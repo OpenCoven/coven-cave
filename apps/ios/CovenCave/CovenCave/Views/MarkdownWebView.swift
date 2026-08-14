@@ -31,6 +31,18 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
     }
 }
 
+struct MarkdownRenderSignature: Equatable {
+    let markdown: String
+    let streaming: Bool
+    let reader: Bool
+}
+
+struct MarkdownStyleSignature: Equatable {
+    let fontScale: CGFloat
+    let theme: ReaderTheme
+    let accentHex: String?
+}
+
 /// A heading reported by the renderer, used to build the reader's table of
 /// contents. `index` is its document order so native can ask the WebView to
 /// scroll to it without translating coordinates.
@@ -102,9 +114,11 @@ struct MarkdownWebView: UIViewRepresentable {
         private var pending: String?
         private var rendering = false
         private var throttleScheduled = false
-        private var lastRenderKey: String?
-        private var lastStyleKey: String?
+        private var lastRenderSignature: MarkdownRenderSignature?
+        private var lastStyleSignature: MarkdownStyleSignature?
         private var lastScrollToken: Int?
+        private let performanceRecorder: CavePerformanceRecorder
+        private var rendererAcquisitionSpan: CavePerformanceSpan?
 
         private struct Opts {
             var streaming = false
@@ -115,13 +129,16 @@ struct MarkdownWebView: UIViewRepresentable {
         }
         private var opts = Opts()
 
-        override init() {
+        init(performanceRecorder: CavePerformanceRecorder? = nil) {
+            let recorder = performanceRecorder ?? .shared
+            self.performanceRecorder = recorder
+            self.rendererAcquisitionSpan = recorder.begin("markdown.webview.init")
             let config = WKWebViewConfiguration()
-            let ucc = WKUserContentController()
-            config.userContentController = ucc
+            let userContentController = WKUserContentController()
+            config.userContentController = userContentController
             webView = WKWebView(frame: .zero, configuration: config)
             super.init()
-            ucc.add(self, name: "cave")
+            userContentController.add(self, name: "cave")
             webView.navigationDelegate = self
             webView.isOpaque = false
             webView.backgroundColor = .clear
@@ -135,6 +152,7 @@ struct MarkdownWebView: UIViewRepresentable {
                 // The renderer bundle (gitignored, built by scripts/build-ios-markdown.mjs)
                 // is missing from this build — never leave the reply blank.
                 failed = true
+                finishRendererAcquisition()
             }
         }
 
@@ -151,14 +169,19 @@ struct MarkdownWebView: UIViewRepresentable {
             // Markdown / streaming / reader changes need a full re-render; a pure
             // font-size / theme / accent change is applied without rebuilding the
             // DOM so the reader's scroll position survives.
-            let renderKey = "\(streaming)|\(reader)|\(md)"
-            let styleKey = "\(fontScale)|\(theme.rawValue)|\(accentHex ?? "")"
-            if renderKey == lastRenderKey {
-                if styleKey != lastStyleKey { lastStyleKey = styleKey; applyStyleOnly() }
+            let renderSignature = MarkdownRenderSignature(markdown: md, streaming: streaming, reader: reader)
+            let styleSignature = MarkdownStyleSignature(fontScale: fontScale, theme: theme, accentHex: accentHex)
+            if renderSignature == lastRenderSignature {
+                if styleSignature != lastStyleSignature {
+                    lastStyleSignature = styleSignature
+                    applyStyleOnly()
+                } else {
+                    performanceRecorder.increment("markdown.render.skipped")
+                }
                 return
             }
-            lastRenderKey = renderKey
-            lastStyleKey = styleKey
+            lastRenderSignature = renderSignature
+            lastStyleSignature = styleSignature
             pending = md
             requestRender()
         }
@@ -203,20 +226,23 @@ struct MarkdownWebView: UIViewRepresentable {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 do {
-                    let value = try await self.webView.callAsyncJavaScript(
-                        "if (typeof window.caveRender !== 'function') throw new Error('caveRender unavailable'); await window.caveRender(md, opts); return Math.ceil(document.body.getBoundingClientRect().height);",
-                        arguments: [
-                            "md": md,
-                            "opts": [
-                                "streaming": o.streaming,
-                                "fontScale": Double(o.fontScale),
-                                "theme": o.theme.rawValue,
-                                "accent": o.accentHex ?? "",
-                                "reader": o.reader,
+                    let spanName = o.streaming ? "markdown.render.streaming" : "markdown.render.settled"
+                    let value = try await self.performanceRecorder.measure(spanName) {
+                        try await self.webView.callAsyncJavaScript(
+                            "if (typeof window.caveRender !== 'function') throw new Error('caveRender unavailable'); await window.caveRender(md, opts); return Math.ceil(document.body.getBoundingClientRect().height);",
+                            arguments: [
+                                "md": md,
+                                "opts": [
+                                    "streaming": o.streaming,
+                                    "fontScale": Double(o.fontScale),
+                                    "theme": o.theme.rawValue,
+                                    "accent": o.accentHex ?? "",
+                                    "reader": o.reader,
+                                ],
                             ],
-                        ],
-                        contentWorld: .page
-                    )
+                            contentWorld: .page
+                        )
+                    }
                     if let h = value as? Double, h > 0 {
                         self.onHeight?(CGFloat(h))
                     } else if !o.streaming {
@@ -237,6 +263,7 @@ struct MarkdownWebView: UIViewRepresentable {
             guard !failedReported else { return }
             failedReported = true
             failed = true
+            finishRendererAcquisition()
             // Defer past the current SwiftUI update cycle — `apply()` runs inside
             // `updateUIView`, and mutating the caller's @State synchronously there
             // is dropped ("Modifying state during view update").
@@ -246,12 +273,31 @@ struct MarkdownWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             ready = true
+            finishRendererAcquisition()
             flush()
         }
 
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            reportFailure()
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            reportFailure()
+        }
+
+        private func finishRendererAcquisition() {
+            performanceRecorder.end(rendererAcquisitionSpan)
+            rendererAcquisitionSpan = nil
+        }
+
         nonisolated func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
             Task { @MainActor in
+                guard let body = message.body as? [String: Any],
+                      let type = body["type"] as? String else { return }
                 switch type {
                 case "height":
                     if let h = body["height"] as? Double { self.onHeight?(CGFloat(h)) }

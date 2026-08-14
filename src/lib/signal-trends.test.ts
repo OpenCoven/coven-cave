@@ -128,6 +128,38 @@ describe("bucketSnapshots", () => {
 });
 
 describe("deriveSignalTrends", () => {
+  it("retains every persisted snapshot for the all-evidence scope", () => {
+    const trends = deriveSignalTrends(
+      [
+        snapshot({ reportedAt: "2026-04-01T12:00:00.000Z", confidence: 40 }),
+        snapshot({ reportedAt: "2026-06-25T12:00:00.000Z", confidence: 80 }),
+      ],
+      NOW,
+      undefined,
+      { days: null, label: "Everything on record" },
+    );
+
+    assert.equal(trends.snapshotCount, 2);
+    assert.equal(trends.scopeLabel, "Everything on record");
+    assert.ok(trends.buckets.some((bucket) => bucket.key === "2026-03-30" && bucket.count === 1));
+  });
+
+  it("keeps snapshots on both sides of an eight-week boundary", () => {
+    const trends = deriveSignalTrends(
+      [
+        snapshot({ reportedAt: "2026-04-30T19:59:59.999Z", confidence: 40 }),
+        snapshot({ reportedAt: "2026-04-30T20:00:00.000Z", confidence: 80 }),
+        snapshot({ reportedAt: "2026-06-25T12:00:00.000Z", confidence: 90 }),
+      ],
+      NOW,
+      undefined,
+      { days: 56, label: "Last 8 weeks" },
+    );
+
+    assert.equal(trends.snapshotCount, 2);
+    assert.equal(trends.scopeLabel, "Last 8 weeks");
+  });
+
   it("answers improving when the latest data bucket clears the threshold", () => {
     const trends = deriveSignalTrends(
       [

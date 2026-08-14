@@ -65,19 +65,60 @@ const base = {
   assert.equal(r.avatarImageFallback, undefined, "no upload → no fallback source");
 }
 
-// BOTH a workspace avatar AND a Cave-local upload: the workspace avatar is the
-// primary and the upload is kept as the fallback so a failed workspace image
-// degrades to the upload (never straight to the glyph).
+// BOTH a workspace avatar AND a Cave-local upload: the most recently written
+// one is primary and the other remains available as fallback.
+const UPLOAD = "data:image/png;base64,AAA";
+const upload = (updatedAt) => ({ dataUrl: UPLOAD, mime: "image/png", updatedAt });
+
+// Newer Cave-local upload wins.
 {
   const r = resolveFamiliar(
     { ...base, avatarUrl: "/api/familiars/x/avatar?v=1" },
-    {
-      image: { dataUrl: "data:image/png;base64,AAA", mime: "image/png", updatedAt: "2026-06-08T00:00:00Z" },
-      archived: false,
-    },
+    { image: upload("2026-06-08T00:00:00Z"), archived: false },
   );
-  assert.equal(r.avatarImage, "/api/familiars/x/avatar?v=1");
-  assert.equal(r.avatarImageFallback, "data:image/png;base64,AAA");
+  assert.equal(r.avatarImage, UPLOAD);
+  assert.equal(r.avatarImageFallback, "/api/familiars/x/avatar?v=1");
+}
+
+// Newer workspace avatar wins.
+{
+  const v = String(Date.parse("2026-07-01T00:00:00Z"));
+  const r = resolveFamiliar(
+    { ...base, avatarUrl: `/api/familiars/x/avatar?v=${v}&format=png` },
+    { image: upload("2026-06-08T00:00:00Z"), archived: false },
+  );
+  assert.equal(r.avatarImage, `/api/familiars/x/avatar?v=${v}&format=png`);
+  assert.equal(r.avatarImageFallback, UPLOAD);
+}
+
+// An undatable upload never displaces a datable workspace avatar.
+{
+  const r = resolveFamiliar(
+    { ...base, avatarUrl: "/api/familiars/x/avatar?v=999" },
+    { image: upload("not a date"), archived: false },
+  );
+  assert.equal(r.avatarImage, "/api/familiars/x/avatar?v=999");
+  assert.equal(r.avatarImageFallback, UPLOAD);
+}
+
+// A datable upload displaces an undatable workspace avatar.
+{
+  const r = resolveFamiliar(
+    { ...base, avatarUrl: "/api/familiars/x/avatar" },
+    { image: upload("2026-06-08T00:00:00Z"), archived: false },
+  );
+  assert.equal(r.avatarImage, UPLOAD);
+  assert.equal(r.avatarImageFallback, "/api/familiars/x/avatar");
+}
+
+// Neither source is datable, so the historic workspace-first order stands.
+{
+  const r = resolveFamiliar(
+    { ...base, avatarUrl: "/api/familiars/x/avatar" },
+    { image: upload("nonsense"), archived: false },
+  );
+  assert.equal(r.avatarImage, "/api/familiars/x/avatar");
+  assert.equal(r.avatarImageFallback, UPLOAD);
 }
 
 // Glyph override wins

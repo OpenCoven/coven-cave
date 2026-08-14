@@ -12,6 +12,23 @@ const STEP_IDS = [
   "publish",
 ] as const;
 
+/**
+ * Recognize the durable flow snapshots emitted by Research. The complete
+ * ordered seven-node shape keeps this conservative: a user flow that merely
+ * starts its id with `research-` is not reclassified. Travel replay uses this
+ * to refuse legacy queue entries created before Research became online-only.
+ */
+export function isResearchMissionFlowSnapshot(
+  flow: Pick<FlowDoc, "id" | "nodes">,
+): boolean {
+  if (!/^research-.+-iteration-[1-9]\d*$/u.test(flow.id)) return false;
+  if (flow.nodes.length !== STEP_IDS.length) return false;
+  return STEP_IDS.every((id, index) => (
+    flow.nodes[index]?.id === id
+    && flow.nodes[index]?.type === (index === 0 ? "trigger.manual" : "familiar")
+  ));
+}
+
 function chainEdges(ids: readonly string[]): FlowEdge[] {
   return ids.slice(0, -1).map((source, index) => {
     const target = ids[index + 1];
@@ -54,6 +71,8 @@ function boundedContext(mission: ResearchMission, iteration: number, workspace: 
     `Mode: ${mission.mode}`,
     `Iteration ${iteration} of ${mission.bounds.maxIterations}.`,
     `Intent: ${mission.intent}`,
+    `Deliverable: ${mission.deliverable}`,
+    mission.audience ? `Audience: ${mission.audience}` : "Audience: not specified.",
     mission.direction ? `Refined direction: ${mission.direction}` : "",
     `Workspace: ${workspace}`,
     `Read existing mission state before acting. Write only under ${workspace}.`,
@@ -70,9 +89,9 @@ function boundedContext(mission: ResearchMission, iteration: number, workspace: 
   ].filter(Boolean).join("\n");
 }
 
-function publishPrompt(context: string): string {
+function publishPrompt(): string {
   return [
-    context,
+    "Using the shared Research mission context above, publish the working files.",
     "Atomically finish the working files: research-state.yaml, findings.md, research-log.md, sources.json, and artifacts/primary.md.",
     "All durable narrative artifacts except an optional self-contained presentation must be Markdown.",
     "After every file is valid, end this step by printing these three bare-line records exactly; replace only the JSON placeholders:",
@@ -107,38 +126,42 @@ export function buildResearchMissionFlow(
       mission,
       "scope",
       "Scope question",
-      `${context}\nDefine research questions, inclusion rules, exclusions, and the evidence standard.`,
+      [
+        "SHARED RESEARCH MISSION CONTEXT — applies to every Research phase in this Flow:",
+        context,
+        "Define research questions, inclusion rules, exclusions, and the evidence standard.",
+      ].join("\n"),
       1,
     ),
     agentNode(
       mission,
       "gather",
       "Gather sources",
-      `${context}\nGather primary, local, and approved project sources. Normalize and update sources.json as evidence changes.`,
+      "Using the shared Research mission context above, gather primary, local, and approved project sources. Normalize and update sources.json as evidence changes.",
       2,
     ),
     agentNode(
       mission,
       "challenge",
       "Challenge claims",
-      `${context}\nTry to refute weak claims. Record contradictions, missing evidence, duplication, and unresolved questions.`,
+      "Using the shared Research mission context above, try to refute weak claims. Record contradictions, missing evidence, duplication, and unresolved questions.",
       3,
     ),
     agentNode(
       mission,
       "synthesize",
       "Synthesize artifacts",
-      `${context}\nUpdate findings.md and artifacts/primary.md with citations to the structured source ledger.`,
+      "Using the shared Research mission context above, update findings.md and artifacts/primary.md with citations to the structured source ledger.",
       4,
     ),
     agentNode(
       mission,
       "control",
       "Choose next state",
-      `${context}\nChoose continue, checkpoint, or complete against evidence quality and explicit bounds. Continue is only a recommendation for a later user or automation action; do not execute it now.`,
+      "Using the shared Research mission context above, choose continue, checkpoint, or complete against evidence quality and explicit bounds. Continue is only a recommendation for a later user or automation action; do not execute it now.",
       5,
     ),
-    agentNode(mission, "publish", "Publish working files", publishPrompt(context), 6),
+    agentNode(mission, "publish", "Publish working files", publishPrompt(), 6),
   ];
 
   return {

@@ -4,13 +4,13 @@
  * SidebarMinimal -- the redesigned Cave sidebar.
  *
  * Layout (top to bottom):
- *   1. Familiar scope selector + New chat CTA
- *   2. App destinations as one flat visible list
+ *   1. Home / Chat section tabs, familiar scope selector, and New chat CTA
+ *   2. Grouped app destinations and role-surface rooms
  *   3. Footer: Dashboard, Settings
  */
 
 import React from "react";
-import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
+import { SidebarRailHeader } from "@/components/sidebar-rail-header";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import {
@@ -21,17 +21,22 @@ import {
 } from "@/lib/page-drag";
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
 import { SidebarFooter } from "@/components/sidebar-footer";
+import {
+  DEFAULT_NAV_SECTION,
+  navItemsForSection,
+  roomBelongsToSection,
+  type NavSection,
+} from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import {
-  VISIBLE_WORKSPACE_NAV_ITEMS,
   type WorkspaceNavItem,
   type WorkspaceNavMode,
 } from "@/lib/workspace-navigation";
-
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
    *  interprets it, only round-trips it through navigation callbacks. */
@@ -46,6 +51,10 @@ export type SidebarRoleSurfaceRow = {
 
 export type SidebarMinimalProps = {
   mode: string;
+  /** Active global section (Home | Chat). The shell owns it so deep links and
+   *  the ⌘K palette can move rooms; omitted falls back to Home. */
+  section?: NavSection;
+  onSectionChange?: (section: NavSection) => void;
   /** Page modes currently open as secondary split tiles (drag-to-split).
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
@@ -140,11 +149,11 @@ function FolderRow({
       onDragStart={
         draggable
           ? (e) => {
-              e.dataTransfer.setData(PAGE_DRAG_MIME, id);
-              e.dataTransfer.setData("text/plain", label);
-              e.dataTransfer.effectAllowed = "copy";
-              emitPageDragStart({ mode: id, label });
-            }
+            e.dataTransfer.setData(PAGE_DRAG_MIME, id);
+            e.dataTransfer.setData("text/plain", label);
+            e.dataTransfer.effectAllowed = "copy";
+            emitPageDragStart({ mode: id, label });
+          }
           : undefined
       }
       onDragEnd={draggable ? () => emitPageDragEnd() : undefined}
@@ -164,6 +173,8 @@ function FolderRow({
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
+    section = DEFAULT_NAV_SECTION,
+    onSectionChange,
     onNewChat,
     onOpenSettings,
     onModeChange,
@@ -187,125 +198,116 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   const handleModeSelect = (id: WorkspaceNavMode) => {
     onModeChange(id);
   };
+  // Rooms are registry-driven; each one shows in the section its mode maps to.
+  const sectionRooms = React.useMemo(
+    () => (props.roleSurfaces ?? []).filter((room) => roomBelongsToSection(room.mode, section)),
+    [props.roleSurfaces, section],
+  );
 
   return (
     <nav className="sidebar-minimal" aria-label="Primary">
-      {/* App brand mark — rail-only chrome (chat-revamp phase D): a 28px
-          accent-tinted rounded square with the star glyph, shown by CSS only
-          when the nav is collapsed to the 56px icon rail. The expanded panel
-          keeps leading with the familiar switcher. Decorative — hidden from AT. */}
-      <div className="sidebar-brand-mark" aria-hidden="true">
-        <Icon name="ph:sparkle" width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} />
-      </div>
+      {/* No rail-only brand mark here any more (it was chat-revamp phase D
+          chrome, decorative and aria-hidden). The expanded panel never had a
+          counterpart for it, so in the 56px rail it pushed every control below
+          it ~32px out of line with its own hover-peek position — see #4351 and
+          the retirement note in styles/sidebar-minimal/activity-rail.css. */}
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
-      {/* Familiar scope lives HERE, on every page (cave-vtk9) — the sidenav
-          header carries the labeled dropdown switcher; the collapsed rail
-          keeps the avatar-only trigger. The mobile top bar keeps its own
-          (the drawer hides this one). */}
-      <div className="sidebar-familiar-switch">
-        <FamiliarQuickSwitch
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId ?? null}
-          selectedFamiliarIds={selectedFamiliarIds}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelectFamiliar={onFamiliarScopeChange}
-          placement="bottom-start"
-          labeled
-        />
-      </div>
+      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
 
-      <div className="sidebar-actions">
-        <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
-          <Icon
-            name="ph:note-pencil"
-            className="sidebar-action-icon"
-            width={CAVE_ICON_SIZE.sidePanelAction}
-            height={CAVE_ICON_SIZE.sidePanelAction}
-            aria-hidden
-          />
-          <span>New chat</span>
-        </button>
-      </div>
+      {/* Familiar scope + New chat (cave-vtk9) — SHARED with the Chat section
+          via SidebarRailHeader, so the two controls cannot drift apart across
+          the Home/Chat toggle the way the forked copies did. The collapsed rail
+          keeps the avatar-only trigger; the mobile top bar keeps its own
+          switcher (the drawer hides this one). */}
+      <SidebarRailHeader
+        familiars={familiars}
+        activeFamiliarId={activeFamiliarId ?? null}
+        selectedFamiliarIds={selectedFamiliarIds}
+        sessions={sessions}
+        responseNeeded={responseNeeded}
+        onSelectFamiliar={onFamiliarScopeChange}
+        onNewChat={onNewChat}
+      />
 
-      <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        {VISIBLE_WORKSPACE_NAV_ITEMS.map((fm: WorkspaceNavItem, i, rows) => (
-          <FolderRow
-            key={fm.id}
-            id={fm.id}
-            label={fm.label}
-            iconName={fm.iconName}
-            // Active follows the primary mode (Roles/Capabilities keep the
-            // Marketplace hub lit); pages open as split tiles get a lighter
-            // "open in split" state instead. Derivation in lib/sidebar-nav-state.
-            state={sidebarRowState(fm.id, mode, props.splitPageModes)}
-            badge={MODE_BADGES[fm.id]?.(props)}
-            kbd={fm.kbd}
-            description={fm.description}
-            quiet={fm.quiet}
-            // Index the RENDERED list — a navHidden entry between quiet rows
-            // must not throw off the "first quiet row" gap.
-            quietLead={Boolean(fm.quiet) && !rows[i - 1]?.quiet}
-            onClick={() => handleModeSelect(fm.id)}
-          />
-        ))}
-
-        {/* Role Surface rooms — the active familiar's or selected scope's
-            vocation workspaces.
+      <div
+        className="sidebar-nav-scroll"
+        ref={navScrollRef}
+        role="tabpanel"
+        id={`nav-section-panel-${section}`}
+        aria-labelledby={`nav-section-tab-${section}`}
+      >
+          {navItemsForSection(section).map((fm: WorkspaceNavItem, i, rows) => (
+            <FolderRow
+              key={fm.id}
+              id={fm.id}
+              label={fm.label}
+              iconName={fm.iconName}
+              // Active follows the primary mode (Roles/Capabilities keep the
+              // Marketplace hub lit); pages open as split tiles get a lighter
+              // "open in split" state instead. Derivation in lib/sidebar-nav-state.
+              state={sidebarRowState(fm.id, mode, props.splitPageModes)}
+              badge={MODE_BADGES[fm.id]?.(props)}
+              kbd={fm.kbd}
+              description={fm.description}
+              quiet={fm.quiet}
+              // Index the RENDERED list — a navHidden entry between quiet rows
+              // must not throw off the "first quiet row" gap.
+              quietLead={Boolean(fm.quiet) && !rows[i - 1]?.quiet}
+              onClick={() => handleModeSelect(fm.id)}
+            />
+          ))}
+          {/* Role Surface rooms — the active familiar's or selected scope's
+            vocation workspaces, filtered to the open section (the coding
+            workbench belongs to Code; every other room to Home).
             Registry-driven: the sidebar renders whatever it's handed and never
             names a role. The cluster label keeps them reading as chambers of
             the Cave rather than more app tabs. */}
-        {(props.roleSurfaces?.length ?? 0) > 0 && (
-          <>
-            <div className="sidebar-rooms-label" aria-hidden>
-              Rooms
-            </div>
-            {props.roleSurfaces!.map((room) => (
-              <FolderRow
-                key={room.mode}
-                id={room.mode}
-                label={room.label}
-                iconName={room.iconName}
-                state={sidebarRowState(room.mode, mode, props.splitPageModes)}
-                description={room.description}
-                onClick={() => {
-                  if (room.familiarId && room.familiarId !== activeFamiliarId) {
-                    onFamiliarScopeChange(room.familiarId, { preserveSurface: true });
-                  }
-                  onModeChange(room.mode);
-                }}
-              />
-            ))}
-          </>
-        )}
+          {sectionRooms.length > 0 && (
+            <>
+              <div className="sidebar-rooms-label" aria-hidden>
+                Rooms
+              </div>
+              {sectionRooms.map((room) => (
+                <FolderRow
+                  key={room.mode}
+                  id={room.mode}
+                  label={room.label}
+                  iconName={room.iconName}
+                  state={sidebarRowState(room.mode, mode, props.splitPageModes)}
+                  description={room.description}
+                  onClick={() => {
+                    if (room.familiarId && room.familiarId !== activeFamiliarId) {
+                      onFamiliarScopeChange(room.familiarId, { preserveSurface: true });
+                    }
+                    onModeChange(room.mode);
+                  }}
+                />
+              ))}
+            </>
+          )}
 
-        <RecentActivityRollup
-          sessions={sessions}
-          selectedFamiliarIds={selectedFamiliarIds}
-          activeSessionId={activeSessionId}
-          onOpenSession={onOpenSession}
-        />
+          {/* The session list belongs to the Code room (cave-24d2r) — Home is
+            destinations, Code is live work. */}
+          {section === "code" ? (
+            <RecentActivityRollup
+              sessions={sessions}
+              selectedFamiliarIds={selectedFamiliarIds}
+              activeSessionId={activeSessionId}
+              onOpenSession={onOpenSession}
+            />
+          ) : null}
       </div>
 
       {/* Bottom: Dashboard + Settings, then the version line — shared with the
-          WorkspaceSidebar that replaces this host during Chat. */}
+          WorkspaceSidebar that replaces this host during Chat, and the last
+          thing in the rail as well as in the panel. The rail-only account
+          avatar that used to close the column is gone: its onClick was
+          onOpenSettings, i.e. the same action as the Settings button directly
+          above it, and being rail-only it left the footer sitting at a
+          different height than its own hover-peek form (#4351). */}
       <SidebarFooter onOpenSettings={onOpenSettings} />
-
-      {/* Account avatar — rail-only (CSS-gated, like the brand mark): the 28px
-          circle closing the rail per the phase-D design. There is no user
-          profile store yet, so it renders the generic account glyph and opens
-          Settings, same as the footer's Settings button. */}
-      <button
-        type="button"
-        className="sidebar-user-avatar focus-ring"
-        onClick={onOpenSettings}
-        aria-label="Account and settings"
-        title="Account & settings"
-      >
-        <Icon name="ph:user" width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} aria-hidden />
-      </button>
     </nav>
   );
 }

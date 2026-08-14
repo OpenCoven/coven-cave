@@ -11,6 +11,10 @@ const FACADES: Record<string, string[]> = {
     "../styles/status-bar.css",
     "../styles/globals/foundations.css",
     "../styles/globals/shell-navigation.css",
+    // The siderail's shared header (scope switcher + New chat). Sits directly
+    // after shell-navigation so it lands beside the rail chrome it replaced;
+    // its trigger overrides beat desktop-chrome.css by specificity, not order.
+    "../styles/globals/rail-header.css",
     "../styles/globals/primitives.css",
     "../styles/globals/themes.css",
     "../styles/globals/desktop-chrome.css",
@@ -27,10 +31,13 @@ const FACADES: Record<string, string[]> = {
   // session-chrome.css lands LAST on purpose: the Chat.dc.html redesign
   // reshapes rules the earlier modules define (title, follow-up pills, user
   // bubble), so it has to win the cascade without raising specificity.
-  "src/styles/cave-chat.css": ["./cave-chat/bubbles.css", "./cave-chat/activity.css", "./cave-chat/transcript.css", "./cave-chat/auxiliary-surfaces.css", "./cave-chat/start-from.css", "./cave-chat/session-chrome.css"],
+  // run-rail last: the rail is a self-scoped leaf (.cave-runrail*) that
+  // overrides nothing above it, so it takes the end of the cascade where a
+  // new module is cheapest to reason about (cave-w716g).
+  "src/styles/cave-chat.css": ["./cave-chat/bubbles.css", "./cave-chat/activity.css", "./cave-chat/transcript.css", "./cave-chat/auxiliary-surfaces.css", "./cave-chat/start-from.css", "./cave-chat/session-chrome.css", "./cave-chat/run-rail.css"],
   "src/styles/board.css": ["./board/chrome-table.css", "./board/kanban-inspector.css", "./board/github-list.css", "./board/github-detail.css", "./board/mobile-card-stack.css", "./board/gantt-fallbacks.css"],
   "src/styles/home-composer.css": ["./home-composer/landing-composer.css", "./home-composer/feed-menus.css", "./home-composer/hearth-continuations.css"],
-  "src/styles/sidebar-minimal.css": ["./sidebar-minimal/shell-chrome.css", "./sidebar-minimal/navigation-recents.css", "./sidebar-minimal/familiars.css", "./sidebar-minimal/activity-rail.css"],
+  "src/styles/sidebar-minimal.css": ["./sidebar-minimal/shell-chrome.css", "./sidebar-minimal/section-tabs.css", "./sidebar-minimal/navigation-recents.css", "./sidebar-minimal/familiars.css", "./sidebar-minimal/activity-rail.css"],
   "src/styles/cave-md.css": ["./cave-md/prose.css", "./cave-md/tables-mermaid.css", "./cave-md/code.css", "./cave-md/interactions.css"],
 };
 

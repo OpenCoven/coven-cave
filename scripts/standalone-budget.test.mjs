@@ -41,13 +41,16 @@ try {
     assert.equal(forbiddenStandaloneRoot(`${root}/nested/file`), root);
   }
   assert.equal(forbiddenStandaloneRoot(".tmp/repo-snapshot/package.json"), ".tmp");
+  // Synthetic sample name — not a real checkout path. Patrol fixtures now live
+  // under tmpdir as worktree-lifecycle-fixture-* (no leading dot); this string
+  // only exercises the forbiddenStandaloneRoot prefix match (cave-ad63l).
   assert.equal(
-    forbiddenStandaloneRoot(".worktree-lifecycle-fixture-eTlVOX"),
-    ".worktree-lifecycle-fixture-eTlVOX",
+    forbiddenStandaloneRoot(".worktree-lifecycle-fixture-sample"),
+    ".worktree-lifecycle-fixture-sample",
   );
   assert.equal(
-    forbiddenStandaloneRoot(".worktree-lifecycle-fixture-eTlVOX/repo/README.md"),
-    ".worktree-lifecycle-fixture-eTlVOX",
+    forbiddenStandaloneRoot(".worktree-lifecycle-fixture-sample/repo/README.md"),
+    ".worktree-lifecycle-fixture-sample",
   );
   assert.equal(forbiddenStandaloneRoot("node_modules/target/index.js"), undefined);
 

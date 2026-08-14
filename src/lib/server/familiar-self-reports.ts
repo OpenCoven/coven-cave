@@ -8,6 +8,7 @@ import {
   type ThreadMetricSnapshot,
 } from "@/lib/signal-trends";
 import {
+  isThreadSelfReport,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { isValidFamiliarId } from "./familiar-id";
@@ -61,7 +62,13 @@ async function readAllReports(familiarId: string): Promise<ThreadSelfReport[]> {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        reports.push(redactReport(JSON.parse(trimmed) as ThreadSelfReport));
+        const parsed: unknown = JSON.parse(trimmed);
+        // `id` has been required since the first persisted schema. Do not
+        // invent identity for a corrupt row: ids drive dedupe and recency
+        // tie-breaking. Match this store's existing malformed-line policy by
+        // dropping the row while preserving the rest of the append-only ledger.
+        if (!isThreadSelfReport(parsed)) continue;
+        reports.push(redactReport(parsed));
       } catch {
         /* Ignore malformed historical lines; append-only storage should keep listing usable. */
       }
@@ -177,14 +184,16 @@ export async function listMetricSnapshots(
 
 export async function listSelfReports(
   familiarId: string,
-  opts: { limit?: number; before?: string },
+  opts: { limit?: number | "all"; before?: string },
 ): Promise<{ reports: ThreadSelfReport[]; total: number }> {
   const reports = await readAllReports(familiarId);
   const beforeMs = opts.before ? new Date(opts.before).getTime() : null;
   const filtered = Number.isFinite(beforeMs)
     ? reports.filter((report) => new Date(report.reportedAt).getTime() < (beforeMs as number))
     : reports;
-  const limit = Math.max(0, Math.min(100, Math.floor(opts.limit ?? 20)));
+  const limit = opts.limit === "all"
+    ? filtered.length
+    : Math.max(0, Math.min(100, Math.floor(opts.limit ?? 20)));
   return { reports: filtered.slice(0, limit), total: filtered.length };
 }
 

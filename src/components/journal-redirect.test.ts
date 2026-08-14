@@ -62,6 +62,7 @@ const ws = read("./workspace.tsx");
 const sidebar = read("./sidebar-minimal.tsx");
 const navigation = read("../lib/workspace-navigation.ts");
 const pageDrag = read("../lib/page-drag.ts");
+const pageRegistry = read("../lib/workspace-page-registry.ts");
 const slash = read("../lib/slash-commands.ts");
 
 // ── Workspace: "journal" is a redirect-only mode (like groupchat) ────────────
@@ -81,10 +82,19 @@ assert.match(ws, /case "\/journal":\s*\n\s*setMode\("journal"\)/, "/journal rout
 // Memories now. ─────
 assert.match(navigation, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "the navigation registry keeps Journal reachable through the palette");
 assert.doesNotMatch(navigation, /generated sketches/, "the Journal description no longer promises the canvas");
-assert.match(sidebar, /VISIBLE_WORKSPACE_NAV_ITEMS/, "the sidebar consumes the shared visible registry");
+assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar consumes the section-filtered visible registry");
 
-// ── A redirect is not a page: journal can't be dragged into a split ─────────
-assert.match(pageDrag, /NON_SPLITTABLE = new Set\(\["terminal", "journal"\]\)/, "journal is excluded from drag-to-split");
+// ── Journal is a registered Memories variant, so split requests preserve it ─
+assert.match(
+  pageRegistry,
+  /journal: \{\s*id: "journal",\s*title: "Journal",\s*canonicalId: "grimoire",\s*variant: "journal",/,
+  "journal is registered as the Memories Journal variant",
+);
+assert.match(
+  pageDrag,
+  /return workspacePageDefinition\(mode\) !== null;/,
+  "drag-to-split accepts every registered page variant, including Journal",
+);
 
 // ── Slash palette copy matches the new home ───────────────────────────────────
 assert.match(slash, /name: "\/journal"/, "the /journal slash command survives the redirect");

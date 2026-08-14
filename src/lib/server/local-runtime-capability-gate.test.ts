@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { probeReadyLocalRuntimeCapability } from "./local-runtime-capability-gate.ts";
+import {
+  probeReadyLocalRuntimeCapability,
+  probeReadyLocalRuntimeCapabilityOutcome,
+} from "./local-runtime-capability-gate.ts";
 
 assert.equal(
   typeof probeReadyLocalRuntimeCapability,
@@ -115,5 +118,111 @@ assert.equal(
   1,
   "the explicit no-local-plan bypass preserves existing SSH capability routing",
 );
+
+// A Claude turn launches through `coven run`, so its plan runs the "coven"
+// runner while its readiness record is tagged "claude" — that check verified
+// BOTH binaries. Before `availabilityRunner` existed, the tag mismatch made the
+// gate skip every `coven run --help` probe on a Claude turn, and the route then
+// told users "the saved model selection cannot be applied by this runtime" for
+// a model and a CLI that were both entirely fine.
+{
+  let covenBackedCalls = 0;
+  const covenBackedResult = await probeReadyLocalRuntimeCapability({
+    plan: {
+      runner: "coven",
+      availabilityRunner: "claude",
+      availability: {
+        state: "ready",
+        runner: "claude",
+        resolvedPath: "/private/claude",
+      },
+    },
+    runner: "coven",
+    probe: async () => {
+      covenBackedCalls += 1;
+      return true;
+    },
+  });
+  assert.equal(
+    covenBackedResult,
+    true,
+    "a Coven-backed Claude plan probes `coven run` capabilities",
+  );
+  assert.equal(covenBackedCalls, 1, "the Coven-backed plan calls the probe exactly once");
+}
+
+// The declared wrapper runner is a narrow allowance, not a blanket one: an
+// availability record for some third runner is still drift.
+{
+  let driftCalls = 0;
+  const drift = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: {
+      runner: "coven",
+      availabilityRunner: "claude",
+      availability: {
+        state: "ready",
+        runner: "opencode",
+        resolvedPath: "/private/opencode",
+      },
+    },
+    runner: "coven",
+    probe: async () => {
+      driftCalls += 1;
+      return true;
+    },
+  });
+  assert.equal(drift.ran, false, "an unrelated readiness record never authorizes a probe");
+  assert.equal(driftCalls, 0, "a drifted plan never spawns the capability probe");
+}
+
+// The reporting contract: "we never asked" must stay distinguishable from
+// "we asked and the answer was no".
+{
+  const notReady = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: {
+      runner: "coven",
+      availability: {
+        state: "missing",
+        runner: "coven",
+        code: "runtime_coven_missing",
+        message: "Coven is not installed.",
+      },
+    },
+    runner: "coven",
+    probe: async () => true,
+  });
+  assert.equal(notReady.ran, false);
+  assert.equal(
+    notReady.ran === false && notReady.reason,
+    "Coven is not installed.",
+    "a not-ready plan surfaces the underlying availability reason rather than a bare false",
+  );
+
+  const noPlan = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: null,
+    runner: "coven",
+    probe: async () => true,
+  });
+  assert.equal(noPlan.ran, false);
+  assert.match(
+    noPlan.ran === false ? noPlan.reason : "",
+    /never probed/,
+    "a missing plan reports that the capability was never probed",
+  );
+
+  const answeredNo = await probeReadyLocalRuntimeCapabilityOutcome({
+    plan: {
+      runner: "coven",
+      availability: { state: "ready", runner: "coven", resolvedPath: "/private/coven" },
+    },
+    runner: "coven",
+    probe: async () => false,
+  });
+  assert.deepEqual(
+    answeredNo,
+    { ran: true, value: false },
+    "a probe that ran and answered no is not confusable with one that never ran",
+  );
+}
 
 console.log("local-runtime-capability-gate.test.ts: ok");

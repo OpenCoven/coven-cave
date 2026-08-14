@@ -4,6 +4,7 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/pro
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import { deriveThreadConfidence } from "@/lib/thread-confidence";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 import {
   appendSelfReport,
@@ -81,6 +82,43 @@ describe("familiar self-report storage", () => {
 
     assert.equal(listed.total, 3);
     assert.deepEqual(listed.reports.map((item) => item.id), ["new", "mid"]);
+  });
+
+  it("listSelfReports returns every report for the full-evidence mode", async () => {
+    await appendSelfReport("cody", report({ id: "old", sessionId: "s1", reportedAt: "2026-06-23T10:00:00.000Z" }));
+    await appendSelfReport("cody", report({ id: "new", sessionId: "s2", reportedAt: "2026-06-25T10:00:00.000Z" }));
+    await appendSelfReport("cody", report({ id: "mid", sessionId: "s3", reportedAt: "2026-06-24T10:00:00.000Z" }));
+
+    const listed = await listSelfReports("cody", { limit: "all" });
+
+    assert.equal(listed.total, 3);
+    assert.deepEqual(listed.reports.map((item) => item.id), ["new", "mid", "old"]);
+  });
+
+  it("drops a stored report missing its required id before analytics aggregation", async () => {
+    const reportsDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(reportsDir, { recursive: true });
+    const valid = report({
+      id: "valid",
+      sessionId: "valid-session",
+      reportedAt: "2026-06-25T10:00:00.000Z",
+    });
+    const { id: _missingId, ...missingId } = report({
+      id: "discarded",
+      sessionId: "malformed-session",
+      reportedAt: valid.reportedAt,
+    });
+    await writeFile(
+      path.join(reportsDir, "2026-06-25.jsonl"),
+      `${JSON.stringify(missingId)}\n${JSON.stringify(valid)}\n`,
+      "utf8",
+    );
+
+    const listed = await listSelfReports("cody", { limit: "all" });
+    const confidence = deriveThreadConfidence(listed.reports);
+
+    assert.deepEqual(listed.reports.map((item) => item.id), ["valid"]);
+    assert.equal(confidence.reportCount, 1);
   });
 
   it("listSelfReports applies the before cursor after sorting", async () => {

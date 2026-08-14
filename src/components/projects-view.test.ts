@@ -30,7 +30,11 @@ test("the surface keeps its mount contract with ChatSurface", () => {
 test("the header is the compact cave-typography access header", () => {
   assert.match(view, /className="projects-access-eyebrow">Familiars</, "eyebrow reads Familiars");
   assert.match(view, /className="projects-access-title">Project access</, "serif title");
-  assert.match(view, /may read and write\. Click a\s*\n\s*project’s pill to cycle — none, read, full\./, "the subtitle names the familiar and explains the cycle");
+  // The subtitle is now pane-aware: it explains the grant cycle on Access, the
+  // union-max rule on Groups, and the provenance readout on Activity.
+  assert.match(view, /may read and write\. Click a project’s pill to cycle — none, read, full\./, "the Access subtitle names the familiar and explains the cycle");
+  assert.match(view, /most permissive of its own grants and its groups’/, "the Groups subtitle states the union-max rule");
+  assert.match(view, /’s access came from — inherited groups, requests/, "the Activity subtitle explains provenance");
   assert.match(css, /\.projects-access-title \{[^}]*font-family: var\(--font-serif, ui-serif, serif\)/, "title uses the cave serif");
   assert.match(css, /\.projects-access-title \{[^}]*font-size: var\(--text-xl\)/, "title sits on the type scale, not a display hero");
   assert.match(css, /\.projects-access-eyebrow \{[^}]*font-family: var\(--font-mono, ui-monospace, monospace\)/, "eyebrow is mono");
@@ -209,7 +213,7 @@ test("the toolbar creates projects through the one shared add flow", () => {
   assert.match(view, /onAdded: \(\) => \{[\s\S]{0,120}reload\(\);[\s\S]{0,120}void loadGrants\(\);/, "a successful add refreshes both the registry and the grants snapshot");
   assert.match(view, /className="projects-access-new"[\s\S]{0,220}onClick=\{addFlow\.beginAddProject\}/, "the toolbar exposes the New project button");
   assert.match(view, />\s*\{addFlow\.adding \? "Adding…" : "New project"\}\s*</, "the button reflects the in-flight add");
-  assert.match(view, /\{addFlow\.addError \? \([\s\S]{0,120}projects-access-error/, "add failures surface on the page");
+  assert.match(view, /\{addFlow\.addError && pane === "access" \? \([\s\S]{0,120}projects-access-error/, "add failures surface on the page, beside the pane that can add");
   assert.match(view, /\{addFlow\.addProjectModal\}/, "the web-fallback directory browser is mounted");
 });
 
@@ -262,4 +266,44 @@ test("the settings modal also renames and removes from the registry (issue #3710
   // Removing a project must refresh the grant matrix — the DELETE cascade
   // revoked its grants server-side, so the stale rows have to drop out.
   assert.match(view, /await deleteProject\(id\);[\s\S]{0,160}void loadGrants\(\);/, "a removal reloads the grants snapshot");
+});
+
+// ── One surface for the whole permissions protocol (cave-2tmly) ──────────────
+// Before this, the grant matrix existed TWICE — here and in Chat → Familiar →
+// Settings → Projects — both writing the same /api/project-grants, while access
+// groups (the only primitive that grants a set of projects to a set of
+// familiars at once) were buried two levels inside that settings tab.
+test("Access, Groups, and Activity are three peer panes", () => {
+  assert.match(view, /type ProjectsPane = "access" \| "groups" \| "activity"/, "the surface names its three panes");
+  assert.match(view, /<Tabs<ProjectsPane>/, "the panes use the shared tabs primitive");
+  assert.match(view, /id: "access", label: "Access"/, "Access is a named tab");
+  assert.match(view, /id: "groups",\s*label: "Groups",/, "Groups is a named tab, not a section scrolled past");
+  assert.match(view, /id: "activity",\s*label: "Activity",/, "Activity is a named tab");
+  assert.match(view, /count: groupCount/, "the Groups tab carries a count so the primitive is visible at a glance");
+  assert.match(view, /<AccessGroupsSection familiars=\{resolvedFamiliars\} \/>/, "the groups manager mounts here now");
+  assert.match(
+    view,
+    /<FamiliarStudioProjectsTab[\s\S]{0,160}variant="activity"/,
+    "the governance panels mount WITHOUT a second copy of the grant matrix",
+  );
+});
+
+test("the pane preference survives a reload and rejects junk", () => {
+  assert.match(view, /const PANE_STORAGE_KEY = "cave:projects:pane"/, "the pane is a persisted preference");
+  assert.match(view, /isPane\(stored\) \? stored : "access"/, "an unrecognised stored value falls back to Access");
+  // Storage failures (private mode) must lose the preference, never the pane.
+  assert.match(view, /window\.localStorage\.setItem\(PANE_STORAGE_KEY, next\);\s*\} catch \{/, "a storage failure is swallowed");
+});
+
+test("one-familiar controls stay on the panes that have a familiar to act on", () => {
+  // The ledger measures ONE familiar's grants. Beside a cross-familiar group
+  // list it would read as a tally of the thing on screen, which it is not.
+  assert.match(view, /\{pane === "access" \? \(\s*<div\s*className="projects-access-ledger"/, "the ledger belongs to Access alone");
+  assert.match(view, /\{pane === "access" && bulk \? \(/, "bulk editing is an Access-pane affordance");
+  assert.match(
+    view,
+    /pane === "activity" && familiars\.length > 0 && familiar \? \(/,
+    "Activity keeps the familiar picker — it is per-familiar too",
+  );
+  assert.match(view, /orphanPermissionRecords > 0 && pane !== "groups"/, "the stale-permission repair hides on the cross-familiar pane");
 });

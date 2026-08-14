@@ -860,6 +860,20 @@ details[open] > .cave-tool-summary::before {
   cursor: default;
 }
 
+/* Active-chat header context strip: sits beneath MetaLine and contains the
+   adaptive context controls without widening the pane or nesting in the
+   live region. */
+.cave-chat-header-context {
+  min-width: 0;
+  overflow: hidden;
+  padding-inline-start: calc(var(--space-6) + var(--space-2));
+}
+
+.cave-chat-header-context .cave-context-chip {
+  height: var(--space-6);
+  font-size: var(--text-xs);
+}
+
 .cave-chat-session-actions {
   display: inline-flex;
   min-width: 0;
@@ -874,113 +888,6 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-session-actions:empty {
   display: none;
-}
-
-/* cave-9xadi: participants cluster — who is in this conversation, and the
-   dashed + that turns it into a coven. Leads the action group and keeps a
-   hairline separator from the verbs that follow, so identity and actions do
-   not read as one undifferentiated icon row. */
-.cave-chat-participants {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--space-1);
-  margin-right: var(--space-1);
-  padding-right: var(--space-2);
-  border-right: 1px solid var(--border-hairline);
-}
-
-.cave-chat-participants__stack {
-  display: inline-flex;
-  align-items: center;
-}
-
-/* The avatar is the positioning context for its presence dot. */
-.cave-chat-participants__avatar {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-}
-
-.cave-chat-participants__presence {
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border: 1.5px solid var(--bg-panel);
-  border-radius: var(--radius-pill);
-  background: var(--text-muted);
-}
-
-/* Matches the host chip's online dot (--color-success), not the presence
-   accent: some themes resolve --accent-presence to a near-white that reads
-   identically to the muted offline dot. */
-.cave-chat-participants__presence[data-online="true"] {
-  background: var(--color-success);
-}
-
-/* Roster rows put the dot inline after the name rather than on the avatar. */
-.cave-chat-participants__row .cave-chat-participants__presence {
-  position: static;
-  border: 0;
-  margin-left: auto;
-}
-
-.cave-chat-participants__mode {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
-}
-
-.cave-chat-participants__add {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  min-height: 20px;
-  flex: 0 0 auto;
-  /* Dashed, per the mock: an empty slot inviting someone in, distinct from the
-     solid verbs beside it. */
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
-}
-
-.cave-chat-participants__add:hover,
-.cave-chat-participants__add[aria-expanded="true"] {
-  border-color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  color: var(--text-primary);
-}
-
-.cave-chat-participants__row {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.cave-chat-participants__role {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-}
-
-/* The cluster is identity, not chrome — keep it on mobile, where the desktop
-   action verbs collapse into the context menu. */
-@media (max-width: 767px) {
-  .cave-chat-participants {
-    margin-right: 0;
-  }
 }
 
 /* Chat-revamp 1b: the header's ghost session-lifecycle action (the design's
@@ -1167,11 +1074,107 @@ details[open] > .cave-tool-summary::before {
   padding: var(--space-5) var(--space-4);
 }
 
-.voice-call-overlay__engines {
-  display: flex;
+/* Arcade — Glitter Crypt mounted into the dead air of a call.
+   Full-bleed inside the body because the body centers its children, and a
+   centered game window with slack on either side reads as a mistake. */
+.voice-call-overlay__arcade-invite {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.voice-call-overlay__arcade-invite:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 52%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+}
+
+.arcade-panel {
+  display: grid;
+  width: 100%;
+  gap: var(--space-2);
+  justify-items: stretch;
+}
+
+.arcade-panel__header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.arcade-panel__heading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--accent-presence);
+}
+
+.arcade-panel__title {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.arcade-panel__tagline {
+  grid-column: 1;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.arcade-panel__actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.arcade-panel__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 54%, transparent);
+  color: var(--text-secondary);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.arcade-panel__action:hover {
+  background: color-mix(in oklch, var(--bg-hover) 70%, transparent);
+  color: var(--text-primary);
+}
+
+.arcade-panel__frame {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  border-radius: var(--radius-panel);
+  background: var(--bg-base);
+}
+
+.arcade-panel__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.voice-call-overlay__engines {  display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 /* How the call hears (cave-vpe1) and speaks (cave-vony): honest engine
@@ -1209,7 +1212,7 @@ details[open] > .cave-tool-summary::before {
 
 .voice-call-overlay__turn {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
   justify-items: start;
 }
 
@@ -1231,7 +1234,7 @@ details[open] > .cave-tool-summary::before {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   background: color-mix(in oklch, var(--bg-base) 45%, transparent);
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   color: var(--text-primary);
   font-size: var(--text-sm);
   line-height: 1.5;
@@ -1278,7 +1281,7 @@ details[open] > .cave-tool-summary::before {
    lands in the same conversation. */
 .voice-call-overlay__reply {
   display: grid;
-  gap: 6px;
+  gap: var(--space-1);
   border-top: 1px solid var(--border-hairline);
   padding: var(--space-3) var(--space-4);
 }
@@ -1287,7 +1290,7 @@ details[open] > .cave-tool-summary::before {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
@@ -1311,14 +1314,14 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   border: 0;
   background: none;
-  padding: 2px;
+  padding: var(--space-1);
   color: var(--text-muted);
   cursor: pointer;
 }
 
 .voice-call-overlay__reply-row {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .voice-call-overlay__reply-input {
@@ -1327,7 +1330,7 @@ details[open] > .cave-tool-summary::before {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-base) 70%, transparent);
-  padding: 6px var(--space-2);
+  padding: var(--space-2);
   color: var(--text-primary);
   font-size: var(--text-sm);
 }
@@ -1415,7 +1418,7 @@ details[open] > .cave-tool-summary::before {
 .voice-call-overlay__controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .voice-call-overlay__footer {

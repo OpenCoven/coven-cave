@@ -32,7 +32,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/prompts", hint: "browse prompts", description: "Show every prompt template to pick from.", section: "chat" },
   { name: "/save", aliases: ["/link"], hint: "save links", description: "Save one or more links to the Research desk, auto-organized by kind.", argPlaceholder: "url…", section: "chat" },
   { name: "/image", aliases: ["/img", "/imagine"], hint: "generate an image", description: "Generate an image inline in chat (provider set in Familiar Studio → Brain).", argPlaceholder: "describe an image…", section: "chat" },
-  { name: "/auto", aliases: ["/autopilot"], hint: "hands-off mission", description: "Run a mission autonomously: the familiar may ask a few clarifying questions up front, then works silently and only pings you on completion or when blocked. Ends with a quick feedback questionnaire that shapes future missions.", argPlaceholder: "mission…", section: "chat" },
+  { name: "/auto", aliases: ["/autopilot"], hint: "hands-off mission", description: "Run a mission autonomously: the familiar may ask a few clarifying questions up front, then works silently and only pings you on completion or when blocked. `/auto stop` ends one early, `/auto status` checks. Ends with a quick feedback questionnaire that shapes future missions.", argPlaceholder: "mission…", section: "chat" },
 
   // Familiar
   { name: "/familiar", aliases: ["/agent"], hint: "switch", description: "Open the familiar picker. Pass a name to switch directly.", argPlaceholder: "name", section: "familiar" },
@@ -90,6 +90,71 @@ export function matchSlash(prefix: string): SlashCommand[] {
       c.name.toLowerCase().startsWith(q) ||
       (c.aliases ?? []).some((a) => a.toLowerCase().startsWith(q)),
   );
+}
+
+export type InlineSlashInvocation = {
+  start: number;
+  caret: number;
+  tokenEnd: number;
+  input: string;
+  commandToken: string;
+};
+
+/**
+ * Find the slash invocation that owns the caret. A slash may begin the draft
+ * or follow whitespace, which keeps URLs and path fragments from opening the
+ * command menu while allowing commands after prose or on later lines.
+ */
+export function inlineSlashInvocation(
+  text: string,
+  caret: number,
+): InlineSlashInvocation | null {
+  const boundedCaret = Math.max(0, Math.min(caret, text.length));
+  const beforeCaret = text.slice(0, boundedCaret);
+  let start = beforeCaret.lastIndexOf("/");
+
+  while (start >= 0) {
+    if (start === 0 || /\s/.test(beforeCaret[start - 1] ?? "")) {
+      const input = beforeCaret.slice(start);
+      if (!input.includes("\n")) {
+        const commandToken = input.split(/\s/, 1)[0] ?? "";
+        let tokenEnd = start + commandToken.length;
+        while (tokenEnd < text.length && !/\s/.test(text[tokenEnd] ?? "")) {
+          tokenEnd += 1;
+        }
+        return { start, caret: boundedCaret, tokenEnd, input, commandToken };
+      }
+    }
+    start = beforeCaret.lastIndexOf("/", start - 1);
+  }
+
+  return null;
+}
+
+export function inlineSlashCommandPrompt(
+  text: string,
+  caret: number,
+  command: string,
+): string {
+  const invocation = inlineSlashInvocation(text, caret);
+  if (!invocation) return command;
+
+  const args = invocation.input.slice(invocation.commandToken.length).trim();
+  return args ? `${command} ${args}` : command;
+}
+
+export function replaceInlineSlashRange(
+  text: string,
+  start: number,
+  end: number,
+  replacement: string,
+): { text: string; caret: number } {
+  const safeStart = Math.max(0, Math.min(start, text.length));
+  const safeEnd = Math.max(safeStart, Math.min(end, text.length));
+  return {
+    text: `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`,
+    caret: safeStart + replacement.length,
+  };
 }
 
 /** Render a /help block grouped by section. */

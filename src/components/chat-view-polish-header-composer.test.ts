@@ -140,11 +140,11 @@ assert.match(
   "composer exposes the permission-mode (Access) control",
 );
 // Context, linked work, prompt-improvement, and response controls collapse into
-// one grouped Chat options surface while attachment and voice stay one click away.
+// one grouped Tools surface at the composer edge while voice stays one click away.
 assert.match(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{/,
-  "composer keeps the direct voice control before the grouped Chat options trigger (attach folds into the menu)",
+  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*<div className="cave-composer-utility-row">[\s\S]*aria-label="Voice call"/,
+  "composer exposes the grouped Tools trigger at its edge while keeping Voice direct in the lower control row",
 );
 const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
 assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");
@@ -154,12 +154,17 @@ assert.match(
   /context=\{\{[\s\S]*linkedWork=\{\{[\s\S]*improve=\{\{[\s\S]*response=\{\{/,
   "the grouped menu receives Context, Linked Work, Improve, and Response contracts in visual order",
 );
-// The context chips (project · model · branch) live in the footer band below
-// the controls (2026-07-21 wide-column pass) — not in the utility row.
+// Context controls are placed adaptively via chatContextControls — new-chat
+// footer when inlineComposer, active-chat header when not. Not in the utility row.
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips/,
-  "the context chips anchor the footer band",
+  /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
+  "chatContextControls is the single ComposerContextChips construction",
+);
+assert.match(
+  source,
+  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "new-chat footer carries chatContextControls when inlineComposer",
 );
 assert.doesNotMatch(
   source,
@@ -177,12 +182,11 @@ assert.match(
   "the grouped Response section carries Access, Model, and only selected-model capability controls with prompt guidance labelled",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
-// "Both" reconciliation (2026-07-21): the context chips ride the footer
-// band — but only there, never back in the control row.
+// "Both" reconciliation updated: context chips still construct exactly once.
 assert.equal(
   source.match(/<ComposerContextChips/g)?.length,
   1,
-  "the context chips mount exactly once — in the footer band",
+  "the context chips construct exactly once — as chatContextControls",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 assert.doesNotMatch(
@@ -207,8 +211,8 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
-  "composer footer lays out the utility cluster and submit actions in one minimal row",
+  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
+  "composer footer lays out utility, live context, and submit controls in one minimal row",
 );
 // The extracted response section renders each control inline (no nested
 // popover) and keeps the connect-host dialog available to the grouped surface.
@@ -285,7 +289,7 @@ assert.match(
   "Only the active slash command row should receive the scroll target ref",
 );
 
-const splitFn = source.match(/function splitReasoning\([\s\S]*?\n}\n/)?.[0] ?? "";
+const splitFn = splitReasoning;
 assert.match(
   splitFn,
   /DEBUG_PREFIX_RE/,
@@ -649,8 +653,8 @@ assert.match(
 );
 assert.match(
   source,
-  /clearLiveChatGeneration\(liveGeneration\.sessionId, runId\)/,
-  "A settling older run must not clear a newer run's registry snapshot",
+  /clearLiveChatGenerationAliases\(liveGeneration\.sessionAliases, runId\)/,
+  "A settling older run clears all of its aliases without clearing a newer run's registry snapshot",
 );
 
 assert.match(
@@ -820,8 +824,17 @@ assert.match(
 );
 assert.match(
   slashBranch,
-  /cmd\.argPlaceholder && canonicalize\(text\.trim\(\)\) !== cmd\.name[\s\S]*setText\(cmd\.name \+ " "\)/,
+  /cmd\.argPlaceholder &&[\s\S]*canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*completeCommand\(cmd\.name, Boolean\(cmd\.argPlaceholder\)\)/,
   "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
+);
+// cave-y7rg0: and a slash typed after prose completes too, whatever the
+// command — running an intent there discards the draft, and /clear wipes the
+// transcript with it. Behavior is covered in
+// src/lib/use-inline-slash-menus-behavior.test.tsx.
+assert.match(
+  slashBranch,
+  /const commandOwnsDraft = \(activeInvocation\?\.start \?\? 0\) === 0;[\s\S]*\(!commandOwnsDraft \|\|/,
+  "Slash-menu Enter only runs a command that owns the draft; mid-draft it completes",
 );
 assert.match(
   menusHookSource,

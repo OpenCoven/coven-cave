@@ -22,6 +22,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/lobster",
   "x-coven": {
     "displayName": "Lobster \u2014 Workflow Shell",

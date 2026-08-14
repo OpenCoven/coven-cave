@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { StandardSelect } from "@/components/ui/select";
 import { settleEnhance } from "@/lib/prompt-enhancer";
 import {
   defaultResearchPlan,
@@ -34,10 +35,21 @@ import {
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_MISSION_MODES,
   type CreateResearchMissionInput,
+  RESEARCH_HARNESS_IDS,
+  RESEARCH_RUNTIME_DEFAULT_HARNESS,
   type ResearchBounds,
   type ResearchMission,
   type ResearchMissionMode,
 } from "@/lib/research-missions";
+import {
+  RESEARCH_BRIEF_FIELDS,
+  assembleBrief,
+  parseBrief,
+  promptStrength,
+  type ResearchPromptRecommendation,
+} from "@/lib/research-prompt-brief";
+import { ResearchPromptBuilder } from "./research-prompt-builder";
+import { ResearchPromptStrengthMeter } from "./research-prompt-strength";
 
 type StartResult =
   | { ok: true; mission: ResearchMission }
@@ -62,6 +74,10 @@ type Props = {
   angleSeeds?: string[];
   /** The /save command destination (Resources tab). */
   onOpenResources?(): void;
+  /** Prompts derived from real missions; empty renders no ⚡ affordance. */
+  recommendations?: ResearchPromptRecommendation[];
+  /** Current draft, reported up so Quick saves can match against it. */
+  onDraftChange?(draft: string): void;
 };
 
 const MODE_LABELS: Record<ResearchMissionMode, string> = {
@@ -69,6 +85,19 @@ const MODE_LABELS: Record<ResearchMissionMode, string> = {
   sweep: "Sweep",
   paper: "Paper",
   autoresearch: "Deep loop",
+};
+
+/** Display names for the runtimes a mission may run on. Unknown ids fall back
+ *  to the raw id rather than being hidden, so a newly added adapter is still
+ *  selectable before it earns a label here. */
+const HARNESS_LABELS: Record<string, string> = {
+  codex: "Codex",
+  claude: "Claude",
+  copilot: "Copilot",
+  hermes: "Hermes",
+  grok: "Grok",
+  openclaw: "OpenClaw",
+  opencode: "OpenCode",
 };
 
 const MODE_DESCRIPTIONS: Record<ResearchMissionMode, string> = {
@@ -188,6 +217,8 @@ export function ResearchMissionComposer({
   onRemoveAttached,
   angleSeeds = [],
   onOpenResources,
+  recommendations = [],
+  onDraftChange,
 }: Props) {
   const { announce } = useAnnouncer();
   const [intent, setIntent] = useState("");
@@ -199,6 +230,11 @@ export function ResearchMissionComposer({
   // live in `bounds`. Parsing on every keystroke made fields uncloseable:
   // clearing snapped to 1, so typing "5" produced "15".
   const [boundDrafts, setBoundDrafts] = useState<Partial<Record<BoundKey, string>>>({});
+  // Runtime is part of the plan, not a hidden inheritance from the familiar's
+  // Coven binding. Defaulting to copilot keeps Research runnable on a daemon
+  // that lacks the sessionLaunchPolicy capability, which the codex path needs.
+  const [harness, setHarness] = useState<string>(RESEARCH_RUNTIME_DEFAULT_HARNESS);
+  const [model, setModel] = useState("");
   // Dirty latch: once a bound is hand-edited, auto-routing (which re-derives
   // the plan on every keystroke) must stop clobbering it. Explicit mode picks
   // clear the latch below, so a deliberate switch still resets.
@@ -211,6 +247,13 @@ export function ResearchMissionComposer({
   const [improving, setImproving] = useState(false);
   const [improveNote, setImproveNote] = useState<string | null>(null);
   const [angleOffset, setAngleOffset] = useState(0);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  // The assembled-brief strip appears once the prompt is actually structured —
+  // either the builder applied it or a recommendation loaded it. A hand-typed
+  // sentence keeps the card quiet.
+  const [briefShown, setBriefShown] = useState(false);
+  const [recsOpen, setRecsOpen] = useState(false);
+  const [briefNote, setBriefNote] = useState<string | null>(null);
 
   // Every setMode caller is an explicit pick — mode cards, slash commands,
   // Reset to Auto, cross-tab preselect — so a deliberate switch clears the
@@ -231,6 +274,16 @@ export function ResearchMissionComposer({
   const plan = useMemo(() => defaultResearchPlan(effectiveMode), [effectiveMode]);
   const trimmedIntent = intent.trim();
   const intentTooShort = trimmedIntent.length > 0 && trimmedIntent.length < RESEARCH_INTENT_MIN_LENGTH;
+
+  // Strength + assembled brief are pure reads of the textarea, so they track
+  // hand edits made after the builder closed.
+  const strength = useMemo(() => promptStrength(intent), [intent]);
+  const brief = useMemo(() => parseBrief(intent), [intent]);
+  const briefFilled = RESEARCH_BRIEF_FIELDS.filter((field) => brief[field.key].trim()).length;
+
+  useEffect(() => {
+    onDraftChange?.(intent);
+  }, [intent, onDraftChange]);
 
   // The enhance race rule: only overwrite the draft the rewrite was asked for.
   const intentRef = useRef(intent);
@@ -395,6 +448,10 @@ export function ResearchMissionComposer({
         modeSource: mode === "auto" ? "auto" : "user",
         deliverable: plan.deliverables.join(" + "),
         bounds: submittedBounds,
+        harness,
+        // Empty means "the harness picks", so send nothing rather than an empty
+        // string the validator would reject.
+        ...(model.trim() ? { model: model.trim() } : {}),
       });
       if (!result.ok) {
         setError(result.error);
@@ -505,6 +562,82 @@ export function ResearchMissionComposer({
           </div>
         )}
 
+        {briefShown ? (
+          <div className="research-brief" role="group" aria-label="Assembled brief">
+            <div className="research-brief__head">
+              <span className="research-brief__kicker">✦ Assembled brief</span>
+              <span className="research-brief__summary">
+                {briefFilled} of {RESEARCH_BRIEF_FIELDS.length} elements · reused at every checkpoint
+              </span>
+              <button
+                type="button"
+                className="research-brief__edit focus-ring"
+                onClick={() => setBuilderOpen(true)}
+              >
+                Edit in builder
+              </button>
+              <button
+                type="button"
+                className="research-brief__dismiss focus-ring"
+                aria-label="Dismiss the assembled brief"
+                onClick={() => setBriefShown(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="research-brief__rows">
+              {RESEARCH_BRIEF_FIELDS.map((field) => {
+                const value = brief[field.key].trim();
+                return (
+                  <div
+                    key={field.key}
+                    className="research-brief__row"
+                    data-set={Boolean(value)}
+                    title={value || "not set"}
+                  >
+                    <span className="research-brief__mark" aria-hidden>{value ? "✓" : "·"}</span>
+                    <span className="research-brief__cell">
+                      <span className="research-brief__label">{field.label}</span>
+                      <span className="research-brief__value">{value || "—"}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {briefNote ? <p className="research-brief__note">{briefNote}</p> : null}
+          </div>
+        ) : null}
+
+        {recsOpen && recommendations.length > 0 ? (
+          <div className="research-recs" role="group" aria-label="Recommended prompts">
+            <span className="research-recs__kicker">
+              ⚡ Recommended from your runs
+            </span>
+            <div className="research-recs__grid">
+              {recommendations.map((rec) => (
+                <button
+                  key={rec.id}
+                  type="button"
+                  className="research-recs__card focus-ring"
+                  onClick={() => {
+                    setIntent(assembleBrief(rec.brief));
+                    setBriefShown(true);
+                    setRecsOpen(false);
+                    setBriefNote(`Loaded from ${rec.why}.`);
+                    announce("Prompt loaded from a recommendation.");
+                  }}
+                >
+                  <span className="research-recs__title">{rec.title}</span>
+                  <span className="research-recs__foot">
+                    <span className="research-recs__why" data-tone={rec.tone}>{rec.why}</span>
+                    <span className="research-recs__use" aria-hidden>Use →</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="research-intake__footer">
           <button
             type="button"
@@ -514,11 +647,31 @@ export function ResearchMissionComposer({
           >
             {improving ? "✦ Improving…" : "✦ Improve"}
           </button>
+          <button
+            type="button"
+            className="research-builder-open focus-ring"
+            title="Structure the question: goal, constraints, deliverable, sources"
+            onClick={() => setBuilderOpen(true)}
+          >
+            ✦ Prompt builder
+          </button>
+          {recommendations.length > 0 ? (
+            <button
+              type="button"
+              className="research-recs-open focus-ring"
+              aria-expanded={recsOpen}
+              title="Prompts derived from your runs"
+              onClick={() => setRecsOpen((open) => !open)}
+            >
+              ⚡ Recommendations
+            </button>
+          ) : null}
           {angleSeeds.length > 0 ? (
             <button type="button" className="research-suggest" onClick={suggestAngles}>
               Suggest angles
             </button>
           ) : null}
+          <ResearchPromptStrengthMeter strength={strength} showMissing={trimmedIntent.length > 0} />
           <p className="research-improve-note" role="status">
             {improving ? "Rewriting the draft for scope and rigor…" : improveNote}
           </p>
@@ -535,6 +688,19 @@ export function ResearchMissionComposer({
           </Button>
         </div>
       </div>
+
+      <ResearchPromptBuilder
+        open={builderOpen}
+        draft={intent}
+        onClose={() => setBuilderOpen(false)}
+        onApply={(prompt, filled) => {
+          setIntent(prompt);
+          setBuilderOpen(false);
+          setBriefShown(true);
+          setBriefNote(null);
+          announce(`Structured prompt applied — ${filled} of ${RESEARCH_BRIEF_FIELDS.length} elements.`);
+        }}
+      />
 
       <div className="research-intake__modes">
         <div className="research-intake__modes-head">
@@ -587,7 +753,7 @@ export function ResearchMissionComposer({
           aria-controls="research-bounds-editor"
           onClick={() => (boundsOpen ? setBoundsOpen(false) : focusBound("research-bound-minutes"))}
         >
-          {MODE_LABELS[effectiveMode]} · {bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"} · {bounds.wallClockMinutes} min · {bounds.sourceTarget} sources
+          {MODE_LABELS[effectiveMode]} · {bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"} · {bounds.wallClockMinutes} min · {bounds.sourceTarget} sources · {HARNESS_LABELS[harness] ?? harness}{model.trim() ? ` (${model.trim()})` : ""}
         </button>
       </div>
 
@@ -642,6 +808,29 @@ export function ResearchMissionComposer({
               onChange={(event) => editBound("checkpointEvery", event.target.value)}
               onBlur={() => commitBound("checkpointEvery")}
               onKeyDown={boundKeyDown("checkpointEvery")}
+            />
+          </label>
+          <label>
+            <span>Runtime</span>
+            <StandardSelect
+              id="research-runtime-harness"
+              label="Runtime"
+              value={harness}
+              onChange={setHarness}
+              options={RESEARCH_HARNESS_IDS.map((id) => ({
+                value: id,
+                label: HARNESS_LABELS[id] ?? id,
+              }))}
+            />
+          </label>
+          <label>
+            <span>Model</span>
+            <input
+              id="research-runtime-model"
+              type="text"
+              value={model}
+              placeholder="runtime default"
+              onChange={(event) => setModel(event.target.value)}
             />
           </label>
         </div>

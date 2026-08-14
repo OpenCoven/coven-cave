@@ -15,12 +15,14 @@ const {
   isSafeConversationSessionId,
   listConversations,
   loadConversation,
+  persistQueuedOfflineConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
 const {
   mapConversationHistoryTurns,
   retryTurnModelRequest,
 } = await import("./chat-turn-state.ts");
+const { deriveChatAttention, NO_CHAT_ATTENTION } = await import("./chat-attention.ts");
 const { persistedTurnControls } = await import(
   "../app/api/chat/send/chat-send-models.ts"
 );
@@ -33,6 +35,86 @@ assert.equal(isSafeConversationSessionId("nested\\session-1"), false);
 assert.equal(isSafeConversationSessionId("."), false);
 assert.equal(isSafeConversationSessionId(".."), false);
 assert.equal(isSafeConversationSessionId(""), false);
+
+await saveConversation({
+  sessionId: "queued-offline-idempotent",
+  familiarId: "sage",
+  harness: "claude",
+  title: "Existing local conversation",
+  createdAt: "2026-08-05T20:00:00.000Z",
+  updatedAt: "2026-08-05T20:00:01.000Z",
+  activeLeafId: "queued-parent-assistant",
+  turns: [
+    {
+      id: "queued-parent-user",
+      role: "user",
+      text: "What needs attention?",
+      createdAt: "2026-08-05T20:00:00.000Z",
+      parentId: null,
+    },
+    {
+      id: "queued-parent-assistant",
+      role: "assistant",
+      text: "Please approve the next step.",
+      createdAt: "2026-08-05T20:00:01.000Z",
+      parentId: "queued-parent-user",
+    },
+  ],
+});
+const queuedOfflineSeed = {
+  sessionId: "queued-offline-idempotent",
+  familiarId: "sage",
+  harness: "claude",
+  createdAt: "2026-08-05T20:00:02.000Z",
+  userTurn: {
+    id: "queued-stable-user-turn",
+    text: "Approved while offline.",
+    attachments: [{
+      name: "approval.txt",
+      type: "text/plain",
+      size: 8,
+      text: "approved",
+    }],
+    reasoningEffort: "medium" as const,
+    responseSpeed: "careful" as const,
+    modelControls: { reasoning: "medium" },
+    modelOverride: "anthropic/claude-opus-4-6",
+    attentionClearOperationId: " run-offline-stable ",
+    parentId: "queued-parent-assistant",
+  },
+};
+await persistQueuedOfflineConversation(queuedOfflineSeed);
+await persistQueuedOfflineConversation(queuedOfflineSeed);
+const queuedOfflineConversation = await loadConversation("queued-offline-idempotent");
+const queuedOfflineTurns = queuedOfflineConversation?.turns.filter(
+  (turn) => turn.id === queuedOfflineSeed.userTurn.id,
+) ?? [];
+assert.equal(queuedOfflineTurns.length, 1, "re-saving the same queued user turn is idempotent");
+assert.deepEqual(
+  queuedOfflineTurns[0],
+  {
+    id: "queued-stable-user-turn",
+    role: "user",
+    text: "Approved while offline.",
+    attachments: [{
+      name: "approval.txt",
+      type: "text/plain",
+      size: 8,
+      text: "approved",
+    }],
+    reasoningEffort: "medium",
+    responseSpeed: "careful",
+    modelControls: { reasoning: "medium" },
+    modelOverride: "anthropic/claude-opus-4-6",
+    attentionClearOperationId: "run-offline-stable",
+    createdAt: "2026-08-05T20:00:02.000Z",
+    parentId: "queued-parent-assistant",
+  },
+  "queue-time persistence keeps stable identity, parentage, attachments, controls, and attention lineage",
+);
+assert.equal(queuedOfflineConversation?.activeLeafId, "queued-stable-user-turn");
+assert.equal(queuedOfflineConversation?.pendingUserTurnId, undefined);
+assert.equal(await deleteConversation("queued-offline-idempotent"), true);
 
 assert.deepEqual(
   mapConversationHistoryTurns([{
@@ -319,6 +401,46 @@ assert.equal(failedSummary?.status, "failed", "conversation summaries expose fai
 assert.equal(failedSummary?.exitCode, 1, "failed conversation summaries expose exit code 1");
 assert.equal(await deleteConversation("summary-ok"), true);
 assert.equal(await deleteConversation("summary-failed"), true);
+
+await saveConversation({
+  sessionId: "legacy-linear-conversation",
+  familiarId: "charm",
+  harness: "claude",
+  title: "Legacy linear conversation",
+  createdAt: "2026-06-12T01:00:00.000Z",
+  updatedAt: "2026-06-12T01:01:00.000Z",
+  turns: [
+    {
+      id: "legacy-linear-user",
+      role: "user",
+      text: "Need approval?",
+      createdAt: "2026-06-12T01:00:00.000Z",
+    },
+    {
+      id: "legacy-linear-assistant",
+      role: "assistant",
+      text: "Yes.",
+      createdAt: "2026-06-12T01:01:00.000Z",
+    },
+  ],
+});
+const legacyLinearConv = await loadConversation("legacy-linear-conversation");
+assert.equal(
+  legacyLinearConv?.activeLeafId,
+  "legacy-linear-assistant",
+  "genuinely legacy turns without parentId still linearize to the newest turn",
+);
+assert.equal(
+  legacyLinearConv?.turns[0]?.parentId,
+  null,
+  "legacy linearization still marks the first historical turn as the root",
+);
+assert.equal(
+  legacyLinearConv?.turns[1]?.parentId,
+  "legacy-linear-user",
+  "legacy linearization still links later historical turns in createdAt order",
+);
+assert.equal(await deleteConversation("legacy-linear-conversation"), true);
 
 // Issue #3266: metadata scans read each large transcript once, then use the
 // stat-keyed summary cache until that specific file changes.
@@ -687,6 +809,7 @@ console.log("cave-conversations.test.ts: ok");
     userTurn: {
       id: "pending-user-turn",
       text: "fix the flaky test please",
+      attentionClearOperationId: " run-stub ",
       reasoningEffort: "medium",
       responseSpeed: "careful",
       modelControls: { reasoning: "medium" },
@@ -700,6 +823,11 @@ console.log("cave-conversations.test.ts: ok");
   assert.equal(stub?.turns[0]?.id, "pending-user-turn");
   assert.equal(stub?.turns[0]?.role, "user");
   assert.equal(stub?.turns[0]?.text, "fix the flaky test please");
+  assert.equal(
+    stub?.turns[0]?.attentionClearOperationId,
+    "run-stub",
+    "pending stubs normalize and retain the send's causal operation id",
+  );
   assert.equal(stub?.turns[0]?.reasoningEffort, "medium");
   assert.equal(stub?.turns[0]?.responseSpeed, "careful");
   assert.deepEqual(stub?.turns[0]?.modelControls, { reasoning: "medium" });
@@ -882,6 +1010,1786 @@ console.log("cave-conversations cache test OK");
 }
 console.log("cave-conversations pending-marker test OK");
 
+// ── Active-path attention evidence summaries (cave-zs85n task 4) ─────────────
+{
+  const NOW = Date.parse("2026-08-04T20:00:00.000Z");
+  const ids = [
+    "attention-leaf-request",
+    "attention-stale-request-left-hanging",
+    "attention-user-leaf-resolution",
+    "attention-malformed-request",
+    "attention-malformed-newer-request",
+    "attention-noncanonical-request",
+    "attention-cancelled-request-turn",
+    "attention-error-request-turn",
+    "attention-mismatched-turnid-request",
+    "attention-off-path-request",
+    "attention-root-sibling-active-request",
+    "attention-root-sibling-inactive-request",
+    "attention-root-sibling-active-completes",
+    "attention-root-sibling-active-fails",
+    "attention-malformed-turns",
+    "attention-corrupt-leaf",
+    "attention-duplicate-leaf-id",
+    "attention-ambiguous-missing-leaf",
+    "attention-explicit-null-roots",
+    "attention-legacy-missing-parent-links",
+    "attention-request-resolved-by-malformed-user",
+    "attention-requested-at-mismatch",
+    "attention-canonical-assistant-noncanonical-request",
+    "attention-request-cleared-by-equal-timestamp",
+    "attention-detached-leaf",
+    "attention-broken-parent-chain",
+    "attention-parent-cycle",
+  ];
+
+  await saveConversation({
+    sessionId: "attention-leaf-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Leaf request",
+    createdAt: "2026-08-04T17:00:00.000Z",
+    updatedAt: "2026-08-04T18:00:00.000Z",
+    turns: [
+      {
+        id: "leaf-prior-user",
+        role: "user",
+        text: "Start the release review.",
+        attentionClearOperationId: "run-prior",
+        createdAt: "2026-08-04T16:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "leaf-prior-assistant",
+        role: "assistant",
+        text: "The release is ready for a final decision.",
+        createdAt: "2026-08-04T16:30:00.000Z",
+        parentId: "leaf-prior-user",
+      },
+      {
+        id: "leaf-user",
+        role: "user",
+        text: "Should I deploy this?",
+        attentionClearOperationId: " run-leaf ",
+        createdAt: "2026-08-04T17:00:00.000Z",
+        parentId: "leaf-prior-assistant",
+      },
+      {
+        id: "leaf-assistant",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T18:00:00.000Z",
+        parentId: "leaf-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-leaf-request",
+            turnId: "leaf-assistant",
+            requestedAt: "2026-08-04T18:00:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "leaf-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-stale-request-left-hanging",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Historical request on active path",
+    createdAt: "2026-08-03T15:00:00.000Z",
+    updatedAt: "2026-08-03T18:00:00.000Z",
+    turns: [
+      {
+        id: "stale-user-1",
+        role: "user",
+        text: "Should we rotate the key?",
+        createdAt: "2026-08-03T15:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "stale-assistant-request",
+        role: "assistant",
+        text: "I need credentials from you.",
+        createdAt: "2026-08-03T16:00:00.000Z",
+        parentId: "stale-user-1",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-stale-request-left-hanging",
+            turnId: "stale-assistant-request",
+            requestedAt: "2026-08-03T16:00:00.000Z",
+            reason: "credentials",
+          },
+        },
+      },
+      {
+        id: "stale-user-2",
+        role: "user",
+        text: "Here they are.",
+        attentionClearOperationId: "   ",
+        createdAt: "2026-08-03T17:00:00.000Z",
+        parentId: "stale-assistant-request",
+      },
+      {
+        id: "stale-assistant-leaf",
+        role: "assistant",
+        text: "Thanks — I'll take it from here.",
+        createdAt: "2026-08-03T18:00:00.000Z",
+        parentId: "stale-user-2",
+      },
+    ],
+    activeLeafId: "stale-assistant-leaf",
+  });
+
+  await saveConversation({
+    sessionId: "attention-malformed-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed request",
+    createdAt: "2026-08-03T16:00:00.000Z",
+    updatedAt: "2026-08-03T18:30:00.000Z",
+    turns: [
+      {
+        id: "bad-request-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-03T16:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "bad-request-assistant",
+        role: "assistant",
+        text: "I need approval, but the stamp is corrupt.",
+        createdAt: "2026-08-03T18:30:00.000Z",
+        parentId: "bad-request-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-malformed-request",
+            turnId: "bad-request-assistant",
+            requestedAt: "not-a-date",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "bad-request-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-malformed-newer-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed newer request suppresses older request",
+    createdAt: "2026-08-01T16:00:00.000Z",
+    updatedAt: "2026-08-04T19:00:00.000Z",
+    turns: [
+      {
+        id: "malformed-newer-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-01T16:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "malformed-newer-old-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-01T17:00:00.000Z",
+        parentId: "malformed-newer-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-malformed-newer-request",
+            turnId: "malformed-newer-old-request",
+            requestedAt: "2026-08-01T17:00:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "malformed-newer-system",
+        role: "system",
+        text: "The runtime resumed the assistant.",
+        createdAt: "2026-08-04T18:59:00.000Z",
+        parentId: "malformed-newer-old-request",
+      },
+      {
+        id: "malformed-newer-assistant",
+        role: "assistant",
+        text: "This newer request has corrupt evidence.",
+        createdAt: "2026-08-04T19:00:00.000Z",
+        parentId: "malformed-newer-system",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-malformed-newer-request",
+            turnId: "malformed-newer-assistant",
+            requestedAt: "not-a-date",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "malformed-newer-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-user-leaf-resolution",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active user leaf resolves request",
+    createdAt: "2026-08-04T15:00:00.000Z",
+    updatedAt: "2026-08-04T17:00:00.000Z",
+    turns: [
+      {
+        id: "user-leaf-root",
+        role: "user",
+        text: "Do you need a decision?",
+        createdAt: "2026-08-04T15:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "user-leaf-request",
+        role: "assistant",
+        text: "Yes — please decide.",
+        createdAt: "2026-08-04T16:00:00.000Z",
+        parentId: "user-leaf-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-user-leaf-resolution",
+            turnId: "user-leaf-request",
+            requestedAt: "2026-08-04T16:00:00.000Z",
+            reason: "decision",
+          },
+        },
+      },
+      {
+        id: "user-leaf-active",
+        role: "user",
+        text: "Ship it.",
+        createdAt: "2026-08-04T17:00:00.000Z",
+        parentId: "user-leaf-request",
+      },
+    ],
+    activeLeafId: "user-leaf-active",
+  });
+
+  await saveConversation({
+    sessionId: "attention-noncanonical-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Reject parseable noncanonical timestamps",
+    createdAt: "2026-08-04T16:45:00.000Z",
+    updatedAt: "2026-08-04T18:45:00.000Z",
+    turns: [
+      {
+        id: "noncanonical-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-04T16:45:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "noncanonical-assistant",
+        role: "assistant",
+        text: "I need approval, but the timestamps are noncanonical.",
+        createdAt: "2026-08-04T18:45:00Z",
+        parentId: "noncanonical-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-noncanonical-request",
+            turnId: "noncanonical-assistant",
+            requestedAt: "2026-08-04T18:45:00Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "noncanonical-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-cancelled-request-turn",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Cancelled assistant requests no attention",
+    createdAt: "2026-08-04T14:00:00.000Z",
+    updatedAt: "2026-08-04T14:30:00.000Z",
+    turns: [
+      {
+        id: "cancelled-request-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T14:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "cancelled-request-assistant",
+        role: "assistant",
+        text: "Partial answer before cancel.",
+        createdAt: "2026-08-04T14:30:00.000Z",
+        parentId: "cancelled-request-user",
+        cancelled: true,
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-cancelled-request-turn",
+            turnId: "cancelled-request-assistant",
+            requestedAt: "2026-08-04T14:30:00.000Z",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "cancelled-request-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-error-request-turn",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Errored assistant requests no attention",
+    createdAt: "2026-08-04T14:40:00.000Z",
+    updatedAt: "2026-08-04T14:50:00.000Z",
+    turns: [
+      {
+        id: "error-request-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T14:40:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "error-request-assistant",
+        role: "assistant",
+        text: "I crashed after asking.",
+        createdAt: "2026-08-04T14:50:00.000Z",
+        parentId: "error-request-user",
+        isError: true,
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-error-request-turn",
+            turnId: "error-request-assistant",
+            requestedAt: "2026-08-04T14:50:00.000Z",
+            reason: "credentials",
+          },
+        },
+      },
+    ],
+    activeLeafId: "error-request-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-mismatched-turnid-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Reject mismatched turn ids",
+    createdAt: "2026-08-04T13:00:00.000Z",
+    updatedAt: "2026-08-04T13:30:00.000Z",
+    turns: [
+      {
+        id: "turn-mismatch-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T13:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "turn-mismatch-assistant",
+        role: "assistant",
+        text: "The metadata points at a different turn.",
+        createdAt: "2026-08-04T13:30:00.000Z",
+        parentId: "turn-mismatch-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-mismatched-turnid-request",
+            turnId: "some-other-turn",
+            requestedAt: "2026-08-04T13:30:00.000Z",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "turn-mismatch-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-off-path-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Ignore inactive branch request",
+    createdAt: "2026-08-04T12:00:00.000Z",
+    updatedAt: "2026-08-04T12:02:00.000Z",
+    turns: [
+      {
+        id: "branch-root",
+        role: "user",
+        text: "Summarize the plan.",
+        createdAt: "2026-08-04T12:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "branch-request",
+        role: "assistant",
+        text: "I need your input.",
+        createdAt: "2026-08-04T12:01:00.000Z",
+        parentId: "branch-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-off-path-request",
+            turnId: "branch-request",
+            requestedAt: "2026-08-04T12:01:00.000Z",
+            reason: "input",
+          },
+        },
+      },
+      {
+        id: "branch-active",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T12:02:00.000Z",
+        parentId: "branch-root",
+      },
+    ],
+    activeLeafId: "branch-active",
+  });
+
+  // Regenerate/rerun legitimately produces a second *root-level* generation
+  // (a fresh parentId: null turn) sitting alongside the first — this is not
+  // corruption, it's a sibling generation the user can switch between. Only
+  // the branch activeLeafId actually selects should ever be validated; the
+  // other root sibling and its evidence must simply be ignored, never treated
+  // as a "disconnected root" that invalidates the whole file.
+  const rootSiblingTurns = [
+    {
+      id: "root-sibling-a-user",
+      role: "user",
+      text: "Do you need approval?",
+      attentionClearOperationId: "run-root-a",
+      createdAt: "2026-08-04T12:10:00.000Z",
+      parentId: null,
+    },
+    {
+      id: "root-sibling-a-assistant",
+      role: "assistant",
+      text: "I need your approval.",
+      createdAt: "2026-08-04T12:11:00.000Z",
+      parentId: "root-sibling-a-user",
+      responseMetadata: {
+        familiarId: "charm",
+        harness: "claude",
+        model: "anthropic/claude-sonnet-4.6",
+        runtime: "local:/repo",
+        attentionRequest: {
+          sessionId: "attention-root-sibling-active-request",
+          turnId: "root-sibling-a-assistant",
+          requestedAt: "2026-08-04T12:11:00.000Z",
+          reason: "approval",
+        },
+      },
+    },
+    {
+      id: "root-sibling-b-user",
+      role: "user",
+      text: "Never mind, summarize it instead.",
+      attentionClearOperationId: "run-root-b",
+      createdAt: "2026-08-04T12:12:00.000Z",
+      parentId: null,
+    },
+    {
+      id: "root-sibling-b-assistant",
+      role: "assistant",
+      text: "Here is the summary.",
+      createdAt: "2026-08-04T12:13:00.000Z",
+      parentId: "root-sibling-b-user",
+    },
+  ];
+
+  // activeLeafId selects the request-bearing root-sibling branch: its request
+  // must surface.
+  await saveConversation({
+    sessionId: "attention-root-sibling-active-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active leaf selects the request-bearing root sibling",
+    createdAt: "2026-08-04T12:10:00.000Z",
+    updatedAt: "2026-08-04T12:13:00.000Z",
+    turns: rootSiblingTurns,
+    activeLeafId: "root-sibling-a-assistant",
+  });
+
+  // Same tree, but activeLeafId selects the *other* root-sibling branch: the
+  // inactive branch's request must be ignored, not surfaced and not treated
+  // as disqualifying evidence.
+  await saveConversation({
+    sessionId: "attention-root-sibling-inactive-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active leaf ignores an inactive root sibling's request",
+    createdAt: "2026-08-04T12:10:00.000Z",
+    updatedAt: "2026-08-04T12:13:00.000Z",
+    turns: rootSiblingTurns.map((turn) =>
+      turn.responseMetadata
+        ? {
+            ...turn,
+            responseMetadata: {
+              ...turn.responseMetadata,
+              attentionRequest: {
+                ...turn.responseMetadata.attentionRequest,
+                sessionId: "attention-root-sibling-inactive-request",
+              },
+            },
+          }
+        : turn,
+    ),
+    activeLeafId: "root-sibling-b-assistant",
+  });
+
+  // Root-level terminal/status regression: a root-sibling generation whose
+  // *inactive* branch ended in error must never leak that failure into the
+  // conversation summary's terminal `status`/`exitCode` — those fields are
+  // derived from the same active-path resolution as attentionEvidence, so
+  // they must honor whichever root-level sibling activeLeafId selects.
+  await saveConversation({
+    sessionId: "attention-root-sibling-active-completes",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active root sibling completes while the inactive one failed",
+    createdAt: "2026-08-04T12:20:00.000Z",
+    updatedAt: "2026-08-04T12:22:00.000Z",
+    turns: [
+      {
+        id: "terminal-sibling-failed-user",
+        role: "user",
+        text: "Do this first.",
+        createdAt: "2026-08-04T12:20:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-failed-assistant",
+        role: "assistant",
+        text: "That failed.",
+        createdAt: "2026-08-04T12:21:00.000Z",
+        parentId: "terminal-sibling-failed-user",
+        isError: true,
+      },
+      {
+        id: "terminal-sibling-active-user",
+        role: "user",
+        text: "Never mind, do this instead.",
+        createdAt: "2026-08-04T12:21:30.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-active-assistant",
+        role: "assistant",
+        text: "Done.",
+        createdAt: "2026-08-04T12:22:00.000Z",
+        parentId: "terminal-sibling-active-user",
+      },
+    ],
+    activeLeafId: "terminal-sibling-active-assistant",
+  });
+
+  // Same shape, terminal outcomes swapped: the active branch is the one that
+  // failed. Together with the fixture above, this pins that `status`/
+  // `exitCode` always track the selected branch in either direction, rather
+  // than e.g. defaulting to "completed" or picking up whichever root sibling
+  // happens to sort first.
+  await saveConversation({
+    sessionId: "attention-root-sibling-active-fails",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Active root sibling fails while the inactive one completed",
+    createdAt: "2026-08-04T12:23:00.000Z",
+    updatedAt: "2026-08-04T12:25:00.000Z",
+    turns: [
+      {
+        id: "terminal-sibling-completed-user",
+        role: "user",
+        text: "Do this first.",
+        createdAt: "2026-08-04T12:23:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-completed-assistant",
+        role: "assistant",
+        text: "Done.",
+        createdAt: "2026-08-04T12:24:00.000Z",
+        parentId: "terminal-sibling-completed-user",
+      },
+      {
+        id: "terminal-sibling-failing-active-user",
+        role: "user",
+        text: "Never mind, do this instead.",
+        createdAt: "2026-08-04T12:24:30.000Z",
+        parentId: null,
+      },
+      {
+        id: "terminal-sibling-failing-active-assistant",
+        role: "assistant",
+        text: "That failed.",
+        createdAt: "2026-08-04T12:25:00.000Z",
+        parentId: "terminal-sibling-failing-active-user",
+        isError: true,
+      },
+    ],
+    activeLeafId: "terminal-sibling-failing-active-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-malformed-turns",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed timestamps stay isolated",
+    createdAt: "2026-08-04T17:00:00.000Z",
+    updatedAt: "2026-08-04T20:00:00.000Z",
+    turns: [
+      {
+        id: "malformed-valid-user",
+        role: "user",
+        text: "Keep going.",
+        createdAt: "2026-08-04T17:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "malformed-valid-assistant",
+        role: "assistant",
+        text: "On it.",
+        createdAt: "2026-08-04T18:00:00.000Z",
+        parentId: "malformed-valid-user",
+      },
+      {
+        id: "malformed-bad-user",
+        role: "user",
+        text: "One more thing.",
+        createdAt: "not-a-date",
+        parentId: "malformed-valid-assistant",
+      },
+      {
+        id: "malformed-cancelled-assistant",
+        role: "assistant",
+        text: "partial",
+        createdAt: "2026-08-04T19:00:00.000Z",
+        parentId: "malformed-bad-user",
+        cancelled: true,
+      },
+      {
+        id: "malformed-error-assistant",
+        role: "assistant",
+        text: "boom",
+        createdAt: "2026-08-04T20:00:00.000Z",
+        parentId: "malformed-cancelled-assistant",
+        isError: true,
+      },
+    ],
+    activeLeafId: "malformed-error-assistant",
+  });
+
+  // Regression (finding #1): a branched conversation whose activeLeafId is
+  // missing/corrupt (points at no turn in the file) must fail quiet — never
+  // fall back to a full createdAt linearization of every branch, which would
+  // admit an abandoned branch's attention request as if it were live.
+  await saveConversation({
+    sessionId: "attention-corrupt-leaf",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Corrupt active leaf",
+    createdAt: "2026-08-04T09:00:00.000Z",
+    updatedAt: "2026-08-04T09:05:00.000Z",
+    turns: [
+      {
+        id: "corrupt-root",
+        role: "user",
+        text: "Summarize the plan.",
+        attentionClearOperationId: "run-corrupt-must-not-leak",
+        createdAt: "2026-08-04T09:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "corrupt-branch-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:03:00.000Z",
+        parentId: "corrupt-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-corrupt-leaf",
+            turnId: "corrupt-branch-request",
+            requestedAt: "2026-08-04T09:03:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "corrupt-branch-active",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T09:05:00.000Z",
+        parentId: "corrupt-root",
+      },
+    ],
+    // Neither branch tip — simulates a corrupted/rewritten activeLeafId.
+    activeLeafId: "corrupt-leaf-that-does-not-exist",
+  });
+
+  await saveConversation({
+    sessionId: "attention-duplicate-leaf-id",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Duplicate active leaf id",
+    createdAt: "2026-08-04T09:10:00.000Z",
+    updatedAt: "2026-08-04T09:15:00.000Z",
+    turns: [
+      {
+        id: "duplicate-root",
+        role: "user",
+        text: "Do you still need approval?",
+        createdAt: "2026-08-04T09:10:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "duplicate-leaf",
+        role: "assistant",
+        text: "Yes, I need your approval.",
+        createdAt: "2026-08-04T09:12:00.000Z",
+        parentId: "duplicate-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-duplicate-leaf-id",
+            turnId: "duplicate-leaf",
+            requestedAt: "2026-08-04T09:12:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "duplicate-leaf",
+        role: "assistant",
+        text: "No branch disambiguation is possible here.",
+        createdAt: "2026-08-04T09:15:00.000Z",
+        parentId: "duplicate-root",
+      },
+    ],
+    activeLeafId: "duplicate-leaf",
+  });
+
+  await saveConversation({
+    sessionId: "attention-ambiguous-missing-leaf",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Ambiguous branch without active leaf",
+    createdAt: "2026-08-03T10:00:00.000Z",
+    updatedAt: "2026-08-03T10:06:00.000Z",
+    turns: [
+      {
+        id: "ambiguous-user",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-03T10:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "ambiguous-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-03T10:05:00.000Z",
+        parentId: "ambiguous-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-ambiguous-missing-leaf",
+            turnId: "ambiguous-request",
+            requestedAt: "2026-08-03T10:05:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "ambiguous-sibling",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-03T10:06:00.000Z",
+        parentId: "ambiguous-user",
+      },
+    ],
+  });
+
+  await saveConversation({
+    sessionId: "attention-explicit-null-roots",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Explicit null roots must not linearize",
+    createdAt: "2026-08-04T11:00:00.000Z",
+    updatedAt: "2026-08-04T11:06:00.000Z",
+    turns: [
+      {
+        id: "explicit-null-root-user",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-04T11:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "explicit-null-root-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T11:05:00.000Z",
+        parentId: null,
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-explicit-null-roots",
+            turnId: "explicit-null-root-request",
+            requestedAt: "2026-08-04T11:05:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "explicit-null-root-answer",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T11:06:00.000Z",
+        parentId: null,
+      },
+    ],
+  });
+
+  await saveConversation({
+    sessionId: "attention-legacy-missing-parent-links",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Legacy missing parent links still linearize",
+    createdAt: "2026-08-04T11:10:00.000Z",
+    updatedAt: "2026-08-04T11:15:00.000Z",
+    turns: [
+      {
+        id: "legacy-missing-parent-user",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-04T11:10:00.000Z",
+      },
+      {
+        id: "legacy-missing-parent-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T11:15:00.000Z",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-legacy-missing-parent-links",
+            turnId: "legacy-missing-parent-request",
+            requestedAt: "2026-08-04T11:15:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+  });
+
+  await saveConversation({
+    sessionId: "attention-request-resolved-by-malformed-user",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Malformed user still resolves older request",
+    createdAt: "2026-08-03T15:00:00.000Z",
+    updatedAt: "2026-08-03T18:00:00.000Z",
+    turns: [
+      {
+        id: "malformed-resolution-user-1",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-03T15:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "malformed-resolution-request",
+        role: "assistant",
+        text: "I need approval.",
+        createdAt: "2026-08-03T16:00:00.000Z",
+        parentId: "malformed-resolution-user-1",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-request-resolved-by-malformed-user",
+            turnId: "malformed-resolution-request",
+            requestedAt: "2026-08-03T16:00:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        id: "malformed-resolution-user-2",
+        role: "user",
+        text: "Go ahead.",
+        createdAt: "not-a-date",
+        parentId: "malformed-resolution-request",
+      },
+      {
+        id: "malformed-resolution-assistant",
+        role: "assistant",
+        text: "Thanks — taking it from here.",
+        createdAt: "2026-08-03T18:00:00.000Z",
+        parentId: "malformed-resolution-user-2",
+      },
+    ],
+    activeLeafId: "malformed-resolution-assistant",
+  });
+
+  await saveConversation({
+    sessionId: "attention-requested-at-mismatch",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Reject requestedAt mismatch",
+    createdAt: "2026-08-04T10:00:00.000Z",
+    updatedAt: "2026-08-04T10:05:00.000Z",
+    turns: [
+      {
+        id: "requested-at-mismatch-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T10:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "requested-at-mismatch-assistant",
+        role: "assistant",
+        text: "The request timestamp is wrong.",
+        createdAt: "2026-08-04T10:05:00.000Z",
+        parentId: "requested-at-mismatch-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-requested-at-mismatch",
+            turnId: "requested-at-mismatch-assistant",
+            requestedAt: "2026-08-04T10:04:59.000Z",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "requested-at-mismatch-assistant",
+  });
+
+  // Regression (cave-zs85n Task 4 spec gap): a noncanonical requestedAt that
+  // carries an offset but still parses to the same instant as a canonical
+  // assistant createdAt must be rejected. `normalizeStableAttentionRequest`
+  // compared parsed instants only, so an offset-equivalent requestedAt was
+  // silently canonicalized to the assistant's own createdAt instead of being
+  // discarded — accepting a request whose recorded timestamp was never
+  // actually canonical.
+  await saveConversation({
+    sessionId: "attention-canonical-assistant-noncanonical-request",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Canonical assistant, noncanonical request",
+    createdAt: "2026-08-04T10:00:00.000Z",
+    updatedAt: "2026-08-04T10:05:00.000Z",
+    turns: [
+      {
+        id: "canonical-noncanonical-request-user",
+        role: "user",
+        text: "Anything blocking you?",
+        createdAt: "2026-08-04T10:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "canonical-noncanonical-request-assistant",
+        role: "assistant",
+        text: "The request timestamp is offset-equivalent but noncanonical.",
+        createdAt: "2026-08-04T10:05:00.000Z",
+        parentId: "canonical-noncanonical-request-user",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-canonical-assistant-noncanonical-request",
+            turnId: "canonical-noncanonical-request-assistant",
+            requestedAt: "2026-08-04T05:05:00.000-05:00",
+            reason: "input",
+          },
+        },
+      },
+    ],
+    activeLeafId: "canonical-noncanonical-request-assistant",
+  });
+
+  // Regression (task 4 follow-up): a structurally later user turn clears a
+  // prior explicit request purely by active-path *order*, never by comparing
+  // timestamps — so an equal (or malformed, see above) createdAt must not
+  // let the request survive.
+  await saveConversation({
+    sessionId: "attention-request-cleared-by-equal-timestamp",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Equal timestamp still clears by path order",
+    createdAt: "2026-08-04T08:00:00.000Z",
+    updatedAt: "2026-08-04T08:05:00.000Z",
+    turns: [
+      {
+        id: "equal-ts-user-1",
+        role: "user",
+        text: "Need anything?",
+        createdAt: "2026-08-04T08:00:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "equal-ts-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T08:05:00.000Z",
+        parentId: "equal-ts-user-1",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-request-cleared-by-equal-timestamp",
+            turnId: "equal-ts-request",
+            requestedAt: "2026-08-04T08:05:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        // Same instant as the request it structurally follows — the clear
+        // must not depend on this being chronologically after it.
+        id: "equal-ts-user-2",
+        role: "user",
+        text: "Go ahead.",
+        createdAt: "2026-08-04T08:05:00.000Z",
+        parentId: "equal-ts-request",
+      },
+    ],
+    activeLeafId: "equal-ts-user-2",
+  });
+
+  // Regression (active-path trust): activeLeafId pointing at a detached,
+  // parent-less system echo (excluded from the structural chain entirely)
+  // must fail quiet rather than exposing the abandoned assistant request
+  // still sitting on the real, unreachable branch.
+  await saveConversation({
+    sessionId: "attention-detached-leaf",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Detached leaf must fail quiet",
+    createdAt: "2026-08-04T09:10:00.000Z",
+    updatedAt: "2026-08-04T09:12:00.000Z",
+    turns: [
+      {
+        id: "detached-root",
+        role: "user",
+        text: "Summarize the plan.",
+        createdAt: "2026-08-04T09:10:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "detached-abandoned-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:11:00.000Z",
+        parentId: "detached-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-detached-leaf",
+            turnId: "detached-abandoned-request",
+            requestedAt: "2026-08-04T09:11:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      // Chain-less system echo: role "system" with no parentId, excluded
+      // from structuralTurns entirely. activeLeafId below points at it.
+      {
+        id: "detached-system-echo",
+        role: "system",
+        text: "/help output",
+        createdAt: "2026-08-04T09:12:00.000Z",
+        parentId: null,
+      },
+    ],
+    activeLeafId: "detached-system-echo",
+  });
+
+  // Regression (active-path trust): activeLeafId resolvable, but an ancestor
+  // in its parent chain names a turn id absent from the file entirely. Must
+  // fail quiet rather than truncating the walk and exposing the abandoned
+  // request on the real branch.
+  await saveConversation({
+    sessionId: "attention-broken-parent-chain",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Broken parent chain must fail quiet",
+    createdAt: "2026-08-04T09:20:00.000Z",
+    updatedAt: "2026-08-04T09:22:00.000Z",
+    turns: [
+      {
+        id: "broken-chain-root",
+        role: "user",
+        text: "Summarize the plan.",
+        createdAt: "2026-08-04T09:20:00.000Z",
+        parentId: null,
+      },
+      {
+        id: "broken-chain-abandoned-request",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:21:00.000Z",
+        parentId: "broken-chain-root",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-broken-parent-chain",
+            turnId: "broken-chain-abandoned-request",
+            requestedAt: "2026-08-04T09:21:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+      {
+        // parentId names a turn that does not exist anywhere in the file.
+        id: "broken-chain-leaf",
+        role: "assistant",
+        text: "Here is the answer.",
+        createdAt: "2026-08-04T09:22:00.000Z",
+        parentId: "phantom-ancestor-that-does-not-exist",
+      },
+    ],
+    activeLeafId: "broken-chain-leaf",
+  });
+
+  // Regression (active-path trust): a corrupt parent ring (cycle) must fail
+  // quiet rather than resolving to any partial/looping chain.
+  await saveConversation({
+    sessionId: "attention-parent-cycle",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Parent cycle must fail quiet",
+    createdAt: "2026-08-04T09:30:00.000Z",
+    updatedAt: "2026-08-04T09:31:00.000Z",
+    turns: [
+      {
+        id: "cycle-a",
+        role: "user",
+        text: "Do you need anything?",
+        createdAt: "2026-08-04T09:30:00.000Z",
+        parentId: "cycle-b",
+      },
+      {
+        id: "cycle-b",
+        role: "assistant",
+        text: "I need your approval.",
+        createdAt: "2026-08-04T09:31:00.000Z",
+        parentId: "cycle-a",
+        responseMetadata: {
+          familiarId: "charm",
+          harness: "claude",
+          model: "anthropic/claude-sonnet-4.6",
+          runtime: "local:/repo",
+          attentionRequest: {
+            sessionId: "attention-parent-cycle",
+            turnId: "cycle-b",
+            requestedAt: "2026-08-04T09:31:00.000Z",
+            reason: "approval",
+          },
+        },
+      },
+    ],
+    activeLeafId: "cycle-a",
+  });
+
+  const summaries = await listConversations();
+  const byId = new Map(summaries.map((summary) => [summary.sessionId, summary]));
+
+  assert.deepEqual(byId.get("attention-leaf-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T18:00:00.000Z" },
+    latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+    attentionAfterOperationId: "run-leaf",
+    attentionOperationLineage: ["run-prior", "run-leaf"],
+    request: {
+      sessionId: "attention-leaf-request",
+      turnId: "leaf-assistant",
+      requestedAt: "2026-08-04T18:00:00.000Z",
+      reason: "approval",
+    },
+  });
+
+  assert.deepEqual(byId.get("attention-stale-request-left-hanging")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T18:00:00.000Z" },
+    latestUserTurnAt: "2026-08-03T17:00:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-stale-request-left-hanging")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "left-hanging",
+      since: "2026-08-03T18:00:00.000Z",
+      reason: null,
+    },
+    "path order resolves historical requests before attention derivation, without erasing later left-hanging fallback",
+  );
+
+  assert.deepEqual(byId.get("attention-malformed-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T18:30:00.000Z" },
+    latestUserTurnAt: "2026-08-03T16:00:00.000Z",
+    request: { state: "invalid" },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-malformed-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "a malformed request on the latest assistant must fail quiet instead of fabricating left-hanging",
+  );
+
+  assert.deepEqual(byId.get("attention-malformed-newer-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T19:00:00.000Z" },
+    latestUserTurnAt: "2026-08-01T16:00:00.000Z",
+    request: { state: "invalid" },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-malformed-newer-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "newer malformed request evidence must fail quiet instead of resurrecting an older valid request",
+  );
+
+  assert.deepEqual(byId.get("attention-noncanonical-request")?.attentionEvidence, {
+    latestCompletedTurn: null,
+    latestUserTurnAt: "2026-08-04T16:45:00.000Z",
+    request: { state: "invalid" },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-noncanonical-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "parseable noncanonical assistant/request timestamps must not create attention-capable evidence",
+  );
+
+  assert.deepEqual(byId.get("attention-user-leaf-resolution")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T17:00:00.000Z" },
+    latestUserTurnAt: "2026-08-04T17:00:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-user-leaf-resolution")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "an active user leaf resolves the request without inventing a later assistant fallback",
+  );
+
+  assert.deepEqual(byId.get("attention-cancelled-request-turn")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T14:00:00.000Z" },
+    latestUserTurnAt: "2026-08-04T14:00:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-cancelled-request-turn")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "cancelled assistant turns must not surface explicit attention requests",
+  );
+
+  assert.deepEqual(byId.get("attention-error-request-turn")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T14:40:00.000Z" },
+    latestUserTurnAt: "2026-08-04T14:40:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-error-request-turn")?.attentionEvidence,
+      status: "failed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    NO_CHAT_ATTENTION,
+    "error assistant turns must not surface explicit attention requests",
+  );
+
+  assert.deepEqual(byId.get("attention-mismatched-turnid-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T13:30:00.000Z" },
+    latestUserTurnAt: "2026-08-04T13:00:00.000Z",
+    request: { state: "invalid" },
+  });
+
+  assert.deepEqual(byId.get("attention-off-path-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:02:00.000Z" },
+    latestUserTurnAt: "2026-08-04T12:00:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-off-path-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a one-root branched transcript remains valid when activeLeafId selects a sibling leaf",
+  );
+
+  // Regenerate/rerun root siblings: when activeLeafId selects the
+  // request-bearing branch, its request must surface normally — the other
+  // root-level sibling elsewhere in the file is irrelevant to that selection.
+  assert.deepEqual(byId.get("attention-root-sibling-active-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:11:00.000Z" },
+    latestUserTurnAt: "2026-08-04T12:10:00.000Z",
+    attentionAfterOperationId: "run-root-a",
+    attentionOperationLineage: ["run-root-a"],
+    request: {
+      sessionId: "attention-root-sibling-active-request",
+      turnId: "root-sibling-a-assistant",
+      requestedAt: "2026-08-04T12:11:00.000Z",
+      reason: "approval",
+    },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-root-sibling-active-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "awaiting-human",
+      since: "2026-08-04T12:11:00.000Z",
+      reason: "approval",
+    },
+    "a legitimate root-sibling generation must surface its own request when activeLeafId selects it",
+  );
+
+  // Same tree, but activeLeafId selects the other root sibling: its own,
+  // request-free branch is what must be reflected — the inactive sibling's
+  // request must be ignored, not surfaced and not treated as corrupt.
+  assert.deepEqual(byId.get("attention-root-sibling-inactive-request")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T12:13:00.000Z" },
+    latestUserTurnAt: "2026-08-04T12:12:00.000Z",
+    attentionAfterOperationId: "run-root-b",
+    attentionOperationLineage: ["run-root-b"],
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-root-sibling-inactive-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "an inactive root sibling's request must never leak into the selected branch's evidence",
+  );
+
+  // Root-level terminal/status regression: `status`/`exitCode` are derived
+  // from the same active-path resolution (deriveConversationSignals reuses
+  // activeConversationTurns), so an inactive root sibling's terminal outcome
+  // must never leak into the summary either — in both directions.
+  assert.equal(
+    byId.get("attention-root-sibling-active-completes")?.status,
+    "completed",
+    "the active root sibling's success must be reported even though the inactive sibling ended in error",
+  );
+  assert.equal(
+    byId.get("attention-root-sibling-active-completes")?.exitCode,
+    0,
+    "the active root sibling's exit code must reflect its own success, not the inactive sibling's failure",
+  );
+  assert.equal(
+    byId.get("attention-root-sibling-active-fails")?.status,
+    "failed",
+    "the active root sibling's failure must be reported even though the inactive sibling completed",
+  );
+  assert.equal(
+    byId.get("attention-root-sibling-active-fails")?.exitCode,
+    1,
+    "the active root sibling's exit code must reflect its own failure, not the inactive sibling's success",
+  );
+
+  assert.deepEqual(byId.get("attention-malformed-turns")?.attentionEvidence, {
+    latestCompletedTurn: null,
+    latestUserTurnAt: null,
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-malformed-turns")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a malformed latest eligible turn must not fall back to older completion evidence",
+  );
+
+  assert.equal(
+    byId.get("attention-corrupt-leaf")?.attentionEvidence,
+    undefined,
+    "a missing/corrupt activeLeafId must fail quiet, not linearize every branch",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-corrupt-leaf")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a corrupt active leaf must never surface an off-path branch's attention request",
+  );
+
+  assert.equal(
+    byId.get("attention-duplicate-leaf-id")?.attentionEvidence,
+    undefined,
+    "duplicate turn ids must fail quiet instead of letting activeLeafId resolve by last-wins map order",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-duplicate-leaf-id")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "an ambiguous duplicate active leaf must not surface any attention state",
+  );
+
+  assert.equal(
+    byId.get("attention-ambiguous-missing-leaf")?.attentionEvidence,
+    undefined,
+    "branched conversations without an activeLeafId must fail quiet instead of choosing a branch implicitly",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-ambiguous-missing-leaf")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "an ambiguous branched conversation with no active leaf must not surface any attention state",
+  );
+
+  assert.equal(
+    byId.get("attention-explicit-null-roots")?.attentionEvidence,
+    undefined,
+    "multiple explicit null roots are ambiguous/corrupt, not legacy linear history",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-explicit-null-roots")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "explicit null-root ambiguity must fail quiet instead of surfacing an abandoned request",
+  );
+
+  assert.deepEqual(byId.get("attention-legacy-missing-parent-links")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T11:15:00.000Z" },
+    latestUserTurnAt: "2026-08-04T11:10:00.000Z",
+    request: {
+      sessionId: "attention-legacy-missing-parent-links",
+      turnId: "legacy-missing-parent-request",
+      requestedAt: "2026-08-04T11:15:00.000Z",
+      reason: "approval",
+    },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-legacy-missing-parent-links")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "awaiting-human",
+      since: "2026-08-04T11:15:00.000Z",
+      reason: "approval",
+    },
+    "genuinely legacy turns with no parentId must still linearize and surface active requests",
+  );
+
+  assert.deepEqual(byId.get("attention-request-resolved-by-malformed-user")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-03T18:00:00.000Z" },
+    latestUserTurnAt: null,
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-request-resolved-by-malformed-user")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "left-hanging",
+      since: "2026-08-03T18:00:00.000Z",
+      reason: null,
+    },
+    "a malformed-date user turn still resolves the older request, while a later valid assistant can independently become left-hanging",
+  );
+
+  assert.deepEqual(byId.get("attention-requested-at-mismatch")?.attentionEvidence, {
+    latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
+    latestUserTurnAt: "2026-08-04T10:00:00.000Z",
+    request: { state: "invalid" },
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-requested-at-mismatch")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "requestedAt must match the containing assistant turn's instant or the request is discarded",
+  );
+
+  assert.deepEqual(
+    byId.get("attention-canonical-assistant-noncanonical-request")?.attentionEvidence,
+    {
+      latestCompletedTurn: { role: "assistant", at: "2026-08-04T10:05:00.000Z" },
+      latestUserTurnAt: "2026-08-04T10:00:00.000Z",
+      request: { state: "invalid" },
+    },
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-canonical-assistant-noncanonical-request")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a noncanonical requestedAt must be rejected even when it is only offset-equivalent to a canonical assistant createdAt",
+  );
+
+  assert.deepEqual(byId.get("attention-request-cleared-by-equal-timestamp")?.attentionEvidence, {
+    latestCompletedTurn: { role: "user", at: "2026-08-04T08:05:00.000Z" },
+    latestUserTurnAt: "2026-08-04T08:05:00.000Z",
+    request: null,
+  });
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-request-cleared-by-equal-timestamp")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a structurally later user turn clears a prior request by active-path order even at an equal timestamp",
+  );
+
+  assert.equal(
+    byId.get("attention-detached-leaf")?.attentionEvidence,
+    undefined,
+    "an activeLeafId pointing at a detached, parent-less system echo must fail quiet",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-detached-leaf")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a detached leaf must never surface the real branch's abandoned attention request",
+  );
+
+  assert.equal(
+    byId.get("attention-broken-parent-chain")?.attentionEvidence,
+    undefined,
+    "a parent chain naming a nonexistent ancestor id must fail quiet",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-broken-parent-chain")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a broken parent chain must never surface the real branch's abandoned attention request",
+  );
+
+  assert.equal(
+    byId.get("attention-parent-cycle")?.attentionEvidence,
+    undefined,
+    "a corrupt parent ring (cycle) must fail quiet rather than resolve a looping chain",
+  );
+  assert.deepEqual(
+    deriveChatAttention({
+      evidence: byId.get("attention-parent-cycle")?.attentionEvidence,
+      status: "completed",
+      archivedAt: null,
+      now: NOW,
+    }),
+    {
+      state: "none",
+      since: null,
+      reason: null,
+    },
+    "a parent cycle must never surface its request",
+  );
+
+  for (const id of ids) {
+    await deleteConversation(id);
+  }
+}
+console.log("cave-conversations attention summary test OK");
+
 // ── First-turn stub / mid-stream model PATCH serialization ──────────────────
 // The client receives a session id immediately and can PATCH its model while
 // the stub is still being written. Both mutations must queue by conversation
@@ -940,3 +2848,151 @@ console.log("cave-conversations pending-marker test OK");
   await deleteConversation(sessionId);
 }
 console.log("cave-conversations model-lock test OK");
+
+// ── Selected-chain validation stays O(chain length) on long/branched trees ──
+// Regression for the retired `hasSingleStructuralRoot`: that check re-walked
+// every turn's full ancestor chain looking for a shared root across the
+// *entire* file, which cost O(n) per turn — O(n^2) overall — and wrongly
+// treated legitimate root-level siblings (a regenerate/rerun starting a fresh
+// root turn) as corruption. The current design never does that walk: it only
+// resolves the ids the selected activeLeafId actually visits, via one O(n)
+// id-map build (`resolveAncestorChainFromMap`'s caller) followed by an
+// O(chain length) walk — which is visible directly in the resolver's source,
+// so no runtime step-counter or wall-clock timing is needed here to prove it.
+{
+  function buildLinearChain(prefix, length, baseMs) {
+    const turns = [];
+    for (let i = 0; i < length; i += 1) {
+      const role = i % 2 === 0 ? "user" : "assistant";
+      turns.push({
+        id: `${prefix}-${i}`,
+        role,
+        text: role === "user" ? `Message ${i}` : `Reply ${i}`,
+        createdAt: new Date(baseMs + i * 1000).toISOString(),
+        parentId: i === 0 ? null : `${prefix}-${i - 1}`,
+      });
+    }
+    return turns;
+  }
+
+  // A long, entirely valid linear/selected chain: the active path must still
+  // resolve correctly and surface the true latest turns at scale.
+  const LONG_CHAIN_LENGTH = 6000;
+  const longChainBaseMs = Date.UTC(2026, 7, 4, 0, 0, 0);
+  const longChainTurns = buildLinearChain("long-chain-turn", LONG_CHAIN_LENGTH, longChainBaseMs);
+  const longChainLeafId = longChainTurns[LONG_CHAIN_LENGTH - 1].id;
+
+  await saveConversation({
+    sessionId: "structural-root-long-chain",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Long linear history",
+    createdAt: longChainTurns[0].createdAt,
+    updatedAt: longChainTurns[LONG_CHAIN_LENGTH - 1].createdAt,
+    turns: longChainTurns,
+    activeLeafId: longChainLeafId,
+  });
+
+  const longChainSummaries = await listConversations();
+  const longChainSummary = longChainSummaries.find(
+    (summary) => summary.sessionId === "structural-root-long-chain",
+  );
+
+  assert.ok(
+    longChainSummary?.attentionEvidence,
+    "a long, entirely valid linear history must still resolve its active path and surface attention evidence",
+  );
+  assert.equal(
+    longChainSummary?.attentionEvidence?.latestUserTurnAt,
+    longChainTurns[LONG_CHAIN_LENGTH - 2].createdAt,
+    "the active-path result over a long chain must still reflect the true latest user turn",
+  );
+  assert.deepEqual(
+    longChainSummary?.attentionEvidence?.latestCompletedTurn,
+    { role: "assistant", at: longChainTurns[LONG_CHAIN_LENGTH - 1].createdAt },
+    "the active-path result over a long chain must still reflect the true latest completed turn",
+  );
+
+  await deleteConversation("structural-root-long-chain");
+
+  // A long history whose parent links form one big cycle (no turn's chain
+  // ever reaches a null parentId). Must fail quiet — not hang, not stack
+  // overflow via recursion — since the walk is iterative and bounded by the
+  // selected chain length (here, the whole ring).
+  const CYCLE_LENGTH = 4000;
+  const cycleBaseMs = Date.UTC(2026, 7, 5, 0, 0, 0);
+  const cycleTurns = buildLinearChain("cycle-turn", CYCLE_LENGTH, cycleBaseMs);
+  // Break the root: instead of null, point turn 0 at the last turn, closing
+  // the whole chain into a single cycle of length CYCLE_LENGTH.
+  cycleTurns[0].parentId = cycleTurns[CYCLE_LENGTH - 1].id;
+
+  await saveConversation({
+    sessionId: "structural-root-long-cycle",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Long parent cycle must fail quiet",
+    createdAt: cycleTurns[0].createdAt,
+    updatedAt: cycleTurns[CYCLE_LENGTH - 1].createdAt,
+    turns: cycleTurns,
+    activeLeafId: cycleTurns[CYCLE_LENGTH - 1].id,
+  });
+
+  const cycleSummaries = await listConversations();
+  const cycleSummary = cycleSummaries.find(
+    (summary) => summary.sessionId === "structural-root-long-cycle",
+  );
+
+  assert.equal(
+    cycleSummary?.attentionEvidence,
+    undefined,
+    "a long parent cycle must fail quiet instead of resolving a looping chain",
+  );
+
+  await deleteConversation("structural-root-long-cycle");
+
+  // Two long, individually valid chains that never connect: a legitimate
+  // large-scale regenerate/rerun scenario (two big root-level siblings). The
+  // active leaf lives on chain A; chain B is a disconnected root sibling and
+  // must simply be ignored — never walked, and never treated as corruption —
+  // while chain A's own evidence still resolves correctly at scale.
+  const ROOT_SIBLING_HALF_LENGTH = 3000;
+  const chainABaseMs = Date.UTC(2026, 7, 6, 0, 0, 0);
+  const chainBBaseMs = Date.UTC(2026, 7, 6, 1, 0, 0);
+  const chainATurns = buildLinearChain("root-sibling-a", ROOT_SIBLING_HALF_LENGTH, chainABaseMs);
+  const chainBTurns = buildLinearChain("root-sibling-b", ROOT_SIBLING_HALF_LENGTH, chainBBaseMs);
+  const rootSiblingActiveLeafId = chainATurns[ROOT_SIBLING_HALF_LENGTH - 1].id;
+
+  await saveConversation({
+    sessionId: "structural-root-long-root-siblings",
+    familiarId: "charm",
+    harness: "claude",
+    title: "Long root-sibling generations resolve the active one",
+    createdAt: chainATurns[0].createdAt,
+    updatedAt: chainBTurns[ROOT_SIBLING_HALF_LENGTH - 1].createdAt,
+    turns: [...chainATurns, ...chainBTurns],
+    activeLeafId: rootSiblingActiveLeafId,
+  });
+
+  const rootSiblingSummaries = await listConversations();
+  const rootSiblingSummary = rootSiblingSummaries.find(
+    (summary) => summary.sessionId === "structural-root-long-root-siblings",
+  );
+
+  assert.ok(
+    rootSiblingSummary?.attentionEvidence,
+    "a large disconnected root sibling must never prevent the active chain from resolving",
+  );
+  assert.equal(
+    rootSiblingSummary?.attentionEvidence?.latestUserTurnAt,
+    chainATurns[ROOT_SIBLING_HALF_LENGTH - 2].createdAt,
+    "the active chain's own latest user turn must resolve, ignoring the disconnected sibling entirely",
+  );
+  assert.deepEqual(
+    rootSiblingSummary?.attentionEvidence?.latestCompletedTurn,
+    { role: "assistant", at: chainATurns[ROOT_SIBLING_HALF_LENGTH - 1].createdAt },
+    "the active chain's own latest completed turn must resolve, ignoring the disconnected sibling entirely",
+  );
+
+  await deleteConversation("structural-root-long-root-siblings");
+}
+console.log("cave-conversations structural-root perf/regression test OK");

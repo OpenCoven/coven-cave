@@ -7,22 +7,59 @@
  *
  * States: clarifying (still needs answers), working (proceeding silently),
  * blocked (needs a human — permissions, a decision, credentials, anything the
- * familiar can't resolve itself), done (mission finished). Only blocked/done
- * should draw the human's attention — that decision lives in the caller
+ * familiar can't resolve itself), failed (hit something unrecoverable; the
+ * mission is over either way), done (mission finished). Only blocked/failed/
+ * done should draw the human's attention — that decision lives in the caller
  * (chat-view's auto-mode watcher), this module only extracts the latest
  * state per turn.
+ *
+ * `timed-out` also exists as a mission state, but deliberately has NO marker:
+ * it is what the client concludes when the model says nothing at all, so
+ * accepting it from the model would defeat the point. See auto-mission-state.ts.
  */
 
 import { markdownCodeRanges } from "./github-blocks.ts";
 
-export type AutoMissionState = "clarifying" | "working" | "blocked" | "done";
+export type AutoMissionState = "clarifying" | "working" | "blocked" | "failed" | "done";
 
 export type AutoStatusUpdate = {
   state: AutoMissionState;
   note?: string;
 };
 
-const STATES: ReadonlySet<string> = new Set(["clarifying", "working", "blocked", "done"]);
+/**
+ * Accepted spellings → canonical state. A model that writes "complete" or
+ * "Done" has told us exactly what we asked for; dropping that marker on a
+ * string mismatch would strand the mission with no ping, which is the single
+ * worst outcome this feature has. Matching is case-insensitive and tolerant of
+ * the obvious synonyms rather than silently strict.
+ */
+const STATE_ALIASES: ReadonlyMap<string, AutoMissionState> = new Map([
+  ["clarifying", "clarifying"],
+  ["clarify", "clarifying"],
+  ["questions", "clarifying"],
+  ["working", "working"],
+  ["in-progress", "working"],
+  ["in_progress", "working"],
+  ["running", "working"],
+  ["blocked", "blocked"],
+  ["needs-human", "blocked"],
+  ["needs-approval", "blocked"],
+  ["waiting", "blocked"],
+  ["failed", "failed"],
+  ["failure", "failed"],
+  ["error", "failed"],
+  ["done", "done"],
+  ["complete", "done"],
+  ["completed", "done"],
+  ["finished", "done"],
+  ["success", "done"],
+]);
+
+function canonicalState(raw: string | undefined): AutoMissionState | null {
+  if (!raw) return null;
+  return STATE_ALIASES.get(raw.trim().toLowerCase()) ?? null;
+}
 
 // Attributes segment treats quoted strings as atomic so a `>` inside a quoted
 // note can't terminate the match early (same guard as skill-blocks.ts).
@@ -57,9 +94,9 @@ export function extractAutoStatusMarkers(text: string): { visible: string; updat
     visible = text.replace(MARKER_RE, (m, rawAttrs: string, index: number) => {
       if (codeRanges.some(([start, end]) => index >= start && index < end)) return m;
       const attrs = parseAttrs(rawAttrs ?? "");
-      const state = attrs.state?.trim();
-      if (state && STATES.has(state)) {
-        const next: AutoStatusUpdate = { state: state as AutoMissionState };
+      const state = canonicalState(attrs.state);
+      if (state) {
+        const next: AutoStatusUpdate = { state };
         const note = attrs.note?.trim();
         if (note) next.note = note;
         update = next;

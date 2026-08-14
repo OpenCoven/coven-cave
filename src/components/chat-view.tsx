@@ -40,6 +40,7 @@ import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
+import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
@@ -66,9 +67,11 @@ import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
+  clearLiveChatGenerationAliases,
   mapConversationHistoryTurns,
   publishLiveChatGenerationMetadata,
   readLiveChatGeneration,
+  reconcileLiveChatGenerationSession,
   recordLiveChatGeneration,
   retryTurnModelRequest,
   stageLiveChatGenerationMetadata,
@@ -83,6 +86,12 @@ import {
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
+import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
+import {
+  chatFoldAriaLabel,
+  chatFoldLabel,
+  chatTranscriptFold,
+} from "@/lib/chat-transcript-fold";
 import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
 import {
   newSessionDefaults,
@@ -94,6 +103,11 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import {
+  CHAT_VIEW_HANDOFF_SCOPE,
+  claimInitialPromptHandoff,
+  initialPromptHandoffClaimed,
+} from "@/lib/initial-prompt-handoff";
 import { useCopy } from "@/lib/use-copy";
 import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
@@ -101,7 +115,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
 import { ChatFindBand } from "@/components/chat-find-band";
-import { ChatParticipants } from "@/components/chat-participants";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
@@ -111,6 +124,7 @@ import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
+import type { SessionRemovalReason } from "@/lib/chat-session-removal";
 import {
   isChatArchiveNudgeDismissed,
   markChatArchiveNudgeDismissed,
@@ -129,7 +143,6 @@ import { LinkedContextRow } from "@/components/composer-linked-work-actions";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import {
   cleanImageDataUrl,
-  extractAgentAttachmentMarkers,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
@@ -193,14 +206,44 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { extractNextPaths, type NextPath } from "@/lib/next-paths";
+import type { NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
-import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
-import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
-import { extractAutoStatusMarkers } from "@/lib/auto-status-blocks";
+import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
+import { parseSkillInvocation } from "@/lib/skill-blocks";
+import {
+  chatTurnVisibleText,
+  extractChatRenderedText,
+} from "@/lib/chat-rendered-text";
+import { sliceSpecBlocks } from "@/lib/spec-blocks";
+import {
+  AUTO_BRIEFED_KEY,
+  clearAutoMission,
+  isAutoMissionTimedOut,
+  pendingAutoMissionPings,
+  readAutoMission,
+  touchAutoMission,
+  writeAutoMission,
+  type AutoMissionRecord,
+} from "@/lib/auto-mission-state";
 import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+import {
+  emitChatAttentionClear,
+  emitChatAttentionSettlement,
+} from "@/lib/chat-attention-events";
+import {
+  createAdoptedAttentionSettlementRegistry,
+  createChatAttentionAdoptionTracker,
+  createChatAttentionSettlementTracker,
+  createExternallySettledGenerationRegistry,
+} from "@/lib/chat-attention-lifecycle";
+import {
+  chatAttentionProjectionScopeKey,
+} from "@/lib/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
+import { ImageCarousel } from "@/components/image-carousel";
+import { ChatSpecCard } from "@/components/chat-spec-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -248,8 +291,11 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
-import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
+import {
+  createCanonicalResponseBuffer,
+  type CanonicalResponseBuffer,
+} from "@/lib/canonical-response-buffer";
 import { consumeChatSse } from "@/lib/chat-sse";
 import {
   EMPTY_CHAT_STREAM_CLIENT_HEALTH,
@@ -265,9 +311,19 @@ import {
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
-import { EnhanceStrip } from "@/components/composer-enhance";
-import { AttachmentList, AttachmentThumb, InlineImageAttachments, formatAttachmentBytes, isInlineImageAttachment } from "./chat-attachment-cards";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
+import { AttachmentList, AttachmentThumb, InlineImageAttachments, InlineMediaAttachments, formatAttachmentBytes, isInlineImageAttachment, isInlineMediaAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
+import {
+  type CreationRefreshState,
+  onSendStart,
+  onCreationSessionIdentified,
+  onDoneCreationRefresh,
+  onCreationRunTerminated,
+  shouldReplacementRefreshOnDone,
+} from "@/lib/chat-creation-refresh";
+import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
+import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -288,6 +344,27 @@ const replyableTurnCache = new WeakMap<Turn, boolean>();
 // state) can be unit-tested without React. The full LiveChatGenerationSnapshot
 // is structurally assignable to the helper's minimal SnapshotLiveness shape.
 
+// `isLiveSnapshotActive` only proves the registry entry hasn't gone stale
+// (unaborted + recently touched) — a generation that finished seconds ago
+// still reads as "active" until its owning send's `finally` retires the
+// entry. Adopting a snapshot like that (opening/refreshing a thread whose
+// reply already landed) must repaint the transcript, but it must NOT clear
+// sidebar attention: that reply already went through its own settlement, and
+// re-clearing here would suppress a genuinely new human request that arrived
+// in the same TTL window. Only a snapshot whose active leaf is still
+// `pending` represents a generation actually awaiting a reply.
+function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" | "activeLeafId">): boolean {
+  return Boolean(live.turns.find((t) => t.id === live.activeLeafId)?.pending);
+}
+
+// A remounted view can evict and externally settle a stale/orphaned live
+// snapshot before the original send owner's `finally` runs. Share that
+// suppression by the generation controller: it is unique per run, survives
+// remount adoption through the live registry, and does not leak if an orphaned
+// owner never comes back to consume it.
+const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
+const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
+
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
@@ -302,6 +379,13 @@ type Props = {
    * Allow that one first prompt to send into the reserved, otherwise-empty
    * conversation instead of treating it as a resumed thread. */
   autoSendInitialPrompt?: boolean;
+  /** Stable id for THIS handoff, for callers that can remount the view while
+   * `initialPrompt` is still set. The auto-send guard is otherwise an instance
+   * ref, so a remount re-arms it and sends the prompt twice — which is what the
+   * Task Work cockpit did every time its pane-set-keyed Group remounted to show
+   * the code rail (cave-6une3). Supplying this moves the latch out of the
+   * instance and into `initial-prompt-handoff`, keyed by this id. */
+  initialPromptHandoffId?: string | null;
   /** The Board reserved this Cave conversation id before any native harness
    * session exists, so the first send must not pass it as a resume token. */
   startNewConversation?: boolean;
@@ -325,24 +409,55 @@ type Props = {
    *  switched this view to a different session. */
   openVoiceSessionId?: string;
   daemonRunning?: boolean;
-  /** Roster behind the title row's participants cluster — who you could add to
-   *  this chat to make it a coven (cave-9xadi). */
+  /** Workspace's current sidebar familiar filter — the scope its
+   *  `/api/sessions/list` request is actually loaded under (null means "all
+   *  familiars"). This is the list scope that can prove a session's absence,
+   *  which can differ from this chat's own `familiar`/`session.familiarId`
+   *  (a split pane showing a different familiar, or a caller that mounts
+   *  ChatView outside Workspace's sidebar entirely). Left undefined by
+   *  callers that don't track a list scope; Workspace's own attention-clear
+   *  handler always re-derives and overrides the authoritative scope itself,
+   *  so this is best-effort provenance on the emitted event, not the sole
+   *  source of truth. */
+  activeFamiliarId?: string | null;
+  /** Roster used to promote this chat into a coven from the familiar rail. */
   familiars?: Familiar[];
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
-  onSessionStarted?: (sessionId: string) => void;
+  composerDraftKey?: string;
+  composeInstance?: number;
+  onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
    *  the router promotes it and re-enters via openVoiceNonce. */
   onVoiceSessionCreated?: (sessionId: string) => void;
   /** An auto-created call session was discarded (empty, hung up) while the
    *  view was still parked on it — the router returns the view to a fresh
    *  compose state instead of leaving the user composing into a deleted
-   *  session. Not called when the user had already switched away. */
-  onVoiceSessionDiscarded?: () => void;
+   *  session. Not called when the user had already switched away. Passed the
+   *  discarded session's id so the router can re-check it's still the one
+   *  showing before navigating (cave-rl980 Task 4 final review) — the discard
+   *  itself is async, and the user may have switched threads or familiars
+   *  while it was in flight. */
+  onVoiceSessionDiscarded?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
-  onBack?: () => void;
+  /** Fires exactly when THIS view's own session is confirmed removed —
+   *  archived, deleted, or a discarded empty voice/pre-session — immediately
+   *  before onBack/onVoiceSessionDiscarded navigates away. Unlike
+   *  onSessionsChanged/onSessionsDeleted (which also fire for unrelated
+   *  refreshes), a consumer can treat this as an unambiguous removal signal
+   *  for the exact session named, with no need to infer it from call order. */
+  onSessionRemoved?: (sessionId: string, reason: SessionRemovalReason) => void;
+  /** Passed the session this back navigation is for — the removal call sites
+   *  below always pass their own (non-null) sessionId; the two "Back to
+   *  sessions" render buttons pass whatever is currently shown. ChatRouter
+   *  only actually navigates when it's still displaying that exact session
+   *  (cave-rl980 Task 4 final review): archiveChat/deleteChat/setChatArchived
+   *  are async, and by the time the request settles the user may have
+   *  already switched to a different thread or familiar, whose view must
+   *  never be clobbered by a now-irrelevant completion. */
+  onBack?: (sessionId: string | null) => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   /** Reverse navigation for a chat that's linked to a board task — clicking
@@ -421,17 +536,25 @@ type QueuedChatMessage = {
   options?: ChatSendOptions;
   controls: ChatSendControls;
 };
+// Settles exactly one sidebar-attention reconciliation per generation. An
 type LiveStreamGeneration = {
   sessionId: string | null;
   originSessionId: string | null;
+  sessionAliases: Set<string>;
   controller: AbortController;
   runId: string;
+  responseText: CanonicalResponseBuffer;
+  clearWatermark: string;
   streamHealth: () => ChatStreamClientHealth;
+  markAttentionCleared: (sessionId: string) => void;
+  markPersistenceConfirmed: () => void;
+  reconcileCanonicalSessions: () => void;
 };
 function liveStreamMetadata(liveGeneration: LiveStreamGeneration): LiveChatGenerationMetadata {
   return {
     runId: liveGeneration.runId,
     streamHealth: liveGeneration.streamHealth(),
+    clearWatermark: liveGeneration.clearWatermark,
   };
 }
 type ComposerThinkingEffort = CommandThinkingEffort;
@@ -441,9 +564,9 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
 // Persist the in-progress composer text so a page reload doesn't eat a
-// half-written message. The composer is a single shared input (it isn’t
-// remounted per session), so one key mirrors the in-memory behaviour.
-const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
+// half-written message. Callers can isolate mounted composers while the
+// default retains the original shared slot.
+export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the chat composer.
 const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
@@ -464,6 +587,7 @@ const CHUNK_FLUSH_MS = 40;
 const CHAT_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
+  "audio/*",
   "application/pdf",
   "application/json",
   "text/*",
@@ -591,13 +715,47 @@ type ErrorStripTool = { id: string; name: string; input?: string; output?: strin
 type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "notice" | "error" };
 type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
 
-/** Only display the fixed, server-produced runtime-process diagnostic shape.
- * Progress detail normally can contain project output, so every other value
- * remains withheld in the error strip. */
+/** Only display fixed server output or a strictly validated redacted launch
+ * record. Progress detail normally can contain project output. */
 function safeRuntimeProcessDetail(step: ErrorStripStep): string | null {
-  if (step.id !== "runtime-process" || !step.detail) return null;
-  const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
-  return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  if (!step.detail) return null;
+  if (step.id === "runtime-process") {
+    const match = /^Exit code (\d+); (runtime diagnostic output was withheld to protect local data|the runtime did not emit an error message)\.$/.exec(step.detail);
+    return match ? `Exit code ${match[1]}. ${match[2]}.` : null;
+  }
+  if (step.id !== "runtime-launch-diagnostics") return null;
+  try {
+    const value = JSON.parse(step.detail) as {
+      schemaVersion?: unknown; runner?: unknown; privacy?: unknown; failure?: { kind?: unknown; exitCode?: unknown; emittedDiagnostic?: unknown };
+      launcher?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+      adapter?: { command?: unknown; availability?: unknown; source?: unknown; pathEntryIndex?: unknown; installKind?: unknown };
+    };
+    const command = (entry: typeof value.launcher): string | null => {
+      if (!entry || !["coven", "codex"].includes(String(entry.command))) return null;
+      if (!["ready", "missing", "unlaunchable", "probe_failed", "unsupported_runtime"].includes(String(entry.availability))) return null;
+      if (!["absolute-command", "PATH", "coven-adapter", "unresolved"].includes(String(entry.source))) return null;
+      if (entry.pathEntryIndex !== undefined && (!Number.isInteger(entry.pathEntryIndex) || Number(entry.pathEntryIndex) < 0 || Number(entry.pathEntryIndex) >= 512)) return null;
+      if (entry.pathEntryIndex !== undefined && entry.source !== "PATH") return null;
+      if (entry.installKind !== undefined && !["managed", "node-package", "system", "user-local", "custom"].includes(String(entry.installKind))) return null;
+      const index = entry.pathEntryIndex === undefined ? "" : `, PATH entry ${entry.pathEntryIndex}`;
+      const install = entry.installKind === undefined ? "" : `, ${entry.installKind}`;
+      return `${entry.command}: ${entry.availability} via ${entry.source}${index}${install}`;
+    };
+    if (
+      value.schemaVersion !== 1 ||
+      value.privacy !== "paths-and-environment-values-redacted" ||
+      !["coven", "codex", "claude"].includes(String(value.runner)) ||
+      !value.failure ||
+      value.failure.kind !== "process-exit" ||
+      (value.failure.exitCode !== null && !Number.isInteger(value.failure.exitCode)) ||
+      typeof value.failure.emittedDiagnostic !== "boolean"
+    ) return null;
+    const exit = value.failure.exitCode === null ? "exit code unavailable" : `exit code ${value.failure.exitCode}`;
+    const entries = [command(value.launcher), command(value.adapter)].filter((entry): entry is string => Boolean(entry));
+    return entries.length ? `${exit}; ${entries.join("; ")}.` : exit;
+  } catch {
+    return null;
+  }
 }
 
 /** Inline error/debug strip between the transcript and the composer. Shows the
@@ -960,64 +1118,6 @@ function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
     case "complete":
       return "Complete";
   }
-}
-
-/**
- * Split assistant text into visible body + accumulated reasoning. We treat any
- * `<thinking>...</thinking>` or `<reasoning>...</reasoning>` block (both
- * commonly emitted by Claude/Codex harnesses) as reasoning to be collapsed.
- * Unclosed reasoning blocks are captured while streaming instead of leaking
- * raw internal tags into the transcript.
- */
-function splitReasoning(text: string): { visible: string; reasoning: string } {
-  const reasoningParts: string[] = [];
-  const visibleParts: string[] = [];
-  const tagRe = /<(\/?)(thinking|reasoning)>/gi;
-  let activeTag: string | null = null;
-  let reasoningStart = 0;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = tagRe.exec(text)) !== null) {
-    const closing = match[1] === "/";
-    const tag = match[2].toLowerCase();
-
-    if (!activeTag && closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (!activeTag && !closing) {
-      visibleParts.push(text.slice(cursor, match.index));
-      activeTag = tag;
-      reasoningStart = tagRe.lastIndex;
-      cursor = tagRe.lastIndex;
-      continue;
-    }
-
-    if (activeTag === tag && closing) {
-      reasoningParts.push(text.slice(reasoningStart, match.index).trim());
-      activeTag = null;
-      cursor = tagRe.lastIndex;
-    }
-  }
-
-  if (activeTag) {
-    reasoningParts.push(text.slice(reasoningStart).trim());
-  } else {
-    visibleParts.push(text.slice(cursor));
-  }
-
-  const visible = visibleParts.join("");
-  // Strip upstream debug-prefix lines (e.g. "[model-fallback/decision] …")
-  // that leak into the assistant transcript. Anchored to line start so
-  // inline brackets in prose are untouched.
-  const DEBUG_PREFIX_RE = /^\[[a-z][\w-]*(?:\/[\w-]+)+\][^\n]*\n?/gim;
-  return {
-    visible: visible.replace(DEBUG_PREFIX_RE, "").replace(/\n{3,}/g, "\n\n").trimStart(),
-    reasoning: reasoningParts.join("\n\n").trim(),
-  };
 }
 
 // ── ChatEmptyState ────────────────────────────────────────────────────────────
@@ -1397,6 +1497,20 @@ function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string 
         <span className="block h-full rounded-full" style={{ width: `${Math.max(3, meter.percent)}%`, background: fill }} />
       </span>
       <span aria-label={`Context ${meter.percent} percent full`}>{`${meter.percent}%`}</span>
+    </span>
+  );
+}
+
+function ComposerContextMeter({ usage, model }: { usage?: TurnUsage; model?: string }) {
+  const meter = computeContextMeter(usage, model);
+  if (!meter) return null;
+  const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
+  return (
+    <span className="cave-composer-context-meter" data-level={meter.level} title={title}>
+      <meter className="cave-composer-context-meter__track" min={0} max={100} value={meter.percent}>
+        {meter.percent}%
+      </meter>
+      <span>{`Context ${meter.percent}%`}</span>
     </span>
   );
 }
@@ -1800,7 +1914,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, familiars = [], sessions, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -1963,39 +2077,56 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => window.clearTimeout(timer);
   }, [reflectError]);
 
-  // `/auto` mission tracking (cave auto-mode): the mission text for the
-  // in-flight /auto run in THIS chat, so the blocked/done watcher below knows
-  // what to notify about and the feedback modal knows what to attribute
-  // ratings to. Cleared when a new /auto starts or the chat is cleared.
-  const [autoMission, setAutoMission] = useState<string | null>(null);
+  // `/auto` mission tracking (cave auto-mode). The record lives in
+  // localStorage, not just component state, because /auto exists precisely for
+  // UNATTENDED runs: the human starts a mission and walks away, so a reload or
+  // an app restart is the expected case. State-only arming would silently drop
+  // the completion ping the feature exists to deliver. See auto-mission-state.ts.
+  const [autoMission, setAutoMission] = useState<AutoMissionRecord | null>(null);
   const [autoFeedbackOpen, setAutoFeedbackOpen] = useState(false);
-  // Turn ids already notified-for, so a settle re-render (or a second
-  // <coven:auto-status> marker of the same terminal state) never double-pings
-  // the human or double-opens the questionnaire.
-  const autoNotifiedTurnsRef = useRef<Set<string>>(new Set());
+
+  // Re-hydrate (or drop) the mission whenever the chat changes. Without this a
+  // mission started in chat A stays armed while chat B is on screen, and any
+  // auto-status marker over there pings against A's mission.
+  useEffect(() => {
+    setAutoFeedbackOpen(false);
+    setAutoMission(readAutoMission(sessionId, typeof window === "undefined" ? null : window.localStorage));
+  }, [sessionId]);
 
   // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
-  // (auto-status-blocks.ts). "blocked" and "done" are the ONLY two states
-  // that should draw the human back in — see buildAutoModeDirective. Blocked
-  // fires a response-needed inbox item (something only a human can resolve);
-  // done fires an agent inbox item AND opens the feedback questionnaire so
-  // the mission's outcome can shape the next one.
+  // (auto-status-blocks.ts). Only blocked/failed/done draw the human back in —
+  // see buildAutoModeDirective. Blocked fires a response-needed inbox item and
+  // leaves the mission armed (answering it resumes the work); failed and done
+  // end the mission and flag feedback as pending.
   useEffect(() => {
-    if (!autoMission) return;
-    for (const t of turns) {
-      if (t.role !== "assistant" || t.pending || !t.text) continue;
-      if (autoNotifiedTurnsRef.current.has(t.id)) continue;
-      const { update } = extractAutoStatusMarkers(t.text);
-      if (!update || (update.state !== "blocked" && update.state !== "done")) continue;
-      autoNotifiedTurnsRef.current.add(t.id);
-      const blocked = update.state === "blocked";
+    const pings = pendingAutoMissionPings(autoMission, turns);
+    if (!pings.length || !autoMission) return;
+    const storage = typeof window === "undefined" ? null : window.localStorage;
+    let next: AutoMissionRecord = { ...autoMission, notified: [...autoMission.notified] };
+    let ended = false;
+    for (const ping of pings) {
+      next.notified.push(ping.turnId);
+      const blocked = ping.state === "blocked";
+      if (!blocked) {
+        ended = true;
+        next = {
+          ...next,
+          completedAt: new Date().toISOString(),
+          outcome: ping.state === "failed" ? "failed" : "done",
+          feedbackPending: true,
+        };
+      }
       void fetch("/api/inbox", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           kind: blocked ? "response-needed" : "agent",
-          title: blocked ? "Auto mission needs you" : "Auto mission complete",
-          body: update.note || autoMission,
+          title: blocked
+            ? "Auto mission needs you"
+            : ping.state === "failed"
+              ? "Auto mission couldn't finish"
+              : "Auto mission complete",
+          body: ping.note || autoMission.mission,
           source: "agent",
           familiarId: familiar.id,
           sessionId,
@@ -2003,8 +2134,69 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           link: sessionId ? { kind: "session", ref: sessionId } : null,
         }),
       }).catch(() => undefined);
-      if (!blocked) setAutoFeedbackOpen(true);
     }
+    writeAutoMission(sessionId, next, storage);
+    setAutoMission(next);
+    if (ended) setAutoFeedbackOpen(true);
+  }, [autoMission, familiar.id, sessionId, turns]);
+
+  // Keep the mission's liveness stamp current. The watchdog below measures from
+  // this, not from mission start, so a long mission that is visibly progressing
+  // is never declared timed out.
+  useEffect(() => {
+    if (!autoMission || autoMission.completedAt) return;
+    setAutoMission((prev) => {
+      if (!prev || prev.completedAt) return prev;
+      const touched = touchAutoMission(prev, Date.now());
+      if (touched === prev) return prev;
+      writeAutoMission(sessionId, touched, typeof window === "undefined" ? null : window.localStorage);
+      return touched;
+    });
+    // Only the transcript growing counts as a sign of life — depending on
+    // autoMission here would re-stamp on our own write and never expire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length, sessionId]);
+
+  // The watchdog. Everything above depends on the familiar volunteering a
+  // terminal marker; nothing guarantees it ever does. It can run out of
+  // context, die mid-stream, or simply forget the protocol — and then the
+  // transcript holds nothing to ping on, the mission stays armed forever, and
+  // the human never hears back at all. That is the one outcome /auto cannot
+  // afford, so the client stops waiting on its own clock.
+  useEffect(() => {
+    if (!autoMission || autoMission.completedAt) return;
+    const tick = () => {
+      setAutoMission((prev) => {
+        if (!isAutoMissionTimedOut(prev, turns, Date.now())) return prev;
+        if (!prev) return prev;
+        const ended: AutoMissionRecord = {
+          ...prev,
+          completedAt: new Date().toISOString(),
+          outcome: "timed-out",
+          feedbackPending: true,
+        };
+        writeAutoMission(sessionId, ended, typeof window === "undefined" ? null : window.localStorage);
+        void fetch("/api/inbox", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            kind: "response-needed",
+            title: "Auto mission went quiet",
+            body: `No word back on "${prev.mission}". Check the thread — it may have stalled.`,
+            source: "agent",
+            familiarId: familiar.id,
+            sessionId,
+            auto: "auto-mission",
+            link: sessionId ? { kind: "session", ref: sessionId } : null,
+          }),
+        }).catch(() => undefined);
+        setAutoFeedbackOpen(true);
+        return ended;
+      });
+    };
+    const timer = window.setInterval(tick, 60_000);
+    tick();
+    return () => window.clearInterval(timer);
   }, [autoMission, familiar.id, sessionId, turns]);
 
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
@@ -2076,11 +2268,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const [input, setInput] = useState(() => readComposerDraft(COMPOSER_DRAFT_KEY));
+  const [input, setInput] = useState(() => readComposerDraft(composerDraftKey));
   // Persist the composer draft so a reload restores a half-written message.
   // Cleared (key removed) when the input empties — e.g. after a send. Shared
   // hook — debounce + remove-on-empty semantics live in use-composer-draft.
-  const { clearNow: clearDraft } = useDraftPersistence(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
+  const { clearNow: clearDraft } = useDraftPersistence(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
   // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
   // chat deliberately never records slash commands (send() returns before the push).
   const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
@@ -2389,6 +2581,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [activeProjectRoot, onProjectRootChange]);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
+  const creationRefreshStateRef = useRef<CreationRefreshState>({ pendingRuns: {} });
+  // Tracks which generation run currently owns the displayed view. Cleared on
+  // thread switch, adoption, and unmount. See ownsDisplayedView for the guard.
+  const displayedCreationRunIdRef = useRef<string | null>(null);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
+  useLayoutEffect(() => {
+    return () => {
+      displayedCreationRunIdRef.current = null;
+    };
+  }, []);
   const streamHealthSessionRef = useRef(sessionId);
   const currentStreamHealthRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -2429,6 +2632,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const historyExpandedRef = useRef(false);
   historyExpandedRef.current = historyExpanded;
+  // "Chat Session - Prototype.dc.html" (cave-u5lq7): a long thread opens on the
+  // recent exchange with everything older behind one pill. Separate concern
+  // from historyExpanded above — that is a mounting budget, this is a reading
+  // affordance — but opening the fold lifts the cap too, because a pill that
+  // says "hide earlier turns" has promised every earlier turn.
+  const [foldOpen, setFoldOpen] = useState(false);
+  const foldOpenRef = useRef(false);
+  foldOpenRef.current = foldOpen;
   // Distance-from-bottom captured at the instant of expansion so the prepended
   // older rows don't visually shove the viewport (restored in a layout effect).
   const expandAnchorRef = useRef<number | null>(null);
@@ -2504,8 +2715,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Restore the pre-expansion distance-from-bottom once the full transcript has
   // mounted, so revealing the older rows doesn't jump the reader's viewport.
+  // Either reveal prepends rows above the viewport, so both have to restore the
+  // anchor. Keying on historyExpanded alone missed the case where the reader
+  // had already scrolled up (cap lifted) and then opened the fold — the rows
+  // arrived with no effect left to fire, and the viewport jumped.
   useLayoutEffect(() => {
-    if (!historyExpanded) return;
+    if (!historyExpanded && !foldOpen) return;
     const anchor = expandAnchorRef.current;
     expandAnchorRef.current = null;
     if (anchor == null) return;
@@ -2514,7 +2729,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       el.scrollTop = Math.max(0, el.scrollHeight - anchor);
       captureReleasedScrollAnchor();
     }
-  }, [captureReleasedScrollAnchor, historyExpanded]);
+  }, [captureReleasedScrollAnchor, historyExpanded, foldOpen]);
+
+  // Opening the fold lifts the render cap with it and anchors the scroll, so
+  // the earlier turns slide in ABOVE the reader rather than shoving them down.
+  // Stable identity: TranscriptRows is memoized on its props.
+  const toggleFold = useCallback(() => {
+    if (foldOpenRef.current) {
+      setFoldOpen(false);
+      return;
+    }
+    const el = scrollRef.current;
+    expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    captureReleasedScrollAnchor();
+    setHistoryExpanded(true);
+    setFoldOpen(true);
+  }, [captureReleasedScrollAnchor]);
 
   // `shouldApply` lets a caller (the effect below) veto the setState after the
   // await — a fetch that resolves after a thread switch must not overwrite the
@@ -2901,6 +3131,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
    *  settle-refetch below; an instance that merely ADOPTED a live snapshot
    *  (remounted mid-generation) does. */
   const streamOwnerRef = useRef(false);
+  const adoptedPendingAttentionClearRef = useRef(createChatAttentionAdoptionTracker());
   /** Session whose settle (registry clear) should trigger a disk refetch:
    *  set when this non-owner view adopts a live snapshot, or when it evicts
    *  a stale one while the orphaned stream may still be running (cave-0er). */
@@ -2922,6 +3153,45 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       runId: currentStreamHealthRunIdRef.current,
       sessionId: targetSessionId,
     };
+  }
+
+  function maybeEmitAdoptedPendingAttentionClear(
+    targetSessionId: string,
+    live: LiveChatGenerationSnapshot,
+  ) {
+    if (!isLiveGenerationPending(live) || !live.runId) return;
+    if (!adoptedPendingAttentionClearRef.current.shouldEmit(targetSessionId, live.runId)) return;
+    emitAttentionClear(targetSessionId, live.runId, attentionClearWatermarkForLiveGeneration(live));
+    adoptedPendingAttentionSettlementOwners.markAttentionCleared(live.controller, targetSessionId);
+  }
+
+  function emitAttentionClear(
+    targetSessionId: string,
+    operationId: string,
+    clearWatermark?: string | null,
+  ) {
+    const knownSession = session?.id === targetSessionId
+      ? session
+      : sessions?.find((entry) => entry.id === targetSessionId) ?? null;
+    // The scope that can prove absence is Workspace's own current sidebar
+    // filter (the scope its session list is actually loaded under), not this
+    // chat's owning familiar — a split pane, or any session whose familiar
+    // differs from the active filter, would otherwise carry a scope that can
+    // never prove anything relative to the list actually being polled. Fall
+    // back to the session's own familiar only when the caller never learned
+    // the active scope at all (activeFamiliarId is undefined, not null).
+    const scopeFamiliarId = activeFamiliarId !== undefined
+      ? activeFamiliarId
+      : knownSession?.familiarId ?? familiar.id;
+    emitChatAttentionClear(targetSessionId, operationId, {
+      clearWatermark,
+      scopeKey: chatAttentionProjectionScopeKey(scopeFamiliarId),
+      baselineAttention: knownSession?.attention ?? null,
+    });
+  }
+
+  function attentionClearWatermarkForLiveGeneration(live: LiveChatGenerationSnapshot): string | null {
+    return live.clearWatermark ?? live.turns.find((turn) => turn.id === live.activeLeafId)?.createdAt ?? null;
   }
 
   function persistLiveTurns(
@@ -3013,6 +3283,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       if (live && isLiveSnapshotActive(live, Date.now())) {
         adoptLiveGenerationMetadata(live, sessionId);
+        maybeEmitAdoptedPendingAttentionClear(sessionId, live);
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -3092,9 +3363,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       turns.map((t) => ({
         id: t.id,
         role: t.role,
-        // Visible text only: assistant turns may carry inline <thinking>
-        // blocks in `text`; match what the transcript actually renders.
-        text: t.role === "assistant" ? splitReasoning(t.text).visible : t.text,
+        // Match the exact prose projection used by the transcript, excluding
+        // reasoning and every non-visible control marker.
+        text: chatTurnVisibleText(t),
       })),
       findDebouncedQuery,
       { matchCase: findMatchCase, wholeWord: findWholeWord },
@@ -3103,9 +3374,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Find searches the whole transcript, so opening it mounts every turn — a
   // jump (jumpToFindMatch) resolves its target via querySelector and must find
-  // the row in the DOM regardless of the render cap.
+  // the row in the DOM regardless of the render cap OR the fold. Without the
+  // fold half, searching a long thread reports hits in folded turns and then
+  // jumps nowhere, because the row it looks for was never rendered.
   useEffect(() => {
-    if (findOpen) setHistoryExpanded(true);
+    if (findOpen) {
+      setHistoryExpanded(true);
+      setFoldOpen(true);
+    }
   }, [findOpen]);
 
   // Keep the active pointer in bounds when the match set shrinks.
@@ -3286,6 +3562,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       : modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : "";
+  const [composerCaret, setComposerCaret] = useState(0);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    setInput(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, []);
   const {
     skills,
     prompts,
@@ -3301,10 +3588,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     slashIdx,
     setSlashIdx,
     slashListboxId,
+    completeCommand,
     handleKeyDown: handleMenuKey,
   } = useInlineSlashMenus({
     text: input,
     setText: setInput,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
     modelOptionsOverride: composerModelOptions,
     onPickModel: (id) => {
@@ -3380,9 +3670,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
   // for the selected predetermined project. The file index is fetched once
   // per root from /api/project/files and fuzzy-filtered client-side. Mentions
-  // stay disjoint from the slash menu: `@` is mid-token, `/` first-token-only.
+  // stay disjoint from the slash menu because each requires its own boundary.
   const mentionRoot = activeProjectRoot.trim();
-  const [composerCaret, setComposerCaret] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   // Esc hides the picker for the current input; any edit brings it back.
   const [mentionDismissed, setMentionDismissed] = useState(false);
@@ -3565,23 +3854,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractNextPaths(last.text).suggestions.find((path) => path.kind === "reply") ?? null;
+    return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
   }, [activePath]);
 
-  // Chat-revamp 1b: the LATEST settled turn's follow-up suggestions render as
-  // typed cards directly above the composer (aligned to the reading column) —
-  // the most actionable element sits closest to the input. That turn's in-turn
-  // card row is suppressed (followUp.turnId → TurnRow) so the suggestions
-  // never render twice; older turns keep their in-turn rows. The parser owns
-  // the product cap so every renderer stays aligned.
+  // The latest settled turn's follow-up suggestions render directly above the
+  // composer. Suggestions are ephemeral actions, not transcript history, so
+  // assistant rows only strip their control blocks and never render old cards.
   const followUp = useMemo(() => {
-    const empty = { turnId: null as string | null, suggestions: [] as NextPath[] };
+    const empty = { suggestions: [] as NextPath[] };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractNextPaths(splitReasoning(last.text).visible).suggestions;
-    return suggestions.length ? { turnId: last.id, suggestions } : empty;
+    const suggestions = extractChatRenderedText(last.text).nextPaths;
+    return suggestions.length ? { suggestions } : empty;
   }, [activePath]);
 
   const handleFollowUp = useCallback((path: NextPath) => {
@@ -3685,6 +3971,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // A queued follow-up belongs to the conversation that was visible when it
     // was composed. Never let a thread switch dispatch it into another chat.
     if (isThreadSwitch) {
+      // Clearing display ownership on any thread switch means an in-flight
+      // generation from the previous view can no longer adopt.
+      displayedCreationRunIdRef.current = null;
       queuedMessagesRef.current = [];
       setQueuedMessages([]);
     }
@@ -3714,6 +4003,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const live = readLiveChatGeneration(sessionId);
     if (live && isLiveSnapshotActive(live, Date.now())) {
       adoptLiveGenerationMetadata(live, sessionId);
+      maybeEmitAdoptedPendingAttentionClear(sessionId, live);
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
@@ -3738,6 +4028,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       skipSettleNotifyRef.current += 1;
       clearLiveChatGeneration(sessionId);
       if (!live.controller.signal.aborted) refetchOnSettleRef.current = sessionId;
+      // A still-pending snapshot (see isLiveGenerationPending above) had
+      // already optimistically cleared sidebar attention via
+      // emitChatAttentionClear when it was adopted. Evicting it here — dead
+      // orphan cleanup, not a real settlement — must not leave that
+      // projection "pending" forever (no owning generation is left to ever
+      // settle it). Settle it now as "failed": we cannot prove the human's
+      // request actually got a persisted reply, and fabricating "persisted"
+      // risks permanently hiding attention on a request that never got
+      // answered. Reconciling canonical sessions once afterward repaints the
+      // sidebar from disk truth (a genuinely still-running orphan stream's
+      // later settle must be a no-op against both the already-cleared
+      // operation and this one reload).
+      if (isLiveGenerationPending(live) && live.runId) {
+        externallySettledChatAttentionControllers.mark(live.controller, sessionId, live.runId);
+        emitChatAttentionSettlement(sessionId, live.runId, "failed");
+        onSessionsChangedRef.current?.();
+      }
     }
     const applyConversationPayload = (json: ConversationHistoryPayload) => {
       const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
@@ -3943,6 +4250,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     updateFollowing(true);
     setHistoryExpanded(false);
+    // The fold is per-thread: arriving in a new chat should land on its recent
+    // exchange, not inherit the last thread's expansion.
+    setFoldOpen(false);
     expandAnchorRef.current = null;
     releasedScrollAnchorRef.current = null;
   }, [sessionId, updateFollowing]);
@@ -4276,7 +4586,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setActiveLeafId("");
       setInput("");
       setAutoMission(null);
-      autoNotifiedTurnsRef.current.clear();
+      setAutoFeedbackOpen(false);
+      clearAutoMission(sessionId, typeof window === "undefined" ? null : window.localStorage);
       return true;
     }
     if (command === "/help") {
@@ -4324,16 +4635,85 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return true;
     }
     if (command === "/auto" || command === "/autopilot") {
+      const storage = typeof window === "undefined" ? null : window.localStorage;
+      const sub = args.trim().toLowerCase();
+      // `/auto stop` is the escape hatch: a mission only ends on its own when
+      // the familiar emits a `done` marker, and nothing guarantees it ever
+      // does. Without a manual end a mission that quietly derails stays armed
+      // forever, and the human has no way to rate what did happen.
+      if (sub === "stop" || sub === "end" || sub === "cancel") {
+        setInput("");
+        if (!autoMission || autoMission.completedAt) {
+          appendSystem("No auto mission is running in this chat.");
+          return true;
+        }
+        const ended: AutoMissionRecord = {
+          ...autoMission,
+          completedAt: new Date().toISOString(),
+          outcome: "cancelled",
+          feedbackPending: true,
+        };
+        writeAutoMission(sessionId, ended, storage);
+        setAutoMission(ended);
+        setAutoFeedbackOpen(true);
+        appendSystem("Auto mission ended. Rate it so the next one goes better.");
+        return true;
+      }
+      if (sub === "status") {
+        setInput("");
+        appendSystem(
+          autoMission && !autoMission.completedAt
+            ? `Auto mission running since ${new Date(autoMission.startedAt).toLocaleString()} — ${autoMission.mission}`
+            : "No auto mission is running in this chat.",
+        );
+        return true;
+      }
       if (!args.trim()) {
         appendSystem(
-          "Give it a mission — e.g. /auto clean up the failing tests in src/lib. It may ask a few clarifying questions up front, then works silently and only pings you again on completion or when blocked.",
+          "Give it a mission — e.g. /auto clean up the failing tests in src/lib. It may ask a few clarifying questions up front, then works silently and only pings you again on completion or when blocked. Use /auto stop to end one early, /auto status to check.",
         );
         setInput("");
         return true;
       }
       const mission = args.trim();
+      // First-run framing. /auto is the one command that changes the shape of
+      // the conversation itself — the familiar stops answering until it is
+      // finished — and silence is indistinguishable from a broken session if
+      // nobody told you to expect it. So the first mission spends one beat
+      // explaining the contract, with the command still loaded in the composer
+      // so confirming costs a single keystroke.
+      if (storage && !storage.getItem(AUTO_BRIEFED_KEY)) {
+        try {
+          storage.setItem(AUTO_BRIEFED_KEY, "1");
+        } catch {
+          /* storage unavailable — brief once per session rather than never */
+        }
+        appendSystem(
+          [
+            "Autonomous mission mode — how this goes:",
+            "• It may ask everything it needs up front, then goes quiet and works. Silence means working, not stuck.",
+            "• It comes back to you exactly twice-worth: when it finishes, or when it genuinely needs you (permissions, credentials, a call that is yours to make). Either way you get a notification, so you can close this and walk away.",
+            "• It won't take an irreversible action on your behalf without asking first.",
+            "• `/auto stop` ends it whenever you like; `/auto status` checks in without interrupting it.",
+            "",
+            "Press enter to start the mission.",
+          ].join("\n"),
+        );
+        setInput(trimmed);
+        return true;
+      }
       setInput("");
-      setAutoMission(mission);
+      const record: AutoMissionRecord = {
+        mission,
+        startedAt: new Date().toISOString(),
+        notified: [],
+        completedAt: null,
+        outcome: null,
+        lastActivityAt: Date.now(),
+        feedbackPending: false,
+      };
+      writeAutoMission(sessionId, record, storage);
+      setAutoMission(record);
       setAutoFeedbackOpen(false);
       void fetch(`/api/auto-mode/feedback?familiarId=${encodeURIComponent(familiar.id)}`)
         .then((res) => (res.ok ? res.json() : null))
@@ -4690,6 +5070,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setProjectRootRequired(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
+    const runId = crypto.randomUUID();
+    creationRefreshStateRef.current = onSendStart(creationRefreshStateRef.current, runId, initialLiveSessionId);
+    // Register this run as the displayed owner for both new and resumed chats.
+    // Unmount/thread-switch cleanup clears the slot before a late replacement
+    // can promote into a different compose.
+    displayedCreationRunIdRef.current = runId;
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -4728,13 +5114,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ],
     };
     const controller = new AbortController();
-    const runId = crypto.randomUUID();
     currentStreamHealthRunIdRef.current = runId;
     let generationStreamHealth = applyStreamHealthAction({
       type: "connect",
       runId,
       at: new Date().toISOString(),
     });
+    const attentionSettlement = createChatAttentionSettlementTracker({
+      operationId: runId,
+      operationController: controller,
+      externalSettlements: externallySettledChatAttentionControllers,
+      settleProjection: (sessionId, operationId, outcome) => {
+        emitChatAttentionSettlement(sessionId, operationId, outcome);
+      },
+      reconcileCanonicalSessions: () => onSessionsChangedRef.current?.(),
+    });
+    adoptedPendingAttentionSettlementOwners.register(controller, attentionSettlement);
     // `sessionId` mutates to the server-assigned id as events arrive;
     // `originSessionId` stays the thread this generation started on, so a
     // background generation (user switched threads mid-stream) can tell it no
@@ -4742,9 +5137,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const liveGeneration: LiveStreamGeneration = {
       sessionId: initialLiveSessionId,
       originSessionId: initialLiveSessionId,
+      sessionAliases: new Set(initialLiveSessionId ? [initialLiveSessionId] : []),
       controller,
       runId,
+      responseText: createCanonicalResponseBuffer(),
+      clearWatermark: now,
       streamHealth: () => generationStreamHealth,
+      markAttentionCleared: (sessionId) => {
+        attentionSettlement.markAttentionCleared(sessionId);
+      },
+      markPersistenceConfirmed: () => {
+        attentionSettlement.markPersistenceConfirmed();
+      },
+      reconcileCanonicalSessions: () => {
+        attentionSettlement.reconcileNow();
+      },
     };
     const publishStreamHealth = (
       action: Exclude<
@@ -4823,6 +5230,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         updatedAt: Date.now(),
         runId,
         streamHealth: generationStreamHealth,
+        clearWatermark: now,
       });
     }
     try {
@@ -4835,6 +5243,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // The on-disk conversation is about to change; a cached pre-send payload
       // must not be painted on a later revisit of this thread.
       if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
+      if (liveGeneration.sessionId) {
+        emitAttentionClear(liveGeneration.sessionId, runId, liveGeneration.clearWatermark);
+        attentionSettlement.markAttentionCleared(liveGeneration.sessionId);
+      }
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -5033,7 +5445,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             { cache: "no-store", signal: controller.signal },
           );
           if (recovery.ok && recovery.body) {
-            const resumed = await consumeChatSse(recovery.body, applyStreamEvent);
+            const resumed = await consumeChatSse(recovery.body, applyStreamEvent, cursor);
             cursor = Math.max(cursor, resumed.cursor);
             sawDone = sawDone || resumed.sawDone;
           } else {
@@ -5109,8 +5521,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         });
       }
     } finally {
+      attentionSettlement.reconcileIfNeeded();
+      // All terminal exits — HTTP rejection, missing body, exhausted recovery,
+      // abort, and stream exceptions — reach here. Calling
+      // onCreationRunTerminated unconditionally is safe: it removes only
+      // unbound pending entries and preserves bound session retry ones.
+      creationRefreshStateRef.current = onCreationRunTerminated(creationRefreshStateRef.current, liveGeneration.runId);
       // Always retire THIS generation's registry entry (keyed by session).
-      clearLiveChatGeneration(liveGeneration.sessionId, runId);
+      clearLiveChatGenerationAliases(liveGeneration.sessionAliases, runId);
       if (needsTranscriptResync && liveGeneration.sessionId === currentSessionRef.current) {
         setHistoryRetryKey((k) => k + 1);
       }
@@ -5326,7 +5744,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // comparator that ignores callback identity, so a captured hook
           // value could go stale (chat-view memo notes below).
           : userDisplayName(readUserProfileSnapshot()?.profile);
-    const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+    const source = chatTurnVisibleText(turn);
     // A quote is a passage the reader selected inside the Expand reader; with
     // none, the whole turn is the subject, exactly as the Reply action means.
     const snippet = buildReplySnippet(quote ?? source);
@@ -5343,8 +5761,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // captures a stale `replyToTurn`.
     let canReply = replyableTurnCache.get(turn);
     if (canReply === undefined) {
-      const source =
-        turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+      const source = chatTurnVisibleText(turn);
       canReply = source.trim().length > 0;
       replyableTurnCache.set(turn, canReply);
     }
@@ -5595,7 +6012,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     readerPromptFor,
     rerunWithFor,
     send,
-    activateFollowUp: handleFollowUp,
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -5614,8 +6030,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     if (!projectLaunchReady) return;
     if (initialPromptSentRef.current || (sessionId && !autoSendInitialPrompt)) return;
+    // A caller that can remount this view under a live handoff (the Task Work
+    // cockpit, whose Group is keyed by the visible pane set) supplies a stable
+    // id, and the latch moves out of the instance ref so the remount cannot
+    // re-send. Callers without one keep the instance-ref-only behaviour.
+    if (
+      initialPromptHandoffId
+      && initialPromptHandoffClaimed(CHAT_VIEW_HANDOFF_SCOPE, initialPromptHandoffId)
+    ) {
+      initialPromptSentRef.current = true;
+      return;
+    }
     const timer = window.setTimeout(() => {
       if (initialPromptSentRef.current) return;
+      if (
+        initialPromptHandoffId
+        && !claimInitialPromptHandoff(CHAT_VIEW_HANDOFF_SCOPE, initialPromptHandoffId)
+      ) {
+        initialPromptSentRef.current = true;
+        return;
+      }
       initialPromptSentRef.current = true;
       const normalized = initialControls ? normalizeCommandControls(initialControls) : null;
       if (normalized) {
@@ -5639,6 +6073,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : {}),
           }
         : undefined;
+      if (
+        (initialAttachments?.length ?? 0) === 0 &&
+        intentFromSlash(initialPrompt)
+      ) {
+        return;
+      }
       void sendRaw(
         initialPrompt,
         initialAttachments ?? [],
@@ -5651,7 +6091,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSendInitialPrompt, initialPrompt, projectLaunchReady, sessionId]);
+  }, [autoSendInitialPrompt, initialPrompt, initialPromptHandoffId, projectLaunchReady, sessionId]);
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -5702,14 +6142,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
    * Extracted from handleEvent's assistant_chunk case (cave-w50e) so the
    * stream loop's coalescer can flush a whole buffered window — dozens of
    * tokens — as a single turns map + registry advance instead of one per
-   * SSE frame. appendCollapsingNewlines is chunking-invariant (see
-   * stream-text.test.ts), so buffering never changes the final text.
+   * SSE frame. The canonical response buffer's append operation is
+   * chunking-invariant, so buffering never changes the final text.
    */
   const applyAssistantChunk = (
     text: string,
     assistantId: string,
     liveGeneration: LiveStreamGeneration,
   ) => {
+    const canonicalText = liveGeneration.responseText.append(text);
     setAssistantLifecycle(
       assistantId,
       "streaming",
@@ -5721,7 +6162,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         t.id === assistantId
           ? {
               ...t,
-              text: appendCollapsingNewlines(t.text, text),
+              text: canonicalText,
               pending: true,
               lifecycle: "streaming",
               // CHAT-D12-01: settle the synthetic row the moment text is
@@ -5751,6 +6192,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     assistantId: string,
     liveGeneration: LiveStreamGeneration,
   ) => {
+    const canonicalText = liveGeneration.responseText.replace(text);
     setAssistantLifecycle(
       assistantId,
       "streaming",
@@ -5762,7 +6204,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         t.id === assistantId
           ? {
               ...t,
-              text,
+              text: canonicalText,
               tools: rebaseToolTextOffsets(t.tools, correction),
               pending: true,
               lifecycle: "streaming",
@@ -5784,22 +6226,61 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ) => {
     switch (ev.kind) {
       case "session": {
-        liveGeneration.sessionId = ev.sessionId;
+        // A generation that started with no session id at all is a brand-new
+        // chat: this event mints ev.sessionId for the first time, so no
+        // canonical row can contain stale attention to clear. Resumed sessions
+        // already carry their id at generation start and clear conservatively.
+        const isBrandNewSession = liveGeneration.sessionId == null;
+        if (!isBrandNewSession) {
+          emitAttentionClear(ev.sessionId, liveGeneration.runId, liveGeneration.clearWatermark);
+          liveGeneration.markAttentionCleared(ev.sessionId);
+        }
+        reconcileLiveChatGenerationSession(
+          liveGeneration,
+          ev.sessionId,
+          liveGeneration.runId,
+        );
+        // Bind creation-refresh OUTSIDE the ownership guard. The provenance
+        // gate is now encoded in the helper: only a sessionless generation
+        // (originSessionId === null) may bind an unbound pending creation state;
+        // an existing-session generation is rejected internally.
+        creationRefreshStateRef.current = onCreationSessionIdentified(
+          creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, ev.sessionId,
+        );
         if (ev.sessionId !== currentSessionRef.current) {
-          // Only adopt the new session id into THIS view's refs when the view is
-          // still on the thread this generation started from. If the user
-          // switched to another conversation before the id arrived (a new chat's
-          // first-token latency), this is a *background* generation: adopting its
-          // id would splice its chunks into the displayed thread and mis-address
-          // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
-          // Still notify onSessionStarted — the router promotes a still-open new
-          // chat but leaves an already-switched view alone (chat-router.tsx).
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Only adopt the new session id into THIS view's refs when this run
+          // still owns the displayed thread. The run slot blocks both overlapping
+          // sessionless sends and resumed replacements arriving after switch/unmount.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          const shouldPromote = canPromoteDisplayedSession({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear display ownership after adoption so no late event may
+            // re-adopt via the done stable-ID fallback.
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (null for sessionless
+          // new-chat; non-null for replacement/fork on an existing session).
+          if (shouldPromote) {
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
+          }
         }
         if (taskArmedRef.current) {
           // One-shot: clear before the async create so a second session event
@@ -5957,29 +6438,87 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setError((prev) => prev ?? "The agent run ended with an error.");
           raiseDebugError({ turnId: assistantId });
         } else {
+          liveGeneration.markPersistenceConfirmed();
           // cave-fy1q phase 3: first completed reply ever — no-op unless the
           // first-open anchor exists (fresh installs only).
           stampFirstReplyOnce();
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
+        if (ev.sessionId) {
+          reconcileLiveChatGenerationSession(
+            liveGeneration,
+            ev.sessionId,
+            liveGeneration.runId,
+          );
+        }
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
-          liveGeneration.sessionId = ev.sessionId;
-          // Same ownership guard as the "session" event: a background generation
-          // (user switched threads before this settled) must not overwrite the
-          // displayed thread's currentSessionRef. Still let the router register it.
-          if (currentSessionRef.current === liveGeneration.originSessionId) {
+          // Same run-and-thread ownership predicate as the "session" event.
+          const owned = ownsDisplayedView({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          const shouldPromote = canPromoteDisplayedSession({
+            currentSessionId: currentSessionRef.current,
+            originSessionId: liveGeneration.originSessionId,
+            runId: liveGeneration.runId,
+            displayedCreationRunId: displayedCreationRunIdRef.current,
+          });
+          if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
+            // Clear display ownership after adoption (same as session event path).
+            displayedCreationRunIdRef.current = null;
           }
-          onSessionStarted?.(ev.sessionId);
+          // Router promotion: pass originSessionId so ChatRouter can match the
+          // specific thread this generation started from (mirrors the session event path).
+          if (shouldPromote) {
+            onSessionStarted?.({
+              newSessionId: ev.sessionId,
+              expectedSessionId: liveGeneration.originSessionId,
+              composeInstance,
+            });
+          }
         }
-        // A Board native-chat handoff already owns the stable conversation id,
-        // so its "session" event does not promote the router and therefore
-        // cannot refresh the task's session list. Refresh after the server has
-        // saved the first transcript; otherwise the cockpit stays in its
-        // one-shot bridge mode and never restores the normal work/rail view.
-        if (startNewConversation && ev.sessionId) onSessionsChanged?.();
+        const completedSessionId = ev.sessionId ?? liveGeneration.sessionId;
+        // Bind creation-refresh to this generation's session ID before the done
+        // decision. Covers: (a) the race where done arrives before the "session"
+        // event (no prior binding), and (b) background generations where the user
+        // switched away — session event already bound the state, this is idempotent.
+        // The provenance gate is encoded in the helper: only a sessionless
+        // generation (originSessionId === null) may bind; a retry participates
+        // only when its origin matches the already-bound creation session; an
+        // unrelated existing-session generation is rejected internally.
+        if (completedSessionId) {
+          creationRefreshStateRef.current = onCreationSessionIdentified(
+            creationRefreshStateRef.current, liveGeneration.runId, liveGeneration.originSessionId, completedSessionId,
+          );
+        }
+        const { shouldRefresh: shouldCreationRefresh, nextState: nextCreationRefreshState } =
+          onDoneCreationRefresh(creationRefreshStateRef.current, liveGeneration.runId, completedSessionId, ev.isError);
+        creationRefreshStateRef.current = nextCreationRefreshState;
+        // Replacement refresh: a resumed session (non-null origin) whose server-
+        // assigned stable ID differs from the origin (replacement/fork, e.g.
+        // OpenCode resume) needs a sidebar refresh so the new row appears.
+        // Background replacements refresh the sidebar but must not adopt the
+        // display — ownership is guarded upstream in the "session" and "done" event
+        // handlers via ownsDisplayedView.
+        const shouldReplacementRefresh = shouldReplacementRefreshOnDone(
+          liveGeneration.originSessionId,
+          completedSessionId,
+          ev.isError,
+        );
+        // Consolidate creation, replacement, and board refresh sources to a single
+        // call so no double-invocation is possible regardless of which path fires.
+        // A Board native-chat handoff already owns the stable conversation id, so
+        // its "session" event does not promote the router; refreshing here after
+        // persistence restores the normal work/rail view from the one-shot bridge mode.
+        const shouldRefreshSessions = shouldCreationRefresh || shouldReplacementRefresh || (startNewConversation && !!ev.sessionId && !ev.isError);
+        // Use the latest callback while mounted; stale runs may not refresh a
+        // replacement compose after layout cleanup revokes display ownership.
+        if (shouldRefreshSessions) onSessionsChangedRef.current?.();
         persistLiveTurns(
           turnsRef.current,
           assistantId,
@@ -6227,13 +6766,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsChanged?.();
-      onBack?.();
+      onSessionRemoved?.(sessionId, "archived");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "archive failed");
     } finally {
       setArchivingChat(false);
     }
-  }, [sessionId, archivingChat, onSessionsChanged, onBack]);
+  }, [sessionId, archivingChat, onSessionsChanged, onSessionRemoved, onBack]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -6247,7 +6787,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsDeleted([sessionId]);
-      onBack?.();
+      onSessionRemoved?.(sessionId, "deleted");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -6259,12 +6800,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // are archive-free by default — chat-siderail-hide-archived) but the
   // transcript survives, reachable via the chat list's "Show archived" toggle
   // where the same menu item unarchives it back onto the rail.
-  // Participants cluster (cave-9xadi): adding a familiar turns this solo
-  // thread into a coven. A coven is a set of ordinary per-familiar sessions,
-  // so nothing migrates — the group pins THIS session as the host's, and the
-  // coven surface resumes it. The latch pair (tab + group id) mirrors how the
-  // Projects/Skills tabs hand off, so the surface lands on the new coven
-  // rather than its empty state.
+  // Rail drag-to-promote retains this callback for turning a solo chat into a coven.
+  const promotableFamiliars = useMemo(
+    () => addableFamiliars(familiars, familiar.id),
+    [familiar.id, familiars],
+  );
+  const promotableFamiliarIds = useMemo(
+    () => promotableFamiliars.map((candidate) => candidate.id),
+    [promotableFamiliars],
+  );
+
   const promoteToCoven = useCallback(
     (addedId: string) => {
       const added = familiars.find((f) => f.id === addedId);
@@ -6291,11 +6836,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [announce, familiar.display_name, familiar.id, familiars, resolvedProjectId, sessionId],
   );
 
-  // Drag a familiar from the rail's switcher into this thread (cave-76yfq) —
-  // the same outcome as the participants `+`, which stays the primary,
-  // keyboard-reachable affordance. The zone arms only for a familiar this
-  // thread can actually accept, so dragging the host over their own transcript
-  // shows nothing rather than a target that would reject the drop.
+  // Drag a familiar from the rail's switcher into this thread (cave-76yfq).
+  // The zone arms only for a familiar this thread can actually accept, so
+  // dragging the host over their own transcript shows nothing rather than a
+  // target that would reject the drop.
   const [familiarDrag, setFamiliarDrag] = useState<FamiliarDragDetail | null>(null);
   const [dropHover, setDropHover] = useState(false);
 
@@ -6303,8 +6847,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const onStart = (e: Event) => {
       const detail = (e as CustomEvent<FamiliarDragDetail>).detail;
       if (!detail?.id) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: detail.id, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       setFamiliarDrag(detail);
     };
     const onEnd = () => {
@@ -6317,7 +6860,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       window.removeEventListener(FAMILIAR_DRAG_START, onStart);
       window.removeEventListener(FAMILIAR_DRAG_END, onEnd);
     };
-  }, [familiar.id, familiars]);
+  }, [familiar.id, promotableFamiliarIds]);
 
   const handleFamiliarDrop = useCallback(
     (e: React.DragEvent) => {
@@ -6326,11 +6869,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setFamiliarDrag(null);
       setDropHover(false);
       if (!dropped) return;
-      const addable = addableFamiliars(familiars, familiar.id).map((f) => f.id);
-      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: addable })) return;
+      if (!canDropFamiliar({ draggedId: dropped, hostId: familiar.id, addableIds: promotableFamiliarIds })) return;
       promoteToCoven(dropped);
     },
-    [familiar.id, familiarDrag, familiars, promoteToCoven],
+    [familiar.id, familiarDrag, promoteToCoven, promotableFamiliarIds],
   );
 
   const setChatArchived = async (archived: boolean) => {
@@ -6351,7 +6893,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
       onSessionsChanged?.();
       // Leaving mirrors delete only for archive; unarchive keeps you in place.
-      if (archived) onBack?.();
+      if (archived) {
+        onSessionRemoved?.(sessionId, "archived");
+        onBack?.(sessionId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
     } finally {
@@ -6421,9 +6966,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // renders inline there and docked everywhere else. Extracted to a variable
   // rather than duplicated: a second composer would mean two textareas sharing
   // nothing, with draft, project, model, branch and enhance state forked.
+  // Context controls follow the same pattern: constructed once as
+  // chatContextControls and placed adaptively — footer cluster for new chats
+  // (inlineComposer) and session header for active chats (!inlineComposer)
+  // so picker state is never duplicated.
   const inlineComposer = sessionId === null;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
+  const chatContextControls = (
+    <ComposerContextChips
+      projects={projects}
+      projectValue={resolvedProjectId}
+      onProjectChange={setProjectIdDraft}
+      familiarId={familiar.id ?? null}
+      createProject={createProject}
+      createProjectOrThrow={createProjectOrThrow}
+      runtime={modelHarness}
+      modelValue={composerModelValue}
+      modelOptions={composerModelOptions}
+      onPickRuntime={handleSelectRuntime}
+      onPickModel={handleSelectModel}
+      promotableModel={promotableModel}
+      onPromoteModelToDefault={handlePromoteModelToDefault}
+      modelDisabled={busy}
+      projectRoot={activeProjectRoot}
+      onOpenUrl={onOpenUrl}
+      registerCurrentRoot={setupCandidateRoot ?? undefined}
+      onRegisterCurrentRoot={
+        setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
+      }
+      popoverPlacement={composerPopoverPlacement}
+      ariaLabel={inlineComposer ? "New chat context" : "Session context"}
+    />
+  );
   const composerNode = (
         <footer
           className="cave-composer-dock"
@@ -6623,7 +7198,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           ref={active ? activeSlashOptionRef : null}
                           onMouseEnter={() => setSlashIdx(i)}
                           onClick={() => {
-                            setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                            completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
                             inputRef.current?.focus();
                           }}
                           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[length:var(--text-base)] transition-colors ${
@@ -6701,6 +7276,88 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
 
             <div className="cave-composer-panel">
+              <div className="cave-composer-edge-actions">
+                <ComposerActionsMenu
+                  attach={{
+                    onSelect: () => fileInputRef.current?.click(),
+                    disabled: attachments.length >= 10,
+                    hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
+                  }}
+                  skills={{
+                    onPickSkill: (skill) => {
+                      setInput(`/skill ${skill.id} `);
+                      inputRef.current?.focus();
+                    },
+                  }}
+                  context={{
+                    projects,
+                    projectValue: resolvedProjectId,
+                    onProjectChange: setProjectIdDraft,
+                    familiarId: familiar.id ?? null,
+                    createProject,
+                    createProjectOrThrow,
+                    runtime: modelHarness,
+                    modelValue: composerModelValue,
+                    modelOptions: composerModelOptions,
+                    onPickRuntime: handleSelectRuntime,
+                    onPickModel: handleSelectModel,
+                    modelDisabled: busy,
+                    projectRoot: activeProjectRoot,
+                    onOpenUrl,
+                    popoverPlacement: composerPopoverPlacement,
+                  }}
+                  linkedWork={{
+                    linkedContext,
+                    onOpenTask,
+                    sessionId,
+                    onLinkedContextChange: setLinkedContext,
+                    handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
+                    sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
+                  }}
+                  improve={{
+                    dictation: dictation.available
+                      ? {
+                          listening: dictation.listening,
+                          toggle: dictation.toggle,
+                          disabled: busy && !dictation.listening,
+                        }
+                      : undefined,
+                    promptSnippets: {
+                      onSelect: () => setPromptSnippetsOpen(true),
+                    },
+                    enhance: {
+                      onEnhance: promptEnhance.enhance,
+                      disabled: busy || !input.trim(),
+                      loading: promptEnhance.state.phase === "loading",
+                    },
+                  }}
+                  response={{
+                    hostValue: composerHostValue,
+                    onHostPick: setRuntimeHost,
+                    sections: composerResponseSections,
+                    onSaveAsTemplate: () => setSaveTemplateSeed(input),
+                    saveAsTemplateDisabled: !input.trim(),
+                    indicator:
+                      composerHostValue !== LOCAL_HOST_ID ||
+                      permissionMode !== DEFAULT_PERMISSION_MODE ||
+                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
+                  }}
+                  triggerVariant="tools"
+                />
+                {linkedContext?.task && onOpenTask ? (
+                  <button
+                    type="button"
+                    className="cave-composer-task-tab focus-ring"
+                    onClick={() => onOpenTask(linkedContext.task!.id)}
+                    title={`Open task: ${linkedContext.task.title}`}
+                    aria-label={`Open linked task: ${linkedContext.task.title}`}
+                  >
+                    <Icon name="ph:kanban" width={12} aria-hidden />
+                    <span>Task</span>
+                  </button>
+                ) : null}
+              </div>
               {attachments.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                   {attachments.map((attachment) => (
@@ -6853,75 +7510,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     >
                       <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
                     </button>
-                    <ComposerActionsMenu
-                      attach={{
-                        onSelect: () => fileInputRef.current?.click(),
-                        disabled: attachments.length >= 10,
-                        hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
-                      }}
-                      skills={{
-                        onPickSkill: (skill) => {
-                          setInput(`/skill ${skill.id} `);
-                          inputRef.current?.focus();
-                        },
-                      }}
-                      context={{
-                        projects,
-                        projectValue: resolvedProjectId,
-                        onProjectChange: setProjectIdDraft,
-                        familiarId: familiar.id ?? null,
-                        createProject,
-                        createProjectOrThrow,
-                        runtime: modelHarness,
-                        modelValue: composerModelValue,
-                        modelOptions: composerModelOptions,
-                        onPickRuntime: handleSelectRuntime,
-                        onPickModel: handleSelectModel,
-                        modelDisabled: busy,
-                        projectRoot: activeProjectRoot,
-                        onOpenUrl,
-                        popoverPlacement: composerPopoverPlacement,
-                      }}
-                      linkedWork={{
-                        linkedContext,
-                        onOpenTask,
-                        sessionId,
-                        onLinkedContextChange: setLinkedContext,
-                        handoff: { turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft },
-                        sessionSettled: !activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error,
-                      }}
-                      improve={{
-                        dictation: dictation.available
-                          ? {
-                              listening: dictation.listening,
-                              toggle: dictation.toggle,
-                              disabled: busy && !dictation.listening,
-                            }
-                          : undefined,
-                        promptSnippets: {
-                          onSelect: () => setPromptSnippetsOpen(true),
-                        },
-                        enhance: {
-                          onEnhance: promptEnhance.enhance,
-                          disabled: busy || !input.trim(),
-                          loading: promptEnhance.state.phase === "loading",
-                        },
-                      }}
-                      response={{
-                        hostValue: composerHostValue,
-                        onHostPick: setRuntimeHost,
-                        sections: composerResponseSections,
-                        onSaveAsTemplate: () => setSaveTemplateSeed(input),
-                        saveAsTemplateDisabled: !input.trim(),
-                        indicator:
-                          composerHostValue !== LOCAL_HOST_ID ||
-                          permissionMode !== DEFAULT_PERMISSION_MODE ||
-                          thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                          responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
-                      }}
-                    />
                   </div>
+                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
                   <div className="cave-composer-submit-row">
+                    <EnhanceControl
+                      state={promptEnhance.state}
+                      onEnhance={promptEnhance.enhance}
+                      onCancel={promptEnhance.cancel}
+                      disabled={busy || !input.trim()}
+                    />
                     {/* The compact send keeps its queue/cancel behavior in one
                         stable action slot. */}
                     {busy ? (
@@ -6963,36 +7560,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   </div>
                 </div>
               </div>
-              {/* Footer band — the darker strip attached to the panel's
-                  underside carries context and linked work first, then the
-                  latest assistant options. Suggestions stay hidden while a
-                  response streams so stale actions cannot be activated. */}
+              {/* Footer band — carries linked work and latest assistant options.
+                  Context controls ride here only for new chats (inlineComposer);
+                  active chats show them in the session header instead. */}
               <div className="cave-composer-footer-band">
-                <div className="cave-composer-footer-band__cluster">
-                  <ComposerContextChips
-                    projects={projects}
-                    projectValue={resolvedProjectId}
-                    onProjectChange={setProjectIdDraft}
-                    familiarId={familiar.id ?? null}
-                    createProject={createProject}
-                    createProjectOrThrow={createProjectOrThrow}
-                    runtime={modelHarness}
-                    modelValue={composerModelValue}
-                    modelOptions={composerModelOptions}
-                    onPickRuntime={handleSelectRuntime}
-                    onPickModel={handleSelectModel}
-                    promotableModel={promotableModel}
-                    onPromoteModelToDefault={handlePromoteModelToDefault}
-                    modelDisabled={busy}
-                    projectRoot={activeProjectRoot}
-                    onOpenUrl={onOpenUrl}
-                    registerCurrentRoot={setupCandidateRoot ?? undefined}
-                    onRegisterCurrentRoot={
-                      setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
-                    }
-                    popoverPlacement={composerPopoverPlacement}
-                  />
-                </div>
+                {inlineComposer ? (
+                  <div className="cave-composer-footer-band__cluster">
+                    {chatContextControls}
+                  </div>
+                ) : null}
                 {linkedContextRow}
                 {followUp.suggestions.length > 0 && !busy ? (
                   <div className="cave-chat-followups">
@@ -7073,16 +7649,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           generateTitle={generateTitleFromTranscript}
         >
           <div className="cave-chat-session-actions">
-            {/* cave-9xadi: the participants cluster leads the action group —
-                who is in this conversation reads before what you can do to it.
-                The dashed + is the coven entry point, per the design's own
-                note: "a solo session becomes a coven by adding someone here." */}
-            <ChatParticipants
-              familiar={familiar}
-              familiars={familiars}
-              daemonRunning={daemonRunning ?? null}
-              onAddFamiliar={promoteToCoven}
-            />
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
                 no longer hides them). Voice joins the hover-reveal quick set;
                 Archive stays always-visible (the design's "Mark done" slot,
@@ -7128,6 +7694,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 sessionId={sessionId}
                 hasTurns={turns.length > 0}
                 onOpenDebug={openDebug}
+                promotableFamiliars={promotableFamiliars}
+                onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
                 onReflect={familiar.id ? () => void reflectOnThread() : undefined}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
@@ -7154,6 +7722,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
+        {!inlineComposer ? (
+          <div className="cave-chat-header-context">{chatContextControls}</div>
+        ) : null}
       </header>
       {/* Chat.dc.html 2a: find slides open as a band under the title row —
           controls over a scrollable list of every hit. The list is the point:
@@ -7267,7 +7838,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <FlowSessionTranscriptFallback
                 transcript={flowTranscriptFallback}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
@@ -7276,14 +7847,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
                   : "This session exists, but CovenCave could not find a saved transcript for it yet."}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "error" ? (
               <ChatHistoryNotice
                 title="Could not load chat history"
                 body="The transcript request failed. You can still continue this session."
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : sessionId === null ? (
               // Brand-new chat (no session yet): the 2b launcher — hero, the
@@ -7344,6 +7915,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             turnIndexMap={turnIndexMap}
             allTurns={activePath}
             historyExpanded={historyExpanded}
+            foldOpen={foldOpen}
+            onToggleFold={toggleFold}
             familiar={familiar}
             busy={busy}
             foundTurnId={foundTurnId}
@@ -7352,7 +7925,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
             onOpenUrl={onOpenUrl}
             handlersRef={transcriptHandlersRef}
-            followUpTurnId={followUp.turnId}
           />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
@@ -7437,6 +8009,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }}
         />
       ) : null}
+              {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
+                  timeline, tool mix and live step, derived from the SAME
+                  activePath the transcript renders. Shares the instruments
+                  toggle — it is the same class of furniture as the spine and
+                  minimap, and two settings for one idea is a choice nobody
+                  asked for.
+
+                  Mounted AFTER the transcript on purpose. It was briefly the
+                  row's first child with CSS `order` doing the visual placement,
+                  which put the rail ahead of the conversation for screen
+                  readers — `order` moves boxes, never reading order. DOM order
+                  is the accessible order, so the annotation follows the log. */}
+              {activePath.length > 0 && instrumentsVisible ? (
+                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
+              ) : null}
       </div>
       </CodeReadingContext.Provider>
       </FileLinkResolverContext.Provider>
@@ -7548,7 +8135,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   // Only yank the view back to compose when it's still
                   // parked on the session we just discarded — if the user
                   // has already switched away, leave them where they are.
-                  if (target === sessionId) onVoiceSessionDiscarded?.();
+                  if (target === sessionId) {
+                    onSessionRemoved?.(target, "discarded");
+                    onVoiceSessionDiscarded?.(target);
+                  }
                 }
               });
             }
@@ -7571,9 +8161,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       />
       <AutoModeFeedbackModal
         open={autoFeedbackOpen}
-        onClose={() => setAutoFeedbackOpen(false)}
+        onClose={() => {
+          setAutoFeedbackOpen(false);
+          // The rating is the only thing still owed once a mission ends —
+          // closing settles it either way so the prompt can't resurface.
+          setAutoMission((prev) => {
+            if (!prev) return prev;
+            const settled = { ...prev, feedbackPending: false };
+            writeAutoMission(sessionId, settled, typeof window === "undefined" ? null : window.localStorage);
+            return settled;
+          });
+        }}
         familiarId={familiar.id}
-        mission={autoMission ?? ""}
+        mission={autoMission?.mission ?? ""}
+        outcome={autoMission?.outcome ?? null}
       />
       <Modal
         open={debugModalOpen}
@@ -7640,6 +8241,18 @@ function splitTextForArtifacts(
   return out;
 }
 
+/**
+ * Apply artifact extraction without crossing an already-mounted inline card.
+ * Image decks split first so an explicit group can span GitHub/artifact
+ * boundaries; subsequent extractors only refine the remaining prose spans.
+ */
+function splitSegmentsForArtifacts(
+  segments: MessageBubbleSegment[],
+  ctx: { familiarId: string | null },
+): MessageBubbleSegment[] {
+  return segments.flatMap((seg) => (seg.kind === "text" ? splitTextForArtifacts(seg.text, ctx) : [seg]));
+}
+
 // GitHub cards (design §1-2, cave-fpqx.6): further split the artifact-split
 // text spans on `<coven:github …>` markers and bare-line github.com URLs,
 // mounting an inline GitHubCard at each reference's position. Settled turns
@@ -7686,6 +8299,67 @@ function splitSegmentsForGitHub(
   return out;
 }
 
+/**
+ * Replace complete familiar-authored spec fences with document cards. This is
+ * settled-turn only: while a familiar is still writing, the ordinary Markdown
+ * path keeps the unfinished fence legible until its closing delimiter arrives.
+ */
+function splitSegmentsForSpecs(
+  segments: MessageBubbleSegment[],
+  onOpenUrl?: (url: string) => void,
+): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return sliceSpecBlocks(segment.text).flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim()
+          ? [{ kind: "text" as const, text: piece.text }]
+          : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
+        node: <ChatSpecCard spec={piece.spec} onOpenUrl={onOpenUrl} />,
+      }];
+    });
+  });
+}
+
+/**
+ * Split prose segments again on `<coven:image …>` markers, mounting one
+ * ImageCarousel per deck at the marker's position (src/lib/image-blocks.ts).
+ * This runs before the GitHub/artifact splits so a grouped deck can span either
+ * kind of inline block; those splitters only refine the remaining prose spans.
+ */
+function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubbleSegment[] {
+  const out: MessageBubbleSegment[] = [];
+  segments.forEach((seg, si) => {
+    if (seg.kind !== "text") {
+      out.push(seg);
+      return;
+    }
+    const pieces = sliceImageBlocks(seg.text);
+    if (pieces.length === 1 && pieces[0].kind === "text") {
+      // `sliceImageBlocks` also removes a terminal incomplete marker. Preserve
+      // that cleaned text when another block makes this segmented path render.
+      out.push(pieces[0].text === seg.text ? seg : { ...seg, text: pieces[0].text });
+      return;
+    }
+    pieces.forEach((p, pi) => {
+      if (p.kind === "text") {
+        if (p.text.trim()) out.push({ kind: "text", text: p.text });
+      } else {
+        out.push({
+          kind: "block",
+          key: `img-${si}-${pi}-${imageCarouselKey(p.carousel)}`,
+          node: <ImageCarousel images={p.carousel.images} />,
+        });
+      }
+    });
+  });
+  return out;
+}
+
 // ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
 // The grouped-turn shapes built by ChatView's `groupedTurns` memo.
 /**
@@ -7708,7 +8382,6 @@ type TranscriptHandlers = {
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   send: (override?: string) => Promise<void>;
-  activateFollowUp: (path: NextPath) => void;
 };
 
 /**
@@ -7732,6 +8405,8 @@ const TranscriptRows = memo(function TranscriptRows({
   turnIndexMap,
   allTurns,
   historyExpanded,
+  foldOpen,
+  onToggleFold,
   familiar,
   // Presence input for regenerateFor (see doc comment); unused directly.
   busy: _busy,
@@ -7741,12 +8416,15 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId,
   onOpenUrl,
   handlersRef,
-  followUpTurnId,
 }: {
   groupedTurns: TranscriptGroup[];
   turnIndexMap: Map<string, number>;
   allTurns: Turn[];
   historyExpanded: boolean;
+  /** Earlier-turns fold (cave-u5lq7): closed hides everything but the recent
+   *  exchange. Distinct from historyExpanded — see chat-transcript-fold.ts. */
+  foldOpen: boolean;
+  onToggleFold: () => void;
   familiar: Familiar;
   busy: boolean;
   foundTurnId: string | null;
@@ -7755,25 +8433,40 @@ const TranscriptRows = memo(function TranscriptRows({
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenUrl?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
-  /** The turn whose follow-up pills render above the composer instead of
-   *  in-turn (chat-revamp 1b) — TurnRow suppresses its own row for it. */
-  followUpTurnId: string | null;
 }) {
   const handlers = () => handlersRef.current;
+  // Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7). The
+  // fold's count is computed over the WHOLE transcript, never over the capped
+  // slice — a pill reading "54 earlier turns" on a 200-turn thread would be
+  // reporting the render cap, not the conversation.
+  const fold = chatTranscriptFold(groupedTurns);
+  const folded = fold.hiddenTurns > 0 && !foldOpen;
   // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
   // mount the newest groups. The per-row prev-turn lookup still reads
   // the full `allTurns`/`turnIndexMap`, so the first visible row's
   // timestamp gap stays correct. Expands to the whole transcript the
   // moment the reader scrolls up or opens find (see historyExpanded).
-  const renderGroups =
-    historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
+  // A closed fold mounts even less than the cap would, so it wins outright.
+  const renderGroups = folded
+    ? groupedTurns.slice(fold.startIndex)
+    : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
       ? groupedTurns
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
-  return renderGroups.map((g) => {
+  const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
       const i = turnIndexMap.get(t.id) ?? -1;
       const prev = allTurns[i - 1];
+      // "Chat Session - Prototype.dc.html" (cave-n3jg2): a long pause gets a
+      // named rule across the column. The transcript already revealed a
+      // timestamp here; the divider says what the timestamp only implies —
+      // that the turns above and below are separate sittings.
+      // …but never on the FIRST rendered row. Its `prev` is a turn the reader
+      // cannot see — folded away, or below the render cap — so the rule would
+      // measure a pause against nothing, and it lands one line under the fold
+      // pill, which is already the boundary there (design language §8: one
+      // hairline per boundary).
+      const gapLabel = groupIndex === 0 ? null : chatTurnGapLabel(prev?.createdAt, t.createdAt);
       const showTimestamp = (() => {
         if (!t.createdAt) return false;
         if (!prev?.createdAt) return true;
@@ -7792,7 +8485,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onNext: () => void handlers().switchBranch(t.id, 1),
         };
       })();
-      return (
+      const row = (
         <TurnRow
           key={t.id}
           turn={t}
@@ -7806,14 +8499,26 @@ const TranscriptRows = memo(function TranscriptRows({
           readerPrompt={handlers().readerPromptFor(t)}
           onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
-          onSuggestion={(path) => handlers().activateFollowUp(path)}
           onRequest={(prompt) => void handlers().send(prompt)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
-          suppressSuggestions={t.id === followUpTurnId}
         />
+      );
+      if (!gapLabel) return row;
+      return (
+        <Fragment key={t.id}>
+          {/* Decorative: the pause is already legible from the timestamp the
+              same condition reveals on the turn below, so a screen reader
+              hearing this twice would be noise. */}
+          <div className="cave-chat-turn-gap" aria-hidden="true">
+            <span className="cave-chat-turn-gap__rule" />
+            <span className="cave-chat-turn-gap__label">{gapLabel}</span>
+            <span className="cave-chat-turn-gap__rule" />
+          </div>
+          {row}
+        </Fragment>
       );
     }
     const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
@@ -7859,19 +8564,41 @@ const TranscriptRows = memo(function TranscriptRows({
               readerPrompt={handlers().readerPromptFor(t)}
               onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
-              onSuggestion={(path) => handlers().activateFollowUp(path)}
               onRequest={(prompt) => void handlers().send(prompt)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}
-              suppressSuggestions={t.id === followUpTurnId}
             />
           );
         })}
       </div>
     );
   });
+  if (fold.hiddenTurns === 0) return rows;
+  // The pill leads the transcript in both states: closed it names what is
+  // hidden, open it names the way back. The two rules make it read as a seam
+  // in the conversation rather than as a toolbar.
+  return [
+    <div key="__chat-fold" className="cave-chat-fold">
+      <span aria-hidden className="cave-chat-fold__rule" />
+      <button
+        type="button"
+        className="cave-chat-fold__pill focus-ring"
+        aria-expanded={foldOpen}
+        aria-label={chatFoldAriaLabel(fold.hiddenTurns, foldOpen)}
+        onClick={onToggleFold}
+      >
+        {/* The caret's direction is driven off the button's own aria-expanded,
+            not a data-prop on the Icon: Icon only forwards aria-* / role, so a
+            data attribute here is silently dropped and the caret never turns. */}
+        <Icon name="ph:caret-up" width={9} className="cave-chat-fold__caret" aria-hidden />
+        {chatFoldLabel(fold.hiddenTurns, foldOpen)}
+      </button>
+      <span aria-hidden className="cave-chat-fold__rule" />
+    </div>,
+    ...rows,
+  ];
 });
 
 // CHAT-D3-07 perf: the implementation is memoized as `TurnRow` below, so a
@@ -7892,19 +8619,13 @@ function TurnRowImpl({
   onOpenUrl,
   expanded = false,
   onToggleAvatar,
-  onSuggestion,
   onRequest,
   feedbackContext,
   branchNav,
-  suppressSuggestions = false,
 }: {
   turn: Turn;
-  onSuggestion?: (path: NextPath) => void;
   /** User-authored artifact feedback remains a normal chat send. */
   onRequest?: (prompt: string) => void;
-  /** Chat-revamp 1b: true for the latest settled turn, whose follow-up pills
-   *  render above the composer instead of at the turn's tail. */
-  suppressSuggestions?: boolean;
   familiar: Familiar;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
@@ -8024,14 +8745,15 @@ function TurnRowImpl({
                 onOpenUrl={onOpenUrl}
                 branchNav={branchNav}
               />
-              {/* An image you attached renders as the image, matching the
-                  assistant path — the chip list only carries what has no
-                  pixels to show (text files, oversize/undelivered images). */}
+              {/* An image or playable clip you attached renders as itself,
+                  matching the assistant path — the chip list only carries what
+                  has nothing to show (text files, oversize/undelivered). */}
               {turn.attachments?.length ? (
                 <>
                   <InlineImageAttachments attachments={turn.attachments} />
-                  {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                  <InlineMediaAttachments attachments={turn.attachments} />
+                  {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                    <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                   ) : null}
                 </>
               ) : null}
@@ -8063,25 +8785,13 @@ function TurnRowImpl({
     );
   }
 
-  // Hide raw `coven:attachment` marker blocks from the live-streamed text. The
-  // server strips them from the persisted text and streams the parsed files as
-  // `attachment` events; this keeps the in-flight turn clean before reload.
-  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
-  const inlineReasoning = reasoningSplit.reasoning;
-  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
-  // tags so they never flash as raw text (cards mount on settle); settled
-  // turns keep them for splitSegmentsForGitHub below to replace with cards.
-  const ghSafeVisible = turn.pending ? stripGitHubMarkers(reasoningSplit.visible) : reasoningSplit.visible;
-  // Skill markers extract on BOTH paths — the whole point is live "which
-  // skill, what stage" visibility while the agent works (design §5). The
-  // extraction also strips partial tails so raw tags never flash.
-  const skillSplit = extractSkillMarkers(ghSafeVisible);
-  // Auto-mission status card (design mirrors skill markers): extracted the
-  // same way, on both the streaming and settled path, so the phase chip
-  // (clarifying/working/blocked/done) updates live.
-  const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(autoStatusSplit.visible);
-  const visible = turn.pending ? visibleWithGh : stripGitHubMarkers(visibleWithGh);
+  const {
+    visible,
+    cardText: visibleWithGh,
+    inlineReasoning,
+    skillUpdates,
+    autoStatusUpdate,
+  } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -8124,12 +8834,22 @@ function TurnRowImpl({
     // you can watch them run as live feedback.
     renderSegments = bubbleSegments;
   } else {
-    // Settled: prose only (+ artifact viewers + GitHub cards). Tools are NOT
-    // woven into the text — they render in the designated ToolGroup section
-    // below. GitHub splitting runs on visibleWithGh (markers intact) so cards
-    // mount at the markers' positions; the `visible` fallback/content path is
-    // marker-free either way.
-    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl, ghFamiliar);
+    // Settled: prose only (+ artifact viewers + GitHub cards + image
+    // carousels). Tools are NOT woven into the text — they render in the
+    // designated ToolGroup section below. Image splitting runs first, while
+    // every marker is still in one prose span, so `group` decks can cross an
+    // artifact or GitHub card. The later splitters refine only the remaining
+    // prose; the `visible` fallback/content path is marker-free either way.
+    const split = splitSegmentsForGitHub(
+      splitSegmentsForArtifacts(
+        splitSegmentsForImages(
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+        ),
+        artifactCtx,
+      ),
+      onOpenUrl,
+      ghFamiliar,
+    );
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 
@@ -8295,22 +9015,23 @@ function TurnRowImpl({
               </div>
             ) : null}
             {/* Agent-produced inline attachments: images render full-bleed
-                (e.g. /image generations), everything else stays a file chip
-                that opens the lightbox. */}
+                (e.g. /image generations), audio/video mount as players, and
+                everything else stays a file chip that opens the lightbox. */}
             {turn.attachments?.length ? (
               <>
                 <InlineImageAttachments attachments={turn.attachments} />
-                {turn.attachments.some((a) => !isInlineImageAttachment(a)) ? (
-                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a))} />
+                <InlineMediaAttachments attachments={turn.attachments} />
+                {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
                 ) : null}
               </>
             ) : null}
             {/* Skill stage cards (design §5): one per skill name per turn,
                 updated in place by repeated <coven:skill> markers — live
                 while streaming, settled state after. */}
-            {skillSplit.updates.length ? (
+            {skillUpdates.length ? (
               <div className="mt-2 space-y-1.5">
-                {skillSplit.updates.map((u) => (
+                {skillUpdates.map((u) => (
                   <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
                 ))}
               </div>
@@ -8318,9 +9039,9 @@ function TurnRowImpl({
             {/* Auto-mission status card: one per turn, updated in place by
                 repeated <coven:auto-status> markers — the human-visible half
                 of the /auto watcher above that fires the blocked/done ping. */}
-            {autoStatusSplit.update ? (
+            {autoStatusUpdate ? (
               <div className="mt-2">
-                <AutoStatusCard state={autoStatusSplit.update.state} note={autoStatusSplit.update.note} />
+                <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
               </div>
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
@@ -8368,12 +9089,6 @@ function TurnRowImpl({
                   );
                 })()
               : null}
-            {/* Typed follow-ups render LAST — reply fills the composer, task
-                opens review, and action routes to Tasks; they sit closest to
-                the composer and aren't pushed up by tool activity. */}
-            {nextPaths.length > 0 && !turn.pending && !suppressSuggestions && onSuggestion ? (
-              <FollowUpCards paths={nextPaths} onActivate={onSuggestion} />
-            ) : null}
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
                 sends every comment back to the agent. Settled, substantial
@@ -9011,7 +9726,6 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
-    prev.suppressSuggestions === next.suppressSuggestions &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

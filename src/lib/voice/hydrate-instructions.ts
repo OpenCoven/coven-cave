@@ -1,17 +1,27 @@
 // Voice-call identity hydration — the familiar's REAL identity, not a costume.
 //
-// A chat turn gets the familiar's identity implicitly: the harness boots in the
-// familiar's workspace (SOUL.md / IDENTITY.md / MEMORY.md on disk) and
-// /api/chat/send wraps the prompt with the Coven identity canon and the
-// Knowledge Vault. A voice call has none of that — the realtime provider (or
-// the local loop's brain) sees only the `instructions` string minted here. So
-// this module assembles chat-parity identity into that one string:
+// A voice call has no filesystem and no per-turn prompt assembly: the realtime
+// provider (or the local loop's brain) sees only the `instructions` string
+// minted here. So this module assembles chat-parity identity into that one
+// string:
 //
 //   persona    — config.json fields (display_name/role/pronouns/description/note)
 //   roles      — the familiar's active roles from config.roles
 //   canon      — buildCovenIdentityCanonBlock (same rules text as chat)
-//   contract   — SOUL.md / IDENTITY.md / MEMORY.md from the familiar workspace
+//   contract   — SOUL.md / IDENTITY.md / MEMORY.md via the shared builder that
+//                /api/chat/send now uses (src/lib/server/familiar-contract-context.ts)
 //   knowledge  — the familiar-scoped Knowledge Vault block (same builder as chat)
+//
+// Voice opts INTO MEMORY.md; chat leaves it out because it already injects
+// today's daily memory file as its own startup-context block. A realtime brain
+// has no such channel, so the durable file is its only memory.
+//
+// Historical note worth keeping: this file used to claim that "a chat turn gets
+// the familiar's identity implicitly" because the harness boots in the familiar's
+// workspace. That was only ever true when no project root was supplied — with a
+// project selected, the workspace sits outside the runtime boundary and nothing
+// loaded the files. Voice was built for parity with a parity that did not exist
+// (cave-gw3iq). Both surfaces now share one builder so the claim can't drift again.
 //
 // Every block is clamped (an oversized SOUL.md or vault entry must never fail
 // a mint) and every loader is throw-proof (a missing file degrades to the
@@ -23,9 +33,10 @@ import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import { buildCovenIdentityCanonBlock } from "../coven-identity-canon.ts";
 import {
-  isValidFamiliarId,
-  readFamiliarContractFiles,
-} from "../server/familiar-contract-files.ts";
+  buildFamiliarContractBlock,
+  FAMILIAR_CONTRACT_FILE_CHARS,
+  FAMILIAR_CONTRACT_MEMORY_CHARS,
+} from "../server/familiar-contract-context.ts";
 import {
   buildPromptWithKnowledgeVault,
   listCollections,
@@ -37,10 +48,12 @@ export type Hydrated = {
   conversationSeed: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
-/** Per-file clamp for SOUL.md / IDENTITY.md (core identity — keep generous). */
-export const VOICE_IDENTITY_FILE_CHARS = 6_000;
+/** Per-file clamp for SOUL.md / IDENTITY.md (core identity — keep generous).
+ *  Re-exported from the shared contract builder so voice and chat can never
+ *  drift to different clamps for the same files. */
+export const VOICE_IDENTITY_FILE_CHARS = FAMILIAR_CONTRACT_FILE_CHARS;
 /** Clamp for MEMORY.md, which drifts and can grow without bound. */
-export const VOICE_MEMORY_FILE_CHARS = 4_000;
+export const VOICE_MEMORY_FILE_CHARS = FAMILIAR_CONTRACT_MEMORY_CHARS;
 /** Clamp for the whole Knowledge Vault block. */
 export const VOICE_VAULT_BLOCK_CHARS = 8_000;
 /** Final safety clamp on the assembled instructions. */
@@ -98,33 +111,10 @@ function buildPersona(f: FamiliarConfigRecord, activeRoles: string[]): string {
 
 /** SOUL.md / IDENTITY.md / MEMORY.md, inlined so a filesystem-less realtime
  *  brain still answers as the declared identity. Missing workspace or files
- *  degrade to null (no block). */
+ *  degrade to null (no block). Shared with chat — see
+ *  src/lib/server/familiar-contract-context.ts for the safeguards. */
 async function buildContractBlock(familiarId: string): Promise<string | null> {
-  if (!isValidFamiliarId(familiarId)) return null;
-  let files: Awaited<ReturnType<typeof readFamiliarContractFiles>>["files"];
-  try {
-    ({ files } = await readFamiliarContractFiles(familiarId));
-  } catch {
-    return null;
-  }
-  const sections: string[] = [];
-  if (files.soul?.trim()) {
-    sections.push(`## SOUL.md\n${clampBlock(files.soul, VOICE_IDENTITY_FILE_CHARS)}`);
-  }
-  if (files.identity?.trim()) {
-    sections.push(`## IDENTITY.md\n${clampBlock(files.identity, VOICE_IDENTITY_FILE_CHARS)}`);
-  }
-  if (files.memory?.trim()) {
-    sections.push(`## MEMORY.md\n${clampBlock(files.memory, VOICE_MEMORY_FILE_CHARS)}`);
-  }
-  if (sections.length === 0) return null;
-  return [
-    "<FAMILIAR_CONTRACT>",
-    "Your declared identity files. Speak and decide as this identity — it overrides any generic assistant persona.",
-    "",
-    sections.join("\n\n"),
-    "</FAMILIAR_CONTRACT>",
-  ].join("\n");
+  return buildFamiliarContractBlock(familiarId, { includeMemory: true });
 }
 
 /** The familiar-scoped Knowledge Vault block, via the same builder chat uses. */

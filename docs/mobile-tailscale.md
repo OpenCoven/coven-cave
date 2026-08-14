@@ -2,6 +2,9 @@
 
 This runs CovenCave's browser surface on your development machine and exposes it privately to your phone through Tailscale Serve with a short-lived mobile invite.
 
+For a device you own, you can skip the invite entirely — see
+[Tokenless access by tailnet device identity](#tokenless-access-by-tailnet-device-identity).
+
 ## Requirements
 
 - Tailscale installed and signed in on the development machine.
@@ -139,6 +142,130 @@ Do not run CovenCave with `-H 0.0.0.0` for mobile access. Binding to all interfa
 ```bash
 pnpm mobile:tailscale:stop
 ```
+
+## Tokenless access by tailnet device identity
+
+The invite flow authorizes a phone with a **shared bearer secret** that you copy,
+deep-link, or scan. It works, but the secret is transferable: anything that
+learns it is you. For a device you own, you can authorize the *device itself*
+instead and stop minting invites.
+
+Find the stable node ID of the devices you want to admit:
+
+```bash
+node scripts/tailnet-allowlist.mjs                  # list every visible device
+node scripts/tailnet-allowlist.mjs my-phone        # emit the env line for one
+```
+
+Then start the server with that allowlist:
+
+```bash
+COVEN_CAVE_TAILNET_ALLOWED_NODES=nEXAMPLE0000011CNTRL pnpm dev
+```
+
+That device now reaches the app over Tailscale Serve with no token at all. Every
+other tailnet node is refused, so this is *not* the old "anyone on the tailnet"
+behavior — tailnet membership alone has never been authorization here, and still
+isn't.
+
+**How it is enforced.** `server.ts` is the only component that sees the raw TCP
+socket. It resolves the forwarded tailnet address against a `tailscale status`
+poll (refreshed every 30s), checks the resulting stable node ID against the
+allowlist, and stamps a header signed with a per-boot secret that never leaves
+the process. `proxy.ts` verifies that stamp in constant time. Any client-supplied
+copy of the header is deleted before Next ever sees the request, so the stamp
+cannot be forged from outside.
+
+**Why the forwarded address is trusted here.** The TCP peer must already be
+loopback, because Tailscale Serve terminates TLS and forwards to `127.0.0.1`. A
+local process able to forge the forwarded-for header could instead connect
+straight to loopback, which grants strictly *more* authority. So reading it adds
+no new exposure while upgrading remote auth from a shared secret to WireGuard
+device identity.
+
+**Fail-closed behavior.** No allowlist means no tailnet access. An unreadable
+`tailscale status` clears the allowlist rather than leaving stale entries, so a
+revoked device loses access instead of coasting on a cached mapping. Revoking a
+device takes at most one refresh interval.
+
+**Notes and limits.**
+
+- Stable node IDs are used deliberately: hostnames and tailnet IPs both move,
+  node IDs survive renames, IP changes, and re-authentication.
+- Local-only surfaces (Codex automation runs) stay off this path exactly as they
+  stay off the invite path — a forwarded Host cannot prove a loopback origin.
+- This authorizes a **device**, not a person. Anyone holding an unlocked
+  allowlisted phone is that device. The next section closes that gap.
+
+## Proving the human, not just the device (passkeys)
+
+Tailnet identity answers *which device*. It cannot answer *which human* — an
+unlocked allowlisted phone in someone else's hand is still the allowlisted
+phone.
+
+The app has had a biometric lock for a while, but it was a SwiftUI screen gated
+on a local preference: nothing about it reached the server, so a client with
+biometrics switched off was indistinguishable from one that had just passed Face
+ID. It was a UI lock, not an authorization signal.
+
+A passkey fixes that, because the proof is a signature rather than a claim. The
+private key lives in the Secure Enclave with user verification required, so it
+**cannot sign at all** without a successful biometric check. A verifying
+signature therefore *is* the biometric check.
+
+### Enrolling
+
+Open **Settings → Phone → Passkey** on the device you want to enroll and choose
+**Add a passkey**. Enrollment is reachable only from a peer the server has
+already authenticated at the socket layer — an allowlisted tailnet device, or a
+direct loopback connection on the machine itself. The passkey is a *second*
+factor; it does not replace the first.
+
+### Requiring it
+
+```bash
+COVEN_CAVE_PASSKEY_REQUIRED=1 pnpm dev
+```
+
+Off by default, deliberately: arming it before anything is enrolled would lock
+the phone out of the very ceremony that would satisfy it. With it on, every
+remote `/api` request must carry a presence proof no older than 15 minutes.
+
+Three exemptions, each for a reason:
+
+- **Page navigations.** The surface that runs the WebAuthn ceremony has to
+  render, or the gate is a wall with no door.
+- **`/api/passkey/*`.** Obtaining presence cannot itself require presence.
+- **Local ingress.** A direct loopback peer is someone sitting at the machine.
+
+That second exemption would otherwise be the bypass — an attacker holding a
+stolen allowlisted device could enroll *their own* credential and satisfy the
+gate with it. So the sensitive endpoints in that family police themselves:
+enrolling an **additional** credential requires the existing one, and so does
+revoking any. Only bootstrapping the very first is exempt.
+
+Note that a **mobile invite token can never satisfy this gate**. The presence
+proof is bound to a device identity and a shared bearer secret does not carry
+one. Arming the requirement means remote access is by tailnet device identity
+plus biometrics, full stop.
+
+### What is and is not verified
+
+Verified: the signature, the server-minted single-use challenge, the origin and
+RP ID, the user-verification flag, the signature counter when the authenticator
+implements one, and that the credential is bound to the presenting tailnet node.
+
+**Not** verified: the attestation statement. Checking it means walking a
+certificate chain to Apple's root, which proves the authenticator *model* — that
+the key really is in a Secure Enclave rather than a software authenticator that
+can simply assert the UV flag. The gap is narrow, because registration is
+already reachable only from an allowlisted device, but it is real and it is
+filed as `cave-01v4u`. The stored credential records the attestation format so
+the gap is visible in state rather than implied.
+
+Presence tokens are keyed by a secret minted per boot, so restarting the server
+invalidates every outstanding proof. That is intended: "the process that saw
+your biometric proof is gone" is a good reason to ask for it again.
 
 ## Troubleshooting
 

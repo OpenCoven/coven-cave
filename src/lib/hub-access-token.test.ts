@@ -15,7 +15,13 @@ process.env.COVEN_HOME = path.join(home, ".coven");
 delete process.env.COVEN_CAVE_HOME;
 delete process.env.COVEN_CAVE_HUB_ACCESS_TOKEN;
 
-const { splitHubAccessToken, storedHubAccessToken, rememberHubAccessToken, HUB_ACCESS_TOKEN_KEY } =
+const {
+  splitHubAccessToken,
+  storedHubAccessToken,
+  rememberHubAccessToken,
+  reconcileHubAccessTokenForOrigin,
+  HUB_ACCESS_TOKEN_KEY,
+} =
   await import("./hub-access-token.ts");
 const { getLocalEncryptedSecret, setLocalEncryptedSecret } = await import("./local-encrypted-vault.ts");
 const { loadConfig, saveConfig } = await import("./cave-config.ts");
@@ -104,6 +110,25 @@ function decodedHubTokenCustody() {
     storedHubAccessToken("https://hub.example"),
     "v1.padded",
     "custody resolves trimmed, never truthy-but-padded",
+  );
+}
+
+// Scheme-less custody preserves the established explicit HTTP origin.
+{
+  assert.equal(
+    rememberHubAccessToken("v1.scheme-less", "hub.tailnet:8787"),
+    true,
+    "scheme-less remote custody succeeds",
+  );
+  assert.equal(
+    storedHubAccessToken("http://hub.tailnet:8787"),
+    "v1.scheme-less",
+    "scheme-less remote custody binds to its normalized HTTP origin",
+  );
+  assert.deepEqual(
+    decodedHubTokenCustody(),
+    { v: 1, origin: "http://hub.tailnet:8787", token: "v1.scheme-less" },
+    "vault custody and daemon targeting share one origin policy",
   );
 }
 

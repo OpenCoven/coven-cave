@@ -9,6 +9,7 @@
  * unchanged while responsibilities are maintained in focused modules. */
 @import "../styles/globals/foundations.css";
 @import "../styles/globals/shell-navigation.css";
+@import "../styles/globals/rail-header.css";
 @import "../styles/globals/primitives.css";
 @import "../styles/globals/themes.css";
 @import "../styles/globals/desktop-chrome.css";

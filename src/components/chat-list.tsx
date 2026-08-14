@@ -17,7 +17,7 @@ import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
-import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
+import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
 import { successfulSessionIds } from "@/lib/session-list-deletes";
@@ -72,7 +72,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ChatListSection, HighlightedSnippet, SortableChatListItem } from "./chat-list-primitives";
-import { chatListCandidates, filterChatListRows, sortChatRowsByRecency } from "@/lib/chat-list-model";
+import { chatListCandidates, filterChatListRows } from "@/lib/chat-list-model";
 import {
   CHAT_GROUP_BY_KEY,
   deriveChatDaySections,
@@ -80,6 +80,28 @@ import {
   sessionCountLine,
   type ChatSessionGroupBy,
 } from "@/lib/chat-session-grouping";
+import {
+  CHAT_SESSION_STATUS,
+  CHAT_SESSION_STATUS_ORDER,
+  chatSessionStatus,
+  chatSessionStatusKey,
+  chatStatusChipDisabled,
+  countChatSessionStatuses,
+  filterChatRowsByStatus,
+  type ChatSessionStatusFilter,
+} from "@/lib/chat-session-status";
+import { groupChatRowsByActivity } from "@/lib/chat-session-activity";
+import {
+  CHAT_SESSION_SORT_HEADING,
+  CHAT_SESSION_SORT_KEY,
+  CHAT_SESSION_SORT_LABEL,
+  CHAT_SESSION_SORT_ORDER,
+  chatSessionDurationMs,
+  formatChatSessionDuration,
+  normalizeChatSessionSort,
+  sortChatSessionRows,
+  type ChatSessionSort,
+} from "@/lib/chat-session-sort";
 
 type Props = {
   familiar: Familiar | null;
@@ -124,17 +146,10 @@ function repoName(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
-const STATUS_STYLES: Record<string, { dot: string; label: string; preview: string }> = {
-  running: { dot: "bg-[var(--color-success)] animate-pulse", label: "running", preview: "text-[var(--color-success)]" },
-  completed: { dot: "bg-[var(--text-muted)]", label: "done", preview: "text-[var(--text-muted)]" },
-  failed: { dot: "bg-[var(--color-danger)]", label: "failed", preview: "text-[var(--color-danger)]" },
-  queued: { dot: "bg-[var(--color-warning)]", label: "queued", preview: "text-[var(--color-warning)]" },
-  paused: { dot: "bg-[var(--accent-presence-soft)]", label: "paused", preview: "text-[var(--accent-presence-soft)]" },
-};
-
-function statusStyle(s: string) {
-  return STATUS_STYLES[s] ?? STATUS_STYLES.completed;
-}
+// The row's status now renders as a labelled pill with a glyph
+// (chat-session-status.ts), so the dot/preview style map this file used to
+// carry has nothing left to style — a colour with no label was the thing the
+// pill replaced.
 
 // ── Content search (CHAT-D9-02) ───────────────────────────────────────────────
 // Title filtering stays instant/local; conversation bodies are searched
@@ -152,7 +167,10 @@ type ContentSearchHit = {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false, hideRail = false }: Props) {
-  useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
+  // Keeps the "Xm ago" labels current without a data refresh — and, since the
+  // activity bands are computed from the same clock, keeps a session that ages
+  // out of "Today" from sitting under the wrong header until the list reloads.
+  const minuteTick = useMinuteTick();
   // Scope the project rail to what the active familiar is granted; with no
   // active familiar (all-familiars view) this loads every project as before.
   const { projects } = useProjects({ familiarId: familiar?.id ?? null });
@@ -173,7 +191,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return next;
     });
   }, []);
-  const [unreadsOnly, setUnreadsOnly] = useState(false);
+  // Status filter — the counted chip row above the list (cave-n3jg2). Replaces
+  // the old All/Active segmented control: "Active" was one of five states the
+  // daemon actually reports, so it could never answer "what failed?".
+  const [statusFilter, setStatusFilter] = useState<ChatSessionStatusFilter>("all");
+  // Reading order for the list. "recent" additionally groups into activity
+  // bands (Active now / Today / …); the other three are flat named orders.
+  const [sessionSort, setSessionSort] = useState<ChatSessionSort>("recent");
+  const [sortOpen, setSortOpen] = useState(false);
   // Pins are Cave-local UI state (localStorage) shared across every chat
   // surface through one subscribable store — the daemon never learns about
   // them, and no surface holds a private copy that could clobber another's.
@@ -208,6 +233,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const sidebarPrefsLoadedRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const sortAnchorRef = useRef<HTMLButtonElement>(null);
   const keys = useKeySymbols();
   const isMobile = useIsMobile();
   // Touch devices can't hover-reveal the per-row controls, and rendering all
@@ -217,9 +243,11 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const allFamiliars = familiar ? [familiar] : familiars;
   const resolvedFamiliars = useResolvedFamiliars(allFamiliars, { includeArchived: true });
   const resolvedFamiliar = familiar ? resolvedFamiliars[0] : null;
-  const familiarsById = useMemo(
-    () => new Map(familiars.map((entry) => [entry.id, entry])),
-    [familiars],
+  // Rows lead with the familiar's avatar, which needs the RESOLVED record —
+  // Cave-local icon/avatar overrides live there, not on the daemon row.
+  const resolvedById = useMemo(
+    () => new Map(resolvedFamiliars.map((entry) => [entry.id, entry])),
+    [resolvedFamiliars],
   );
   // Scoped to one familiar? That is the user's own choice and it carries into a
   // new chat. UNSCOPED there is no correct default: handing familiars[0]
@@ -252,9 +280,16 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // archived" toggle is on, rail groups build from an archive-free view.
   const railSessions = useMemo(() => mine.filter((s) => !s.archived_at), [mine]);
 
-  const filtered = useMemo(() => {
-    return filterChatListRows(mine, search, unreadsOnly);
-  }, [mine, search, unreadsOnly]);
+  // Search first, then status. The chip counts describe the SEARCHED set, so
+  // pressing one chip never renumbers the others — the number under "Failed"
+  // means "failed among what you searched for", not "failed among what is
+  // already filtered to failed".
+  const searched = useMemo(() => filterChatListRows(mine, search, false), [mine, search]);
+  const statusCounts = useMemo(() => countChatSessionStatuses(searched), [searched]);
+  const filtered = useMemo(
+    () => filterChatRowsByStatus(searched, statusFilter),
+    [searched, statusFilter],
+  );
 
   const hasAny = mine.length > 0;
 
@@ -308,8 +343,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     sidebarPrefsLoadedRef.current = true;
     try {
       setGroupBy(normalizeChatGroupBy(window.localStorage.getItem(CHAT_GROUP_BY_KEY)));
+      setSessionSort(normalizeChatSessionSort(window.localStorage.getItem(CHAT_SESSION_SORT_KEY)));
     } catch {
-      // storage unavailable — default grouping stands
+      // storage unavailable — default grouping and sort stand
     }
     const hasStoredExpanded =
       typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
@@ -339,10 +375,11 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     if (!sidebarHydrated) return;
     try {
       window.localStorage.setItem(CHAT_GROUP_BY_KEY, groupBy);
+      window.localStorage.setItem(CHAT_SESSION_SORT_KEY, sessionSort);
     } catch {
       // persistence is best-effort
     }
-  }, [sidebarHydrated, groupBy]);
+  }, [sidebarHydrated, groupBy, sessionSort]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
   }, [sidebarHydrated, expandedKeys]);
@@ -426,7 +463,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     if (effectiveSelection === "all" && groupBy !== "project") {
       let rows = scopedGroups.flatMap((group) => group.sessions);
       rows = sessionOrder.length === 0
-        ? partitionPinnedFirst(sortChatRowsByRecency(rows), pinnedIds)
+        ? partitionPinnedFirst(sortChatSessionRows(rows, sessionSort), pinnedIds)
         : applyManualOrder(rows, sessionOrder);
       const latest = rows[0] ?? null;
       return [{
@@ -447,7 +484,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return { ...group, sessions: ordered };
     });
     return changed ? next : scopedGroups;
-  }, [effectiveSelection, groupBy, scopedGroups, sessionOrder, pinnedIds, scopedFamiliarId]);
+  }, [effectiveSelection, groupBy, scopedGroups, sessionOrder, sessionSort, pinnedIds, scopedFamiliarId]);
   // Calendar-day sections for the "Group by date" mode: header metadata keyed
   // by the first row index of each local day (Today / Yesterday / formatted).
   const daySectionsByIndex = useMemo(() => {
@@ -456,6 +493,39 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     const sections = deriveChatDaySections(rows, Date.now(), (iso) => formatDate(iso, dtPrefs));
     return new Map(sections.map((section) => [section.startIndex, section]));
   }, [groupBy, effectiveSelection, displayGroups, dtPrefs]);
+  // Activity bands (cave-n3jg2) — the handoff's grouping for the default
+  // "Recent activity" order: running work floats into "Active now" and the
+  // rest fall into Today / Yesterday / This week / Older by last activity.
+  // Only for the flat, ungrouped, all-projects view; "Group by project" and
+  // "Group by date" own their own headers, and a manual drag order has no
+  // meaningful bands at all.
+  const activityBanded =
+    groupBy === "none" && effectiveSelection === "all" && sessionSort === "recent" && sessionOrder.length === 0;
+  const bandsByIndex = useMemo(() => {
+    if (groupBy !== "none" || effectiveSelection !== "all") return null;
+    const rows = displayGroups[0]?.sessions ?? [];
+    // Pinned rows are partitioned to the top and keep their own collapsible
+    // section — bands describe everything below that run.
+    const pinnedRun = rows.findIndex((row) => !isSessionPinned(pinnedIds, row.id));
+    const offset = pinnedRun < 0 ? rows.length : pinnedRun;
+    const rest = rows.slice(offset);
+    if (rest.length === 0) return null;
+    const map = new Map<number, { bucket: string; label: string; count: number }>();
+    if (!activityBanded) {
+      // A named flat order still gets one header, so the list never presents
+      // rows in an order it has not named.
+      map.set(offset, { bucket: "flat", label: CHAT_SESSION_SORT_HEADING[sessionSort], count: rest.length });
+      return map;
+    }
+    let index = offset;
+    for (const band of groupChatRowsByActivity(rest, Date.now())) {
+      map.set(index, { bucket: band.bucket, label: band.label, count: band.rows.length });
+      index += band.rows.length;
+    }
+    return map;
+    // minuteTick keeps a session that ages past midnight from staying under
+    // yesterday's header until the next data refresh.
+  }, [activityBanded, groupBy, effectiveSelection, displayGroups, pinnedIds, sessionSort, minuteTick]);
   const displayIds = useMemo(
     () => displayGroups.flatMap((group) => group.sessions.map((session) => session.id)),
     [displayGroups],
@@ -471,10 +541,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     // ungrouped view — project/date grouping renders every row, so nothing is
     // hidden and displayIds is already the visible set.
     if (effectiveSelection !== "all" || groupBy !== "none" || collapsedSections.size === 0) return displayIds;
-    return displayIds.filter(
-      (id) => !collapsedSections.has(isSessionPinned(pinnedIds, id) ? "pinned" : "sessions"),
-    );
-  }, [displayIds, effectiveSelection, groupBy, collapsedSections, pinnedIds]);
+    return displayIds.filter((id) => {
+      const key = isSessionPinned(pinnedIds, id) ? "pinned" : "sessions";
+      // Mirrors the per-row `rowCollapsed`: banded lists have no "Sessions"
+      // header, so its collapsed flag can never hide anything.
+      if (key === "sessions" && bandsByIndex) return true;
+      return !collapsedSections.has(key);
+    });
+  }, [displayIds, effectiveSelection, groupBy, collapsedSections, pinnedIds, bandsByIndex]);
   const visibleRows = useMemo(
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
     [scopedGroups],
@@ -770,21 +844,33 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               </p>
             </div>
 
-            {/* + Session CTA */}
-            <button
-              type="button"
-              onClick={() => onNewChat(undefined, scopedFamiliarId)}
-              disabled={!canStartChat}
-              className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
-            >
-              <Icon name="ph:plus-bold" width={11} />
-              Session
-            </button>
           </div>
         </div>
         )}
 
-        {/* Stats removed for sidepanel optimization */}
+        {/* ── Surface title (cave-n3jg2) ──────────────────────────────────
+            The handoff names the surface once, in serif, with the session
+            count beside it and the one primary action on the right. The
+            identity dossier above stays for the all-familiars view — this
+            row is the surface's heading, not the familiar's. */}
+        {!compact && (
+        <div className="flex items-center gap-3 px-4 pb-0 pt-3">
+          <h1 className="chat-sessions-title min-w-0 truncate">Sessions</h1>
+          <span className="chat-sessions-count shrink-0">
+            {mine.length} {mine.length === 1 ? "session" : "sessions"}
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => onNewChat(undefined, scopedFamiliarId)}
+            disabled={!canStartChat}
+            className="chat-list-new-button focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95 disabled:opacity-[var(--opacity-disabled)]"
+          >
+            <Icon name="ph:plus-bold" width={11} aria-hidden />
+            New session
+          </button>
+        </div>
+        )}
 
         {/* Search + filter row */}
         <div className="mt-3 flex items-center gap-2 px-4 pb-3">
@@ -827,40 +913,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
           {!compact && (
             <>
-              {/* All / Active segmented filter — same state as the dot toggle
-                  below (active = status running). */}
-              <div
-                role="group"
-                aria-label="Filter sessions by activity"
-                className="chat-list-activity-filter flex h-7 shrink-0 items-stretch overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)]"
-              >
-                <button
-                  type="button"
-                  aria-pressed={!unreadsOnly}
-                  onClick={() => setUnreadsOnly(false)}
-                  className={[
-                    "focus-ring-inset px-3 text-[length:var(--text-xs)] transition-colors",
-                    !unreadsOnly
-                      ? "bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] font-medium text-[var(--accent-presence)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--accent-presence)_38%,transparent)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-                  ].join(" ")}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={unreadsOnly}
-                  onClick={() => setUnreadsOnly(true)}
-                  className={[
-                    "focus-ring-inset px-3 text-[length:var(--text-xs)] transition-colors",
-                    unreadsOnly
-                      ? "bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] font-medium text-[var(--accent-presence)] shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--accent-presence)_38%,transparent)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-                  ].join(" ")}
-                >
-                  Active
-                </button>
-              </div>
               <select
                 value={groupBy}
                 onChange={(e) => setGroupBy(normalizeChatGroupBy(e.target.value))}
@@ -871,28 +923,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 <option value="project">Group by project</option>
                 <option value="date">Group by date</option>
               </select>
-              <span className="chat-list-count-line ml-auto hidden shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)] min-[900px]:inline">
-                {sessionCountLine(visibleRows, mine.length)}
-              </span>
+              {/* The title row's pill already carries the total, so this line
+                  only earns its place when the two numbers differ — i.e. when
+                  a search or a status chip is actually hiding something. An
+                  unfiltered list showed "11 of 11 sessions" beside "11
+                  sessions", which is the duplicated-count-in-a-header trap. */}
+              {visibleRows !== mine.length ? (
+                <span className="chat-list-count-line ml-auto hidden shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)] min-[900px]:inline">
+                  {sessionCountLine(visibleRows, mine.length)}
+                </span>
+              ) : null}
             </>
           )}
-
-          <button
-            type="button"
-            onClick={() => setUnreadsOnly((v) => !v)}
-            title={unreadsOnly ? "Show all sessions" : "Show active only"}
-            aria-label={unreadsOnly ? "Show all sessions" : "Show active only"}
-            className={[
-              "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
-              unreadsOnly
-                ? "border-[color-mix(in_oklch,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
-                : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
-            ].join(" ")}
-          >
-            {unreadsOnly
-              ? <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
-              : <Icon name="ph:circle" width={12} />}
-          </button>
 
           <button
             type="button"
@@ -926,19 +968,98 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <Icon name="ph:list-checks-bold" width={12} aria-hidden />
           </button>
 
-          {/* With the identity row hidden, the + Session CTA lives here */}
-          {familiar && (
+          {/* Compact companion panels drop the surface title row (no width for
+              a serif heading), so the one primary action rides here instead —
+              the panel must never be the one place you cannot start a chat. */}
+          {compact && (
             <button
               type="button"
               onClick={() => onNewChat(undefined, scopedFamiliarId)}
               disabled={!canStartChat}
-              className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[length:var(--text-sm)] font-semibold text-[var(--accent-presence-foreground)] shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+              aria-label="New session"
+              title="New session"
+              className="chat-list-new-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-control)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-all hover:opacity-90 active:scale-95 disabled:opacity-[var(--opacity-disabled)]"
             >
-              <Icon name="ph:plus-bold" width={11} />
-              Session
+              <Icon name="ph:plus-bold" width={12} aria-hidden />
             </button>
           )}
         </div>
+
+        {/* ── Status chips + sort (cave-n3jg2) ────────────────────────────
+            Five states the daemon actually reports, each carrying its own
+            count, so "what failed today?" is one click rather than a scroll.
+            Counts come from the searched set, so pressing one chip never
+            renumbers the others. */}
+        {!compact && (
+          <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+            <span role="group" aria-label="Filter sessions by status" className="flex flex-wrap items-center gap-0.5">
+              <button
+                type="button"
+                aria-pressed={statusFilter === "all"}
+                onClick={() => setStatusFilter("all")}
+                className="chat-status-chip focus-ring"
+              >
+                All
+                <span className="chat-status-chip__count">{statusCounts.all}</span>
+              </button>
+              {CHAT_SESSION_STATUS_ORDER.map((key) => {
+                const presentation = CHAT_SESSION_STATUS[key];
+                const active = statusFilter === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={active}
+                    disabled={chatStatusChipDisabled(statusCounts[key], active)}
+                    onClick={() => setStatusFilter(key)}
+                    className="chat-status-chip focus-ring"
+                    data-state={key}
+                  >
+                    <span aria-hidden className="chat-status-chip__dot" />
+                    {presentation.label}
+                    <span className="chat-status-chip__count">{statusCounts[key]}</span>
+                  </button>
+                );
+              })}
+            </span>
+            <span className="flex-1" />
+            <button
+              ref={sortAnchorRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={sortOpen}
+              onClick={() => setSortOpen((v) => !v)}
+              className="chat-sessions-sort focus-ring"
+            >
+              <span className="chat-sessions-sort__label">sort</span>
+              {CHAT_SESSION_SORT_LABEL[sessionSort]}
+              <Icon name="ph:caret-up-down" width={10} className="text-[var(--text-muted)]" aria-hidden />
+            </button>
+            <Popover
+              open={sortOpen}
+              onOpenChange={setSortOpen}
+              anchorRef={sortAnchorRef}
+              placement="bottom-end"
+              minWidth={186}
+              ariaLabel="Sort sessions"
+            >
+              <PopoverBody role="menu" ariaLabel="Sort sessions">
+                {CHAT_SESSION_SORT_ORDER.map((key) => (
+                  <PopoverItem
+                    key={key}
+                    checked={sessionSort === key}
+                    onSelect={() => {
+                      setSessionSort(key);
+                      setSortOpen(false);
+                    }}
+                  >
+                    {CHAT_SESSION_SORT_LABEL[key]}
+                  </PopoverItem>
+                ))}
+              </PopoverBody>
+            </Popover>
+          </div>
+        )}
       </header>
 
       {/* ── Error banner (launch failures — transient, dismissable) ── */}
@@ -1041,7 +1162,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             </p>
             <button
               type="button"
-              onClick={() => { setSearch(""); setUnreadsOnly(false); setSelection("all"); }}
+              onClick={() => { setSearch(""); setStatusFilter("all"); setSelection("all"); }}
               className="text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:underline"
             >
               Clear filters
@@ -1135,23 +1256,39 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     </button>
                   </div>
                 )}
-                <ul className="divide-y divide-[var(--border-hairline)]">
+                <ul className="chat-session-list divide-y divide-[var(--border-hairline)]">
                   {rows.map((s, idx) => {
-                    const st = statusStyle(s.status);
                     const prStatus = sessionPrStatus(s.pullRequest);
                     const rel = relativeTime(s.updated_at);
                     const project = repoName(s.project_root ?? "");
                     const isActive = activeId === s.id;
-                    const rowFamiliar = s.familiarId ? familiarsById.get(s.familiarId) : null;
+                    const rowFamiliar = s.familiarId ? resolvedById.get(s.familiarId) : null;
                     const rowFamiliarName = rowFamiliar?.display_name ?? familiar?.display_name ?? "Familiar";
                     const pinned = isSessionPinned(pinnedIds, s.id);
                     // Pinned/Sessions sections only split the flat ungrouped
                     // list; project/date grouping owns its own headers.
                     const sectioned = projectRoot === null && groupBy === "none";
+                    // With activity bands there is no "Sessions" header left to
+                    // toggle, so a stale collapsed flag must not hide rows.
                     const rowCollapsed =
-                      sectioned && (pinned ? collapsedSections.has("pinned") : collapsedSections.has("sessions"));
+                      sectioned
+                      && (pinned
+                        ? collapsedSections.has("pinned")
+                        : !bandsByIndex && collapsedSections.has("sessions"));
                     const rowName = s.title || s.id;
                     const daySection = daySectionsByIndex?.get(idx) ?? null;
+                    // ── Handoff row facts (cave-n3jg2) ──────────────────
+                    const band = bandsByIndex?.get(idx) ?? null;
+                    const statusKey = chatSessionStatusKey(s.status);
+                    const statusPresentation = chatSessionStatus(s);
+                    // The session's OWN branch, never the checkout's current
+                    // one — a shared checkout churns branches under every row.
+                    const workBranch = s.workBranch ?? s.git?.branch ?? null;
+                    const elapsed = formatChatSessionDuration(chatSessionDurationMs(s));
+                    const adds = s.diff?.additions ?? 0;
+                    const dels = s.diff?.deletions ?? 0;
+                    // Retention is the one thing the status pill cannot say.
+                    const retentionMark = Boolean(s.keep || s.archive_extended_until || s.archived_at);
 
                     return (
                       <Fragment key={s.id}>
@@ -1172,7 +1309,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           onToggle={() => toggleSection("pinned")}
                         />
                       ) : null}
-                      {sectioned && idx === firstRestIdx ? (
+                      {/* Activity band (cave-n3jg2) — replaces the flat
+                          "Sessions" section header, which said the same thing
+                          about every row below it. Bands say WHEN. */}
+                      {band ? (
+                        <li className="chat-activity-header" data-bucket={band.bucket}>
+                          <span aria-hidden className="chat-activity-header__tick" />
+                          <span className="chat-activity-header__label">{band.label}</span>
+                          <span className="chat-activity-header__count">{band.count}</span>
+                          <span aria-hidden className="chat-activity-header__rule" />
+                        </li>
+                      ) : null}
+                      {sectioned && !bandsByIndex && idx === firstRestIdx ? (
                         <ChatListSection
                           label="Sessions"
                           count={restCount}
@@ -1206,10 +1354,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             }
                           }}
                           data-selected={selectMode && selectedIds.has(s.id) ? "true" : undefined}
-                          data-status={st.label}
+                          data-status={statusKey}
                           data-active={isActive ? "true" : undefined}
                           className={[
-                            "chat-list-row focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
+                            "chat-list-row chat-session-card focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
                             isActive
                               ? "bg-[var(--bg-raised)]"
                               : "hover:bg-[var(--bg-raised)]/50",
@@ -1251,6 +1399,13 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               request, else the plain session-status dot.
                               Clicking the PR badge opens the PR (in-app
                               browser when wired) without opening the chat. */}
+                          {/* Who is on this thread. The handoff leads every row
+                              with the familiar rather than a status dot: the
+                              status has a labelled pill further in, so the dot
+                              was spending the row's most valuable column on the
+                              one fact it repeats. A running session wears a
+                              breathing ring. The PR badge keeps its click-through
+                              to the pull request without opening the chat. */}
                           {prStatus ? (
                             <span className="chat-list-status-dot mt-[3px] shrink-0">
                               <button
@@ -1269,11 +1424,21 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               </button>
                             </span>
                           ) : (
-                            <span className="chat-list-status-dot mt-[5px] shrink-0">
+                            <span className="chat-list-status-dot shrink-0">
                               <span
-                                className={`block h-2 w-2 rounded-full ${st.dot}`}
-                                title={st.label}
-                              />
+                                className="chat-session-avatar"
+                                title={rowFamiliarName}
+                                style={{ "--row-tint": rowFamiliar?.color ?? "var(--accent-presence)" } as React.CSSProperties}
+                              >
+                                {rowFamiliar ? (
+                                  <FamiliarAvatar familiar={rowFamiliar} size="sm" />
+                                ) : (
+                                  <Icon name="ph:sparkle" width={13} aria-hidden />
+                                )}
+                                {statusKey === "running" ? (
+                                  <span aria-hidden className="chat-session-avatar__ring" />
+                                ) : null}
+                              </span>
                             </span>
                           )}
 
@@ -1303,6 +1468,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                   {stripLeadingTrailingEmoji((sessionTitles.get(s.id) ?? s.title) || "(untitled chat)")}
                                 </span>
                               </span>
+                              {workBranch ? (
+                                <span className="chat-session-branch hidden sm:inline-flex" title={`Branch ${workBranch}`}>
+                                  <Icon name="ph:git-branch" width={9} aria-hidden />
+                                  {workBranch}
+                                </span>
+                              ) : null}
                               {project ? (
                                 <span className="chat-list-row-project-tag hidden shrink-0 items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-1.5 py-px text-[length:var(--text-2xs)] text-[var(--text-muted)] sm:inline-flex">
                                   {project}
@@ -1316,6 +1487,31 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             {/* Row 2: familiar · project · date, plus the
                                 origin/initiator/model chips */}
                             <span className="chat-list-row-tags flex min-w-0 items-center gap-1.5">
+                              {/* How the run is GOING: a labelled state, the
+                                  time it has been alive, and the working-tree
+                                  delta it produced. The pill carries a glyph as
+                                  well as a tint so state is never colour-only. */}
+                              <span className="chat-session-pill" data-state={statusKey}>
+                                {statusKey === "running" ? (
+                                  <span aria-hidden className="chat-session-pill__dot" />
+                                ) : statusPresentation.icon ? (
+                                  <Icon name={statusPresentation.icon} width={10} aria-hidden />
+                                ) : null}
+                                {statusPresentation.label}
+                              </span>
+                              <span className="chat-session-stat" data-live={statusKey === "running" ? "true" : undefined}>
+                                {elapsed}
+                              </span>
+                              {adds > 0 ? (
+                                <span className="chat-session-stat" data-kind="adds" title={`${adds} lines added`}>
+                                  +{adds}
+                                </span>
+                              ) : null}
+                              {dels > 0 ? (
+                                <span className="chat-session-stat" data-kind="dels" title={`${dels} lines removed`}>
+                                  −{dels}
+                                </span>
+                              ) : null}
                               <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">
                                 {rowFamiliarName}
                                 {project ? ` · ${project}` : ""}
@@ -1335,30 +1531,28 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               ) : null}
                             </span>
 
-                            {/* Row 3: status preview */}
-                            <span className={`chat-list-row-preview truncate text-[length:var(--text-sm)] ${st.preview}`}>
-                              {s.keep ? <span className="text-[var(--accent-presence)]">Keep · </span> : null}
-                              {!s.keep && s.archive_extended_until ? (
-                                <span
-                                  className="text-[var(--text-muted)]"
-                                  title={`Auto-archive deferred until ${chatDate(s.archive_extended_until, dtPrefs)}`}
-                                >
-                                  Extended ·{" "}
-                                </span>
-                              ) : null}
-                              {s.archived_at ? <span className="text-[var(--text-muted)]">Archived · </span> : null}
-                              {st.label === "running"
-                                ? "Active now…"
-                                : st.label === "failed"
-                                  ? "Ended with an error"
-                                  : st.label === "queued"
-                                    ? "Waiting to start"
-                                    : st.label === "paused"
-                                      ? "Paused"
-                                      : project
-                                        ? `${rowFamiliarName} · ${project}`
-                                        : `${rowFamiliarName}`}
-                            </span>
+                            {/* Row 3: retention marks only (cave-n3jg2). This
+                                line used to restate the status — "Active now…"
+                                under a row whose pill now reads RUNNING,
+                                "Waiting to start" under QUEUED. The pill says
+                                it with a label, so the sentence was a second
+                                boundary on the same fact costing every row a
+                                full line. What survives is what the pill does
+                                NOT say: whether the chat is kept, deferred or
+                                archived. */}
+                            {retentionMark ? (
+                              <span className="chat-list-row-preview truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                                {s.keep ? (
+                                  <span className="text-[var(--accent-presence)]">Keep</span>
+                                ) : s.archive_extended_until ? (
+                                  <span title={`Auto-archive deferred until ${chatDate(s.archive_extended_until, dtPrefs)}`}>
+                                    Extended
+                                  </span>
+                                ) : (
+                                  <span>Archived</span>
+                                )}
+                              </span>
+                            ) : null}
                           </span>
 
                           {!selectMode && (confirmDeleteId === s.id ? (

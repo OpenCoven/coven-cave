@@ -305,3 +305,38 @@ test("parseCitations reads a worktree file reference into a repo citation", () =
     assert.equal(parsed.citations[0].domain, "example.com");
   }
 });
+
+test("orphan numeric footnote refs are stripped instead of leaking literal text", () => {
+  // No definitions anywhere in the turn — the [^1] must not render as prose.
+  const cited = renderCitedBody("The quality levers[^1]: prompts, seeds, and reviews.");
+  assert.equal(cited.body, "The quality levers: prompts, seeds, and reviews.");
+  assert.equal(cited.citations.length, 0);
+
+  // Definitions exist but one ref points at a label that was never defined.
+  const mixed = renderCitedBody([
+    "Known[^a] and unknown[^2].",
+    "",
+    '[^a]: https://example.com/guide "A web guide"',
+  ].join("\n"));
+  assert.match(mixed.body, /Known\[example\.com\]\(#cite-1\) and unknown\./);
+});
+
+test("orphan stripping leaves code spans, fences, and non-numeric labels alone", () => {
+  const cited = renderCitedBody([
+    "Match with `[^1]` inside code[^1].",
+    "```js",
+    "const re = /[^1]/;",
+    "```",
+    "A regex class [^a-z] stays put.",
+  ].join("\n"));
+  assert.equal(
+    cited.body,
+    [
+      "Match with `[^1]` inside code.",
+      "```js",
+      "const re = /[^1]/;",
+      "```",
+      "A regex class [^a-z] stays put.",
+    ].join("\n"),
+  );
+});

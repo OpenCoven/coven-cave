@@ -391,8 +391,10 @@
 }
 
 .cave-chat-followups .cave-followup-card {
-  display: block;
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
   border-color: var(--border-strong);
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
@@ -418,12 +420,28 @@
   display: none;
 }
 
+.cave-chat-followups .cave-followup-card__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.cave-chat-followups .cave-followup-card__separator {
+  display: inline;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
 .cave-chat-followups .cave-followup-card__title {
-  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--text-sm);
   font-weight: 500;
-  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Typed assistant suggestions keep their effect legible before activation.
@@ -454,6 +472,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.cave-followup-card__separator {
+  display: none;
 }
 
 .cave-followup-card__recommended {
@@ -612,6 +634,16 @@
   .cave-chat-meta-line,
   .cave-chat-linked-context {
     display: none;
+  }
+
+  /* Keep the header context strip visible on mobile with full touch targets. */
+  .cave-chat-header-context {
+    display: block;
+    padding-inline-start: 0;
+  }
+
+  .cave-chat-header-context .cave-context-chip {
+    min-height: var(--touch-target);
   }
 
   .cave-mobile-header-identity {

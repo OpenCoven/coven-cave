@@ -135,8 +135,20 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /useState<FamiliarsScope>\("conversation"\)/,
+  /initialScope = "conversation"[\s\S]*?useSurfaceHistory<FamiliarsScope>\(\{[\s\S]*?initial:\s*initialScope/,
   "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
+);
+
+assert.match(
+  chatSurface,
+  /scopeHistoryId = "chat:scope"[\s\S]*?id:\s*scopeHistoryId/,
+  "ChatSurface should register its scope strip as a navigation level so Back steps between tabs instead of leaving Chat",
+);
+
+assert.match(
+  chatSurface,
+  /onChange=\{\(s\) => \{\s*selectScope\(s\)/,
+  "The scope tab strip is user-initiated navigation, so it must record a history entry (selectScope, not showScope)",
 );
 
 assert.doesNotMatch(
@@ -275,8 +287,8 @@ assert.doesNotMatch(
 // the Familiar chat tab; Git/Changes → the code rail's Changes tab.
 assert.match(
   chatSurface,
-  /const onInspectorOpen = \(\) => setScope\("familiar"\)/,
-  "cave:inspector-open routes to the promoted Familiar tab",
+  /const onInspectorOpen = \(\) => selectScope\("familiar"\)/,
+  "cave:inspector-open routes to the promoted Familiar tab, recording a history entry because it moves only this level",
 );
 assert.match(
   railController,
@@ -349,4 +361,38 @@ assert.match(
   railController,
   /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(null\);/,
   "changeCount drops to null (unknown) on a real root change — clears the stale badge AND keeps first-load dirt from faking a fresh-batch reveal (cave-xsq.7)",
+);
+
+// Workspace → ChatSurface onSessionStarted wiring:
+// - Workspace must pass onSessionStarted so GroupChatView can refresh the
+//   session list after a new group chat is created.
+// - ChatSurface must forward onSessionStarted to GroupChatView.
+// - ChatSurface must NOT forward onSessionStarted to ChatRouter: the
+//   single-chat path uses the creation-refresh helper (onSessionsChanged) to
+//   avoid a redundant pre-persistence sidebar load (Task 1 fix).
+assert.match(
+  workspace,
+  /<ChatSurface[\s\S]*?onSessionStarted=\{loadSessions\}/,
+  "Workspace must pass onSessionStarted={loadSessions} to ChatSurface so GroupChatView gets session-list refreshes",
+);
+assert.match(
+  chatSurface,
+  /<GroupChatView[\s\S]*?onSessionStarted=\{onSessionStarted\}/,
+  "ChatSurface must forward onSessionStarted to GroupChatView",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /<ChatRouter\b[\s\S]*?onSessionStarted=/,
+  "ChatSurface must not forward onSessionStarted to ChatRouter (single-chat path uses creation-refresh helper)",
+);
+
+assert.match(
+  chatSurface,
+  /initialScope\?: FamiliarsScope/,
+  "split Chat pages accept a concrete initial scope instead of relying on window events",
+);
+assert.match(
+  chatSurface,
+  /scopeHistoryId\?: string/,
+  "split Chat pages keep their scope history isolated by pane instance",
 );

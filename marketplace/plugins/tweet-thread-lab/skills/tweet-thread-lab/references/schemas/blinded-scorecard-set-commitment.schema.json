@@ -1,0 +1,70 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "commitmentHmac": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "committedAt": {
+      "format": "date-time",
+      "maxLength": 24,
+      "minLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "protocolVersion": {
+      "const": "opencoven.tweet-thread.blinding.v1",
+      "type": "string"
+    },
+    "publicTrialSha256": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "revealCommitment": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "scorecardSha256ByArmToken": {
+      "maxProperties": 32,
+      "minProperties": 2,
+      "patternProperties": {
+        "^arm-[a-f0-9]{64}$": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "setSha256": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "trialId": {
+      "maxLength": 128,
+      "minLength": 7,
+      "pattern": "^trial-[a-z0-9-]+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "trialId",
+    "publicTrialSha256",
+    "revealCommitment",
+    "scorecardSha256ByArmToken",
+    "setSha256",
+    "committedAt",
+    "commitmentHmac"
+  ],
+  "type": "object"
+}

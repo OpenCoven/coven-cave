@@ -114,9 +114,15 @@ test("2a ③ — the instrument strip keeps every metric reachable at narrow wid
   assert.match(styles, /\.cave-chat-context-stat--action/, "detail metrics have trigger styling");
   assert.match(styles, /\.cave-chat-context-popover/, "breakdown cards have a scoped surface");
   assert.match(styles, /\.cave-chat-context-breakdown__bar/, "context detail includes a segmented bar");
+  // The rule BODY is [^}]* rather than [\s\S]*?: `styles` is the whole expanded
+  // facade, so a body that may cross `}` matches an @media here, this selector
+  // there, and a `display: none` from an unrelated rule in a different imported
+  // file — which is exactly what it did when cave-w716g added
+  // `.cave-runrail--narrow { display: none }`. The intent is unchanged and still
+  // pinned below: display:none INSIDE this rule, inside that media query.
   assert.doesNotMatch(
     styles,
-    /@media \(max-width: 900px\)[\s\S]*?\.cave-chat-context-row__stats\s*\{[\s\S]*?display:\s*none/,
+    /@media \(max-width: 900px\)[\s\S]*?\.cave-chat-context-row__stats\s*\{[^}]*display:\s*none/,
     "narrow panes do not hide the right-side metrics",
   );
 });
@@ -259,14 +265,28 @@ test("rail — rows carry a state tick and groups carry a count and a rule", () 
     /\.cnav__tick\.cnav__dot--running \{[\s\S]*?animation: none;/,
     "ticks borrow the running colour but never the pulse — a rail of breathing bars is noise",
   );
-  assert.match(sidebar, /<kbd className="cnav__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
+  assert.match(sidebar, /<kbd className="rail-header__new-kbd">⌘N<\/kbd>/, "the primary action shows its shortcut");
 });
 
 test("rail — the selected chat is a raised card with one accent rail", () => {
   const activeRow = shellNav.match(/\.cnav__thread\.is-active \{[\s\S]*?\n\}/)?.[0] ?? "";
   const activeRail = shellNav.match(/\.cnav__thread\.is-active::before \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const scroll = shellNav.match(/\.cnav__scroll \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-  assert.match(activeRow, /margin: 0 var\(--space-2\);/, "the selection is inset from the list edge");
+  // The inset is still there, but it is no longer private to the selected row:
+  // the scroll region carries the rail's one inset (--rail-pad), so the card
+  // lines up with the header and search above it instead of with nothing.
+  // Asserting the row's own margin would pin the old mechanism, not the intent.
+  assert.match(
+    scroll,
+    /padding-inline: var\(--rail-pad\);/,
+    "the selection is inset from the list edge, on the rail's shared inset",
+  );
+  assert.doesNotMatch(
+    activeRow,
+    /\n\s*margin:/,
+    "the selected row takes no inset of its own — it would double the container's",
+  );
   assert.match(activeRow, /border-radius: var\(--radius-card\)/, "the selection reads as a rounded raised card");
   assert.match(activeRow, /background: var\(--bg-raised\)/, "the selection uses the raised surface rather than a second accent tint");
   assert.match(activeRail, /background: var\(--accent-presence\)/, "the selection keeps one lavender identity rail");

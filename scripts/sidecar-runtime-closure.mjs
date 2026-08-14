@@ -1,7 +1,42 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** The one place the file-count budget is written down. */
+export const SIDECAR_RUNTIME_BUDGET_FILE = fileURLToPath(
+  new URL("./sidecar-runtime-budget.json", import.meta.url),
+);
+
+/**
+ * Read the budget from its single source, or refuse to run.
+ *
+ * Validation is not ceremony here. The gate compares a measured count against
+ * this number, so a missing key or a malformed file yielding `undefined`/`NaN`
+ * would make every comparison false and the gate would PASS silently — worse
+ * than the six hand-synced copies this replaced, because nothing would ever go
+ * red to reveal it. Fail loudly instead.
+ */
+function readSidecarFileCountBudget() {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(SIDECAR_RUNTIME_BUDGET_FILE, "utf8"));
+  } catch (cause) {
+    throw new Error(
+      `sidecar runtime budget is unreadable at ${SIDECAR_RUNTIME_BUDGET_FILE}: ${cause.message}`,
+      { cause },
+    );
+  }
+  const fileCount = parsed?.fileCount;
+  if (!Number.isSafeInteger(fileCount) || fileCount <= 0) {
+    throw new Error(
+      `sidecar runtime budget "fileCount" must be a positive integer, received ${JSON.stringify(fileCount)} ` +
+        `from ${SIDECAR_RUNTIME_BUDGET_FILE}`,
+    );
+  }
+  return fileCount;
+}
 
 export const SIDECAR_RUNTIME_ROOTS = Object.freeze([
   ".agents/skills",
@@ -187,7 +222,53 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Windows — so 5,902 was the Ubuntu figure with no headroom at all, and the
   // Windows leg was still red at it. Set from the HIGHER figure plus the same
   // ten-file cross-platform headroom the entries above use.
-  fileCount: 5_915,
+  // 2026-08-04 (image carousel, #4315): src/components/image-carousel.tsx and the
+  // chat-view wiring that renders it join the closure. CI measured 5,913 on Ubuntu
+  // and 5,916 on Windows — the ten-file headroom above was fully consumed and the
+  // Windows leg went one over while Ubuntu still passed, which is why only that
+  // leg was red. Set from the HIGHER figure plus the same ten-file cross-platform
+  // headroom every entry above uses.
+  // 2026-08-04 (headroom rate, cave-k5n56): worth recording that the entry
+  // above is a rate problem, not a one-feature one. main's Windows leg measured
+  // 5,914 at ab27ef62d8 and 5,915 at 39eadf26eb — sitting exactly ON the budget,
+  // reporting green with zero headroom — before #4315 added the single file that
+  // crossed it. Growth is roughly a file per merge, diffuse across many PRs, and
+  // Windows governs at a consistent +3 over Ubuntu (5914/5911, 5915/5912,
+  // 5916/5913). So read a red here as the headroom running out rather than as the
+  // last merge misbehaving, and check the previous runs' measured counts before
+  // attributing it. Ten files is about ten merges at this rate, so this will
+  // recur; the durable fix is to size the headroom to the growth rate or stop the
+  // closure growing, not to keep adding ten.
+  // 2026-08-06 (cave-oqawv): taking the advice directly above rather than adding
+  // ten for the third time. CI measured 5,957 on Ubuntu and 5,959 on Windows,
+  // which governs — that is +43 on the 5,916 the entry above was set from, over
+  // roughly two days, so ~21 files/day. A ten-file headroom is therefore worth
+  // about eleven hours, which is exactly why this gate went red again within a
+  // day of being raised.
+  //
+  // Set from the governing Windows figure plus 150, which is about one week of
+  // drift at the measured rate (main took 869 commits in the last 7 days at
+  // ~0.3 closure files per commit). State the trade plainly: at this headroom
+  // the gate no longer notices organic drift, and it is not meant to — what it
+  // still catches is a single change dragging a whole subtree in, which is
+  // hundreds of files at once and the failure worth having a gate for. If this
+  // needs to detect drift again, the fix is to stop the closure growing, not a
+  // smaller number here.
+  //
+  // 2026-08-06 (cave-0ia8h): the VALUE now lives in sidecar-runtime-budget.json
+  // and is read from there. It used to be hand-copied into six places — this
+  // file, sidecar-runtime-smoke.mjs, the Rust MAX_FILE_COUNT const, and three
+  // test pins — so every raise was a six-file sync performed under a red CI,
+  // and one of them was reverted independently once (#4249). The history above
+  // is kept here because it is the reasoning; the number is data.
+  //
+  // Investigation for that bead also settled where the growth comes from: over
+  // the two days that added 43 closure files, the first-party runtime roots
+  // above grew by ONE file and no runtime dependency was added. The rest is
+  // Next's traced output following new routes, at roughly two to four files
+  // each. There is no subtree to prune — the closure grows because the app
+  // does — which is why this is a tracked budget rather than a fixed one.
+  fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

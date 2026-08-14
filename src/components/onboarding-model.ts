@@ -1,4 +1,5 @@
 import type { IconName } from "@/lib/icon";
+import type { OnboardingReadinessState } from "@/lib/onboarding-readiness";
 import type { LatestCheckDisplay } from "@/lib/opencoven-tools-status-display";
 import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
 
@@ -9,11 +10,18 @@ export type PruneState =
   | { pruning: true }
   | { pruned: number }
   | { error: string };
-export type Step = { ok: boolean; detail?: string; hint?: string; optional?: boolean };
+export type Step = {
+  ok: boolean;
+  state?: OnboardingReadinessState;
+  detail?: string;
+  hint?: string;
+  optional?: boolean;
+};
 export type PlatformId = "windows" | "linux" | "mac" | "unknown";
 
 export type OnboardingStatus = {
   complete: boolean;
+  mayContinue?: boolean;
   steps: {
     covenCli: Step;
     covenHome: Step;
@@ -23,7 +31,7 @@ export type OnboardingStatus = {
     familiars: Step;
     binding: Step;
   };
-  tools?: OpenCovenToolStatus[];
+  tools?: OpenCovenToolStatus[] | null;
 };
 
 export type OpenCovenToolStatus = {
@@ -291,6 +299,7 @@ export type GuidedStep = {
   key: string;
   title: string;
   ok: boolean;
+  state?: OnboardingReadinessState;
   optional?: boolean;
   detail: string;
   icon: IconName;

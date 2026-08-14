@@ -123,6 +123,12 @@ package-lock.json
 /public/sandbox/
 /docs/audits
 test-results/
+# Agent skill installs are machine-local by default. Skills that every familiar
+# must load are the exception and ARE tracked (`.agents/skills/beads`,
+# `branch-curator`, `branch-to-merge`, …) — because this rule ignores the whole
+# directory, adding one needs an explicit `git add -f .agents/skills/<name>/`.
+# Without the `-f` the file is silently dropped and the skill reaches nobody
+# else, which is exactly how a "shared" skill ends up existing on one machine.
 /.agents
 
 # design-sync machine state
@@ -138,3 +144,6 @@ ds-bundle/
 /.codex-tmp
 __verify-chat-detail.mjs
 /.worktree-lifecycle-fixture-*
+.psyche*
+/.xcode-source-packages
+/.demo

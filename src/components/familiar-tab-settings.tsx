@@ -1,27 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AccessGroupsSection } from "@/components/access-groups-section";
 import dynamic from "next/dynamic";
 import { FamiliarStudioBrainTab } from "@/components/familiar-studio-brain-tab";
 import { FamiliarStudioIdentityTab } from "@/components/familiar-studio-identity-tab";
 import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab";
-import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { VaultPanel } from "@/components/vault-panel";
 import { Tabs } from "@/components/ui/tabs";
 import type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 
 export type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
 
+// Projects is deliberately absent: project access, access groups, and the
+// access history all live on Chat → Projects now. A `projects` target
+// redirects there (see the effect below) rather than rendering a second copy
+// of the grant matrix here.
 const SETTINGS_TABS: Array<{ id: FamiliarSettingsTab; label: string }> = [
   { id: "chat", label: "Chat" },
   { id: "identity", label: "Identity" },
   { id: "brain", label: "Brain" },
   { id: "memory", label: "Memory" },
-  { id: "projects", label: "Projects" },
   { id: "vault", label: "Vault" },
 ];
 
@@ -61,8 +63,17 @@ export function FamiliarSettingsSection({
   initialTab?: FamiliarSettingsTab;
   onRosterChanged?: () => void;
 }) {
-  const [tab, setTab] = useState<FamiliarSettingsTab>(initialTab ?? "identity");
+  const [tab, setTab] = useState<FamiliarSettingsTab>(
+    initialTab && initialTab !== "projects" ? initialTab : "identity",
+  );
   useEffect(() => {
+    // `projects` no longer names a tab here. Rather than silently landing on
+    // Identity, hand the request to the surface that owns project access now.
+    if (initialTab === "projects") {
+      markProjectsTabPending();
+      window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+      return;
+    }
     if (initialTab) setTab(initialTab);
   }, [initialTab]);
   const raw = useMemo(
@@ -121,12 +132,6 @@ export function FamiliarSettingsSection({
             allFamiliars={familiars}
             localDaemonReady={localDaemonReady}
           />
-        ) : null}
-        {tab === "projects" ? (
-          <div className="familiar-studio-control__projects">
-            <FamiliarStudioProjectsTab key={`${familiar.id}:projects`} familiar={familiar} />
-            <AccessGroupsSection familiars={allFamiliars} />
-          </div>
         ) : null}
         {tab === "vault" ? <VaultPanel key={`${familiar.id}:vault`} familiarId={familiar.id} /> : null}
       </div>

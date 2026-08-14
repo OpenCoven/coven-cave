@@ -41,6 +41,9 @@ type Props = {
   placement?: "bottom-start" | "bottom-end" | "top-start" | "top-end";
   /** Shows the current familiar name beside the avatar on surfaces with room. */
   labeled?: boolean;
+  /** Home launches one familiar at a time, so it hides the All row and
+   * multiselect affordance while retaining the shared picker. */
+  singleRequired?: boolean;
 };
 
 /**
@@ -59,6 +62,7 @@ export function FamiliarSwitcher({
   onSelectFamiliar,
   placement = "bottom-start",
   labeled = false,
+  singleRequired = false,
 }: Props) {
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -78,6 +82,11 @@ export function FamiliarSwitcher({
   /** Row activation: the checkbox zone (or ⌘/Ctrl-click) toggles membership and
    *  keeps the menu open for more picks; a plain click solo-selects and closes. */
   const pickFamiliar = (id: string, e: ReactMouseEvent) => {
+    if (singleRequired) {
+      onSelectFamiliar(id);
+      setOpen(false);
+      return;
+    }
     const multi =
       e.metaKey || e.ctrlKey ||
       Boolean((e.target as HTMLElement).closest(".familiar-switcher__checkbox"));
@@ -125,16 +134,20 @@ export function FamiliarSwitcher({
 
   // Trigger copy: a ≥2 multiselect summarizes the scope; otherwise the single
   // active familiar (or the All scope) names the control.
-  const triggerText = multiScope
+  const triggerText = !singleRequired && multiScope
     ? `${multiScope.size} familiars`
     : active
       ? active.display_name
-      : "All familiars";
-  const triggerLabel = multiScope
+      : singleRequired
+        ? "Choose familiar"
+        : "All familiars";
+  const triggerLabel = !singleRequired && multiScope
     ? `Switch familiar — scope: ${multiScope.size} familiars`
     : active
       ? `Switch familiar — current: ${active.display_name}`
-      : "Switch familiar — scope: all familiars";
+      : singleRequired
+        ? "Choose familiar"
+        : "Switch familiar — scope: all familiars";
 
   return (
     <>
@@ -234,10 +247,10 @@ export function FamiliarSwitcher({
               className="familiar-switcher__list"
               role="listbox"
               aria-label="Switch familiar"
-              aria-multiselectable="true"
-              data-multi={multiScope ? "true" : undefined}
+              aria-multiselectable={singleRequired ? undefined : true}
+              data-multi={!singleRequired && multiScope ? "true" : undefined}
             >
-              <li>
+              {!singleRequired ? <li>
                 <button
                   type="button"
                   role="option"
@@ -251,7 +264,7 @@ export function FamiliarSwitcher({
                   <span className="familiar-switcher__option-name">All familiars</span>
                   {!multiScope && activeFamiliarId == null ? <Icon name="ph:check" width={12} aria-hidden /> : null}
                 </button>
-              </li>
+              </li> : null}
 
               {filtered.map((f) => {
                 const isActive = isScoped(f.id);
@@ -266,7 +279,11 @@ export function FamiliarSwitcher({
                       className={`familiar-switcher__option${isActive ? " is-active" : ""}`}
                       style={{ ["--familiar-accent" as string]: f.color } as CSSProperties}
                       onClick={(e) => pickFamiliar(f.id, e)}
-                      title={`${f.display_name} · ${presence.label} · click switches, checkbox or ⌘-click multi-selects, drag into a chat to start a coven`}
+                      title={
+                        singleRequired
+                          ? `${f.display_name} · ${presence.label}`
+                          : `${f.display_name} · ${presence.label} · click switches, checkbox or ⌘-click multi-selects, drag into a chat to start a coven`
+                      }
                       // Drag a familiar into a chat thread to add them to it
                       // (cave-76yfq). Only this plain-listbox branch is
                       // draggable — the reorder branch above is a dnd-kit
@@ -288,9 +305,11 @@ export function FamiliarSwitcher({
                     >
                       {/* Checkbox zone — clicking it toggles this familiar in the
                           multiselect scope and keeps the menu open. */}
-                      <span className={`familiar-switcher__checkbox${isActive ? " is-checked" : ""}`} aria-hidden>
-                        {isActive ? <Icon name="ph:check" width={10} /> : null}
-                      </span>
+                      {!singleRequired ? (
+                        <span className={`familiar-switcher__checkbox${isActive ? " is-checked" : ""}`} aria-hidden>
+                          {isActive ? <Icon name="ph:check" width={10} /> : null}
+                        </span>
+                      ) : null}
                       <span className="familiar-switcher__avatar">
                         <FamiliarAvatar familiar={f} size="sm" />
                         <span className={`familiar-switcher__presence ${presence.dot}`} aria-hidden />

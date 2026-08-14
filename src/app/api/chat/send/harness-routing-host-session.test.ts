@@ -227,7 +227,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\(openclawLaunch\.command/,
+  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command/,
   "OpenClaw chat should use the shared passive availability gate before spawning",
 );
 
@@ -276,7 +276,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\(openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
+  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
 );
 
@@ -514,6 +514,27 @@ assert.match(
   /const generationOrigin = existingConversation\?\.origin \?\? body\.origin/,
   "a request must not relabel an existing user chat as a projectless hidden generation",
 );
+// cave-o3nq7: the hidden-generation exemption must be decided by the shared
+// helper, which admits only the familiar's own workspace. The old inline
+// `resumeCwd ?? resolvedFamiliarWorkspace` adopted a daemon session's
+// project_root — from a list that is global and carries no familiar id — with
+// authorizeChatProjectLaunch skipped entirely.
+assert.match(
+  chatRoute,
+  /const projectlessLaunch = projectlessGenerationLaunch\(\{[\s\S]*?origin: generationOrigin,[\s\S]*?resumeCwd,[\s\S]*?familiarWorkspace: resolvedFamiliarWorkspace,[\s\S]*?\}\)/,
+  "the projectless branch should delegate to the shared launch decision",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /generationRoot = sshRuntime \? homedir\(\) : \(resumeCwd \?\? resolvedFamiliarWorkspace\)/,
+  "a hidden generation must not adopt a resume cwd without the launch gate",
+);
+const projectlessDecisionIndex = chatRoute.indexOf('projectlessLaunch.kind === "workspace"');
+const projectlessGateIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");
+assert.ok(
+  projectlessDecisionIndex >= 0 && projectlessDecisionIndex < projectlessGateIndex,
+  "the auth-free workspace case must be the only branch that skips the launch gate",
+);
 
 const authorizeLaunchIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");
 const offlineLaunchIndex = chatRoute.indexOf("const offlineChatResponse = await maybeQueueOfflineChat");
@@ -542,8 +563,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /filterProjectsForFamiliar\(projects, body\.familiarId\)/,
-  "Local Cave chat should derive grant-aware project roots for the familiar before building the runtime prompt",
+  /listAccessibleProjects\(projects, body\.familiarId\)/,
+  "Local Cave chat should derive grant-aware project roots (with each root's access level) for the familiar before building the runtime prompt",
 );
 
 assert.match(
@@ -554,14 +575,20 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /projectRootAccess: grantedProjectRootAccess/,
+  "The runtime prompt should carry each granted root's read/write access level so the boundary preamble can annotate it",
+);
+
+assert.match(
+  chatRoute,
   /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/project-permissions";/,
   "Chat send should import the shared project-permission chokepoint",
 );
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve exact and worktree roots through the shared chat-project-access helper",
+  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
 );
 
 assert.match(
@@ -578,8 +605,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*projectIdOverride: taskWorktreeProjectId/,
-  "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
+  /authorizeChatProjectLaunch\([\s\S]*resolveProjectId: \(requestedRoot, resolvedRoot\) =>[\s\S]*taskWorktreeProjectAccessId\(\{[\s\S]*startNewConversation: Boolean\(body\.startNewConversation\),[\s\S]*hasExistingConversation: Boolean\(existingConversation\),[\s\S]*taskProjectId: taskCard\?\.projectId,[\s\S]*taskCwd: taskCard\?\.cwd,[\s\S]*requestedProjectRoot: requestedRoot,[\s\S]*resolvedCwd: resolvedRoot,[\s\S]*\}\) \?\?[\s\S]*chatProjectAccessId/,
+  "A fresh Board worktree handoff should authorize through its persisted task project only after checking the resolved cwd remains inside that project",
 );
 
 assert.doesNotMatch(
@@ -604,6 +631,30 @@ assert.match(
   chatRoute,
   /const harnessPrompt = buildPromptWithBoundaryReminder\(scopedPrompt, body\.sessionId\)/,
   "The harness prompt should carry the corrective boundary reminder when the previous turn went out of bounds",
+);
+
+assert.match(
+  chatRoute,
+  /const runtimeAccessFingerprint = buildRuntimeAccessFingerprint\(/,
+  "Every local turn should fingerprint the effective project grants handed to the harness",
+);
+
+assert.match(
+  chatRoute,
+  /existingConversation[\s\S]*runtimeAccessFingerprint !== runtimeAccessFingerprint[\s\S]*buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "A resumed conversation whose live grant set changed should start a fresh sandbox with bounded transcript replay",
+);
+
+assert.match(
+  chatRoute,
+  /conv\.runtimeAccessFingerprint = runtimeAccessFingerprint/,
+  "Successful turns should persist the grant fingerprint used by their native harness session",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\([\s\S]*?"runtime-access-refresh"[\s\S]*?"Filesystem access refreshed"[\s\S]*?"done"/,
+  "A grant-triggered sandbox refresh should be observable in the turn timeline",
 );
 
 assert.match(
@@ -704,18 +755,34 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await setDefaultSessionTitleIfMissing\(finalSessionId, chatTitle\)/,
+  /await setDefaultStubTitleAuto\(finalSessionId, chatTitle\)/,
   "Fresh chats should store a Cave-side title override so daemon prompt-derived titles do not win in the session list",
 );
 
 assert.match(
   chatRoute,
-  /async function setDefaultSessionTitleIfMissing[\s\S]*await setSessionTitle\(sessionId, title\)/,
-  "The default title override helper should preserve existing titles and write only through the Cave title override path",
+  /async function setDefaultStubTitleAuto[\s\S]{0,400}setSessionTitleAutoIfOwned/,
+  "The default title override helper must use the atomic auto-owned write (setSessionTitleAutoIfOwned)",
 );
 
 assert.match(
   boardRoute,
   /isTrustedChatHarness\(binding\.harness\)/,
   "Board step enrichment should enforce the same trusted Coven harness gate",
+);
+
+// cave-o3nq7 review (#4582): the exemption's containment test must run on a
+// symlink-RESOLVED resume root. resolveLocalRuntimeCwd realpaths the root it is
+// handed and enforces only "inside $HOME", so a lexical check on the raw string
+// would let a symlink inside the familiar's own workspace resolve into another
+// project with authorizeChatProjectLaunch skipped.
+assert.match(
+  chatRoute,
+  /const resumeCwdResolved = resumeCwd\s*\?\s*await realpath\(resumeCwd\)\.catch\(\(\) => undefined\)\s*:\s*undefined/,
+  "the resume root is symlink-resolved, and an unresolvable root yields undefined",
+);
+assert.match(
+  chatRoute,
+  /projectlessGenerationLaunch\(\{[\s\S]*?resumeCwdResolved,[\s\S]*?\}\)/,
+  "the launch decision receives the resolved resume root",
 );

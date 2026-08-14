@@ -18,6 +18,8 @@ function stateVisual(state: AutoMissionState): { label: string; cls: string; ico
       return { label: "working", cls: "text-[var(--accent-presence)]", icon: "ph:magic-wand" };
     case "blocked":
       return { label: "blocked — needs you", cls: "text-[var(--color-danger)]", icon: "ph:hand-palm" };
+    case "failed":
+      return { label: "couldn't finish", cls: "text-[var(--color-danger)]", icon: "ph:warning-circle" };
     case "done":
       return { label: "mission complete", cls: "text-[var(--color-success)]", icon: "ph:check-circle" };
   }

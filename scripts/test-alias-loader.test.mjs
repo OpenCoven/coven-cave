@@ -31,6 +31,17 @@ test("repo-owned JSON remains compatible with the Node test loader", async () =>
   assert.match(String(result.source), /^export default /);
 });
 
+test("the root package manifest remains compatible for app-version imports", async () => {
+  const result = await load(
+    new URL("../package.json", import.meta.url).href,
+    {},
+    nextLoad,
+  );
+  assert.equal(result.format, "module");
+  assert.equal(result.shortCircuit, true);
+  assert.match(String(result.source), /"version"/);
+});
+
 test("dependency TSX and JSON URLs fall through without being transformed", async () => {
   for (const relative of [
     "../node_modules/example-package/private.tsx",

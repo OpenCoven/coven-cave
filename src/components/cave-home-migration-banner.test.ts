@@ -23,7 +23,7 @@ assert.match(src, /Recover legacy/, "review offers legacy recovery");
 assert.match(src, /Open backup folder/, "review exposes verified recovery bundles");
 assert.match(src, /return "Defer"/, "review lets users defer ambiguous decisions");
 assert.match(src, /shell_open_path/, "desktop opens the absolute backup directory through the validated command");
-assert.match(src, /usePausablePoll\(\(\) => void refresh\(\), 5 \* 60_000/, "managed mirrors are rechecked for stale legacy writes while Cave remains open — at a gentle 5min cadence (the endpoint rescans the legacy home per hit; cave-v8hh)");
+assert.match(src, /usePausablePoll\(refresh, 5 \* 60_000/, "managed mirrors are rechecked without discarding rejected refresh promises while Cave remains open — at a gentle 5min cadence (the endpoint rescans the legacy home per hit; cave-v8hh)");
 assert.match(src, /JSON\.stringify\(confirmToken\s*\?\s*\{ legacy: detail\.legacy, action, confirm: confirmToken \}\s*:\s*\{ legacy: detail\.legacy, action \}\)/, "actions identify one manifest entry and only send the issued token after the guard asked for it");
 assert.match(src, /confirmationRequired\?\.find/, "a guard-blocked resolution surfaces its confirmation request");
 assert.match(src, /discardToken: guard\.discardToken/, "a re-blocked confirmation adopts the fresh token issued for the changed copy");

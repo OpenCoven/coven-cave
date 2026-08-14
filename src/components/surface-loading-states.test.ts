@@ -56,6 +56,11 @@ assert.match(
   /if \(!isCurrent\(\)\) return; \/\/ superseded/,
   "a superseded (scope-changed) session-list load drops its writes",
 );
+assert.match(
+  workspace,
+  /catch \{\s*\n\s*if \(isCurrent\(\)\) setSessionsError\(true\);[\s\S]*?finally \{\s*\n\s*if \(!baseSessionsApplied && isCurrent\(\)\) setSessionsLoaded\(true\);/,
+  "request sequencing also guards stale failure and settlement writes",
+);
 assert.doesNotMatch(
   workspace,
   /Promise\.allSettled\(\[[\s\S]{0,600}\/api\/sessions\/list[\s\S]{0,600}\/api\/github\/tasks/,

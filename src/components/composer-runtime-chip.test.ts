@@ -70,7 +70,7 @@ assert.match(
   "a home runtime switch fires the roster refresh (only on a successful PATCH)",
 );
 
-// ── The picker is always in the composer control row, wired to live state ───
+// ── The picker is always reachable from the composer Tools edge ─────────────
 assert.match(
   chatView,
   /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?runtime: modelHarness,[\s\S]*?modelValue: composerModelValue,[\s\S]*?modelOptions: composerModelOptions,[\s\S]*?onPickRuntime: handleSelectRuntime,[\s\S]*?onPickModel: handleSelectModel,[\s\S]*?\}\}/,
@@ -78,13 +78,13 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-utility-row">[\s\S]{0,4000}?<ComposerActionsMenu/,
-  "the chat options trigger sits in the composer utility row — always visible, session or not",
+  /className="cave-composer-edge-actions">[\s\S]{0,4000}?<ComposerActionsMenu[\s\S]*?triggerVariant="tools"/,
+  "the chat options trigger sits at the composer edge — always visible, session or not",
 );
 assert.match(
   chatView,
-  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
-  "the pill anchors the composer footer band — always visible, session or not (2026-07-21 wide-column pass moved it down from the utility row)",
+  /const chatContextControls = \([\s\S]*?<ComposerContextChips[\s\S]*?runtime=\{modelHarness\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "chatContextControls is constructed once with live runtime/model state; new chat (inlineComposer) mounts it in the footer cluster, active chat in cave-chat-header-context",
 );
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──

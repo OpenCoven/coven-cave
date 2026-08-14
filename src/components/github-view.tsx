@@ -76,6 +76,7 @@ import {
   surfaceWarmupRetryAfterSeconds,
 } from "@/lib/surface-warmup-registry";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { GitHubStream } from "@/components/github-stream";
 import {
   deriveStage,
@@ -102,7 +103,7 @@ type Props = {
   initialTarget?: GitHubItemTarget | null;
   /** Called after the view captures a host target into local detail state. */
   onInitialTargetHandled?: () => void;
-  /** When set, the host owns the content filter (e.g. the Code Workshop's
+  /** When set, the host owns the content filter (e.g. the Coding Desk's
    *  PRs/Issues/Reviews top tabs). The view is driven to this filter and hides
    *  its own filter control to avoid a redundant second switch. */
   initialFilter?: Filter | null;
@@ -2827,7 +2828,15 @@ export function GitHubView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useSurfacePreference(surfacePreferenceSpecs.github.filter);
-  // Host-driven filter (Code Workshop's PRs/Issues/Reviews tabs): follow the
+  // A filter is an axis, not a destination: a burst of chip taps collapses into
+  // one entry so Back does not become a per-tap undo.
+  const selectFilter = useTrackedSurfaceValue({
+    id: "github:filter",
+    value: filter,
+    onRestore: setFilter,
+    coalesceMs: 700,
+  });
+  // Host-driven filter (Coding Desk's PRs/Issues/Reviews tabs): follow the
   // prop whenever it changes so switching tabs re-filters the same mounted view.
   useEffect(() => {
     if (initialFilter && initialFilter !== filter) setFilter(initialFilter);
@@ -3343,7 +3352,7 @@ export function GitHubView({
           {activity?.rateLimit && <GhBudgetMeter rateLimit={activity.rateLimit} />}
         </div>
 
-        {/* Host-driven filter (Code Workshop tabs) owns the switch — hide the
+        {/* Host-driven filter (Coding Desk tabs) owns the switch — hide the
             in-view chips so there is only one control. */}
         {initialFilter ? null : (
           <Tabs
@@ -3352,7 +3361,7 @@ export function GitHubView({
             size="sm"
             ariaLabel="Filter GitHub activity"
             value={filter}
-            onChange={setFilter}
+            onChange={selectFilter}
             items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
               id: f,
               label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],

@@ -71,8 +71,8 @@ assert.match(
 
 assert.match(
   source,
-  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
-  "Chat attachments should explicitly accept images, videos, documents, and common text/code files",
+  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"audio\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
+  "Chat attachments should explicitly accept images, videos, audio, documents, and common text/code files",
 );
 
 assert.match(
@@ -123,8 +123,8 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
-  "Composer should keep voice, grouped options (attach inside), and send actions in the footer row",
+  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*<EnhanceControl[\s\S]*aria-label="Send message"/,
+  "Composer should keep Tools at its edge plus voice, context, enhance, and send actions in the footer row",
 );
 assert.match(
   addMenuSource,
@@ -134,8 +134,8 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-utility-row"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue/,
-  "Composer places the grouped Chat options menu in the utility row",
+  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue/,
+  "Composer places the grouped Tools menu at the composer edge",
 );
 
 assert.match(
@@ -179,17 +179,28 @@ assert.match(
   "a send waits for the runtime binding write instead of launching the previous harness",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
-// "Both" reconciliation (2026-07-21): the context pill returned with the
-// footer band — but only there, never back in the control row.
+// Context controls are constructed once as chatContextControls and placed
+// adaptively — footer for new chats (inlineComposer), header for active chats.
+// This avoids duplicated picker state while the control row stays context-free.
 assert.equal(
   source.match(/<ComposerContextChips/g)?.length,
   1,
-  "the context chips mount exactly once — in the footer band",
+  "ComposerContextChips is constructed exactly once (as chatContextControls)",
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips/,
-  "the context chips live in the footer band, not the control row",
+  /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
+  "chatContextControls wraps the single ComposerContextChips construction",
+);
+assert.match(
+  source,
+  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "the context controls ride the footer band only for new-chat (inlineComposer)",
+);
+assert.match(
+  source,
+  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "the context controls ride the header for active chats (!inlineComposer)",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 

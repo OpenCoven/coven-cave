@@ -40,11 +40,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  // Pinned as an ORDER, not an exact chain: marker extractors keep being added
-  // between the skill split and next-paths (auto-mission status was the last),
-  // and naming the immediate argument makes this assertion stale every time.
-  /const reasoningSplit = splitReasoning\(extractAgentAttachmentMarkers\(turn\.text\)\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const skillSplit = extractSkillMarkers\([\s\S]*const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(/,
-  "Assistant turns should split visible content from collapsible reasoning before extracting next-path suggestions",
+  /inlineReasoning,[\s\S]*\} = extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "Assistant turns should use the shared visible-text projection for reasoning and control-marker stripping",
 );
 
 assert.match(

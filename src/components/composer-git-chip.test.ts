@@ -48,6 +48,17 @@ assert.match(
   /window\.dispatchEvent\(new CustomEvent\("cave:changes-open"\)\)/,
   "the pill keeps the Git-changes drill-through",
 );
+// ── Worktree is a separate chip; branch label no longer folds it in ──────────
+assert.match(
+  pill,
+  /aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}/,
+  "the worktree chip carries its own dedicated accessible name",
+);
+assert.doesNotMatch(
+  pill,
+  /name="ph:git-branch"[\s\S]{0,400}?context\.worktree/,
+  "worktree no longer appears inside the branch chip's text content",
+);
 
 // ── Git-less chats render nothing — the chip gates on a loaded repo status ──
 assert.match(
@@ -111,6 +122,11 @@ assert.match(
   chip,
   /aria-haspopup="menu"[\s\S]*?aria-expanded=\{menuOpen\}/,
   "the branch segment is a real menu trigger with ARIA state",
+);
+assert.match(
+  chip,
+  /ariaLabel = "Switch branch"[\s\S]*?menuLabel = "Branches"[\s\S]*?<Popover[\s\S]*?ariaLabel=\{ariaLabel\}[\s\S]*?<PopoverBody role="menu" ariaLabel=\{menuLabel\}>[\s\S]*?<PopoverLabel>\{ariaLabel\}<\/PopoverLabel>/,
+  "the shared branch menu exposes overridable popover and menu labels while preserving branch defaults",
 );
 assert.match(
   chip,

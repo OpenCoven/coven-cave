@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MutableRefObject,
   type ReactNode,
 } from "react";
@@ -18,6 +19,15 @@ import {
   PopoverItem,
   PopoverLabel,
 } from "@/components/ui/popover";
+import {
+  READER_TEXT_SCALE_DEFAULT_INDEX,
+  READER_TEXT_SCALE_STEPS,
+  clampScaleIndex,
+  loadScaleIndex,
+  saveScaleIndex,
+  scaleForIndex,
+  scaleLabel,
+} from "@/lib/reader-text-scale";
 
 export type DocumentReaderSection<TBlock> = {
   id: string;
@@ -78,6 +88,27 @@ export function DocumentReader<TBlock, TLede = TBlock>({
   const [openSections, setOpenSections] = useState<Set<string>>(
     () => new Set(document.sections.map((section) => section.id)),
   );
+
+  // Text size starts at the default and adopts the stored value after mount.
+  // Reading localStorage in the initializer would render different HTML on the
+  // server than on the client and trip hydration, so the first paint is always
+  // the default size and the effect below corrects it.
+  const [scaleIndex, setScaleIndex] = useState(READER_TEXT_SCALE_DEFAULT_INDEX);
+
+  useEffect(() => {
+    setScaleIndex(loadScaleIndex());
+  }, []);
+
+  const stepScale = useCallback((delta: number) => {
+    setScaleIndex((current) => {
+      const next = clampScaleIndex(current + delta);
+      if (next !== current) saveScaleIndex(next);
+      return next;
+    });
+  }, []);
+
+  const atSmallest = scaleIndex <= 0;
+  const atLargest = scaleIndex >= READER_TEXT_SCALE_STEPS.length - 1;
 
   const namedSections = useMemo(
     () => document.sections.filter((section) => section.heading),
@@ -176,6 +207,9 @@ export function DocumentReader<TBlock, TLede = TBlock>({
       ]
         .filter(Boolean)
         .join(" ")}
+      style={
+        { "--reader-text-scale": scaleForIndex(scaleIndex) } as CSSProperties
+      }
     >
       {navigation === "rail" && namedSections.length > 0 ? (
         <nav
@@ -201,7 +235,35 @@ export function DocumentReader<TBlock, TLede = TBlock>({
         className="document-reader__scroll rr-col rr-doc"
         onScroll={onScroll}
       >
-        {navigation === "compact" && namedSections.length >= 2 ? (
+        {/* One sticky control row. It renders in every navigation mode,
+            because text size is not a navigation affordance — a reader with
+            no table of contents still needs it. The Contents trigger keeps its
+            own class so the existing compact-nav styling is unchanged. */}
+        <div className="document-reader__toolbar">
+          <div className="document-reader__textsize" role="group" aria-label="Text size">
+            <button
+              type="button"
+              className="document-reader__textsize-btn focus-ring"
+              onClick={() => stepScale(-1)}
+              disabled={atSmallest}
+              aria-label={`Decrease text size (currently ${scaleLabel(scaleIndex)})`}
+              title="Decrease text size"
+            >
+              <span aria-hidden className="document-reader__textsize-glyph--small">A</span>
+            </button>
+            <button
+              type="button"
+              className="document-reader__textsize-btn focus-ring"
+              onClick={() => stepScale(1)}
+              disabled={atLargest}
+              aria-label={`Increase text size (currently ${scaleLabel(scaleIndex)})`}
+              title="Increase text size"
+            >
+              <span aria-hidden className="document-reader__textsize-glyph--large">A</span>
+            </button>
+          </div>
+
+          {navigation === "compact" && namedSections.length >= 2 ? (
           <div className="document-reader__compact-nav">
             <button
               ref={contentsTriggerRef}
@@ -237,7 +299,8 @@ export function DocumentReader<TBlock, TLede = TBlock>({
               </PopoverBody>
             </Popover>
           </div>
-        ) : null}
+          ) : null}
+        </div>
 
         <div className="document-reader__column rr-doc__column">
           {hasBody ? (

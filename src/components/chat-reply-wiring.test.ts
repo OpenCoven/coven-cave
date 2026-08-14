@@ -15,13 +15,20 @@ assert.match(
   /onReply,\s*onOpenUrl/,
   "onReply is destructured in the MessageBubble signature",
 );
-{
-  const replyButtons = bubble.match(/aria-label="Reply to message"/g) ?? [];
-  assert.equal(replyButtons.length, 2, "Reply action renders in both the user and assistant action rows");
-}
+assert.match(
+  bubble,
+  /aria-label="Reply to message"/,
+  "Reply remains directly available on user messages",
+);
+assert.match(
+  bubble,
+  /<PopoverItem icon="ph:arrow-bend-up-left" onSelect=\{onReply\}>[\s\S]*?Reply[\s\S]*?<\/PopoverItem>/,
+  "Reply remains available for assistant responses under More",
+);
 // The reply buttons live INSIDE the !pending action rows so they never show
 // on a streaming turn.
 assert.match(bubble, /onClick=\{onReply\}/, "the Reply button invokes onReply");
+assert.match(bubble, /onSelect=\{onReply\}/, "the assistant Reply menu item invokes onReply");
 
 // ── chat-view stages, shows, and sends the reply ──────────────────────────
 assert.match(view, /from "@\/lib\/chat-reply"/, "chat-view imports the quote-reply helpers");

@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import {
+  canonicalize,
+  inlineSlashInvocation,
+  matchSlash,
+  replaceInlineSlashRange,
+  type SlashCommand,
+} from "@/lib/slash-commands";
 import { modelSlashOptions } from "@/lib/slash-model";
 import type { RuntimeModelOption } from "@/lib/runtime-models";
 import { skillCommandMatches, skillSlashOptions, type SkillOption } from "@/lib/slash-skill";
@@ -15,7 +21,7 @@ import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prom
  *
  * Why this exists: the chat composer (chat-view.tsx) and the home composer
  * (home-composer.tsx) each hand-rolled the identical menu machinery — the
- * first-token-only matching rule, the skills/prompts fetches, the roving
+ * caret-scoped matching rule, the skills/prompts fetches, the roving
  * index that runs from the command list into the Skills group, the shared
  * listbox id behind the textarea's combobox ARIA, Esc-dismiss with
  * typing-reopens, and the ↑↓/Tab/Enter keyboard branches. One implementation
@@ -26,7 +32,7 @@ import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prom
  * - onPickSkill: home starts a new chat, chat sends in-thread;
  * - onInsertPrompt: both insert-for-editing (never send) — but with their own
  *   caret/announce plumbing;
- * - onRunCommand: home submits the typed text, chat runs the slash intent;
+ * - onRunCommand: each composer runs the highlighted slash intent;
  * - onNoMatchEnter: home falls through to submit; chat consumes and does
  *   nothing.
  *
@@ -37,6 +43,8 @@ import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prom
 export function useInlineSlashMenus(opts: {
   text: string;
   setText: (t: string) => void;
+  caret: number;
+  onCompleteText?: (text: string, caret: number) => void;
   modelHarness: string;
   modelOptionsOverride?: RuntimeModelOption[];
   onPickModel: (id: string) => void;
@@ -60,9 +68,10 @@ export function useInlineSlashMenus(opts: {
   setSlashIdx: (updater: number | ((i: number) => number)) => void;
   slashListboxId: string;
   dismiss: () => void;
+  completeCommand: (command: string, appendSpace?: boolean) => void;
   handleKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
 } {
-  const { text, setText, modelHarness, modelOptionsOverride } = opts;
+  const { text, setText, caret, modelHarness, modelOptionsOverride } = opts;
   // Latest-ref for the pick callbacks (usePausablePoll pattern) so inline
   // arrows at the call site don't churn handleKeyDown's identity per render.
   const cbRef = useRef(opts);
@@ -76,13 +85,20 @@ export function useInlineSlashMenus(opts: {
     setSlashDismissed(false);
   }, [text]);
 
-  // Slash suggestions — surface only while the user is still typing the
-  // command token (no whitespace yet).
+  const activeInvocation = useMemo(
+    () => inlineSlashInvocation(text, caret),
+    [text, caret],
+  );
+  const commandTokenActive = Boolean(
+    activeInvocation && !/\s/.test(activeInvocation.input),
+  );
+
+  // Slash suggestions surface while the caret is inside a command token. The
+  // token can appear after prose or on a later line.
   const slashMatches: SlashCommand[] = useMemo(() => {
-    const firstWord = text.trimStart().split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || text.trimStart().includes(" ")) return [];
-    return matchSlash(firstWord);
-  }, [text]);
+    if (!activeInvocation || !commandTokenActive) return [];
+    return matchSlash(activeInvocation.commandToken);
+  }, [activeInvocation, commandTokenActive]);
   const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
 
   // Skills for the inline `/skill` / `/skills` picker — fetched once from the
@@ -131,14 +147,14 @@ export function useInlineSlashMenus(opts: {
   // While typing "/model <partial>", the menu shows model options instead of
   // commands (an inline picker). null ⇒ not in /model arg position.
   const modelOptions = useMemo(
-    () => (slashDismissed ? null : modelSlashOptions(text, modelHarness, modelOptionsOverride)),
-    [text, modelHarness, modelOptionsOverride, slashDismissed],
+    () => (slashDismissed ? null : modelSlashOptions(activeInvocation?.input ?? "", modelHarness, modelOptionsOverride)),
+    [activeInvocation, modelHarness, modelOptionsOverride, slashDismissed],
   );
   const modelMenuActive = (modelOptions?.length ?? 0) > 0;
   // Inline `/skill` / `/skills` picker — null ⇒ not in a skill-picker position.
   const skillOptions = useMemo(
-    () => (slashDismissed ? null : skillSlashOptions(text, skills)),
-    [text, skills, slashDismissed],
+    () => (slashDismissed ? null : skillSlashOptions(activeInvocation?.input ?? "", skills)),
+    [activeInvocation, skills, slashDismissed],
   );
   const skillMenuActive = (skillOptions?.length ?? 0) > 0;
   // Inline `/prompt` / `/prompts` picker — null ⇒ not in a prompt-picker
@@ -147,20 +163,16 @@ export function useInlineSlashMenus(opts: {
   // the very next open.
   const promptOptions = useMemo(() => {
     if (slashDismissed) return null;
-    const options = promptSlashOptions(text, prompts);
+    const options = promptSlashOptions(activeInvocation?.input ?? "", prompts);
     return options ? orderPrompts(options, readPromptFavorites(), readPromptRecents()) : null;
-  }, [text, prompts, slashDismissed]);
+  }, [activeInvocation, prompts, slashDismissed]);
   const promptMenuActive = (promptOptions?.length ?? 0) > 0;
-  // Skills surfaced directly in the command menu — typing `/revi` finds the
-  // code-review skill without the /skill prefix. Same first-token-only rule as
-  // slashSuggestions so arg positions never double-render.
+  // Skills surfaced directly in the command menu — typing `/revi` at the caret
+  // finds the code-review skill without the /skill prefix.
   const skillCommandRows: SkillOption[] = useMemo(() => {
-    if (slashDismissed) return [];
-    const t = text.trimStart();
-    const firstWord = t.split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || t.includes(" ")) return [];
-    return skillCommandMatches(firstWord, skills);
-  }, [text, skills, slashDismissed]);
+    if (slashDismissed || !activeInvocation || !commandTokenActive) return [];
+    return skillCommandMatches(activeInvocation.commandToken, skills);
+  }, [activeInvocation, commandTokenActive, skills, slashDismissed]);
 
   // The slash-command, /model, /skill and /prompt pickers are mutually
   // exclusive inline listboxes sharing one listbox id, so the composer's
@@ -170,6 +182,38 @@ export function useInlineSlashMenus(opts: {
   const slashListboxId = useId();
 
   const dismiss = useCallback(() => setSlashDismissed(true), []);
+  const completeRange = useCallback(
+    (start: number, end: number, replacement: string) => {
+      const completed = replaceInlineSlashRange(text, start, end, replacement);
+      if (opts.onCompleteText) opts.onCompleteText(completed.text, completed.caret);
+      else setText(completed.text);
+    },
+    [opts.onCompleteText, setText, text],
+  );
+  const completeCommand = useCallback(
+    (command: string, appendSpace = false) => {
+      if (!activeInvocation) return;
+      const suffixStartsWithSpace = /\s/.test(text[activeInvocation.tokenEnd] ?? "");
+      const replacement = `${command}${appendSpace && !suffixStartsWithSpace ? " " : ""}`;
+      completeRange(
+        activeInvocation.start,
+        activeInvocation.tokenEnd,
+        replacement,
+      );
+    },
+    [activeInvocation, completeRange, text],
+  );
+  const completeInvocation = useCallback(
+    (replacement: string) => {
+      if (!activeInvocation) return;
+      let replacementEnd = activeInvocation.caret;
+      while (replacementEnd < text.length && !/\s/.test(text[replacementEnd] ?? "")) {
+        replacementEnd += 1;
+      }
+      completeRange(activeInvocation.start, replacementEnd, replacement);
+    },
+    [activeInvocation, completeRange, text],
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
@@ -188,7 +232,7 @@ export function useInlineSlashMenus(opts: {
         const opts = modelOptions;
         if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return true; }
         if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return true; }
-        if (e.key === "Tab") { e.preventDefault(); const m = opts[slashIdx]; if (m) setText(`/model ${m.id}`); return true; }
+        if (e.key === "Tab") { e.preventDefault(); const m = opts[slashIdx]; if (m) completeInvocation(`/model ${m.id}`); return true; }
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           const m = opts[slashIdx];
@@ -201,7 +245,7 @@ export function useInlineSlashMenus(opts: {
         const opts = skillOptions;
         if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return true; }
         if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return true; }
-        if (e.key === "Tab") { e.preventDefault(); const s = opts[slashIdx]; if (s) setText(`/skill ${s.id}`); return true; }
+        if (e.key === "Tab") { e.preventDefault(); const s = opts[slashIdx]; if (s) completeInvocation(`/skill ${s.id}`); return true; }
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           const s = opts[slashIdx];
@@ -215,7 +259,7 @@ export function useInlineSlashMenus(opts: {
         const opts = promptOptions;
         if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return true; }
         if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return true; }
-        if (e.key === "Tab") { e.preventDefault(); const p = opts[slashIdx]; if (p) setText(`/prompt ${p.id}`); return true; }
+        if (e.key === "Tab") { e.preventDefault(); const p = opts[slashIdx]; if (p) completeInvocation(`/prompt ${p.id}`); return true; }
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           const p = opts[slashIdx];
@@ -243,19 +287,34 @@ export function useInlineSlashMenus(opts: {
           e.preventDefault();
           const cmd = slashSuggestions[slashIdx];
           const s = skillAt(slashIdx);
-          if (cmd) setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
-          else if (s) setText(`/skill ${s.id} `);
+          if (cmd) completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
+          else if (s) completeCommand(`/skill ${s.id}`, true);
           return true;
         }
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           const cmd = slashSuggestions[slashIdx];
           const s = skillAt(slashIdx);
-          // If the highlighted command takes an argument and the input isn't
-          // the exact command yet, autocomplete first (like Tab) so the user
-          // can fill in args; otherwise run the highlighted suggestion.
-          if (cmd && cmd.argPlaceholder && canonicalize(text.trim()) !== cmd.name) {
-            setText(cmd.name + " ");
+          // A slash that follows prose completes; only a slash that OWNS the
+          // draft runs. inlineSlashInvocation deliberately opens this menu
+          // mid-draft ("commands after prose or on later lines"), and running
+          // an intent from there throws away everything the user typed —
+          // /clear additionally wipes the whole transcript, and 19 of the 31
+          // commands declare no argPlaceholder, so they skipped the
+          // autocomplete guard below and executed on the first Enter
+          // (cave-y7rg0). Completing instead keeps Enter non-destructive
+          // wherever the draft is more than the command itself.
+          const commandOwnsDraft = (activeInvocation?.start ?? 0) === 0;
+          // Within a command-owned draft, autocomplete first when the command
+          // takes an argument and the token isn't already that command (like
+          // Tab), so the user can fill in args; otherwise run it.
+          if (
+            cmd &&
+            (!commandOwnsDraft ||
+              (cmd.argPlaceholder &&
+                canonicalize(activeInvocation?.commandToken ?? "") !== cmd.name))
+          ) {
+            completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
           } else if (cmd) {
             cbRef.current.onRunCommand(cmd);
           } else if (s) {
@@ -281,6 +340,9 @@ export function useInlineSlashMenus(opts: {
       slashIdx,
       text,
       setText,
+      completeCommand,
+      completeInvocation,
+      activeInvocation,
     ],
   );
 
@@ -300,6 +362,7 @@ export function useInlineSlashMenus(opts: {
     setSlashIdx,
     slashListboxId,
     dismiss,
+    completeCommand,
     handleKeyDown,
   };
 }

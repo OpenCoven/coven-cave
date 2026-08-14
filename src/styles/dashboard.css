@@ -97,6 +97,15 @@
     var(--bg-base);
 }
 
+.settings-shell--embedded {
+  min-width: 0;
+  min-height: 0;
+}
+
+.settings-shell--embedded .settings-shell__header {
+  -webkit-app-region: no-drag;
+}
+
 .settings-shell__header {
   /* Subtle titlebar glass, matching the workspace shell's native band: a
      translucent panel-to-base wash with blur+saturate instead of the old
@@ -507,6 +516,19 @@
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+}
+
+.settings-workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-workspace-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .settings-workspace-error {

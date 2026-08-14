@@ -24,6 +24,9 @@ type Props = {
   filter?: string;
   scope: ResearchMissionScope;
   onClearFilters(): void;
+  /** Collapse the queue to its spine. Absent means the queue is not
+   *  collapsible in this host, so no control renders. */
+  onCollapse?(): void;
 };
 
 const STATUS_TONE: Partial<Record<ResearchMission["status"], string>> = {
@@ -48,6 +51,7 @@ export function ResearchMissionList({
   filter,
   scope,
   onClearFilters,
+  onCollapse,
 }: Props) {
   const filteredMissions = useMemo(
     () => filterResearchMissionsByText(missions, filter).filter((mission) =>
@@ -179,7 +183,18 @@ export function ResearchMissionList({
     <nav className="research-mission-nav" aria-label="Research missions">
       <div className="research-mission-nav__head">
         <span>Runs</span>
-        <span>{nonArchivedCount}</span>
+        <span className="research-mission-nav__count">{nonArchivedCount}</span>
+        {onCollapse ? (
+          <button
+            type="button"
+            className="research-mission-nav__collapse focus-ring"
+            aria-label="Collapse the run queue"
+            title="Collapse the run queue"
+            onClick={onCollapse}
+          >
+            <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+          </button>
+        ) : null}
       </div>
       {checkpointMissions.length > 0 ? (
         <p className="research-mission-nav__waiting" role="status">

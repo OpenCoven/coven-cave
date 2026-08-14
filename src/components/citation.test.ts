@@ -46,6 +46,26 @@ test("the Citation UI exposes inline provider previews through the shared Popove
   );
   assert.match(
     citation,
+    /useLayoutEffect\(\(\) => \{[\s\S]{0,1800}?querySelectorAll<HTMLAnchorElement>\('a\[href\^="#cite-"\]'\)[\s\S]{0,500}?classList\.add\("cave-citation-chip"\)/,
+    "citation anchors receive their chip behavior in the commit before paint",
+  );
+  assert.match(
+    citation,
+    /const wiredLinks = new Map<HTMLAnchorElement, \(\) => void>\(\)[\s\S]{0,1800}?if \(wiredLinks\.has\(link\)\) continue/,
+    "citation reconciliation keeps exactly one listener set per anchor",
+  );
+  assert.match(
+    citation,
+    /new MutationObserver\(reconcileCitationLinks\)[\s\S]{0,160}?observer\.observe\(container, \{ childList: true, subtree: true \}\)/,
+    "late or replaced markdown anchors are enhanced as soon as they enter the document",
+  );
+  assert.match(
+    citation,
+    /observer\.disconnect\(\)[\s\S]{0,100}?for \(const cleanup of wiredLinks\.values\(\)\) cleanup\(\)[\s\S]{0,50}?wiredLinks\.clear\(\)/,
+    "citation observation and listeners are removed together",
+  );
+  assert.match(
+    citation,
     /renderedHtml: string[\s\S]*?\[activate, citationsById, containerRef, onOpenUrl, preview, renderedHtml\]/,
     "preview wiring reruns when the markdown renderer replaces its injected DOM",
   );

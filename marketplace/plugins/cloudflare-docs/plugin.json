@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/cloudflare-docs",
   "x-coven": {
     "displayName": "Cloudflare Docs",

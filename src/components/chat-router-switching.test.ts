@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const familiarChangeEffect =
-  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[familiar\?\.id\]\);/)?.[0] ?? "";
+  source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[advanceComposeInstance, familiar\?\.id\]\);/)?.[0] ?? "";
 
 assert.match(
   familiarChangeEffect,
@@ -48,6 +48,12 @@ assert.match(
   source,
   /const chatFamiliar = selectedViewFamiliar \?\? sessionFamiliar \?\? familiar \?\? null/,
   "ChatRouter should render an opened session with its own familiar before the parent active familiar catches up",
+);
+
+assert.match(
+  source,
+  /<ChatView[\s\S]*?onSessionsChanged=\{onSessionsChanged\}/,
+  "ChatRouter forwards Workspace's stable session refresh callback to ChatView unchanged",
 );
 
 // ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
@@ -139,7 +145,7 @@ assert.match(
 
 assert.match(
   source,
-  /prev\.kind === "chat" && prev\.sessionId === null\s*\? \{ kind: "chat", sessionId: sid/,
+  /shouldRouterPromoteSession\(\s*\{ sessionId: prev\.sessionId, composeInstance: composeInstanceRef\.current \},\s*request,\s*\)/,
   "Session promotion must update the view's sessionId via setView so the hash-sync effect writes the promoted id",
 );
 
@@ -245,7 +251,7 @@ const findChromeSource =
   chatViewSource + readFileSync(new URL("./chat-find-band.tsx", import.meta.url), "utf8");
 // cave-chat.css is a facade of @imports; the runner's css-source-contract-hook
 // patches readFileSync so it yields the effective content of the split sheets.
-const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const chatCssSource = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/transcript", "cave-chat/activity"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 
@@ -403,8 +409,8 @@ assert.match(
 
 assert.match(
   chatViewSource,
-  /t\.role === "assistant" \? splitReasoning\(t\.text\)\.visible : t\.text/,
-  "Find must match the VISIBLE transcript text — never turn.reasoning or unsplit thinking blocks",
+  /text: chatTurnVisibleText\(t\),/,
+  "Find must match the shared visible transcript text — never turn.reasoning or unsplit thinking/control blocks",
 );
 
 // 8. Highlight CSS: temporary cave-turn-found flash with reduced-motion

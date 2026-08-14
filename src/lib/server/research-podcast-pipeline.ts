@@ -120,6 +120,76 @@ export function pcmWavDurationMs(bytes: Uint8Array): number {
   return Math.round((parsed.dataLength / parsed.byteRate) * 1_000);
 }
 
+// ── per-segment silence trimming (cave-8nndo) ────────────────────────────────
+// TTS engines pad segments with long stretches of near-silence (Charm's
+// re-review caught ~4.9s of dead air mid-episode). Each segment is trimmed
+// before concatenation, keeping a short natural breath on both sides so turns
+// don't slam into each other.
+
+/** 16-bit amplitude below which a sample counts as silence (~ -44 dBFS). */
+const SILENCE_AMPLITUDE_THRESHOLD = 200;
+/** Silence kept before a segment's first audible frame. */
+const MAX_LEADING_SILENCE_MS = 250;
+/** Silence kept after a segment's last audible frame. */
+const MAX_TRAILING_SILENCE_MS = 450;
+
+/**
+ * Trims leading/trailing silence from a 16-bit PCM WAV segment down to the
+ * caps above. Non-16-bit audio and fully silent segments pass through
+ * unchanged — a wholly silent segment is a synthesis symptom this function
+ * must surface, not mask.
+ */
+export function trimPcmWavSilence(bytes: Uint8Array): Uint8Array {
+  const parsed = parsePcmWav(bytes);
+  if (parsed.bitsPerSample !== 16 || parsed.blockAlign < parsed.channels * 2) return bytes;
+  const view = new DataView(parsed.bytes.buffer, parsed.bytes.byteOffset, parsed.bytes.byteLength);
+  const frameBytes = parsed.blockAlign;
+  // A data chunk that is not a whole number of frames is malformed; flooring
+  // it here would silently drop the trailing partial-frame bytes, so pass the
+  // segment through untouched instead (PR #4288 review, cave-bsaum).
+  if (parsed.dataLength % frameBytes !== 0) return bytes;
+  const frameCount = parsed.dataLength / frameBytes;
+  const audible = (frame: number): boolean => {
+    const base = parsed.dataOffset + frame * frameBytes;
+    for (let channel = 0; channel < parsed.channels; channel += 1) {
+      if (Math.abs(view.getInt16(base + channel * 2, true)) > SILENCE_AMPLITUDE_THRESHOLD) {
+        return true;
+      }
+    }
+    return false;
+  };
+  let first = 0;
+  while (first < frameCount && !audible(first)) first += 1;
+  if (first === frameCount) return bytes;
+  let last = frameCount - 1;
+  while (last > first && !audible(last)) last -= 1;
+  const framesPerMs = parsed.sampleRate / 1_000;
+  const start = Math.max(0, first - Math.round(MAX_LEADING_SILENCE_MS * framesPerMs));
+  const end = Math.min(frameCount, last + 1 + Math.round(MAX_TRAILING_SILENCE_MS * framesPerMs));
+  if (start === 0 && end === frameCount) return bytes;
+  const dataStart = parsed.dataOffset + start * frameBytes;
+  const dataLength = (end - start) * frameBytes;
+  const output = new Uint8Array(44 + dataLength);
+  const headerView = new DataView(output.buffer);
+  const text = (offset: number, value: string) =>
+    [...value].forEach((char, index) => (output[offset + index] = char.charCodeAt(0)));
+  text(0, "RIFF");
+  headerView.setUint32(4, output.length - 8, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  headerView.setUint32(16, 16, true);
+  headerView.setUint16(20, 1, true);
+  headerView.setUint16(22, parsed.channels, true);
+  headerView.setUint32(24, parsed.sampleRate, true);
+  headerView.setUint32(28, parsed.byteRate, true);
+  headerView.setUint16(32, parsed.blockAlign, true);
+  headerView.setUint16(34, parsed.bitsPerSample, true);
+  text(36, "data");
+  headerView.setUint32(40, dataLength, true);
+  output.set(parsed.bytes.subarray(dataStart, dataStart + dataLength), 44);
+  return output;
+}
+
 function readyVoice(voices: SpeechModelReadiness[], requestedVoice?: string): SpeechModelReadiness {
   const voice = requestedVoice
     ? voices.find((candidate) => candidate.id === requestedVoice && candidate.ready)
@@ -333,11 +403,12 @@ export function createPodcastMediaJobDefinition(
                 `selected ${provider} voice changed during synthesis`,
               );
             }
-            cumulativeAudioBytes += synthesized.bytes.byteLength;
+            const trimmed = trimPcmWavSilence(synthesized.bytes);
+            cumulativeAudioBytes += trimmed.byteLength;
             if (cumulativeAudioBytes > RESEARCH_AUDIO_MAX_BYTES) {
               throw new Error("podcast audio exceeds the size limit");
             }
-            segments.push(synthesized.bytes);
+            segments.push(trimmed);
           } catch (error) {
             if (
               context.signal.aborted ||

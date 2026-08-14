@@ -52,8 +52,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /imagesSupported\s*\?\s*await writeImageAttachmentsToTemp\(attachments\)/,
-  "Image payloads should be written to temp files before the harness prompt is built",
+  /imagesSupported\s*\?\s*await writeImageAttachmentsToRuntime\(attachments, attachmentStagingRoot\)/,
+  "Image payloads should be staged inside a granted runtime root before the harness prompt is built",
 );
 
 assert.match(
@@ -74,12 +74,45 @@ assert.match(
   "The harness prompt should include the familiar startup context before task and identity wrappers",
 );
 
+// cave-gw3iq: chat asserted (via the per-turn identity canon) that SOUL.md and
+// IDENTITY.md define the familiar, while never loading them. These pins keep
+// the fix wired: the block is built, it is gated to new non-enhance turns, it
+// sits inside the canon wrapper, and the turn reports what it loaded.
+assert.match(
+  chatRoute,
+  /body\.sessionId \|\| body\.origin === "enhance"[\s\S]{0,80}:\s*await buildFamiliarContractContext\(body\.familiarId\)/,
+  "The familiar contract should load on new, non-enhance turns only",
+);
+
+assert.match(
+  chatRoute,
+  /buildPromptWithFamiliarContract\(\s*buildTaskAwarePrompt\([\s\S]*familiarContractBlock,\s*\),\s*body\.familiarId,/,
+  "The familiar contract block should wrap the task-aware prompt inside the identity canon",
+);
+
+assert.doesNotMatch(
+  chatRoute,
+  /buildFamiliarContractContext\([^)]*includeMemory/,
+  "Chat should not inline MEMORY.md — it already injects the daily memory file",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\(\s*"familiar-contract",\s*notice\.label,\s*"notice",\s*notice\.detail,?\s*\)/,
+  "Each turn should report which identity files it actually loaded",
+);
+
+assert.match(
+  chatRoute,
+  /id === "familiar-contract"/,
+  "The identity-load notice must persist so a reloaded transcript still shows it",
+);
+
 assert.match(
   attachmentDelivery,
   /await writeFile\(filePath, payload, \{ mode: 0o600 \}\)/,
-  "Saved image payloads should be private temp files (mode 0600)",
+  "Staged image payloads should be private files (mode 0600)",
 );
-
 assert.match(
   attachmentDelivery,
   /crypto\.randomUUID\(\)\}\.\$\{imageExtension\(attachment\.mimeType\)/,
@@ -88,8 +121,32 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /cleanupImageTempFiles\(imageFilePaths\);/,
-  "Image temp files should be best-effort deleted after the harness child has exited",
+  /const runtimeResourceRoots = sshRuntime[\s\S]*?resolveRuntimeSkillRoots\([\s\S]*?readOnlyResourceRoots: runtimeResourceRoots/,
+  "Local skill sources should be declared as read-only runtime resources in the boundary prompt",
+);
+
+assert.match(
+  chatRoute,
+  /createBoundarySentinel\([\s\S]*?allowedRoots:[\s\S]*?\.\.\.runtimeResourceRoots/,
+  "Reading an advertised skill should not be reported as a boundary violation",
+);
+
+assert.match(
+  chatRoute,
+  /const grantDirs = !sshRuntime[\s\S]*?\.\.\.runtimeResourceRoots/,
+  "Harness launches should receive the same skill-resource directories as the boundary prompt",
+);
+
+assert.match(
+  chatRoute,
+  /cleanupStagedImageFiles\(imageFilePaths\);/,
+  "Staged image files should be best-effort deleted after the harness child has exited",
+);
+
+assert.match(
+  chatRoute,
+  /parseAgentAttachments\(assistantTextForPersistence, \{[\s\S]*?allowedRoots: sshRuntime[\s\S]*?\.\.\.\(resolvedFamiliarWorkspace \? \[resolvedFamiliarWorkspace\] : \[\]\)/,
+  "workspace-local familiar outputs should be eligible for visible attachment delivery",
 );
 
 // The transcript still never receives a base64 payload. Since cave-cysu4 the

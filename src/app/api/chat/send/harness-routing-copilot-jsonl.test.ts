@@ -317,8 +317,13 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const copilotSpawnEnv = copilotDirect \? harnessSpawnEnv\(body\.familiarId\) : null;[\s\S]*?resolveCopilotRuntimeLaunch\(copilotManifestStream\.executable, \{[\s\S]*?spawnEnv: \(\) => copilotSpawnEnv![\s\S]*?probeCopilotCapability\(copilotManifestStream\.executable/,
-  "Copilot resolves and probes the manifest-declared executable in the exact familiar-scoped spawn environment",
+  /resolveCopilotRuntimeLaunch\(copilotManifestStream\.executable, \{[\s\S]*?spawnEnv: \(discoveryDeadline\) =>[\s\S]*?harnessSpawnEnv\(body\.familiarId, \{ discoveryDeadline \}\)[\s\S]*?probeCopilotCapability\(copilotManifestStream\.executable/,
+  "Copilot gives familiar-scoped PATH discovery its own deadline before resolving and probing the exact launch plan",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /const copilotSpawnEnv = copilotDirect \? harnessSpawnEnv\(body\.familiarId\) : null/,
+  "chat does not consume the Copilot resolver's environment-discovery budget before the resolver starts",
 );
 assert.doesNotMatch(
   chatRoute,
@@ -347,6 +352,16 @@ assert.match(
   chatRoute,
   /copilotIdentityPreamble\(\s*\n?\s*body\.familiarId,/,
   "The direct copilot spawn bypasses `coven run --familiar`, so the route must mirror coven's identity preamble itself",
+);
+assert.match(
+  chatRoute,
+  /const copilotPluginDirs = copilotDirect[\s\S]*?resolveBundledCopilotPluginDirs\(\)[\s\S]*?pluginDirs: copilotPluginDirs/,
+  "direct Copilot turns load Cave's validated bundled memory skills through native plugin argv",
+);
+assert.match(
+  chatRoute,
+  /buildPromptWithRuntimeScope\(\s*buildPromptWithDeliveryEvidenceContract\(\s*buildPromptWithCovenIdentityCanon\(/,
+  "every chat turn receives the host-authored completion evidence contract inside the runtime boundary",
 );
 
 assert.match(

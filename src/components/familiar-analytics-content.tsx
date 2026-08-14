@@ -175,7 +175,7 @@ function ThreadTrendBlock({ trends }: { trends: SignalTrends }) {
     value: bucket.score,
   }));
   const granularityNoun = trends.granularity === "week" ? "weeks" : "days";
-  const windowPhrase = `last ${trends.buckets.length} ${granularityNoun}`;
+  const windowPhrase = trends.scopeLabel;
 
   return (
     <div className="fa-trend" role="group" aria-label="Thread metric changes over time">
@@ -1631,9 +1631,14 @@ export function FamiliarAnalyticsContent({
     () => deriveThreadConfidence(windowReports),
     [windowReports],
   );
+  const windowSpec = ANALYTICS_WINDOWS.find((entry) => entry.id === windowId)
+    ?? ANALYTICS_WINDOWS.find((entry) => entry.id === DEFAULT_WINDOW)!;
   const windowSignalTrends = useMemo(
-    () => deriveSignalTrends(windowSnapshots, now),
-    [now, windowSnapshots],
+    () => deriveSignalTrends(windowSnapshots, now, undefined, {
+      days: windowSpec.days,
+      label: windowSpec.title,
+    }),
+    [now, windowSnapshots, windowSpec.days, windowSpec.title],
   );
   const threadSignalsAggregate = useMemo(
     () => windowReports.length > 0 ? aggregateThreadSignals(windowReports) : null,
@@ -1669,6 +1674,7 @@ export function FamiliarAnalyticsContent({
     setActionModal(buildActionModal(request));
   }, []);
   const traceRequest = useCallback((request: SelfHealRequest) => {
+    setBoardOpen(false);
     setTraceTarget({ id: request.id, title: request.title });
     setActionModal(null);
   }, []);
@@ -1740,6 +1746,7 @@ export function FamiliarAnalyticsContent({
     <div className="fa-frame">
       <FamiliarAnalyticsDock
         model={model}
+        confidence={windowConfidence}
         healRequestCount={allHealRequests.length}
         actions={nextActions}
         contractReport={model.contractReport}
@@ -1774,6 +1781,8 @@ export function FamiliarAnalyticsContent({
         <StatBand
           model={model}
           sessions={windowSessions}
+          now={now}
+          windowDays={windowSpec.days}
           healRequests={healRequests}
           reportCount={windowReports.length}
           queueCount={reviewQueue.length}
@@ -1972,6 +1981,7 @@ export function FamiliarAnalyticsContent({
         {pulseOpen ? (
           <PulseOverlay
             pulse={model.sessionPulse}
+            lattice={model.activityLattice}
             lastActive={model.growthReport?.lastActiveAt ?? model.recentSessions[0]?.updated_at ?? null}
             streakDays={model.progression?.streakDays ?? 0}
             onClose={() => setPulseOpen(false)}
@@ -2109,8 +2119,8 @@ export function FamiliarAnalyticsContent({
 
       {trustOpen ? (
         <TrustModal
-          confidence={model.confidence}
-          trends={model.signalTrends}
+          confidence={windowConfidence}
+          trends={windowSignalTrends}
           onClose={() => setTrustOpen(false)}
         />
       ) : null}

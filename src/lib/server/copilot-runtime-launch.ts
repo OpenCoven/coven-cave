@@ -6,7 +6,7 @@ import {
   type RuntimeAvailability,
 } from "../runtime-availability.ts";
 
-const COPILOT_LAUNCH_RESOLUTION_TIMEOUT_MS = 2_500;
+const COPILOT_LAUNCH_PHASE_TIMEOUT_MS = 2_500;
 
 const COPILOT_LAUNCH_TIMEOUT_MESSAGE =
   "The Copilot launch check timed out before Cave could verify the CLI. Retry after Copilot finishes starting.";
@@ -21,7 +21,7 @@ export type CopilotRuntimeLaunch = {
   fixedArgs: string[];
   /** Fixed argv artifacts required by the selected launch plan. */
   requiredFiles?: string[];
-  /** Absolute deadline shared by env, launcher, and identity discovery. */
+  /** Absolute deadline shared by launcher, availability, and identity discovery. */
   deadline: number;
   availability: RuntimeAvailability;
   /** Safe timeout marker retained for capability diagnostics. */
@@ -78,40 +78,34 @@ function failedPlan(input: {
 /**
  * Resolve and passively classify one exact Copilot launch plan.
  *
- * This boundary never runs Copilot. Environment construction, npm-shim
- * conversion, and filesystem availability all share one absolute deadline;
- * callers may run `--version` only after this returns `ready`, using the exact
- * command/fixed args and env returned here.
+ * This boundary never runs Copilot. Environment construction has its own
+ * bounded deadline because a cold desktop login-shell lookup may consume its
+ * entire budget. npm-shim conversion, filesystem availability, and identity
+ * discovery then share a fresh deadline. Callers may run `--version` only
+ * after this returns `ready`, using the exact command/fixed args and env
+ * returned here.
  */
 export async function resolveCopilotRuntimeLaunch(
   executable = "copilot",
   options: ResolveCopilotRuntimeLaunchOptions = {},
 ): Promise<CopilotRuntimeLaunch> {
   const now = options.now ?? Date.now;
-  const discoveryDeadline = now() + COPILOT_LAUNCH_RESOLUTION_TIMEOUT_MS;
+  const environmentDeadline = now() + COPILOT_LAUNCH_PHASE_TIMEOUT_MS;
   let env: NodeJS.ProcessEnv;
   try {
     env = options.spawnEnv
-      ? options.spawnEnv(discoveryDeadline)
-      : canonicalProbeSpawnEnv({ discoveryDeadline, now });
+      ? options.spawnEnv(environmentDeadline)
+      : canonicalProbeSpawnEnv({ discoveryDeadline: environmentDeadline, now });
   } catch {
     return failedPlan({
       executable,
       env: { NODE_ENV: process.env.NODE_ENV ?? "development" },
-      deadline: discoveryDeadline,
+      deadline: environmentDeadline,
       reason: "failed",
     });
   }
 
-  if (now() >= discoveryDeadline) {
-    return failedPlan({
-      executable,
-      env,
-      deadline: discoveryDeadline,
-      reason: "timeout",
-    });
-  }
-
+  const discoveryDeadline = now() + COPILOT_LAUNCH_PHASE_TIMEOUT_MS;
   const remaining = discoveryDeadline - now();
   if (remaining <= 0) {
     return failedPlan({

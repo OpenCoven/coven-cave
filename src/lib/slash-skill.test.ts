@@ -107,7 +107,7 @@ assert.match(slashCmds, /name: "\/skills"/, "/skills is registered");
 // what a pick DOES (send in-thread vs start-a-chat) stays per composer.
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const menusHook = await readFile(new URL("./use-inline-slash-menus.ts", import.meta.url), "utf8");
-assert.match(menusHook, /skillSlashOptions\(text, skills\)/, "the shared hook computes the inline /skill options");
+assert.match(menusHook, /skillSlashOptions\(activeInvocation\?\.input \?\? "", skills\)/, "the shared hook computes the caret-scoped inline /skill options");
 assert.match(menusHook, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "menuOpen includes the skill picker and the Skills group");
 assert.match(chatView, /command === "\/skill" \|\| command === "\/skills"/, "chat-view dispatches /skill and /skills");
 assert.match(chatView, /sendRaw\(buildSkillPrompt\(skill, skillArgs\)\)/, "typed /skill arguments are forwarded into the invocation");
@@ -115,7 +115,7 @@ assert.match(chatView, /sendRaw\(buildSkillPrompt\(s\)\)/, "picking a skill send
 assert.match(chatView, /const invokeSkillOption = \(s: SkillOption\)/, "chat-view shares one skill-invoke helper across picker, menu and clicks");
 assert.match(chatView, /onPickSkill: \(s\) => invokeSkillOption\(s\)/, "the hook's skill picks route through chat-view's invoke helper");
 assert.match(chatView, /s\.argumentHint && input\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/, "a hinted skill autofills /skill <id> for argument editing instead of sending");
-assert.match(menusHook, /skillCommandMatches\(firstWord, skills\)/, "the shared hook surfaces skills in the top-level command menu");
+assert.match(menusHook, /skillCommandMatches\(activeInvocation\.commandToken, skills\)/, "the shared hook surfaces skills at the active slash token");
 assert.match(chatView, /role="listbox" aria-label="Skills"/, "chat-view renders a Skills listbox");
 assert.match(menusHook, /fetch\("\/api\/skills\/local"/, "the shared hook sources skills from the local skill scan");
 

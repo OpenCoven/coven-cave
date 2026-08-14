@@ -98,14 +98,34 @@ describe("buildReflectTranscript", () => {
     assert.equal(out, "user: hi there\nassistant: hello");
   });
 
+  it("records visible attachment evidence, including attachment-only turns", () => {
+    const out = buildReflectTranscript([
+      {
+        role: "assistant",
+        text: "The banner is shown below.",
+        attachments: [{ name: "launch-banner.png", mimeType: "image/png" }],
+      },
+      {
+        role: "assistant",
+        text: "",
+        attachments: [{ name: "alternate.webp", type: "image/webp" }],
+      },
+    ]);
+    assert.equal(
+      out,
+      "assistant: The banner is shown below. [visible attachments: launch-banner.png (image/png)]\n"
+        + "assistant: [visible attachments: alternate.webp (image/webp)]",
+    );
+  });
+
   it("keeps only the most recent turns and truncates long ones", () => {
     const many = Array.from({ length: 40 }, (_, i) => ({ role: "user" as const, text: `m${i}` }));
     const out = buildReflectTranscript(many);
-    assert.equal(out.split("\n").length, 24, "caps at the most recent 24 turns");
+    assert.equal(out.split("\n").length, 36, "caps at the most recent 36 turns");
     assert.ok(out.includes("m39") && !out.includes("m0\n") && !out.startsWith("user: m0"));
 
     const long = buildReflectTranscript([{ role: "assistant", text: "x".repeat(2000) }]);
-    assert.ok(long.length < 700 && long.endsWith("…"), "long turns are clipped with an ellipsis");
+    assert.ok(long.length < 1000 && long.endsWith("…"), "long turns are clipped with an ellipsis");
   });
 });
 
@@ -125,7 +145,52 @@ describe("buildThreadReflectPrompt", () => {
 
   it("falls back to a context-free instruction when no transcript is given", () => {
     const prompt = buildThreadReflectPrompt({ sessionId: "sess-2" });
-    assert.ok(prompt.includes("Reflect on the thread just completed (session: sess-2)"));
+    assert.ok(prompt.includes("No transcript was captured"));
+    assert.ok(prompt.includes("session: sess-2"));
+    assert.ok(
+      /do not treat the missing transcript as a finding/i.test(prompt),
+      "an absent transcript must not be reported as a thread finding",
+    );
+  });
+
+  // Regression: reflection runs used to rate their OWN condensed view, producing
+  // `critical` contextPressure for threads that had none ("only the session ID
+  // was provided"; "the actual exchange is truncated while a very large
+  // knowledge vault dominates the context"). The prompt must scope the rating to
+  // the thread under review.
+  it("scopes contextPressure to the reflected thread, not the reflection run", () => {
+    const prompt = buildThreadReflectPrompt({ sessionId: "sess-3", transcript: "user: hi" });
+    assert.ok(
+      /rate the THREAD ABOVE, not this reflection run/i.test(prompt),
+      "prompt states the scope rule for contextPressure",
+    );
+    assert.ok(
+      /Do NOT rate pressure on how much of the transcript you can see/i.test(prompt),
+      "a clipped transcript is explicitly not evidence of pressure",
+    );
+    assert.ok(
+      /too thin to judge, use "adequate"/i.test(prompt),
+      "insufficient evidence falls back to adequate, not an inflated rating",
+    );
+  });
+
+  it("requires concrete delivery evidence instead of inferring completion from narration", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-delivery",
+      transcript: "assistant: I am about to push the branch and schedule the reminder.",
+    });
+    assert.match(prompt, /Do NOT infer completion from plans, narration, or intent/i);
+    assert.match(prompt, /remote ref, artifact path, receipt, message id, or equivalent/i);
+    assert.match(prompt, /incomplete or unverified/i);
+  });
+
+  it("treats rendered attachment metadata as delivery proof instead of trusting prose", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-image",
+      transcript: "assistant: The banner is complete.",
+    });
+    assert.match(prompt, /A prose claim that an image was shown is not delivery evidence/i);
+    assert.match(prompt, /\[visible attachments:/i);
   });
 
   it("builds a resolution prompt that directs the thread to fix a selected review item", () => {
@@ -142,6 +207,8 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(/root cause/i.test(prompt), "asks for a root-cause diagnosis");
     assert.ok(/apply the concrete fix/i.test(prompt), "instructs the thread to actually apply the fix");
     assert.ok(/verify the fix/i.test(prompt), "requires verification, not just discussion");
+    assert.match(prompt, /classify every requested deliverable/i);
+    assert.match(prompt, /verified with exact evidence, incomplete, or blocked/i);
     assert.match(prompt, /^Resolve this /, "opens as a resolution directive");
     // every review kind maps to a label (no "undefined" leaking into the prompt)
     for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {

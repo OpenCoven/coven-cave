@@ -205,7 +205,9 @@ async function safeGenerationDirectory(
   create: boolean,
 ): Promise<SafeGenerationDirectory> {
   assertSafePath(familiarId, generationId);
-  const root = path.resolve(researchMediaRoot());
+  // caveHome()-derived media root, resolved at runtime. The ignores stop
+  // Turbopack tracing it as a specifier and globbing the checkout root.
+  const root = path.resolve(/* turbopackIgnore: true */ researchMediaRoot());
   if (create) await mkdir(root, { recursive: true });
   const rootMetadata = await pathMetadata(root, "media file not found");
   if (rootMetadata.isSymbolicLink()) {
@@ -214,7 +216,7 @@ async function safeGenerationDirectory(
   if (!rootMetadata.isDirectory()) {
     throw new ResearchMediaStoreError("invalid-path", "media root is not a directory");
   }
-  const rootRealPath = await realpath(root);
+  const rootRealPath = await realpath(/* turbopackIgnore: true */ root);
   const familiarDir = path.join(root, familiarId);
   const familiar = await ensureRealDirectory(
     familiarDir,

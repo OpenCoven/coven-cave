@@ -10,9 +10,18 @@ import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { GrokSandboxProfile } from "./grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
+import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
+import {
+  isCanonicalIsoInstant,
+  normalizeChatAttentionOperationId,
+  normalizeChatAttentionOperationLineage,
+  type ChatAttentionEvidence,
+  type ChatAttentionRequest,
+} from "./chat-attention.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
 const conversationLockTails = new Map<string, Promise<void>>();
+const VALID_ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
 
 export type ChatTurn = {
   id: string;
@@ -72,6 +81,8 @@ export type ChatTurn = {
    * transcript reload, duplication, and retry. */
   modelOverrideScope?: "runtime-default";
   responseMetadata?: ChatResponseMetadata;
+  /** Client send identity used only for causal chat-attention reconciliation. */
+  attentionClearOperationId?: string;
   origin?: "chat" | "voice";
   voiceCallId?: string;
 };
@@ -94,6 +105,9 @@ export type ConversationFile = {
   harnessSessionId?: string;
   /** Grok pins its OS sandbox when a native session is created. */
   grokSandboxProfile?: GrokSandboxProfile;
+  /** Effective local filesystem grants used to create the latest successful
+   * native harness session. A changed value requires a fresh sandbox. */
+  runtimeAccessFingerprint?: string;
   familiarId: string;
   harness: string;
   model?: string;
@@ -135,23 +149,9 @@ export type ConversationFile = {
   pendingUserTurnId?: string;
 };
 
-function conversationTerminalStatus(conv: ConversationFile): { status: string; exitCode: number } | null {
-  const turns = conv.activeLeafId
-    ? resolveActivePath(conv.turns, conv.activeLeafId)
-    : conv.turns;
-  const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
-  // No reply on the active path yet — a first-turn stub whose assistant reply
-  // is still streaming (or never arrived; see createConversationStub). There
-  // is no terminal status to report: callers fall back to their own default,
-  // and the session-list merge must never override a live daemon status with
-  // one inferred from a pending stub.
-  if (!latestAssistant) return null;
-  if (latestAssistant.isError) return { status: "failed", exitCode: 1 };
-  return { status: "completed", exitCode: 0 };
-}
-
 export type ConversationSummary = {
   sessionId: string;
+  harnessSessionId?: string;
   familiarId: string;
   harness?: string;
   model?: string;
@@ -169,6 +169,7 @@ export type ConversationSummary = {
   pending?: boolean;
   createdAt?: string;
   updatedAt: string;
+  attentionEvidence?: ChatAttentionEvidence;
 };
 
 export type ConversationListMetrics = {
@@ -215,6 +216,246 @@ export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
 }
 
+function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
+  const seen = new Set<string>();
+  for (const turn of turns) {
+    if (seen.has(turn.id)) return true;
+    seen.add(turn.id);
+  }
+  return false;
+}
+
+function isLegacyLinearHistory(turns: Pick<ChatTurn, "parentId">[]): boolean {
+  return turns.length > 0 && turns.every((turn) => turn.parentId === undefined);
+}
+
+function activeConversationTurns(conv: Pick<ConversationFile, "turns" | "activeLeafId">): ChatTurn[] {
+  if (conv.turns.length === 0) return [];
+  if (hasDuplicateTurnIds(conv.turns)) return [];
+  const structuralTurns = conv.turns.filter((turn) => !(turn.role === "system" && turn.parentId == null));
+
+  if (structuralTurns.length === 0) return conv.turns;
+
+  if (!conv.activeLeafId) {
+    if (isLegacyLinearHistory(structuralTurns)) {
+      const linearized = linearizeLegacy(structuralTurns);
+      const linkedById = new Map(linearized.turns.map((turn) => [turn.id, turn]));
+      const turns = conv.turns.map((turn) => linkedById.get(turn.id) ?? turn);
+      return resolveActivePath(turns, linearized.activeLeafId);
+    }
+    const onlyLeafId = soleResolvableLeafId(structuralTurns);
+    return onlyLeafId ? resolveActivePath(conv.turns, onlyLeafId) : [];
+  }
+
+  // Validate only the chain the active leaf actually selects: unique ids are
+  // already guaranteed above, the leaf itself must exist, and every parent it
+  // names on the way to a root must exist with no cycle back into the walk.
+  // Other root-level siblings (e.g. a regenerate/rerun that starts a fresh
+  // root turn) are legitimate and are simply never visited here — a single
+  // shared root across the whole file is not part of the contract.
+  return hasResolvableAncestorChain(structuralTurns, conv.activeLeafId)
+    ? resolveActivePath(conv.turns, conv.activeLeafId)
+    : [];
+}
+
+function deriveConversationSignals(conv: ConversationFile): {
+  terminal: { status: string; exitCode: number } | null;
+  attentionEvidence?: ChatAttentionEvidence;
+} {
+  const turns = activeConversationTurns(conv);
+  let latestAssistant: ChatTurn | null = null;
+  let sawLatestCompletedTurn = false;
+  let latestCompletedTurn: ChatAttentionEvidence["latestCompletedTurn"] = null;
+  let sawLatestUserTurn = false;
+  let latestUserTurnAt: string | null = null;
+  let attentionAfterOperationId: string | null = null;
+  const attentionOperationLineage = normalizeChatAttentionOperationLineage(
+    turns
+      .filter((turn) => turn.role === "user")
+      .map((turn) => turn.attentionClearOperationId),
+  );
+  let request: ChatAttentionEvidence["request"] = null;
+  let sawRequestEvidence = false;
+  let sawUserAfterAssistant = false;
+
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const turn = turns[i];
+    if (!latestAssistant && turn.role === "assistant") latestAssistant = turn;
+
+    if (
+      !sawLatestCompletedTurn &&
+      (turn.role === "user" || turn.role === "assistant") &&
+      !turn.isError &&
+      !turn.cancelled
+    ) {
+      sawLatestCompletedTurn = true;
+      const createdAt = normalizeStableIsoTimestamp(turn.createdAt);
+      latestCompletedTurn = createdAt ? { role: turn.role, at: createdAt } : null;
+    }
+
+    if (!sawLatestUserTurn && turn.role === "user") {
+      sawLatestUserTurn = true;
+      latestUserTurnAt = normalizeStableIsoTimestamp(turn.createdAt);
+      attentionAfterOperationId = normalizeChatAttentionOperationId(
+        turn.attentionClearOperationId,
+      );
+    }
+
+    if (turn.role === "user") sawUserAfterAssistant = true;
+
+    if (
+      !sawRequestEvidence &&
+      turn.role === "assistant" &&
+      !turn.isError &&
+      !turn.cancelled
+    ) {
+      if (sawUserAfterAssistant) {
+        sawRequestEvidence = true;
+      } else if (
+        typeof turn.responseMetadata === "object" &&
+        turn.responseMetadata &&
+        Object.hasOwn(turn.responseMetadata, "attentionRequest")
+      ) {
+        sawRequestEvidence = true;
+        request =
+          normalizeStableAttentionRequest(
+            turn.responseMetadata.attentionRequest,
+            conv.sessionId,
+            turn.id,
+            turn.createdAt,
+          ) ?? { state: "invalid" };
+      }
+    }
+  }
+
+  const terminal = !latestAssistant
+    ? null
+    : latestAssistant.isError
+      ? { status: "failed", exitCode: 1 }
+      : { status: "completed", exitCode: 0 };
+
+  return {
+    terminal,
+    ...(sawLatestCompletedTurn || sawLatestUserTurn || request
+      ? {
+          attentionEvidence: {
+            latestCompletedTurn,
+            latestUserTurnAt,
+            ...(attentionAfterOperationId ? { attentionAfterOperationId } : {}),
+            ...(attentionOperationLineage.length > 0 ? { attentionOperationLineage } : {}),
+            request,
+          },
+        }
+      : {}),
+  };
+}
+
+function normalizeStableIsoTimestamp(value: unknown): string | null {
+  return isCanonicalIsoInstant(value) ? value : null;
+}
+
+function parseFiniteTimestamp(value: unknown): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeStableAttentionRequest(
+  value: unknown,
+  sessionId: string,
+  assistantTurnId: string,
+  assistantCreatedAt: unknown,
+): ChatAttentionRequest | null {
+  if (!value || typeof value !== "object") return null;
+  const normalizedAssistantCreatedAt = normalizeStableIsoTimestamp(assistantCreatedAt);
+  const assistantCreatedAtMs = parseFiniteTimestamp(assistantCreatedAt);
+  const candidate = value as Partial<ChatAttentionRequest>;
+  const requestedAtMs = parseFiniteTimestamp(candidate.requestedAt);
+  if (
+    typeof candidate.sessionId !== "string" ||
+    candidate.sessionId !== sessionId ||
+    typeof candidate.turnId !== "string" ||
+    candidate.turnId !== assistantTurnId ||
+    !normalizedAssistantCreatedAt ||
+    // requestedAt must itself be canonical UTC ISO — instant equality alone
+    // (checked next) would otherwise accept a noncanonical requestedAt that
+    // merely parses to the same instant as the assistant's canonical
+    // createdAt, silently canonicalizing it below instead of discarding it.
+    !isCanonicalIsoInstant(candidate.requestedAt) ||
+    requestedAtMs === null ||
+    assistantCreatedAtMs === null ||
+    requestedAtMs !== assistantCreatedAtMs ||
+    typeof candidate.reason !== "string" ||
+    !VALID_ATTENTION_REASON_SET.has(candidate.reason)
+  ) {
+    return null;
+  }
+  return {
+    sessionId: candidate.sessionId,
+    turnId: candidate.turnId,
+    requestedAt: normalizedAssistantCreatedAt,
+    reason: candidate.reason,
+  };
+}
+
+// Walks only the selected leaf's own ancestor chain — never the whole turn
+// set — so cost is O(chain length) once the id map is built. `byId` is built
+// once per activeConversationTurns() call (a single O(n) pass over the file),
+// not per turn, so there is no quadratic re-walk here: no other turn's chain
+// is ever inspected, and root-level siblings elsewhere in the file (a
+// regenerate/rerun that starts a fresh root turn, for instance) are simply
+// never visited. `seen` catches a cycle back into this one walk.
+function resolveAncestorChainFromMap(
+  byId: ReadonlyMap<string, ChatTurn>,
+  leafId: string,
+): { size: number } | null {
+  let current = byId.get(leafId);
+  if (!current) return null;
+  const seen = new Set<string>();
+  while (current) {
+    if (seen.has(current.id)) return null;
+    seen.add(current.id);
+    const parentId = current.parentId ?? null;
+    if (parentId === null) return { size: seen.size };
+    current = byId.get(parentId);
+    if (!current) return null;
+  }
+  return null;
+}
+
+function resolveAncestorChain(turns: ChatTurn[], leafId: string): { size: number } | null {
+  return resolveAncestorChainFromMap(new Map(turns.map((turn) => [turn.id, turn])), leafId);
+}
+
+function resolvableAncestorChainSize(turns: ChatTurn[], leafId: string): number | null {
+  return resolveAncestorChain(turns, leafId)?.size ?? null;
+}
+
+function hasResolvableAncestorChain(turns: ChatTurn[], leafId: string): boolean {
+  return resolvableAncestorChainSize(turns, leafId) !== null;
+}
+
+function soleResolvableLeafId(turns: ChatTurn[]): string | null {
+  const childCounts = new Map<string, number>();
+  let rootCount = 0;
+  for (const turn of turns) {
+    const parentId = turn.parentId ?? null;
+    if (parentId === null) {
+      rootCount += 1;
+      continue;
+    }
+    const nextCount = (childCounts.get(parentId) ?? 0) + 1;
+    childCounts.set(parentId, nextCount);
+    if (nextCount > 1) return null;
+  }
+
+  if (rootCount !== 1) return null;
+  const leaves = turns.filter((turn) => !childCounts.has(turn.id));
+  if (leaves.length !== 1) return null;
+  if (resolvableAncestorChainSize(turns, leaves[0].id) !== turns.length) return null;
+  return leaves[0].id;
+}
+
 async function ensureDir() {
   await mkdir(CONV_DIR, { recursive: true });
 }
@@ -244,13 +485,20 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
   try {
     const raw = await readFile(pathFor(sessionId), "utf8");
     const conv = JSON.parse(raw) as ConversationFile;
-    // Lazy migration: a pre-branching file has no activeLeafId. Linearize its
-    // turns into a single-path tree so callers always see tree shape. Written
-    // back to disk on the next saveConversation.
+    // Lazy migration: only genuinely pre-branching files (parentId absent
+    // throughout) are linearized here. Explicit null roots describe authored
+    // structure, so a missing activeLeafId there is ambiguous/corrupt and must
+    // not be rewritten into a fake linear history.
     if (!conv.activeLeafId && conv.turns.length > 0) {
-      const { turns, activeLeafId } = linearizeLegacy(conv.turns);
-      conv.turns = turns;
-      conv.activeLeafId = activeLeafId;
+      if (isLegacyLinearHistory(conv.turns)) {
+        const { turns, activeLeafId } = linearizeLegacy(conv.turns);
+        conv.turns = turns;
+        conv.activeLeafId = activeLeafId;
+      } else {
+        const structuralTurns = conv.turns.filter((turn) => !(turn.role === "system" && turn.parentId == null));
+        const inferredLeafId = soleResolvableLeafId(structuralTurns);
+        if (inferredLeafId) conv.activeLeafId = inferredLeafId;
+      }
     }
     return conv;
   } catch {
@@ -326,6 +574,32 @@ export type ConversationStubSeed = {
     modelControls?: ChatTurn["modelControls"];
     modelOverride?: string;
     modelOverrideScope?: ChatTurn["modelOverrideScope"];
+    attentionClearOperationId?: string;
+  };
+};
+
+export type QueuedOfflineConversationSeed = {
+  sessionId: string;
+  familiarId: string;
+  harness: string;
+  model?: string;
+  runtime?: string;
+  title?: string;
+  origin?: SessionOrigin;
+  modelIntent?: ConversationModelIntent;
+  createdAt: string;
+  harnessSessionId?: string;
+  userTurn: {
+    id: string;
+    text: string;
+    attachments?: import("./chat-attachments").ChatAttachment[];
+    reasoningEffort?: ChatTurn["reasoningEffort"];
+    responseSpeed?: ChatTurn["responseSpeed"];
+    modelControls?: ChatTurn["modelControls"];
+    modelOverride?: string;
+    modelOverrideScope?: ChatTurn["modelOverrideScope"];
+    attentionClearOperationId?: string;
+    parentId?: string | null;
   };
 };
 
@@ -345,6 +619,9 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
   return withConversationLock(seed.sessionId, async () => {
     if (await loadConversation(seed.sessionId)) return false;
     const now = new Date().toISOString();
+    const attentionClearOperationId = normalizeChatAttentionOperationId(
+      seed.userTurn.attentionClearOperationId,
+    );
     await saveConversation({
       sessionId: seed.sessionId,
       familiarId: seed.familiarId,
@@ -379,6 +656,7 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
           ...(seed.userTurn.modelOverrideScope === "runtime-default"
             ? { modelOverrideScope: "runtime-default" as const }
             : {}),
+          ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
           createdAt: now,
           parentId: null,
         },
@@ -387,6 +665,69 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
       pendingUserTurnId: seed.userTurn.id,
     });
     return true;
+  });
+}
+
+export async function persistQueuedOfflineConversation(
+  seed: QueuedOfflineConversationSeed,
+): Promise<void> {
+  await withConversationLock(seed.sessionId, async () => {
+    const existing = await loadConversation(seed.sessionId);
+    const attentionClearOperationId = normalizeChatAttentionOperationId(
+      seed.userTurn.attentionClearOperationId,
+    );
+    const conv = existing ?? {
+      sessionId: seed.sessionId,
+      familiarId: seed.familiarId,
+      harness: seed.harness,
+      ...(seed.model ? { model: seed.model } : {}),
+      ...(seed.runtime ? { runtime: seed.runtime } : {}),
+      ...(seed.title ? { title: seed.title } : {}),
+      ...(seed.origin ? { origin: seed.origin } : {}),
+      ...(seed.modelIntent ? { modelIntent: seed.modelIntent } : {}),
+      createdAt: seed.createdAt,
+      updatedAt: seed.createdAt,
+      turns: [],
+    };
+    conv.familiarId = seed.familiarId;
+    conv.harness = seed.harness;
+    if (seed.model !== undefined) conv.model = seed.model;
+    if (seed.runtime !== undefined) conv.runtime = seed.runtime;
+    if (!conv.title && seed.title) conv.title = seed.title;
+    if (!conv.origin && seed.origin) conv.origin = seed.origin;
+    if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
+    if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
+
+    const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
+    if (!existingTurn) {
+      const parentId = seed.userTurn.parentId !== undefined
+        ? seed.userTurn.parentId
+        : existing?.activeLeafId ?? null;
+      conv.turns.push({
+        id: seed.userTurn.id,
+        role: "user",
+        text: seed.userTurn.text,
+        ...(seed.userTurn.attachments?.length ? { attachments: seed.userTurn.attachments } : {}),
+        ...(seed.userTurn.reasoningEffort ? { reasoningEffort: seed.userTurn.reasoningEffort } : {}),
+        ...(seed.userTurn.responseSpeed ? { responseSpeed: seed.userTurn.responseSpeed } : {}),
+        ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
+          ? { modelControls: seed.userTurn.modelControls }
+          : {}),
+        ...(seed.userTurn.modelOverride ? { modelOverride: seed.userTurn.modelOverride } : {}),
+        ...(seed.userTurn.modelOverrideScope === "runtime-default"
+          ? { modelOverrideScope: "runtime-default" as const }
+          : {}),
+        ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
+        createdAt: seed.createdAt,
+        ...(parentId != null ? { parentId } : { parentId: null }),
+      });
+      conv.activeLeafId = seed.userTurn.id;
+    }
+    delete conv.pendingUserTurnId;
+    if (!existing) {
+      conv.updatedAt = seed.createdAt;
+    }
+    await saveConversation(conv);
   });
 }
 
@@ -469,17 +810,14 @@ async function readConversationSummary(
   }
 
   try {
-    // Match loadConversation's lazy legacy normalization before deriving the
-    // active-path terminal status, without writing the migrated body here.
-    if (!conv.activeLeafId && conv.turns.length > 0) {
-      const linearized = linearizeLegacy(conv.turns);
-      conv.turns = linearized.turns;
-      conv.activeLeafId = linearized.activeLeafId;
-    }
-    const terminal = conversationTerminalStatus(conv);
+    // Derive active-path signals without mutating the on-disk file: legacy
+    // truly-linear transcripts still project a synthetic path, while corrupt or
+    // ambiguous branch state fails quiet instead of picking a branch implicitly.
+    const signals = deriveConversationSignals(conv);
     return {
       summary: {
         sessionId: conv.sessionId,
+        ...(conv.harnessSessionId ? { harnessSessionId: conv.harnessSessionId } : {}),
         familiarId: conv.familiarId,
         harness: conv.harness,
         model: conv.model,
@@ -488,8 +826,11 @@ async function readConversationSummary(
         origin: conv.origin,
         ...(conv.branch ? { branch: conv.branch } : {}),
         ...(conv.prUrl ? { prUrl: conv.prUrl } : {}),
-        ...(terminal ? { status: terminal.status, exitCode: terminal.exitCode } : {}),
+        ...(signals.terminal
+          ? { status: signals.terminal.status, exitCode: signals.terminal.exitCode }
+          : {}),
         ...(conv.pendingUserTurnId ? { pending: true } : {}),
+        ...(signals.attentionEvidence ? { attentionEvidence: signals.attentionEvidence } : {}),
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
       },

@@ -23,8 +23,16 @@ assert.match(term, /isCoarse \?\s*\(\s*<TerminalKeyBar/, "key bar renders only o
 assert.match(term, /term\.input\(seq\)/, "injected keys route through xterm.input → onData → pty");
 assert.match(
   term,
-  /ctrlStickyRef\.current && data\.length === 1[\s\S]*code & 0x1f/,
+  /foldStickyCtrlRef\.current = \(data: string\) => \{[\s\S]*ctrlStickyRef\.current \|\| data\.length !== 1[\s\S]*code & 0x1f/,
   "sticky Ctrl folds the next character into its C0 control code",
+);
+// The fold is shared, not per-transport. It lived inline in the Tauri desktop
+// handler alone, which meant this bar — a TOUCH affordance — did nothing on
+// browser/iOS/Android, where the WS bridge carries input: Ctrl-C sent "c".
+assert.equal(
+  (term.match(/foldStickyCtrlRef\.current\(data\)/g) ?? []).length,
+  2,
+  "both transports fold, so the key bar works where touch devices actually run",
 );
 
 // Touch Find: ⌘F can't be produced by a soft keyboard, so the bar exposes a

@@ -232,13 +232,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<FamiliarMenuBar[\s\S]*searchQuery=\{topSearchQuery\}[\s\S]*onSearchQueryChange=\{\(query\) => \{[\s\S]*setTopSearchQuery\(query\);[\s\S]*setPaletteOpen\(true\);/,
+  /<FamiliarMenuBar[\s\S]*searchQuery=\{topSearchQuery\}[\s\S]*onSearchQueryChange=\{\(query\) => \{[\s\S]*setTopSearchQuery\(query\);[\s\S]*openPalette\(\);/,
   "desktop menu bar search shares the same palette query/open wiring as mobile top bar",
 );
 assert.match(
   workspace,
-  /<SalemChatPanel\s+familiarId=\{[\s\S]*?model=\{/,
-  "Salem should remain available — re-homed into the drag-to-split pane",
+  /<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
+  "Salem should remain available as a registered page in the drag-to-split pane",
 );
 assert.doesNotMatch(
   workspace,

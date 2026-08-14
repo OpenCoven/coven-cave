@@ -281,10 +281,9 @@
 }
 
 /* ── Preview modal ─────────────────────────────────────────────────────────
-   Clicking a card opens the sketch rendered live but non-interactive
-   (pointer-events off, same opaque-origin sandbox as thumbnails). Running it
-   for real happens in the editor. Bespoke dialog (useFocusTrap) because the
-   shared Modal owns a breadcrumb header/footer this layout replaces. */
+   Clicking a card opens the sketch live in the same opaque-origin sandbox as
+   thumbnails. Bespoke dialog (useFocusTrap) because the shared Modal owns a
+   breadcrumb header/footer this layout replaces. */
 .chat-canvas-preview-backdrop {
   position: fixed;
   inset: 0;
@@ -378,7 +377,11 @@
   width: 100%;
   border: 0;
   display: block;
-  pointer-events: none;
+}
+/* Play toggle hands the sandbox its own input back (cave canvas interactivity).
+   Isolation is unchanged — still an opaque-origin allow-scripts sandbox. */
+.chat-canvas-preview__frame[data-playing] {
+  pointer-events: auto;
 }
 .chat-canvas-preview__hint {
   margin: 0;
@@ -709,6 +712,27 @@
   cursor: pointer;
 }
 .chat-canvas-add__suggestion:hover { border-color: var(--border-strong); color: var(--text-primary); }
+
+/* Playable toggle — pressed state uses the one accent token, tinted per the
+   state recipe, so it reads as engaged without introducing a second hue. */
+.chat-canvas-add__playable {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.chat-canvas-add__playable:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.chat-canvas-add__playable[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
 .chat-canvas-add__result-head,
 .chat-canvas-add__code-head {
   display: flex;

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync, realpathSync, rmSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import {
   isDisposableIgnoredPath,
@@ -9,8 +9,9 @@ import {
 } from "../src/lib/worktree-lifecycle.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
+  createFenceRenewal,
   heartbeatMaintenanceGate,
-  maintenanceGateRoot,
+  MAX_FENCED_MUTATION_TIMEOUT_MS,
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
 
@@ -54,10 +55,7 @@ const UNSAFE_GIT_ENVIRONMENT = new Set([
   "GIT_CONFIG_NOSYSTEM",
 ]);
 
-export type RetirementGateHandle = {
-  generation: number;
-  token: string;
-};
+export type RetirementGateHandle = object;
 
 export type RetirementBlock = {
   branch: string | null;
@@ -99,6 +97,12 @@ type OperationResult = OperationSuccess | OperationFailure;
 type ReprobeResult = OperationFailure | { ok: true; item: WorktreeLifecycleItem };
 type RemoteReadResult = OperationFailure | { ok: true; remoteRef: WorktreeRemoteRef | null };
 
+/**
+ * Retention for a unit whose remote branch is gone: the tag ref on the remote
+ * that resolves to the unit's exact head, or null when nothing retains it.
+ */
+type RetentionReadResult = OperationFailure | { ok: true; retainedBy: string | null };
+
 export interface RetirementOperations {
   verifyGate(handle: RetirementGateHandle): OperationResult;
   heartbeatGate(handle: RetirementGateHandle): OperationResult;
@@ -109,6 +113,7 @@ export interface RetirementOperations {
   restoreLocalRef(item: WorktreeLifecycleItem): OperationResult;
   verifyAbsent(item: WorktreeLifecycleItem): OperationResult;
   readRemoteRef(ref: string): RemoteReadResult;
+  readRemoteTagRetention(head: string): RetentionReadResult;
 }
 
 type RetirementState = {
@@ -117,10 +122,7 @@ type RetirementState = {
   localRefAbsent: boolean;
 };
 
-type GitRetirementHandle = RetirementGateHandle & {
-  ownerId: string;
-  root?: string;
-};
+type GitRetirementHandle = RetirementGateHandle;
 
 type CommandResult = {
   ok: boolean;
@@ -202,14 +204,51 @@ export function retireLifecycleUnits({
       continue;
     }
 
-    if (expectedRemoteRef !== null) {
+    // `remoteRef` is deliberately NOT part of retirementIdentityError, so a
+    // transient remote-read failure at inventory time can report null for a
+    // branch that still exists. Prefer the reprobed observation so that stale
+    // null does not force the tag-retention path and refuse a unit that is
+    // plainly retained; fall back to the inventory value so a branch that
+    // disappeared BETWEEN the two observations still fails the live
+    // revalidation below rather than quietly taking the tag path. Neither
+    // observation is trusted on its own -- whichever is used is revalidated
+    // against the live remote before anything is destroyed.
+    const remoteRefForCheck = currentItem.remoteRef ?? expectedRemoteRef;
+
+    if (remoteRefForCheck !== null) {
       const remotePrecheck = readRemoteRefStrict(
         operations,
-        expectedRemoteRef,
+        remoteRefForCheck,
         "before local retirement started",
       );
       if (!remotePrecheck.ok) {
         reportFailure(report, item, attempt, state, remotePrecheck.reason);
+        continue;
+      }
+    } else {
+      // The remote branch is gone -- the DEFAULT here, because merging deletes
+      // it. Landing proof says the CONTENT is on the default branch, squashed;
+      // it says nothing about the branch's own pre-squash commits, which after
+      // branch deletion survive only in the provider's PR record. Retiring on
+      // landing alone therefore drops them, so require the same proof the
+      // manual route requires: a tag on the remote resolving to this exact
+      // head. Fail closed -- an unreadable remote is not evidence of retention.
+      const retention = safeInvoke("readRemoteTagRetention", () =>
+        operations.readRemoteTagRetention(currentItem.head),
+      );
+      if (!retention.ok) {
+        reportFailure(report, item, attempt, state, retention.reason);
+        continue;
+      }
+      if (retention.retainedBy === null) {
+        reportFailure(
+          report,
+          item,
+          attempt,
+          state,
+          `remote branch is absent and no remote tag resolves to ${currentItem.head}; ` +
+            "archive the head to a pushed tag before retiring",
+        );
         continue;
       }
     }
@@ -326,10 +365,10 @@ export function retireLifecycleUnits({
     attempt.worktreePostcondition = currentItem.path === null ? "not-applicable" : "verified";
     attempt.localRefPostcondition = "verified";
 
-    if (expectedRemoteRef !== null) {
+    if (remoteRefForCheck !== null) {
       const remote = readRemoteRefStrict(
         operations,
-        expectedRemoteRef,
+        remoteRefForCheck,
         "before local retirement completed",
       );
       if (!remote.ok) {
@@ -361,10 +400,10 @@ export function retireLifecycleUnits({
     attempt.reason = null;
     report.attempts.push({ ...attempt });
     report.retired.push(currentItem);
-    if (expectedRemoteRef !== null) {
+    if (remoteRefForCheck !== null) {
       report.remoteDeletionProposals.push({
-        ref: expectedRemoteRef.ref,
-        oid: expectedRemoteRef.oid,
+        ref: remoteRefForCheck.ref,
+        oid: remoteRefForCheck.oid,
         localRetirementOid: currentItem.head,
         mergedPr: currentItem.mergedPr?.number ?? null,
         reason: "remote-deletion-requires-separate-authorization",
@@ -380,21 +419,55 @@ export function createGitRetirementOperations({
   repo,
   gateHandle,
   nowMs,
+  // Injected so a test can observe renewal without waiting out the throttle.
+  // The real factory skips its first call and then renews at most every
+  // FENCE_RENEWAL_INTERVAL_MS, so against a small fixture inventory every call
+  // is throttled and a missing hook looks exactly like a working one.
+  createFenceRenewal: makeFenceRenewal = createFenceRenewal,
 }: {
   root: string;
   repo: string;
   gateHandle: GitRetirementHandle;
   nowMs?: number | (() => number);
+  createFenceRenewal?: typeof createFenceRenewal;
 }): RetirementOperations {
   const normalizedRoot = realpathSync(root);
-  const maintenanceHandle = {
-    ...gateHandle,
-    ownerId: gateHandle.ownerId,
-    root: gateHandle.root ?? maintenanceGateRoot(normalizedRoot),
-  };
+  const maintenanceHandle = gateHandle;
 
   const readNowMs = (): number =>
     typeof nowMs === "function" ? nowMs() : (nowMs ?? Date.now());
+
+  // Renew the fence while reprobe's inventory runs.
+  //
+  // reprobe() below rebuilds the WHOLE lifecycle inventory to re-verify one
+  // unit, and that is not a quick read: 134s for 47 units when measured on the
+  // checkout this was found on, against a COVEN_OWNER_LEASE_MS of 120s. It runs
+  // inside the fence, between the "before retirement" and "before ignored
+  // cleanup" checkpoints, so without renewal the lease is always dead by the
+  // time retirement takes its next step — every retirement blocked with
+  // "maintenance lease expired", and no worktree on that checkout had ever been
+  // retired. Traced by pointing COVEN_BIN at a logging shim: 129 seconds passed
+  // between two heartbeats with no coven call of any kind in between.
+  //
+  // One renewal is shared by both reprobe call sites (the pre-retirement probe
+  // and the post-cleanup one) so the 30s throttle is applied across the whole
+  // retirement rather than reset per probe.
+  //
+  // Progress-anchored rather than timed, because the inventory is synchronous
+  // throughout and never yields — see createFenceRenewal. A failed heartbeat
+  // throws, which is its documented fail-closed contract; reprobe's own
+  // try/catch turns that into a probe failure, so the unit is reported as
+  // blocked instead of being retired behind a fence nobody holds.
+  const renewFenceDuringProbe = makeFenceRenewal(() => {
+    const renewed = heartbeatMaintenanceGate(maintenanceHandle);
+    if (!renewed.ok) {
+      throw new Error(
+        `failed to heartbeat maintenance gate during retirement probe: ${
+          renewed.reason ?? "unknown heartbeat error"
+        }`,
+      );
+    }
+  });
 
   return {
     verifyGate() {
@@ -428,6 +501,20 @@ export function createGitRetirementOperations({
           repo,
           root: normalizedRoot,
           nowMs: readNowMs(),
+          onProgress: renewFenceDuringProbe,
+          // Only this candidate needs a fresh GitHub answer. Probing all of
+          // them cost ~2 GraphQL round trips per unit — ~104 calls and ~95s of
+          // a ~134s inventory on a 47-unit checkout — and every result but one
+          // was discarded by the ref filter below. Retirement reprobes twice
+          // per unit, so a --max-retire 3 run paid it up to six times
+          // (cave-imhf0).
+          //
+          // Scoping does not weaken the check this probe exists to perform.
+          // The candidate itself is probed exactly as before, so its lane and
+          // reasons are unchanged; every other unit fails closed to
+          // `uncertain`, which is the safe direction and is asserted by the
+          // inventory's own tests.
+          focusRefs: [item.ref],
         });
       } catch (error) {
         return {
@@ -465,18 +552,40 @@ export function createGitRetirementOperations({
       for (const rawCandidate of [...new Set(item.ignoredPaths)]) {
         const resolved = resolveDisposableIgnoredTarget(worktreePath, rawCandidate);
         if (!resolved.ok) return resolved;
-        try {
-          rmSync(resolved.target, {
-            recursive: true,
-            force: false,
-            maxRetries: 8,
-            retryDelay: 100,
-          });
-        } catch (error) {
-          if (isErrno(error, "ENOENT")) continue;
+        const heartbeated = heartbeatMaintenanceGate(maintenanceHandle);
+        if (!heartbeated.ok) {
           return {
             ok: false,
-            reason: `disposable ignored cleanup failed for ${rawCandidate}: ${errorMessage(error)}`,
+            reason:
+              heartbeated.reason ??
+              "maintenance gate heartbeat failed before disposable cleanup",
+          };
+        }
+        const verified = verifyMaintenanceGateOwnership(maintenanceHandle);
+        if (!verified.ok) {
+          return {
+            ok: false,
+            reason:
+              verified.reason ??
+              "maintenance gate ownership check failed before disposable cleanup",
+          };
+        }
+        const removed = command(
+          process.execPath,
+          [
+            "-e",
+            "try { require('node:fs').rmSync(process.argv[1], { recursive: true, force: false, maxRetries: 8, retryDelay: 100 }) } catch (error) { if (error?.code !== 'ENOENT') throw error }",
+            resolved.target,
+          ],
+          normalizedRoot,
+          MAX_FENCED_MUTATION_TIMEOUT_MS,
+        );
+        if (!removed.ok) {
+          return {
+            ok: false,
+            reason: `disposable ignored cleanup failed for ${rawCandidate}: ${
+              removed.stderr || "bounded cleanup command failed"
+            }`,
           };
         }
       }
@@ -485,7 +594,11 @@ export function createGitRetirementOperations({
     removeWorktree(item) {
       const worktreePath = normalizeAbsoluteWorktreePath(item.path);
       if (worktreePath === null) return { ok: true };
-      const removed = git(normalizedRoot, ["worktree", "remove", worktreePath], 120_000);
+      const removed = git(
+        normalizedRoot,
+        ["worktree", "remove", worktreePath],
+        MAX_FENCED_MUTATION_TIMEOUT_MS,
+      );
       return removed.ok
         ? { ok: true }
         : {
@@ -639,6 +752,39 @@ export function createGitRetirementOperations({
         ok: true,
         remoteRef: { ref: match[2], oid: match[1] },
       };
+    },
+    readRemoteTagRetention(head) {
+      if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(head)) {
+        return { ok: false, reason: `refusing to probe retention for malformed oid ${head}` };
+      }
+      const remote = git(normalizedRoot, ["ls-remote", "--tags", "origin"], 60_000);
+      if (!remote.ok) {
+        return {
+          ok: false,
+          reason: remote.stderr || "ls-remote --tags failed while proving retention",
+        };
+      }
+      // An ANNOTATED tag emits two lines: `<tag-object-oid>\t<ref>` and
+      // `<commit-oid>\t<ref>^{}`. A LIGHTWEIGHT tag emits only
+      // `<commit-oid>\t<ref>`. So a tag retains `head` when its PEELED target
+      // matches, falling back to the direct oid only when no peeled line
+      // exists. Matching any line instead would report a tag as retaining its
+      // own tag-object oid -- unreachable in practice, since a head is always a
+      // commit, but it would make the probe mean something other than it says.
+      const targets = new Map<string, { direct: string | null; peeled: string | null }>();
+      for (const line of remote.stdout.split("\n")) {
+        const match = line.match(/^((?:[0-9a-f]{40}|[0-9a-f]{64}))\t(refs\/tags\/[^\n]+?)(\^\{\})?$/);
+        if (!match) continue;
+        const [, oid, ref, peeledMarker] = match;
+        const entry = targets.get(ref) ?? { direct: null, peeled: null };
+        if (peeledMarker) entry.peeled = oid;
+        else entry.direct = oid;
+        targets.set(ref, entry);
+      }
+      for (const [ref, { direct, peeled }] of targets) {
+        if ((peeled ?? direct) === head) return { ok: true, retainedBy: ref };
+      }
+      return { ok: true, retainedBy: null };
     },
   };
 }

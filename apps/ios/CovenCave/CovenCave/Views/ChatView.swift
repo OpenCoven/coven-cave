@@ -29,6 +29,7 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
@@ -54,8 +55,12 @@ struct ChatView: View {
     @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
     @State private var showSessionPicker = false
-    /// Navigation path handed to the session picker. It pushes nothing, but
-    /// FamiliarThreadsView requires the binding.
+    @State private var showVoiceCall = false
+    /// Inert navigation path handed to the session picker to satisfy its
+    /// binding. The picker runs in `onSelect` mode, so it never pushes — a
+    /// chosen session is switched to via `switchToSession` instead. Pushing
+    /// here would strand the selection: this sheet's `NavigationStack` is not
+    /// bound to it.
     @State private var pickerPath: [ChatRoute] = []
     @Namespace private var pickerZoomNamespace
     @State private var atBottom = true
@@ -115,6 +120,22 @@ struct ChatView: View {
         return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
+
+    // A voice call targets a single familiar, so the call button only appears
+    // on one-to-one threads whose familiar is known. Group threads have no
+    // single callee.
+    private var voiceCallFamiliar: Familiar? {
+        guard !thread.isGroup, let id = thread.familiarIds.first else { return nil }
+        return app.familiar(id)
+    }
+
+    // The server session for the callee, when the thread already has one.
+    // Empty for a brand-new chat; the call engine treats that as a fresh
+    // session for the familiar.
+    private var voiceCallSessionId: String {
+        guard let id = thread.familiarIds.first else { return "" }
+        return thread.sessionIds[id] ?? ""
+    }
 
     private func writeDraftPersistence(_ value: String, key: String) {
         if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -199,6 +220,17 @@ struct ChatView: View {
                 .accessibilityLabel("\(thread.title), \(chatPresence.label)")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                if let familiar = voiceCallFamiliar {
+                    Button {
+                        Haptics.tap()
+                        showVoiceCall = true
+                    } label: {
+                        Image(systemName: "phone.fill")
+                    }
+                    .accessibilityLabel("Call \(familiar.displayName)")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Haptics.tap()
                     showSessionDetails.toggle()
@@ -270,6 +302,15 @@ struct ChatView: View {
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
         }
+        .fullScreenCover(isPresented: $showVoiceCall) {
+            if let familiar = voiceCallFamiliar {
+                LiveVoiceCallView(
+                    familiar: familiar,
+                    sessionId: voiceCallSessionId,
+                    client: app.client
+                )
+            }
+        }
         // A new chat linked to a task acquires its server session only after the
         // first reply; once streaming stops, push that sessionId onto the card.
         .onChange(of: thread.isStreaming) { _, streaming in
@@ -332,7 +373,9 @@ struct ChatView: View {
                 NavigationStack {
                     FamiliarThreadsView(familiar: familiar,
                                         path: $pickerPath,
-                                        zoomNamespace: pickerZoomNamespace)
+                                        zoomNamespace: pickerZoomNamespace,
+                                        onSelect: { chosen in switchToSession(chosen) },
+                                        currentThreadId: thread.id)
                 }
             } else {
                 // Group threads and any thread whose familiar no longer
@@ -345,6 +388,22 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    /// Switch the chat to a session chosen in the picker: close the picker,
+    /// then hand the thread to the chat list, which makes it the detail
+    /// column's conversation and clears any pushed navigation. The chosen
+    /// session then stays put until something asks for another one.
+    ///
+    /// Re-picking the session already open only closes the sheet — routing it
+    /// through `requestOpen` would rebuild the very chat being looked at.
+    private func switchToSession(_ chosen: ChatThread) {
+        showSessionPicker = false
+        guard chosen.id != thread.id else { return }
+        // Persist the composer draft before the detail column swaps away.
+        flushDraftPersistence()
+        Haptics.tap()
+        app.switchConversation(to: chosen, currentThreadId: thread.id)
     }
 
     private var sessionDetailsCard: some View {
@@ -391,6 +450,9 @@ struct ChatView: View {
                 )
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("Switch session")
+            .accessibilityLabel("Session")
+            .accessibilityValue(thread.title)
             .disabled(thread.isGroup)
             ForEach(presentedModelControlCapabilities) { capability in
                 Divider()
@@ -415,18 +477,19 @@ struct ChatView: View {
 
     @ViewBuilder
     private var projectContext: some View {
-        if thread.needsProjectSelection || !thread.canSendMessages {
+        if thread.canChangeProject && (thread.needsProjectSelection || !thread.canSendMessages) {
             ChatProjectPicker(
                 familiarIds: thread.familiarIds,
                 recentRoots: app.recentProjectRoots,
                 selectedRoot: $thread.projectRoot,
                 isResolved: $projectResolved,
-                locked: !thread.canChangeProject,
-                requiresExplicitSelection: thread.needsProjectSelection
-            ) {
-                thread.needsProjectSelection = false
-                app.touch(thread)
-            }
+                refreshToken: 0,
+                requiresExplicitSelection: thread.needsProjectSelection,
+                onResolved: {
+                    thread.needsProjectSelection = false
+                    app.touch(thread)
+                }
+            )
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(chrome.bgRaised)
@@ -580,38 +643,111 @@ struct ChatView: View {
         id.split(separator: "/").last.map(String.init) ?? id
     }
 
+    private var linkedGitHubContext: (link: CardGitHubLink, url: URL)? {
+        app.linkedTasks(for: thread)
+            .flatMap(\.githubLinks)
+            .compactMap { link in
+                validGitHubURL(for: link).map { (link, $0) }
+            }
+            .first
+    }
+
+    private func validGitHubURL(for link: CardGitHubLink) -> URL? {
+        let kind = link.kind.lowercased()
+        guard ["pr", "review_request", "issue"].contains(kind),
+              let number = link.number,
+              let url = URL(string: link.url),
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "github.com",
+              url.user == nil,
+              url.password == nil,
+              url.port == nil
+        else { return nil }
+
+        let repo = link.repo.split(separator: "/", omittingEmptySubsequences: true)
+        let path = url.pathComponents.filter { $0 != "/" }
+        let expectedKind = kind == "issue" ? "issues" : "pull"
+        guard repo.count == 2,
+              path.count >= 4,
+              path[0].caseInsensitiveCompare(String(repo[0])) == .orderedSame,
+              path[1].caseInsensitiveCompare(String(repo[1])) == .orderedSame,
+              path[2].lowercased() == expectedKind,
+              path[3] == String(number)
+        else { return nil }
+        return url
+    }
+
+    private func githubContextLabel(_ link: CardGitHubLink) -> String {
+        let kind = link.kind.lowercased() == "issue" ? "Issue" : "PR"
+        guard let number = link.number else { return kind }
+        return "\(kind) #\(number)"
+    }
+
     private var linkedContextStrip: some View {
         let cards = app.linkedTasks(for: thread)
-        return Button {
-            showTasks = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "checklist")
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            if let context = linkedGitHubContext {
+                Link(destination: context.url) {
+                    HStack(spacing: 6) {
+                        Image(systemName: context.link.kind.lowercased() == "issue"
+                              ? "smallcircle.filled.circle" : "arrow.triangle.branch")
+                        Text(githubContextLabel(context.link))
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(chrome.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text(cards.first?.title ?? "Open Tasks")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 36)
+                    .background(chrome.accent.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(chrome.accent.opacity(0.35), lineWidth: 1))
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(githubContextLabel(context.link)) on GitHub")
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 52)
-            .background(chrome.bgRaised)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(chrome.border).frame(height: 1)
+
+            Button {
+                showTasks = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "checklist")
+                        .foregroundStyle(chrome.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(cards.first?.title ?? "Open Tasks")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityHint("Opens tasks linked to this conversation")
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Opens tasks linked to this conversation")
+        .padding(.horizontal, 14)
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
+        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .frame(minHeight: 52)
+        .background(chrome.bgRaised)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(chrome.border).frame(height: 1)
+        }
     }
 
     private func sessionDetailRow(
