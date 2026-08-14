@@ -14,7 +14,7 @@ const POST_ID_RE = /^post-[1-9][0-9]*$/;
 const X_POST_ID_RE = /^[1-9][0-9]*$/;
 const X_THREAD_URL_RE = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[1-9][0-9]*$/;
 const HTTP_URL_RE = /^https?:\/\/[^\s/?#]+(?:[/?#]|$)/;
-const WORD_CONTINUATION_CHARACTER_CLASS = "\\p{L}\\p{N}\\p{M}\\p{Pc}";
+const WORD_CONTINUATION_CHARACTER_CLASS = "\\p{L}\\p{N}\\p{M}\\p{Pc}\\u200C\\u200D";
 const WORD_CONTINUATION_CHARACTER_RE = new RegExp(`[${WORD_CONTINUATION_CHARACTER_CLASS}]`, "u");
 const THREAD_OBSERVATION_METRIC_NAMES = [
   "impressions",

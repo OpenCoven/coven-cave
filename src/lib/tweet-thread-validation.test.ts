@@ -360,6 +360,22 @@ for (const invalid of [
 }
 
 {
+  const insidePersianWord = validateThreadCandidate(candidate((content) => {
+    content.brief = brief({ bannedPhrases: ["روم"] });
+    content.posts[1]!.text = "من می‌روم خانه";
+  }));
+  assert.equal(insidePersianWord.accepted, true);
+  assert.equal(codes(insidePersianWord).includes("banned-phrase"), false);
+
+  const standalonePersianWord = validateThreadCandidate(candidate((content) => {
+    content.brief = brief({ bannedPhrases: ["روم"] });
+    content.posts[1]!.text = "من روم خانه";
+  }));
+  assert.equal(standalonePersianWord.accepted, false);
+  assert.equal(codes(standalonePersianWord).includes("banned-phrase"), true);
+}
+
+{
   const input = candidate();
   const contradictoryBrief = structuredClone(input.brief);
   contradictoryBrief.constraints.maxPosts = 1;

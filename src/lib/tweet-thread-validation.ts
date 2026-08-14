@@ -80,16 +80,21 @@ function boundFindingMessage(message: string): string {
     .concat(FINDING_MESSAGE_TRUNCATION_MARKER);
 }
 
-function addFinding(
-  findings: Map<string, DeterministicFinding>,
+export function createDeterministicFinding(
   code: string,
   severity: DeterministicFinding["severity"],
   message: string,
   references: { postId?: string; claimId?: string } = {},
-): void {
-  const key = [code, severity, references.postId ?? "", references.claimId ?? "", message];
+  identityParts: readonly string[] = [
+    code,
+    severity,
+    references.postId ?? "",
+    references.claimId ?? "",
+    message,
+  ],
+): DeterministicFinding {
   let finding: DeterministicFinding = {
-    findingId: findingId(key),
+    findingId: findingId(identityParts),
     code,
     severity,
     message: boundFindingMessage(message),
@@ -109,6 +114,17 @@ function addFinding(
   if (!Value.Check(DeterministicFindingSchema, finding)) {
     throw new TypeError(`Validator constructed an invalid hard failure for code "${code}".`);
   }
+  return finding;
+}
+
+function addFinding(
+  findings: Map<string, DeterministicFinding>,
+  code: string,
+  severity: DeterministicFinding["severity"],
+  message: string,
+  references: { postId?: string; claimId?: string } = {},
+): void {
+  const finding = createDeterministicFinding(code, severity, message, references);
   findings.set(finding.findingId, finding);
 }
 

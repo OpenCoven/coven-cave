@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+
+import { Value } from "typebox/value";
 
 import {
+  DeterministicFindingSchema,
   TWEET_THREAD_PROTOCOL_VERSION,
   computeThreadCandidateSha256,
 } from "./tweet-thread-protocol.ts";
@@ -121,6 +125,21 @@ function rankingInput(
   };
 }
 
+function legacyAuditFindingId(
+  finding: { code: string; message: string; postId?: string; claimId?: string },
+): string {
+  const hash = createHash("sha256")
+    .update([
+      finding.code,
+      finding.message,
+      finding.postId ?? "",
+      finding.claimId ?? "",
+    ].join("\u0000"), "utf8")
+    .digest("hex")
+    .slice(0, 16);
+  return `finding-${hash}`;
+}
+
 {
   const a = candidate("candidate-a");
   const b = candidate("candidate-b");
@@ -214,6 +233,13 @@ for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] a
   assert.ok(result.rejected[0]?.findings.some((finding) =>
     finding.severity === "fail"
   ), invalidKind);
+  if (invalidKind === "sha") {
+    const auditFinding = result.rejected[0]?.findings.find((finding) =>
+      finding.code === "scorecard-candidate-sha-mismatch"
+    );
+    assert.ok(auditFinding);
+    assert.equal(auditFinding.findingId, legacyAuditFindingId(auditFinding));
+  }
 }
 
 {
@@ -272,6 +298,81 @@ for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] a
     finding.code === "protocol-invalid"
     && finding.message.includes("candidateSha256")
   ));
+}
+
+{
+  const valid = rankingInput(candidate("candidate-valid-after-malformed"), {
+    factuality: 0.8,
+    provenance: 0.8,
+    accessibility: 0.8,
+    voice: 0.8,
+    coherence: 0.8,
+    engagement: 0.8,
+  });
+  const malformedCandidate = {
+    candidateId: "candidate-malformed-shape",
+    candidateSha256: "not-a-sha",
+    posts: null,
+    evidence: null,
+  } as unknown as ThreadCandidate;
+  const malformed = {
+    candidate: malformedCandidate,
+    scorecard: scorecard(valid.candidate),
+    validation: validateThreadCandidate(malformedCandidate),
+  };
+
+  const result = rankThreadCandidates([malformed, valid], equalWeights);
+  assert.deepEqual(result.ranked.map((entry) => entry.candidateId), [
+    valid.candidate.candidateId,
+  ]);
+  const rejected = result.rejected.find((entry) =>
+    entry.candidateId === "candidate-malformed-shape"
+  );
+  assert.ok(rejected, "malformed candidate remains visible in rejected audit output");
+  assert.ok(rejected.findings.some((finding) => finding.severity === "fail"));
+  assert.ok(rejected.findings.every((finding) =>
+    Value.Check(DeterministicFindingSchema, finding)
+  ));
+}
+
+{
+  const oversizedId = "x".repeat(2_100);
+  const input = rankingInput(candidate("candidate-oversized-audit-id"));
+  input.candidate.candidateId = `candidate-${oversizedId}`;
+  input.scorecard.scorecardId = `scorecard-${oversizedId}`;
+
+  const result = rankThreadCandidates([input], equalWeights);
+  assert.equal(result.ranked.length, 0);
+  assert.equal(result.rejected.length, 1);
+  assert.ok(result.results.flatMap((entry) => entry.findings).every((finding) =>
+    Value.Check(DeterministicFindingSchema, finding)
+  ), "every scoring-generated finding remains schema-valid for oversized identifiers");
+}
+
+{
+  const originalLocaleCompare = String.prototype.localeCompare;
+  assert.ok(
+    originalLocaleCompare.call("candidate-aa", "candidate-ab", "da") > 0,
+    "the regression IDs must demonstrate locale-sensitive ordering",
+  );
+  String.prototype.localeCompare = function localeCompareUsingDanish(
+    compareString: string,
+  ): number {
+    return originalLocaleCompare.call(this, compareString, "da");
+  };
+  try {
+    const aa = rankingInput(candidate("candidate-aa"));
+    const ab = rankingInput(candidate("candidate-ab"));
+    for (const inputs of [[ab, aa], [aa, ab]]) {
+      const result = rankThreadCandidates(inputs, equalWeights);
+      assert.deepEqual(result.ranked.map((entry) => entry.candidateId), [
+        "candidate-aa",
+        "candidate-ab",
+      ]);
+    }
+  } finally {
+    String.prototype.localeCompare = originalLocaleCompare;
+  }
 }
 
 {

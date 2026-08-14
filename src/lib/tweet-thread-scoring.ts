@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
-
 import { Value } from "typebox/value";
 
 import {
   computeThreadCandidateSha256,
   ObjectiveWeightsSchema,
+  ThreadCandidateSchema,
   ThreadScorecardSchema,
 } from "./tweet-thread-protocol.ts";
 import type {
@@ -14,6 +13,7 @@ import type {
   ThreadScorecard,
 } from "./tweet-thread-protocol.ts";
 import {
+  createDeterministicFinding,
   validateThreadCandidate,
   type ThreadValidationResult,
 } from "./tweet-thread-validation.ts";
@@ -79,24 +79,18 @@ export type OptimizationContinuationDecision =
     reason: "threshold-met" | "no-meaningful-gain" | "budget-exhausted" | "hard-regression";
   };
 
-function findingId(parts: readonly string[]): string {
-  const hash = createHash("sha256").update(parts.join("\u0000"), "utf8").digest("hex").slice(0, 16);
-  return `finding-${hash}`;
-}
-
 function auditFinding(
   code: string,
   message: string,
   references: { postId?: string; claimId?: string } = {},
 ): DeterministicFinding {
-  return {
-    findingId: findingId([code, message, references.postId ?? "", references.claimId ?? ""]),
+  return createDeterministicFinding(
     code,
-    severity: "fail",
+    "fail",
     message,
-    ...(references.postId ? { postId: references.postId } : {}),
-    ...(references.claimId ? { claimId: references.claimId } : {}),
-  };
+    references,
+    [code, message, references.postId ?? "", references.claimId ?? ""],
+  );
 }
 
 function dimensionsFromScorecard(scorecard: ThreadScorecard): ThreadDimensionScores {
@@ -119,51 +113,63 @@ function weightedMean(
 }
 
 function scorecardReferenceIssues(
-  candidate: ThreadCandidate,
-  scorecard: ThreadScorecard,
+  candidateValue: unknown,
+  scorecardValue: unknown,
   validation: ThreadValidationResult,
   canonicalSha256: string | null,
+  candidateSchemaValid: boolean,
+  scorecardSchemaValid: boolean,
+  candidateId: string,
+  candidateSha256: string,
+  scorecardId: string,
 ): DeterministicFinding[] {
   const findings: DeterministicFinding[] = [];
-  const scorecardId = scorecard.scorecardId;
+  const candidateRecord: UnknownRecord = isRecord(candidateValue) ? candidateValue : {};
+  const scorecardRecord: UnknownRecord = isRecord(scorecardValue) ? scorecardValue : {};
   if (canonicalSha256 === null) {
     findings.push(auditFinding(
       "candidate-canonical-sha-unavailable",
-      `Candidate "${candidate.candidateId}" cannot be serialized for canonical SHA-256 verification.`,
+      `Candidate "${candidateId}" cannot be serialized for canonical SHA-256 verification.`,
     ));
-  } else if (candidate.candidateSha256 !== canonicalSha256) {
+  } else if (candidateSha256 !== canonicalSha256) {
     findings.push(auditFinding(
       "candidate-canonical-sha-mismatch",
-      `Candidate "${candidate.candidateId}" has candidateSha256 "${candidate.candidateSha256}", but canonical content hashes to "${canonicalSha256}".`,
+      `Candidate "${candidateId}" has candidateSha256 "${candidateSha256}", but canonical content hashes to "${canonicalSha256}".`,
     ));
   }
-  if (!Value.Check(ThreadScorecardSchema, scorecard)) {
+  if (!scorecardSchemaValid) {
     findings.push(auditFinding(
       "scorecard-protocol-invalid",
       `Scorecard "${String(scorecardId)}" does not match ThreadScorecardSchema.`,
     ));
   }
-  if (scorecard.candidateSha256 !== (canonicalSha256 ?? candidate.candidateSha256)) {
+  if (scorecardRecord.candidateSha256 !== (canonicalSha256 ?? candidateSha256)) {
     findings.push(auditFinding(
       "scorecard-candidate-sha-mismatch",
-      `Scorecard "${String(scorecard.scorecardId)}" is not bound to candidate "${candidate.candidateId}".`,
+      `Scorecard "${scorecardId}" is not bound to candidate "${candidateId}".`,
     ));
   }
-  if (validation.candidateSha256 !== candidate.candidateSha256) {
+  if (validation.candidateSha256 !== candidateSha256) {
     findings.push(auditFinding(
       "validation-candidate-sha-mismatch",
-      `Validation result is not bound to candidate "${candidate.candidateId}".`,
+      `Validation result is not bound to candidate "${candidateId}".`,
     ));
   }
-  const generatedAt = Date.parse(candidate.generatedAt);
-  const scoredAt = Date.parse(scorecard.scoredAt);
+  const generatedAt = typeof candidateRecord.generatedAt === "string"
+    ? Date.parse(candidateRecord.generatedAt)
+    : Number.NaN;
+  const scoredAt = typeof scorecardRecord.scoredAt === "string"
+    ? Date.parse(scorecardRecord.scoredAt)
+    : Number.NaN;
   if (Number.isFinite(generatedAt) && Number.isFinite(scoredAt) && scoredAt < generatedAt) {
     findings.push(auditFinding(
       "scorecard-chronology-invalid",
-      `Scorecard "${String(scorecard.scorecardId)}" predates candidate "${candidate.candidateId}".`,
+      `Scorecard "${scorecardId}" predates candidate "${candidateId}".`,
     ));
   }
-  if (Value.Check(ThreadScorecardSchema, scorecard)) {
+  if (candidateSchemaValid && scorecardSchemaValid) {
+    const candidate = candidateValue as ThreadCandidate;
+    const scorecard = scorecardValue as ThreadScorecard;
     const postIds = new Set(candidate.posts.map((post) => post.postId));
     const claimIds = new Set(candidate.evidence.map((item) => item.claimId));
     for (const dimension of DIMENSIONS) {
@@ -185,7 +191,7 @@ function scorecardReferenceIssues(
       }
     }
   }
-  return findings.sort((left, right) => left.findingId.localeCompare(right.findingId));
+  return findings.sort((left, right) => compareOrdinal(left.findingId, right.findingId));
 }
 
 function dominates(
@@ -208,16 +214,32 @@ function rankingComparator(
     const rightScore = right.dimensions?.[dimension] ?? Number.NEGATIVE_INFINITY;
     if (leftScore !== rightScore) return rightScore - leftScore;
   }
-  return left.candidateId.localeCompare(right.candidateId);
+  return compareOrdinal(left.candidateId, right.candidateId);
 }
 
 function stableAuditComparator(
   left: RankedThreadCandidate,
   right: RankedThreadCandidate,
 ): number {
-  return left.candidateId.localeCompare(right.candidateId)
-    || left.candidateSha256.localeCompare(right.candidateSha256)
-    || left.scorecardId.localeCompare(right.scorecardId);
+  return compareOrdinal(left.candidateId, right.candidateId)
+    || compareOrdinal(left.candidateSha256, right.candidateSha256)
+    || compareOrdinal(left.scorecardId, right.scorecardId);
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function auditString(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function compareOrdinal(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 export function rankThreadCandidates(
@@ -237,7 +259,9 @@ export function rankThreadCandidates(
 
   const candidateIds = new Set<string>();
   const candidateShas = new Set<string>();
-  for (const { candidate } of inputs) {
+  for (const { candidate: candidateValue } of inputs) {
+    if (!Value.Check(ThreadCandidateSchema, candidateValue)) continue;
+    const candidate = candidateValue as ThreadCandidate;
     if (candidateIds.has(candidate.candidateId)) {
       throw new TypeError(`Ranking input contains duplicate candidate ID "${candidate.candidateId}".`);
     }
@@ -250,29 +274,47 @@ export function rankThreadCandidates(
 
   const passing: RankedThreadCandidate[] = [];
   const rejected: RankedThreadCandidate[] = [];
-  for (const { candidate, scorecard } of inputs) {
+  for (const { candidate: candidateValue, scorecard: scorecardValue } of inputs) {
+    const candidateRecord: UnknownRecord = isRecord(candidateValue) ? candidateValue : {};
+    const scorecardRecord: UnknownRecord = isRecord(scorecardValue) ? scorecardValue : {};
+    const candidateId = auditString(candidateRecord.candidateId, "candidate-invalid");
+    const candidateSha256 = auditString(
+      candidateRecord.candidateSha256,
+      "candidate-sha-unavailable",
+    );
+    const scorecardId = auditString(scorecardRecord.scorecardId, "scorecard-invalid");
+    const candidateSchemaValid = Value.Check(ThreadCandidateSchema, candidateValue);
+    const scorecardSchemaValid = Value.Check(ThreadScorecardSchema, scorecardValue);
     let canonicalSha256: string | null = null;
-    try {
-      canonicalSha256 = computeThreadCandidateSha256(candidate);
-    } catch {
-      canonicalSha256 = null;
+    if (candidateSchemaValid) {
+      try {
+        canonicalSha256 = computeThreadCandidateSha256(candidateValue as ThreadCandidate);
+      } catch {
+        canonicalSha256 = null;
+      }
     }
-    const validation = validateThreadCandidate(candidate);
+    const validation = validateThreadCandidate(candidateValue);
     const bindingFindings = scorecardReferenceIssues(
-      candidate,
-      scorecard,
+      candidateValue,
+      scorecardValue,
       validation,
       canonicalSha256,
+      candidateSchemaValid,
+      scorecardSchemaValid,
+      candidateId,
+      candidateSha256,
+      scorecardId,
     );
     const validationHasHardGate = !validation.accepted
       || validation.findings.some((finding) => finding.severity === "fail");
     const isRejected = bindingFindings.length > 0 || validationHasHardGate;
-    const scorecardValid = Value.Check(ThreadScorecardSchema, scorecard);
-    const dimensions = scorecardValid ? dimensionsFromScorecard(scorecard) : null;
+    const dimensions = scorecardSchemaValid
+      ? dimensionsFromScorecard(scorecardValue as ThreadScorecard)
+      : null;
     const result: RankedThreadCandidate = {
-      candidateId: candidate.candidateId,
-      candidateSha256: candidate.candidateSha256,
-      scorecardId: scorecard.scorecardId,
+      candidateId,
+      candidateSha256,
+      scorecardId,
       eligible: !isRejected,
       paretoDominated: false,
       weightedTotal: dimensions
@@ -281,7 +323,7 @@ export function rankThreadCandidates(
       dimensions,
       validation,
       findings: [...validation.findings, ...bindingFindings].sort((left, right) =>
-        left.findingId.localeCompare(right.findingId)
+        compareOrdinal(left.findingId, right.findingId)
       ),
     };
     if (isRejected) rejected.push(result);
