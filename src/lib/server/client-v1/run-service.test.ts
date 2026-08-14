@@ -22,6 +22,7 @@ import {
 } from "./run-operation-store.ts";
 import {
   clientRunBufferKey,
+  type ClientSendInput,
   type ClientRunServiceDeps,
   createClientRunService,
   parseClientSendInput,
@@ -205,11 +206,12 @@ function createDurableService(overrides: Partial<ClientRunServiceDeps> = {}) {
 async function storedRunOperation(
   operationId: string = input.operationId,
   requestedCredentialId: string = credentialId,
+  requestedInput: ClientSendInput = input,
 ) {
   return readClientRunOperation({
     operationId,
     credentialId: requestedCredentialId,
-    requestHash: hashNormalizedRequest(input),
+    requestHash: hashNormalizedRequest(requestedInput),
   });
 }
 
@@ -893,38 +895,117 @@ test("canonical owner and project fields cannot be widened by caller input", asy
   assert.equal(claimed, false);
 });
 
-test("attachment ownership failures are safe 4xx responses and never launch", async () => {
+test("terminal attachment validation failures persist and replay without resolving twice", async () => {
+  const attachmentInput = {
+    ...input,
+    attachmentIds: ["../malformed-attachment"],
+  };
+  let resolutions = 0;
   let executions = 0;
-  const { service } = createService({
+  const service = createDurableService({
     authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
-    claimOperation: async () => ({
-      kind: "claimed",
-      claimId: "890437e7-7b87-4af9-a6ce-28931d778f80",
-    }),
-    completeOperation: async () => {
-      throw new Error("must not complete before attachment validation");
-    },
     resolveAttachments: async () => {
-      throw new ClientAttachmentError(404, "not_found", "Attachment not found.");
+      resolutions += 1;
+      throw new ClientAttachmentError(
+        400,
+        "invalid_request",
+        "Attachment ids must be safe and distinct.",
+      );
     },
     executeChatSend: async () => {
       executions += 1;
       return new Response();
     },
   });
-  const response = await service.send(
-    { ...input, attachmentIds: ["9f4145de-9b43-4abc-876d-81ef63de60e0.png"] },
-    principal,
-  );
-  assert.equal(response.status, 404);
-  assert.deepEqual(await response.json(), {
+  const first = await service.send(attachmentInput, principal);
+  const firstBody = await first.json();
+  assert.equal(first.status, 400);
+  assert.deepEqual(firstBody, {
     ok: false,
     error: {
-      code: "not_found",
-      message: "Attachment not found.",
+      code: "invalid_request",
+      message: "Attachment ids must be safe and distinct.",
       retryable: false,
     },
   });
+  assert.equal((await storedRunOperation(operationId, credentialId, attachmentInput))?.state, "terminal");
+
+  const replay = await service.send(attachmentInput, principal);
+  assert.equal(replay.status, 400);
+  assert.deepEqual(await replay.json(), firstBody);
+  assert.equal(resolutions, 1, "a terminal attachment failure never resolves twice");
+  assert.equal(executions, 0);
+});
+
+test("retryable attachment service failures return to reserved and retry the same operation id", async () => {
+  const attachmentInput = {
+    ...input,
+    attachmentIds: ["9f4145de-9b43-4abc-876d-81ef63de60e0.png"],
+  };
+  let resolutions = 0;
+  let executions = 0;
+  const service = createDurableService({
+    authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
+    resolveAttachments: async () => {
+      resolutions += 1;
+      if (resolutions === 1) {
+        throw new ClientAttachmentError(
+          503,
+          "service_unavailable",
+          "The attachment index is unavailable.",
+        );
+      }
+      return [];
+    },
+    executeChatSend: async () => {
+      executions += 1;
+      return new Response(
+        `id: 1\ndata: ${JSON.stringify({ kind: "done", isError: false })}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+
+  const first = await service.send(attachmentInput, principal);
+  assert.equal(first.status, 503);
+  assert.equal((await first.json()).error.retryable, true);
+  assert.equal((await storedRunOperation(operationId, credentialId, attachmentInput))?.state, "reserved");
+
+  const second = await service.send(attachmentInput, principal);
+  assert.equal(second.status, 200);
+  assert.equal((await storedRunOperation(operationId, credentialId, attachmentInput))?.state, "launched");
+  assert.equal(resolutions, 2);
+  assert.equal(executions, 1);
+});
+
+test("unexpected attachment resolution failures retain crash-recovery semantics", async () => {
+  let resolutions = 0;
+  let executions = 0;
+  const service = createDurableService({
+    now: () => Date.now() + PENDING_CLAIM_RETRY_MS,
+    authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
+    resolveAttachments: async () => {
+      resolutions += 1;
+      throw new Error("unexpected attachment resolver failure");
+    },
+    executeChatSend: async () => {
+      executions += 1;
+      return new Response();
+    },
+  });
+
+  await assert.rejects(
+    () => service.send(input, principal),
+    /unexpected attachment resolver failure/,
+  );
+  assert.equal((await storedRunOperation())?.state, "launching");
+
+  const retry = await service.send(input, principal);
+  assert.equal(retry.status, 409);
+  const body = await retry.json();
+  assert.equal(body.error.details.status, "manual_recovery_required");
+  assert.equal(body.error.details.runState, "launching");
+  assert.equal(resolutions, 1, "a crash-state retry must not resolve attachments again");
   assert.equal(executions, 0);
 });
 

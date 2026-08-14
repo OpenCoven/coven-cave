@@ -2,6 +2,7 @@ import { isValidChatAttachmentId } from "@/lib/server/chat-attachment-store";
 import { requireClientPrincipal } from "@/lib/server/client-v1/auth";
 import {
   ClientAttachmentError,
+  isRetryableClientAttachmentError,
   readClientAttachment,
 } from "@/lib/server/client-v1/attachment-service";
 import { withAuthorizedClientConversation } from "@/lib/server/client-v1/chat-service";
@@ -61,7 +62,7 @@ function attachmentErrorResponse(error: ClientAttachmentError): Response {
     error.status,
     error.code,
     error.message,
-    error.status === 503,
+    isRetryableClientAttachmentError(error),
   );
 }
 
