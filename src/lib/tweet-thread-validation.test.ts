@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 
 import twitterText from "twitter-text";
+import { Value } from "typebox/value";
 
 import {
+  DeterministicFindingSchema,
   TWEET_THREAD_PROTOCOL_VERSION,
   computeThreadCandidateSha256,
 } from "./tweet-thread-protocol.ts";
@@ -174,6 +176,31 @@ for (const [minPosts, maxPosts] of [[3, 4], [1, 1]] as const) {
 
 {
   const result = validateThreadCandidate(candidate((content) => {
+    content.brief = brief({ bannedPhrases: ["art"] });
+    content.posts[1]!.text = "A partial result still cites the evidence.";
+  }));
+  assert.equal(result.accepted, true);
+  assert.equal(codes(result).includes("banned-phrase"), false);
+}
+
+{
+  const invalidCharacter = "Valid-looking text\uFFFE";
+  assert.equal(parseTweet(invalidCharacter).weightedLength <= 280, true);
+  assert.equal(parseTweet(invalidCharacter).valid, false);
+  const result = validateThreadCandidate(candidate((content) => {
+    content.posts[1]!.text = invalidCharacter;
+  }));
+  assert.equal(result.accepted, false);
+  assert.ok(result.findings.some((finding) =>
+    finding.code === "post-twitter-text-invalid"
+    && finding.severity === "fail"
+    && finding.postId === "post-2"
+  ));
+  assert.equal(codes(result).includes("post-weighted-length"), false);
+}
+
+{
+  const result = validateThreadCandidate(candidate((content) => {
     content.posts[1]!.media = [{ description: "Launch chart" }];
   }));
   assert.equal(result.accepted, false);
@@ -217,7 +244,7 @@ for (const [minPosts, maxPosts] of [[3, 4], [1, 1]] as const) {
 
 {
   const result = validateThreadCandidate(candidate((content) => {
-    content.posts[1]!.text = "🚀🚀🚀🚀 #Launch #launch #Build #Ship https://one.example/a https://two.example/b";
+    content.posts[1]!.text = "🚀🚀🚀🚀 #Launch #launch #Build #Ship https://one.example.com/a https://two.example.com/b";
   }));
   assert.equal(result.accepted, true);
   assert.ok(codes(result).includes("repeated-emoji"));
@@ -231,10 +258,24 @@ for (const [minPosts, maxPosts] of [[3, 4], [1, 1]] as const) {
 
 {
   const result = validateThreadCandidate(candidate((content) => {
-    content.posts[1]!.text = "https://only.example/link";
+    content.posts[1]!.text = "https://only.example.com/link";
   }));
   assert.equal(result.accepted, true);
   assert.ok(codes(result).includes("link-density"));
+}
+
+{
+  const text = "HTTPS://EXAMPLE.COM/path X.COM/OpenCoven/status/123";
+  const first = validateThreadCandidate(candidate((content) => {
+    content.posts[1]!.text = text;
+  }));
+  const second = validateThreadCandidate(candidate((content) => {
+    content.posts[1]!.text = text;
+  }));
+  const measurement = first.measurements.find((entry) => entry.postId === "post-2");
+  assert.equal(measurement?.urlCount, 2);
+  assert.ok(codes(first).includes("link-density"));
+  assert.deepEqual(first.findings, second.findings);
 }
 
 {
@@ -243,6 +284,22 @@ for (const [minPosts, maxPosts] of [[3, 4], [1, 1]] as const) {
   const result = validateThreadCandidate(invalid);
   assert.equal(result.accepted, false);
   assert.ok(codes(result).includes("protocol-invalid"));
+}
+
+{
+  const invalid = candidate() as unknown as Record<string, unknown>;
+  invalid.posts = [{
+    postId: "invalid post id",
+    text: "A schema-invalid candidate still produces auditable findings.",
+    claimIds: ["invalid claim id"],
+  }];
+  const result = validateThreadCandidate(invalid);
+  assert.equal(result.accepted, false);
+  assert.ok(result.findings.length > 0);
+  assert.ok(
+    result.findings.every((finding) => Value.Check(DeterministicFindingSchema, finding)),
+    "schema-invalid candidate identifiers never leak into canonical finding references",
+  );
 }
 
 {

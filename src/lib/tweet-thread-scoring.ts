@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { Value } from "typebox/value";
 
 import {
+  computeThreadCandidateSha256,
   ObjectiveWeightsSchema,
   ThreadScorecardSchema,
 } from "./tweet-thread-protocol.ts";
@@ -12,7 +13,10 @@ import type {
   ThreadCandidate,
   ThreadScorecard,
 } from "./tweet-thread-protocol.ts";
-import type { ThreadValidationResult } from "./tweet-thread-validation.ts";
+import {
+  validateThreadCandidate,
+  type ThreadValidationResult,
+} from "./tweet-thread-validation.ts";
 
 const DIMENSIONS = [
   "factuality",
@@ -118,16 +122,28 @@ function scorecardReferenceIssues(
   candidate: ThreadCandidate,
   scorecard: ThreadScorecard,
   validation: ThreadValidationResult,
+  canonicalSha256: string | null,
 ): DeterministicFinding[] {
   const findings: DeterministicFinding[] = [];
   const scorecardId = scorecard.scorecardId;
+  if (canonicalSha256 === null) {
+    findings.push(auditFinding(
+      "candidate-canonical-sha-unavailable",
+      `Candidate "${candidate.candidateId}" cannot be serialized for canonical SHA-256 verification.`,
+    ));
+  } else if (candidate.candidateSha256 !== canonicalSha256) {
+    findings.push(auditFinding(
+      "candidate-canonical-sha-mismatch",
+      `Candidate "${candidate.candidateId}" has candidateSha256 "${candidate.candidateSha256}", but canonical content hashes to "${canonicalSha256}".`,
+    ));
+  }
   if (!Value.Check(ThreadScorecardSchema, scorecard)) {
     findings.push(auditFinding(
       "scorecard-protocol-invalid",
       `Scorecard "${String(scorecardId)}" does not match ThreadScorecardSchema.`,
     ));
   }
-  if (scorecard.candidateSha256 !== candidate.candidateSha256) {
+  if (scorecard.candidateSha256 !== (canonicalSha256 ?? candidate.candidateSha256)) {
     findings.push(auditFinding(
       "scorecard-candidate-sha-mismatch",
       `Scorecard "${String(scorecard.scorecardId)}" is not bound to candidate "${candidate.candidateId}".`,
@@ -219,10 +235,35 @@ export function rankThreadCandidates(
     throw new RangeError("Ranking requires at least one positive objective weight.");
   }
 
+  const candidateIds = new Set<string>();
+  const candidateShas = new Set<string>();
+  for (const { candidate } of inputs) {
+    if (candidateIds.has(candidate.candidateId)) {
+      throw new TypeError(`Ranking input contains duplicate candidate ID "${candidate.candidateId}".`);
+    }
+    candidateIds.add(candidate.candidateId);
+    if (candidateShas.has(candidate.candidateSha256)) {
+      throw new TypeError(`Ranking input contains duplicate candidate SHA "${candidate.candidateSha256}".`);
+    }
+    candidateShas.add(candidate.candidateSha256);
+  }
+
   const passing: RankedThreadCandidate[] = [];
   const rejected: RankedThreadCandidate[] = [];
-  for (const { candidate, scorecard, validation } of inputs) {
-    const bindingFindings = scorecardReferenceIssues(candidate, scorecard, validation);
+  for (const { candidate, scorecard } of inputs) {
+    let canonicalSha256: string | null = null;
+    try {
+      canonicalSha256 = computeThreadCandidateSha256(candidate);
+    } catch {
+      canonicalSha256 = null;
+    }
+    const validation = validateThreadCandidate(candidate);
+    const bindingFindings = scorecardReferenceIssues(
+      candidate,
+      scorecard,
+      validation,
+      canonicalSha256,
+    );
     const validationHasHardGate = !validation.accepted
       || validation.findings.some((finding) => finding.severity === "fail");
     const isRejected = bindingFindings.length > 0 || validationHasHardGate;
@@ -285,11 +326,11 @@ export function shouldContinueOptimization(
   if (input.hardRegression) {
     return { continue: false, reason: "hard-regression" };
   }
-  if (input.currentBestScore >= input.threshold) {
-    return { continue: false, reason: "threshold-met" };
-  }
   if (!input.accepted) {
     return { continue: true, reason: "repairable-regression" };
+  }
+  if (input.currentBestScore >= input.threshold) {
+    return { continue: false, reason: "threshold-met" };
   }
   if (input.currentBestScore - input.previousBestScore < input.minimumMeaningfulGain) {
     return { continue: false, reason: "no-meaningful-gain" };

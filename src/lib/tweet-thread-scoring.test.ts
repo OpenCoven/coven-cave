@@ -191,13 +191,12 @@ function rankingInput(
   assert.equal(result.dominated.length, 0);
 }
 
-for (const invalidKind of ["sha", "schema", "chronology", "validation-sha", "finding-reference"] as const) {
+for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] as const) {
   const input = candidate(`candidate-invalid-${invalidKind}`);
   const entry = rankingInput(input);
   if (invalidKind === "sha") entry.scorecard.candidateSha256 = "a".repeat(64);
   if (invalidKind === "schema") entry.scorecard.dimensions.voice.score = 2;
   if (invalidKind === "chronology") entry.scorecard.scoredAt = "2026-08-14T11:59:59.000Z";
-  if (invalidKind === "validation-sha") entry.validation.candidateSha256 = "b".repeat(64);
   if (invalidKind === "finding-reference") {
     entry.scorecard.dimensions.factuality.findings = [{
       findingId: "finding-unknown-reference",
@@ -260,6 +259,64 @@ for (const invalidKind of ["sha", "schema", "chronology", "validation-sha", "fin
   assert.deepEqual(forward, reverse);
 }
 
+{
+  const entry = rankingInput(candidate("candidate-mutated-after-validation"));
+  entry.candidate.posts[0]!.text = "界".repeat(141);
+  assert.equal(entry.validation.accepted, true);
+  const result = rankThreadCandidates([entry], equalWeights);
+  assert.equal(result.ranked.length, 0);
+  assert.equal(result.rejected[0]?.candidateId, entry.candidate.candidateId);
+  assert.equal(result.rejected[0]?.validation.accepted, false);
+  assert.ok(result.rejected[0]?.findings.some((finding) => finding.code === "post-weighted-length"));
+  assert.ok(result.rejected[0]?.findings.some((finding) =>
+    finding.code === "protocol-invalid"
+    && finding.message.includes("candidateSha256")
+  ));
+}
+
+{
+  const entry = rankingInput(candidate("candidate-stale-rejection"));
+  entry.validation = {
+    candidateSha256: entry.candidate.candidateSha256,
+    accepted: false,
+    findings: [{
+      findingId: "finding-stale-rejection",
+      code: "stale-rejection",
+      severity: "fail",
+      message: "This stale result must not control ranking.",
+    }],
+    measurements: [],
+  };
+  const result = rankThreadCandidates([entry], equalWeights);
+  assert.deepEqual(result.ranked.map((item) => item.candidateId), [entry.candidate.candidateId]);
+  assert.equal(result.ranked[0]?.validation.accepted, true);
+  assert.equal(result.ranked[0]?.findings.some((finding) => finding.code === "stale-rejection"), false);
+}
+
+for (const reverse of [false, true]) {
+  const duplicates = [
+    rankingInput(candidate("candidate-duplicate-id", "First canonical body.")),
+    rankingInput(candidate("candidate-duplicate-id", "Second canonical body.")),
+  ];
+  assert.throws(
+    () => rankThreadCandidates(reverse ? duplicates.reverse() : duplicates, equalWeights),
+    /duplicate candidate id.*candidate-duplicate-id/i,
+  );
+}
+
+for (const reverse of [false, true]) {
+  const first = rankingInput(candidate("candidate-duplicate-sha-a"));
+  const second = rankingInput(candidate("candidate-duplicate-sha-b"));
+  second.candidate.candidateSha256 = first.candidate.candidateSha256;
+  second.scorecard.candidateSha256 = first.candidate.candidateSha256;
+  second.validation.candidateSha256 = first.candidate.candidateSha256;
+  const duplicates = [first, second];
+  assert.throws(
+    () => rankThreadCandidates(reverse ? duplicates.reverse() : duplicates, equalWeights),
+    /duplicate candidate sha.*[a-f0-9]{64}/i,
+  );
+}
+
 assert.throws(
   () => rankThreadCandidates(
     [rankingInput(candidate("candidate-zero-weight"))],
@@ -299,7 +356,7 @@ assert.deepEqual(shouldContinueOptimization({
   ...baseDecision,
   currentBestScore: 0.8,
   accepted: false,
-}), { continue: false, reason: "threshold-met" });
+}), { continue: true, reason: "repairable-regression" });
 assert.deepEqual(shouldContinueOptimization({
   ...baseDecision,
   accepted: false,

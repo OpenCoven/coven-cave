@@ -2,10 +2,13 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import twitterText from "twitter-text";
+import { Value } from "typebox/value";
 
 import {
+  DeterministicFindingSchema,
   TweetThreadProtocolValidationError,
   assertValidThreadCandidate,
+  containsBannedPhrase,
 } from "./tweet-thread-protocol.ts";
 import type {
   DeterministicFinding,
@@ -13,10 +16,9 @@ import type {
   ThreadCandidate,
 } from "./tweet-thread-protocol.ts";
 
-const { parseTweet } = twitterText;
+const { extractUrls, parseTweet } = twitterText;
 
 const X_POST_WEIGHTED_LENGTH_LIMIT = 280;
-const URL_RE = /https?:\/\/[^\s]+/gu;
 const HASHTAG_RE = /#[\p{L}\p{N}_]+/gu;
 const STYLED_UNICODE_ALPHABET_RE = /[\u{1D400}-\u{1D7FF}\uFF21-\uFF3A\uFF41-\uFF5A]/u;
 const REPEATED_EMOJI_RE = /(\p{Extended_Pictographic})(?:\uFE0E|\uFE0F)?(?:\1(?:\uFE0E|\uFE0F)?){3,}/gu;
@@ -79,9 +81,19 @@ function addFinding(
     code,
     severity,
     message,
-    ...(references.postId ? { postId: references.postId } : {}),
-    ...(references.claimId ? { claimId: references.claimId } : {}),
   };
+  if (
+    references.postId
+    && Value.Check(DeterministicFindingSchema, { ...finding, postId: references.postId })
+  ) {
+    finding.postId = references.postId;
+  }
+  if (
+    references.claimId
+    && Value.Check(DeterministicFindingSchema, { ...finding, claimId: references.claimId })
+  ) {
+    finding.claimId = references.claimId;
+  }
   findings.set(finding.findingId, finding);
 }
 
@@ -194,8 +206,9 @@ export function validateThreadCandidate(
 
     if (typeof postValue.text !== "string") continue;
     const text = postValue.text;
-    const weightedLength = parseTweet(text).weightedLength;
-    const urls = text.match(URL_RE) ?? [];
+    const parsedTweet = parseTweet(text);
+    const weightedLength = parsedTweet.weightedLength;
+    const urls = extractUrls(text);
     const hashtags = text.match(HASHTAG_RE) ?? [];
     const normalizedHashtags = hashtags.map((tag) => normalizeText(tag));
     const repeatedHashtagCount = normalizedHashtags.length - new Set(normalizedHashtags).size;
@@ -221,13 +234,20 @@ export function validateThreadCandidate(
         { postId },
       );
     }
+    if (!parsedTweet.valid && weightedLength <= X_POST_WEIGHTED_LENGTH_LIMIT) {
+      addFinding(
+        findings,
+        "post-twitter-text-invalid",
+        "fail",
+        `${postId} is not valid according to official twitter-text parsing.`,
+        { postId },
+      );
+    }
 
     if (constraints && Array.isArray(constraints.bannedPhrases)) {
-      const normalizedText = normalizeText(text);
       for (const phrase of constraints.bannedPhrases) {
         if (typeof phrase !== "string") continue;
-        const normalizedPhrase = normalizeText(phrase);
-        if (normalizedPhrase && normalizedText.includes(normalizedPhrase)) {
+        if (containsBannedPhrase(text, phrase)) {
           addFinding(
             findings,
             "banned-phrase",

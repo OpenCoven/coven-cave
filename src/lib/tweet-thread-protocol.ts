@@ -357,9 +357,13 @@ function dedupeTrimmedList(value: unknown): unknown {
   return out;
 }
 
-function containsBannedPhrase(text: string, phrase: string): boolean {
-  const normalizedText = text.toLowerCase();
-  const normalizedPhrase = phrase.trim().toLowerCase();
+function normalizeBannedPhraseText(value: string): string {
+  return value.normalize("NFKC").toLowerCase().trim().replace(/\s+/gu, " ");
+}
+
+export function containsBannedPhrase(text: string, phrase: string): boolean {
+  const normalizedText = normalizeBannedPhraseText(text);
+  const normalizedPhrase = normalizeBannedPhraseText(phrase);
   if (normalizedPhrase.length === 0) return false;
 
   const [firstCharacter] = normalizedPhrase;

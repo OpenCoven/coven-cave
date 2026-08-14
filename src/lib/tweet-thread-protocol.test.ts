@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { Value } from "typebox/value";
 
+import * as protocolApi from "./tweet-thread-protocol.ts";
 import {
   ApprovalRecordSchema,
   EvidenceItemSchema,
@@ -759,6 +760,32 @@ const bannedPhraseError = expectValidationError(
   }),
 );
 assert.match(bannedPhraseError.issues.join("\n"), /posts\[0\].*banned phrase.*just vibing/i);
+const normalizedBannedPhraseError = expectValidationError(
+  () => assertValidThreadCandidate(rehashCandidate({
+    ...validCandidate(),
+    posts: [
+      { ...validPosts()[0], text: "The draft is ＪＵＳＴ　ＶＩＢＩＮＧ instead of citing its source." },
+      validPosts()[1],
+    ],
+  })),
+);
+assert.match(
+  normalizedBannedPhraseError.issues.join("\n"),
+  /posts\[0\].*banned phrase.*just vibing/i,
+  "protocol assertions apply NFKC normalization before banned-phrase matching",
+);
+const bannedPhraseMatcher = (protocolApi as Record<string, unknown>).containsBannedPhrase;
+assert.equal(typeof bannedPhraseMatcher, "function", "the protocol exports one canonical banned-phrase matcher");
+assert.equal(
+  (bannedPhraseMatcher as (text: string, phrase: string) => boolean)("A partial result.", "art"),
+  false,
+  "word-like banned phrases do not match inside larger Unicode words",
+);
+assert.equal(
+  (bannedPhraseMatcher as (text: string, phrase: string) => boolean)("ＡＲＴ matters.", "art"),
+  true,
+  "Unicode compatibility-equivalent banned phrases match",
+);
 
 const altTextPolicyError = expectValidationError(
   () => assertValidThreadCandidate({
