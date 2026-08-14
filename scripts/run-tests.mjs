@@ -74,6 +74,7 @@ export const SUITES = {
     "scripts/fence-refusal-message.test.mjs",
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
+    "scripts/onboarding-feedback-report.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
