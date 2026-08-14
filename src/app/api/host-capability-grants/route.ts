@@ -35,11 +35,16 @@ async function revokeInput(payload: Record<string, unknown>) {
   return { familiarId, sessionId, capability };
 }
 export async function GET(req: Request) {
-  const [grants, audit] = await Promise.all([listHostCapabilityGrants(), listHostCapabilityAudit()]);
   const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim();
-  const sessions = familiarId && isValidFamiliarId(familiarId)
-    ? (await listConversations()).filter((conversation) => conversation.familiarId === familiarId).map((conversation) => ({ id: conversation.sessionId, title: conversation.title ?? "Untitled chat" }))
-    : [];
+  // Never hand the browser a global capability ledger and filter it there:
+  // another familiar's session ids and audit history are authority metadata.
+  if (!familiarId || !isValidFamiliarId(familiarId)) {
+    return NextResponse.json({ ok: true, catalog: hostCapabilitiesForPlatform(), grants: [], audit: [], sessions: [] });
+  }
+  const [allGrants, allAudit, conversations] = await Promise.all([listHostCapabilityGrants(), listHostCapabilityAudit(), listConversations()]);
+  const grants = allGrants.filter((grant) => grant.familiarId === familiarId);
+  const audit = allAudit.filter((entry) => entry.familiarId === familiarId);
+  const sessions = conversations.filter((conversation) => conversation.familiarId === familiarId).map((conversation) => ({ id: conversation.sessionId, title: conversation.title ?? "Untitled chat" }));
   return NextResponse.json({ ok: true, catalog: hostCapabilitiesForPlatform(), grants, audit, sessions });
 }
 export async function POST(req: Request) {
