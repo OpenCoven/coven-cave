@@ -20,11 +20,13 @@ import {
   assertValidThreadRunManifest,
   normalizeThreadBrief,
 } from "./tweet-thread-protocol.ts";
+import type { PublishReceipt } from "./tweet-thread-protocol.ts";
 
 const TIMESTAMP = "2026-08-14T12:00:00.000Z";
 const OTHER_TIMESTAMP = "2026-08-14T12:05:00.000Z";
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);
+type PublishedReceipt = Extract<PublishReceipt, { status: "published" }>;
 
 function validBrief() {
   return {
@@ -143,7 +145,7 @@ function validApproval(candidateSha256 = SHA_A) {
   };
 }
 
-function validPublishReceipt(candidateSha256 = SHA_A) {
+function validPublishReceipt(candidateSha256 = SHA_A): PublishedReceipt {
   return {
     protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
     receiptId: "publish-portable-launch",
@@ -155,6 +157,18 @@ function validPublishReceipt(candidateSha256 = SHA_A) {
     threadUrl: "https://x.com/opencoven/status/1",
     remotePostIds: ["1888888888888888888", "1888888888888888889"],
   };
+}
+
+function publishReceiptEvidence(receipt: PublishReceipt): string {
+  switch (receipt.status) {
+    case "publishing":
+      return receipt.attemptedAt;
+    case "published":
+      return `${receipt.publishedAt}:${receipt.threadUrl}:${receipt.remotePostIds.join(",")}`;
+    case "failed":
+    case "uncertain":
+      return receipt.errorCode;
+  }
 }
 
 function validObservation(candidateSha256 = SHA_A) {
@@ -232,6 +246,51 @@ assert.deepStrictEqual(normalizedBrief.constraints.bannedPhrases, ["just vibing"
 assert.equal(normalizedBrief.topic, "Portable protocol launch");
 assert.equal(normalizedBrief.audience, "Builders shipping cross-harness tweet threads");
 assert.equal(normalizedBrief.notes, "Keep the copy sharp.");
+
+const whitespaceBannedPhraseBrief = {
+  ...validBrief(),
+  constraints: {
+    ...validBrief().constraints,
+    bannedPhrases: [" \t "],
+  },
+};
+assert.equal(
+  Value.Check(ThreadBriefSchema, whitespaceBannedPhraseBrief),
+  false,
+  "brief schemas reject whitespace-only banned phrases",
+);
+const whitespaceNormalizedBriefError = expectValidationError(
+  () => normalizeThreadBrief(whitespaceBannedPhraseBrief),
+);
+assert.match(whitespaceNormalizedBriefError.issues.join("\n"), /constraints\.bannedPhrases\[0\].*non-whitespace/i);
+const whitespaceCandidateBriefError = expectValidationError(
+  () => assertValidThreadCandidate({
+    ...validCandidate(),
+    brief: whitespaceBannedPhraseBrief,
+  }),
+);
+assert.match(
+  whitespaceCandidateBriefError.issues.join("\n"),
+  /ThreadCandidate\.brief\.constraints\.bannedPhrases\[0\].*non-whitespace/i,
+);
+const whitespaceManifestBriefError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    brief: whitespaceBannedPhraseBrief,
+    candidates: [{
+      ...validCandidate(),
+      brief: whitespaceBannedPhraseBrief,
+    }],
+  }),
+);
+assert.match(
+  whitespaceManifestBriefError.issues.join("\n"),
+  /ThreadRunManifest\.brief\.constraints\.bannedPhrases\[0\].*non-whitespace/i,
+);
+assert.match(
+  whitespaceManifestBriefError.issues.join("\n"),
+  /ThreadRunManifest\.candidates\[0\]\.brief\.constraints\.bannedPhrases\[0\].*non-whitespace/i,
+);
 
 const invalidBriefError = expectValidationError(
   () => normalizeThreadBrief({
@@ -392,6 +451,18 @@ assert.equal(
 assert.ok(Value.Check(ThreadCandidateSchema, validCandidate()));
 assert.doesNotThrow(() => assertValidThreadCandidate(validCandidate()));
 
+const invalidCandidateTimestampError = expectValidationError(
+  () => assertValidThreadCandidate({
+    ...validCandidate(),
+    generatedAt: "2026-02-30T12:00:00.000Z",
+    evidence: validEvidence().map((item, index) => index === 0
+      ? { ...item, retrievedAt: "2026-02-30T12:00:00.000Z" }
+      : item),
+  }),
+);
+assert.match(invalidCandidateTimestampError.issues.join("\n"), /ThreadCandidate\.generatedAt.*calendar-valid/i);
+assert.match(invalidCandidateTimestampError.issues.join("\n"), /ThreadCandidate\.evidence\[0\]\.retrievedAt.*calendar-valid/i);
+
 const missingLedgerReferenceError = expectValidationError(
   () => assertValidThreadCandidate({
     ...validCandidate(),
@@ -459,6 +530,67 @@ assert.equal(
 
 assert.ok(Value.Check(ApprovalRecordSchema, validApproval()));
 assert.ok(Value.Check(PublishReceiptSchema, validPublishReceipt()));
+assert.match(publishReceiptEvidence(validPublishReceipt()), /https:\/\/x\.com\/opencoven\/status\/1/);
+for (const field of ["publishedAt", "threadUrl", "remotePostIds"] as const) {
+  const incompleteReceipt: Partial<ReturnType<typeof validPublishReceipt>> = { ...validPublishReceipt() };
+  delete incompleteReceipt[field];
+  assert.equal(
+    Value.Check(PublishReceiptSchema, incompleteReceipt),
+    false,
+    `published receipts require ${field}`,
+  );
+}
+assert.equal(
+  Value.Check(PublishReceiptSchema, { ...validPublishReceipt(), errorCode: "upstream-unavailable" }),
+  false,
+  "published receipts forbid failure evidence",
+);
+const receiptWithoutOutcome = (status: "publishing" | "failed" | "uncertain", errorCode?: string) => ({
+  protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+  receiptId: "publish-portable-launch",
+  candidateSha256: SHA_A,
+  platform: "x",
+  status,
+  attemptedAt: OTHER_TIMESTAMP,
+  ...(errorCode ? { errorCode } : {}),
+});
+assert.ok(Value.Check(PublishReceiptSchema, receiptWithoutOutcome("publishing")));
+assert.equal(
+  Value.Check(PublishReceiptSchema, {
+    ...receiptWithoutOutcome("publishing"),
+    publishedAt: OTHER_TIMESTAMP,
+  }),
+  false,
+  "publishing receipts forbid outcome evidence",
+);
+assert.equal(
+  Value.Check(PublishReceiptSchema, receiptWithoutOutcome("failed")),
+  false,
+  "failed receipts require an error code",
+);
+assert.ok(Value.Check(PublishReceiptSchema, receiptWithoutOutcome("failed", "invalid-request")));
+assert.equal(
+  Value.Check(PublishReceiptSchema, {
+    ...receiptWithoutOutcome("failed", "invalid-request"),
+    threadUrl: "https://x.com/opencoven/status/1",
+  }),
+  false,
+  "failed receipts forbid publication evidence",
+);
+assert.equal(
+  Value.Check(PublishReceiptSchema, receiptWithoutOutcome("uncertain")),
+  false,
+  "uncertain receipts require an error code",
+);
+assert.ok(Value.Check(PublishReceiptSchema, receiptWithoutOutcome("uncertain", "upstream-unavailable")));
+assert.equal(
+  Value.Check(PublishReceiptSchema, {
+    ...receiptWithoutOutcome("uncertain", "upstream-unavailable"),
+    remotePostIds: ["1888888888888888888"],
+  }),
+  false,
+  "uncertain receipts forbid publication evidence",
+);
 assert.ok(Value.Check(ThreadObservationSchema, validObservation()));
 assert.equal(
   Value.Check(ThreadObservationSchema, { ...validObservation(), dimensions: validScorecard().dimensions }),
@@ -473,6 +605,83 @@ assert.equal(
 
 assert.ok(Value.Check(ThreadRunManifestSchema, validManifest()));
 assert.doesNotThrow(() => assertValidThreadRunManifest(validManifest()));
+
+const impossibleTimestamp = "2026-02-30T12:00:00.000Z";
+const invalidManifestTimestampError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    createdAt: impossibleTimestamp,
+    candidates: [{
+      ...validCandidate(),
+      generatedAt: impossibleTimestamp,
+      evidence: validEvidence().map((item, index) => index === 0
+        ? { ...item, retrievedAt: impossibleTimestamp }
+        : item),
+    }],
+    scorecards: [{ ...validScorecard(), scoredAt: impossibleTimestamp }],
+    approvals: [{ ...validApproval(), decidedAt: impossibleTimestamp }],
+    publishReceipts: [{
+      ...validPublishReceipt(),
+      attemptedAt: impossibleTimestamp,
+      publishedAt: impossibleTimestamp,
+    }],
+    observations: [{
+      ...validObservation(),
+      retrievedAt: impossibleTimestamp,
+      exposedAt: impossibleTimestamp,
+    }],
+  }),
+);
+for (const timestampPath of [
+  "ThreadRunManifest.createdAt",
+  "ThreadRunManifest.candidates[0].generatedAt",
+  "ThreadRunManifest.candidates[0].evidence[0].retrievedAt",
+  "ThreadRunManifest.scorecards[0].scoredAt",
+  "ThreadRunManifest.approvals[0].decidedAt",
+  "ThreadRunManifest.publishReceipts[0].attemptedAt",
+  "ThreadRunManifest.publishReceipts[0].publishedAt",
+  "ThreadRunManifest.observations[0].retrievedAt",
+  "ThreadRunManifest.observations[0].exposedAt",
+]) {
+  assert.ok(
+    invalidManifestTimestampError.issues.some((issue) => issue.includes(timestampPath)),
+    `${timestampPath} rejects impossible calendar dates`,
+  );
+}
+
+const manifestBriefBindingError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    candidates: [{
+      ...validCandidate(),
+      brief: {
+        ...validBrief(),
+        topic: "A different valid topic",
+      },
+    }],
+  }),
+);
+assert.match(
+  manifestBriefBindingError.issues.join("\n"),
+  /ThreadRunManifest\.candidates\[0\]\.brief.*ThreadRunManifest\.brief/i,
+);
+
+const manifestVoiceBindingError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    candidates: [{
+      ...validCandidate(),
+      voiceProfile: {
+        ...validVoiceProfile(),
+        tone: "A different valid tone.",
+      },
+    }],
+  }),
+);
+assert.match(
+  manifestVoiceBindingError.issues.join("\n"),
+  /ThreadRunManifest\.candidates\[0\]\.voiceProfile.*ThreadRunManifest\.voiceProfile/i,
+);
 
 const bindingError = expectValidationError(
   () => assertValidThreadRunManifest({

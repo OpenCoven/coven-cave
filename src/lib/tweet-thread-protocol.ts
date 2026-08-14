@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
@@ -12,6 +14,9 @@ const WORD_CHARACTER_RE = /[\p{L}\p{N}_]/u;
 
 const boundedString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength });
+
+const boundedNonWhitespaceString = (maxLength: number) =>
+  Type.String({ minLength: 1, maxLength, pattern: "\\S" });
 
 const timestampString = () =>
   Type.String({ minLength: 24, maxLength: 24, pattern: RFC3339_UTC_MILLIS.source });
@@ -45,7 +50,7 @@ export const ThreadConstraintsSchema = Type.Object({
   minPosts: Type.Integer({ minimum: 1, maximum: 50 }),
   maxPosts: Type.Integer({ minimum: 1, maximum: 50 }),
   requiredClaimIds: Type.Array(claimIdSchema(), { maxItems: 128, uniqueItems: true }),
-  bannedPhrases: Type.Array(boundedString(200), { maxItems: 128, uniqueItems: true }),
+  bannedPhrases: Type.Array(boundedNonWhitespaceString(200), { maxItems: 128, uniqueItems: true }),
   requireAltText: Type.Boolean(),
 }, { additionalProperties: false });
 export type ThreadConstraints = Static<typeof ThreadConstraintsSchema>;
@@ -168,23 +173,37 @@ export const ApprovalRecordSchema = Type.Object({
 }, { additionalProperties: false });
 export type ApprovalRecord = Static<typeof ApprovalRecordSchema>;
 
-export const PublishReceiptSchema = Type.Object({
+const publishReceiptBaseProperties = () => ({
   protocolVersion: protocolVersionLiteral(),
   receiptId: stableId("publish"),
   candidateSha256: sha256Schema(),
   platform: Type.Literal("x"),
-  status: Type.Union([
-    Type.Literal("publishing"),
-    Type.Literal("published"),
-    Type.Literal("failed"),
-    Type.Literal("uncertain"),
-  ]),
   attemptedAt: timestampString(),
-  publishedAt: Type.Optional(timestampString()),
-  threadUrl: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
-  remotePostIds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { minItems: 1, maxItems: 50 })),
-  errorCode: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
-}, { additionalProperties: false });
+});
+
+export const PublishReceiptSchema = Type.Union([
+  Type.Object({
+    ...publishReceiptBaseProperties(),
+    status: Type.Literal("publishing"),
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...publishReceiptBaseProperties(),
+    status: Type.Literal("published"),
+    publishedAt: timestampString(),
+    threadUrl: Type.String({ minLength: 1, maxLength: 2_000 }),
+    remotePostIds: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { minItems: 1, maxItems: 50 }),
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...publishReceiptBaseProperties(),
+    status: Type.Literal("failed"),
+    errorCode: Type.String({ minLength: 1, maxLength: 120 }),
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...publishReceiptBaseProperties(),
+    status: Type.Literal("uncertain"),
+    errorCode: Type.String({ minLength: 1, maxLength: 120 }),
+  }, { additionalProperties: false }),
+]);
 export type PublishReceipt = Static<typeof PublishReceiptSchema>;
 
 export const ThreadObservationMetricsSchema = Type.Object({
@@ -298,11 +317,25 @@ function collectThreadBriefIssues(value: unknown, path = "ThreadBrief"): string[
     ) {
       issues.push(`${path}.constraints.minPosts must be less than or equal to maxPosts.`);
     }
+    if (Array.isArray(constraints.bannedPhrases)) {
+      for (const [index, phrase] of constraints.bannedPhrases.entries()) {
+        if (typeof phrase === "string" && phrase.trim().length === 0) {
+          issues.push(`${path}.constraints.bannedPhrases[${index}] must contain non-whitespace text.`);
+        }
+      }
+    }
   }
   if (!Value.Check(ThreadBriefSchema, value)) {
     issues.push(`${path} does not match ThreadBriefSchema.`);
   }
   return issues;
+}
+
+function collectTimestampIssues(value: unknown, path: string): string[] {
+  if (typeof value !== "string" || !RFC3339_UTC_MILLIS.test(value)) return [];
+  const timestamp = new Date(value);
+  if (!Number.isNaN(timestamp.getTime()) && timestamp.toISOString() === value) return [];
+  return [`${path} must be a calendar-valid UTC-millisecond timestamp.`];
 }
 
 function pushDuplicateIssue(seen: Set<string>, next: string, path: string, issues: string[]): void {
@@ -320,12 +353,14 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
   if (!Value.Check(ThreadCandidateSchema, value)) {
     issues.push(`${path} does not match ThreadCandidateSchema.`);
   }
+  issues.push(...collectTimestampIssues(value.generatedAt, `${path}.generatedAt`));
   if (!isRecord(value.brief) || !Array.isArray(value.evidence) || !Array.isArray(value.posts)) return issues;
 
   const evidenceClaimIds = new Set<string>();
   const evidenceIds = new Set<string>();
   for (const [index, item] of value.evidence.entries()) {
     if (!isRecord(item)) continue;
+    issues.push(...collectTimestampIssues(item.retrievedAt, `${path}.evidence[${index}].retrievedAt`));
     if (typeof item.evidenceId === "string") {
       pushDuplicateIssue(evidenceIds, item.evidenceId, `${path}.evidence[${index}].evidenceId`, issues);
     }
@@ -454,6 +489,7 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
   if (!Value.Check(ThreadRunManifestSchema, input)) {
     issues.push("ThreadRunManifest does not match ThreadRunManifestSchema.");
   }
+  issues.push(...collectTimestampIssues(input.createdAt, "ThreadRunManifest.createdAt"));
   issues.push(...collectThreadBriefIssues(input.brief, "ThreadRunManifest.brief"));
   if (!Array.isArray(input.candidates)) {
     issues.push("ThreadRunManifest.candidates must be an array.");
@@ -462,11 +498,45 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       issues.push(...collectThreadCandidateIssues(candidate, `ThreadRunManifest.candidates[${index}]`));
     }
   }
+  if (Array.isArray(input.scorecards)) {
+    for (const [index, scorecard] of input.scorecards.entries()) {
+      if (isRecord(scorecard)) {
+        issues.push(...collectTimestampIssues(scorecard.scoredAt, `ThreadRunManifest.scorecards[${index}].scoredAt`));
+      }
+    }
+  }
+  if (Array.isArray(input.approvals)) {
+    for (const [index, approval] of input.approvals.entries()) {
+      if (isRecord(approval)) {
+        issues.push(...collectTimestampIssues(approval.decidedAt, `ThreadRunManifest.approvals[${index}].decidedAt`));
+      }
+    }
+  }
+  if (Array.isArray(input.publishReceipts)) {
+    for (const [index, receipt] of input.publishReceipts.entries()) {
+      if (!isRecord(receipt)) continue;
+      issues.push(...collectTimestampIssues(receipt.attemptedAt, `ThreadRunManifest.publishReceipts[${index}].attemptedAt`));
+      issues.push(...collectTimestampIssues(receipt.publishedAt, `ThreadRunManifest.publishReceipts[${index}].publishedAt`));
+    }
+  }
+  if (Array.isArray(input.observations)) {
+    for (const [index, observation] of input.observations.entries()) {
+      if (!isRecord(observation)) continue;
+      issues.push(...collectTimestampIssues(observation.retrievedAt, `ThreadRunManifest.observations[${index}].retrievedAt`));
+      issues.push(...collectTimestampIssues(observation.exposedAt, `ThreadRunManifest.observations[${index}].exposedAt`));
+    }
+  }
   if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
 
   const manifest = input as ThreadRunManifest;
   const candidateBySha = new Map<string, ThreadCandidate>();
-  for (const candidate of manifest.candidates) {
+  for (const [index, candidate] of manifest.candidates.entries()) {
+    if (!isDeepStrictEqual(candidate.brief, manifest.brief)) {
+      issues.push(`ThreadRunManifest.candidates[${index}].brief must equal ThreadRunManifest.brief.`);
+    }
+    if (!isDeepStrictEqual(candidate.voiceProfile, manifest.voiceProfile)) {
+      issues.push(`ThreadRunManifest.candidates[${index}].voiceProfile must equal ThreadRunManifest.voiceProfile.`);
+    }
     if (candidateBySha.has(candidate.candidateSha256)) {
       issues.push(`ThreadRunManifest.candidates must have unique candidateSha256 values; duplicate "${candidate.candidateSha256}" found.`);
       continue;
