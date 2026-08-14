@@ -643,6 +643,8 @@ export const SUITES = {
     "src/lib/canvas-inspector.test.ts",
     "src/lib/canvas-inspector-channel.test.ts",
     "src/lib/canvas-inspector-chromium.test.ts",
+    "src/lib/canvas-preview-csp.test.ts",
+    "src/lib/canvas-preview-csp-chromium.test.ts",
     "src/lib/arcade/glitter-crypt.test.ts",
     "src/lib/arcade/glitter-crypt-chromium.test.ts",
     "src/lib/artifact-open.test.ts",
