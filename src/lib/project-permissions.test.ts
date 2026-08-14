@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -248,22 +248,205 @@ try {
     "level-less grants (v1) migrate as write",
   );
 
-  // A legacy file copied directly into the canonical path is not trusted as a
-  // migration: only cave-home recovery may normalize it under authority.
+  // A structurally exact v1 file at the canonical path is a durable migration
+  // authority, even without a process-local cave-home recovery marker.
   const { writeFile: writeRaw } = await import("node:fs/promises");
   const v1Path = path.join(tmp, "v1-permissions.json");
-  await writeRaw(v1Path, JSON.stringify({
+  const v1Raw = JSON.stringify({
     version: 1,
     projectGrants: [{ familiarId: "old", projectId: "cave", source: "human", grantedAt: "2024-01-01T00:00:00.000Z" }],
+    grantProposals: [{
+      id: "legacy-pending",
+      proposedBy: "supreme",
+      targetFamiliarId: "old",
+      projectId: "docs",
+      status: "pending",
+      createdAt: "2024-01-01T00:00:00.000Z",
+    }],
+    permissionAudit: [{
+      id: "legacy-audit",
+      at: "2024-01-01T00:00:00.000Z",
+      familiarId: "old",
+      projectId: "cave",
+      surface: "chat",
+      decision: "allow",
+      reason: "grant",
+    }],
+  }, null, 2);
+  await writeRaw(v1Path, v1Raw, "utf8");
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = v1Path;
+  const migratedV1 = await loadProjectPermissions();
+  assert.equal(migratedV1.version, 2, "a valid v1 permission store migrates to v2");
+  assert.deepEqual(
+    migratedV1.projectGrants,
+    [{
+      familiarId: "old",
+      projectId: "cave",
+      source: "human",
+      grantedAt: "2024-01-01T00:00:00.000Z",
+      access: "write",
+    }],
+    "v1 binary grants retain their authority as v2 write grants",
+  );
+  assert.equal(migratedV1.grantProposals[0]?.access, "write", "v1 proposals retain write semantics");
+  assert.notEqual(migratedV1.visibilityGeneration, "missing", "migration writes one durable visibility generation");
+  assert.equal(
+    (await loadProjectPermissions()).visibilityGeneration,
+    migratedV1.visibilityGeneration,
+    "an ordinary post-migration load does not rotate the visibility generation",
+  );
+  const migratedV1OnDisk = JSON.parse(await readFile(v1Path, "utf8"));
+  assert.deepEqual(
+    migratedV1OnDisk,
+    migratedV1,
+    "the migrated v1 store is atomically persisted in current v2 shape",
+  );
+
+  const malformedV1Path = path.join(tmp, "malformed-v1-permissions.json");
+  const malformedV1Raw = JSON.stringify({
+    version: 1,
+    projectGrants: [{
+      familiarId: "attacker",
+      projectId: "cave",
+      source: "human",
+      grantedAt: "2024-01-01T00:00:00.000Z",
+      access: "write",
+    }],
     grantProposals: [],
     permissionAudit: [],
-  }), "utf8");
-  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = v1Path;
+  }, null, 2);
+  await writeRaw(malformedV1Path, malformedV1Raw, "utf8");
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = malformedV1Path;
+  await assert.rejects(
+    () => loadProjectPermissions(),
+    (error) => error instanceof ProjectPermissionsIntegrityError && /invalid version schema/.test(error.message),
+    "a v1-shaped store with extra authority fields fails closed",
+  );
+  assert.equal(
+    await readFile(malformedV1Path, "utf8"),
+    malformedV1Raw,
+    "a malformed v1 store remains unchanged after rejection",
+  );
+
+  const validV2Path = path.join(tmp, "valid-v2-permissions.json");
+  const validV2Raw = JSON.stringify({
+    version: 2,
+    projectGrants: [],
+    accessGroups: [],
+    grantProposals: [],
+    permissionAudit: [],
+    grantAudit: [],
+    repairAudit: [],
+    visibilityGeneration: "valid-v2-generation",
+  }, null, 2);
+  await writeRaw(validV2Path, validV2Raw, "utf8");
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = validV2Path;
+  assert.equal(
+    (await loadProjectPermissions()).visibilityGeneration,
+    "valid-v2-generation",
+    "a current v2 store loads without migration",
+  );
+  assert.equal(
+    await readFile(validV2Path, "utf8"),
+    validV2Raw,
+    "an already-current v2 store is byte-for-byte unchanged",
+  );
+
+  const acceptingInjectionPath = path.join(tmp, "accepting-injection-permissions.json");
+  const acceptingInjectionRaw = JSON.stringify({
+    version: 2,
+    projectGrants: [],
+    accessGroups: [],
+    grantProposals: [{
+      id: "injected",
+      proposedBy: "supreme",
+      targetFamiliarId: "attacker",
+      projectId: "cave",
+      access: "write",
+      status: "accepting",
+      createdAt: "2024-01-01T00:00:00.000Z",
+    }],
+    permissionAudit: [],
+    grantAudit: [],
+    repairAudit: [],
+    visibilityGeneration: "injection-generation",
+  }, null, 2);
+  await writeRaw(acceptingInjectionPath, acceptingInjectionRaw, "utf8");
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = acceptingInjectionPath;
   await assert.rejects(
     () => loadProjectPermissions(),
     ProjectPermissionsIntegrityError,
-    "a non-current canonical permission schema fails closed",
+    "an accepting proposal without a verified deadline cannot materialize a grant",
   );
+  assert.equal(
+    await readFile(acceptingInjectionPath, "utf8"),
+    acceptingInjectionRaw,
+    "an invalid accepting proposal is never rewritten into authority",
+  );
+
+  const invertedAcceptanceWindowPath = path.join(tmp, "inverted-acceptance-window-permissions.json");
+  const invertedAcceptanceWindowRaw = JSON.stringify({
+    version: 2,
+    projectGrants: [],
+    accessGroups: [],
+    grantProposals: [{
+      id: "inverted-window",
+      proposedBy: "supreme",
+      targetFamiliarId: "attacker",
+      projectId: "cave",
+      access: "write",
+      status: "accepting",
+      createdAt: "2024-01-01T00:00:00.000Z",
+      acceptedAt: "2030-01-01T00:00:30.000Z",
+      finalizesAt: "2020-01-01T00:00:00.000Z",
+    }],
+    permissionAudit: [],
+    grantAudit: [],
+    repairAudit: [],
+    visibilityGeneration: "inverted-window-generation",
+  }, null, 2);
+  await writeRaw(invertedAcceptanceWindowPath, invertedAcceptanceWindowRaw, "utf8");
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = invertedAcceptanceWindowPath;
+  await assert.rejects(
+    () => loadProjectPermissions(),
+    ProjectPermissionsIntegrityError,
+    "an inverted accepting window cannot materialize a grant",
+  );
+  assert.equal(
+    await readFile(invertedAcceptanceWindowPath, "utf8"),
+    invertedAcceptanceWindowRaw,
+    "an inverted accepting window remains unchanged after rejection",
+  );
+
+  const migrationFailureDir = path.join(tmp, "v1-migration-write-failure");
+  await mkdir(migrationFailureDir);
+  const migrationFailurePath = path.join(migrationFailureDir, "permissions.json");
+  await writeRaw(migrationFailurePath, v1Raw, "utf8");
+  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = migrationFailurePath;
+  const { setProjectAuthorizationLockDbPathForTest } =
+    await import("./server/project-authorization-lock.ts");
+  setProjectAuthorizationLockDbPathForTest(
+    () => path.join(tmp, "v1-migration-write-failure.authz-lock.sqlite3"),
+  );
+  await chmod(migrationFailureDir, 0o500);
+  try {
+    await assert.rejects(
+      () => loadProjectPermissions(),
+      (error) =>
+        error instanceof ProjectPermissionsIntegrityError &&
+        error.message === "Unable to migrate legacy project permissions.",
+      "a failed v1 migration surfaces a focused integrity error",
+    );
+  } finally {
+    await chmod(migrationFailureDir, 0o700);
+    setProjectAuthorizationLockDbPathForTest(null);
+  }
+  assert.equal(
+    await readFile(migrationFailurePath, "utf8"),
+    v1Raw,
+    "a failed v1 migration leaves the prior authority bytes intact",
+  );
+
   process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(tmp, "permissions.json");
 
   await grantProjectToFamiliar({ familiarId: "quill", projectId: "docs", source: "human", access: "read" });
@@ -416,6 +599,7 @@ try {
   const permissionsPath = process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE;
   const raw = JSON.parse(await readFile(permissionsPath, "utf8"));
   const stored = raw.grantProposals.find((p) => p.id === undoable.id);
+  stored.acceptedAt = new Date(Date.now() - GRANT_ACCEPT_UNDO_WINDOW_MS - 1_000).toISOString();
   stored.finalizesAt = new Date(Date.now() - 1_000).toISOString();
   await writeFile(permissionsPath, JSON.stringify(raw, null, 2), "utf8");
   const generationBeforeFinalization = raw.visibilityGeneration;

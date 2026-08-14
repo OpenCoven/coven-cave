@@ -67,7 +67,10 @@ export function markCaveHomeStoreRecoveryNormalized(legacy: string): void {
  */
 export async function migrateCaveHome(options: ReconciliationOptions = {}): Promise<CaveHomeMigrationResult> {
   const result = await reconcileCaveHome(CAVE_HOME_MIGRATIONS, options);
-  for (const legacy of result.moved) recoveredStores().add(legacy);
+  // A routine lossless path move supplies no authority to repair a malformed
+  // permission store. Strict schema migration handles valid historical files
+  // after the move; only an explicit recover-legacy resolution authorizes a
+  // store-specific best-effort normalization.
   if (options.action === "recover-legacy" && options.legacy && result.resolved.includes(options.legacy)) {
     recoveredStores().add(options.legacy);
   }
