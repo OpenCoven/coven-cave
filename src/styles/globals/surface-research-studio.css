@@ -668,6 +668,7 @@
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
+.research-studio-config__count--near { color: var(--color-warning); }
 .research-studio-config__note {
   margin: 0;
   font-size: var(--text-xs);
