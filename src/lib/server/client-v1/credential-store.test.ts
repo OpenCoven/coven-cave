@@ -21,6 +21,7 @@ process.env.COVEN_CAVE_CLIENT_CREDENTIAL_STORE_PATH = path.join(workdir, "client
 
 const {
   clientCredentialStorePath,
+  clientCredentialSettlementJournalPath,
   isCredentialStoreIntegrityError,
   issueCredential,
   listCredentials,
@@ -44,7 +45,10 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  await rm(clientCredentialStorePath(), { force: true });
+  await Promise.all([
+    rm(clientCredentialStorePath(), { force: true }),
+    rm(clientCredentialSettlementJournalPath(), { force: true }),
+  ]);
   // Every mutation acquires a fresh `BEGIN IMMEDIATE` transaction on the
   // SQLite lock database adjacent to the store path; clearing its sidecar
   // files (including WAL/SHM, present whenever the lock db is in WAL mode)

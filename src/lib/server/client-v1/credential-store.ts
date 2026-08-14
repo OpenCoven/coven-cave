@@ -1,13 +1,21 @@
 // Long-lived credential store for the `/api/client/v1` facade.
 //
 // A credential is the trust anchor a paired client presents on every request
-// after pairing completes. Only the SHA-256 hash of the bearer token is ever
-// persisted — the raw token exists exactly once, in the HTTP response that
-// issues it, and cannot be recovered from disk or from a leaked backup. This
-// mirrors the persisted half of passkey-store.ts, but for an opaque bearer
-// token instead of a WebAuthn public key.
+// after pairing completes. The authority record keeps only the SHA-256 hash.
+// Pairing exchange additionally keeps a short-lived AES-GCM-encrypted recovery
+// copy in its adjacent settlement journal, decryptable only with the original
+// high-entropy pairing secret, so a crash cannot strand a newly active
+// credential without an exact-request replay path. This mirrors the persisted
+// half of passkey-store.ts, but for an opaque bearer token instead of a
+// WebAuthn public key.
 
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -18,6 +26,10 @@ import { timingSafeEqualString } from "@/proxy-helpers";
 import { CLIENT_V1_SCOPES, isUuid } from "./contract.ts";
 import type { ClientV1Scope } from "./contract.ts";
 import { withCredentialTransactionLock } from "./credential-transaction-lock.ts";
+import {
+  PAIRING_CLAIM_STALE_MS,
+  PAIRING_EXCHANGE_RETRY_AFTER_MS,
+} from "./pairing-store.ts";
 import type { ApprovedPairing } from "./pairing-store.ts";
 
 export type ClientCredential = {
@@ -36,6 +48,69 @@ export type SafeClientCredential = Omit<ClientCredential, "tokenHash">;
 
 type StoreFile = { version: 1; credentials: ClientCredential[] };
 
+/**
+ * A pending pairing issuance is deliberately persisted beside the credential
+ * store.  The pairing request itself is process-local, so this is the durable
+ * half of an exchange: it either contains the encrypted token needed to
+ * finish an exact retry, or the predecessor state needed to undo an
+ * incomplete replacement.
+ */
+type CredentialSettlementContext = {
+  pairingId: string;
+  pairingSecret: string;
+  idempotencyKey: string;
+  requestHash: string;
+  claimId?: string;
+};
+
+type SealedToken = {
+  nonce: string;
+  ciphertext: string;
+  authTag: string;
+};
+
+type ReplacedCredential = {
+  id: string;
+  previousRevokedAt: number | null;
+  replacementRevokedAt: number;
+};
+
+type CredentialSettlementEntry = {
+  pairingId: string;
+  claimId: string;
+  secretHash: string;
+  idempotencyKey: string;
+  requestHash: string;
+  credential: ClientCredential;
+  replaced: ReplacedCredential[];
+  sealedToken: SealedToken;
+  createdAt: number;
+  expiresAt: number;
+  recoveryClaimId: string | null;
+  recoveryClaimStartedAt: number | null;
+};
+
+type CredentialSettlementJournal = {
+  version: 1;
+  transactions: CredentialSettlementEntry[];
+  replays: CredentialSettlementEntry[];
+};
+
+export type CredentialSettlementRecovery =
+  | { kind: "none" | "pending" }
+  | {
+    kind: "issued";
+    token: string;
+    credential: SafeClientCredential;
+    recoveryClaimId: string;
+    claimId: string;
+  }
+  | { kind: "replay"; credential: SafeClientCredential };
+
+const SETTLEMENT_JOURNAL_VERSION = 1;
+const SETTLEMENT_JOURNAL_MAX_ENTRIES = 64;
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+
 // A credential that has just been reissued for the same installation should
 // not still be usable via its old token; a real client's re-pair replaces
 // rather than accumulates active tokens.
@@ -48,6 +123,11 @@ const LAST_USED_WRITE_THRESHOLD_MS = 60_000;
 export function clientCredentialStorePath(): string {
   const override = process.env.COVEN_CAVE_CLIENT_CREDENTIAL_STORE_PATH?.trim();
   return override || path.join(/* turbopackIgnore: true */ caveHome(), "client-v1-credentials.json");
+}
+
+/** Adjacent, encrypted recovery journal for pairing credential issuance. */
+export function clientCredentialSettlementJournalPath(): string {
+  return `${clientCredentialStorePath()}.pairing-settlement.json`;
 }
 
 function emptyStore(): StoreFile {
@@ -325,6 +405,186 @@ async function writeStore(store: StoreFile): Promise<void> {
   await writeJsonAtomic(file, store);
 }
 
+function emptySettlementJournal(): CredentialSettlementJournal {
+  return { version: SETTLEMENT_JOURNAL_VERSION, transactions: [], replays: [] };
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+
+function parseSealedToken(value: unknown): SealedToken | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!hasExactKeys(record, ["nonce", "ciphertext", "authTag"])) return null;
+  if (
+    typeof record.nonce !== "string"
+    || typeof record.ciphertext !== "string"
+    || typeof record.authTag !== "string"
+    || !BASE64URL_RE.test(record.nonce)
+    || !BASE64URL_RE.test(record.ciphertext)
+    || !BASE64URL_RE.test(record.authTag)
+  ) {
+    return null;
+  }
+  try {
+    if (Buffer.from(record.nonce, "base64url").length !== 12) return null;
+    if (Buffer.from(record.authTag, "base64url").length !== 16) return null;
+    if (Buffer.from(record.ciphertext, "base64url").length === 0) return null;
+  } catch {
+    return null;
+  }
+  return {
+    nonce: record.nonce,
+    ciphertext: record.ciphertext,
+    authTag: record.authTag,
+  };
+}
+
+function parseReplacedCredential(value: unknown): ReplacedCredential | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!hasExactKeys(record, ["id", "previousRevokedAt", "replacementRevokedAt"])) return null;
+  if (
+    !isUuid(record.id)
+    || !isNullOrFiniteNonNegativeNumber(record.previousRevokedAt)
+    || !isFiniteNonNegativeNumber(record.replacementRevokedAt)
+  ) {
+    return null;
+  }
+  return {
+    id: record.id,
+    previousRevokedAt: record.previousRevokedAt,
+    replacementRevokedAt: record.replacementRevokedAt,
+  };
+}
+
+function parseSettlementEntry(value: unknown): CredentialSettlementEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!hasExactKeys(record, [
+    "pairingId",
+    "claimId",
+    "secretHash",
+    "idempotencyKey",
+    "requestHash",
+    "credential",
+    "replaced",
+    "sealedToken",
+    "createdAt",
+    "expiresAt",
+    "recoveryClaimId",
+    "recoveryClaimStartedAt",
+  ])) {
+    return null;
+  }
+  if (
+    !isUuid(record.pairingId)
+    || !isUuid(record.claimId)
+    || typeof record.secretHash !== "string"
+    || !TOKEN_HASH_RE.test(record.secretHash)
+    || !isUuid(record.idempotencyKey)
+    || typeof record.requestHash !== "string"
+    || !TOKEN_HASH_RE.test(record.requestHash)
+    || !Array.isArray(record.replaced)
+    || !isFiniteNonNegativeNumber(record.createdAt)
+    || !isFiniteNonNegativeNumber(record.expiresAt)
+    || record.expiresAt < record.createdAt
+    || (record.recoveryClaimId !== null && !isUuid(record.recoveryClaimId))
+    || !isNullOrFiniteNonNegativeNumber(record.recoveryClaimStartedAt)
+    || ((record.recoveryClaimId === null) !== (record.recoveryClaimStartedAt === null))
+  ) {
+    return null;
+  }
+  const credential = parseClientCredential(record.credential);
+  const sealedToken = parseSealedToken(record.sealedToken);
+  if (!credential || !sealedToken) return null;
+  const replaced: ReplacedCredential[] = [];
+  const replacementIds = new Set<string>();
+  for (const entry of record.replaced) {
+    const parsed = parseReplacedCredential(entry);
+    if (!parsed || replacementIds.has(parsed.id)) return null;
+    replacementIds.add(parsed.id);
+    replaced.push(parsed);
+  }
+  return {
+    pairingId: record.pairingId,
+    claimId: record.claimId,
+    secretHash: record.secretHash.toLowerCase(),
+    idempotencyKey: record.idempotencyKey,
+    requestHash: record.requestHash.toLowerCase(),
+    credential,
+    replaced,
+    sealedToken,
+    createdAt: record.createdAt,
+    expiresAt: record.expiresAt,
+    recoveryClaimId: record.recoveryClaimId,
+    recoveryClaimStartedAt: record.recoveryClaimStartedAt,
+  };
+}
+
+async function readSettlementJournalForMutation(): Promise<CredentialSettlementJournal> {
+  const file = clientCredentialSettlementJournalPath();
+  let raw: string;
+  try {
+    raw = await readFile(/* turbopackIgnore: true */ file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+      return emptySettlementJournal();
+    }
+    throw new CredentialStoreIntegrityError("The pairing credential settlement journal could not be read.");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new CredentialStoreIntegrityError("The pairing credential settlement journal contains invalid JSON.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new CredentialStoreIntegrityError("The pairing credential settlement journal does not match the expected schema.");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (
+    !hasExactKeys(record, ["version", "transactions", "replays"])
+    || record.version !== SETTLEMENT_JOURNAL_VERSION
+    || !Array.isArray(record.transactions)
+    || !Array.isArray(record.replays)
+    || record.transactions.length > SETTLEMENT_JOURNAL_MAX_ENTRIES
+    || record.replays.length > SETTLEMENT_JOURNAL_MAX_ENTRIES
+  ) {
+    throw new CredentialStoreIntegrityError("The pairing credential settlement journal does not match the expected schema.");
+  }
+  const transactions: CredentialSettlementEntry[] = [];
+  const replays: CredentialSettlementEntry[] = [];
+  const identities = new Set<string>();
+  for (const rawEntry of record.transactions) {
+    const entry = parseSettlementEntry(rawEntry);
+    const identity = entry && `${entry.pairingId}:${entry.idempotencyKey}:${entry.requestHash}`;
+    if (!entry || !identity || identities.has(identity)) {
+      throw new CredentialStoreIntegrityError("The pairing credential settlement journal contains a malformed entry.");
+    }
+    identities.add(identity);
+    transactions.push(entry);
+  }
+  for (const rawEntry of record.replays) {
+    const entry = parseSettlementEntry(rawEntry);
+    const identity = entry && `${entry.pairingId}:${entry.idempotencyKey}:${entry.requestHash}`;
+    if (!entry || !identity || identities.has(identity)) {
+      throw new CredentialStoreIntegrityError("The pairing credential settlement journal contains a malformed entry.");
+    }
+    identities.add(identity);
+    replays.push(entry);
+  }
+  return { version: 1, transactions, replays };
+}
+
+async function writeSettlementJournal(journal: CredentialSettlementJournal): Promise<void> {
+  const file = clientCredentialSettlementJournalPath();
+  await mkdir(/* turbopackIgnore: true */ path.dirname(file), { recursive: true });
+  await writeJsonAtomic(file, journal);
+}
+
 // Layer 1 of 2: serializes the entire read -> mutate -> write transaction of
 // every mutating export (`issueCredential`, `recordCredentialUse`,
 // `revokeCredential`) so two concurrent calls IN THE SAME PROCESS can never
@@ -487,6 +747,355 @@ function toSafe(credential: ClientCredential): SafeClientCredential {
   };
 }
 
+function assertSettlementContext(context: CredentialSettlementContext): void {
+  if (
+    !isUuid(context.pairingId)
+    || !isUuid(context.idempotencyKey)
+    || (context.claimId !== undefined && !isUuid(context.claimId))
+    || !TOKEN_HASH_RE.test(context.requestHash)
+    || !isNonEmptyString(context.pairingSecret)
+  ) {
+    throw new Error("Invalid pairing credential settlement context.");
+  }
+}
+
+function settlementAad(entry: Pick<CredentialSettlementEntry, "pairingId" | "idempotencyKey" | "requestHash">): Buffer {
+  return Buffer.from(`${entry.pairingId}\n${entry.idempotencyKey}\n${entry.requestHash}`, "utf8");
+}
+
+function settlementEncryptionKey(secret: string): Buffer {
+  return createHash("sha256")
+    .update("coven-cave/client-v1/pairing-credential-settlement/v1\0")
+    .update(secret)
+    .digest();
+}
+
+function sealSettlementToken(
+  token: string,
+  secret: string,
+  entry: Pick<CredentialSettlementEntry, "pairingId" | "idempotencyKey" | "requestHash">,
+): SealedToken {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", settlementEncryptionKey(secret), nonce);
+  cipher.setAAD(settlementAad(entry));
+  const ciphertext = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  return {
+    nonce: nonce.toString("base64url"),
+    ciphertext: ciphertext.toString("base64url"),
+    authTag: cipher.getAuthTag().toString("base64url"),
+  };
+}
+
+function unsealSettlementToken(entry: CredentialSettlementEntry, secret: string): string | null {
+  try {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      settlementEncryptionKey(secret),
+      Buffer.from(entry.sealedToken.nonce, "base64url"),
+    );
+    decipher.setAAD(settlementAad(entry));
+    decipher.setAuthTag(Buffer.from(entry.sealedToken.authTag, "base64url"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(entry.sealedToken.ciphertext, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+function isSettlementContextForEntry(
+  entry: CredentialSettlementEntry,
+  context: CredentialSettlementContext,
+): boolean {
+  return (
+    entry.pairingId === context.pairingId
+    && entry.idempotencyKey === context.idempotencyKey
+    && entry.requestHash === context.requestHash.toLowerCase()
+    && timingSafeEqualString(entry.secretHash, hashToken(context.pairingSecret))
+  );
+}
+
+function hasPersistedSettlementCredential(
+  store: StoreFile,
+  entry: CredentialSettlementEntry,
+): boolean {
+  const credential = store.credentials.find((candidate) => candidate.id === entry.credential.id);
+  return Boolean(
+    credential
+    && credential.appName === entry.credential.appName
+    && credential.installationId === entry.credential.installationId
+    && credential.tokenHash === entry.credential.tokenHash
+    && credential.createdAt === entry.credential.createdAt
+    && credential.lastUsedAt === entry.credential.lastUsedAt
+    && credential.scopes.length === entry.credential.scopes.length
+    && credential.scopes.every((scope, index) => scope === entry.credential.scopes[index]),
+  );
+}
+
+/**
+ * Undo only the precise writes this transaction made.  The exact planned
+ * revocation timestamp is the compare-and-swap guard: an administrator's
+ * later, independent revocation is never silently overwritten.
+ */
+function rollbackSettlementCredential(store: StoreFile, entry: CredentialSettlementEntry): boolean {
+  if (!hasPersistedSettlementCredential(store, entry)) return false;
+  store.credentials = store.credentials.filter((credential) => credential.id !== entry.credential.id);
+  for (const replaced of entry.replaced) {
+    const credential = store.credentials.find((candidate) => candidate.id === replaced.id);
+    if (credential?.revokedAt === replaced.replacementRevokedAt) {
+      credential.revokedAt = replaced.previousRevokedAt;
+    }
+  }
+  return true;
+}
+
+function pruneSettlementJournal(
+  store: StoreFile,
+  journal: CredentialSettlementJournal,
+  now: number,
+): { storeChanged: boolean; journalChanged: boolean } {
+  let storeChanged = false;
+  const transactions: CredentialSettlementEntry[] = [];
+  for (const entry of journal.transactions) {
+    if (entry.expiresAt > now) {
+      transactions.push(entry);
+      continue;
+    }
+    storeChanged = rollbackSettlementCredential(store, entry) || storeChanged;
+  }
+  const replays = journal.replays.filter((entry) => entry.expiresAt > now);
+  const journalChanged =
+    transactions.length !== journal.transactions.length || replays.length !== journal.replays.length;
+  journal.transactions = transactions;
+  journal.replays = replays;
+  return { storeChanged, journalChanged };
+}
+
+async function persistSettlementCleanup(
+  store: StoreFile,
+  journal: CredentialSettlementJournal,
+  changed: { storeChanged: boolean; journalChanged: boolean },
+): Promise<void> {
+  // Restore authority before dropping its recovery record.  A crash after the
+  // first write is safe to repeat; the inverse ordering could orphan an
+  // active replacement with no way to recover or roll it back.
+  if (changed.storeChanged) await writeStore(store);
+  if (changed.journalChanged) await writeSettlementJournal(journal);
+}
+
+function crashAtCredentialSettlementPoint(point: string): void {
+  if (process.env.COVEN_CAVE_TEST_CREDENTIAL_SETTLEMENT_CRASH_POINT !== point) return;
+  process.kill(process.pid, "SIGKILL");
+}
+
+function makeReplacementCredential(
+  store: StoreFile,
+  approvedPairing: ApprovedPairing,
+  token: string,
+  now: number,
+): { credential: ClientCredential; replaced: ReplacedCredential[]; credentials: ClientCredential[] } {
+  const installationId = approvedPairing.installationId.toLowerCase();
+  let createdAt = now;
+  for (const existing of store.credentials) {
+    if (existing.installationId !== installationId) continue;
+    if (createdAt <= existing.createdAt) {
+      createdAt =
+        existing.createdAt < Number.MAX_SAFE_INTEGER ? existing.createdAt + 1 : existing.createdAt;
+    }
+  }
+  const credential: ClientCredential = {
+    id: randomUUID(),
+    appName: approvedPairing.appName,
+    installationId,
+    tokenHash: hashToken(token),
+    scopes: [...approvedPairing.scopes],
+    createdAt,
+    lastUsedAt: null,
+    revokedAt: null,
+  };
+  const replaced: ReplacedCredential[] = [];
+  const credentials = store.credentials.map((existing) => {
+    if (
+      !REVOKE_ON_REPAIR
+      || existing.installationId !== installationId
+      || existing.revokedAt !== null
+    ) {
+      return existing;
+    }
+    const replacementRevokedAt = monotonicTimestamp(now, existing.createdAt, existing.lastUsedAt);
+    replaced.push({
+      id: existing.id,
+      previousRevokedAt: existing.revokedAt,
+      replacementRevokedAt,
+    });
+    return { ...existing, revokedAt: replacementRevokedAt };
+  });
+  credentials.push(credential);
+  return { credential, replaced, credentials };
+}
+
+/**
+ * Issue a pairing credential only after an encrypted, exact-request recovery
+ * record has been atomically written under the credential store's existing
+ * SQLite/file-lock transaction.  A hard crash can therefore either replay
+ * this token to the holder of the original pairing secret or restore the
+ * predecessor credential after the bounded claim lease.
+ */
+export async function issueCredentialForPairingSettlement(
+  approvedPairing: ApprovedPairing,
+  context: CredentialSettlementContext,
+  now = Date.now(),
+): Promise<{ token: string; credential: SafeClientCredential }> {
+  if (!isUuid(approvedPairing.installationId)) {
+    throw new Error("issueCredential requires a UUID-shaped installationId.");
+  }
+  assertValidNow(now);
+  assertSettlementContext(context);
+  return withCredentialTransaction(async () => {
+    const store = await readStoreForMutation();
+    const journal = await readSettlementJournalForMutation();
+    const cleanup = pruneSettlementJournal(store, journal, now);
+    await persistSettlementCleanup(store, journal, cleanup);
+
+    if (journal.transactions.some((entry) => entry.credential.installationId === approvedPairing.installationId.toLowerCase())) {
+      throw new Error("A credential replacement for this installation is awaiting settlement.");
+    }
+    if (journal.transactions.length >= SETTLEMENT_JOURNAL_MAX_ENTRIES) {
+      throw new Error("Pairing credential settlement capacity is temporarily unavailable.");
+    }
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const token = Buffer.from(bytes).toString("base64url");
+    const replacement = makeReplacementCredential(store, approvedPairing, token, now);
+    const entryWithoutToken = {
+      pairingId: context.pairingId,
+      claimId: context.claimId ?? randomUUID(),
+      secretHash: hashToken(context.pairingSecret),
+      idempotencyKey: context.idempotencyKey,
+      requestHash: context.requestHash.toLowerCase(),
+      credential: replacement.credential,
+      replaced: replacement.replaced,
+      createdAt: now,
+      expiresAt: now + PAIRING_CLAIM_STALE_MS,
+      recoveryClaimId: null,
+      recoveryClaimStartedAt: null,
+    };
+    const entry: CredentialSettlementEntry = {
+      ...entryWithoutToken,
+      sealedToken: sealSettlementToken(token, context.pairingSecret, entryWithoutToken),
+    };
+    journal.transactions.push(entry);
+    await writeSettlementJournal(journal);
+    await writeStore({ version: 1, credentials: replacement.credentials });
+    crashAtCredentialSettlementPoint("after-credential-write");
+    return { token, credential: toSafe(replacement.credential) };
+  });
+}
+
+/**
+ * Find a durable pairing issuance/replay for this exact request.  Recovering
+ * an unfinished issuance itself takes a short journal lease, so concurrent
+ * retries cannot both re-reveal the same token while one is promoting it to
+ * a terminal replay receipt.
+ */
+export async function recoverPairingCredentialSettlement(
+  context: CredentialSettlementContext,
+  now = Date.now(),
+): Promise<CredentialSettlementRecovery> {
+  assertValidNow(now);
+  assertSettlementContext(context);
+  return withCredentialTransaction(async () => {
+    const store = await readStoreForMutation();
+    const journal = await readSettlementJournalForMutation();
+    const cleanup = pruneSettlementJournal(store, journal, now);
+    await persistSettlementCleanup(store, journal, cleanup);
+
+    const replay = journal.replays.find((entry) => isSettlementContextForEntry(entry, context));
+    if (replay) return { kind: "replay", credential: toSafe(replay.credential) };
+
+    const transaction = journal.transactions.find((entry) => isSettlementContextForEntry(entry, context));
+    if (!transaction) return { kind: "none" };
+    if (!hasPersistedSettlementCredential(store, transaction)) {
+      journal.transactions = journal.transactions.filter((entry) => entry !== transaction);
+      await writeSettlementJournal(journal);
+      return { kind: "none" };
+    }
+    const persistedCredential = store.credentials.find(
+      (candidate) => candidate.id === transaction.credential.id,
+    );
+    if (persistedCredential?.revokedAt !== null) {
+      const storeChanged = rollbackSettlementCredential(store, transaction);
+      journal.transactions = journal.transactions.filter((entry) => entry !== transaction);
+      if (storeChanged) await writeStore(store);
+      await writeSettlementJournal(journal);
+      return { kind: "none" };
+    }
+    if (
+      transaction.recoveryClaimId !== null
+      && transaction.recoveryClaimStartedAt !== null
+      && now < transaction.recoveryClaimStartedAt + PAIRING_EXCHANGE_RETRY_AFTER_MS
+    ) {
+      return { kind: "pending" };
+    }
+    const token = unsealSettlementToken(transaction, context.pairingSecret);
+    if (!token || hashToken(token) !== transaction.credential.tokenHash) {
+      throw new CredentialStoreIntegrityError("The pairing credential settlement journal could not be decrypted.");
+    }
+    transaction.recoveryClaimId = randomUUID();
+    transaction.recoveryClaimStartedAt = now;
+    await writeSettlementJournal(journal);
+    return {
+      kind: "issued",
+      token,
+      credential: toSafe(transaction.credential),
+      recoveryClaimId: transaction.recoveryClaimId,
+      claimId: transaction.claimId,
+    };
+  });
+}
+
+/**
+ * Promote an issued transaction to a bounded terminal replay receipt.  The
+ * plaintext token remains encrypted under the pairing secret; normal replay
+ * callers only receive credential metadata, while a crash before this
+ * promotion is recoverable through `recoverPairingCredentialSettlement`.
+ */
+export async function settlePairingCredentialSettlement(
+  context: CredentialSettlementContext,
+  recoveryClaimId: string | null,
+  now = Date.now(),
+): Promise<boolean> {
+  assertValidNow(now);
+  assertSettlementContext(context);
+  return withCredentialTransaction(async () => {
+    const store = await readStoreForMutation();
+    const journal = await readSettlementJournalForMutation();
+    const cleanup = pruneSettlementJournal(store, journal, now);
+    await persistSettlementCleanup(store, journal, cleanup);
+
+    if (journal.replays.some((entry) => isSettlementContextForEntry(entry, context))) return true;
+    const transaction = journal.transactions.find((entry) => isSettlementContextForEntry(entry, context));
+    if (
+      !transaction
+      || !hasPersistedSettlementCredential(store, transaction)
+      || store.credentials.find((candidate) => candidate.id === transaction.credential.id)?.revokedAt !== null
+      || transaction.recoveryClaimId !== recoveryClaimId
+    ) {
+      return false;
+    }
+    while (journal.replays.length >= SETTLEMENT_JOURNAL_MAX_ENTRIES) {
+      journal.replays.shift();
+    }
+    journal.transactions = journal.transactions.filter((entry) => entry !== transaction);
+    transaction.recoveryClaimId = null;
+    transaction.recoveryClaimStartedAt = null;
+    journal.replays.push(transaction);
+    await writeSettlementJournal(journal);
+    return true;
+  });
+}
+
 /**
  * Issue a fresh credential for an approved pairing. Re-pairing the same
  * installation id revokes any still-active prior credential for it first, so
@@ -519,6 +1128,21 @@ export async function issueCredential(
   // brand-new store that drops whatever was actually on disk.
   return withCredentialTransaction(async () => {
     const store = await readStoreForMutation();
+    // A regular re-pair must not supersede an unresolved durable pairing
+    // transaction for this installation: doing so could make its predecessor
+    // revocation irreversible before the replacement has a replay receipt.
+    // Stale transactions are safely rolled back first; a live one is left for
+    // its exact pairing retry to recover.
+    const settlementJournal = await readSettlementJournalForMutation();
+    const settlementCleanup = pruneSettlementJournal(store, settlementJournal, now);
+    await persistSettlementCleanup(store, settlementJournal, settlementCleanup);
+    if (
+      settlementJournal.transactions.some(
+        (entry) => entry.credential.installationId === installationId,
+      )
+    ) {
+      throw new Error("A credential replacement for this installation is awaiting settlement.");
+    }
     await postReadDelayForTest?.();
     const bytes = new Uint8Array(32);
     crypto.getRandomValues(bytes);
@@ -586,10 +1210,10 @@ export async function listCredentials(): Promise<SafeClientCredential[]> {
 }
 
 /**
- * Verify a bearer token against every stored hash in constant time, returning
- * the credential it belongs to or null if it is malformed, unknown, or
- * revoked. The raw token is hashed once here and never compared or persisted
- * in its raw form; every stored hash is checked so timing does not vary with
+ * Verify a bearer token against every stored authority hash in constant time,
+ * returning the credential it belongs to or null if it is malformed, unknown,
+ * or revoked. The raw token is hashed once here and never stored in the
+ * authority record; every stored hash is checked so timing does not vary with
  * how many earlier credentials in the store are unrelated non-matches.
  *
  * `now` is accepted for symmetry with the store's other time-taking

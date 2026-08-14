@@ -3,9 +3,12 @@
 // transport as the poll route) for a long-lived bearer credential. Requires
 // the same internal loopback marker (same as /health and create) as every
 // other client-v1 route, checked before params/body/secrets are parsed or
-// either store is touched at all. The raw token is returned exactly once, in
-// this response body, and is never persisted or logged anywhere — the
-// credential store keeps only its hash.
+// either store is touched at all. The raw token is normally returned exactly
+// once in this response body. During the short crash-recovery window it is
+// retained only as AES-GCM ciphertext in the credential settlement journal,
+// bound to the original pairing secret and exact request; it is never logged
+// and is not stored in the credential authority record (which keeps only its
+// hash).
 //
 // The actual claim -> issue -> finalize/rollback transaction lives in
 // `pairing-exchange.ts` (`exchangePairingRequest`), which claims the approved
@@ -124,6 +127,16 @@ export async function POST(
       // A transient credential-store failure, not a caller mistake: the
       // approval itself was preserved (rolled back), so a retry can still
       // succeed. Never carries the underlying error's raw message.
+      return clientV1Error(
+        503,
+        "service_unavailable",
+        "Could not complete pairing right now. Try again.",
+        true,
+      );
+    case "recovery_pending":
+      // The credential write is durably journaled but its terminal receipt
+      // was not yet promoted. Retrying this exact request recovers it; never
+      // expose a bearer token before that promotion succeeds.
       return clientV1Error(
         503,
         "service_unavailable",

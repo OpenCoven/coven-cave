@@ -18,11 +18,16 @@
 // resorting to brittle module-level mocks of `node:fs`/timers.
 
 import type { SafeClientCredential } from "./credential-store.ts";
-import { issueCredential } from "./credential-store.ts";
+import {
+  issueCredentialForPairingSettlement,
+  recoverPairingCredentialSettlement,
+  settlePairingCredentialSettlement,
+} from "./credential-store.ts";
 import type {
   PairingExchangeTerminalReplay,
   PublicPairingRecord,
   PairingExchangeCredentialSnapshot,
+  ApprovedPairing,
 } from "./pairing-store.ts";
 import {
   claimApprovedPairingWithIdempotency,
@@ -37,9 +42,37 @@ export type PairingExchangeDeps = {
   rollback: typeof rollbackApprovedPairingClaim;
   readPairing: typeof readPairingRequest;
   issueCredential: (
-    approved: Parameters<typeof issueCredential>[0],
+    approved: ApprovedPairing,
     now: number,
+    context: {
+      pairingId: string;
+      pairingSecret: string;
+      idempotencyKey: string;
+      requestHash: string;
+      claimId?: string;
+    },
   ) => Promise<{ token: string; credential: SafeClientCredential }>;
+  recover?: (
+    context: {
+      pairingId: string;
+      pairingSecret: string;
+      idempotencyKey: string;
+      requestHash: string;
+      claimId?: string;
+    },
+    now: number,
+  ) => ReturnType<typeof recoverPairingCredentialSettlement>;
+  settle?: (
+    context: {
+      pairingId: string;
+      pairingSecret: string;
+      idempotencyKey: string;
+      requestHash: string;
+      claimId?: string;
+    },
+    recoveryClaimId: string | null,
+    now: number,
+  ) => ReturnType<typeof settlePairingCredentialSettlement>;
 };
 
 export const defaultPairingExchangeDeps: PairingExchangeDeps = {
@@ -47,7 +80,10 @@ export const defaultPairingExchangeDeps: PairingExchangeDeps = {
   finalize: finalizeApprovedPairingClaim,
   rollback: rollbackApprovedPairingClaim,
   readPairing: readPairingRequest,
-  issueCredential,
+  issueCredential: (approved, now, context) =>
+    issueCredentialForPairingSettlement(approved, context, now),
+  recover: recoverPairingCredentialSettlement,
+  settle: settlePairingCredentialSettlement,
 };
 
 export type PairingExchangeResult =
@@ -62,6 +98,9 @@ export type PairingExchangeResult =
   // or a different key after completion all collapse to this same result.
   | { kind: "expired" }
   | { kind: "conflict" }
+  // Durable credential mutation succeeded but the caller must retry the
+  // exact request to recover and settle its encrypted replay record.
+  | { kind: "recovery_pending" }
   // The claim succeeded (the request really was approved and live) but
   // `issueCredential` itself failed — a transient store problem, never a
   // caller mistake. This is returned only after rollback explicitly released
@@ -133,6 +172,68 @@ export async function exchangePairingRequest(
   now: number,
   deps: PairingExchangeDeps = defaultPairingExchangeDeps,
 ): Promise<PairingExchangeResult> {
+  const settlementContext = {
+    pairingId: id,
+    pairingSecret: secret,
+    idempotencyKey,
+    requestHash,
+  };
+  const recover = deps.recover ?? (async () => ({ kind: "none" as const }));
+  const settle = deps.settle ?? (async () => true);
+  let recovered;
+  try {
+    recovered = await recover(settlementContext, now);
+  } catch (error) {
+    console.error("[client-v1-pairing] durable credential recovery failed", {
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { kind: "issue_failed" };
+  }
+  if (recovered.kind === "pending") {
+    return { kind: "processing", retryAfterMs: 1_000 };
+  }
+  if (recovered.kind === "replay") {
+    return { kind: "already_exchanged", credential: recovered.credential };
+  }
+  if (recovered.kind === "issued") {
+    // If this process still has the original in-memory pairing claim, finish
+    // its tombstone as well. A restart quite properly reports `missing`
+    // here; the durable journal remains the recovery authority in that case.
+    const recoveredReceipt: PairingExchangeTerminalReplay = {
+      idempotencyKey,
+      requestHash,
+      credential: {
+        id: recovered.credential.id,
+        appName: recovered.credential.appName,
+        installationId: recovered.credential.installationId,
+        scopes: [...recovered.credential.scopes],
+        createdAt: recovered.credential.createdAt,
+      },
+    };
+    try {
+      deps.finalize(id, recovered.claimId, Date.now(), { exchangeReplay: recoveredReceipt });
+    } catch (error) {
+      console.error("[client-v1-pairing] recovered pairing finalize failed", {
+        id,
+        claimId: recovered.claimId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    try {
+      if (!await settle(settlementContext, recovered.recoveryClaimId, now)) {
+        return { kind: "recovery_pending" };
+      }
+    } catch (error) {
+      console.error("[client-v1-pairing] durable credential recovery settlement failed", {
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { kind: "recovery_pending" };
+    }
+    return { kind: "ok", token: recovered.token, credential: recovered.credential };
+  }
+
   const claim = deps.claim(id, secret, idempotencyKey, requestHash, now);
   if (claim.kind === "replay") {
     return { kind: "already_exchanged", credential: claim.credential };
@@ -150,10 +251,14 @@ export async function exchangePairingRequest(
     return { kind: "conflict" };
   }
   const claimed = claim;
+  crashAtPairingSettlementPoint("before-credential-issuance");
 
   let issued: { token: string; credential: SafeClientCredential };
   try {
-    issued = await deps.issueCredential(claimed.pairing, now);
+    issued = await deps.issueCredential(claimed.pairing, now, {
+      ...settlementContext,
+      claimId: claimed.claimId,
+    });
   } catch (err) {
     let rollback;
     try {
@@ -206,6 +311,24 @@ export async function exchangePairingRequest(
     });
     return { kind: "conflict" };
   }
+  crashAtPairingSettlementPoint("after-pairing-finalize");
+  try {
+    if (!await settle(settlementContext, null, now)) {
+      return { kind: "recovery_pending" };
+    }
+  } catch (error) {
+    console.error("[client-v1-pairing] durable credential settlement failed", {
+      id,
+      claimId: claimed.claimId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { kind: "recovery_pending" };
+  }
 
   return { kind: "ok", token: issued.token, credential: issued.credential };
+}
+
+function crashAtPairingSettlementPoint(point: string): void {
+  if (process.env.COVEN_CAVE_TEST_CREDENTIAL_SETTLEMENT_CRASH_POINT !== point) return;
+  process.kill(process.pid, "SIGKILL");
 }
