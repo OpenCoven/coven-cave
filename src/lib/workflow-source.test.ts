@@ -510,10 +510,16 @@ await (async () => {
     assert.match(evidenceStep.summary, /without network retrieval/i);
     const validateStep = threadManifest.steps.find((step: { id: string }) => step.id === "validate");
     assert.ok(validateStep);
+    const candidatesStep = threadManifest.steps.find((step: { id: string }) => step.id === "candidates");
+    assert.ok(candidatesStep);
+    assert.match(candidatesStep.summary, /tooling\.json/i);
+    assert.match(candidatesStep.summary, /absolute installed validator path/i);
+    assert.match(candidatesStep.summary, /loaded `SKILL\.md`/i);
     assert.match(
       validateStep.summary,
-      /node marketplace\/plugins\/tweet-thread-lab\/bin\/tweet-thread-validate\.mjs validate candidates\/<candidate-id>\.json brief\.json/i,
+      /read.*tooling\.json.*validator.*absolute path/i,
     );
+    assert.doesNotMatch(validateStep.summary, /marketplace\/plugins\/tweet-thread-lab/);
     assert.match(validateStep.summary, /strict JSON stdout.*deterministic\/<candidate-id>\.json/i);
     assert.match(validateStep.summary, /exit 1 blocks.*exit 2/i);
     assert.deepEqual(

@@ -12,6 +12,7 @@ runs/<run-id>/
   evidence.json
   voice-profile.json
   strategies.json
+  tooling.json
   execution-log.jsonl
   candidates/<candidate-id>.json
   deterministic/<candidate-id>.json
@@ -21,9 +22,24 @@ runs/<run-id>/
   approval.json
 ```
 
-Create both sidecars for every run. Preserve failed or partial artifacts. Never replace a failed write with an apparently complete manifest. Append missing paths, errors, uncertainty, and stopping decisions to `execution-log.jsonl`.
+Create all three sidecars for every run. Preserve failed or partial artifacts. Never replace a failed write with an apparently complete manifest. Append missing paths, errors, uncertainty, and stopping decisions to `execution-log.jsonl`.
 
 ## Portable sidecars
+
+`tooling.json` records the installed validator selected by the candidate step:
+
+```json
+{
+  "protocolVersion": "opencoven.tweet-thread.v1",
+  "runId": "run-example",
+  "tweetThreadValidator": {
+    "skillPath": "/absolute/path/to/tweet-thread-lab/SKILL.md",
+    "validatorPath": "/absolute/path/to/tweet-thread-validate.mjs"
+  }
+}
+```
+
+Both paths must be absolute, normalized real paths. `skillPath` must name the loaded regular `SKILL.md`; `validatorPath` must be an absolute regular file resolved as `../../bin/tweet-thread-validate.mjs` from the directory containing `skillPath`. Reject missing, relative, differently resolved, non-regular, or changed paths. The validation step consumes this prior-step artifact and never assumes the repository is the current working directory.
 
 `strategies.json` is a run-level map keyed by candidate ID. Each record binds the declared strategy to the exact materialized candidate SHA-256:
 
@@ -82,8 +98,8 @@ Required fields are `protocolVersion`, `runId`, `eventId`, positive monotonic `s
 3. Give every candidate a stable ID, canonicalize and hash it, and write only fields accepted by `thread-candidate.schema.json`.
 4. Write or update `strategies.json` so each successful candidate ID maps to its exact SHA-256 and declared strategy. Log failed generations or writes instead of inventing candidate fields.
 5. From the plugin root run `node bin/tweet-thread-validate.mjs validate <candidate.json> [brief.json]`. Save its strict JSON stdout to `deterministic/<candidate-id>.json`. Exit `0` accepts, exit `1` rejects through deterministic hard gates, and exit `2` is a safe usage/read/parse/runtime contract error. Before any manifest or approval, convert the raw result into one strict `validation-` record containing `protocolVersion`, stable `validationId`, `candidateSha256`, caller-supplied `validatedAt`, `accepted`, `findings`, and `measurements`; save it under `validations/`. Append failures, partial materialization, missing paths, and uncertainty to the execution log.
-6. Blind candidates for judging. Keep `strategies.json`, its private extensions, and the private arm mapping outside judge context.
-7. Save scorecards, rank eligible candidates, perform bounded revisions, and append every stopping decision.
+6. Blind candidates for judging. Keep `strategies.json`, its private extensions, and the private arm mapping outside judge context. A blinded scorecard contains the blinding protocol version, trial ID, `publicTrialSha256`, `armToken`, scorecard ID/time, and six dimensions; it contains no candidate ID or candidate SHA-256.
+7. After the precommitted stopping rule permits reveal, verify the public trial, private envelope, secret-backed reveal commitment, token mapping, and blinded scorecards. Convert each blinded scorecard to a canonical scorecard bound to the revealed `candidateSha256` and immutable provenance (`trialId`, `publicTrialSha256`, `armToken`). Reject trial, token, content, duplicate-arm, early-reveal, or scorecard alterations. Then rank eligible candidates, perform bounded revisions, and append every stopping decision.
 8. Write `manifest.json` with only the strict schema fields: `protocolVersion`, `manifestId`, `runId`, `createdAt`, `brief`, `voiceProfile`, `candidates`, `validations`, `scorecards`, `approvals`, `publishReceipts`, and `observations`. Use the candidate IDs, candidate SHA-256 values, validation IDs, scorecard IDs, approval IDs, receipt IDs, and observation IDs already supported by those artifacts; do not add strategy, generation-context, failure, partial-state, path, or sidecar fields.
 9. Write `approval.json` only from an exact human decision bound to the selected candidate hash.
 
@@ -95,7 +111,7 @@ Evaluate the six rubric dimensions separately on `0..1`. Remove hard-gate failur
 
 ## Blinding
 
-Use opaque arm tokens and a committed private mapping when the harness supports the repository blinding primitives. Every candidate in one trial must carry deeply identical brief and voice-profile content. Give judges one committed non-identifying context containing topic, audience, objective weights, constraints, and voice tone/do/dont, plus public arm data. Omit brief and voice IDs, voice display name, candidate IDs and hashes, timestamps, strategy, author, model, harness, file path, and ordering metadata. Use a separate judge context or harness when available.
+Use opaque arm tokens and a committed private mapping when the harness supports the repository blinding primitives. Every candidate in one trial must carry deeply identical brief and voice-profile content. Give judges one committed non-identifying context containing topic, audience, objective weights, constraints, and voice tone/do/dont, plus public arm data. Omit brief and voice IDs, voice display name, candidate IDs and hashes, timestamps, strategy, author, model, harness, file path, and ordering metadata. The judge emits a blinded scorecard bound to `publicTrialSha256` and `armToken`; only the reveal/conversion boundary may attach canonical candidate identity. Use a separate judge context or harness when available.
 
 If full blinding is unavailable, record the limitation before judging. Do not describe an unblinded comparison as blinded.
 
@@ -105,7 +121,7 @@ Declare iteration, agent, time, and cost bounds before revision. Continue only f
 
 ## Approval boundary
 
-Approval is the terminal action in this package. Require an exact human decision naming the selected candidate SHA-256. Before approval, require exactly one current accepted validation record bound to that hash, no `fail` validation finding, and at least one bound scorecard with no `fail` finding. Validation and scoring must be at or after candidate generation; approval must be at or after both. Do not publish, schedule, authenticate to X, or create a publication receipt. A later publisher must independently verify the same gate evidence, approval, and protocol version.
+Approval is the terminal action in this package. Require an exact human decision naming the selected candidate SHA-256. Before approval, require exactly one current accepted validation record bound to that hash, no `fail` validation finding, and a current bound scorecard with no `fail` finding. Validation and scoring must be at or after candidate generation; approval must be at or after both. Do not publish, schedule, authenticate to X, or create a publication receipt. A later publisher must independently verify the same gate evidence, latest decision, and protocol version before every attempt; `failed`, `uncertain`, `publishing`, `partial`, and `published` receipts all prove an attempt and receive the same gate.
 
 ## Compatibility
 

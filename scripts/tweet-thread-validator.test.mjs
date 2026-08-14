@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  closeSync,
   copyFileSync,
+  ftruncateSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -15,6 +18,10 @@ import {
   TWEET_THREAD_PROTOCOL_VERSION,
   computeThreadCandidateSha256,
 } from "../src/lib/tweet-thread-protocol.ts";
+import {
+  checkTweetThreadValidatorBundle,
+  writeTweetThreadValidatorBundle,
+} from "./build-tweet-thread-validator.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUNDLE = path.join(
@@ -37,10 +44,11 @@ assert.equal(
   "node scripts/build-tweet-thread-validator.mjs --check",
 );
 
-function run(command, args, cwd = ROOT) {
+function run(command, args, cwd = ROOT, timeout = undefined) {
   return spawnSync(command, args, {
     cwd,
     encoding: "utf8",
+    timeout,
     env: {
       ...process.env,
       NODE_PATH: "",
@@ -48,14 +56,31 @@ function run(command, args, cwd = ROOT) {
   });
 }
 
-const firstBuild = run("pnpm", ["protocol:tweet-thread:validator"]);
-assert.equal(firstBuild.status, 0, firstBuild.stderr);
-const firstBundle = readFileSync(BUNDLE);
-const secondBuild = run("pnpm", ["protocol:tweet-thread:validator"]);
-assert.equal(secondBuild.status, 0, secondBuild.stderr);
-assert.deepEqual(readFileSync(BUNDLE), firstBundle, "validator bundle generation is byte-deterministic");
 const check = run("pnpm", ["protocol:tweet-thread:validator:check"]);
 assert.equal(check.status, 0, check.stderr);
+const committedBundle = readFileSync(BUNDLE);
+
+rmSync(SCRATCH, { recursive: true, force: true });
+mkdirSync(SCRATCH, { recursive: true });
+const scratchBundle = path.join(SCRATCH, "tweet-thread-validate.mjs");
+await writeTweetThreadValidatorBundle(scratchBundle);
+assert.deepEqual(
+  readFileSync(scratchBundle),
+  committedBundle,
+  "a scratch build matches the committed validator byte-for-byte",
+);
+await writeTweetThreadValidatorBundle(scratchBundle);
+assert.deepEqual(
+  readFileSync(scratchBundle),
+  committedBundle,
+  "validator bundle generation is byte-deterministic",
+);
+writeFileSync(scratchBundle, "\n// stale\n", { flag: "a" });
+assert.equal(
+  await checkTweetThreadValidatorBundle(scratchBundle),
+  false,
+  "a stale bundle fails the same check used for the committed artifact",
+);
 assert.equal(
   readdirSync(path.dirname(BUNDLE)).some((name) => name.includes(".tmp-")),
   false,
@@ -121,7 +146,6 @@ function candidate() {
   };
 }
 
-rmSync(SCRATCH, { recursive: true, force: true });
 try {
   const isolatedPlugin = path.join(SCRATCH, "tweet-thread-lab");
   const isolatedBin = path.join(isolatedPlugin, "bin");
@@ -177,6 +201,42 @@ try {
   assert.equal(malformed.stdout, "");
   assert.match(malformed.stderr, /^tweet-thread-validate: candidate JSON could not be parsed\.\n$/);
   assert.equal(/SyntaxError|at file:|node_modules|malformed\.json/.test(malformed.stderr), false);
+
+  const oversizedPath = path.join(isolatedPlugin, "oversized.json");
+  const oversizedHandle = openSync(oversizedPath, "w");
+  try {
+    ftruncateSync(oversizedHandle, (8 * 1024 * 1024) + 1);
+  } finally {
+    closeSync(oversizedHandle);
+  }
+  const oversized = run(
+    process.execPath,
+    ["bin/tweet-thread-validate.mjs", "validate", "oversized.json"],
+    isolatedPlugin,
+  );
+  assert.equal(oversized.status, 2);
+  assert.match(oversized.stderr, /candidate file exceeds the portable size limit/i);
+
+  const directoryInput = run(
+    process.execPath,
+    ["bin/tweet-thread-validate.mjs", "validate", "."],
+    isolatedPlugin,
+  );
+  assert.equal(directoryInput.status, 2);
+  assert.match(directoryInput.stderr, /candidate file must be a regular file/i);
+
+  const fifoPath = path.join(isolatedPlugin, "candidate.fifo");
+  const mkfifo = run("mkfifo", [fifoPath], isolatedPlugin);
+  assert.equal(mkfifo.status, 0, mkfifo.stderr);
+  const fifo = run(
+    process.execPath,
+    ["bin/tweet-thread-validate.mjs", "validate", "candidate.fifo"],
+    isolatedPlugin,
+    1_000,
+  );
+  assert.notEqual(fifo.error?.code, "ETIMEDOUT", "unsupported file types are rejected without blocking");
+  assert.equal(fifo.status, 2);
+  assert.match(fifo.stderr, /candidate file must be a regular file/i);
 
   const usage = run(process.execPath, ["bin/tweet-thread-validate.mjs"], isolatedPlugin);
   assert.equal(usage.status, 2);

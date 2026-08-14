@@ -16,6 +16,7 @@ import {
   ThreadScorecardSchema,
   ThreadValidationRecordSchema,
 } from "../src/lib/tweet-thread-protocol.ts";
+import { BlindedThreadScorecardSchema } from "../src/lib/tweet-thread-blinding.ts";
 import { Value } from "typebox/value";
 import {
   checkProtocolSchemas,
@@ -24,6 +25,7 @@ import {
 } from "./generate-tweet-thread-protocol.mjs";
 
 const schemaFiles = new Map([
+  ["blinded-thread-scorecard.schema.json", BlindedThreadScorecardSchema],
   ["thread-brief.schema.json", ThreadBriefSchema],
   ["thread-candidate.schema.json", ThreadCandidateSchema],
   ["thread-validation-record.schema.json", ThreadValidationRecordSchema],
@@ -37,6 +39,25 @@ const outputDirectory = new URL(
 );
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const gitAttributes = readFileSync(new URL("../.gitattributes", import.meta.url), "utf8");
+const validationCoreSource = readFileSync(
+  new URL("../src/lib/tweet-thread-validation-core.ts", import.meta.url),
+  "utf8",
+);
+const validationWrapperSource = readFileSync(
+  new URL("../src/lib/tweet-thread-validation.ts", import.meta.url),
+  "utf8",
+);
+
+assert.doesNotMatch(
+  validationCoreSource,
+  /from\s+["']\.\/tweet-thread-protocol\.ts["']/,
+  "the deterministic validation core is acyclic and does not import the canonical protocol module",
+);
+assert.match(
+  validationWrapperSource,
+  /from\s+["']\.\/tweet-thread-validation-core\.ts["']/,
+  "the public validator wraps the shared deterministic validation core",
+);
 
 assert.equal(
   packageJson.dependencies?.canonicalize,
@@ -133,6 +154,7 @@ function failSecondInstall() {
 function failSecondInstallAndRollbackRemoval() {
   const failure = failSecondInstall();
   const rollbackError = new Error("injected rollback removal failure");
+  const firstSchemaFilename = schemaFiles.keys().next().value;
   let removalFailed = false;
   return {
     ...failure,
@@ -140,7 +162,7 @@ function failSecondInstallAndRollbackRemoval() {
     operations: {
       ...failure.operations,
       remove(target) {
-        if (!removalFailed && target.pathname.endsWith("thread-brief.schema.json")) {
+        if (!removalFailed && target.pathname.endsWith(firstSchemaFilename)) {
           removalFailed = true;
           throw rollbackError;
         }

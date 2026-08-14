@@ -1254,6 +1254,35 @@
       "items": {
         "additionalProperties": false,
         "properties": {
+          "blinding": {
+            "additionalProperties": false,
+            "properties": {
+              "armToken": {
+                "maxLength": 68,
+                "minLength": 68,
+                "pattern": "^arm-[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "publicTrialSha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "trialId": {
+                "maxLength": 128,
+                "minLength": 7,
+                "pattern": "^trial-[a-z0-9-]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "trialId",
+              "publicTrialSha256",
+              "armToken"
+            ],
+            "type": "object"
+          },
           "candidateSha256": {
             "maxLength": 64,
             "minLength": 64,

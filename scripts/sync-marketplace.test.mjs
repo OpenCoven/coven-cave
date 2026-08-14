@@ -392,10 +392,19 @@ assert.match(threadLabSkill, /^## Artifacts$/m);
 assert.match(threadLabSkill, /^## Verification$/m);
 assert.match(
   threadLabSkill,
-  /node bin\/tweet-thread-validate\.mjs validate <candidate\.json> \[brief\.json\]/i,
+  /node "<validatorPath>" validate <candidate\.json> \[brief\.json\]/i,
 );
 assert.match(threadLabSkill, /materialize the canonical validation record before the manifest or approval/i);
 assert.match(threadLabSkill, /only after the bundled command succeeds may `cave\.output` record/i);
+assert.match(threadLabSkill, /resolve.*validator.*relative to.*loaded `SKILL\.md`/i);
+assert.match(threadLabSkill, /`tooling\.json`/i);
+assert.match(threadLabProtocol, /"validatorPath": "\/absolute\/path\/to\/tweet-thread-validate\.mjs"/i);
+assert.match(threadLabProtocol, /validatorPath.*absolute.*regular file.*resolved.*skillPath/i);
+assert.match(threadLabProtocol, /blinded scorecard/i);
+assert.match(threadLabProtocol, /publicTrialSha256/i);
+assert.match(threadLabProtocol, /armToken/i);
+assert.match(threadLabProtocol, /reveal.*canonical.*candidateSha256/i);
+assert.match(readFileSync(path.join(threadLabSkillRoot, "references", "rubric.md"), "utf8"), /judge.*must not receive.*candidate/i);
 for (const document of [threadLabSkill, threadLabProtocol]) {
   assert.match(document, /`strategies\.json`/);
   assert.match(document, /`execution-log\.jsonl`/);
@@ -417,6 +426,7 @@ for (const reference of ["protocol.md", "rubric.md"]) {
 }
 for (const schema of [
   "thread-brief.schema.json",
+  "blinded-thread-scorecard.schema.json",
   "thread-candidate.schema.json",
   "thread-run-manifest.schema.json",
   "thread-scorecard.schema.json",

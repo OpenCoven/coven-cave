@@ -6,6 +6,16 @@ import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
 
+import {
+  compareOrdinalStrings as compareCoreOrdinalStrings,
+  containsBannedPhrase as containsCoreBannedPhrase,
+  validateThreadCandidateCore,
+} from "./tweet-thread-validation-core.ts";
+import {
+  StrictJsonSnapshotError,
+  createStrictJsonSnapshot,
+} from "./strict-json-snapshot.ts";
+
 export const TWEET_THREAD_PROTOCOL_VERSION = "opencoven.tweet-thread.v1" as const;
 
 const RFC3339_UTC_MILLIS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -15,8 +25,6 @@ const POST_ID_RE = /^post-[1-9][0-9]*$/;
 const X_POST_ID_RE = /^[1-9][0-9]*$/;
 const X_THREAD_URL_RE = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[1-9][0-9]*$/;
 const HTTP_URL_RE = /^https?:\/\/[^\s/?#]+(?:[/?#]|$)/;
-const WORD_CONTINUATION_CHARACTER_CLASS = "\\p{L}\\p{N}\\p{M}\\p{Pc}\\u200C\\u200D";
-const WORD_CONTINUATION_CHARACTER_RE = new RegExp(`[${WORD_CONTINUATION_CHARACTER_CLASS}]`, "u");
 const THREAD_OBSERVATION_METRIC_NAMES = [
   "impressions",
   "likes",
@@ -250,12 +258,20 @@ export const ThreadScorecardDimensionsSchema = Type.Object({
 }, { additionalProperties: false });
 export type ThreadScorecardDimensions = Static<typeof ThreadScorecardDimensionsSchema>;
 
+export const ThreadScorecardBlindingProvenanceSchema = Type.Object({
+  trialId: Type.String({ minLength: 7, maxLength: 128, pattern: "^trial-[a-z0-9-]+$" }),
+  publicTrialSha256: sha256Schema(),
+  armToken: Type.String({ minLength: 68, maxLength: 68, pattern: "^arm-[a-f0-9]{64}$" }),
+}, { additionalProperties: false });
+export type ThreadScorecardBlindingProvenance = Static<typeof ThreadScorecardBlindingProvenanceSchema>;
+
 export const ThreadScorecardSchema = Type.Object({
   protocolVersion: protocolVersionLiteral(),
   scorecardId: stableId("scorecard"),
   candidateSha256: sha256Schema(),
   scoredAt: timestampString(),
   dimensions: ThreadScorecardDimensionsSchema,
+  blinding: Type.Optional(ThreadScorecardBlindingProvenanceSchema),
 }, { additionalProperties: false });
 export type ThreadScorecard = Static<typeof ThreadScorecardSchema>;
 
@@ -381,7 +397,7 @@ export class TweetThreadProtocolValidationError extends Error {
   readonly issues: string[];
 
   constructor(issues: string[]) {
-    super("Tweet thread protocol validation failed");
+    super(`Tweet thread protocol validation failed: ${issues.join("; ")}`);
     this.name = "TweetThreadProtocolValidationError";
     this.issues = issues;
   }
@@ -421,34 +437,61 @@ function isRecord(value: unknown): value is UnknownRecord {
 }
 
 export function compareOrdinalStrings(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+  return compareCoreOrdinalStrings(left, right);
+}
+
+function snapshotProtocolValue<T>(value: T, path: string): T {
+  try {
+    return createStrictJsonSnapshot(value);
+  } catch (error) {
+    if (error instanceof StrictJsonSnapshotError) {
+      throw new TweetThreadProtocolValidationError([
+        `${path} must be strict accessor-free plain JSON without custom prototypes, toJSON hooks, symbols, sparse arrays, cycles, unsupported primitives, or resource-budget excess.`,
+      ]);
+    }
+    throw error;
+  }
+}
+
+function serializeCanonicalThreadCandidateSnapshot(
+  candidate: ThreadCandidate | ThreadCandidateCanonicalContent,
+): string {
+  const content = { ...candidate } as UnknownRecord;
+  delete content.candidateSha256;
+  if (!Value.Check(JCS_JSON_VALUE_SCHEMA, content)) {
+    throw new TweetThreadProtocolValidationError([
+      "Thread candidate content must contain only finite JSON values and well-formed Unicode before JCS serialization.",
+    ]);
+  }
+  const serialized = canonicalize(content);
+  if (serialized === undefined) {
+    throw new TweetThreadProtocolValidationError([
+      "Thread candidate content could not be serialized as RFC 8785 JCS.",
+    ]);
+  }
+  return serialized;
+}
+
+function computeThreadCandidateSnapshotSha256(
+  candidate: ThreadCandidate | ThreadCandidateCanonicalContent,
+): string {
+  return createHash("sha256")
+    .update(serializeCanonicalThreadCandidateSnapshot(candidate), "utf8")
+    .digest("hex");
 }
 
 export function serializeCanonicalThreadCandidate(
   candidate: ThreadCandidate | ThreadCandidateCanonicalContent,
 ): string {
-  const content: UnknownRecord = { ...candidate };
-  delete content.candidateSha256;
-  if (!Value.Check(JCS_JSON_VALUE_SCHEMA, content)) {
-    throw new TypeError(
-      "Thread candidate content must contain only finite JSON values and well-formed Unicode before JCS serialization.",
-    );
-  }
-  const serialized = canonicalize(content);
-  if (serialized === undefined) {
-    throw new TypeError("Thread candidate content could not be serialized as RFC 8785 JCS.");
-  }
-  return serialized;
+  const snapshot = snapshotProtocolValue(candidate, "ThreadCandidate");
+  return serializeCanonicalThreadCandidateSnapshot(snapshot);
 }
 
 export function computeThreadCandidateSha256(
   candidate: ThreadCandidate | ThreadCandidateCanonicalContent,
 ): string {
-  return createHash("sha256")
-    .update(serializeCanonicalThreadCandidate(candidate), "utf8")
-    .digest("hex");
+  const snapshot = snapshotProtocolValue(candidate, "ThreadCandidate");
+  return computeThreadCandidateSnapshotSha256(snapshot);
 }
 
 function trimIfString(value: unknown): unknown {
@@ -468,25 +511,8 @@ function dedupeTrimmedList(value: unknown): unknown {
   return out;
 }
 
-function normalizeBannedPhraseText(value: string): string {
-  return value.normalize("NFKC").toLowerCase().trim().replace(/\s+/gu, " ");
-}
-
 export function containsBannedPhrase(text: string, phrase: string): boolean {
-  const normalizedText = normalizeBannedPhraseText(text);
-  const normalizedPhrase = normalizeBannedPhraseText(phrase);
-  if (normalizedPhrase.length === 0) return false;
-
-  const [firstCharacter] = normalizedPhrase;
-  const lastCharacter = Array.from(normalizedPhrase).at(-1);
-  const escapedPhrase = normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const startBoundary = firstCharacter && WORD_CONTINUATION_CHARACTER_RE.test(firstCharacter)
-    ? `(?<![${WORD_CONTINUATION_CHARACTER_CLASS}])`
-    : "";
-  const endBoundary = lastCharacter && WORD_CONTINUATION_CHARACTER_RE.test(lastCharacter)
-    ? `(?![${WORD_CONTINUATION_CHARACTER_CLASS}])`
-    : "";
-  return new RegExp(`${startBoundary}${escapedPhrase}${endBoundary}`, "u").test(normalizedText);
+  return containsCoreBannedPhrase(text, phrase);
 }
 
 function collectObjectiveWeightIssues(value: unknown, path: string): string[] {
@@ -601,13 +627,6 @@ function hasKnownRemoteEvidence(receipt: PublishReceipt): receipt is PublishRece
   return "publishedAt" in receipt && "threadUrl" in receipt && "remotePostIds" in receipt;
 }
 
-function publicationRequiresApproval(receipt: PublishReceipt): boolean {
-  return receipt.status === "publishing"
-    || receipt.status === "published"
-    || receipt.status === "partial"
-    || receipt.status === "uncertain";
-}
-
 function latestApprovalAtOrBefore(
   approvals: readonly ApprovalRecord[],
   candidateSha256: string,
@@ -626,7 +645,11 @@ function latestApprovalAtOrBefore(
   return latest;
 }
 
-function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"): string[] {
+function collectThreadCandidateIssues(
+  value: unknown,
+  path = "ThreadCandidate",
+  includeDeterministicFailures = false,
+): string[] {
   const issues: string[] = [];
   if (!isRecord(value)) return [`${path} must be an object.`];
   issues.push(...collectThreadBriefIssues(value.brief, `${path}.brief`));
@@ -641,7 +664,7 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
     && SHA256_HEX.test(value.candidateSha256)
   ) {
     try {
-      const computedSha256 = computeThreadCandidateSha256(value as ThreadCandidate);
+      const computedSha256 = computeThreadCandidateSnapshotSha256(value as ThreadCandidate);
       if (computedSha256 !== value.candidateSha256) {
         issues.push(
           `${path}.candidateSha256 must equal the SHA-256 of canonical candidate content; expected "${computedSha256}".`,
@@ -679,70 +702,41 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
     }
   }
 
-  const constraints = isRecord(value.brief.constraints) ? value.brief.constraints : null;
-  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
-    for (const claimId of constraints.requiredClaimIds) {
-      if (typeof claimId === "string" && !evidenceClaimIds.has(claimId)) {
-        issues.push(`${path}.brief.constraints.requiredClaimIds references missing evidence ledger claim "${claimId}".`);
-      }
-    }
-  }
-
   const postIds = new Set<string>();
-  const postedClaimIds = new Set<string>();
   for (const [index, post] of value.posts.entries()) {
     if (!isRecord(post)) continue;
     issues.push(...collectNonWhitespaceStringIssues(post.text, `${path}.posts[${index}].text`));
     if (typeof post.postId === "string") {
       pushDuplicateIssue(postIds, post.postId, `${path}.posts[${index}].postId`, issues);
     }
-    if (Array.isArray(post.claimIds)) {
-      for (const claimId of post.claimIds) {
-        if (typeof claimId === "string") postedClaimIds.add(claimId);
-        if (typeof claimId === "string" && !evidenceClaimIds.has(claimId)) {
-          issues.push(`${path}.posts[${index}].claimIds references missing evidence ledger claim "${claimId}".`);
-        }
-      }
-    }
-    if (typeof post.text === "string" && constraints && Array.isArray(constraints.bannedPhrases)) {
-      for (const phrase of constraints.bannedPhrases) {
-        if (typeof phrase === "string" && containsBannedPhrase(post.text, phrase)) {
-          issues.push(`${path}.posts[${index}].text contains banned phrase "${phrase.trim()}".`);
-        }
-      }
-    }
-    if (constraints?.requireAltText && Array.isArray(post.media)) {
+    if (Array.isArray(post.media)) {
       for (const [mediaIndex, media] of post.media.entries()) {
         if (!isRecord(media)) continue;
         issues.push(...collectNonWhitespaceStringIssues(
           media.description,
           `${path}.posts[${index}].media[${mediaIndex}].description`,
         ));
-        const altText = media.altText;
-        if (typeof altText !== "string" || altText.trim().length === 0) {
-          issues.push(`${path}.posts[${index}].media[${mediaIndex}] must include non-empty alt text when requireAltText is true.`);
-        }
       }
     }
   }
 
-  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
-    for (const claimId of constraints.requiredClaimIds) {
-      if (typeof claimId === "string" && !postedClaimIds.has(claimId)) {
-        issues.push(`${path}.brief.constraints.requiredClaimIds claim "${claimId}" must appear in at least one post.`);
-      }
-    }
-  }
-
-  if (
-    constraints
-    && typeof constraints.minPosts === "number"
-    && typeof constraints.maxPosts === "number"
-    && Number.isInteger(constraints.minPosts)
-    && Number.isInteger(constraints.maxPosts)
-  ) {
-    if (value.posts.length < constraints.minPosts || value.posts.length > constraints.maxPosts) {
-      issues.push(`${path}.posts length must stay within brief constraints (${constraints.minPosts}..${constraints.maxPosts}).`);
+  if (includeDeterministicFailures) {
+    const postIndexById = new Map(
+      value.posts.flatMap((post, index) =>
+        isRecord(post) && typeof post.postId === "string"
+          ? [[post.postId, index] as const]
+          : []
+      ),
+    );
+    for (const finding of validateThreadCandidateCore(value).findings) {
+      if (finding.severity !== "fail") continue;
+      const postIndex = finding.postId === undefined
+        ? undefined
+        : postIndexById.get(finding.postId);
+      const findingPath = postIndex === undefined ? path : `${path}.posts[${postIndex}]`;
+      issues.push(
+        `${findingPath} deterministic validation failed (${finding.code}): ${finding.message}`,
+      );
     }
   }
 
@@ -838,18 +832,21 @@ function collectGateEvidenceIssues(
     }
   }
 
-  const cleanScorecards = manifest.scorecards
+  const boundScorecards = manifest.scorecards
     .map((scorecard, index) => ({ scorecard, index }))
-    .filter(({ scorecard }) =>
-      scorecard.candidateSha256 === candidateSha256
-      && !scorecardHasFailFinding(scorecard)
-    );
-  const eligibleScorecard = cleanScorecards.some(({ scorecard }) =>
-    Date.parse(scorecard.scoredAt) <= Date.parse(boundaryAt)
-  );
-  if (!eligibleScorecard) {
-    const later = cleanScorecards.find(({ scorecard }) =>
-      Date.parse(scorecard.scoredAt) > Date.parse(boundaryAt)
+    .filter(({ scorecard }) => scorecard.candidateSha256 === candidateSha256);
+  const boundaryAtMs = Date.parse(boundaryAt);
+  let current: (typeof boundScorecards)[number] | undefined;
+  let currentMs = Number.NEGATIVE_INFINITY;
+  for (const entry of boundScorecards) {
+    const scoredAtMs = Date.parse(entry.scorecard.scoredAt);
+    if (scoredAtMs > boundaryAtMs || scoredAtMs < currentMs) continue;
+    current = entry;
+    currentMs = scoredAtMs;
+  }
+  if (!current) {
+    const later = boundScorecards.find(({ scorecard }) =>
+      Date.parse(scorecard.scoredAt) > boundaryAtMs
     );
     if (later) {
       issues.push(
@@ -860,6 +857,10 @@ function collectGateEvidenceIssues(
         `${boundaryPath} for an ${boundaryKind === "approved" ? "approved" : "publishing"} candidate requires at least one bound scorecard with no fail finding.`,
       );
     }
+  } else if (scorecardHasFailFinding(current.scorecard)) {
+    issues.push(
+      `${boundaryPath} for an ${boundaryKind === "approved" ? "approved" : "publishing"} candidate requires the current bound scorecard at or before the boundary to have no fail finding.`,
+    );
   }
   return issues;
 }
@@ -889,36 +890,49 @@ export function normalizeThreadBrief(input: unknown): ThreadBrief {
 }
 
 export function assertValidThreadCandidate(input: unknown): ThreadCandidate {
-  const issues = collectThreadCandidateIssues(input);
+  const snapshot = snapshotProtocolValue(input, "ThreadCandidate");
+  const issues = collectThreadCandidateIssues(snapshot, "ThreadCandidate", true);
   if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
-  return input as ThreadCandidate;
+  return snapshot as ThreadCandidate;
+}
+
+export function inspectThreadCandidateForValidation(input: unknown): {
+  snapshot: unknown;
+  issues: string[];
+} {
+  const snapshot = snapshotProtocolValue(input, "ThreadCandidate");
+  return {
+    snapshot,
+    issues: collectThreadCandidateIssues(snapshot),
+  };
 }
 
 export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest {
   const issues: string[] = [];
-  if (!isRecord(input)) {
+  const snapshot = snapshotProtocolValue(input, "ThreadRunManifest");
+  if (!isRecord(snapshot)) {
     throw new TweetThreadProtocolValidationError(["ThreadRunManifest must be an object."]);
   }
-  if (!Value.Check(ThreadRunManifestSchema, input)) {
+  if (!Value.Check(ThreadRunManifestSchema, snapshot)) {
     issues.push("ThreadRunManifest does not match ThreadRunManifestSchema.");
   }
-  issues.push(...collectTimestampIssues(input.createdAt, "ThreadRunManifest.createdAt"));
-  issues.push(...collectThreadBriefIssues(input.brief, "ThreadRunManifest.brief"));
-  if (!Array.isArray(input.candidates)) {
+  issues.push(...collectTimestampIssues(snapshot.createdAt, "ThreadRunManifest.createdAt"));
+  issues.push(...collectThreadBriefIssues(snapshot.brief, "ThreadRunManifest.brief"));
+  if (!Array.isArray(snapshot.candidates)) {
     issues.push("ThreadRunManifest.candidates must be an array.");
   } else {
-    for (const [index, candidate] of input.candidates.entries()) {
+    for (const [index, candidate] of snapshot.candidates.entries()) {
       issues.push(...collectThreadCandidateIssues(candidate, `ThreadRunManifest.candidates[${index}]`));
     }
   }
-  if (Array.isArray(input.scorecards)) {
-    for (const [index, scorecard] of input.scorecards.entries()) {
+  if (Array.isArray(snapshot.scorecards)) {
+    for (const [index, scorecard] of snapshot.scorecards.entries()) {
       if (isRecord(scorecard)) {
         issues.push(...collectTimestampIssues(scorecard.scoredAt, `ThreadRunManifest.scorecards[${index}].scoredAt`));
       }
     }
-    if (Array.isArray(input.validations)) {
-      for (const [index, validation] of input.validations.entries()) {
+    if (Array.isArray(snapshot.validations)) {
+      for (const [index, validation] of snapshot.validations.entries()) {
         if (isRecord(validation)) {
           issues.push(...collectTimestampIssues(
             validation.validatedAt,
@@ -928,8 +942,8 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       }
     }
   }
-  if (Array.isArray(input.approvals)) {
-    for (const [index, approval] of input.approvals.entries()) {
+  if (Array.isArray(snapshot.approvals)) {
+    for (const [index, approval] of snapshot.approvals.entries()) {
       if (isRecord(approval)) {
         issues.push(...collectTimestampIssues(approval.decidedAt, `ThreadRunManifest.approvals[${index}].decidedAt`));
         issues.push(...collectNonWhitespaceStringIssues(
@@ -939,15 +953,15 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       }
     }
   }
-  if (Array.isArray(input.publishReceipts)) {
-    for (const [index, receipt] of input.publishReceipts.entries()) {
+  if (Array.isArray(snapshot.publishReceipts)) {
+    for (const [index, receipt] of snapshot.publishReceipts.entries()) {
       if (!isRecord(receipt)) continue;
       issues.push(...collectTimestampIssues(receipt.attemptedAt, `ThreadRunManifest.publishReceipts[${index}].attemptedAt`));
       issues.push(...collectTimestampIssues(receipt.publishedAt, `ThreadRunManifest.publishReceipts[${index}].publishedAt`));
     }
   }
-  if (Array.isArray(input.observations)) {
-    for (const [index, observation] of input.observations.entries()) {
+  if (Array.isArray(snapshot.observations)) {
+    for (const [index, observation] of snapshot.observations.entries()) {
       if (!isRecord(observation)) continue;
       issues.push(...collectTimestampIssues(observation.retrievedAt, `ThreadRunManifest.observations[${index}].retrievedAt`));
       issues.push(...collectTimestampIssues(observation.exposedAt, `ThreadRunManifest.observations[${index}].exposedAt`));
@@ -955,7 +969,7 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
   }
   if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
 
-  const manifest = input as ThreadRunManifest;
+  const manifest = snapshot as ThreadRunManifest;
   collectStableIdIssues(manifest.candidates, "candidateId", "ThreadRunManifest.candidates", issues);
   collectStableIdIssues(manifest.validations, "validationId", "ThreadRunManifest.validations", issues);
   collectStableIdIssues(manifest.scorecards, "scorecardId", "ThreadRunManifest.scorecards", issues);
@@ -1023,6 +1037,23 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       "at-or-after",
     ));
     issues.push(...candidateReferencesFromValidation(validation, candidate, validationPath));
+    const recomputed = validateThreadCandidateCore(candidate);
+    if (!isDeepStrictEqual(
+      {
+        accepted: validation.accepted,
+        findings: validation.findings,
+        measurements: validation.measurements,
+      },
+      {
+        accepted: recomputed.accepted,
+        findings: recomputed.findings,
+        measurements: recomputed.measurements,
+      },
+    )) {
+      issues.push(
+        `${validationPath} accepted, findings, and measurements must exactly match recomputed deterministic validation evidence.`,
+      );
+    }
   }
 
   for (const [index, scorecard] of manifest.scorecards.entries()) {
@@ -1080,23 +1111,21 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
         `${receiptPath}.attemptedAt must be greater than or equal to ThreadRunManifest.candidates[${candidateIndex}].generatedAt.`,
       );
     }
-    if (publicationRequiresApproval(receipt)) {
-      const latestApproval = latestApprovalAtOrBefore(
-        manifest.approvals,
-        receipt.candidateSha256,
-        receipt.attemptedAt,
-      );
-      if (latestApproval?.decision !== "approved") {
-        issues.push(`${receiptPath} requires the candidate's latest approval at or before attemptedAt to be approved.`);
-      }
-      issues.push(...collectGateEvidenceIssues(
-        manifest,
-        receipt.candidateSha256,
-        receipt.attemptedAt,
-        receiptPath,
-        "publication",
-      ));
+    const latestApproval = latestApprovalAtOrBefore(
+      manifest.approvals,
+      receipt.candidateSha256,
+      receipt.attemptedAt,
+    );
+    if (latestApproval?.decision !== "approved") {
+      issues.push(`${receiptPath} requires the candidate's latest approval at or before attemptedAt to be approved.`);
     }
+    issues.push(...collectGateEvidenceIssues(
+      manifest,
+      receipt.candidateSha256,
+      receipt.attemptedAt,
+      receiptPath,
+      "publication",
+    ));
     if (hasKnownRemoteEvidence(receipt)) {
       const threadStatusId = receipt.threadUrl.slice(receipt.threadUrl.lastIndexOf("/") + 1);
       if (threadStatusId !== receipt.remotePostIds[0]) {

@@ -16,8 +16,10 @@ import {
   ThreadScorecardSchema,
   ThreadValidationRecordSchema,
 } from "../src/lib/tweet-thread-protocol.ts";
+import { BlindedThreadScorecardSchema } from "../src/lib/tweet-thread-blinding.ts";
 
 export const PROTOCOL_SCHEMA_FILES = new Map([
+  ["blinded-thread-scorecard.schema.json", BlindedThreadScorecardSchema],
   ["thread-brief.schema.json", ThreadBriefSchema],
   ["thread-candidate.schema.json", ThreadCandidateSchema],
   ["thread-validation-record.schema.json", ThreadValidationRecordSchema],

@@ -6567,10 +6567,16 @@ var require_dist2 = __commonJS({
 });
 
 // scripts/tweet-thread-validator-cli.ts
-import { readFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readSync
+} from "node:fs";
 
 // src/lib/tweet-thread-protocol.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 
 // node_modules/.pnpm/canonicalize@3.0.0/node_modules/canonicalize/lib/canonicalize.js
 function canonicalize(object, seen = /* @__PURE__ */ new Set()) {
@@ -8759,8 +8765,8 @@ function ScriptMapping(input) {
 function IsMatch(value) {
   return IsEqual(value.length, 2);
 }
-function Match2(input, ok, fail) {
-  return IsMatch(input) ? ok(input[0], input[1]) : fail();
+function Match2(input, ok, fail2) {
+  return IsMatch(input) ? ok(input[0], input[1]) : fail2();
 }
 
 // node_modules/.pnpm/typebox@1.3.8/node_modules/typebox/build/type/script/token/internal/take.mjs
@@ -14997,6 +15003,456 @@ __export(value_exports, {
   Repair: () => Repair
 });
 
+// src/lib/tweet-thread-validation-core.ts
+var import_twitter_text = __toESM(require_dist2(), 1);
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+var { extractUrls, parseTweet } = import_twitter_text.default;
+var X_POST_WEIGHTED_LENGTH_LIMIT = 280;
+var HASHTAG_RE = /#[\p{L}\p{N}_]+/gu;
+var STYLED_UNICODE_ALPHABET_RE = /[\u{1D400}-\u{1D7FF}\uFF21-\uFF3A\uFF41-\uFF5A]/u;
+var REPEATED_EMOJI_RE = new RegExp("(\\p{Extended_Pictographic})(?:\\uFE0E|\\uFE0F)?(?:\\1(?:\\uFE0E|\\uFE0F)?){3,}", "gu");
+var IMAGE_DEPENDENT_RE = /\b(?:(?:only\s+)?(?:shown|visible|available|provided)\s+in|see)\s+(?:the\s+)?(?:image|chart|screenshot|graphic|diagram)\b/u;
+var GENERIC_ALT_TEXT = /* @__PURE__ */ new Set(["image", "chart", "screenshot", "graphic", "photo", "diagram"]);
+var FINDING_MESSAGE_MAX_LENGTH = 2e3;
+var FINDING_MESSAGE_TRUNCATION_MARKER = "… [truncated]";
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function normalizeText(value) {
+  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-US");
+}
+function compareOrdinalStrings(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+var WORD_CONTINUATION_CHARACTER_CLASS = "\\p{L}\\p{N}\\p{M}\\p{Pc}\\u200C\\u200D";
+var WORD_CONTINUATION_CHARACTER_RE = new RegExp(`[${WORD_CONTINUATION_CHARACTER_CLASS}]`, "u");
+function containsBannedPhrase(text, phrase) {
+  const normalizedText = text.normalize("NFKC").toLocaleLowerCase("en-US");
+  const normalizedPhrase = phrase.normalize("NFKC").trim().toLocaleLowerCase("en-US");
+  if (normalizedPhrase.length === 0) return false;
+  const escaped = normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const firstCharacter = Array.from(normalizedPhrase)[0];
+  const lastCharacter = Array.from(normalizedPhrase).at(-1);
+  const startBoundary = firstCharacter && WORD_CONTINUATION_CHARACTER_RE.test(firstCharacter) ? `(?<![${WORD_CONTINUATION_CHARACTER_CLASS}])` : "";
+  const endBoundary = lastCharacter && WORD_CONTINUATION_CHARACTER_RE.test(lastCharacter) ? `(?![${WORD_CONTINUATION_CHARACTER_CLASS}])` : "";
+  return new RegExp(`${startBoundary}${escaped}${endBoundary}`, "u").test(normalizedText);
+}
+function findingId(parts) {
+  const hash = createHash("sha256").update(parts.join("\0"), "utf8").digest("hex").slice(0, 16);
+  return `finding-${hash}`;
+}
+function postReference(candidate, issue) {
+  const match = issue.match(/\.posts\[(\d+)\]/u);
+  if (!match || !Array.isArray(candidate.posts)) return void 0;
+  const post = candidate.posts[Number(match[1])];
+  return isRecord(post) && typeof post.postId === "string" ? post.postId : void 0;
+}
+function claimReference(issue) {
+  return issue.match(/claim "([^"]+)"/u)?.[1];
+}
+function boundFindingMessage(message) {
+  const characters = Array.from(message);
+  if (characters.length <= FINDING_MESSAGE_MAX_LENGTH) return message;
+  const markerLength = Array.from(FINDING_MESSAGE_TRUNCATION_MARKER).length;
+  return characters.slice(0, FINDING_MESSAGE_MAX_LENGTH - markerLength).join("").concat(FINDING_MESSAGE_TRUNCATION_MARKER);
+}
+function createDeterministicFinding(code, severity, message, references = {}, identityParts = [
+  code,
+  severity,
+  references.postId ?? "",
+  references.claimId ?? "",
+  message
+]) {
+  const finding = {
+    findingId: findingId(identityParts),
+    code,
+    severity,
+    message: boundFindingMessage(message)
+  };
+  if (references.postId && references.postId.length <= 32 && /^post-[1-9][0-9]*$/u.test(references.postId)) {
+    finding.postId = references.postId;
+  }
+  if (references.claimId && references.claimId.length <= 128 && /^claim-[a-z0-9-]+$/u.test(references.claimId)) {
+    finding.claimId = references.claimId;
+  }
+  return finding;
+}
+function addFinding(findings, code, severity, message, references = {}) {
+  const finding = createDeterministicFinding(code, severity, message, references);
+  findings.set(finding.findingId, finding);
+}
+function collectProtocolFindings(candidate, findings, issues) {
+  const record = isRecord(candidate) ? candidate : {};
+  for (const issue of issues) {
+    addFinding(findings, "protocol-invalid", "fail", issue, {
+      postId: postReference(record, issue),
+      claimId: claimReference(issue)
+    });
+  }
+}
+function countRepeatedEmojiRuns(text) {
+  return Array.from(text.matchAll(REPEATED_EMOJI_RE)).length;
+}
+function hasTextEquivalent(altText) {
+  if (typeof altText !== "string") return false;
+  const normalized = normalizeText(altText);
+  return normalized.length >= 12 && !GENERIC_ALT_TEXT.has(normalized);
+}
+function validateThreadCandidateCore(candidate, protocolIssues = [], brief) {
+  const findings = /* @__PURE__ */ new Map();
+  collectProtocolFindings(candidate, findings, protocolIssues);
+  const record = isRecord(candidate) ? candidate : {};
+  const candidateBrief = isRecord(record.brief) ? record.brief : null;
+  if (brief && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))) {
+    addFinding(
+      findings,
+      "brief-mismatch",
+      "fail",
+      "The supplied brief must exactly match the brief embedded in the candidate."
+    );
+  }
+  const constraints = candidateBrief && isRecord(candidateBrief.constraints) ? candidateBrief.constraints : null;
+  const posts = Array.isArray(record.posts) ? record.posts : [];
+  const evidence = Array.isArray(record.evidence) ? record.evidence : [];
+  const evidenceClaimIds = new Set(
+    evidence.flatMap(
+      (item) => isRecord(item) && typeof item.claimId === "string" ? [item.claimId] : []
+    )
+  );
+  const postedClaimIds = /* @__PURE__ */ new Set();
+  const measurements = [];
+  if (constraints && typeof constraints.minPosts === "number" && typeof constraints.maxPosts === "number" && (posts.length < constraints.minPosts || posts.length > constraints.maxPosts)) {
+    addFinding(
+      findings,
+      "post-count-out-of-range",
+      "fail",
+      `Candidate has ${posts.length} posts; the brief requires ${constraints.minPosts}..${constraints.maxPosts}.`
+    );
+  }
+  for (const [index, postValue] of posts.entries()) {
+    if (!isRecord(postValue)) continue;
+    const expectedPostId = `post-${index + 1}`;
+    const postId = typeof postValue.postId === "string" ? postValue.postId : expectedPostId;
+    if (postId !== expectedPostId) {
+      addFinding(
+        findings,
+        "post-id-sequence",
+        "fail",
+        `Post at index ${index} must use postId "${expectedPostId}", not "${postId}".`,
+        { postId }
+      );
+    }
+    if (Array.isArray(postValue.claimIds)) {
+      for (const claimId of postValue.claimIds) {
+        if (typeof claimId !== "string") continue;
+        postedClaimIds.add(claimId);
+        if (!evidenceClaimIds.has(claimId)) {
+          addFinding(
+            findings,
+            "claim-missing-evidence",
+            "fail",
+            `Claim "${claimId}" is used by ${postId} but has no evidence ledger entry.`,
+            { postId, claimId }
+          );
+        }
+      }
+    }
+    if (typeof postValue.text !== "string") continue;
+    const text = postValue.text;
+    const parsedTweet = parseTweet(text);
+    const weightedLength = parsedTweet.weightedLength;
+    const urls = extractUrls(text);
+    const hashtags = text.match(HASHTAG_RE) ?? [];
+    const normalizedHashtags = hashtags.map((tag) => normalizeText(tag));
+    const repeatedHashtagCount = normalizedHashtags.length - new Set(normalizedHashtags).size;
+    const repeatedEmojiRuns = countRepeatedEmojiRuns(text);
+    const tokenCount = Math.max(normalizeText(text).split(" ").filter(Boolean).length, 1);
+    const linkDensity = urls.length / tokenCount;
+    measurements.push({
+      postId,
+      weightedLength,
+      urlCount: urls.length,
+      hashtagCount: hashtags.length,
+      repeatedHashtagCount,
+      repeatedEmojiRuns,
+      linkDensity
+    });
+    if (weightedLength > X_POST_WEIGHTED_LENGTH_LIMIT) {
+      addFinding(
+        findings,
+        "post-weighted-length",
+        "fail",
+        `${postId} has official X weighted length ${weightedLength}; the preflight limit is ${X_POST_WEIGHTED_LENGTH_LIMIT}.`,
+        { postId }
+      );
+    }
+    if (!parsedTweet.valid && weightedLength <= X_POST_WEIGHTED_LENGTH_LIMIT) {
+      addFinding(
+        findings,
+        "post-twitter-text-invalid",
+        "fail",
+        `${postId} is not valid according to official twitter-text parsing.`,
+        { postId }
+      );
+    }
+    if (constraints && Array.isArray(constraints.bannedPhrases)) {
+      for (const phrase of constraints.bannedPhrases) {
+        if (typeof phrase !== "string") continue;
+        if (containsBannedPhrase(text, phrase)) {
+          addFinding(
+            findings,
+            "banned-phrase",
+            "fail",
+            `${postId} contains banned phrase "${phrase.trim()}".`,
+            { postId }
+          );
+        }
+      }
+    }
+    if (STYLED_UNICODE_ALPHABET_RE.test(text)) {
+      addFinding(
+        findings,
+        "styled-unicode-alphabet",
+        "fail",
+        `${postId} contains styled Unicode alphabet characters that are not reliably accessible.`,
+        { postId }
+      );
+    }
+    const media = Array.isArray(postValue.media) ? postValue.media : [];
+    if (constraints?.requireAltText === true) {
+      for (const mediaValue of media) {
+        if (!isRecord(mediaValue)) continue;
+        if (typeof mediaValue.altText !== "string" || mediaValue.altText.trim().length === 0) {
+          addFinding(
+            findings,
+            "missing-alt-text",
+            "fail",
+            `${postId} includes media without required alt text.`,
+            { postId }
+          );
+        }
+      }
+      if (IMAGE_DEPENDENT_RE.test(normalizeText(text)) && (media.length === 0 || media.some((item) => !isRecord(item) || !hasTextEquivalent(item.altText)))) {
+        addFinding(
+          findings,
+          "image-dependent-text",
+          "fail",
+          `${postId} makes the message depend on an image without a meaningful text equivalent.`,
+          { postId }
+        );
+      }
+    }
+    if (repeatedEmojiRuns > 0) {
+      addFinding(
+        findings,
+        "repeated-emoji",
+        "warn",
+        `${postId} contains ${repeatedEmojiRuns} run(s) of four or more repeated emoji.`,
+        { postId }
+      );
+    }
+    if (hashtags.length > 3) {
+      addFinding(
+        findings,
+        "hashtag-count",
+        "warn",
+        `${postId} contains ${hashtags.length} hashtags; more than three may reduce readability.`,
+        { postId }
+      );
+    }
+    if (repeatedHashtagCount > 0) {
+      addFinding(
+        findings,
+        "hashtag-repetition",
+        "warn",
+        `${postId} repeats ${repeatedHashtagCount} hashtag(s) after normalization.`,
+        { postId }
+      );
+    }
+    if (urls.length >= 2 || linkDensity >= 0.25) {
+      addFinding(
+        findings,
+        "link-density",
+        "warn",
+        `${postId} contains ${urls.length} links across ${tokenCount} text tokens.`,
+        { postId }
+      );
+    }
+  }
+  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
+    for (const claimId of constraints.requiredClaimIds) {
+      if (typeof claimId !== "string") continue;
+      if (!evidenceClaimIds.has(claimId)) {
+        addFinding(
+          findings,
+          "claim-missing-evidence",
+          "fail",
+          `Required claim "${claimId}" has no evidence ledger entry.`,
+          { claimId }
+        );
+      }
+      if (!postedClaimIds.has(claimId)) {
+        addFinding(
+          findings,
+          "required-claim-unresolved",
+          "fail",
+          `Required claim "${claimId}" does not appear in any post.`,
+          { claimId }
+        );
+      }
+    }
+  }
+  const orderedFindings = [...findings.values()].sort(
+    (left, right) => compareOrdinalStrings(left.findingId, right.findingId)
+  );
+  return {
+    candidateSha256: typeof record.candidateSha256 === "string" ? record.candidateSha256 : null,
+    accepted: !orderedFindings.some((finding) => finding.severity === "fail"),
+    findings: orderedFindings,
+    measurements
+  };
+}
+
+// src/lib/strict-json-snapshot.ts
+var MAX_DEPTH = 64;
+var MAX_NODE_PROPERTY_BUDGET = 1e6;
+var MAX_OBJECT_KEYS = 1024;
+var MAX_ARRAY_LENGTH = 1024;
+var StrictJsonSnapshotError = class extends Error {
+  constructor(message = "Value must be strict accessor-free plain JSON data.") {
+    super(message);
+    this.name = "StrictJsonSnapshotError";
+  }
+};
+function fail() {
+  throw new StrictJsonSnapshotError();
+}
+function freezeJson(value) {
+  if (Array.isArray(value)) {
+    for (const entry of value) freezeJson(entry);
+    return Object.freeze(value);
+  }
+  if (value !== null && typeof value === "object") {
+    for (const entry of Object.values(value)) {
+      freezeJson(entry);
+    }
+    return Object.freeze(value);
+  }
+  return value;
+}
+function createStrictJsonSnapshot(input) {
+  const ancestors = /* @__PURE__ */ new WeakSet();
+  let budget = 0;
+  const consume = (amount) => {
+    if (amount > MAX_NODE_PROPERTY_BUDGET - budget) fail();
+    budget += amount;
+  };
+  const visit = (value, depth) => {
+    if (depth > MAX_DEPTH) fail();
+    if (value === null || typeof value === "string" || typeof value === "boolean") {
+      consume(1);
+      return value;
+    }
+    if (typeof value === "number") {
+      consume(1);
+      if (!Number.isFinite(value)) fail();
+      return value;
+    }
+    if (typeof value !== "object" || ancestors.has(value)) fail();
+    let keys;
+    let isArray;
+    try {
+      keys = Reflect.ownKeys(value);
+      isArray = Array.isArray(value);
+    } catch {
+      fail();
+    }
+    if (keys.some((key) => typeof key === "symbol")) fail();
+    if (isArray) {
+      let lengthDescriptor;
+      try {
+        lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+      } catch {
+        fail();
+      }
+      if (lengthDescriptor === void 0 || !("value" in lengthDescriptor) || !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0 || lengthDescriptor.value > MAX_ARRAY_LENGTH) {
+        fail();
+      }
+      const length = lengthDescriptor.value;
+      if (keys.length !== length + 1) fail();
+      const keySet = new Set(keys);
+      if (!keySet.has("length")) fail();
+      for (let index = 0; index < length; index += 1) {
+        if (!keySet.has(String(index))) fail();
+      }
+      consume(keys.length + 1);
+      const descriptors2 = [];
+      for (let index = 0; index < length; index += 1) {
+        let descriptor;
+        try {
+          descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        } catch {
+          fail();
+        }
+        if (descriptor === void 0 || !("value" in descriptor) || descriptor.enumerable !== true) {
+          fail();
+        }
+        descriptors2.push(descriptor);
+      }
+      let prototype2;
+      try {
+        prototype2 = Object.getPrototypeOf(value);
+      } catch {
+        fail();
+      }
+      if (prototype2 !== Array.prototype) fail();
+      ancestors.add(value);
+      try {
+        return descriptors2.map((descriptor) => visit(descriptor.value, depth + 1));
+      } finally {
+        ancestors.delete(value);
+      }
+    }
+    if (keys.length > MAX_OBJECT_KEYS) fail();
+    if (keys.includes("toJSON")) fail();
+    consume(keys.length + 1);
+    const descriptors = /* @__PURE__ */ new Map();
+    for (const key of keys) {
+      let descriptor;
+      try {
+        descriptor = Object.getOwnPropertyDescriptor(value, key);
+      } catch {
+        fail();
+      }
+      if (descriptor === void 0 || !("value" in descriptor) || descriptor.enumerable !== true) {
+        fail();
+      }
+      descriptors.set(key, descriptor);
+    }
+    let prototype;
+    try {
+      prototype = Object.getPrototypeOf(value);
+    } catch {
+      fail();
+    }
+    if (prototype !== Object.prototype && prototype !== null) fail();
+    ancestors.add(value);
+    try {
+      const snapshot = {};
+      for (const [key, descriptor] of descriptors) {
+        snapshot[key] = visit(descriptor.value, depth + 1);
+      }
+      return snapshot;
+    } finally {
+      ancestors.delete(value);
+    }
+  };
+  return freezeJson(visit(input, 0));
+}
+
 // src/lib/tweet-thread-protocol.ts
 var TWEET_THREAD_PROTOCOL_VERSION = "opencoven.tweet-thread.v1";
 var RFC3339_UTC_MILLIS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -15006,8 +15462,6 @@ var POST_ID_RE = /^post-[1-9][0-9]*$/;
 var X_POST_ID_RE = /^[1-9][0-9]*$/;
 var X_THREAD_URL_RE = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[1-9][0-9]*$/;
 var HTTP_URL_RE = /^https?:\/\/[^\s/?#]+(?:[/?#]|$)/;
-var WORD_CONTINUATION_CHARACTER_CLASS = "\\p{L}\\p{N}\\p{M}\\p{Pc}\\u200C\\u200D";
-var WORD_CONTINUATION_CHARACTER_RE = new RegExp(`[${WORD_CONTINUATION_CHARACTER_CLASS}]`, "u");
 var THREAD_OBSERVATION_METRIC_NAMES = [
   "impressions",
   "likes",
@@ -15142,7 +15596,6 @@ var DeterministicFindingSchemaInternal = typebox_exports.Object({
   postId: typebox_exports.Optional(postIdSchema()),
   claimId: typebox_exports.Optional(claimIdSchema())
 }, { additionalProperties: false });
-var DeterministicFindingSchema = DeterministicFindingSchemaInternal;
 var ThreadPostMeasurementSchema = typebox_exports.Object({
   postId: postIdSchema(),
   weightedLength: typebox_exports.Integer({ minimum: 0 }),
@@ -15183,12 +15636,18 @@ var ThreadScorecardDimensionsSchema = typebox_exports.Object({
   coherence: DimensionScoreSchemaInternal("coherence"),
   engagement: DimensionScoreSchemaInternal("engagement")
 }, { additionalProperties: false });
+var ThreadScorecardBlindingProvenanceSchema = typebox_exports.Object({
+  trialId: typebox_exports.String({ minLength: 7, maxLength: 128, pattern: "^trial-[a-z0-9-]+$" }),
+  publicTrialSha256: sha256Schema(),
+  armToken: typebox_exports.String({ minLength: 68, maxLength: 68, pattern: "^arm-[a-f0-9]{64}$" })
+}, { additionalProperties: false });
 var ThreadScorecardSchema = typebox_exports.Object({
   protocolVersion: protocolVersionLiteral(),
   scorecardId: stableId("scorecard"),
   candidateSha256: sha256Schema(),
   scoredAt: timestampString(),
-  dimensions: ThreadScorecardDimensionsSchema
+  dimensions: ThreadScorecardDimensionsSchema,
+  blinding: typebox_exports.Optional(ThreadScorecardBlindingProvenanceSchema)
 }, { additionalProperties: false });
 var ApprovalRecordSchema = typebox_exports.Object({
   protocolVersion: protocolVersionLiteral(),
@@ -15294,35 +15753,44 @@ var ThreadRunManifestSchema = typebox_exports.Object({
 }, { additionalProperties: false });
 var TweetThreadProtocolValidationError = class extends Error {
   constructor(issues) {
-    super("Tweet thread protocol validation failed");
+    super(`Tweet thread protocol validation failed: ${issues.join("; ")}`);
     this.name = "TweetThreadProtocolValidationError";
     this.issues = issues;
   }
 };
-function isRecord(value) {
+function isRecord2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-function compareOrdinalStrings(left, right) {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+function snapshotProtocolValue(value, path) {
+  try {
+    return createStrictJsonSnapshot(value);
+  } catch (error) {
+    if (error instanceof StrictJsonSnapshotError) {
+      throw new TweetThreadProtocolValidationError([
+        `${path} must be strict accessor-free plain JSON without custom prototypes, toJSON hooks, symbols, sparse arrays, cycles, unsupported primitives, or resource-budget excess.`
+      ]);
+    }
+    throw error;
+  }
 }
-function serializeCanonicalThreadCandidate(candidate) {
+function serializeCanonicalThreadCandidateSnapshot(candidate) {
   const content = { ...candidate };
   delete content.candidateSha256;
   if (!value_exports.Check(JCS_JSON_VALUE_SCHEMA, content)) {
-    throw new TypeError(
+    throw new TweetThreadProtocolValidationError([
       "Thread candidate content must contain only finite JSON values and well-formed Unicode before JCS serialization."
-    );
+    ]);
   }
   const serialized = canonicalize(content);
   if (serialized === void 0) {
-    throw new TypeError("Thread candidate content could not be serialized as RFC 8785 JCS.");
+    throw new TweetThreadProtocolValidationError([
+      "Thread candidate content could not be serialized as RFC 8785 JCS."
+    ]);
   }
   return serialized;
 }
-function computeThreadCandidateSha256(candidate) {
-  return createHash("sha256").update(serializeCanonicalThreadCandidate(candidate), "utf8").digest("hex");
+function computeThreadCandidateSnapshotSha256(candidate) {
+  return createHash2("sha256").update(serializeCanonicalThreadCandidateSnapshot(candidate), "utf8").digest("hex");
 }
 function trimIfString(value) {
   return typeof value === "string" ? value.trim() : value;
@@ -15339,22 +15807,8 @@ function dedupeTrimmedList(value) {
   }
   return out;
 }
-function normalizeBannedPhraseText(value) {
-  return value.normalize("NFKC").toLowerCase().trim().replace(/\s+/gu, " ");
-}
-function containsBannedPhrase(text, phrase) {
-  const normalizedText = normalizeBannedPhraseText(text);
-  const normalizedPhrase = normalizeBannedPhraseText(phrase);
-  if (normalizedPhrase.length === 0) return false;
-  const [firstCharacter] = normalizedPhrase;
-  const lastCharacter = Array.from(normalizedPhrase).at(-1);
-  const escapedPhrase = normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const startBoundary = firstCharacter && WORD_CONTINUATION_CHARACTER_RE.test(firstCharacter) ? `(?<![${WORD_CONTINUATION_CHARACTER_CLASS}])` : "";
-  const endBoundary = lastCharacter && WORD_CONTINUATION_CHARACTER_RE.test(lastCharacter) ? `(?![${WORD_CONTINUATION_CHARACTER_CLASS}])` : "";
-  return new RegExp(`${startBoundary}${escapedPhrase}${endBoundary}`, "u").test(normalizedText);
-}
 function collectObjectiveWeightIssues(value, path) {
-  if (!isRecord(value)) return [`${path} must be an object with exact objective weight keys.`];
+  if (!isRecord2(value)) return [`${path} must be an object with exact objective weight keys.`];
   const issues = [];
   let hasPositiveWeight = false;
   for (const key of OBJECTIVE_WEIGHT_KEYS) {
@@ -15372,12 +15826,12 @@ function collectObjectiveWeightIssues(value, path) {
 }
 function collectThreadBriefIssues(value, path = "ThreadBrief") {
   const issues = [];
-  if (!isRecord(value)) return [`${path} must be an object.`];
+  if (!isRecord2(value)) return [`${path} must be an object.`];
   issues.push(...collectNonWhitespaceStringIssues(value.topic, `${path}.topic`));
   issues.push(...collectNonWhitespaceStringIssues(value.audience, `${path}.audience`));
   issues.push(...collectObjectiveWeightIssues(value.objectiveWeights, `${path}.objectiveWeights`));
   const constraints = value.constraints;
-  if (!isRecord(constraints)) {
+  if (!isRecord2(constraints)) {
     issues.push(`${path}.constraints must be an object.`);
   } else {
     if (typeof constraints.minPosts === "number" && typeof constraints.maxPosts === "number" && Number.isInteger(constraints.minPosts) && Number.isInteger(constraints.maxPosts) && constraints.minPosts > constraints.maxPosts) {
@@ -15422,9 +15876,9 @@ function pushDuplicateIssue(seen, next, path, issues) {
   }
   seen.add(next);
 }
-function collectThreadCandidateIssues(value, path = "ThreadCandidate") {
+function collectThreadCandidateIssues(value, path = "ThreadCandidate", includeDeterministicFailures = false) {
   const issues = [];
-  if (!isRecord(value)) return [`${path} must be an object.`];
+  if (!isRecord2(value)) return [`${path} must be an object.`];
   issues.push(...collectThreadBriefIssues(value.brief, `${path}.brief`));
   const matchesCandidateSchema = value_exports.Check(ThreadCandidateSchema, value);
   if (!matchesCandidateSchema) {
@@ -15433,7 +15887,7 @@ function collectThreadCandidateIssues(value, path = "ThreadCandidate") {
   issues.push(...collectTimestampIssues(value.generatedAt, `${path}.generatedAt`));
   if (matchesCandidateSchema && typeof value.candidateSha256 === "string" && SHA256_HEX.test(value.candidateSha256)) {
     try {
-      const computedSha256 = computeThreadCandidateSha256(value);
+      const computedSha256 = computeThreadCandidateSnapshotSha256(value);
       if (computedSha256 !== value.candidateSha256) {
         issues.push(
           `${path}.candidateSha256 must equal the SHA-256 of canonical candidate content; expected "${computedSha256}".`
@@ -15443,15 +15897,15 @@ function collectThreadCandidateIssues(value, path = "ThreadCandidate") {
       issues.push(`${path} must be serializable as canonical JSON before candidateSha256 can be verified.`);
     }
   }
-  if (!isRecord(value.brief) || !Array.isArray(value.evidence) || !Array.isArray(value.posts)) return issues;
-  if (isRecord(value.voiceProfile)) {
+  if (!isRecord2(value.brief) || !Array.isArray(value.evidence) || !Array.isArray(value.posts)) return issues;
+  if (isRecord2(value.voiceProfile)) {
     issues.push(...collectNonWhitespaceStringIssues(value.voiceProfile.displayName, `${path}.voiceProfile.displayName`));
     issues.push(...collectNonWhitespaceStringIssues(value.voiceProfile.tone, `${path}.voiceProfile.tone`));
   }
   const evidenceClaimIds = /* @__PURE__ */ new Set();
   const evidenceIds = /* @__PURE__ */ new Set();
   for (const [index, item] of value.evidence.entries()) {
-    if (!isRecord(item)) continue;
+    if (!isRecord2(item)) continue;
     issues.push(...collectTimestampIssues(item.retrievedAt, `${path}.evidence[${index}].retrievedAt`));
     issues.push(...collectTimestampOrderIssues(
       item.retrievedAt,
@@ -15469,67 +15923,42 @@ function collectThreadCandidateIssues(value, path = "ThreadCandidate") {
       pushDuplicateIssue(evidenceClaimIds, item.claimId, `${path}.evidence[${index}].claimId`, issues);
     }
   }
-  const constraints = isRecord(value.brief.constraints) ? value.brief.constraints : null;
-  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
-    for (const claimId of constraints.requiredClaimIds) {
-      if (typeof claimId === "string" && !evidenceClaimIds.has(claimId)) {
-        issues.push(`${path}.brief.constraints.requiredClaimIds references missing evidence ledger claim "${claimId}".`);
-      }
-    }
-  }
   const postIds = /* @__PURE__ */ new Set();
-  const postedClaimIds = /* @__PURE__ */ new Set();
   for (const [index, post] of value.posts.entries()) {
-    if (!isRecord(post)) continue;
+    if (!isRecord2(post)) continue;
     issues.push(...collectNonWhitespaceStringIssues(post.text, `${path}.posts[${index}].text`));
     if (typeof post.postId === "string") {
       pushDuplicateIssue(postIds, post.postId, `${path}.posts[${index}].postId`, issues);
     }
-    if (Array.isArray(post.claimIds)) {
-      for (const claimId of post.claimIds) {
-        if (typeof claimId === "string") postedClaimIds.add(claimId);
-        if (typeof claimId === "string" && !evidenceClaimIds.has(claimId)) {
-          issues.push(`${path}.posts[${index}].claimIds references missing evidence ledger claim "${claimId}".`);
-        }
-      }
-    }
-    if (typeof post.text === "string" && constraints && Array.isArray(constraints.bannedPhrases)) {
-      for (const phrase of constraints.bannedPhrases) {
-        if (typeof phrase === "string" && containsBannedPhrase(post.text, phrase)) {
-          issues.push(`${path}.posts[${index}].text contains banned phrase "${phrase.trim()}".`);
-        }
-      }
-    }
-    if (constraints?.requireAltText && Array.isArray(post.media)) {
+    if (Array.isArray(post.media)) {
       for (const [mediaIndex, media] of post.media.entries()) {
-        if (!isRecord(media)) continue;
+        if (!isRecord2(media)) continue;
         issues.push(...collectNonWhitespaceStringIssues(
           media.description,
           `${path}.posts[${index}].media[${mediaIndex}].description`
         ));
-        const altText = media.altText;
-        if (typeof altText !== "string" || altText.trim().length === 0) {
-          issues.push(`${path}.posts[${index}].media[${mediaIndex}] must include non-empty alt text when requireAltText is true.`);
-        }
       }
     }
   }
-  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
-    for (const claimId of constraints.requiredClaimIds) {
-      if (typeof claimId === "string" && !postedClaimIds.has(claimId)) {
-        issues.push(`${path}.brief.constraints.requiredClaimIds claim "${claimId}" must appear in at least one post.`);
-      }
-    }
-  }
-  if (constraints && typeof constraints.minPosts === "number" && typeof constraints.maxPosts === "number" && Number.isInteger(constraints.minPosts) && Number.isInteger(constraints.maxPosts)) {
-    if (value.posts.length < constraints.minPosts || value.posts.length > constraints.maxPosts) {
-      issues.push(`${path}.posts length must stay within brief constraints (${constraints.minPosts}..${constraints.maxPosts}).`);
+  if (includeDeterministicFailures) {
+    const postIndexById = new Map(
+      value.posts.flatMap(
+        (post, index) => isRecord2(post) && typeof post.postId === "string" ? [[post.postId, index]] : []
+      )
+    );
+    for (const finding of validateThreadCandidateCore(value).findings) {
+      if (finding.severity !== "fail") continue;
+      const postIndex = finding.postId === void 0 ? void 0 : postIndexById.get(finding.postId);
+      const findingPath = postIndex === void 0 ? path : `${path}.posts[${postIndex}]`;
+      issues.push(
+        `${findingPath} deterministic validation failed (${finding.code}): ${finding.message}`
+      );
     }
   }
   return issues;
 }
 function normalizeThreadBrief(input) {
-  if (!isRecord(input)) {
+  if (!isRecord2(input)) {
     throw new TweetThreadProtocolValidationError(["ThreadBrief must be an object."]);
   }
   const normalized = { ...input };
@@ -15538,10 +15967,10 @@ function normalizeThreadBrief(input) {
   normalized.topic = trimIfString(input.topic);
   normalized.audience = trimIfString(input.audience);
   if (Object.hasOwn(input, "notes")) normalized.notes = trimIfString(input.notes);
-  if (isRecord(input.objectiveWeights)) {
+  if (isRecord2(input.objectiveWeights)) {
     normalized.objectiveWeights = { ...input.objectiveWeights };
   }
-  if (isRecord(input.constraints)) {
+  if (isRecord2(input.constraints)) {
     normalized.constraints = { ...input.constraints };
     normalized.constraints.requiredClaimIds = dedupeTrimmedList(input.constraints.requiredClaimIds);
     normalized.constraints.bannedPhrases = dedupeTrimmedList(input.constraints.bannedPhrases);
@@ -15550,320 +15979,32 @@ function normalizeThreadBrief(input) {
   if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
   return normalized;
 }
-function assertValidThreadCandidate(input) {
-  const issues = collectThreadCandidateIssues(input);
-  if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
-  return input;
+function inspectThreadCandidateForValidation(input) {
+  const snapshot = snapshotProtocolValue(input, "ThreadCandidate");
+  return {
+    snapshot,
+    issues: collectThreadCandidateIssues(snapshot)
+  };
 }
 
 // src/lib/tweet-thread-validation.ts
-var import_twitter_text = __toESM(require_dist2(), 1);
-import { createHash as createHash2 } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
-var { extractUrls, parseTweet } = import_twitter_text.default;
-var X_POST_WEIGHTED_LENGTH_LIMIT = 280;
-var HASHTAG_RE = /#[\p{L}\p{N}_]+/gu;
-var STYLED_UNICODE_ALPHABET_RE = /[\u{1D400}-\u{1D7FF}\uFF21-\uFF3A\uFF41-\uFF5A]/u;
-var REPEATED_EMOJI_RE = new RegExp("(\\p{Extended_Pictographic})(?:\\uFE0E|\\uFE0F)?(?:\\1(?:\\uFE0E|\\uFE0F)?){3,}", "gu");
-var IMAGE_DEPENDENT_RE = /\b(?:(?:only\s+)?(?:shown|visible|available|provided)\s+in|see)\s+(?:the\s+)?(?:image|chart|screenshot|graphic|diagram)\b/u;
-var GENERIC_ALT_TEXT = /* @__PURE__ */ new Set(["image", "chart", "screenshot", "graphic", "photo", "diagram"]);
-var FINDING_MESSAGE_MAX_LENGTH = 2e3;
-var FINDING_MESSAGE_TRUNCATION_MARKER = "… [truncated]";
-function isRecord2(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-function normalizeText(value) {
-  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-US");
-}
-function findingId(parts) {
-  const hash = createHash2("sha256").update(parts.join("\0"), "utf8").digest("hex").slice(0, 16);
-  return `finding-${hash}`;
-}
-function postReference(candidate, issue) {
-  const match = issue.match(/\.posts\[(\d+)\]/u);
-  if (!match || !Array.isArray(candidate.posts)) return void 0;
-  const post = candidate.posts[Number(match[1])];
-  return isRecord2(post) && typeof post.postId === "string" ? post.postId : void 0;
-}
-function claimReference(issue) {
-  return issue.match(/claim "([^"]+)"/u)?.[1];
-}
-function boundFindingMessage(message) {
-  const characters = Array.from(message);
-  if (characters.length <= FINDING_MESSAGE_MAX_LENGTH) return message;
-  const markerLength = Array.from(FINDING_MESSAGE_TRUNCATION_MARKER).length;
-  return characters.slice(0, FINDING_MESSAGE_MAX_LENGTH - markerLength).join("").concat(FINDING_MESSAGE_TRUNCATION_MARKER);
-}
-function createDeterministicFinding(code, severity, message, references = {}, identityParts = [
-  code,
-  severity,
-  references.postId ?? "",
-  references.claimId ?? "",
-  message
-]) {
-  let finding = {
-    findingId: findingId(identityParts),
-    code,
-    severity,
-    message: boundFindingMessage(message)
-  };
-  if (references.postId) {
-    const withPostId = { ...finding, postId: references.postId };
-    if (value_exports.Check(DeterministicFindingSchema, withPostId)) {
-      finding = withPostId;
-    }
-  }
-  if (references.claimId) {
-    const withClaimId = { ...finding, claimId: references.claimId };
-    if (value_exports.Check(DeterministicFindingSchema, withClaimId)) {
-      finding = withClaimId;
-    }
-  }
-  if (!value_exports.Check(DeterministicFindingSchema, finding)) {
-    throw new TypeError(`Validator constructed an invalid hard failure for code "${code}".`);
-  }
-  return finding;
-}
-function addFinding(findings, code, severity, message, references = {}) {
-  const finding = createDeterministicFinding(code, severity, message, references);
-  findings.set(finding.findingId, finding);
-}
-function collectProtocolFindings(candidate, findings) {
-  try {
-    assertValidThreadCandidate(candidate);
-    return true;
-  } catch (error) {
-    const issues = error instanceof TweetThreadProtocolValidationError ? error.issues : ["ThreadCandidate validation failed unexpectedly."];
-    const record = isRecord2(candidate) ? candidate : {};
-    for (const issue of issues) {
-      addFinding(findings, "protocol-invalid", "fail", issue, {
-        postId: postReference(record, issue),
-        claimId: claimReference(issue)
-      });
-    }
-    return false;
-  }
-}
-function countRepeatedEmojiRuns(text) {
-  return Array.from(text.matchAll(REPEATED_EMOJI_RE)).length;
-}
-function hasTextEquivalent(altText) {
-  if (typeof altText !== "string") return false;
-  const normalized = normalizeText(altText);
-  return normalized.length >= 12 && !GENERIC_ALT_TEXT.has(normalized);
-}
+import { isDeepStrictEqual as isDeepStrictEqual2 } from "node:util";
 function validateThreadCandidate(candidate, brief) {
-  const findings = /* @__PURE__ */ new Map();
-  collectProtocolFindings(candidate, findings);
-  const record = isRecord2(candidate) ? candidate : {};
-  const candidateBrief = isRecord2(record.brief) ? record.brief : null;
-  if (brief && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))) {
-    addFinding(
-      findings,
-      "brief-mismatch",
-      "fail",
-      "The supplied brief must exactly match the brief embedded in the candidate."
-    );
-  }
-  const constraints = candidateBrief && isRecord2(candidateBrief.constraints) ? candidateBrief.constraints : null;
-  const posts = Array.isArray(record.posts) ? record.posts : [];
-  const evidence = Array.isArray(record.evidence) ? record.evidence : [];
-  const evidenceClaimIds = new Set(
-    evidence.flatMap(
-      (item) => isRecord2(item) && typeof item.claimId === "string" ? [item.claimId] : []
-    )
-  );
-  const postedClaimIds = /* @__PURE__ */ new Set();
-  const measurements = [];
-  if (constraints && typeof constraints.minPosts === "number" && typeof constraints.maxPosts === "number" && (posts.length < constraints.minPosts || posts.length > constraints.maxPosts)) {
-    addFinding(
-      findings,
-      "post-count-out-of-range",
-      "fail",
-      `Candidate has ${posts.length} posts; the brief requires ${constraints.minPosts}..${constraints.maxPosts}.`
-    );
-  }
-  for (const [index, postValue] of posts.entries()) {
-    if (!isRecord2(postValue)) continue;
-    const expectedPostId = `post-${index + 1}`;
-    const postId = typeof postValue.postId === "string" ? postValue.postId : expectedPostId;
-    if (postId !== expectedPostId) {
-      addFinding(
-        findings,
-        "post-id-sequence",
-        "fail",
-        `Post at index ${index} must use postId "${expectedPostId}", not "${postId}".`,
-        { postId }
-      );
-    }
-    if (Array.isArray(postValue.claimIds)) {
-      for (const claimId of postValue.claimIds) {
-        if (typeof claimId !== "string") continue;
-        postedClaimIds.add(claimId);
-        if (!evidenceClaimIds.has(claimId)) {
-          addFinding(
-            findings,
-            "claim-missing-evidence",
-            "fail",
-            `Claim "${claimId}" is used by ${postId} but has no evidence ledger entry.`,
-            { postId, claimId }
-          );
-        }
-      }
-    }
-    if (typeof postValue.text !== "string") continue;
-    const text = postValue.text;
-    const parsedTweet = parseTweet(text);
-    const weightedLength = parsedTweet.weightedLength;
-    const urls = extractUrls(text);
-    const hashtags = text.match(HASHTAG_RE) ?? [];
-    const normalizedHashtags = hashtags.map((tag) => normalizeText(tag));
-    const repeatedHashtagCount = normalizedHashtags.length - new Set(normalizedHashtags).size;
-    const repeatedEmojiRuns = countRepeatedEmojiRuns(text);
-    const tokenCount = Math.max(normalizeText(text).split(" ").filter(Boolean).length, 1);
-    const linkDensity = urls.length / tokenCount;
-    measurements.push({
-      postId,
-      weightedLength,
-      urlCount: urls.length,
-      hashtagCount: hashtags.length,
-      repeatedHashtagCount,
-      repeatedEmojiRuns,
-      linkDensity
-    });
-    if (weightedLength > X_POST_WEIGHTED_LENGTH_LIMIT) {
-      addFinding(
-        findings,
-        "post-weighted-length",
-        "fail",
-        `${postId} has official X weighted length ${weightedLength}; the preflight limit is ${X_POST_WEIGHTED_LENGTH_LIMIT}.`,
-        { postId }
-      );
-    }
-    if (!parsedTweet.valid && weightedLength <= X_POST_WEIGHTED_LENGTH_LIMIT) {
-      addFinding(
-        findings,
-        "post-twitter-text-invalid",
-        "fail",
-        `${postId} is not valid according to official twitter-text parsing.`,
-        { postId }
-      );
-    }
-    if (constraints && Array.isArray(constraints.bannedPhrases)) {
-      for (const phrase of constraints.bannedPhrases) {
-        if (typeof phrase !== "string") continue;
-        if (containsBannedPhrase(text, phrase)) {
-          addFinding(
-            findings,
-            "banned-phrase",
-            "fail",
-            `${postId} contains banned phrase "${phrase.trim()}".`,
-            { postId }
-          );
-        }
-      }
-    }
-    if (STYLED_UNICODE_ALPHABET_RE.test(text)) {
-      addFinding(
-        findings,
-        "styled-unicode-alphabet",
-        "fail",
-        `${postId} contains styled Unicode alphabet characters that are not reliably accessible.`,
-        { postId }
-      );
-    }
-    const media = Array.isArray(postValue.media) ? postValue.media : [];
-    if (constraints?.requireAltText === true) {
-      for (const mediaValue of media) {
-        if (!isRecord2(mediaValue)) continue;
-        if (typeof mediaValue.altText !== "string" || mediaValue.altText.trim().length === 0) {
-          addFinding(
-            findings,
-            "missing-alt-text",
-            "fail",
-            `${postId} includes media without required alt text.`,
-            { postId }
-          );
-        }
-      }
-      if (IMAGE_DEPENDENT_RE.test(normalizeText(text)) && (media.length === 0 || media.some((item) => !isRecord2(item) || !hasTextEquivalent(item.altText)))) {
-        addFinding(
-          findings,
-          "image-dependent-text",
-          "fail",
-          `${postId} makes the message depend on an image without a meaningful text equivalent.`,
-          { postId }
-        );
-      }
-    }
-    if (repeatedEmojiRuns > 0) {
-      addFinding(
-        findings,
-        "repeated-emoji",
-        "warn",
-        `${postId} contains ${repeatedEmojiRuns} run(s) of four or more repeated emoji.`,
-        { postId }
-      );
-    }
-    if (hashtags.length > 3) {
-      addFinding(
-        findings,
-        "hashtag-count",
-        "warn",
-        `${postId} contains ${hashtags.length} hashtags; more than three may reduce readability.`,
-        { postId }
-      );
-    }
-    if (repeatedHashtagCount > 0) {
-      addFinding(
-        findings,
-        "hashtag-repetition",
-        "warn",
-        `${postId} repeats ${repeatedHashtagCount} hashtag(s) after normalization.`,
-        { postId }
-      );
-    }
-    if (urls.length >= 2 || linkDensity >= 0.25) {
-      addFinding(
-        findings,
-        "link-density",
-        "warn",
-        `${postId} contains ${urls.length} links across ${tokenCount} text tokens.`,
-        { postId }
-      );
-    }
-  }
-  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
-    for (const claimId of constraints.requiredClaimIds) {
-      if (typeof claimId !== "string") continue;
-      if (!evidenceClaimIds.has(claimId)) {
-        addFinding(
-          findings,
-          "claim-missing-evidence",
-          "fail",
-          `Required claim "${claimId}" has no evidence ledger entry.`,
-          { claimId }
-        );
-      }
-      if (!postedClaimIds.has(claimId)) {
-        addFinding(
-          findings,
-          "required-claim-unresolved",
-          "fail",
-          `Required claim "${claimId}" does not appear in any post.`,
-          { claimId }
-        );
-      }
-    }
-  }
-  const orderedFindings = [...findings.values()].sort(
-    (left, right) => compareOrdinalStrings(left.findingId, right.findingId)
+  const inspected = inspectThreadCandidateForValidation(candidate);
+  const briefMismatch = brief !== void 0 && (!inspected.snapshot || typeof inspected.snapshot !== "object" || !isDeepStrictEqual2(
+    inspected.snapshot.brief,
+    brief
+  ));
+  const result = validateThreadCandidateCore(
+    inspected.snapshot,
+    inspected.issues,
+    briefMismatch ? brief : void 0
   );
   return {
-    candidateSha256: typeof record.candidateSha256 === "string" ? record.candidateSha256 : null,
-    accepted: !orderedFindings.some((finding) => finding.severity === "fail"),
-    findings: orderedFindings,
-    measurements
+    candidateSha256: result.candidateSha256,
+    accepted: result.accepted,
+    findings: result.findings,
+    measurements: result.measurements
   };
 }
 
@@ -15878,19 +16019,47 @@ var CliContractError = class extends Error {
   }
 };
 function readJsonFile(label, filename) {
-  let bytes;
+  let handle;
   try {
-    bytes = readFileSync(filename);
+    handle = openSync(filename, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch {
     throw new CliContractError(`${label} file could not be read.`);
   }
-  if (bytes.byteLength > MAX_INPUT_BYTES) {
-    throw new CliContractError(`${label} file exceeds the portable size limit.`);
-  }
   try {
-    return JSON.parse(bytes.toString("utf8"));
-  } catch {
-    throw new CliContractError(`${label} JSON could not be parsed.`);
+    let stat;
+    try {
+      stat = fstatSync(handle);
+    } catch {
+      throw new CliContractError(`${label} file could not be read.`);
+    }
+    if (!stat.isFile()) {
+      throw new CliContractError(`${label} file must be a regular file.`);
+    }
+    if (stat.size > MAX_INPUT_BYTES) {
+      throw new CliContractError(`${label} file exceeds the portable size limit.`);
+    }
+    const bounded = Buffer.allocUnsafe(MAX_INPUT_BYTES + 1);
+    let total = 0;
+    while (total <= MAX_INPUT_BYTES) {
+      let read;
+      try {
+        read = readSync(handle, bounded, total, bounded.byteLength - total, null);
+      } catch {
+        throw new CliContractError(`${label} file could not be read.`);
+      }
+      if (read === 0) break;
+      total += read;
+    }
+    if (total > MAX_INPUT_BYTES) {
+      throw new CliContractError(`${label} file exceeds the portable size limit.`);
+    }
+    try {
+      return JSON.parse(bounded.subarray(0, total).toString("utf8"));
+    } catch {
+      throw new CliContractError(`${label} JSON could not be parsed.`);
+    }
+  } finally {
+    closeSync(handle);
   }
 }
 function readBrief(filename) {

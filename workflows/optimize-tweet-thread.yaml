@@ -35,14 +35,14 @@ steps:
     kind: skill
     name: Candidate tournament
     uses: tweet-thread-lab
-    summary: Materialize three strategy-declared thread candidates and their canonical hashes.
+    summary: Materialize three strategy-declared thread candidates and their canonical hashes, then resolve the absolute installed validator path relative to the loaded `SKILL.md` and record it in tooling.json.
     requires:
       - evidence
   - id: validate
     kind: tool
     name: Deterministic validation
     uses: cave.exec
-    summary: Run `node marketplace/plugins/tweet-thread-lab/bin/tweet-thread-validate.mjs validate candidates/<candidate-id>.json brief.json`; save strict JSON stdout to deterministic/<candidate-id>.json; exit 1 blocks the candidate and exit 2 logs a contract error before any cave.output materialization.
+    summary: Read tooling.json, validate its validator absolute path, and run `node "<validatorPath>" validate candidates/<candidate-id>.json brief.json`; save strict JSON stdout to deterministic/<candidate-id>.json; exit 1 blocks the candidate and exit 2 logs a contract error before any cave.output materialization.
     requires:
       - candidates
   - id: judge

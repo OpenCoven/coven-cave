@@ -25,6 +25,7 @@ import {
   serializeCanonicalThreadCandidate,
 } from "./tweet-thread-protocol.ts";
 import type { DeterministicFinding, PublishReceipt } from "./tweet-thread-protocol.ts";
+import { validateThreadCandidate } from "./tweet-thread-validation.ts";
 
 const TIMESTAMP = "2026-08-14T12:00:00.000Z";
 const OTHER_TIMESTAMP = "2026-08-14T12:05:00.000Z";
@@ -266,7 +267,7 @@ function validValidationRecord(candidateSha256 = SHA_A) {
     measurements: [
       {
         postId: "post-1",
-        weightedLength: 73,
+        weightedLength: 72,
         urlCount: 0,
         hashtagCount: 0,
         repeatedHashtagCount: 0,
@@ -275,7 +276,7 @@ function validValidationRecord(candidateSha256 = SHA_A) {
       },
       {
         postId: "post-2",
-        weightedLength: 67,
+        weightedLength: 64,
         urlCount: 0,
         hashtagCount: 0,
         repeatedHashtagCount: 0,
@@ -830,6 +831,55 @@ assert.equal(
   KNOWN_CANDIDATE_SHA256,
   "candidate hashing is independent of object property insertion order while preserving array order",
 );
+
+for (const operation of [
+  (candidate: unknown) => serializeCanonicalThreadCandidate(candidate as ReturnType<typeof validCandidate>),
+  (candidate: unknown) => computeThreadCandidateSha256(candidate as ReturnType<typeof validCandidate>),
+  (candidate: unknown) => assertValidThreadCandidate(candidate),
+  (candidate: unknown) => validateThreadCandidate(candidate),
+]) {
+  let getterReads = 0;
+  const candidate = structuredClone(validCandidate());
+  Object.defineProperty(candidate.posts[0]!, "text", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      getterReads += 1;
+      candidate.posts[1]!.text = "Mutated by an unsafe getter.";
+      return validPosts()[0]!.text;
+    },
+  });
+  assert.throws(
+    () => operation(candidate),
+    TweetThreadProtocolValidationError,
+    "candidate boundaries reject accessors with a typed protocol error",
+  );
+  assert.equal(getterReads, 0, "candidate boundaries never invoke accessors");
+}
+
+for (const attack of [
+  () => Object.assign(structuredClone(validCandidate()), {
+    toJSON() {
+      return validCandidate();
+    },
+  }),
+  () => {
+    const prototype = {
+      toJSON() {
+        return validCandidate();
+      },
+    };
+    return Object.assign(Object.create(prototype), structuredClone(validCandidate()));
+  },
+  () => Object.assign(Object.create({ inherited: true }), structuredClone(validCandidate())),
+]) {
+  assert.throws(
+    () => computeThreadCandidateSha256(attack()),
+    TweetThreadProtocolValidationError,
+    "candidate hashing rejects own or inherited serialization hooks and custom prototypes",
+  );
+}
+
 const jcsNumberCandidate = validCandidateContent("candidate-jcs-numbers");
 jcsNumberCandidate.brief.objectiveWeights = {
   factuality: 1e-7,
@@ -973,7 +1023,7 @@ const omittedRequiredClaimError = expectValidationError(
     posts: validPosts().map((post) => ({ ...post, claimIds: ["claim-second-proof"] })),
   }),
 );
-assert.match(omittedRequiredClaimError.issues.join("\n"), /requiredClaimIds.*claim-source-of-truth/i);
+assert.match(omittedRequiredClaimError.issues.join("\n"), /required-claim-unresolved.*claim-source-of-truth/i);
 
 assert.doesNotThrow(
   () => assertValidThreadCandidate(rehashCandidate({
@@ -1618,28 +1668,38 @@ checkInvariant("validation accepted state cannot contradict fail findings", () =
 });
 
 checkInvariant("validation and scorecard findings may share one stable warning identity", () => {
-  const sharedWarning = {
-    findingId: "finding-shared-warning",
-    code: "shared-warning",
-    severity: "warn" as const,
-    message: "The same warning is preserved across deterministic and judged evidence.",
-  };
+  const candidate = rehashCandidate({
+    ...validCandidate(),
+    posts: validCandidate().posts.map((post, index) => ({
+      ...post,
+      text: index === 0 ? `${post.text} 😀😀😀😀` : post.text,
+    })),
+  });
+  const deterministic = validateThreadCandidate(candidate);
+  const sharedWarning = deterministic.findings.find((finding) => finding.severity === "warn");
+  assert.ok(sharedWarning);
   assert.doesNotThrow(() => assertValidThreadRunManifest({
     ...validManifest(),
+    candidates: [candidate],
     validations: [{
-      ...validValidationRecord(),
-      findings: [sharedWarning],
+      ...validValidationRecord(candidate.candidateSha256),
+      accepted: deterministic.accepted,
+      findings: deterministic.findings,
+      measurements: deterministic.measurements,
     }],
     scorecards: [{
-      ...validScorecard(),
+      ...validScorecard(candidate.candidateSha256),
       dimensions: {
-        ...validScorecard().dimensions,
+        ...validScorecard(candidate.candidateSha256).dimensions,
         factuality: {
-          ...validScorecard().dimensions.factuality,
+          ...validScorecard(candidate.candidateSha256).dimensions.factuality,
           findings: [sharedWarning],
         },
       },
     }],
+    approvals: [],
+    publishReceipts: [],
+    observations: [],
   }));
 });
 
@@ -1764,6 +1824,7 @@ checkInvariant("all active publication states require approval", () => {
     receiptWithoutOutcome("publishing"),
     validPublishReceipt(),
     validPartialPublishReceipt(),
+    receiptWithoutOutcome("failed", "request-rejected"),
     uncertainReceiptWithKnownPrefix(),
     receiptWithoutOutcome("uncertain", "dispatch-ambiguous"),
   ]) {
@@ -1782,6 +1843,7 @@ checkInvariant("all active publication states require current deterministic gate
     receiptWithoutOutcome("publishing"),
     validPublishReceipt(),
     validPartialPublishReceipt(),
+    receiptWithoutOutcome("failed", "request-rejected"),
     uncertainReceiptWithKnownPrefix(),
     receiptWithoutOutcome("uncertain", "dispatch-ambiguous"),
   ]) {
@@ -1793,6 +1855,141 @@ checkInvariant("all active publication states require current deterministic gate
     }));
     assert.match(error.issues.join("\n"), /publishReceipts\[0\].*exactly one.*validation|validation.*publishReceipts\[0\]/i);
   }
+});
+
+checkInvariant("failed receipts reject a stale clean scorecard superseded before the attempt", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    scorecards: [
+      {
+        ...validScorecard(),
+        scorecardId: "scorecard-clean-earlier",
+        scoredAt: EARLIER_TIMESTAMP,
+      },
+      {
+        ...scorecardWithFail(),
+        scorecardId: "scorecard-failed-current",
+        scoredAt: OTHER_TIMESTAMP,
+      },
+    ],
+    publishReceipts: [{
+      ...receiptWithoutOutcome("failed", "request-rejected"),
+      attemptedAt: LATER_TIMESTAMP,
+    }],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /publishReceipts\[0\].*current.*scorecard.*no fail/i);
+});
+
+checkInvariant("manifest validation evidence is recomputed instead of trusted", () => {
+  const baseline = validManifest();
+  const canonical = validateThreadCandidate(baseline.candidates[0]);
+  assert.equal(canonical.accepted, true);
+
+  for (const validation of [
+    {
+      ...validValidationRecord(),
+      accepted: false,
+    },
+    {
+      ...validValidationRecord(),
+      measurements: validValidationRecord().measurements.map((measurement, index) => ({
+        ...measurement,
+        weightedLength: index === 0 ? measurement.weightedLength + 1 : measurement.weightedLength,
+      })),
+    },
+    {
+      ...validValidationRecord(),
+      measurements: validValidationRecord().measurements.map((measurement, index) => ({
+        ...measurement,
+        urlCount: index === 0 ? measurement.urlCount + 1 : measurement.urlCount,
+      })),
+    },
+  ]) {
+    const error = expectValidationError(() => assertValidThreadRunManifest({
+      ...baseline,
+      validations: [validation],
+      approvals: [],
+      publishReceipts: [],
+      observations: [],
+    }));
+    assert.match(error.issues.join("\n"), /validations\[0\].*(recomputed|deterministic|exactly match)/i);
+  }
+});
+
+checkInvariant("manifest validation findings cannot be removed or rewritten", () => {
+  const candidate = rehashCandidate({
+    ...validCandidate(),
+    posts: validCandidate().posts.map((post, index) => ({
+      ...post,
+      text: index === 0 ? `${post.text} 😀😀😀😀` : post.text,
+    })),
+  });
+  const canonical = validateThreadCandidate(candidate);
+  assert.equal(canonical.accepted, true);
+  assert.ok(canonical.findings.length > 0);
+  const record = {
+    ...validValidationRecord(candidate.candidateSha256),
+    accepted: canonical.accepted,
+    findings: canonical.findings,
+    measurements: canonical.measurements,
+  };
+  const manifest = {
+    ...validManifest(),
+    candidates: [candidate],
+    validations: [record],
+    scorecards: [],
+    approvals: [],
+    publishReceipts: [],
+    observations: [],
+  };
+  assert.doesNotThrow(() => assertValidThreadRunManifest(manifest));
+
+  for (const findings of [
+    [],
+    record.findings.map((finding, index) => ({
+      ...finding,
+      findingId: index === 0 ? "finding-forged-id" : finding.findingId,
+    })),
+    record.findings.map((finding, index) => ({
+      ...finding,
+      message: index === 0 ? "Forged finding message." : finding.message,
+    })),
+  ]) {
+    const error = expectValidationError(() => assertValidThreadRunManifest({
+      ...manifest,
+      validations: [{ ...record, findings }],
+    }));
+    assert.match(error.issues.join("\n"), /validations\[0\].*(recomputed|deterministic|exactly match)/i);
+  }
+});
+
+checkInvariant("manifest validation cannot forge acceptance after removing a fail finding", () => {
+  const candidate = rehashCandidate({
+    ...validCandidate(),
+    posts: validCandidate().posts.map((post, index) => ({
+      ...post,
+      text: index === 0 ? "Use 𝕲𝖔𝖙𝖍𝖎𝖈 letters in this post." : post.text,
+    })),
+  });
+  const canonical = validateThreadCandidate(candidate);
+  assert.equal(canonical.accepted, false);
+  assert.ok(canonical.findings.some((finding) => finding.severity === "fail"));
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validManifest(),
+    candidates: [candidate],
+    validations: [{
+      ...validValidationRecord(candidate.candidateSha256),
+      accepted: true,
+      findings: canonical.findings.filter((finding) => finding.severity !== "fail"),
+      measurements: canonical.measurements,
+    }],
+    scorecards: [],
+    approvals: [],
+    publishReceipts: [],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /validations\[0\].*(recomputed|deterministic|exactly match)/i);
 });
 
 checkInvariant("observations declare receipt identity and complete metric availability", () => {

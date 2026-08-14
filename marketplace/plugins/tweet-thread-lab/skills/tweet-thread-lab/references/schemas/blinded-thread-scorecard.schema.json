@@ -1,39 +1,10 @@
 {
   "additionalProperties": false,
   "properties": {
-    "blinding": {
-      "additionalProperties": false,
-      "properties": {
-        "armToken": {
-          "maxLength": 68,
-          "minLength": 68,
-          "pattern": "^arm-[a-f0-9]{64}$",
-          "type": "string"
-        },
-        "publicTrialSha256": {
-          "maxLength": 64,
-          "minLength": 64,
-          "pattern": "^[a-f0-9]{64}$",
-          "type": "string"
-        },
-        "trialId": {
-          "maxLength": 128,
-          "minLength": 7,
-          "pattern": "^trial-[a-z0-9-]+$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "trialId",
-        "publicTrialSha256",
-        "armToken"
-      ],
-      "type": "object"
-    },
-    "candidateSha256": {
-      "maxLength": 64,
-      "minLength": 64,
-      "pattern": "^[a-f0-9]{64}$",
+    "armToken": {
+      "maxLength": 68,
+      "minLength": 68,
+      "pattern": "^arm-[a-f0-9]{64}$",
       "type": "string"
     },
     "dimensions": {
@@ -585,7 +556,13 @@
       "type": "object"
     },
     "protocolVersion": {
-      "const": "opencoven.tweet-thread.v1",
+      "const": "opencoven.tweet-thread.blinding.v1",
+      "type": "string"
+    },
+    "publicTrialSha256": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[a-f0-9]{64}$",
       "type": "string"
     },
     "scorecardId": {
@@ -600,12 +577,20 @@
       "minLength": 24,
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
       "type": "string"
+    },
+    "trialId": {
+      "maxLength": 128,
+      "minLength": 7,
+      "pattern": "^trial-[a-z0-9-]+$",
+      "type": "string"
     }
   },
   "required": [
     "protocolVersion",
+    "trialId",
+    "publicTrialSha256",
+    "armToken",
     "scorecardId",
-    "candidateSha256",
     "scoredAt",
     "dimensions"
   ],

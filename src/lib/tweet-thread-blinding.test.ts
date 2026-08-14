@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
+import { Value } from "typebox/value";
 
 import {
   TWEET_THREAD_PROTOCOL_VERSION,
+  ThreadScorecardSchema,
   computeThreadCandidateSha256,
 } from "./tweet-thread-protocol.ts";
 import type {
@@ -11,11 +13,14 @@ import type {
 } from "./tweet-thread-protocol.ts";
 import {
   TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
+  BlindedThreadScorecardSchema,
   TweetThreadBlindingError,
   createBlindedTweetThreadTrial,
   revealBlindedTweetThreadTrial,
+  revealBlindedThreadScorecards,
 } from "./tweet-thread-blinding.ts";
 import type {
+  BlindedThreadScorecard,
   BlindingEnvelope,
   PublicBlindedTweetThreadTrial,
   TweetThreadBlindingErrorCode,
@@ -225,6 +230,30 @@ function publicTrialSha256(publicTrial: PublicBlindedTweetThreadTrial): string {
   return createHash("sha256")
     .update(JSON.stringify(canonicalizeJson(publicTrial)), "utf8")
     .digest("hex");
+}
+
+function blindedScorecard(
+  publicTrial: PublicBlindedTweetThreadTrial,
+  envelope: BlindingEnvelope,
+  armToken: string,
+  scorecardId: string,
+): BlindedThreadScorecard {
+  return {
+    protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
+    trialId: publicTrial.trialId,
+    publicTrialSha256: envelope.publicTrialSha256,
+    armToken,
+    scorecardId,
+    scoredAt: GENERATED_AT,
+    dimensions: {
+      factuality: { dimension: "factuality", score: 0.9, rationale: "Supported.", findings: [] },
+      provenance: { dimension: "provenance", score: 0.8, rationale: "Traceable.", findings: [] },
+      accessibility: { dimension: "accessibility", score: 0.7, rationale: "Readable.", findings: [] },
+      voice: { dimension: "voice", score: 0.6, rationale: "Aligned.", findings: [] },
+      coherence: { dimension: "coherence", score: 0.5, rationale: "Ordered.", findings: [] },
+      engagement: { dimension: "engagement", score: 0.4, rationale: "Specific.", findings: [] },
+    },
+  };
 }
 
 function expectInvalidPublicMutation(
@@ -1255,6 +1284,142 @@ function expectInvalidPublicMutation(
     nestedTrapCalls,
     0,
     "array length budgets reject before traversing entries",
+  );
+}
+
+{
+  const { publicTrial, envelope } = createTrial();
+  const scorecards = publicTrial.arms.map((arm, index) =>
+    blindedScorecard(publicTrial, envelope, arm.armToken, `scorecard-blinded-${index}`));
+  assert.ok(scorecards.every((scorecard) => Value.Check(BlindedThreadScorecardSchema, scorecard)));
+  assert.equal(
+    Value.Check(BlindedThreadScorecardSchema, {
+      ...scorecards[0],
+      candidateSha256: CANDIDATES[0].candidateSha256,
+    }),
+    false,
+    "blinded scorecards cannot carry candidate identity",
+  );
+
+  const revealed = revealBlindedThreadScorecards({
+    publicTrial,
+    envelope,
+    observedVoteCount: 12,
+    currentTime: GENERATED_AT,
+    secret: SECRET,
+    scorecards,
+  });
+  assert.equal(revealed.length, scorecards.length);
+  for (const [index, scorecard] of revealed.entries()) {
+    const blinded = scorecards[index]!;
+    assert.equal(Value.Check(ThreadScorecardSchema, scorecard), true);
+    assert.equal(
+      scorecard.candidateSha256,
+      envelope.mapping[blinded.armToken]!.candidateSha256,
+    );
+    assert.deepEqual(scorecard.dimensions, blinded.dimensions);
+    assert.deepEqual(scorecard.blinding, {
+      trialId: publicTrial.trialId,
+      publicTrialSha256: envelope.publicTrialSha256,
+      armToken: blinded.armToken,
+    });
+    assert.equal(Object.isFrozen(scorecard.blinding), true);
+  }
+
+  expectCode(
+    () => revealBlindedThreadScorecards({
+      publicTrial,
+      envelope,
+      observedVoteCount: 11,
+      currentTime: GENERATED_AT,
+      secret: SECRET,
+      scorecards,
+    }),
+    "REVEAL_LOCKED",
+  );
+
+  const wrongTrial = structuredClone(scorecards);
+  wrongTrial[0]!.trialId = "trial-other";
+  expectCode(
+    () => revealBlindedThreadScorecards({
+      publicTrial,
+      envelope,
+      observedVoteCount: 12,
+      currentTime: GENERATED_AT,
+      secret: SECRET,
+      scorecards: wrongTrial,
+    }),
+    "INVALID_BLINDED_SCORECARD",
+  );
+
+  const wrongCommitment = structuredClone(scorecards);
+  wrongCommitment[0]!.publicTrialSha256 = "0".repeat(64);
+  expectCode(
+    () => revealBlindedThreadScorecards({
+      publicTrial,
+      envelope,
+      observedVoteCount: 12,
+      currentTime: GENERATED_AT,
+      secret: SECRET,
+      scorecards: wrongCommitment,
+    }),
+    "INVALID_BLINDED_SCORECARD",
+  );
+
+  const duplicateArm = structuredClone(scorecards);
+  duplicateArm[1]!.armToken = duplicateArm[0]!.armToken;
+  expectCode(
+    () => revealBlindedThreadScorecards({
+      publicTrial,
+      envelope,
+      observedVoteCount: 12,
+      currentTime: GENERATED_AT,
+      secret: SECRET,
+      scorecards: duplicateArm,
+    }),
+    "DUPLICATE_ARM_SCORECARD",
+  );
+
+  const foreignToken = structuredClone(scorecards);
+  foreignToken[0]!.armToken = `arm-${"f".repeat(64)}`;
+  expectCode(
+    () => revealBlindedThreadScorecards({
+      publicTrial,
+      envelope,
+      observedVoteCount: 12,
+      currentTime: GENERATED_AT,
+      secret: SECRET,
+      scorecards: foreignToken,
+    }),
+    "INVALID_BLINDED_SCORECARD",
+  );
+
+  const alteredScorecard = structuredClone(scorecards);
+  alteredScorecard[0]!.dimensions.factuality.score = 2;
+  expectCode(
+    () => revealBlindedThreadScorecards({
+      publicTrial,
+      envelope,
+      observedVoteCount: 12,
+      currentTime: GENERATED_AT,
+      secret: SECRET,
+      scorecards: alteredScorecard,
+    }),
+    "INVALID_BLINDED_SCORECARD",
+  );
+
+  const alteredTrial = structuredClone(publicTrial);
+  alteredTrial.arms[0]!.content.posts[0]!.text = "Reassigned content";
+  expectCode(
+    () => revealBlindedThreadScorecards({
+      publicTrial: alteredTrial,
+      envelope,
+      observedVoteCount: 12,
+      currentTime: GENERATED_AT,
+      secret: SECRET,
+      scorecards,
+    }),
+    "TRIAL_COMMITMENT_MISMATCH",
   );
 }
 

@@ -2,6 +2,8 @@
 
 Score each dimension separately from `0` to `1`. Give a concise rationale and evidence-linked findings. Do not average away a hard-gate failure.
 
+A blinded judge must not receive candidate IDs, candidate SHA-256 values, strategy names, authorship, model identity, or private arm mappings. It records trial ID, committed public-trial SHA-256, arm token, scorecard ID/time, and the six dimensions. Candidate identity is attached only after the precommitted reveal threshold is met and the commitment is verified.
+
 ## Hard gates
 
 A candidate is ineligible when any required schema, canonical hash, required-claim evidence, X weighted-length, banned-phrase, required alt-text, provenance, chronology, or scorecard-binding check fails. Deterministic gates outrank every judge score. Engagement never rescues an ineligible candidate.
@@ -46,7 +48,7 @@ A candidate is ineligible when any required schema, canonical hash, required-cla
 
 ## Evidence requirements
 
-Reference candidate SHA-256, post IDs, claim IDs, and evidence IDs in findings. Distinguish observed text from interpretation. Mark missing evidence and uncertainty explicitly. Never infer factuality from writing quality, popularity, or judge confidence.
+While blinded, reference arm-visible post order, claim IDs, and evidence content without naming candidate identity. After verified reveal, the canonical scorecard binds the candidate SHA-256 and preserves the trial ID, public-trial SHA-256, and arm token. Distinguish observed text from interpretation. Mark missing evidence and uncertainty explicitly. Never infer factuality from writing quality, popularity, or judge confidence.
 
 ## Ranking
 

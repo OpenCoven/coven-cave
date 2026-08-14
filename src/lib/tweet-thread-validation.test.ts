@@ -313,8 +313,8 @@ for (const invalid of [
     }];
     return {
       input,
-      code: "protocol-invalid",
-      prefix: "ThreadCandidate.posts[0].claimIds references missing evidence ledger claim",
+      code: "claim-missing-evidence",
+      prefix: 'Claim "claim-',
     };
   })(),
   (() => {

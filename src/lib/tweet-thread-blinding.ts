@@ -2,7 +2,13 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import canonicalize from "canonicalize";
+import { Type } from "typebox";
+import type { Static } from "typebox";
+import { Value } from "typebox/value";
 import {
+  ThreadScorecardDimensionsSchema,
+  ThreadScorecardSchema,
+  TWEET_THREAD_PROTOCOL_VERSION,
   assertValidThreadCandidate,
   compareOrdinalStrings,
 } from "./tweet-thread-protocol.ts";
@@ -11,7 +17,12 @@ import type {
   ThreadCandidate,
   ThreadPost,
   ThreadPostMedia,
+  ThreadScorecard,
 } from "./tweet-thread-protocol.ts";
+import {
+  StrictJsonSnapshotError,
+  createStrictJsonSnapshot,
+} from "./strict-json-snapshot.ts";
 
 export const TWEET_THREAD_BLINDING_PROTOCOL_VERSION =
   "opencoven.tweet-thread.blinding.v1" as const;
@@ -53,7 +64,9 @@ export type TweetThreadBlindingErrorCode =
   | "TRIAL_COMMITMENT_MISMATCH"
   | "REVEAL_COMMITMENT_MISMATCH"
   | "TOKEN_SET_MISMATCH"
-  | "REVEAL_LOCKED";
+  | "REVEAL_LOCKED"
+  | "INVALID_BLINDED_SCORECARD"
+  | "DUPLICATE_ARM_SCORECARD";
 
 export class TweetThreadBlindingError extends Error {
   readonly code: TweetThreadBlindingErrorCode;
@@ -176,6 +189,27 @@ export interface BlindedTweetThreadReveal {
   protocolVersion: typeof TWEET_THREAD_BLINDING_PROTOCOL_VERSION;
   trialId: string;
   arms: RevealedBlindedTweetThreadArm[];
+}
+
+export const BlindedThreadScorecardSchema = Type.Object({
+  protocolVersion: Type.Literal(TWEET_THREAD_BLINDING_PROTOCOL_VERSION),
+  trialId: Type.String({ minLength: 7, maxLength: 128, pattern: TRIAL_ID_RE.source }),
+  publicTrialSha256: Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_RE.source }),
+  armToken: Type.String({ minLength: 68, maxLength: 68, pattern: ARM_TOKEN_RE.source }),
+  scorecardId: Type.String({ minLength: 11, maxLength: 128, pattern: "^scorecard-[a-z0-9-]+$" }),
+  scoredAt: Type.String({
+    format: "date-time",
+    minLength: 24,
+    maxLength: 24,
+    pattern: RFC3339_UTC_MILLIS.source,
+  }),
+  dimensions: ThreadScorecardDimensionsSchema,
+}, { additionalProperties: false });
+export type BlindedThreadScorecard = Static<typeof BlindedThreadScorecardSchema>;
+
+export interface RevealBlindedThreadScorecardsInput
+  extends RevealBlindedTweetThreadTrialInput {
+  scorecards: readonly BlindedThreadScorecard[];
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -1496,4 +1530,100 @@ export function revealBlindedTweetThreadTrial(
       ...envelope.mapping[armToken]!,
     })),
   };
+}
+
+export function revealBlindedThreadScorecards(
+  input: RevealBlindedThreadScorecardsInput,
+): ThreadScorecard[] {
+  let snapshot: RevealBlindedThreadScorecardsInput;
+  try {
+    snapshot = createStrictJsonSnapshot(input);
+  } catch (error) {
+    if (error instanceof StrictJsonSnapshotError) {
+      fail(
+        "INVALID_BLINDED_SCORECARD",
+        "Blinded scorecard conversion requires strict accessor-free plain JSON inputs.",
+      );
+    }
+    throw error;
+  }
+
+  const reveal = revealBlindedTweetThreadTrial({
+    publicTrial: snapshot.publicTrial,
+    envelope: snapshot.envelope,
+    observedVoteCount: snapshot.observedVoteCount,
+    currentTime: snapshot.currentTime,
+    secret: snapshot.secret,
+  });
+  if (
+    !Array.isArray(snapshot.scorecards)
+    || snapshot.scorecards.length < 1
+    || snapshot.scorecards.length > MAXIMUM_ARM_COUNT
+  ) {
+    fail(
+      "INVALID_BLINDED_SCORECARD",
+      "Blinded scorecards must be a bounded non-empty array.",
+    );
+  }
+
+  const revealedByToken = new Map(
+    reveal.arms.map((arm) => [arm.armToken, arm]),
+  );
+  const seenArmTokens = new Set<string>();
+  const seenScorecardIds = new Set<string>();
+  const converted: ThreadScorecard[] = [];
+  for (const scorecard of snapshot.scorecards) {
+    if (!Value.Check(BlindedThreadScorecardSchema, scorecard)) {
+      fail(
+        "INVALID_BLINDED_SCORECARD",
+        "A blinded scorecard does not match BlindedThreadScorecardSchema.",
+      );
+    }
+    if (
+      scorecard.trialId !== snapshot.publicTrial.trialId
+      || scorecard.publicTrialSha256 !== snapshot.envelope.publicTrialSha256
+      || !revealedByToken.has(scorecard.armToken)
+    ) {
+      fail(
+        "INVALID_BLINDED_SCORECARD",
+        "A blinded scorecard is not bound to this committed trial arm.",
+      );
+    }
+    if (seenArmTokens.has(scorecard.armToken)) {
+      fail(
+        "DUPLICATE_ARM_SCORECARD",
+        "Each blinded trial arm may have at most one scorecard.",
+      );
+    }
+    if (seenScorecardIds.has(scorecard.scorecardId)) {
+      fail(
+        "INVALID_BLINDED_SCORECARD",
+        "Blinded scorecard identifiers must be unique.",
+      );
+    }
+    seenArmTokens.add(scorecard.armToken);
+    seenScorecardIds.add(scorecard.scorecardId);
+    const candidateSha256 = revealedByToken.get(scorecard.armToken)!.candidateSha256;
+    const canonical: ThreadScorecard = {
+      protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+      scorecardId: scorecard.scorecardId,
+      candidateSha256,
+      scoredAt: scorecard.scoredAt,
+      dimensions: scorecard.dimensions,
+      blinding: {
+        trialId: scorecard.trialId,
+        publicTrialSha256: scorecard.publicTrialSha256,
+        armToken: scorecard.armToken,
+      },
+    };
+    if (!Value.Check(ThreadScorecardSchema, canonical)) {
+      fail(
+        "INVALID_BLINDED_SCORECARD",
+        "Converted scorecard does not match ThreadScorecardSchema.",
+      );
+    }
+    converted.push(createStrictJsonSnapshot(canonical));
+  }
+  Object.freeze(converted);
+  return converted;
 }

@@ -1,4 +1,10 @@
-import { readFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readSync,
+} from "node:fs";
 
 import {
   normalizeThreadBrief,
@@ -17,19 +23,48 @@ class CliContractError extends Error {
 }
 
 function readJsonFile(label: "candidate" | "brief", filename: string): unknown {
-  let bytes: Buffer;
+  let handle: number | undefined;
   try {
-    bytes = readFileSync(filename);
+    handle = openSync(filename, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch {
     throw new CliContractError(`${label} file could not be read.`);
   }
-  if (bytes.byteLength > MAX_INPUT_BYTES) {
-    throw new CliContractError(`${label} file exceeds the portable size limit.`);
-  }
   try {
-    return JSON.parse(bytes.toString("utf8"));
-  } catch {
-    throw new CliContractError(`${label} JSON could not be parsed.`);
+    let stat;
+    try {
+      stat = fstatSync(handle);
+    } catch {
+      throw new CliContractError(`${label} file could not be read.`);
+    }
+    if (!stat.isFile()) {
+      throw new CliContractError(`${label} file must be a regular file.`);
+    }
+    if (stat.size > MAX_INPUT_BYTES) {
+      throw new CliContractError(`${label} file exceeds the portable size limit.`);
+    }
+
+    const bounded = Buffer.allocUnsafe(MAX_INPUT_BYTES + 1);
+    let total = 0;
+    while (total <= MAX_INPUT_BYTES) {
+      let read: number;
+      try {
+        read = readSync(handle, bounded, total, bounded.byteLength - total, null);
+      } catch {
+        throw new CliContractError(`${label} file could not be read.`);
+      }
+      if (read === 0) break;
+      total += read;
+    }
+    if (total > MAX_INPUT_BYTES) {
+      throw new CliContractError(`${label} file exceeds the portable size limit.`);
+    }
+    try {
+      return JSON.parse(bounded.subarray(0, total).toString("utf8"));
+    } catch {
+      throw new CliContractError(`${label} JSON could not be parsed.`);
+    }
+  } finally {
+    closeSync(handle);
   }
 }
 
