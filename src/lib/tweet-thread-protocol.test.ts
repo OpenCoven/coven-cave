@@ -620,6 +620,111 @@ assert.ok(Value.Check(ThreadRunManifestSchema, validManifest()));
 assert.doesNotThrow(() => assertValidThreadRunManifest(validManifest()));
 
 const impossibleTimestamp = "2026-02-30T12:00:00.000Z";
+const standaloneTimestampCases = [
+  {
+    label: "evidence retrievedAt",
+    schema: EvidenceItemSchema,
+    value: { ...validEvidence()[0], retrievedAt: impossibleTimestamp },
+  },
+  {
+    label: "candidate generatedAt",
+    schema: ThreadCandidateSchema,
+    value: { ...validCandidate(), generatedAt: impossibleTimestamp },
+  },
+  {
+    label: "scorecard scoredAt",
+    schema: ThreadScorecardSchema,
+    value: { ...validScorecard(), scoredAt: impossibleTimestamp },
+  },
+  {
+    label: "approval decidedAt",
+    schema: ApprovalRecordSchema,
+    value: { ...validApproval(), decidedAt: impossibleTimestamp },
+  },
+  {
+    label: "receipt attemptedAt",
+    schema: PublishReceiptSchema,
+    value: { ...validPublishReceipt(), attemptedAt: impossibleTimestamp },
+  },
+  {
+    label: "receipt publishedAt",
+    schema: PublishReceiptSchema,
+    value: { ...validPublishReceipt(), publishedAt: impossibleTimestamp },
+  },
+  {
+    label: "observation retrievedAt",
+    schema: ThreadObservationSchema,
+    value: { ...validObservation(), retrievedAt: impossibleTimestamp },
+  },
+  {
+    label: "observation exposedAt",
+    schema: ThreadObservationSchema,
+    value: { ...validObservation(), exposedAt: impossibleTimestamp },
+  },
+  {
+    label: "manifest createdAt",
+    schema: ThreadRunManifestSchema,
+    value: { ...validManifest(), createdAt: impossibleTimestamp },
+  },
+] as const;
+for (const { label, schema, value } of standaloneTimestampCases) {
+  assert.equal(Value.Check(schema, value), false, `${label} rejects impossible calendar dates standalone`);
+}
+
+for (const [label, threadUrl] of [
+  ["malformed", "not-a-url"],
+  ["non-X", "https://example.com/opencoven/status/1"],
+] as const) {
+  assert.equal(
+    Value.Check(PublishReceiptSchema, { ...validPublishReceipt(), threadUrl }),
+    false,
+    `published receipts reject ${label} thread URLs`,
+  );
+}
+assert.equal(
+  Value.Check(PublishReceiptSchema, {
+    ...validPublishReceipt(),
+    remotePostIds: ["1888888888888888888", "not-an-x-id"],
+  }),
+  false,
+  "published receipts reject nonnumeric remote post IDs",
+);
+assert.equal(
+  Value.Check(PublishReceiptSchema, {
+    ...validPublishReceipt(),
+    remotePostIds: ["1888888888888888888", "1888888888888888888"],
+  }),
+  false,
+  "published receipts reject duplicate remote post IDs",
+);
+for (const status of ["failed", "uncertain"] as const) {
+  assert.equal(
+    Value.Check(PublishReceiptSchema, receiptWithoutOutcome(status, " \t ")),
+    false,
+    `${status} receipts reject blank error codes`,
+  );
+}
+for (const metric of ["impressions", "likes", "reposts", "replies", "bookmarks"] as const) {
+  assert.equal(
+    Value.Check(ThreadObservationSchema, {
+      ...validObservation(),
+      metrics: { ...validObservation().metrics, [metric]: 1.5 },
+    }),
+    false,
+    `${metric} rejects fractional counts`,
+  );
+}
+const mismatchedRemotePostCountError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    publishReceipts: [{
+      ...validPublishReceipt(),
+      remotePostIds: ["1888888888888888888"],
+    }],
+  }),
+);
+assert.match(mismatchedRemotePostCountError.issues.join("\n"), /remotePostIds.*candidate.*posts/i);
+
 const invalidManifestTimestampError = expectValidationError(
   () => assertValidThreadRunManifest({
     ...validManifest(),

@@ -10,6 +10,8 @@ const RFC3339_UTC_MILLIS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const CLAIM_ID_RE = /^claim-[a-z0-9-]+$/;
 const POST_ID_RE = /^post-[1-9][0-9]*$/;
+const X_POST_ID_RE = /^[1-9][0-9]*$/;
+const X_THREAD_URL_RE = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[1-9][0-9]*$/;
 const WORD_CHARACTER_RE = /[\p{L}\p{N}_]/u;
 
 const boundedString = (maxLength: number) =>
@@ -19,7 +21,7 @@ const boundedNonWhitespaceString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength, pattern: "\\S" });
 
 const timestampString = () =>
-  Type.String({ minLength: 24, maxLength: 24, pattern: RFC3339_UTC_MILLIS.source });
+  Type.String({ format: "date-time", minLength: 24, maxLength: 24, pattern: RFC3339_UTC_MILLIS.source });
 
 const stableId = (prefix: string) =>
   Type.String({ minLength: prefix.length + 2, maxLength: 128, pattern: `^${prefix}-[a-z0-9-]+$` });
@@ -32,6 +34,12 @@ const claimIdSchema = () =>
 
 const postIdSchema = () =>
   Type.String({ minLength: 6, maxLength: 32, pattern: POST_ID_RE.source });
+
+const xPostIdSchema = () =>
+  Type.String({ minLength: 1, maxLength: 64, pattern: X_POST_ID_RE.source });
+
+const xThreadUrlSchema = () =>
+  Type.String({ format: "url", minLength: 1, maxLength: 2_000, pattern: X_THREAD_URL_RE.source });
 
 const sha256Schema = () =>
   Type.String({ minLength: 64, maxLength: 64, pattern: SHA256_HEX.source });
@@ -190,28 +198,28 @@ export const PublishReceiptSchema = Type.Union([
     ...publishReceiptBaseProperties(),
     status: Type.Literal("published"),
     publishedAt: timestampString(),
-    threadUrl: boundedNonWhitespaceString(2_000),
-    remotePostIds: Type.Array(boundedNonWhitespaceString(64), { minItems: 1, maxItems: 50 }),
+    threadUrl: xThreadUrlSchema(),
+    remotePostIds: Type.Array(xPostIdSchema(), { minItems: 1, maxItems: 50, uniqueItems: true }),
   }, { additionalProperties: false }),
   Type.Object({
     ...publishReceiptBaseProperties(),
     status: Type.Literal("failed"),
-    errorCode: Type.String({ minLength: 1, maxLength: 120 }),
+    errorCode: boundedNonWhitespaceString(120),
   }, { additionalProperties: false }),
   Type.Object({
     ...publishReceiptBaseProperties(),
     status: Type.Literal("uncertain"),
-    errorCode: Type.String({ minLength: 1, maxLength: 120 }),
+    errorCode: boundedNonWhitespaceString(120),
   }, { additionalProperties: false }),
 ]);
 export type PublishReceipt = Static<typeof PublishReceiptSchema>;
 
 export const ThreadObservationMetricsSchema = Type.Object({
-  impressions: Type.Optional(Type.Number({ minimum: 0 })),
-  likes: Type.Optional(Type.Number({ minimum: 0 })),
-  reposts: Type.Optional(Type.Number({ minimum: 0 })),
-  replies: Type.Optional(Type.Number({ minimum: 0 })),
-  bookmarks: Type.Optional(Type.Number({ minimum: 0 })),
+  impressions: Type.Optional(Type.Integer({ minimum: 0 })),
+  likes: Type.Optional(Type.Integer({ minimum: 0 })),
+  reposts: Type.Optional(Type.Integer({ minimum: 0 })),
+  replies: Type.Optional(Type.Integer({ minimum: 0 })),
+  bookmarks: Type.Optional(Type.Integer({ minimum: 0 })),
 }, { additionalProperties: false });
 export type ThreadObservationMetrics = Static<typeof ThreadObservationMetricsSchema>;
 
@@ -560,8 +568,11 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
   }
 
   for (const [index, receipt] of manifest.publishReceipts.entries()) {
-    if (!candidateBySha.has(receipt.candidateSha256)) {
+    const candidate = candidateBySha.get(receipt.candidateSha256);
+    if (!candidate) {
       issues.push(`ThreadRunManifest.publishReceipts[${index}] candidate sha "${receipt.candidateSha256}" does not match any candidate.`);
+    } else if (receipt.status === "published" && receipt.remotePostIds.length !== candidate.posts.length) {
+      issues.push(`ThreadRunManifest.publishReceipts[${index}].remotePostIds count must equal the associated candidate posts count.`);
     }
   }
 
