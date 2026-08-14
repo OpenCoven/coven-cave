@@ -155,6 +155,8 @@ export const SUITES = {
     "src/lib/endpoint-validators.test.ts",
     "src/lib/x-api.test.ts",
     "src/lib/tweet-thread-protocol.test.ts",
+    "src/lib/tweet-thread-validation.test.ts",
+    "src/lib/tweet-thread-scoring.test.ts",
     "scripts/tweet-thread-protocol-drift.test.mjs",
     "src/lib/server/familiar-avatar-mutation.test.ts",
     "src/lib/server/x-app-config.test.ts",
