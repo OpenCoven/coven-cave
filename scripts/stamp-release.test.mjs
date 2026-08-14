@@ -1076,6 +1076,17 @@ assert.match(
   /git cat-file -t "refs\/tags\/\$RELEASE_TAG"[\s\S]*\.verification\.verified[\s\S]*git merge-base --is-ancestor "\$TAGGED_COMMIT" origin\/main/,
   "source-version requires an annotated GitHub-verified tag contained in main",
 );
+const tagVerificationIndex = sourceVersionJob.indexOf("- name: Require a verified signed tag on main");
+const dependencyInstallIndex = sourceVersionJob.indexOf("- name: Install release checker runtime dependency");
+assert.ok(
+  tagVerificationIndex < dependencyInstallIndex,
+  "source-version verifies tag provenance before installing tag-controlled dependencies",
+);
+assert.match(
+  sourceVersionJob,
+  /pnpm install --frozen-lockfile --prod --ignore-scripts --ignore-pnpmfile/,
+  "the release checker install disables lifecycle scripts and pnpmfile hooks",
+);
 assert.match(
   sourceVersionJob,
   /scripts\/check-release-version\.mjs scripts\/release-yaml-settings\.mjs[\s\S]*git show "\$\{WORKFLOW_TOOLING_SHA\}:\$\{tooling_path\}"[\s\S]*expected_blob[\s\S]*actual_blob/,
