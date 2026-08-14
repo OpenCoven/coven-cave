@@ -20,6 +20,7 @@
 import type { SafeClientCredential } from "./credential-store.ts";
 import { issueCredential } from "./credential-store.ts";
 import type {
+  PairingExchangeTerminalReplay,
   PublicPairingRecord,
   PairingExchangeCredentialSnapshot,
 } from "./pairing-store.ts";
@@ -63,15 +64,42 @@ export type PairingExchangeResult =
   | { kind: "conflict" }
   // The claim succeeded (the request really was approved and live) but
   // `issueCredential` itself failed — a transient store problem, never a
-  // caller mistake. The claim has already been rolled back by the time this
-  // is returned, so the approved request is retryable exactly as it was
-  // before this call.
+  // caller mistake. This is returned only after rollback explicitly released
+  // the claim, so the approved request is retryable exactly as it was before
+  // this call.
   | { kind: "issue_failed" };
 
 function classifyUnclaimable(live: PublicPairingRecord | null): PairingExchangeResult {
   if (live?.status === "pending") return { kind: "pending" };
   if (live?.status === "denied") return { kind: "denied" };
   return { kind: "expired" };
+}
+
+function classifyTerminalSettlement(
+  result: { kind: "expired" | "stale" | "missing" | "conflict" },
+): PairingExchangeResult {
+  if (result.kind === "expired" || result.kind === "stale") return { kind: "expired" };
+  return { kind: "conflict" };
+}
+
+function hasIssuedReplayReceipt(
+  replay: PairingExchangeTerminalReplay | null,
+  issued: { credential: SafeClientCredential },
+  idempotencyKey: string,
+  requestHash: string,
+): boolean {
+  if (!replay || replay.idempotencyKey !== idempotencyKey || replay.requestHash !== requestHash) {
+    return false;
+  }
+  const { credential } = replay;
+  return (
+    credential.id === issued.credential.id
+    && credential.appName === issued.credential.appName
+    && credential.installationId === issued.credential.installationId
+    && credential.createdAt === issued.credential.createdAt
+    && credential.scopes.length === issued.credential.scopes.length
+    && credential.scopes.every((scope, index) => scope === issued.credential.scopes[index])
+  );
 }
 
 /**
@@ -88,15 +116,14 @@ function classifyUnclaimable(live: PublicPairingRecord | null): PairingExchangeR
  *   2. `await deps.issueCredential(...)` runs OUTSIDE any destructive
  *      mutation of the pairing store — a failure here has touched nothing
  *      the store cares about yet.
- *   3. On success, `deps.finalize` deletes + tombstones the claimed record —
- *      never before this point.
- *   4. On failure, `deps.rollback` is called in a targeted catch: while
- *      still within the request's original TTL this releases the claim so a
- *      retry can succeed; if the TTL has since passed, it finishes the
- *      record off exactly like a normal expiry. Either way `issue_failed` is
- *      returned with no raw error message, stack, or secret — logging the
- *      real detail (never the secret) is this function's own job, not the
- *      caller's.
+ *   3. On success, `deps.finalize` deletes + tombstones the claimed record
+ *      with the exact replay receipt. Only that typed `finalized` result may
+ *      become `ok`; a stale/missing/conflicting settlement never lies about
+ *      issuance success.
+ *   4. On issuance failure, `deps.rollback` is called. `issue_failed` means
+ *      it specifically returned `released`; expiry, stale ownership, missing
+ *      state, and conflicts remain terminal instead of being mislabeled as
+ *      retryable.
  */
 export async function exchangePairingRequest(
   id: string,
@@ -128,44 +155,57 @@ export async function exchangePairingRequest(
   try {
     issued = await deps.issueCredential(claimed.pairing, now);
   } catch (err) {
+    let rollback;
     try {
-      deps.rollback(id, claimed.claimId, Date.now());
+      rollback = deps.rollback(id, claimed.claimId, Date.now());
     } catch (rollbackErr) {
-      // Secret-free, fixed diagnostic: never the pairing's secret, its hash,
-      // or `claim.pairing`'s contents — only the id and claim id (both
-      // already known to whoever holds the correct secret) plus the error's
-      // own message.
       console.error("[client-v1-pairing] rollback failed after credential issuance error", {
         id,
-      claimId: claimed.claimId,
+        claimId: claimed.claimId,
         rollbackError: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr),
       });
+      return { kind: "conflict" };
     }
     console.error("[client-v1-pairing] credential issuance failed during pairing exchange", {
       id,
       error: err instanceof Error ? err.message : String(err),
     });
-    return { kind: "issue_failed" };
+    if (rollback.kind === "released") return { kind: "issue_failed" };
+    return classifyTerminalSettlement(rollback);
   }
 
-  // Finalize only AFTER issuance has genuinely succeeded — never before, and
-  // never if `issueCredential` threw. A `false` return here (the claim was
-  // already finalized/rolled back, or the record was pruned/evicted out from
-  // under it) is a benign race: the credential above was already issued
-  // exactly once regardless of whether this cleanup step finds anything left
-  // to do.
-  deps.finalize(id, claimed.claimId, Date.now(), {
-    exchangeReplay: {
-      idempotencyKey,
-      requestHash,
-      credential: {
-        id: issued.credential.id,
-        appName: issued.credential.appName,
-        installationId: issued.credential.installationId,
-        scopes: [...issued.credential.scopes],
-        createdAt: issued.credential.createdAt,
-      },
+  const receipt: PairingExchangeTerminalReplay = {
+    idempotencyKey,
+    requestHash,
+    credential: {
+      id: issued.credential.id,
+      appName: issued.credential.appName,
+      installationId: issued.credential.installationId,
+      scopes: [...issued.credential.scopes],
+      createdAt: issued.credential.createdAt,
     },
-  });
+  };
+  let finalized;
+  try {
+    finalized = deps.finalize(id, claimed.claimId, Date.now(), {
+      exchangeReplay: receipt,
+    });
+  } catch (error) {
+    console.error("[client-v1-pairing] finalize failed after credential issuance", {
+      id,
+      claimId: claimed.claimId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { kind: "conflict" };
+  }
+  if (finalized.kind !== "finalized") return classifyTerminalSettlement(finalized);
+  if (!hasIssuedReplayReceipt(finalized.replay, issued, idempotencyKey, requestHash)) {
+    console.error("[client-v1-pairing] finalize did not retain the issued credential replay receipt", {
+      id,
+      claimId: claimed.claimId,
+    });
+    return { kind: "conflict" };
+  }
+
   return { kind: "ok", token: issued.token, credential: issued.credential };
 }

@@ -594,28 +594,33 @@ test("a second claim attempt while one is outstanding fails generically, even wi
   assert.equal(second, null, "a concurrent/replayed claim must never succeed while another claim is outstanding");
 });
 
-test("finalize deletes + tombstones only when the claim id matches; a wrong claim id is a safe no-op", () => {
+test("finalize reports conflict for a foreign claim and records the terminal result for its owner", () => {
   const { request, secret } = createPairingRequest(input(), 1_000);
   decidePairingRequest(request.id, "approved", 1_100);
   const claim = claimApprovedPairing(request.id, secret, 1_200);
   assert.ok(claim);
 
-  assert.equal(
+  assert.deepEqual(
     finalizeApprovedPairingClaim(request.id, "not-the-real-claim-id", 1_250),
-    false,
+    { kind: "conflict" },
     "a foreign/wrong claim id must never finalize someone else's claim",
   );
   // Still claimed, still approved, still readable — nothing was touched.
   assert.equal(readPairingRequest(request.id, secret, 1_260)?.status, "approved");
 
-  assert.equal(finalizeApprovedPairingClaim(request.id, claim.claimId, 1_300), true);
+  assert.deepEqual(finalizeApprovedPairingClaim(request.id, claim.claimId, 1_300), {
+    kind: "finalized",
+    replay: null,
+  });
   // Now gone, and reported as expired to the correct secret (same terminal
   // state consumeApprovedPairing always produced).
   assert.equal(readPairingRequest(request.id, secret, 1_350), null);
   assert.equal(isPairingRequestExpired(request.id, secret, 1_350), true);
 
-  // A second finalize attempt with the same (now-stale) claim id is a no-op.
-  assert.equal(finalizeApprovedPairingClaim(request.id, claim.claimId, 1_400), false);
+  // A second finalize cannot re-settle the already-finalized claim.
+  assert.deepEqual(finalizeApprovedPairingClaim(request.id, claim.claimId, 1_400), {
+    kind: "conflict",
+  });
 });
 
 test("rollback while still within the original TTL releases the claim so a retry can immediately succeed", () => {
@@ -624,14 +629,19 @@ test("rollback while still within the original TTL releases the claim so a retry
   const claim = claimApprovedPairing(request.id, secret, 1_200);
   assert.ok(claim);
 
-  assert.equal(rollbackApprovedPairingClaim(request.id, claim.claimId, 1_250), true);
+  assert.deepEqual(rollbackApprovedPairingClaim(request.id, claim.claimId, 1_250), {
+    kind: "released",
+  });
   // Still live and approved — the request itself was never touched.
   assert.equal(readPairingRequest(request.id, secret, 1_260)?.status, "approved");
 
   const retry = claimApprovedPairing(request.id, secret, 1_300);
   assert.ok(retry, "the retry must be able to claim again after a rollback");
   assert.notEqual(retry.claimId, claim.claimId, "a retry claim must get a fresh claim id");
-  assert.equal(finalizeApprovedPairingClaim(request.id, retry.claimId, 1_350), true);
+  assert.deepEqual(finalizeApprovedPairingClaim(request.id, retry.claimId, 1_350), {
+    kind: "finalized",
+    replay: null,
+  });
 });
 
 test("rollback after the claim's original TTL has passed finishes the record like a normal expiry (tombstoned, never left claimable)", () => {
@@ -641,7 +651,9 @@ test("rollback after the claim's original TTL has passed finishes the record lik
   assert.ok(claim);
 
   const pastTtl = request.expiresAt + 1;
-  assert.equal(rollbackApprovedPairingClaim(request.id, claim.claimId, pastTtl), true);
+  assert.deepEqual(rollbackApprovedPairingClaim(request.id, claim.claimId, pastTtl), {
+    kind: "expired",
+  });
 
   assert.equal(readPairingRequest(request.id, secret, pastTtl + 10), null);
   assert.equal(isPairingRequestExpired(request.id, secret, pastTtl + 10), true);
@@ -658,9 +670,14 @@ test("rollback with a foreign/wrong claim id is a safe no-op and never disturbs 
   const claim = claimApprovedPairing(request.id, secret, 1_200);
   assert.ok(claim);
 
-  assert.equal(rollbackApprovedPairingClaim(request.id, "not-the-real-claim-id", 1_250), false);
+  assert.deepEqual(rollbackApprovedPairingClaim(request.id, "not-the-real-claim-id", 1_250), {
+    kind: "conflict",
+  });
   // The real claim is completely unaffected — it can still finalize.
-  assert.equal(finalizeApprovedPairingClaim(request.id, claim.claimId, 1_300), true);
+  assert.deepEqual(finalizeApprovedPairingClaim(request.id, claim.claimId, 1_300), {
+    kind: "finalized",
+    replay: null,
+  });
 });
 
 test("a wrong secret can never claim, and a still-pending or denied request can never be claimed either", () => {
@@ -715,11 +732,14 @@ test("expiry during claim preserves finalize and exact-request terminal replay",
     scopes: ["chat:read" as const],
     createdAt: request.expiresAt + 2,
   };
-  assert.equal(
+  assert.deepEqual(
     finalizeApprovedPairingClaim(request.id, claim.claimId, request.expiresAt + 2, {
       exchangeReplay: { idempotencyKey, requestHash, credential },
     }),
-    true,
+    {
+      kind: "finalized",
+      replay: { idempotencyKey, requestHash, credential },
+    },
   );
   assert.deepEqual(
     claimApprovedPairingWithIdempotency(
@@ -738,13 +758,13 @@ test("rollback after expiry terminates a claim, while stale claimed requests are
   decidePairingRequest(rollbackRequest.request.id, "approved", 1_100);
   const rollbackClaim = claimApprovedPairing(rollbackRequest.request.id, rollbackRequest.secret, 1_200);
   assert.ok(rollbackClaim);
-  assert.equal(
+  assert.deepEqual(
     rollbackApprovedPairingClaim(
       rollbackRequest.request.id,
       rollbackClaim.claimId,
       rollbackRequest.request.expiresAt + 1,
     ),
-    true,
+    { kind: "expired" },
   );
   assert.equal(
     isPairingRequestExpired(
@@ -765,7 +785,10 @@ test("rollback after expiry terminates a claim, while stale claimed requests are
   const staleAt = 1_200 + PAIRING_CLAIM_STALE_MS;
   listPendingPairingRequests(staleAt);
   assert.equal(isPairingRequestExpired(staleRequest.request.id, staleRequest.secret, staleAt), true);
-  assert.equal(finalizeApprovedPairingClaim(staleRequest.request.id, staleClaim.claimId, staleAt), false);
+  assert.deepEqual(
+    finalizeApprovedPairingClaim(staleRequest.request.id, staleClaim.claimId, staleAt),
+    { kind: "stale" },
+  );
 });
 
 test("concurrent prune and finalize leave one expired claim terminally tombstoned", async () => {
@@ -780,6 +803,54 @@ test("concurrent prune and finalize leave one expired claim terminally tombstone
     Promise.resolve().then(() => finalizeApprovedPairingClaim(request.id, claim.claimId, afterExpiry)),
   ]);
   assert.equal(pruned, null);
-  assert.equal(finalized, true);
+  assert.deepEqual(finalized, { kind: "finalized", replay: null });
   assert.equal(isPairingRequestExpired(request.id, secret, afterExpiry + 1), true);
+});
+
+test("missing claims report missing, while an idempotent claim cannot finalize without its replay receipt", () => {
+  assert.deepEqual(finalizeApprovedPairingClaim("missing-request", "missing-claim", 1_000), {
+    kind: "missing",
+  });
+  assert.deepEqual(rollbackApprovedPairingClaim("missing-request", "missing-claim", 1_000), {
+    kind: "missing",
+  });
+
+  const { request, secret } = createPairingRequest(input(), 1_000);
+  decidePairingRequest(request.id, "approved", 1_100);
+  const claim = claimApprovedPairingWithIdempotency(
+    request.id,
+    secret,
+    "receipt-key",
+    "receipt-hash",
+    1_200,
+  );
+  assert.equal(claim.kind, "claimed");
+  if (claim.kind !== "claimed") return;
+
+  assert.deepEqual(finalizeApprovedPairingClaim(request.id, claim.claimId, 1_300), {
+    kind: "conflict",
+  });
+  assert.equal(
+    readPairingRequest(request.id, secret, 1_301)?.status,
+    "approved",
+    "a failed settlement must leave the claim owned and cannot consume the pairing",
+  );
+});
+
+test("concurrent stale prune, finalize, and rollback share the same deterministic stale terminal result", async () => {
+  const { request, secret } = createPairingRequest(input(), 1_000);
+  decidePairingRequest(request.id, "approved", 1_100);
+  const claim = claimApprovedPairing(request.id, secret, 1_200);
+  assert.ok(claim);
+  const staleAt = 1_200 + PAIRING_CLAIM_STALE_MS;
+
+  const [pruned, finalized, rolledBack] = await Promise.all([
+    Promise.resolve().then(() => readPairingRequest(request.id, secret, staleAt)),
+    Promise.resolve().then(() => finalizeApprovedPairingClaim(request.id, claim.claimId, staleAt)),
+    Promise.resolve().then(() => rollbackApprovedPairingClaim(request.id, claim.claimId, staleAt)),
+  ]);
+
+  assert.equal(pruned, null);
+  assert.deepEqual(finalized, { kind: "stale" });
+  assert.deepEqual(rolledBack, { kind: "stale" });
 });
