@@ -249,6 +249,8 @@ Running DevCommand (`cargo run --no-default-features --color always --`)
 <details>
 <summary><strong>Startup looks stuck? Diagnose it here</strong></summary>
 
+<br>
+
 - **First launch is slow by design.** Cargo downloads and compiles Rust crates
   before the window appears. `Compiling ...` lines are progress, not a hang.
 - **No `port ... is free` line + an error** → every port in `3000..3010` is
@@ -347,7 +349,7 @@ worktree ad hoc.
 <details>
 <summary><strong>How is Coven Cave different from OpenCoven?</strong></summary>
 
-OpenCoven is the platform and the coven of familiars. Coven Cave is the **native
+<br>OpenCoven is the platform and the coven of familiars. Coven Cave is the **native
 client** you use to interact with them — the control room. You can think of
 OpenCoven as the engine and Coven Cave as the cockpit.
 
@@ -356,7 +358,7 @@ OpenCoven as the engine and Coven Cave as the cockpit.
 <details>
 <summary><strong>Do I need to build from source to use it?</strong></summary>
 
-No. Install the signed desktop build via Homebrew (`brew install --cask
+<br>No. Install the signed desktop build via Homebrew (`brew install --cask
 opencoven/tap/coven-cave`) or download it from the
 [releases page](https://github.com/OpenCoven/coven-cave/releases/latest).
 Building from source is only needed for development.
@@ -366,7 +368,7 @@ Building from source is only needed for development.
 <details>
 <summary><strong>Why is it a native app instead of a website?</strong></summary>
 
-Native capabilities: local terminal and browser panes, a sidecar that drives
+<br>Native capabilities: local terminal and browser panes, a sidecar that drives
 local agent sessions, offline-capable state, OS-level speech, auto-updates, and
 device handoff. A browser tab can't spawn a local shell or hold a persistent
 agent session the way the Tauri shell can.
@@ -376,7 +378,7 @@ agent session the way the Tauri shell can.
 <details>
 <summary><strong>What is the "sidecar"?</strong></summary>
 
-The Cave sidecar is the local companion process the Tauri shell manages. It
+<br>The Cave sidecar is the local companion process the Tauri shell manages. It
 backs the desktop-local surfaces (terminal, browser) and hosts local agent
 sessions so familiar work can run on your machine.
 
@@ -385,7 +387,7 @@ sessions so familiar work can run on your machine.
 <details>
 <summary><strong>How does mobile handoff work?</strong></summary>
 
-Two paths. For quick dogfooding, `pnpm mobile:tailscale` exposes the web app to
+<br>Two paths. For quick dogfooding, `pnpm mobile:tailscale` exposes the web app to
 your phone over **Tailscale**. The native SwiftUI iOS client has its own chat,
 code, tasks, and feed tabs, but no public TestFlight or App Store enrollment
 link is currently available.
@@ -395,7 +397,7 @@ link is currently available.
 <details>
 <summary><strong>Which platforms are supported?</strong></summary>
 
-Desktop: **macOS** on Apple Silicon and Intel, **Windows** on x64, and **Linux**
+<br>Desktop: **macOS** on Apple Silicon and Intel, **Windows** on x64, and **Linux**
 on amd64/x86_64. Mobile: the native **iOS** client can be built from source but
 is not publicly distributed yet; phone browsers can use the Tailscale path.
 
@@ -404,7 +406,7 @@ is not publicly distributed yet; phone browsers can use the Tailscale path.
 <details>
 <summary><strong>The desktop app seems stuck on first launch — is it broken?</strong></summary>
 
-Almost always no. A **source** launch through `dev:app` compiles Rust crates and
+<br>Almost always no. A **source** launch through `dev:app` compiles Rust crates and
 can take several minutes. Prebuilt Homebrew, DMG, MSI, and AppImage installs do
 not compile Rust locally. `Compiling ...` output is progress when running from
 source; see the [startup diagnostics](#run-the-native-desktop-shell) above.
@@ -414,7 +416,7 @@ source; see the [startup diagnostics](#run-the-native-desktop-shell) above.
 <details>
 <summary><strong>Can I run several familiars at once?</strong></summary>
 
-Yes. Coven Cave supports multiple concurrent agent sessions with coordination
+<br>Yes. Coven Cave supports multiple concurrent agent sessions with coordination
 across them — see [`docs/multi-session-coordination.md`](docs/multi-session-coordination.md).
 
 </details>

@@ -88,6 +88,7 @@ export const SUITES = {
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
     "src/lib/research-prompt-brief.test.ts",
+    "src/lib/research-refine-direction.test.ts",
     "src/lib/research-autoloop.test.ts",
     "src/lib/research-mission-client.test.ts",
     "src/lib/roving-list.test.ts",
@@ -563,6 +564,7 @@ export const SUITES = {
     "src/components/fire-and-forget-fetch.test.ts",
     "src/components/notification-bell-mutations.test.ts",
     "src/components/notification-bell-series.test.ts",
+    "src/components/notification-bell-glyph-size.test.ts",
     "src/components/surface-error-states.test.ts",
     "src/components/glass-overlay-chrome.test.ts",
     "src/components/surface-loading-states.test.ts",
@@ -1066,6 +1068,7 @@ export const SUITES = {
     "src/components/familiars-memory-master-detail.test.ts",
     "src/components/canonical-memory-markdown.test.ts",
     "src/components/document-reader-view.test.ts",
+    "src/components/document-reader-text-size.test.ts",
     "src/components/canonical-memory-reader.test.ts",
     "src/components/familiars-memory-recovery.test.tsx",
     "src/components/familiars-view-memory-ownership.test.tsx",
@@ -1713,6 +1716,7 @@ const ALIAS_LOADER = new Set([
   // the prompt-brief + quick-saves tests type their fixtures against
   // "@/lib/research-missions" and "@/lib/link-organizer"
   "src/lib/research-prompt-brief.test.ts",
+  "src/lib/research-refine-direction.test.ts",
   "src/components/role-surfaces/research-quick-saves.test.ts",
   "src/components/role-surfaces/research-library-view.test.ts",
   "src/components/role-surfaces/research-studio-providers.test.ts",
@@ -1941,6 +1945,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
   "src/components/document-reader-view.test.ts",
+  "src/components/document-reader-text-size.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
   "src/components/familiars-memory-recovery.test.tsx",
   "src/components/familiars-view-memory-ownership.test.tsx",
