@@ -127,8 +127,9 @@
                                                      = 8 + 4 + 8 + 8  = 28px
 
    so --rail-pad === (56 - 2*--space-2 - --rail-control)/2. Change one and the
-   column splits again; sidebar-rail-peek-parity.test.ts pins the relation and
-   tests/sidebar-rail-peek-parity.spec.ts measures the rendered result. */
+   column splits again; sidebar-rail-header.test.ts pins the constants and
+   tests/sidebar-rail-peek-parity.spec.ts measures the rendered result.
+   Design note: docs/superpowers/specs/2026-08-14-siderail-rail-peek-parity-design.md */
 .shell-nav {
   --rail-pad: 4px;
   /* Leading padding inside an expanded control, before its icon. */
