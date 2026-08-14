@@ -14,11 +14,16 @@ import {
   isBindableRuntimeChoice,
   isSummonableLocalHarness,
   isTrustedChatHarness,
+  resolveTrustedConversationHarness,
   isTrustedOnboardingHarness,
   openClawAdapterReport,
   canonicalHarnessId,
   runtimeDisplayLabel,
 } from "./harness-adapters.ts";
+import {
+  resolveAuthoritativeFamiliarId,
+  resolveExactFamiliarId,
+} from "./server/familiar-id.ts";
 
 // Model-parity gating probe: forwarding `--model` must stay off until the
 // installed `coven run` advertises the flag.
@@ -115,6 +120,107 @@ assert.equal(isSummonableLocalHarness("grok"), true);
 assert.equal(isSummonableLocalHarness("openclaw"), false, "OpenClaw is summoned through the dedicated agent vessel");
 assert.equal(isSummonableLocalHarness("coven-code"), false, "Coven Code is an app/tool install, not a familiar runtime choice");
 assert.equal(isSummonableLocalHarness("opencode"), false, "registry runtimes stay hidden until the creation flow has explicit support");
+
+assert.deepEqual(
+  resolveTrustedConversationHarness("claude-code", "openclaw"),
+  { ok: true, harness: "openclaw" },
+  "a trusted persisted conversation stays pinned when the configured binding is also trusted",
+);
+assert.deepEqual(
+  resolveTrustedConversationHarness("openai-codex"),
+  { ok: true, harness: "codex" },
+  "a new chat uses the canonical trusted configured harness",
+);
+assert.deepEqual(
+  resolveTrustedConversationHarness("__wardsunder_dispatch_unavailable__", "openclaw"),
+  { ok: false },
+  "trusted persisted provenance cannot bypass an untrusted configured binding",
+);
+assert.deepEqual(
+  resolveTrustedConversationHarness("claude", "__wardsunder_dispatch_unavailable__"),
+  { ok: false },
+  "an untrusted persisted harness cannot bypass a trusted configured binding",
+);
+assert.deepEqual(
+  resolveTrustedConversationHarness("claude", ""),
+  { ok: false },
+  "an explicitly empty persisted harness is untrusted rather than absent",
+);
+
+assert.deepEqual(
+  resolveExactFamiliarId("wren", ["wren"]),
+  { ok: true, familiarId: "wren" },
+  "an exact authoritative familiar id is preserved byte for byte",
+);
+assert.deepEqual(
+  resolveExactFamiliarId("WREN", ["wren"]),
+  { ok: false, reason: "alias" },
+  "a case-only familiar alias is rejected rather than canonicalized",
+);
+assert.deepEqual(
+  resolveExactFamiliarId("wren", ["wren", "WREN"]),
+  { ok: false, reason: "collision" },
+  "two authoritative ids with the same case fold fail closed",
+);
+assert.deepEqual(
+  resolveExactFamiliarId("unknown", ["wren"]),
+  { ok: false, reason: "unknown" },
+  "an unknown familiar id is not admitted through defaults",
+);
+
+const localConfig = {
+  defaults: { harness: "codex", model: "" },
+  familiars: { wren: { harness: "claude" } },
+};
+let rosterLoads = 0;
+assert.deepEqual(
+  await resolveAuthoritativeFamiliarId(localConfig, "wren", {
+    loadDeclaredIds: async () => ["sage"],
+    loadRosterIds: async () => {
+      rosterLoads += 1;
+      return null;
+    },
+  }),
+  { ok: true, familiarId: "wren" },
+  "an exact configured familiar remains available while the daemon is offline",
+);
+assert.equal(rosterLoads, 0, "local exact admission never depends on daemon availability");
+assert.deepEqual(
+  await resolveAuthoritativeFamiliarId(localConfig, "sage", {
+    loadDeclaredIds: async () => ["sage"],
+    loadRosterIds: async () => {
+      rosterLoads += 1;
+      return null;
+    },
+  }),
+  { ok: true, familiarId: "sage" },
+  "a manifest-declared familiar using runtime defaults remains available offline",
+);
+assert.equal(rosterLoads, 0, "manifest exact admission also avoids the daemon");
+assert.deepEqual(
+  await resolveAuthoritativeFamiliarId(localConfig, "WREN", {
+    loadDeclaredIds: async () => [],
+    loadRosterIds: async () => {
+      rosterLoads += 1;
+      return ["WREN"];
+    },
+  }),
+  { ok: false, reason: "alias" },
+  "a local case alias cannot be revived by a matching hub roster entry",
+);
+assert.equal(rosterLoads, 0, "local alias rejection happens before hub fallback");
+assert.deepEqual(
+  await resolveAuthoritativeFamiliarId(localConfig, "hub-familiar", {
+    loadDeclaredIds: async () => [],
+    loadRosterIds: async () => {
+      rosterLoads += 1;
+      return ["hub-familiar"];
+    },
+  }),
+  { ok: true, familiarId: "hub-familiar" },
+  "an exact hub-only familiar may resolve through the live roster fallback",
+);
+assert.equal(rosterLoads, 1, "only a locally unknown id consults the daemon roster");
 
 // Binding pickers (Studio Brain tab, Familiar tab hero) hide tool installs the
 // daemon's adapter list re-introduces past the COMPATIBILITY_ADAPTERS policy

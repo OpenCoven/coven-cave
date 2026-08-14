@@ -38,10 +38,12 @@ export type VisibleFamiliarRosterResult =
     error: string;
   };
 
-export async function loadVisibleFamiliarRoster(): Promise<VisibleFamiliarRosterResult> {
+export async function loadVisibleFamiliarRoster(
+  configSnapshot?: CaveConfig,
+): Promise<VisibleFamiliarRosterResult> {
   const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
-  const config = await loadConfig();
+  const config = configSnapshot ?? await loadConfig();
   const target = daemonTargetForConfig(config);
   const [res, removedIds, declaredEntries] = await Promise.all([
     callDaemonTarget<VisibleFamiliarRosterEntry[]>(target, {

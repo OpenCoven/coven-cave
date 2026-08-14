@@ -47,8 +47,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /binding\.harness = canonicalHarnessId\(binding\.harness\)/,
-  "Native chat must canonicalize the bound harness id (e.g. hermes-agent → hermes) before the trust gate, so an aliased familiar isn't 403'd",
+  /existingConversation && existingConversation\.familiarId !== body\.familiarId[\s\S]*?taskCard && taskCard\.familiarId !== body\.familiarId[\s\S]*?resolveAuthoritativeFamiliarId\(config, body\.familiarId\)[\s\S]*?body\.familiarId = familiarResolution\.familiarId;[\s\S]*?bindingFor\(config, body\.familiarId\)[\s\S]*?persistImageAttachments\(/,
+  "Native chat must preserve ownership 404s, then admit one exact familiar id before binding, attachment writes, or workspace resolution",
+);
+
+assert.match(
+  chatRoute,
+  /const harnessResolution = resolveTrustedConversationHarness\(\s*binding\.harness,\s*existingConversation\?\.harness,?\s*\)[\s\S]*?if \(!harnessResolution\.ok\)[\s\S]*?binding\.harness = harnessResolution\.harness;[\s\S]*?persistImageAttachments\(/,
+  "Native chat must canonicalize and trust both configured and persisted harnesses before attachment persistence or runtime work",
 );
 
 assert.match(

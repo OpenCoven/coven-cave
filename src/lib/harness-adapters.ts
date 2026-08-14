@@ -234,6 +234,29 @@ export function isTrustedChatHarness(harness: string): boolean {
   return TRUSTED_CHAT_HARNESSES.has(canonicalHarnessId(harness));
 }
 
+export type TrustedConversationHarnessResolution =
+  | { ok: true; harness: string }
+  | { ok: false };
+
+/**
+ * Resolve the harness for a new or resumed native-chat turn without allowing
+ * persisted conversation provenance to bypass a disabled/untrusted familiar
+ * binding. A resume may stay pinned to its original harness only while BOTH
+ * the familiar's current binding and the persisted harness remain trusted.
+ */
+export function resolveTrustedConversationHarness(
+  configuredHarness: string,
+  persistedHarness?: string | null,
+): TrustedConversationHarnessResolution {
+  const configured = canonicalHarnessId(configuredHarness);
+  if (!isTrustedChatHarness(configured)) return { ok: false };
+
+  if (persistedHarness == null) return { ok: true, harness: configured };
+  const persisted = canonicalHarnessId(persistedHarness);
+  if (!isTrustedChatHarness(persisted)) return { ok: false };
+  return { ok: true, harness: persisted };
+}
+
 export function isSummonableLocalHarness(harness: string): boolean {
   return SUMMONABLE_LOCAL_HARNESSES.has(canonicalHarnessId(harness));
 }

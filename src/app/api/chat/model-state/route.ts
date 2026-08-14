@@ -7,7 +7,10 @@ import {
   withConversationLock,
 } from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
+import {
+  canonicalHarnessId,
+  resolveTrustedConversationHarness,
+} from "@/lib/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
 import { modelControlCapabilities } from "@/lib/model-control-capabilities";
@@ -15,7 +18,10 @@ import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { hermesApiConfig } from "@/lib/hermes-responses-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
-import { isValidFamiliarId } from "@/lib/server/familiar-id";
+import {
+  isValidFamiliarId,
+  resolveAuthoritativeFamiliarId,
+} from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,10 +37,25 @@ function jsonError(error: string, status: number) {
   return NextResponse.json({ ok: false, error }, { status });
 }
 
+function untrustedChatHarnessError() {
+  return NextResponse.json(
+    {
+      ok: false,
+      code: "untrusted_chat_harness",
+      error: "This familiar is not available for native Cave chat.",
+    },
+    { status: 403 },
+  );
+}
+
 function cleanText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function exactFamiliarId(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function runtimeForBinding(binding: ReturnType<typeof bindingFor>): string | null {
@@ -83,31 +104,60 @@ async function currentState(
   sessionId?: string | null,
   nextMessageModel?: string | null,
 ) {
-  const config = await loadConfig();
-  const binding = bindingFor(config, familiarId);
-  const conversation = sessionId ? await loadConversation(sessionId) : null;
-  const conversationHarness = conversation?.harness
-    ? canonicalHarnessId(conversation.harness)
-    : null;
-  return resolveChatModelState({
-    familiarId,
-    // Chat/send treats a persisted conversation harness as the execution
-    // contract. Model state must resolve against the same harness or a
-    // familiar rebind can render Hermes controls while the next turn still
-    // launches the old Claude conversation (and vice versa).
-    harness: conversationHarness ?? canonicalHarnessId(binding.harness),
-    runtime: conversation?.runtime ?? runtimeForBinding(binding),
-    globalDefaultModel: config.defaults.model,
-    familiarModel: config.familiars[familiarId]?.model ?? null,
-    sessionModel: conversation?.modelIntent?.model,
-    nextMessageModel,
-    lastResponseModel: lastResponseModel(conversation),
-  });
+  const [config, conversation] = await Promise.all([
+    loadConfig(),
+    sessionId ? loadConversation(sessionId) : null,
+  ]);
+  if (conversation && conversation.familiarId !== familiarId) {
+    return { ok: false as const, reason: "not-found" as const };
+  }
+  const familiarResolution = await resolveAuthoritativeFamiliarId(config, familiarId);
+  if (!familiarResolution.ok) {
+    return { ok: false as const, reason: "untrusted-familiar" as const };
+  }
+  const canonicalFamiliarId = familiarResolution.familiarId;
+  const binding = bindingFor(config, canonicalFamiliarId);
+  const harnessResolution = resolveTrustedConversationHarness(
+    binding.harness,
+    conversation?.harness,
+  );
+  if (!harnessResolution.ok) {
+    return { ok: false as const, reason: "untrusted-harness" as const };
+  }
+  return {
+    ok: true as const,
+    binding,
+    familiarId: canonicalFamiliarId,
+    state: resolveChatModelState({
+      familiarId: canonicalFamiliarId,
+      // Match chat/send's dual-trust contract: persisted provenance may retain
+      // a trusted conversation runtime, but it cannot bypass an untrusted
+      // current binding or revive an untrusted legacy harness.
+      harness: harnessResolution.harness,
+      runtime: conversation?.runtime ?? runtimeForBinding(binding),
+      globalDefaultModel: config.defaults.model,
+      familiarModel: config.familiars[canonicalFamiliarId]?.model ?? null,
+      sessionModel: conversation?.modelIntent?.model,
+      nextMessageModel,
+      lastResponseModel: lastResponseModel(conversation),
+    }),
+  };
 }
 
-export async function GET(req: Request) {
+type ModelStateGetDependencies = {
+  listRuntimeModelInventory: typeof listRuntimeModelInventory;
+};
+
+const DEFAULT_GET_DEPENDENCIES: ModelStateGetDependencies = {
+  listRuntimeModelInventory,
+};
+
+export async function handleModelStateGet(
+  req: Request,
+  dependencies: ModelStateGetDependencies = DEFAULT_GET_DEPENDENCIES,
+) {
   const url = new URL(req.url);
-  const familiarId = cleanText(url.searchParams.get("familiarId"));
+  const familiarId = exactFamiliarId(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
   const rawPreviewModel = url.searchParams.get("model");
   // A model preview is intentionally read-only. Clients use it after staging
@@ -128,16 +178,13 @@ export async function GET(req: Request) {
     return jsonError("invalid model", 400);
   }
 
-  if (sessionId) {
-    const conversation = await loadConversation(sessionId);
-    if (conversation && conversation.familiarId !== familiarId) {
-      return jsonError("not found", 404);
-    }
+  const current = await currentState(familiarId, sessionId, previewModel);
+  if (!current.ok) {
+    return current.reason === "not-found"
+      ? jsonError("not found", 404)
+      : untrustedChatHarnessError();
   }
-
-  const state = await currentState(familiarId, sessionId, previewModel);
-  const config = await loadConfig();
-  const binding = bindingFor(config, familiarId);
+  const { binding, familiarId: canonicalFamiliarId, state } = current;
   // Also hand back the pickable model menu for this chat's runtime so non-web
   // clients (the iOS app) don't have to mirror runtime capability rules.
   // `allowCustom` means a free-typed id is valid.
@@ -156,9 +203,9 @@ export async function GET(req: Request) {
     !isSshRuntime(binding.runtime) &&
     !state.runtime?.startsWith("ssh:");
   const canReadHermesInventory = bareLocalHermes && localInventoryRequest;
-  const inventory = await listRuntimeModelInventory(
+  const inventory = await dependencies.listRuntimeModelInventory(
     state.harness,
-    familiarId,
+    canonicalFamiliarId,
     {
       allowOpenCodeInventory: canReadOpenCodeInventory,
       allowHermesInventory: canReadHermesInventory,
@@ -167,7 +214,7 @@ export async function GET(req: Request) {
   // Native Hermes controls are available only through its configured Responses
   // API transport. Keep the state response aligned with the send boundary so
   // a client never renders a provider setting that would be rejected later.
-  const hermesEnvironment = bareLocalHermes ? harnessSpawnEnv(familiarId) : null;
+  const hermesEnvironment = bareLocalHermes ? harnessSpawnEnv(canonicalFamiliarId) : null;
   const hermesApi = hermesEnvironment
     ? hermesApiConfig({
         HERMES_API_URL: hermesEnvironment.HERMES_API_URL,
@@ -188,6 +235,10 @@ export async function GET(req: Request) {
   });
 }
 
+export async function GET(req: Request) {
+  return handleModelStateGet(req);
+}
+
 export async function PATCH(req: Request) {
   let body: ModelStatePatchBody;
   try {
@@ -199,7 +250,7 @@ export async function PATCH(req: Request) {
     return jsonError("invalid json body", 400);
   }
 
-  const familiarId = cleanText(body.familiarId);
+  const familiarId = exactFamiliarId(body.familiarId);
   const sessionId = cleanText(body.sessionId);
   // Both null (older clients) and the empty string (new clients that need to
   // preserve the sentinel through JSON/config merges) mean explicit runtime
@@ -214,8 +265,6 @@ export async function PATCH(req: Request) {
     return jsonError("invalid session id", 400);
   }
   if (!clearModel && !model) return jsonError("invalid model", 400);
-  const config = await loadConfig();
-  const binding = bindingFor(config, familiarId);
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
@@ -223,15 +272,27 @@ export async function PATCH(req: Request) {
     return jsonError("unsupported scope", 400);
   }
 
-  const sessionConversation = scope === "session" && sessionId
-    ? await loadConversation(sessionId)
-    : null;
-  if (scope === "session" && sessionId &&
-      (!sessionConversation || sessionConversation.familiarId !== familiarId)) {
+  const [config, sessionConversation] = await Promise.all([
+    loadConfig(),
+    sessionId ? loadConversation(sessionId) : null,
+  ]);
+  if (sessionConversation && sessionConversation.familiarId !== familiarId) {
     return jsonError("not found", 404);
   }
+  if (scope === "session" && sessionId && !sessionConversation) {
+    return jsonError("not found", 404);
+  }
+  const familiarResolution = await resolveAuthoritativeFamiliarId(config, familiarId);
+  if (!familiarResolution.ok) return untrustedChatHarnessError();
+  const canonicalFamiliarId = familiarResolution.familiarId;
+  const binding = bindingFor(config, canonicalFamiliarId);
+  const harnessResolution = resolveTrustedConversationHarness(
+    binding.harness,
+    sessionConversation?.harness,
+  );
+  if (!harnessResolution.ok) return untrustedChatHarnessError();
   const modelValidationHarness = scope === "session"
-    ? canonicalHarnessId(sessionConversation?.harness ?? binding.harness)
+    ? harnessResolution.harness
     : canonicalHarnessId(binding.harness);
   if (model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
     return jsonError("model is not allowed by this runtime", 400);
@@ -240,8 +301,8 @@ export async function PATCH(req: Request) {
   if (scope === "familiar-default") {
     await saveConfig({
       familiars: {
-        [familiarId]: {
-          ...(config.familiars[familiarId] ?? {}),
+        [canonicalFamiliarId]: {
+          ...(config.familiars[canonicalFamiliarId] ?? {}),
           // Empty model is a durable Runtime-default intent. A null patch
           // remains accepted for old clients, but must not erase the intent
           // and expose a stale familiar/global fallback on the next send.
@@ -249,14 +310,19 @@ export async function PATCH(req: Request) {
         },
       },
     });
-    const state = await currentState(familiarId, sessionId);
-    return NextResponse.json({ ok: true, state });
+    const current = await currentState(canonicalFamiliarId, sessionId);
+    if (!current.ok) {
+      return current.reason === "not-found"
+        ? jsonError("not found", 404)
+        : untrustedChatHarnessError();
+    }
+    return NextResponse.json({ ok: true, state: current.state });
   }
 
   if (!sessionId) return jsonError("sessionId is required for session scope", 400);
   const updated = await withConversationLock(sessionId, async () => {
     const conversation = await loadConversation(sessionId);
-    if (!conversation || conversation.familiarId !== familiarId) return false;
+    if (!conversation || conversation.familiarId !== canonicalFamiliarId) return false;
     if (clearModel) {
       // Keep an explicit empty session intent. Deleting it would immediately
       // re-expose a familiar/global model and makes clear → send race-prone.
@@ -278,6 +344,11 @@ export async function PATCH(req: Request) {
     return true;
   });
   if (!updated) return jsonError("not found", 404);
-  const state = await currentState(familiarId, sessionId);
-  return NextResponse.json({ ok: true, state });
+  const current = await currentState(canonicalFamiliarId, sessionId);
+  if (!current.ok) {
+    return current.reason === "not-found"
+      ? jsonError("not found", 404)
+      : untrustedChatHarnessError();
+  }
+  return NextResponse.json({ ok: true, state: current.state });
 }

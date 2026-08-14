@@ -18,12 +18,12 @@ assert.match(
 );
 assert.match(
   route,
-  /const localInventoryRequest = rejectNonLocalRequest\(req\) === null[\s\S]*?state\.harness === "opencode" && localInventoryRequest[\s\S]*?listRuntimeModelInventory\([\s\S]*?allowOpenCodeInventory: canReadOpenCodeInventory/,
+  /const localInventoryRequest = rejectNonLocalRequest\(req\) === null[\s\S]*?state\.harness === "opencode" && localInventoryRequest[\s\S]*?dependencies\.listRuntimeModelInventory\([\s\S]*?allowOpenCodeInventory: canReadOpenCodeInventory/,
   "the aggregate endpoint uses the shared inventory while keeping OpenCode discovery local-only",
 );
 assert.match(
   route,
-  /listRuntimeModelInventory\(\s*state\.harness,\s*familiarId,/,
+  /dependencies\.listRuntimeModelInventory\(\s*state\.harness,\s*canonicalFamiliarId,/,
   "Claude, Copilot, OpenCode, and static clients receive one capability-aware model contract",
 );
 assert.match(route, /\n\s*inventory,\n/);
@@ -32,17 +32,37 @@ assert.match(
   /function modelBindingScope\([\s\S]*?binding\.hermesProfile\.id[\s\S]*?runtimeForBinding\(binding\),[\s\S]*?runtime,[\s\S]*?hermesScope,[\s\S]*?bindingScope: modelBindingScope\(binding, state\.runtime\)/,
   "the response exposes a non-secret binding identity for local, SSH, and Hermes profile scope transitions",
 );
-assert.match(route, /bindingFor\(config, familiarId\)/);
+assert.match(route, /bindingFor\(config, canonicalFamiliarId\)/);
 assert.match(route, /resolveChatModelState/);
 assert.match(route, /loadConversation\(sessionId\)/);
 assert.match(
   route,
-  /const conversationHarness = conversation\?\.harness[\s\S]*?harness: conversationHarness \?\? canonicalHarnessId\(binding\.harness\)/,
-  "model state must use the persisted conversation harness that chat/send will launch",
+  /const harnessResolution = resolveTrustedConversationHarness\(\s*binding\.harness,\s*conversation\?\.harness,?\s*\)[\s\S]*?if \(!harnessResolution\.ok\)[\s\S]*?reason: "untrusted-harness"[\s\S]*?harness: harnessResolution\.harness/,
+  "model state must use the same dual-trust conversation harness contract as chat/send",
 );
 assert.match(
   route,
-  /if \(conversation && conversation\.familiarId !== familiarId\)[\s\S]*?jsonError\("not found", 404\)/,
+  /const current = await currentState\(familiarId, sessionId, previewModel\);[\s\S]*?if \(!current\.ok\)[\s\S]*?untrustedChatHarnessError\(\);[\s\S]*?const \{ binding, familiarId: canonicalFamiliarId, state \} = current;[\s\S]*?dependencies\.listRuntimeModelInventory\(/,
+  "an untrusted configured or persisted harness is rejected before provider model discovery",
+);
+assert.match(
+  route,
+  /if \(conversation && conversation\.familiarId !== familiarId\)[\s\S]*?reason: "not-found"[\s\S]*?resolveAuthoritativeFamiliarId\(config, familiarId\)[\s\S]*?bindingFor\(config, canonicalFamiliarId\)/,
+  "GET preserves opaque conversation ownership before exact familiar admission and binding",
+);
+assert.match(
+  route,
+  /if \(sessionConversation && sessionConversation\.familiarId !== familiarId\)[\s\S]*?jsonError\("not found", 404\)[\s\S]*?resolveAuthoritativeFamiliarId\(config, familiarId\)[\s\S]*?\[canonicalFamiliarId\]/,
+  "PATCH preserves opaque conversation ownership and writes only the admitted canonical id",
+);
+assert.match(
+  route,
+  /export async function handleModelStateGet\([\s\S]*?dependencies: ModelStateGetDependencies[\s\S]*?dependencies\.listRuntimeModelInventory\(/,
+  "the aggregate inventory call has a narrow injectable seam for causal no-discovery tests",
+);
+assert.match(
+  route,
+  /if \(conversation && conversation\.familiarId !== familiarId\)[\s\S]*?reason: "not-found"[\s\S]*?current\.reason === "not-found"[\s\S]*?jsonError\("not found", 404\)/,
   "model-state GET must not expose another familiar's session model intent",
 );
 assert.match(route, /saveConfig/);
@@ -72,8 +92,8 @@ assert.equal(
 );
 assert.match(
   route,
-  /const modelValidationHarness = scope === "session"[\s\S]*?canonicalHarnessId\(sessionConversation\?\.harness \?\? binding\.harness\)[\s\S]*?isModelAllowedByRuntime\(modelValidationHarness, model\)/,
-  "model-state writes enforce the active conversation runtime custom-id policy rather than trusting picker validation",
+  /const harnessResolution = resolveTrustedConversationHarness\(\s*binding\.harness,\s*sessionConversation\?\.harness,?\s*\)[\s\S]*?if \(!harnessResolution\.ok\) return untrustedChatHarnessError\(\);[\s\S]*?const modelValidationHarness = scope === "session"[\s\S]*?harnessResolution\.harness[\s\S]*?isModelAllowedByRuntime\(modelValidationHarness, model\)/,
+  "model-state writes enforce both harness trust and the active conversation runtime custom-id policy",
 );
 assert.match(
   route,

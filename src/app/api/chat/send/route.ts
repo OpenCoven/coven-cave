@@ -182,6 +182,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
+import { resolveAuthoritativeFamiliarId } from "@/lib/server/familiar-id";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -200,7 +201,10 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
+import {
+  isTrustedChatHarness,
+  resolveTrustedConversationHarness,
+} from "@/lib/harness-adapters";
 import {
   type ChatTurn,
   createConversationStub,
@@ -329,6 +333,17 @@ type LocalRuntimePlan = LocalRuntimeCapabilityPlan & {
   cwd?: string;
   unresolvedWindowsShim?: boolean;
 };
+
+function untrustedChatHarnessResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      code: "untrusted_chat_harness",
+      error: "This familiar is not available for native Cave chat.",
+    }),
+    { status: 403, headers: { "content-type": "application/json" } },
+  );
+}
 
 function createLocalRuntimePlan(input: {
   runner: DirectRunnerId;
@@ -1595,7 +1610,11 @@ export async function POST(req: Request) {
   ) ?? undefined;
   const attachments = normalizeChatAttachments(body.attachments);
   const promptText = body.prompt?.trim() ?? "";
-  if (!body.familiarId || (!promptText && attachments.length === 0)) {
+  if (
+    typeof body.familiarId !== "string" ||
+    !body.familiarId ||
+    (!promptText && attachments.length === 0)
+  ) {
     return new Response(
       JSON.stringify({
         ok: false,
@@ -1664,50 +1683,47 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  // Persisted transcripts keep attachment metadata only — base64 image
-  // payloads stay out of the conversation store. Images additionally get a
-  // durable copy in the attachment store, and the transcript records its id,
-  // so reopening the thread can show the picture again instead of degrading
-  // to a filename chip (cave-cysu4).
-  const persistedAttachments = await persistImageAttachments(
-    stripPreviewOnlyAttachmentFields(attachments),
-    attachments,
-  );
-
-  const config = await loadConfig();
-  const binding = bindingFor(config, body.familiarId);
-  const existingConversation = body.sessionId
-    ? await loadConversation(body.sessionId).catch(() => null)
-    : null;
-  // Canonicalize the bound harness id up front so a familiar carrying a
-  // package/alias id (e.g. "hermes-agent" for Hermes) is recognized as the
-  // trusted "hermes" adapter — otherwise the trust gate below 403s and `coven
-  // run` is invoked with an unknown harness name. Every downstream check and
-  // the spawn use this canonical id.
-  binding.harness = canonicalHarnessId(binding.harness);
+  const [config, existingConversation, taskCard] = await Promise.all([
+    loadConfig(),
+    body.sessionId ? loadConversation(body.sessionId).catch(() => null) : null,
+    taskCardForSession(body.sessionId),
+  ]);
   if (existingConversation && existingConversation.familiarId !== body.familiarId) {
     return new Response(
       JSON.stringify({ ok: false, error: "not found" }),
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
-  // On resume, the persisted conversation is the execution contract: a later
-  // familiar edit must not silently move an in-progress OpenClaw (or other
-  // runtime) conversation to a different harness. The trust gate below still
-  // rejects any malformed legacy value.
-  if (existingConversation) {
-    binding.harness = canonicalHarnessId(existingConversation.harness);
-  }
-  // Native Board handoffs reserve Cave's conversation id before the harness
-  // writes its transcript. Bind that pre-transcript id to the server-owned
-  // task card now, so a caller cannot use another familiar's reserved task.
-  const taskCard = await taskCardForSession(body.sessionId);
   if (taskCard && taskCard.familiarId !== body.familiarId) {
     return new Response(
       JSON.stringify({ ok: false, error: "not found" }),
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  const familiarResolution = await resolveAuthoritativeFamiliarId(config, body.familiarId);
+  if (!familiarResolution.ok) return untrustedChatHarnessResponse();
+  body.familiarId = familiarResolution.familiarId;
+  const binding = bindingFor(config, body.familiarId);
+  // A persisted conversation may remain pinned to its original runtime only
+  // while the familiar's CURRENT binding and the persisted harness are both
+  // trusted. Resolve that contract before attachment writes, discovery,
+  // capability probes, or any child process can run.
+  const harnessResolution = resolveTrustedConversationHarness(
+    binding.harness,
+    existingConversation?.harness,
+  );
+  if (!harnessResolution.ok) return untrustedChatHarnessResponse();
+  binding.harness = harnessResolution.harness;
+  // Persisted transcripts keep attachment metadata only — base64 image
+  // payloads stay out of the conversation store. Images additionally get a
+  // durable copy in the attachment store, and the transcript records its id,
+  // so reopening the thread can show the picture again instead of degrading
+  // to a filename chip (cave-cysu4). Trust and ownership checks above must run
+  // first so a rejected turn cannot mutate the durable attachment store.
+  const persistedAttachments = await persistImageAttachments(
+    stripPreviewOnlyAttachmentFields(attachments),
+    attachments,
+  );
   // A submitted stable id is resume provenance even when its transcript still
   // exists only in the daemon. Board is the sole exception: it reserves Cave's
   // id before dispatching the first native-chat turn.
@@ -2021,13 +2037,7 @@ export async function POST(req: Request) {
     );
   }
   if (!isTrustedChatHarness(binding.harness)) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: `Harness '${binding.harness}' is not trusted for native Cave chat.`,
-      }),
-      { status: 403, headers: { "content-type": "application/json" } },
-    );
+    return untrustedChatHarnessResponse();
   }
   // Claude's stream envelope is versioned independently of Cave. Resolve a
   // trusted local capability profile before streaming; an unknown client still

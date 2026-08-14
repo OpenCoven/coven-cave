@@ -1,6 +1,15 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -12,12 +21,28 @@ const home = await mkdtemp(path.join(homedir(), "cave-openclaw-resume-"));
 const bin = path.join(home, "bin");
 const workspace = path.join(home, "workspace");
 const calls = path.join(home, "openclaw-calls.jsonl");
+const attachmentRoot = path.join(home, "blocked-chat-attachments");
+const familiarWorkspaces = path.join(home, "workspaces", "familiars");
+const wrenWorkspace = path.join(familiarWorkspaces, "wren");
+const caseAliasWorkspace = path.join(familiarWorkspaces, "WREN");
+const unavailableHarness = "__wardsunder_dispatch_unavailable__";
+const pixelBase64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const blockedImage = {
+  name: "blocked.png",
+  type: "image/png",
+  mimeType: "image/png",
+  size: Buffer.from(pixelBase64, "base64").byteLength,
+  dataUrl: `data:image/png;base64,${pixelBase64}`,
+};
 const daemonSocket = process.platform === "win32"
   ? `\\\\.\\pipe\\cave-openclaw-resume-${process.pid}-${path.basename(home)}`
   : path.join(home, "coven.sock");
 const daemonOnlySessionId = "openclaw-daemon-only-resume";
 await mkdir(bin, { recursive: true });
 await mkdir(workspace, { recursive: true });
+await mkdir(wrenWorkspace, { recursive: true });
+if (process.platform !== "win32") await symlink("wren", caseAliasWorkspace, "dir");
 await writeFile(path.join(home, "familiars.toml"), "[[familiar]]\nid = \"wren\"\nopenclaw_agent = \"wren\"\n");
 
 const previousHome = process.env.COVEN_HOME;
@@ -25,10 +50,12 @@ const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousOpenClawBin = process.env.OPENCLAW_BIN;
 const previousCallLog = process.env.OPENCLAW_TEST_CALLS;
 const previousCovenSocket = process.env.COVEN_SOCKET;
+const previousAttachmentRoot = process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.OPENCLAW_TEST_CALLS = calls;
 process.env.COVEN_SOCKET = daemonSocket;
+process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = attachmentRoot;
 
 let daemonSessionRequests = 0;
 const daemon = createServer((req, res) => {
@@ -74,6 +101,42 @@ if (process.platform === "win32") {
   process.env.OPENCLAW_BIN = shimExecutable;
 }
 
+async function openClawInvocations() {
+  try {
+    return (await readFile(calls, "utf8"))
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function directoryEntries(directory) {
+  try {
+    return await readdir(directory);
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function assertUntrustedHarness(response) {
+  assert.equal(response.status, 403, await response.clone().text());
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    code: "untrusted_chat_harness",
+    error: "This familiar is not available for native Cave chat.",
+  });
+}
+
+async function assertNotFound(response) {
+  assert.equal(response.status, 404, await response.clone().text());
+  assert.deepEqual(await response.json(), { ok: false, error: "not found" });
+}
+
 async function readSse(response) {
   assert.equal(response.status, 200, await response.clone().text());
   const events = (await response.text())
@@ -84,12 +147,40 @@ async function readSse(response) {
 }
 
 try {
-  const { loadState, saveConfig } = await import("@/lib/cave-config");
+  const { loadConfig, loadState, saveConfig } = await import("@/lib/cave-config");
   const { loadConversation, saveConversation } = await import("@/lib/cave-conversations");
   const { chatSummaryTitle, defaultChatTitleForSession } = await import("@/lib/cave-chat-titles");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
+  const {
+    PATCH: PATCHModelState,
+    handleModelStateGet,
+  } = await import("../model-state/route.ts");
+
+  const inventoryCalls = [];
+  const modelStateDependencies = {
+    listRuntimeModelInventory: async (runtime, familiarId) => {
+      inventoryCalls.push({ runtime, familiarId });
+      return {
+        runtime,
+        models: [],
+        provenance: "runtime-managed",
+        freshness: "runtime-managed",
+        refreshState: "degraded",
+        availability: "degraded",
+        defaultOwner: "runtime",
+        allowCustom: false,
+        scope: {
+          familiarId,
+          runtime,
+          provider: null,
+          credentialScope: "runtime-managed",
+          providerConfiguration: "runtime-managed",
+        },
+      };
+    },
+  };
 
   const sessionId = "openclaw-resume-contract";
   const now = new Date().toISOString();
@@ -132,11 +223,7 @@ try {
   assert.equal(done?.responseMetadata?.harness, "openclaw");
   assert.equal(done?.responseMetadata?.openclawAgentId, "wren");
 
-  const invocations = (await readFile(calls, "utf8"))
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  const invocations = await openClawInvocations();
   assert.equal(invocations.length, 1, "the resumed turn starts exactly one OpenClaw child");
   assert.deepEqual(invocations[0].slice(0, 3), ["agent", "--agent", "wren"]);
   assert.ok(invocations[0].includes(`cave-${sessionId}`), "the existing Cave session key is retained");
@@ -144,6 +231,365 @@ try {
   const conversation = await loadConversation(sessionId);
   assert.equal(conversation?.harness, "openclaw", "resume never rewrites the stored harness");
   assert.equal(conversation?.turns.at(-1)?.responseMetadata?.harness, "openclaw");
+
+  const trustedModelState = await handleModelStateGet(
+    new Request(
+      `http://localhost/api/chat/model-state?familiarId=wren&sessionId=${sessionId}`,
+    ),
+    modelStateDependencies,
+  );
+  assert.equal(trustedModelState.status, 200, await trustedModelState.clone().text());
+  assert.equal(
+    (await trustedModelState.json()).state.harness,
+    "openclaw",
+    "model state preserves the same trusted configured-to-persisted resume contract",
+  );
+  assert.deepEqual(
+    inventoryCalls,
+    [{ runtime: "openclaw", familiarId: "wren" }],
+    "the injected aggregate inventory seam is exercised by a trusted request",
+  );
+
+  const trustedClaudeSessionId = "trusted-claude-model-state-contract";
+  await saveConversation({
+    sessionId: trustedClaudeSessionId,
+    familiarId: "wren",
+    harness: "claude",
+    model: "anthropic/claude-sonnet-4-6",
+    modelIntent: {
+      model: "anthropic/claude-sonnet-4-6",
+      source: "session",
+      applicationState: "saved",
+      reason: "Use Sonnet for this chat.",
+    },
+    runtime: `local:${workspace}`,
+    createdAt: now,
+    updatedAt: now,
+    turns: [],
+  });
+  await saveConfig({ familiars: { wren: { harness: "claude", model: "" } } });
+  const trustedClaudeModelState = await handleModelStateGet(
+    new Request(
+      `http://localhost/api/chat/model-state?familiarId=wren&sessionId=${trustedClaudeSessionId}`,
+    ),
+    modelStateDependencies,
+  );
+  assert.equal(
+    trustedClaudeModelState.status,
+    200,
+    await trustedClaudeModelState.clone().text(),
+  );
+  const trustedClaudePayload = await trustedClaudeModelState.json();
+  assert.deepEqual(
+    trustedClaudePayload.controls.map(
+      (control: { family: string; delivery: string }) => ({
+        family: control.family,
+        delivery: control.delivery,
+      }),
+    ),
+    [{ family: "reasoning", delivery: "prompt-only" }],
+    "a trusted Claude model exposes its audited prompt-only control",
+  );
+  assert.deepEqual(
+    inventoryCalls,
+    [
+      { runtime: "openclaw", familiarId: "wren" },
+      { runtime: "claude", familiarId: "wren" },
+    ],
+    "the positive trusted paths prove the aggregate discovery spy is wired",
+  );
+
+  // Installing the Wardsunder fail-closed binding disables every persisted
+  // conversation for this familiar. A previously trusted OpenClaw transcript
+  // must not revive a runtime, persist the rejected image, or alter the chat.
+  const conversationBeforeConfiguredBlock = await loadConversation(sessionId);
+  await saveConfig({
+    familiars: { wren: { harness: unavailableHarness, model: "" } },
+  });
+  await assertUntrustedHarness(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "wren",
+      sessionId,
+      projectRoot: workspace,
+      prompt: "this must stay blocked",
+      attachments: [blockedImage],
+    }),
+  })));
+  assert.equal(
+    (await openClawInvocations()).length,
+    1,
+    "a trusted persisted harness cannot spawn through an untrusted configured binding",
+  );
+  assert.deepEqual(
+    await loadConversation(sessionId),
+    conversationBeforeConfiguredBlock,
+    "a rejected configured binding cannot append or rewrite conversation state",
+  );
+  assert.deepEqual(
+    await directoryEntries(attachmentRoot),
+    [],
+    "a rejected configured binding cannot persist attachment bytes",
+  );
+
+  // The inverse is also fail-closed: a trusted current binding cannot revive
+  // an untrusted legacy/persisted conversation harness.
+  const untrustedPersistedSessionId = "untrusted-persisted-resume-contract";
+  await saveConversation({
+    sessionId: untrustedPersistedSessionId,
+    familiarId: "wren",
+    harness: unavailableHarness,
+    model: "",
+    runtime: `local:${workspace}`,
+    createdAt: now,
+    updatedAt: now,
+    turns: [{ id: "legacy-user", role: "user", text: "legacy", createdAt: now }],
+    activeLeafId: "legacy-user",
+  });
+  const conversationBeforePersistedBlock = await loadConversation(untrustedPersistedSessionId);
+  await saveConfig({ familiars: { wren: { harness: "openclaw", model: "" } } });
+  await assertUntrustedHarness(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "wren",
+      sessionId: untrustedPersistedSessionId,
+      projectRoot: workspace,
+      prompt: "legacy provenance must stay blocked",
+      attachments: [blockedImage],
+    }),
+  })));
+  assert.equal(
+    (await openClawInvocations()).length,
+    1,
+    "an untrusted persisted harness cannot spawn through a trusted configured binding",
+  );
+  assert.deepEqual(
+    await loadConversation(untrustedPersistedSessionId),
+    conversationBeforePersistedBlock,
+    "a rejected persisted harness cannot append or rewrite conversation state",
+  );
+  assert.deepEqual(
+    await directoryEntries(attachmentRoot),
+    [],
+    "a rejected persisted harness cannot persist attachment bytes",
+  );
+
+  // Model-state uses the same trust boundary before inventory or controls. The
+  // injected aggregate below makes the no-discovery assertion causal without
+  // invoking a provider.
+  await saveConfig({
+    familiars: { wren: { harness: unavailableHarness, model: "" } },
+  });
+  await assertUntrustedHarness(await handleModelStateGet(
+    new Request(`http://localhost/api/chat/model-state?familiarId=wren&sessionId=${sessionId}`),
+    modelStateDependencies,
+  ));
+
+  await saveConfig({ familiars: { wren: { harness: "claude", model: "" } } });
+  await assertUntrustedHarness(await handleModelStateGet(
+    new Request(
+      `http://localhost/api/chat/model-state?familiarId=wren&sessionId=${untrustedPersistedSessionId}`,
+    ),
+    modelStateDependencies,
+  ));
+  assert.equal(
+    inventoryCalls.length,
+    2,
+    "neither untrusted harness direction reaches aggregate model discovery",
+  );
+
+  if (process.platform !== "win32") {
+    assert.equal(
+      await realpath(caseAliasWorkspace),
+      await realpath(wrenWorkspace),
+      "the Linux fixture reproduces a case-variant workspace alias to wren",
+    );
+    // The exact wren binding is fail-closed while the global default remains a
+    // trusted executable harness. Before the identity gate, requesting WREN
+    // missed the sentinel and the hidden origin adopted this symlinked
+    // workspace without project authorization.
+    await saveConfig({
+      defaults: { harness: "openclaw", model: "" },
+      familiars: { wren: { harness: unavailableHarness, model: "" } },
+    });
+    const configBeforeAliasAttempts = await loadConfig();
+    const conversationsDirectory = path.join(home, "cave", "conversations");
+    const conversationsBeforeAliasAttempts = await directoryEntries(conversationsDirectory);
+    const invocationsBeforeAliasAttempts = (await openClawInvocations()).length;
+    const inventoryBeforeAliasAttempts = inventoryCalls.length;
+
+    await assertNotFound(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "WREN",
+        sessionId,
+        projectRoot: workspace,
+        prompt: "ownership remains opaque",
+        attachments: [blockedImage],
+      }),
+    })));
+    await assertNotFound(await handleModelStateGet(
+      new Request(
+        `http://localhost/api/chat/model-state?familiarId=WREN&sessionId=${sessionId}`,
+      ),
+      modelStateDependencies,
+    ));
+    await assertNotFound(await PATCHModelState(new Request(
+      "http://localhost/api/chat/model-state",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiarId: "WREN",
+          sessionId,
+          model: "",
+          scope: "session",
+        }),
+      },
+    )));
+
+    for (const origin of ["canvas", "enhance", "journal"]) {
+      await assertUntrustedHarness(await POST(new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiarId: "WREN",
+          prompt: `blocked ${origin} case alias`,
+          origin,
+          attachments: [blockedImage],
+        }),
+      })));
+    }
+
+    await assertUntrustedHarness(await handleModelStateGet(
+      new Request("http://localhost/api/chat/model-state?familiarId=WREN"),
+      modelStateDependencies,
+    ));
+    await assertUntrustedHarness(await PATCHModelState(new Request(
+      "http://localhost/api/chat/model-state",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiarId: "WREN",
+          model: "",
+          scope: "familiar-default",
+        }),
+      },
+    )));
+
+    await assertUntrustedHarness(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "unknown-familiar",
+        prompt: "unknown ids cannot inherit the trusted default",
+        origin: "canvas",
+        attachments: [blockedImage],
+      }),
+    })));
+    await assertUntrustedHarness(await handleModelStateGet(
+      new Request("http://localhost/api/chat/model-state?familiarId=unknown-familiar"),
+      modelStateDependencies,
+    ));
+    await assertUntrustedHarness(await PATCHModelState(new Request(
+      "http://localhost/api/chat/model-state",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiarId: "unknown-familiar",
+          model: "",
+          scope: "familiar-default",
+        }),
+      },
+    )));
+
+    const familiarsManifest = path.join(home, "familiars.toml");
+    const originalManifest = await readFile(familiarsManifest, "utf8");
+    const collidingManifest = [
+      "[[familiar]]",
+      'id = "wren"',
+      'openclaw_agent = "wren"',
+      "",
+      "[[familiar]]",
+      'id = "WREN"',
+      'openclaw_agent = "WREN"',
+      "",
+    ].join("\n");
+    await saveConfig({ familiars: { wren: { harness: "openclaw", model: "legacy" } } });
+    await writeFile(familiarsManifest, collidingManifest);
+    const configBeforeCollisionAttempts = await loadConfig();
+    await assertUntrustedHarness(await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        familiarId: "wren",
+        prompt: "case-colliding identities fail closed",
+        origin: "canvas",
+        attachments: [blockedImage],
+      }),
+    })));
+    await assertUntrustedHarness(await handleModelStateGet(
+      new Request("http://localhost/api/chat/model-state?familiarId=wren"),
+      modelStateDependencies,
+    ));
+    await assertUntrustedHarness(await PATCHModelState(new Request(
+      "http://localhost/api/chat/model-state",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiarId: "wren",
+          model: "",
+          scope: "familiar-default",
+        }),
+      },
+    )));
+    assert.equal(
+      await readFile(familiarsManifest, "utf8"),
+      collidingManifest,
+      "rejected case-collision requests cannot rewrite the identity manifest",
+    );
+    assert.deepEqual(
+      await loadConfig(),
+      configBeforeCollisionAttempts,
+      "rejected case-collision requests cannot mutate Cave config",
+    );
+    await writeFile(familiarsManifest, originalManifest);
+    await saveConfig({
+      familiars: { wren: { harness: unavailableHarness, model: "" } },
+    });
+
+    assert.equal(
+      (await openClawInvocations()).length,
+      invocationsBeforeAliasAttempts,
+      "case-variant hidden generators cannot start a runtime child",
+    );
+    assert.equal(
+      inventoryCalls.length,
+      inventoryBeforeAliasAttempts,
+      "case-variant model state cannot reach aggregate model discovery",
+    );
+    assert.deepEqual(
+      await directoryEntries(attachmentRoot),
+      [],
+      "case-variant hidden generators cannot persist attachment bytes",
+    );
+    assert.deepEqual(
+      await directoryEntries(conversationsDirectory),
+      conversationsBeforeAliasAttempts,
+      "case-variant hidden generators cannot create or rewrite conversations",
+    );
+    assert.deepEqual(
+      await loadConfig(),
+      configBeforeAliasAttempts,
+      "case-variant send and model-state PATCH cannot mutate config",
+    );
+  }
 
   // A resumed send to an existing Cave-persisted OpenClaw session must not
   // claim or reset auto title ownership — it is a follow-up, not a first turn.
@@ -215,6 +661,8 @@ try {
   else process.env.OPENCLAW_TEST_CALLS = previousCallLog;
   if (previousCovenSocket === undefined) delete process.env.COVEN_SOCKET;
   else process.env.COVEN_SOCKET = previousCovenSocket;
+  if (previousAttachmentRoot === undefined) delete process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR;
+  else process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = previousAttachmentRoot;
   await new Promise((resolve, reject) => daemon.close((error) => error ? reject(error) : resolve()));
   await rm(home, { recursive: true, force: true });
 }
