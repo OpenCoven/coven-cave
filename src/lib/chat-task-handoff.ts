@@ -108,23 +108,29 @@ export async function createTaskFromChat({
   context,
   title,
   capturedAt,
+  fetchImpl,
+  cardId,
 }: {
   sessionId: string;
   context: ChatHandoffContext;
   /** Explicit title (e.g. the picker's typed query); derived from the turns when omitted. */
   title?: string;
   capturedAt?: string;
+  fetchImpl?: typeof fetch;
+  cardId?: string;
 }): Promise<{ ok: boolean; card?: Card; error?: string }> {
   const notes = buildChatHandoffNotes({
     sessionId,
     turns: context.turns,
     capturedAt: capturedAt ?? new Date().toISOString(),
   });
+  const executeFetch = fetchImpl ?? fetch;
   try {
-    const res = await fetch("/api/board", {
+    const res = await executeFetch("/api/board", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        ...(cardId ? { id: cardId } : {}),
         title: title?.trim() || deriveTaskTitleFromTurns(context.turns),
         notes,
         status: "inbox" as const,

@@ -9,6 +9,7 @@ export type Section =
   | "voice"
   | "daemon"
   | "mobile"
+  | "clientAccess"
   | "appearance"
   | "about";
 
@@ -26,6 +27,7 @@ export const SECTIONS: SectionMeta[] = [
   { id: "voice", label: "Voice", icon: "ph:waveform", description: "Providers, voices, local speech, and defaults for new familiars.", accent: "var(--accent-presence)" },
   { id: "daemon", label: "Daemon", icon: "ph:terminal-window", description: "Local runtime status and process controls.", accent: "#69d6a6" },
   { id: "mobile", label: "Phone", icon: "ph:device-mobile", description: "Native iOS handoff over your Tailscale network.", accent: "#73d9d0" },
+  { id: "clientAccess", label: "Client Access", icon: "ph:plug", description: "Approve and manage standalone OpenCoven Chat clients.", accent: "#c98ff0" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush", description: "Theme, typography, and reading controls.", accent: "#ff9fb5" },
   { id: "about", label: "About", icon: "ph:info", description: "Version, updates, and project links.", accent: "#b8d8ff" },
 ];
@@ -36,6 +38,7 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
   voice: ["Provider readiness", "Voices & models", "New familiar defaults"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   mobile: ["Mobile mode", "Tailscale handoff", "Native iOS guide"],
+  clientAccess: ["Pending requests", "Paired clients", "Revoke access"],
   appearance: ["Theme & colors", "Typography", "Reading comfort"],
   about: ["App version", "Tool updates", "Project links"],
 };
@@ -66,6 +69,8 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "mobile", group: "Pair", keywords: "phone mobile connect qr pair tailscale" },
   { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
   { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
+  { section: "clientAccess", group: "Pending requests", keywords: "client access pairing requests approve deny opencoven chat standalone app native" },
+  { section: "clientAccess", group: "Paired clients", keywords: "client access paired credentials revoke tokens opencoven chat standalone app native" },
   { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },
   { section: "appearance", group: "Theme", keywords: "theme color palette swatch preset" },
   { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom customize picker swatch background accent border" },

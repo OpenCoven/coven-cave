@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { caveHome, covenHome } from "@/lib/coven-paths";
 import {
-  loadConfig,
   normalizeMultiHostConfig,
+  saveConfigUnlocked,
+  withFamiliarLifecycleGuard,
   type CaveMultiHostConfig,
 } from "@/lib/cave-config";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@/lib/harness-adapters";
 import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
+import { writeFileAtomic } from "@/lib/server/atomic-write";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -75,7 +77,6 @@ export async function POST(req: Request) {
   const covenDir = covenHome();
   const caveDir = caveHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
-  const configJson = path.join(caveDir, "config.json");
   const conversationsDir = path.join(caveDir, "conversations");
   const memoryDir = path.join(covenDir, "memory");
 
@@ -91,23 +92,6 @@ export async function POST(req: Request) {
     wrote.push(`adapters/${adapterManifest.filename}`);
   }
 
-  const familiarsExists = await pathExists(familiarsToml);
-  if (!familiarsExists) {
-    await writeFile(familiarsToml, buildFamiliarsToml(draft), "utf8");
-    wrote.push("familiars.toml");
-  } else if (draft) {
-    const existingToml = await readFile(familiarsToml, "utf8");
-    if (!familiarsTomlContainsId(existingToml, draft.id)) {
-      const separator = existingToml.endsWith("\n") ? "\n" : "\n\n";
-      await writeFile(
-        familiarsToml,
-        `${existingToml}${separator}${buildFamiliarsToml(draft).replace(/^# User familiars for this Coven\.\n+/, "")}`,
-        "utf8",
-      );
-      wrote.push("familiars.toml");
-    }
-  }
-
   // Always update the cave config defaults so the user's chosen adapter
   // binding takes effect even if they re-run setup.
   //
@@ -117,38 +101,56 @@ export async function POST(req: Request) {
   // user's `addons`, `roles`, and `marketplace.installed` settings every time
   // they added a familiar. Guard against that regression with the source-test
   // at src/app/api/onboarding/setup/route.test.ts.
-  const existing = await loadConfig();
-  const nextConfig = {
-    version: existing.version || 1,
-    defaults: {
-      harness,
-      model: model || existing.defaults.model,
-    },
-    familiars: draft
-      ? {
-          ...(existing.familiars ?? {}),
-          [draft.id]: {
-            harness: draft.harness,
-            ...(draft.model ? { model: draft.model } : {}),
-            // Remote familiars carry their SSH runtime in the binding —
-            // chat's send route reads it via bindingFor(); familiars.toml
-            // stays runtime-free.
-            ...(draft.runtime ? { runtime: draft.runtime } : {}),
-          },
-        }
-      : (existing.familiars ?? {}),
-    // Carry over user-set fields untouched — these belong to other surfaces
-    // (Settings → Add-ons, Settings → Roles, Marketplace) and creating a
-    // familiar should not touch them.
-    roles: existing.roles,
-    addons: existing.addons,
-    marketplace: existing.marketplace,
-    multiHost: normalizeMultiHostConfig({
-      ...existing.multiHost,
-      ...(body.multiHost ?? {}),
-    }),
-  };
-  await writeFile(configJson, JSON.stringify(nextConfig, null, 2), "utf8");
+  await withFamiliarLifecycleGuard(async (existing) => {
+    const familiarsExists = await pathExists(familiarsToml);
+    const existingToml = familiarsExists
+      ? await readFile(familiarsToml, "utf8")
+      : null;
+    let nextToml: string | null = null;
+    if (existingToml === null) {
+      nextToml = buildFamiliarsToml(draft);
+    } else if (draft && !familiarsTomlContainsId(existingToml, draft.id)) {
+      const separator = existingToml.endsWith("\n") ? "\n" : "\n\n";
+      nextToml =
+        `${existingToml}${separator}${buildFamiliarsToml(draft).replace(/^# User familiars for this Coven\.\n+/, "")}`;
+    }
+
+    let tomlSaved = false;
+    try {
+      if (nextToml !== null) {
+        await writeFileAtomic(familiarsToml, nextToml);
+        tomlSaved = true;
+      }
+      await saveConfigUnlocked({
+        defaults: {
+          harness,
+          model: model || existing.defaults.model,
+        },
+        ...(draft
+          ? {
+              familiars: {
+                [draft.id]: {
+                  harness: draft.harness,
+                  ...(draft.model ? { model: draft.model } : {}),
+                  ...(draft.runtime ? { runtime: draft.runtime } : {}),
+                },
+              },
+            }
+          : {}),
+        multiHost: normalizeMultiHostConfig({
+          ...existing.multiHost,
+          ...(body.multiHost ?? {}),
+        }),
+      });
+    } catch (error) {
+      if (tomlSaved) {
+        if (existingToml === null) await rm(familiarsToml, { force: true }).catch(() => {});
+        else await writeFileAtomic(familiarsToml, existingToml).catch(() => {});
+      }
+      throw error;
+    }
+    if (tomlSaved) wrote.push("familiars.toml");
+  });
   wrote.push("cave/config.json");
 
   return NextResponse.json({ ok: true, wrote, covenDir });

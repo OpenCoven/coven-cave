@@ -359,6 +359,8 @@ export async function saveBoard(board: BoardFile): Promise<void> {
 }
 
 export type NewCardInput = {
+  /** Optional stable id for idempotent internal creation paths. */
+  id?: string;
   title: string;
   notes?: string;
   status?: CardStatus;
@@ -398,12 +400,17 @@ function boardAttachments(input: ChatAttachment[] | undefined): ChatAttachment[]
 export async function createCard(input: NewCardInput): Promise<Card> {
   return withBoardLock(async () => {
   const board = await loadBoard();
+  const explicitId = typeof input.id === "string" && input.id.trim() ? input.id.trim() : null;
+  if (explicitId) {
+    const existing = board.cards.find((card) => card.id === explicitId);
+    if (existing) return existing;
+  }
   const now = new Date().toISOString();
   const status: CardStatus = input.status ?? "backlog";
   const github = mergeGitHubLinks(normalizeGitHubLinks(input.github), ...gitHubLinksFromLinks(input.links));
   const asana = mergeAsanaLinks(normalizeAsanaLinks(input.asana), ...asanaLinksFromLinks(input.links));
   const card: Card = {
-    id: crypto.randomUUID(),
+    id: explicitId ?? crypto.randomUUID(),
     title: input.title.trim(),
     notes: (input.notes ?? "").trim(),
     status,

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+const source = await readFile(new URL("../lib/server/chat-send-service.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(source, /@\/lib\/link-extractor|extractLinks\(/,
   "chat/send should not scan chat text for Library saves while Library is on feature/library");

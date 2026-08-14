@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,6 +14,7 @@ try {
     dedupeProjectsByRoot,
     loadProjects,
     patchProject,
+    ProjectRegistryIntegrityError,
     projectById,
     projectForRoot,
     seedDefaultProjectsIfEmpty,
@@ -30,11 +31,84 @@ try {
 
   assert.deepEqual(await loadProjects(), [], "missing projects file should load as an empty list");
 
+  await writeFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, '{"version":1,"projects":[', "utf8");
+  await assert.rejects(
+    () => loadProjects(),
+    ProjectRegistryIntegrityError,
+    "a torn registry fails closed instead of reading as empty",
+  );
+  const tornBytes = await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8");
+  await assert.rejects(
+    () => createProject({ name: "Must not overwrite", root: "/torn" }),
+    ProjectRegistryIntegrityError,
+    "a mutation cannot overwrite a torn registry with an empty snapshot",
+  );
+  assert.equal(await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"), tornBytes);
+
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({ version: 1, projects: [], visibilityGeneration: 42 }),
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadProjects(),
+    ProjectRegistryIntegrityError,
+    "a wrong-schema registry fails closed",
+  );
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      projects: [{
+        id: "strict",
+        name: "Strict",
+        root: "/repo/strict",
+        createdAt: "now",
+        updatedAt: "now",
+        unexpectedAuthorityField: true,
+      }],
+      visibilityGeneration: "strict-generation",
+    }),
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadProjects(),
+    ProjectRegistryIntegrityError,
+    "unknown project keys fail strict schema validation",
+  );
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      projects: [],
+      visibilityGeneration: "strict-generation",
+      unexpectedTopLevel: true,
+    }),
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadProjects(),
+    ProjectRegistryIntegrityError,
+    "unknown registry keys fail strict schema validation",
+  );
+
+  await chmod(process.env.CAVE_PROJECTS_PATH_OVERRIDE, 0o000);
+  await assert.rejects(
+    () => loadProjects(),
+    ProjectRegistryIntegrityError,
+    "an unreadable registry fails closed",
+  );
+  await chmod(process.env.CAVE_PROJECTS_PATH_OVERRIDE, 0o600);
+  await rm(process.env.CAVE_PROJECTS_PATH_OVERRIDE, { force: true });
+
   const created = await createProject({ name: "Test", root: "/tmp/test" });
   assert.ok(created.id, "created project should receive a stable id");
   assert.equal(created.name, "Test");
   assert.equal(created.root, "/tmp/test");
   assert.equal((await loadProjects()).length, 1);
+  const generationAfterCreate = JSON.parse(
+    await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+  ).visibilityGeneration;
 
   // cave-729h: one project per root. A second create at the same root (even the
   // trailing-slash variant) returns the existing project and writes no duplicate.
@@ -42,10 +116,36 @@ try {
   assert.equal(dup.id, created.id, "creating at an existing root returns the existing project");
   assert.equal(dup.name, "Test", "the existing project comes back unchanged, not renamed");
   assert.equal((await loadProjects()).length, 1, "no duplicate root is persisted on disk");
+  assert.equal(
+    JSON.parse(await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8")).visibilityGeneration,
+    generationAfterCreate,
+    "an idempotent duplicate create does not advance visibility",
+  );
 
   const patched = await patchProject(created.id, { name: "New", root: "/tmp/test/" });
   assert.equal(patched?.name, "New");
   assert.equal(patched?.root, "/tmp/test");
+  assert.equal(
+    JSON.parse(await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8")).visibilityGeneration,
+    generationAfterCreate,
+    "a name-only/effective-root-no-op patch keeps visibility stable",
+  );
+  await patchProject(created.id, { root: "/tmp/test-rerooted" });
+  const generationAfterReRoot = JSON.parse(
+    await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+  ).visibilityGeneration;
+  assert.notEqual(
+    generationAfterReRoot,
+    generationAfterCreate,
+    "an effective root change advances visibility exactly once",
+  );
+  await patchProject(created.id, { root: "/tmp/test-rerooted" });
+  assert.equal(
+    JSON.parse(await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8")).visibilityGeneration,
+    generationAfterReRoot,
+    "a repeated no-op root patch does not advance visibility again",
+  );
+  await patchProject(created.id, { root: "/tmp/test" });
 
   // color: string sets, undefined leaves untouched, null clears (back to the
   // auto root-hash tint — the field disappears rather than persisting null).
@@ -151,12 +251,12 @@ try {
   // load time, so server consumers (projectById/trustedProjectCwd) can never
   // resolve an entry the UI hides. Newest record wins; ~ expands like the
   // server normalizer so a tilde row and its absolute twin are one project.
-  const { writeFile } = await import("node:fs/promises");
   const homeAbs = path.join(os.homedir(), "dupe-home").replace(/\\/g, "/");
   await writeFile(
     process.env.CAVE_PROJECTS_PATH_OVERRIDE,
     JSON.stringify({
       version: 1,
+      visibilityGeneration: "dedupe-fixture",
       projects: [
         {
           id: "disk-old",
@@ -276,6 +376,76 @@ try {
     "typed queries retain the picker's existing root matching",
   );
   assert.equal(projectForPickerQuery(pickerProjects, "   "), null, "blank input selects nothing");
+
+  // ── Task5 quality finding — project registry mutations invalidate the
+  // shared sessions-list cache. Adding/removing a project or changing its
+  // root can move sessions between the always-visible "(no project)" bucket
+  // and a grant-checked known project, so registry writes are, just like a
+  // permission-file write, a class of mutation that can alter effective
+  // visibility. `saveProjects` (the one function every registry mutation
+  // funnels through) must bust the shared cache AFTER a successful durable
+  // write, and must NOT bust it when the write fails. ─────────────────────
+  {
+    const { sessionsListCache } = await import("./server/sessions-list-cache.ts");
+    const { writeFile } = await import("node:fs/promises");
+    const cacheKey = "cave-projects-invalidation-test";
+    let computeCount = 0;
+    const compute = async () => {
+      computeCount += 1;
+      return { payload: { ok: true, sessions: [] } };
+    };
+
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 1, "cache primed by the first read");
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 1, "sanity check: a fresh (unexpired) entry is served without recomputing");
+
+    // A successful createProject busts the cache: the SAME key recomputes.
+    const invalidationProject = await createProject({
+      name: "Invalidation check",
+      root: "/tmp/cache-invalidation-check",
+    });
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 2, "a successful createProject invalidates the shared sessions-list cache");
+
+    // A successful root change (patchProject) also busts it.
+    await patchProject(invalidationProject.id, { root: "/tmp/cache-invalidation-check-2" });
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(
+      computeCount,
+      3,
+      "a successful patchProject root change invalidates the shared sessions-list cache",
+    );
+
+    // A successful project removal also busts it.
+    await deleteProject(invalidationProject.id);
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 4, "a successful deleteProject invalidates the shared sessions-list cache");
+
+    // A FAILED registry write must NOT invalidate — a failed write never
+    // pretends state changed. Force writeProjectsFile to fail by pointing
+    // the registry path's parent directory segment at a plain file
+    // (mkdir(..., {recursive:true}) throws ENOTDIR). The cache is already
+    // warm (fresh) at computeCount 4 from the deleteProject read above.
+    const blockerFile = path.join(tmpDir, "blocked-by-a-file");
+    await writeFile(blockerFile, "not a directory", "utf8");
+    const previousProjectsPathOverride = process.env.CAVE_PROJECTS_PATH_OVERRIDE;
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(blockerFile, "projects.json");
+    await assert.rejects(
+      () => createProject({ name: "Should fail", root: "/tmp/should-fail-registry-write" }),
+      undefined,
+      "createProject rejects when its durable write cannot land",
+    );
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE = previousProjectsPathOverride;
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(
+      computeCount,
+      4,
+      "a failed project-registry write must NOT invalidate the cache — a failed write never pretends state changed",
+    );
+
+    sessionsListCache.clear(); // leave no test entry behind for later test files
+  }
 
   console.log("cave-projects.test.ts: ok");
 } finally {

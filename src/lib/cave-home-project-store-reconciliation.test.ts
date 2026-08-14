@@ -49,8 +49,12 @@ try {
     "utf8",
   );
 
-  const { loadProjects } = await import("./cave-projects.ts");
-  const { loadProjectPermissions } = await import("./project-permissions.ts");
+  const { loadProjects, projectsVisibilityGeneration } = await import("./cave-projects.ts");
+  const {
+    loadProjectPermissions,
+    projectPermissionsVisibilityGeneration,
+  } = await import("./project-permissions.ts");
+  const { canonicalSessionListCacheKey } = await import("./server/client-v1/read-model.ts");
 
   const projects = await loadProjects();
   assert.deepEqual(
@@ -62,6 +66,8 @@ try {
     await readFile(path.join(tmp, "cave", "projects.json"), "utf8").then((raw) => JSON.parse(raw).projects[0].id),
     "secret-project-id",
   );
+  const projectGeneration = await projectsVisibilityGeneration();
+  assert.notEqual(projectGeneration, "unversioned");
 
   const permissions = await loadProjectPermissions();
   assert.deepEqual(
@@ -69,6 +75,24 @@ try {
     ["secret-project-id"],
     "loadProjectPermissions reconciles legacy grants before returning authorization data",
   );
+  const permissionGeneration = await projectPermissionsVisibilityGeneration();
+  assert.notEqual(permissionGeneration, "unversioned");
+  assert.notEqual(
+    canonicalSessionListCacheKey(false, "supreme", false, [
+      "unversioned",
+      "unversioned",
+    ]),
+    canonicalSessionListCacheKey(false, "supreme", false, [
+      permissionGeneration,
+      projectGeneration,
+    ]),
+    "a process holding a legacy cache key selects a new key after recovery",
+  );
+  for (const file of ["projects.json", "project-permissions.json"]) {
+    const recovered = JSON.parse(await readFile(path.join(tmp, "cave", file), "utf8"));
+    assert.equal(typeof recovered.visibilityGeneration, "string");
+    assert.notEqual(recovered.visibilityGeneration, "unversioned");
+  }
   console.log("cave-home-project-store-reconciliation.test.ts: ok");
 } finally {
   delete process.env.COVEN_HOME;

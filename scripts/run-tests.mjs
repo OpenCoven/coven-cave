@@ -68,6 +68,7 @@ export const SUITES = {
     "src/lib/canonical-memory-consumer-contract.test.ts",
     "scripts/canonical-memory-smoke-helpers.test.mjs",
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
+    "scripts/run-playwright-e2e.test.mjs",
     "scripts/test-alias-loader.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/local-maintenance-gate.test.mjs",
@@ -235,6 +236,28 @@ export const SUITES = {
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/cave-inbox-bulk.test.ts",
     "src/lib/project-permissions.test.ts",
+    // Recoverable project delete cascade (authority finding): permission
+    // cleanup runs BEFORE the registry delete under the SAME authorization
+    // lock, so a cleanup failure never touches the registry and a
+    // registry-delete failure after cleanup leaves the project registered
+    // (fail-closed, retryable) instead of lost or 404'd. Redirects the
+    // lock's own SQLite sidecar to a dedicated writable directory (via the
+    // documented test-only seam) so each injected chmod fault hits only the
+    // one store write it targets.
+    "src/lib/project-delete-cascade-fault-injection.test.ts",
+    // Production-path (real `COVEN_HOME`, real reconciliation lock, no
+    // `CAVE_*_PATH_OVERRIDE` shortcut) deadlock/barrier proof for
+    // `withProjectAccessGuard` — see the file's own header comment for why
+    // the path-override shortcut used by project-permissions.test.ts above
+    // would hide the exact deadlock this test exists to catch.
+    "src/lib/project-access-guard-production-path.test.ts",
+    // no "@/" aliases of its own — a self-contained node:sqlite-backed
+    // mutex sibling to credential-transaction-lock.ts/
+    // operation-transaction-lock.ts, scoped to project-permissions.json;
+    // imports only node builtins and its own sibling module directly. Wired
+    // here alongside its sole consumer's tests (project-permissions.test.ts,
+    // just above) for consistency.
+    "src/lib/server/project-authorization-lock.test.ts",
     "src/lib/project-grant-audit.test.ts",
     "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
@@ -957,6 +980,7 @@ export const SUITES = {
     "src/components/settings-action-buttons.test.ts",
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
+    "src/components/settings-client-access.test.tsx",
     "src/components/voice-engine-settings.test.ts",
     "src/components/voice-provider-settings.test.tsx",
     "src/components/voice-provider-settings.integration.test.tsx",
@@ -1049,6 +1073,19 @@ export const SUITES = {
     "src/lib/font-settings.test.ts",
     "src/lib/font-wiring.test.ts",
     "src/lib/cave-config.test.ts",
+    // no "@/" aliases of its own — a self-contained node:sqlite-backed
+    // mutex sibling to credential-transaction-lock.ts/
+    // operation-transaction-lock.ts/project-authorization-lock.ts, scoped to
+    // cave-config.json; imports only node builtins and its own sibling
+    // module directly. Wired here alongside its sole consumer's tests
+    // (cave-config.test.ts, just above) for consistency.
+    "src/lib/server/familiar-lifecycle-lock.test.ts",
+    // Production-path (real `COVEN_HOME`, real reconciliation lock, no
+    // `CAVE_*_PATH_OVERRIDE` shortcut) deadlock/barrier proof for
+    // `withFamiliarLifecycleGuard`, wired through the real familiar-removal
+    // DELETE route and `createClientConversation` — resolves "@/lib/..."
+    // through both of those imports, hence listed in ALIAS_LOADER below too.
+    "src/lib/familiar-lifecycle-guard-production-path.test.ts",
     "src/lib/cave-config-compatibility.test.ts",
     "src/lib/omnigent/client.test.ts",
     "src/lib/omnigent/fleet-gate.test.ts",
@@ -1140,6 +1177,7 @@ export const SUITES = {
     "src/lib/vault-ref-shadowing.test.ts",
     "src/lib/vault-ref-cold-start.test.ts",
     "src/lib/cave-board-atomic.test.ts",
+    "src/lib/cave-board-deterministic-id.test.ts",
     "src/lib/server/atomic-write.test.ts",
     "src/lib/server/local-origin.test.ts",
     "src/lib/server/api-security.test.ts",
@@ -1268,6 +1306,15 @@ export const SUITES = {
     "src/lib/server/cave-home-migration-status.test.ts",
     "src/lib/server/cave-home-migration-discard-guard.test.ts",
     "src/lib/server/cave-home-migration-fast-path.test.ts",
+    // Durable legacy normalization (authority finding): real subprocess
+    // proofs that `loadProjects`/`loadProjectPermissions` detect a genuine
+    // on-disk legacy schema from parsed file content alone — a cold start
+    // with the legacy-schema file already at the canonical path, and a
+    // cross-process migration where the mover's recovery marker never
+    // reaches this process. No "@/" aliases of its own (only
+    // `node:child_process`/`node:fs`/`node:path`/`node:url`); each spawned
+    // subprocess registers the alias loader itself.
+    "src/lib/server/cave-home-legacy-normalization-subprocess.test.ts",
     "src/lib/testing/wait-for.test.ts",
     "src/lib/server/research-landing.test.ts",
     "src/lib/server/claude-models.test.ts",
@@ -1305,6 +1352,7 @@ export const SUITES = {
     "src/app/api/opencoven-executions-route.test.ts",
     "src/app/api/opencoven-submissions-route.test.ts",
     "src/app/api/familiars/route.test.ts",
+    "src/app/api/familiars/removed/route.production.test.ts",
     "src/app/api/familiars/[id]/avatar/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
@@ -1401,6 +1449,7 @@ export const SUITES = {
     "src/app/api/chat/send/route-claude-availability.integration.test.ts",
     "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
+    "src/app/api/chat/send/openclaw-gateway-conversation-race.test.ts",
     "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
@@ -1411,6 +1460,7 @@ export const SUITES = {
     "src/app/api/onboarding/install/install-service.test.ts",
     "src/app/api/onboarding/install/route.test.ts",
     "src/app/api/onboarding/setup/route.test.ts",
+    "src/app/api/onboarding/setup/route.production.test.ts",
     "src/app/api/onboarding/codex-port-preflight/route.test.ts",
     "src/app/api/onboarding/ssh-check/route.test.ts",
     "src/app/api/skills/local/route.test.ts",
@@ -1525,6 +1575,7 @@ export const SUITES = {
     "src/app/api/voice/transcript/route.test.ts",
     "src/server-pty-ws.test.ts",
     "src/server-heap-monitor.test.ts",
+    "src/client-v1-discovery.test.ts",
     "src/lib/pty-upgrade-auth.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
     "src/lib/websocket-url.test.ts",
@@ -1542,6 +1593,7 @@ export const SUITES = {
     "src/lib/github-assigned-meta.test.ts",
     "src/app/api/github/commit/route.test.ts",
     "src/app/api/github/diff/route.test.ts",
+    "src/app/api/github/comment/route.test.ts",
     "src/app/api/github/dispatch/route.test.ts",
     "src/app/api/github/merge/route.test.ts",
     "src/app/api/github/rerun/route.test.ts",
@@ -1551,6 +1603,9 @@ export const SUITES = {
     "src/app/api/salem/strip-mdx.test.ts",
     "src/app/api/salem/route.test.ts",
     "src/proxy-behavior.test.ts",
+    // real-runtime proxy() behavior test (Task 3, Finding 2) — needs the
+    // alias loader for its "next/server" resolution; see ALIAS_LOADER below.
+    "src/client-v1-proxy-runtime.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
     "src/lib/server/memory-file-write.test.ts",
@@ -1611,6 +1666,89 @@ export const SUITES = {
     "src/lib/server/prompt-scan.test.ts",
     "src/lib/server/adapter-conflict-heal.test.ts",
     "src/lib/server/mobile-access-provision.test.ts",
+    "src/lib/server/client-v1/contract.test.ts",
+    // resolves "@/lib/coven-daemon", "@/lib/cave-config", "@/lib/cave-conversations",
+    // and friends for the shared canonical read projection.
+    "src/lib/server/client-v1/read-model.test.ts",
+    // resolves "@/proxy-helpers" for constant-time secret comparison.
+    "src/lib/server/client-v1/pairing-store.test.ts",
+    // resolves the pairing-store + credential-store modules (transitively
+    // "@/proxy-helpers", "@/lib/coven-paths", "@/lib/server/atomic-write").
+    "src/lib/server/client-v1/pairing-exchange.test.ts",
+    // no "@/" aliases of its own — a self-contained node:sqlite-backed
+    // mutex; imports only node builtins and its own sibling module.
+    "src/lib/server/client-v1/credential-transaction-lock.test.ts",
+    // resolves "@/lib/coven-paths", "@/lib/server/atomic-write", and
+    // "@/proxy-helpers" for the persisted-store path and token comparison.
+    "src/lib/server/client-v1/credential-store.test.ts",
+    // no "@/" aliases of its own — pure in-memory token-bucket limiter.
+    // resolves "@/lib/coven-paths" and "@/lib/server/atomic-write" for the
+    // persisted ledger path and atomic writes; imports the contract module's
+    // "isUuid" for identity validation.
+    "src/lib/server/client-v1/idempotency-store.test.ts",
+    // no "@/" aliases of its own — a self-contained node:sqlite-backed
+    // mutex sibling to credential-transaction-lock.ts, scoped to the
+    // idempotency ledger; imports only node builtins and its own sibling
+    // module directly. Two of its tests additionally spawn subprocesses
+    // that import idempotency-store.ts (hence registered on the
+    // alias-loader import line below, even though this file's own direct
+    // imports need no "@/" resolution).
+    "src/lib/server/client-v1/operation-transaction-lock.test.ts",
+    // resolves "@/lib/cave-config", "@/lib/cave-conversations",
+    // "@/lib/cave-board", "@/lib/project-permissions", "@/lib/cave-projects",
+    // "@/lib/server/chat-project-launch", "@/lib/server/voice-chat-create",
+    // and the read-model module (Task 7: canonical conversation mutations).
+    "src/lib/server/client-v1/chat-service.test.ts",
+    // no "@/" aliases of its own — imports only its sibling
+    // idempotency-store.ts/responses.ts modules with relative paths.
+    "src/lib/server/client-v1/idempotent-mutation.test.ts",
+    "src/lib/server/client-v1/rate-limit.test.ts",
+    // resolves "@/proxy-helpers" (CLIENT_V1_LOCAL_HEADER, isTrustedLocalPeer)
+    // through auth.ts, and imports the credential store + rate limiter.
+    "src/lib/server/client-v1/auth.test.ts",
+    "src/lib/server/client-v1/action-service.test.ts",
+    "src/lib/server/client-v1/github-effect-store.test.ts",
+    "src/lib/server/chat-send-service.test.ts",
+    "src/lib/server/client-v1/attachment-service.test.ts",
+    "src/lib/server/client-v1/sse.test.ts",
+    "src/lib/server/client-v1/run-service.test.ts",
+    // health/route.ts resolves "@/lib/coven-paths", "@/proxy-helpers", and
+    // "@/lib/server/client-v1/{contract,responses}".
+    "src/app/api/client/v1/health/route.test.ts",
+    // resolves "@/proxy-helpers" and the contract/responses/pairing-store/
+    // rate-limit modules.
+    "src/app/api/client/v1/pairing/requests/route.test.ts",
+    // resolves the pairing-store + responses modules.
+    "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
+    // resolves the pairing-store + credential-store + responses modules.
+    "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",
+    // resolves the pairing-store + responses modules.
+    "src/app/api/client/v1/admin/pairing-requests/route.test.ts",
+    "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
+    // resolves the credential-store + responses modules.
+    "src/app/api/client/v1/admin/credentials/route.test.ts",
+    "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+    // canonical read projections (cave-client-v1 plan, Task 5) — every route
+    // below resolves the auth/responses/read-model modules, plus the
+    // canonical loaders (cave-config, cave-conversations, cave-projects,
+    // project-permissions, familiar-roster, slash-commands) read-model.ts
+    // itself depends on.
+    "src/app/api/client/v1/familiars/route.test.ts",
+    "src/app/api/client/v1/projects/route.test.ts",
+    "src/app/api/client/v1/commands/route.test.ts",
+    "src/app/api/client/v1/conversations/route.test.ts",
+    "src/app/api/client/v1/conversations/[id]/route.test.ts",
+    "src/app/api/client/v1/conversations/search/route.test.ts",
+    "src/app/api/client/v1/messages/send/route.test.ts",
+    "src/app/api/client/v1/runs/[id]/stream/route.test.ts",
+    "src/app/api/client/v1/runs/[id]/stop/route.test.ts",
+    "src/app/api/client/v1/runs/[id]/retry/route.test.ts",
+    "src/app/api/client/v1/attachments/route.test.ts",
+    "src/app/api/client/v1/attachments/[id]/route.test.ts",
+    "src/app/api/client/v1/attention/[id]/respond/route.test.ts",
+    "src/app/api/client/v1/tasks/handoff/route.test.ts",
+    "src/app/api/client/v1/github/actions/route.test.ts",
+    "src/app/api/client/v1/client-v1-contract.snapshot.test.ts",
   ],
   mobile: [
     "src/lib/mobile-access-token.test.ts",
@@ -1734,6 +1872,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // Recovery/cache integration imports the canonical client-v1 read model.
+  "src/lib/cave-home-project-store-reconciliation.test.ts",
+  "src/app/api/onboarding/setup/route.production.test.ts",
   // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
   // for the project allow-list; the suite cannot load without the resolver.
   "src/lib/search-provider.test.ts",
@@ -1784,10 +1925,23 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/workspace-root-store.test.ts",
   // imports the route module, which resolves "@/lib/server/..." aliases.
   "src/app/api/daemon/travel/reconcile/route.test.ts",
+  // real-runtime proxy() behavior test (Task 3, Finding 2): imports
+  // "next/server" directly, which needs the loader's Next-16
+  // `next/server` -> `next/server.js` resolution rewrite even though the
+  // test itself reaches no "@/" alias.
+  "src/client-v1-proxy-runtime.test.ts",
+  // wired per the client-v1 facade plan; later client-v1 route tests will
+  // reach "@/lib/server/..." aliases through this same suite entry point.
+  "src/lib/server/client-v1/contract.test.ts",
+  // resolves "@/lib/coven-daemon", "@/lib/cave-config", "@/lib/cave-conversations",
+  // "@/lib/session-list-merge", "@/lib/project-permissions" and friends for
+  // the shared canonical read projection.
+  "src/lib/server/client-v1/read-model.test.ts",
   "src/app/api/chat/stop/route.test.ts",
   "src/app/api/sessions/list/route.test.ts",
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
+  "src/app/api/familiars/removed/route.production.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
   "src/lib/opencode-compatibility.test.ts",
@@ -1805,6 +1959,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
   "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
   "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
+  "src/app/api/chat/send/openclaw-gateway-conversation-race.test.ts",
   "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
   "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
   "src/app/api/chat/send/route-body-validation.test.ts",
@@ -1899,10 +2054,15 @@ const ALIAS_LOADER = new Set([
   "src/lib/task-archive-nudge.test.ts",
   "src/lib/task-chat-context.test.ts",
   "src/lib/cave-config.test.ts",
+  // resolves "@/lib/cave-config", "@/lib/cave-projects",
+  // "@/lib/server/client-v1/chat-service" (which itself resolves further
+  // "@/..." aliases), and the familiar-removal DELETE route.
+  "src/lib/familiar-lifecycle-guard-production-path.test.ts",
   "src/lib/cave-config-state-race.test.ts",
   "src/lib/cave-config-write-race.test.ts",
   "src/lib/travel-client-state.test.ts",
   "src/lib/cave-board-atomic.test.ts",
+  "src/lib/cave-board-deterministic-id.test.ts",
   "src/lib/cave-board-steps.test.ts",
   "src/lib/board-card-ops.test.ts",
   "src/lib/cave-board-ops.test.ts",
@@ -1971,6 +2131,82 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
+  // resolves "@/proxy-helpers" for constant-time secret comparison.
+  "src/lib/server/client-v1/pairing-store.test.ts",
+  // resolves the pairing-store + credential-store modules (transitively
+  // "@/proxy-helpers", "@/lib/coven-paths", "@/lib/server/atomic-write").
+  "src/lib/server/client-v1/pairing-exchange.test.ts",
+  // no "@/" aliases of its own — a self-contained node:sqlite-backed
+  // mutex; imports only node builtins and its own sibling module. Wired
+  // here anyway, alongside its sole consumer's tests, for consistency.
+  "src/lib/server/client-v1/credential-transaction-lock.test.ts",
+  // resolves "@/lib/coven-paths", "@/lib/server/atomic-write", and
+  // "@/proxy-helpers" for the persisted-store path and token comparison.
+  "src/lib/server/client-v1/credential-store.test.ts",
+  // resolves "@/lib/coven-paths" and "@/lib/server/atomic-write" for the
+  // persisted ledger path and atomic writes; imports the contract module's
+  // "isUuid" for identity validation.
+  "src/lib/server/client-v1/idempotency-store.test.ts",
+  // no "@/" aliases of its own — wired here anyway, alongside its sole
+  // consumer's tests, for consistency (see the "api" suite comment above
+  // for the fuller rationale: two of its tests spawn subprocesses that
+  // import idempotency-store.ts directly, which does need the alias
+  // loader).
+  "src/lib/server/client-v1/operation-transaction-lock.test.ts",
+  // resolves "@/lib/cave-config", "@/lib/cave-conversations",
+  // "@/lib/cave-board", "@/lib/project-permissions", "@/lib/cave-projects",
+  // "@/lib/server/chat-project-launch", "@/lib/server/voice-chat-create",
+  // and the read-model module (Task 7: canonical conversation mutations).
+  "src/lib/server/client-v1/chat-service.test.ts",
+  // resolves "@/lib/coven-paths" transitively through idempotency-store.ts
+  // and "@/lib/server/atomic-write" through responses.ts's import graph.
+  "src/lib/server/client-v1/idempotent-mutation.test.ts",
+  // resolves "@/proxy-helpers" (CLIENT_V1_LOCAL_HEADER, isTrustedLocalPeer)
+  // through auth.ts.
+  "src/lib/server/client-v1/auth.test.ts",
+  "src/lib/server/client-v1/action-service.test.ts",
+  "src/lib/server/client-v1/github-effect-store.test.ts",
+  "src/lib/server/chat-send-service.test.ts",
+  "src/lib/server/client-v1/attachment-service.test.ts",
+  "src/lib/server/client-v1/sse.test.ts",
+  "src/lib/server/client-v1/run-service.test.ts",
+  // resolves "@/lib/coven-paths", "@/proxy-helpers", and
+  // "@/lib/server/client-v1/{contract,responses}".
+  "src/app/api/client/v1/health/route.test.ts",
+  // resolves "@/proxy-helpers" and the contract/responses/pairing-store/
+  // rate-limit modules.
+  "src/app/api/client/v1/pairing/requests/route.test.ts",
+  // resolves the pairing-store + responses modules.
+  "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
+  // resolves the pairing-store + credential-store + responses modules.
+  "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",
+  // resolves the pairing-store + responses modules.
+  "src/app/api/client/v1/admin/pairing-requests/route.test.ts",
+  "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
+  // resolves the credential-store + responses modules.
+  "src/app/api/client/v1/admin/credentials/route.test.ts",
+  "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+  // canonical read projections (cave-client-v1 plan, Task 5) — resolve
+  // "@/proxy-helpers", the auth/responses/read-model modules, and the
+  // canonical loaders (cave-config, cave-conversations, cave-projects,
+  // project-permissions, familiar-roster, slash-commands) read-model.ts
+  // itself depends on.
+  "src/app/api/client/v1/familiars/route.test.ts",
+  "src/app/api/client/v1/projects/route.test.ts",
+  "src/app/api/client/v1/commands/route.test.ts",
+  "src/app/api/client/v1/conversations/route.test.ts",
+  "src/app/api/client/v1/conversations/[id]/route.test.ts",
+  "src/app/api/client/v1/conversations/search/route.test.ts",
+  "src/app/api/client/v1/messages/send/route.test.ts",
+  "src/app/api/client/v1/runs/[id]/stream/route.test.ts",
+  "src/app/api/client/v1/runs/[id]/stop/route.test.ts",
+  "src/app/api/client/v1/runs/[id]/retry/route.test.ts",
+  "src/app/api/client/v1/attachments/route.test.ts",
+  "src/app/api/client/v1/attachments/[id]/route.test.ts",
+  "src/app/api/client/v1/attention/[id]/respond/route.test.ts",
+  "src/app/api/client/v1/tasks/handoff/route.test.ts",
+  "src/app/api/client/v1/github/actions/route.test.ts",
+  "src/app/api/client/v1/client-v1-contract.snapshot.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
@@ -2006,6 +2242,7 @@ const VITEST_TESTS = new Set([
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
   "src/components/mobile-drawer-nav-list-focus.test.tsx",
+  "src/components/settings-client-access.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer

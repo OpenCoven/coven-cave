@@ -91,6 +91,7 @@ try {
         { id: "project-a", name: "Project A", root: projectA, createdAt: "2026-07-24T00:00:00.000Z", updatedAt: "2026-07-24T00:00:00.000Z" },
         { id: "project-b", name: "Project B", root: projectB, createdAt: "2026-07-24T00:00:00.000Z", updatedAt: "2026-07-24T00:00:00.000Z" },
       ],
+      visibilityGeneration: "beads-route-projects",
     }),
   );
   await Promise.all([

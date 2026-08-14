@@ -47,9 +47,10 @@ try {
     JSON.stringify({
       version: 1,
       projects: [
-        { id: "docs", name: "Coven Docs", root: savedProjectRoot },
-        { id: "sensitive", name: "Sensitive", root: sensitiveFileRoot },
+        { id: "docs", name: "Coven Docs", root: savedProjectRoot, createdAt: "now", updatedAt: "now" },
+        { id: "sensitive", name: "Sensitive", root: sensitiveFileRoot, createdAt: "now", updatedAt: "now" },
       ],
+      visibilityGeneration: "project-paths-initial",
     }),
   );
 
@@ -103,9 +104,10 @@ try {
     JSON.stringify({
       version: 1,
       projects: [
-        { id: "docs", name: "Coven Docs", root: savedProjectRoot },
-        { id: "late", name: "Late Project", root: lateProjectRoot },
+        { id: "docs", name: "Coven Docs", root: savedProjectRoot, createdAt: "now", updatedAt: "now" },
+        { id: "late", name: "Late Project", root: lateProjectRoot, createdAt: "now", updatedAt: "now" },
       ],
+      visibilityGeneration: "project-paths-late",
     }),
   );
   assert.equal(

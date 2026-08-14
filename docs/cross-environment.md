@@ -45,8 +45,8 @@ that diverge. It pairs with the conformance suite that enforces them.
 
 | Concern | Default | Override |
 | --- | --- | --- |
-| Dev server port | `3000` | `PORT` env ([`server.ts`](../server.ts)) |
-| E2E (Playwright) port | `3100` (fixed, avoids colliding with `pnpm dev`) | `PORT` env ([`playwright.config.ts`](../playwright.config.ts)) |
+| Dev server port | `3000` | `COVEN_CAVE_PORT`, then `PORT` ([`server.ts`](../server.ts)) |
+| E2E (Playwright) port | `3100` (fixed, ignores inherited generic `PORT`) | `COVEN_CAVE_E2E_PORT` ([`playwright.config.ts`](../playwright.config.ts)) |
 | Config / state home | `~/.coven/` | `COVEN_HOME` env ([`src/lib/coven-paths.ts`](../src/lib/coven-paths.ts)) |
 | Familiar workspaces | `~/.coven/workspaces/familiars/<id>/` | via `COVEN_HOME` |
 | `coven` CLI binary | discovered on PATH / well-known install dirs | `COVEN_BIN` env ([`src/lib/coven-bin.ts`](../src/lib/coven-bin.ts)) |
