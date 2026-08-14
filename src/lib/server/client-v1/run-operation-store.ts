@@ -6,13 +6,21 @@ import { caveHome } from "@/lib/coven-paths";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 
 import {
+  canonicalizeJsonValue,
   COMPLETED_OPERATION_TTL_MS,
+  MAX_RESPONSE_BODY_BYTES,
   PENDING_CLAIM_RETRY_MS,
+  type JsonValue,
 } from "./idempotency-store.ts";
 import { isUuid } from "./contract.ts";
 import { withOperationTransactionLock } from "./operation-transaction-lock.ts";
 
-export type ClientRunOperationState = "reserved" | "launching" | "launched";
+export type ClientRunOperationState = "reserved" | "launching" | "launched" | "terminal";
+
+export type ClientRunOperationTerminalResponse = {
+  status: number;
+  body: JsonValue;
+};
 
 export type ClientRunOperationRecord = {
   version: 1;
@@ -25,6 +33,12 @@ export type ClientRunOperationRecord = {
   createdAt: number;
   updatedAt: number;
   expiresAt: number;
+  /**
+   * A non-SSE, terminal result from the canonical send endpoint. Keeping the
+   * safe client response alongside its terminal state closes the crash window
+   * before the idempotency ledger has replayed it.
+   */
+  terminalResponse?: ClientRunOperationTerminalResponse;
 };
 
 export type ReserveClientRunOperationResult =
@@ -33,12 +47,24 @@ export type ReserveClientRunOperationResult =
 
 export type LaunchClientRunOperationResult<T> =
   | { kind: "launched_now"; record: ClientRunOperationRecord; value: T }
+  | { kind: "retryable_prelaunch_failure"; record: ClientRunOperationRecord; value: T }
+  | { kind: "terminal_prelaunch_failure"; record: ClientRunOperationRecord; value: T }
   | { kind: "already_launching"; record: ClientRunOperationRecord }
   | { kind: "already_launched"; record: ClientRunOperationRecord }
+  | { kind: "already_terminal"; record: ClientRunOperationRecord }
   | { kind: "conflict" };
 
 const STORE_VERSION = 1;
 const REQUEST_HASH_RE = /^[0-9a-f]{64}$/;
+
+export type ClientRunOperationLaunchOutcome<T> =
+  | { kind: "launched"; value: T }
+  | { kind: "retryable_prelaunch_failure"; value: T }
+  | {
+    kind: "terminal_prelaunch_failure";
+    value: T;
+    terminalResponse: ClientRunOperationTerminalResponse;
+  };
 
 type ClientRunOperationWriteRecordHook = (
   storePath: string,
@@ -110,6 +136,38 @@ function readInt(record: Record<string, unknown>, key: string): number | null {
   return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : null;
 }
 
+function normalizeTerminalResponse(
+  value: unknown,
+): ClientRunOperationTerminalResponse | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const response = value as Record<string, unknown>;
+  if (
+    Object.keys(response).length !== 2
+    || !Object.hasOwn(response, "status")
+    || !Object.hasOwn(response, "body")
+    || !Number.isInteger(response.status)
+    || (response.status as number) < 100
+    || (response.status as number) > 599
+  ) return null;
+  try {
+    const body = canonicalizeJsonValue(response.body);
+    if (Buffer.byteLength(JSON.stringify(body), "utf8") > MAX_RESPONSE_BODY_BYTES) return null;
+    return { status: response.status as number, body };
+  } catch {
+    return null;
+  }
+}
+
+function requireTerminalResponse(
+  value: ClientRunOperationTerminalResponse,
+): ClientRunOperationTerminalResponse {
+  const normalized = normalizeTerminalResponse(value);
+  if (!normalized) {
+    throw new ClientRunOperationStoreError("Client run terminal response is invalid.");
+  }
+  return normalized;
+}
+
 function parseRecord(value: unknown): ClientRunOperationRecord | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -121,6 +179,9 @@ function parseRecord(value: unknown): ClientRunOperationRecord | null {
   const createdAt = readInt(record, "createdAt");
   const updatedAt = readInt(record, "updatedAt");
   const expiresAt = readInt(record, "expiresAt");
+  const terminalResponse = record.terminalResponse === undefined
+    ? undefined
+    : normalizeTerminalResponse(record.terminalResponse);
   if (
     record.version !== STORE_VERSION
     || !operationId
@@ -131,18 +192,25 @@ function parseRecord(value: unknown): ClientRunOperationRecord | null {
     || createdAt === null
     || updatedAt === null
     || expiresAt === null
-    || (record.state !== "reserved" && record.state !== "launching" && record.state !== "launched")
+    || (
+      record.state !== "reserved"
+      && record.state !== "launching"
+      && record.state !== "launched"
+      && record.state !== "terminal"
+    )
     || !isUuid(operationId)
     || !isUuid(credentialId)
     || !isUuid(internalRunId)
     || !REQUEST_HASH_RE.test(requestHash)
     || !isSafeConversationSessionId(conversationId)
     || updatedAt < createdAt
+    || (record.state === "terminal" && !terminalResponse)
+    || (record.state !== "terminal" && record.terminalResponse !== undefined)
   ) {
     return null;
   }
   if (
-    (record.state === "reserved" && expiresAt !== createdAt + PENDING_CLAIM_RETRY_MS)
+    (record.state === "reserved" && expiresAt !== updatedAt + PENDING_CLAIM_RETRY_MS)
     || (record.state !== "reserved" && expiresAt !== updatedAt + COMPLETED_OPERATION_TTL_MS)
   ) {
     return null;
@@ -158,6 +226,7 @@ function parseRecord(value: unknown): ClientRunOperationRecord | null {
     createdAt,
     updatedAt,
     expiresAt,
+    ...(terminalResponse ? { terminalResponse } : {}),
   };
 }
 
@@ -294,7 +363,7 @@ export async function launchClientRunOperation<T>(args: {
   credentialId: string;
   requestHash: string;
   now?: number;
-  launch: (record: ClientRunOperationRecord) => Promise<T>;
+  launch: (record: ClientRunOperationRecord) => Promise<ClientRunOperationLaunchOutcome<T>>;
 }): Promise<LaunchClientRunOperationResult<T>> {
   validateIds(args.operationId, args.credentialId);
   validateRequestHash(args.requestHash);
@@ -319,7 +388,10 @@ export async function launchClientRunOperation<T>(args: {
       if (existing.state === "launched") {
         return { kind: "already_launched", record: existing };
       }
-      const launchingAt = now;
+      if (existing.state === "terminal") {
+        return { kind: "already_terminal", record: existing };
+      }
+      const launchingAt = Math.max(now, existing.updatedAt);
       const launching: ClientRunOperationRecord = {
         ...existing,
         state: "launching",
@@ -328,16 +400,37 @@ export async function launchClientRunOperation<T>(args: {
       };
       await writeRecord(storePath, launching);
       await beforeLaunchHookForTest?.(launching);
-      const value = await args.launch(launching);
-      const launchedAt = Date.now();
-      const updated: ClientRunOperationRecord = {
+      const outcome = await args.launch(launching);
+      const completedAt = Math.max(Date.now(), launchingAt);
+      if (outcome.kind === "retryable_prelaunch_failure") {
+        const retryable: ClientRunOperationRecord = {
+          ...existing,
+          state: "reserved",
+          updatedAt: completedAt,
+          expiresAt: completedAt + PENDING_CLAIM_RETRY_MS,
+        };
+        await writeRecord(storePath, retryable);
+        return { kind: "retryable_prelaunch_failure", record: retryable, value: outcome.value };
+      }
+      if (outcome.kind === "terminal_prelaunch_failure") {
+        const terminal: ClientRunOperationRecord = {
+          ...launching,
+          state: "terminal",
+          updatedAt: completedAt,
+          expiresAt: completedAt + COMPLETED_OPERATION_TTL_MS,
+          terminalResponse: requireTerminalResponse(outcome.terminalResponse),
+        };
+        await writeRecord(storePath, terminal);
+        return { kind: "terminal_prelaunch_failure", record: terminal, value: outcome.value };
+      }
+      const launched: ClientRunOperationRecord = {
         ...launching,
         state: "launched",
-        updatedAt: launchedAt,
-        expiresAt: launchedAt + COMPLETED_OPERATION_TTL_MS,
+        updatedAt: completedAt,
+        expiresAt: completedAt + COMPLETED_OPERATION_TTL_MS,
       };
-      await writeRecord(storePath, updated);
-      return { kind: "launched_now", record: updated, value };
+      await writeRecord(storePath, launched);
+      return { kind: "launched_now", record: launched, value: outcome.value };
     },
   );
 }

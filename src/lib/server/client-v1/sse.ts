@@ -5,6 +5,7 @@ import {
   subscribeRunStream,
 } from "@/lib/server/chat-stream-buffer";
 import type { StreamEvent } from "@/lib/stream-events";
+import type { JsonValue } from "./idempotency-store.ts";
 
 export type ClientStreamEvent =
   | { type: "run.started"; runId: string; conversationId: string }
@@ -184,8 +185,15 @@ function canonicalFailureTranslation(
   }
 }
 
-function safeFailureResponse(status: number): Response {
-  const mapped = status === 400 || status === 422
+type SafeFailure = {
+  status: number;
+  code: string;
+  message: string;
+  retryable: boolean;
+};
+
+function safeFailure(status: number): SafeFailure {
+  return status === 400 || status === 422
     ? { status: 400, code: "invalid_request", message: "The run request was rejected.", retryable: false }
     : status === 401 || status === 403
       ? { status: 403, code: "forbidden", message: "The run was not authorized.", retryable: false }
@@ -198,10 +206,44 @@ function safeFailureResponse(status: number): Response {
             : status === 501
               ? { status: 501, code: "unsupported", message: "This run is not supported.", retryable: false }
               : { status: 503, code: "service_unavailable", message: "Run launch is temporarily unavailable.", retryable: true };
-  return Response.json(
-    { ok: false, error: { code: mapped.code, message: mapped.message, retryable: mapped.retryable } },
-    { status: mapped.status },
-  );
+}
+
+export type InitialChatResponseClassification =
+  | { kind: "stream"; response: Response }
+  | {
+    kind: "prelaunch_failure";
+    response: Response;
+    retryable: boolean;
+    terminalResponse: { status: number; body: JsonValue };
+  };
+
+/**
+ * An SSE response establishes the canonical run; all other responses prove
+ * that the send endpoint returned before creating one. Classifying before the
+ * caller commits its durable launch state keeps retryable HTTP failures safe
+ * to retry under the same operation id.
+ */
+export function classifyInitialChatResponse(response: Response): InitialChatResponseClassification {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (response.body && /^text\/event-stream(?:\s*;|$)/i.test(contentType)) {
+    return { kind: "stream", response };
+  }
+  void response.body?.cancel().catch(() => {});
+  const failure = safeFailure(response.status);
+  const body: JsonValue = {
+    ok: false,
+    error: {
+      code: failure.code,
+      message: failure.message,
+      retryable: failure.retryable,
+    },
+  };
+  return {
+    kind: "prelaunch_failure",
+    response: Response.json(body, { status: failure.status }),
+    retryable: failure.retryable,
+    terminalResponse: { status: failure.status, body },
+  };
 }
 
 type ParsedFrame =
@@ -283,12 +325,9 @@ export function translateInitialChatResponse(
   context: ClientStreamContext,
   bufferKey?: string,
 ): Response {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!response.body || !/^text\/event-stream(?:\s*;|$)/i.test(contentType)) {
-    void response.body?.cancel().catch(() => {});
-    return safeFailureResponse(response.status);
-  }
-  const reader = response.body.getReader();
+  const classified = classifyInitialChatResponse(response);
+  if (classified.kind === "prelaunch_failure") return classified.response;
+  const reader = classified.response.body!.getReader();
   const decoder = new TextDecoder();
   let buffered = "";
   let sourceDone = false;
