@@ -99,10 +99,16 @@ assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem laun
 // bare {kind} literal. Same contract — the Salem launcher opens Salem in the
 // drag-to-split pane — asserted on the new call shape (cave-ktvy0).
 assert.match(workspace, /normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), "salem"\)[\s\S]{0,120}?addSplitTarget\(request\)/, "Salem launcher must open Salem in the drag-to-split pane");
-assert.match(workspace, /import \{[\s\S]*SalemChatPanel[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
+// cave-x6rw promoted the quick-ask surface to a registered page: workspace mounts
+// AskSalemView at mode === "salem". The lazy-boundary contract is unchanged, so
+// this pins the surface actually imported (cave-ktvy0).
+assert.match(workspace, /import \{[\s\S]*AskSalemView[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
-assert.match(workspace, /<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the split with the local familiar's model");
+// Salem is a registered page now: workspace renders <AskSalemView> at
+// mode === "salem", scoped by the active familiar rather than a familiarId prop
+// on a panel. Same contract, current shape (cave-ktvy0).
+assert.match(workspace, /<AskSalemView\s+familiars=\{/, "workspace must render Salem in the split");
+assert.match(workspace, /<AskSalemView[\s\S]*?activeFamiliarId=\{activeId\}/, "workspace must render Salem scoped to the active familiar");
 
 // 7. CSS classes present
 const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");
