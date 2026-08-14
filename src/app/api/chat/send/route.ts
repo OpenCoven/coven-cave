@@ -9,6 +9,7 @@ import {
   bindingFor,
   enqueueOfflineTravelItem,
   type CaveConfig,
+  getSessionDeletionGeneration,
   loadConfig,
   loadState,
   recordSessionFamiliar,
@@ -1063,6 +1064,7 @@ function openClawChatResponse(args: {
         const stubTitle = ownsFirstExchangeTitle
           ? chatSummaryTitle({ userText: args.promptText }) ?? defaultChatTitleForSession(conversationId)
           : defaultChatTitleForSession(conversationId);
+        let initialDeletionGeneration: number | null = null;
         const initialStubState = settleGatewayInitialStub(
           createConversationStub({
             sessionId: conversationId,
@@ -1080,12 +1082,15 @@ function openClawChatResponse(args: {
               ...attentionClearOperationForTurn(args.body.runId),
               ...persistedTurnControls(args.body, responseMetadata.retryModel),
             },
+          }, async () => {
+            initialDeletionGeneration = await getSessionDeletionGeneration(conversationId);
           }).then(async (created) => {
             if (created && ownsFirstExchangeTitle) {
               await setDefaultStubTitleAuto(conversationId, stubTitle);
             }
             return created;
           }),
+          () => initialDeletionGeneration,
         );
         const abortGateway = (toolOutcome: string) => {
           settleOpenGatewayTools(toolOutcome);
@@ -1152,7 +1157,12 @@ function openClawChatResponse(args: {
           const isFirstExchange = await persistGatewayTranscript({
             sessionId: conversationId,
             initialStubState: await initialStubState,
-            deps: { loadConversation, saveConversation, withConversationLock },
+            deps: {
+              loadConversation,
+              saveConversation,
+              withConversationLock,
+              getDeletionGeneration: getSessionDeletionGeneration,
+            },
             createAfterInitialStubFailure: () => {
               const createdAt = new Date().toISOString();
               return {

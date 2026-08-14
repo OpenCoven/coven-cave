@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, test } from "node:test";
 
@@ -16,6 +16,7 @@ const {
   saveConversation,
   withConversationLock,
 } = await import("@/lib/cave-conversations");
+const { getSessionDeletionGeneration } = await import("@/lib/cave-config");
 const { appendVoiceOriginTurn } = await import("@/lib/voice/append-voice-turn");
 const { DELETE, PATCH } = await import("../conversation/[id]/route.ts");
 const {
@@ -73,12 +74,18 @@ async function gatewayCompletion(
   id: string,
   initialStubState: Awaited<ReturnType<typeof settleGatewayInitialStub>> = {
     kind: "already-existed",
+    deletionGeneration: 0,
   },
 ): Promise<boolean> {
   return persistGatewayTranscript({
     sessionId: id,
     initialStubState,
-    deps: { loadConversation, saveConversation, withConversationLock },
+    deps: {
+      loadConversation,
+      saveConversation,
+      withConversationLock,
+      getDeletionGeneration: getSessionDeletionGeneration,
+    },
     createAfterInitialStubFailure: () => emptyGatewayConversation(id),
     complete: (conv) => {
       conv.turns.push(
@@ -105,8 +112,10 @@ async function gatewayCompletion(
 
 test("Gateway persists a completed transcript after an initial stub write failure recovers", async () => {
   const id = "gateway-stub-write-recovery";
+  const initialGeneration = await getSessionDeletionGeneration(id);
   const initialStubState = await settleGatewayInitialStub(
     Promise.reject(new Error("transient conversation-store failure")),
+    () => initialGeneration,
     () => undefined,
   );
 
@@ -116,6 +125,92 @@ test("Gateway persists a completed transcript after an initial stub write failur
     (await loadConversation(id))?.turns.map((turn) => turn.text),
     ["Gateway prompt", "Gateway reply"],
   );
+});
+
+test("Gateway refuses recovery when DELETE sacrifices a missing conversation after its stub fails", async () => {
+  const id = "gateway-stub-delete-before-save";
+  const initialGeneration = await getSessionDeletionGeneration(id);
+  const initialStubState = await settleGatewayInitialStub(
+    Promise.reject(new Error("transient conversation-store failure")),
+    () => initialGeneration,
+    () => undefined,
+  );
+
+  const deletion = await DELETE(
+    new Request(`http://test/api/chat/conversation/${id}`, { method: "DELETE" }),
+    { params: Promise.resolve({ id }) },
+  );
+  assert.equal(deletion.status, 200);
+  assert.ok(
+    (await getSessionDeletionGeneration(id)) > initialGeneration,
+    "DELETE advances the durable deletion generation even without a conversation file",
+  );
+  await assert.rejects(
+    gatewayCompletion(id, initialStubState),
+    /conversation deleted before Gateway transcript save/,
+  );
+  assert.equal(await loadConversation(id), null);
+});
+
+test("Gateway deterministically refuses recovery when queued DELETE acquires the conversation lock first", async () => {
+  const id = "gateway-stub-delete-lock-race";
+  const initialGeneration = await getSessionDeletionGeneration(id);
+  const initialStubState = await settleGatewayInitialStub(
+    Promise.reject(new Error("transient conversation-store failure")),
+    () => initialGeneration,
+    () => undefined,
+  );
+  const barrier = lockBarrier(id);
+  await barrier.ready;
+
+  let paramsConsumed!: () => void;
+  const consumed = new Promise<void>((resolve) => {
+    paramsConsumed = resolve;
+  });
+  const deletion = DELETE(
+    new Request(`http://test/api/chat/conversation/${id}`, { method: "DELETE" }),
+    {
+      params: {
+        then(resolve: (value: { id: string }) => void) {
+          paramsConsumed();
+          resolve({ id });
+        },
+      } as unknown as Promise<{ id: string }>,
+    },
+  );
+  await consumed;
+  await Promise.resolve();
+  const gateway = gatewayCompletion(id, initialStubState);
+
+  barrier.release();
+  await barrier.held;
+  assert.equal((await deletion).status, 200);
+  await assert.rejects(gateway, /conversation deleted before Gateway transcript save/);
+  assert.equal(await loadConversation(id), null);
+});
+
+test("Gateway recovery permits a failure whose durable tombstone predates the stub attempt", async () => {
+  const id = "gateway-stub-older-tombstone";
+  const statePath = path.join(home, "cave", "state.json");
+  const state = JSON.parse(await readFile(statePath, "utf8"));
+  state.sessionSacrificed[id] = "2026-08-10T00:00:00.000Z";
+  if (state.sessionSacrificeGeneration) delete state.sessionSacrificeGeneration[id];
+  await writeFile(statePath, JSON.stringify(state));
+
+  const initialGeneration = await getSessionDeletionGeneration(id);
+  assert.equal(initialGeneration, 1, "legacy sacrifice timestamps migrate to generation one");
+  const initialStubState = await settleGatewayInitialStub(
+    Promise.reject(new Error("transient conversation-store failure")),
+    () => initialGeneration,
+    () => undefined,
+  );
+
+  assert.equal(await gatewayCompletion(id, initialStubState), true);
+  assert.deepEqual(
+    (await loadConversation(id))?.turns.map((turn) => turn.text),
+    ["Gateway prompt", "Gateway reply"],
+  );
+  assert.equal(await getSessionDeletionGeneration(id), initialGeneration);
 });
 
 test("Gateway normally updates an existing conversation", async () => {
@@ -133,6 +228,7 @@ test("Gateway surfaces a final transcript persistence failure", async () => {
   const id = "gateway-final-write-failure";
   const initialStubState = await settleGatewayInitialStub(
     Promise.reject(new Error("initial write failed")),
+    () => 0,
     () => undefined,
   );
 
@@ -146,6 +242,7 @@ test("Gateway surfaces a final transcript persistence failure", async () => {
           throw new Error("final conversation-store failure");
         },
         withConversationLock,
+        getDeletionGeneration: getSessionDeletionGeneration,
       },
       createAfterInitialStubFailure: () => emptyGatewayConversation(id),
       complete: (conv) => {
@@ -211,7 +308,11 @@ test("client DELETE winning the lock prevents a late Gateway completion from res
     runtime: `local:${home}`,
     userTurn: { id: "stub-user", text: "Gateway prompt" },
   });
-  const initialStubState = await settleGatewayInitialStub(Promise.resolve(stubCreated), () => undefined);
+  const initialStubState = await settleGatewayInitialStub(
+    Promise.resolve(stubCreated),
+    () => 0,
+    () => undefined,
+  );
   assert.equal(initialStubState.kind, "created");
   const barrier = lockBarrier(id);
   await barrier.ready;
@@ -253,11 +354,16 @@ test("production OpenClaw Gateway persistence tracks stub failure separately fro
   assert.match(branch, /const initialStubState = settleGatewayInitialStub\(\s*createConversationStub\(/);
   assert.match(
     branch,
-    /persistGatewayTranscript\(\{[\s\S]*?initialStubState: await initialStubState,[\s\S]*?deps: \{ loadConversation, saveConversation, withConversationLock \}/,
+    /createConversationStub\(\{[\s\S]*?\}, async \(\) => \{\s*initialDeletionGeneration = await getSessionDeletionGeneration\(conversationId\);[\s\S]*?\}\)\.then\([\s\S]*?\),\s*\(\) => initialDeletionGeneration,/,
+    "the initial stub captures the durable deletion generation while holding its conversation lock",
+  );
+  assert.match(
+    branch,
+    /persistGatewayTranscript\(\{[\s\S]*?initialStubState: await initialStubState,[\s\S]*?getDeletionGeneration: getSessionDeletionGeneration/,
   );
   assert.match(
     helperSource,
-    /withConversationLock\(args\.sessionId,[\s\S]*?loadConversation\(args\.sessionId\)[\s\S]*?initialStubState\.kind !== "failed-before-exists"[\s\S]*?saveConversation\(conversation\)/,
+    /withConversationLock\(args\.sessionId,[\s\S]*?loadConversation\(args\.sessionId\)[\s\S]*?initialStubState\.deletionGeneration[\s\S]*?getDeletionGeneration\(args\.sessionId\)[\s\S]*?saveConversation\(conversation\)/,
   );
   assert.doesNotMatch(
     branch,
