@@ -81,6 +81,8 @@ test("create failures surface the server's message inline (409 no-artifact inclu
 test("generation directions show a bounded, quiet character count", () => {
   assert.match(modals, /maxLength=\{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\}/);
   assert.match(modals, /directions\.length\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
+  assert.match(modals, /aria-describedby="research-studio-directions-count"/);
+  assert.match(modals, /id="research-studio-directions-count"/);
   assert.doesNotMatch(modals, /research-studio-config__count" aria-live/);
   assert.match(css, /\.research-studio-config__count--near/);
 });

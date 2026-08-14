@@ -704,9 +704,13 @@ export function GenerationConfigModal({
             value={directions}
             maxLength={RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
             onChange={(event) => onDirectionsChange(event.target.value)}
+            aria-describedby="research-studio-directions-count"
             placeholder="Audience, tone, emphasis — kept with the generation for future pipelines"
           />
-          <span className={`research-studio-config__count${nearCap ? " research-studio-config__count--near" : ""}`}>
+          <span
+            id="research-studio-directions-count"
+            className={`research-studio-config__count${nearCap ? " research-studio-config__count--near" : ""}`}
+          >
             {directions.length.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
           </span>
         </div>
