@@ -523,6 +523,7 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
 
   const pr = row.pullRequest;
   const hasPr = Boolean(pr?.repo && pr?.number != null);
+  const trustedForActions = hasPr && pr?.attribution !== "transcript";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -556,12 +557,19 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
           </div>
           <ChecksSection repo={pr.repo} number={pr.number as number} />
           <ThreadsSection repo={pr.repo} number={pr.number as number} />
-          <ActionsSection
-            repo={pr.repo}
-            number={pr.number as number}
-            prState={pr.state}
-            onActed={() => setActedTick((t) => t + 1)}
-          />
+          {trustedForActions ? (
+            <ActionsSection
+              repo={pr.repo}
+              number={pr.number as number}
+              prState={pr.state}
+              onActed={() => setActedTick((t) => t + 1)}
+            />
+          ) : (
+            <div className="rounded-lg border border-[var(--border-muted)] bg-[var(--surface-muted)] p-3 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+              This PR was detected from the chat transcript, so it is shown for reference only.
+              Review and merge actions stay disabled until a PR is resolved from this session&apos;s work branch.
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-start gap-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
