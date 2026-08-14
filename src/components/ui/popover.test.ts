@@ -117,4 +117,64 @@ assert.match(
   "focus moving back to the anchor doesn't close the popover",
 );
 
+// A `checked` row used to be a menuitemradio unconditionally, so every
+// standalone boolean toggle in a popover menu announced as one choice among
+// mutually exclusive alternatives. Radio stays the DEFAULT — most checked rows
+// here really are option groups (runtimes, models, sort order, project pickers)
+// — and independent toggles opt into menuitemcheckbox.
+assert.match(
+  src,
+  /export type PopoverItemCheckedRole = "radio" \| "checkbox"/,
+  "PopoverItem exposes an explicit checked-role choice",
+);
+assert.match(
+  src,
+  /checkedRole\?: PopoverItemCheckedRole/,
+  "checkedRole is an opt-in prop",
+);
+assert.match(
+  src,
+  /checkedRole = "radio"/,
+  "radio stays the default so existing option groups are unchanged",
+);
+assert.match(
+  src,
+  /checkedRole === "checkbox" \? "menuitemcheckbox" : "menuitemradio"/,
+  "an opted-in toggle announces as menuitemcheckbox",
+);
+
+// The independent on/off toggles, named so a future caller can see which rows
+// are toggles rather than option groups.
+for (const [file, label] of [
+  ["../workspace-sidebar.tsx", "Show archived"],
+  ["../chat-list.tsx", "Keep chat"],
+  ["../chat-session-header.tsx", "session menu (thinking / instruments)"],
+]) {
+  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
+  assert.match(
+    caller,
+    /checkedRole="checkbox"/,
+    `${label} is an independent toggle, not one of a mutually exclusive set`,
+  );
+}
+
+// Both "Keep chat" rows — the list row menu and the hover-kebab menu — carry it.
+// Their indentation differs, so a single edit silently covers only one of them.
+const chatList = readFileSync(new URL("../chat-list.tsx", import.meta.url), "utf8");
+assert.equal(
+  chatList.match(/checkedRole="checkbox"/g)?.length,
+  2,
+  "both Keep-chat toggles opt into the checkbox role",
+);
+
+// Guard the other direction: mutually exclusive pickers must NOT be converted,
+// and e2e specs pin them as menuitemradio.
+for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "../ui/select.tsx"]) {
+  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
+  assert.ok(
+    !/checkedRole="checkbox"/.test(caller),
+    `${file} is a one-of-a-set picker and must stay menuitemradio`,
+  );
+}
+
 console.log("popover.test.ts: ok");

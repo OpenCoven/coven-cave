@@ -1612,6 +1612,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 <PopoverSeparator />
                                 <PopoverItem
                                   checked={Boolean(s.keep)}
+                                  checkedRole="checkbox"
                                   onSelect={() => void setSessionKeep(s.id, !s.keep)}
                                 >
                                   {s.keep ? "Remove keep mark" : "Keep chat"}
@@ -1677,6 +1678,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 >
                                   <PopoverItem
                                     checked={Boolean(s.keep)}
+                                    checkedRole="checkbox"
                                     onSelect={() => void setSessionKeep(s.id, !s.keep)}
                                   >
                                     {s.keep ? "Remove keep mark" : "Keep chat"}

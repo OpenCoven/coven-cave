@@ -347,6 +347,11 @@ export function PopoverSeparator() {
 
 export type PopoverItemSemantic = "menuitem" | "button";
 
+/** How a `checked` row is announced. `radio` (the default) is for one-of-a-set
+ *  option groups. `checkbox` is for an independent on/off toggle, which a radio
+ *  role misdescribes as a mutually exclusive choice among alternatives. */
+export type PopoverItemCheckedRole = "radio" | "checkbox";
+
 export function PopoverItem({
   icon,
   leading,
@@ -356,6 +361,7 @@ export function PopoverItem({
   danger,
   disabled,
   checked,
+  checkedRole = "radio",
   title,
   semantic = "menuitem",
 }: {
@@ -370,9 +376,14 @@ export function PopoverItem({
   /** Native tooltip / AT description for items whose label abbreviates a
    *  longer explanation. */
   title?: string;
-  /** When set (true/false) the item is a menuitemradio with aria-checked and a
-   *  trailing check glyph — for mutually exclusive option groups. */
+  /** When set (true/false) the item carries aria-checked and a trailing check
+   *  glyph. `checkedRole` picks how it is announced. */
   checked?: boolean;
+  /** Announce a `checked` row as an independent toggle (menuitemcheckbox)
+   *  rather than one of a mutually exclusive set (menuitemradio, the default).
+   *  Radio stays the default because most `checked` rows here really are option
+   *  groups — runtimes, models, sort order, project pickers. */
+  checkedRole?: PopoverItemCheckedRole;
   /** Composite dialogs can retain native button semantics instead of exposing
    *  rows as menuitems. Pure menus keep the menuitem default. */
   semantic?: PopoverItemSemantic;
@@ -383,7 +394,8 @@ export function PopoverItem({
   ]
     .filter(Boolean)
     .join(" ");
-  const radio = checked !== undefined;
+  const selectable = checked !== undefined;
+  const selectableRole = checkedRole === "checkbox" ? "menuitemcheckbox" : "menuitemradio";
   return (
     <button
       type="button"
@@ -392,12 +404,12 @@ export function PopoverItem({
       data-active={active || undefined}
       disabled={disabled}
       title={title}
-      role={semantic === "button" ? undefined : radio ? "menuitemradio" : "menuitem"}
-      aria-checked={semantic === "button" ? undefined : radio ? checked : undefined}
+      role={semantic === "button" ? undefined : selectable ? selectableRole : "menuitem"}
+      aria-checked={semantic === "button" ? undefined : selectable ? checked : undefined}
     >
       {leading ?? (icon ? <Icon name={icon} width={13} aria-hidden /> : null)}
       <span>{children}</span>
-      {radio && checked ? (
+      {selectable && checked ? (
         <Icon name="ph:check" width={12} aria-hidden className="ml-auto" />
       ) : null}
     </button>
