@@ -85,15 +85,26 @@ assert.equal(
   "ASCII SemVer ordering keeps B below a instead of locale-sorting it above",
 );
 assert.equal(selectRuntimeEventProtocol("1.0.0-b", [prereleaseBoundarySchema])?.id, prereleaseBoundarySchema.id);
+assert.equal(selectRuntimeEventProtocol("1.0.64"), null, "clients that reject --session-id fail closed");
 assert.equal(selectRuntimeEventProtocol("0.9.9"), null, "pre-protocol clients fail closed");
 assert.equal(selectRuntimeEventProtocol("1.0.70")?.id, "copilot-jsonl-v1");
 assert.equal(selectRuntimeEventProtocol("2.0.0"), null, "an unknown future major fails closed");
 assert.equal(selectRuntimeEventProtocol("2.0.0-rc.1"), null, "future-major prereleases fail closed");
 assert.equal(selectRuntimeEventProtocol("not-a-version"), null, "unparseable clients fail closed");
 assert.equal(
-  copilotStreamSpec("0.9.9"),
+  copilotStreamSpec("1.0.64"),
   null,
   "a caller that has an incompatible client version must retain the generic plain-chat path",
+);
+const staleRefreshedV1Schema = {
+  ...COPILOT_EVENT_PROTOCOL_SCHEMAS[0]!,
+  id: "copilot-jsonl-v1-stale-refresh-fixture",
+  minClientVersion: "1.0.0",
+};
+assert.equal(
+  copilotStreamSpec("1.0.64", [staleRefreshedV1Schema]),
+  null,
+  "a stale refreshed parser schema cannot lower the verified launch-version floor",
 );
 
 const V2_SCHEMA = {
