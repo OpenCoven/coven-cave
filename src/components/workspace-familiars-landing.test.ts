@@ -240,9 +240,13 @@ assert.match(
   /if \(chatProjectBlockedRef\.current\) \{[\s\S]*if \(familiarId\) setActiveId\(familiarId\);[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}/,
   "startFamiliarChat bounces blocked launches to Home so the first-project gate becomes visible without queuing a chat",
 );
+// The parameter type is `\w+` on purpose: cave-x6rw renamed SplitTarget to
+// WorkspacePaneRequest. The GUARDED BEHAVIOUR is what matters here and is
+// unchanged — gate, setMode("home"), early return, then setSplitSide — so the
+// pin asserts that and not the type's spelling (cave-ktvy0).
 assert.match(
   workspace,
-  /const addSplitTarget = useCallback\(\(target: SplitTarget, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setSplitSide\(side\);/,
+  /const addSplitTarget = useCallback\(\(target: \w+, side: "left" \| "right" = "right"\) => \{[\s\S]*if \(chatProjectBlockedRef\.current && splitTargetRendersMode\(target, "chat"\)\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setSplitSide\(side\);/,
   "Workspace blocks chat-rendering split targets under the first-project gate and reroutes the primary pane to Home",
 );
 assert.match(
