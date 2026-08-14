@@ -9,6 +9,7 @@ const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const transcript = readFileSync(new URL("../lib/group-chat-transcript.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const covenStyles = readFileSync(new URL("../styles/coven-tab.css", import.meta.url), "utf8");
 const inspector = readFileSync(new URL("./coven-inspector.tsx", import.meta.url), "utf8");
 const composerBar = readFileSync(new URL("./coven-composer-bar.tsx", import.meta.url), "utf8");
@@ -382,7 +383,12 @@ test("Group chat transcript uses avatar author rows with recency", () => {
 test("Group Chat is a tab inside the Chat surface, not a standalone page", () => {
   // The mode still exists purely as a redirect target for legacy deep links.
   assert.match(mode, /\| "groupchat"/, "groupchat stays a valid WorkspaceMode for redirects");
-  assert.match(workspace, /groupchat: "Group Chat"/, "groupchat keeps a title entry");
+  // The point of this assertion is that groupchat KEEPS a title entry while being
+  // only a legacy redirect target. cave-x6rw moved titles into the page registry
+  // and wrote the copy sentence-case ("Group chat"), consistently for both title
+  // and landmark; nothing else in the tree spells it "Group Chat", and groupchat
+  // has no navigation label to contradict it (cave-ktvy0).
+  assert.match(pageRegistry, /groupchat: \{[\s\S]*?title: "Group chat"/, "groupchat keeps a title entry");
 
   // The standalone page is retired: the Workspace no longer imports or renders
   // GroupChatView, and redirects the legacy mode into the Chat surface's tab.
