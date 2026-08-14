@@ -1266,6 +1266,7 @@ export const SUITES = {
     "src/lib/testing/wait-for.test.ts",
     "src/lib/server/research-landing.test.ts",
     "src/lib/server/claude-models.test.ts",
+    "src/lib/server/claude-opus5-routability.test.ts",
     "src/lib/server/copilot-models.test.ts",
     "src/lib/server/grok-models.test.ts",
     "src/lib/server/hermes-models.test.ts",
@@ -1729,6 +1730,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // Imports the send route's chat-send-models.ts for its launch-boundary
+  // predicate, and that module resolves "@/lib/..." across its whole graph.
+  "src/lib/server/claude-opus5-routability.test.ts",
   // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
   // for the project allow-list; the suite cannot load without the resolver.
   "src/lib/search-provider.test.ts",
