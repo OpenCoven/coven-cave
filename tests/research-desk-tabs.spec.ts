@@ -286,6 +286,18 @@ function fulfillDirectionDraft(route: Route) {
   });
 }
 
+function fulfillJournalSend(route: Route) {
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: [
+      `data: ${JSON.stringify({ kind: "done", sessionId: "research-journal-1" })}`,
+      "",
+      "",
+    ].join("\n"),
+  });
+}
+
 async function mockResearchApis(page: Page): Promise<BootHandles> {
   const handles: BootHandles = {
     createdGenerationBodies: [],
@@ -315,9 +327,12 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   );
   await page.route("**/api/chat/send", (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
-    expect(body.origin, "unexpected Research Desk chat send").toBe("enhance");
-    handles.directionDraftBodies.push(body);
-    return fulfillDirectionDraft(route);
+    if (body.origin === "enhance") {
+      handles.directionDraftBodies.push(body);
+      return fulfillDirectionDraft(route);
+    }
+    if (body.origin === "journal") return fulfillJournalSend(route);
+    throw new Error(`unexpected Research Desk chat send origin: ${String(body.origin)}`);
   });
   await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
     route.fulfill({
