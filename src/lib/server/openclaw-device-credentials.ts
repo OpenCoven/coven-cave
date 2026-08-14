@@ -224,11 +224,14 @@ export function createOpenClawDeviceCredentialStore(
   };
 
   // `-i` command mode keeps the secret on stdin; `add-generic-password -w <v>`
-  // on argv would expose it to every process on the machine.
+  // on argv would expose it to every process on the machine. An explicit empty
+  // trusted-app list prevents the `security` executable from becoming a
+  // trusted reader that any process running as this user could invoke.
   const writeSecret = (account: string, secret: string, params: { update: boolean }): number => {
     const command = [
       "add-generic-password",
       params.update ? "-U" : null,
+      '-T ""',
       `-s "${safeValue(KEYCHAIN_SERVICE, "service")}"`,
       `-a "${safeValue(account, "account")}"`,
       `-w "${safeValue(secret, "secret")}"`,
