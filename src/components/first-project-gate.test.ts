@@ -132,9 +132,14 @@ test("workspace wires the first-project gate through pending-aware policy and re
     /<FirstProjectGate[\s\S]*familiarId=\{projectGateFamiliarId\}[\s\S]*pendingGrant=\{reconciledPendingFirstProjectGrant\}[\s\S]*onPendingGrantChange=\{setPendingFirstProjectGrant\}[\s\S]*loadingProjects=\{projectsLoading\}[\s\S]*projectsError=\{projectsError\}[\s\S]*createProjectOrThrow=\{createProjectOrThrow\}[\s\S]*reloadProjects=\{reloadProjects\}/,
     "workspace passes the policy target, reconciled pending retry, and update callback into the gate",
   );
-  assert.match(
+  // cave-x6rw renamed this binding `detail` -> `defaultDetail` and wrapped it in a
+// <WorkspacePanePage>. The overlay/inert structure this protects is unchanged;
+// note the old spelling also collided with unrelated event locals
+// (`const detail = (e as CustomEvent<...>).detail`) earlier in the file, which is
+// what made the ordered chain fail (cave-ktvy0).
+assert.match(
     src,
-    /const detailContent = renderSurface\(mode\);[\s\S]*const detail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*<div[\s\S]*className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"[\s\S]*aria-hidden=\{firstProjectGateOpen \? true : undefined\}[\s\S]*inert=\{firstProjectGateOpen \|\| undefined\}[\s\S]*>\s*\{detailContent\}\s*<\/div>[\s\S]*<\/div>/,
+    /const detailContent = renderSurface\(mode\);[\s\S]*const defaultDetail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*<div[\s\S]*className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"[\s\S]*aria-hidden=\{firstProjectGateOpen \? true : undefined\}[\s\S]*inert=\{firstProjectGateOpen \|\| undefined\}[\s\S]*>\s*\{detailContent\}\s*<\/div>[\s\S]*<\/div>/,
     "workspace renders the gate as an absolute sibling overlay and puts the underlying surface inside an inert, full-height wrapper",
   );
   assert.match(src, /mode === "chat" \? \(\s*<ChatSurface/, "Chat stays a direct render branch");
