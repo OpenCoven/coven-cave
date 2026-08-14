@@ -219,7 +219,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // Bulk delete is deferred + undoable: rows hide immediately, the DELETEs fire
   // only after the undo window, and Undo restores the batch.
   const { pending: deletePending, scheduleDelete: scheduleBulkDelete, undo: undoBulkDelete, commit: commitBulkDelete } = useUndoDelete<SessionRow[]>();
-  useEffect(() => { setSelectMode(false); setSelectedIds(new Set()); }, [familiar?.id]);
   // Content search (CHAT-D9-02) — hits from /api/chat/search for the current
   // query; cleared the moment the query drops below the 2-char threshold.
   const [contentHits, setContentHits] = useState<ContentSearchHit[]>([]);
@@ -232,6 +231,17 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
   const sidebarPrefsLoadedRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
+  const clearSessionFilters = useCallback(() => {
+    setSearch("");
+    setStatusFilter("all");
+    setSelection("all");
+    setShowArchived(false);
+  }, []);
+  useEffect(() => {
+    clearSessionFilters();
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, [clearSessionFilters, familiar?.id]);
   const searchRef = useRef<HTMLInputElement>(null);
   const sortAnchorRef = useRef<HTMLButtonElement>(null);
   const keys = useKeySymbols();
@@ -300,15 +310,20 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }, [filtered, projects, projectOverrides]);
 
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
-  // so it stays stable while typing. The persisted selection is normalized
+  // so it stays stable while typing. The view-local selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
-  // sidebar is hidden, so a persisted project selection must not scope the
-  // list there — no affordance would exist to unscope it.
+  // sidebar is hidden, so a project selection must not scope the list there —
+  // no affordance would exist to unscope it.
   const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(railSessions, projectOverrides), projects), [railSessions, projects, projectOverrides]);
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
   );
+  const hasAppliedFilters =
+    search.trim().length > 0 ||
+    statusFilter !== "all" ||
+    effectiveSelection !== "all" ||
+    showArchived;
   const scopedGroups = useMemo(
     () => applyProjectScope(grouped, effectiveSelection),
     [grouped, effectiveSelection],
@@ -335,8 +350,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Sidebar state loads after mount (not in initializers) so SSR markup and
-  // first client render agree; persistence is gated until that load lands.
+  // Sidebar preferences load after mount (not in initializers) so SSR markup
+  // and first client render agree; persistence is gated until that load lands.
+  // Project filtering deliberately stays view-local: returning to Sessions
+  // starts from the active familiar rather than the last chat's project.
   useEffect(() => {
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
@@ -356,8 +373,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         ? storedExpanded.filter((k): k is string => typeof k === "string")
         : projectSelectionKeys(sidebarGroups),
     );
-    const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
-    setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
   }, [sessionsLoaded, sidebarGroups]);
@@ -383,9 +398,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
   }, [sidebarHydrated, expandedKeys]);
-  useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
-  }, [sidebarHydrated, selection]);
   // First chat in a fresh project folder (or this surface's just-started
   // chat) must not hide inside a collapsed group (cave-mllp).
   useAutoExpandNewGroups({
@@ -968,6 +980,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <Icon name="ph:list-checks-bold" width={12} aria-hidden />
           </button>
 
+          {compact && hasAppliedFilters && (
+            <button
+              type="button"
+              onClick={clearSessionFilters}
+              aria-label="Clear filters"
+              title="Clear filters"
+              className="chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]"
+            >
+              <Icon name="ph:funnel" width={12} aria-hidden />
+            </button>
+          )}
+
           {/* Compact companion panels drop the surface title row (no width for
               a serif heading), so the one primary action rides here instead —
               the panel must never be the one place you cannot start a chat. */}
@@ -1022,6 +1046,16 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 );
               })}
             </span>
+            {hasAppliedFilters && !(visibleRows === 0 && !showContentSection) && (
+              <Button
+                variant="ghost"
+                size="xs"
+                leadingIcon="ph:funnel"
+                onClick={clearSessionFilters}
+              >
+                Clear filters
+              </Button>
+            )}
             <span className="flex-1" />
             <button
               ref={sortAnchorRef}
@@ -1162,8 +1196,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             </p>
             <button
               type="button"
-              onClick={() => { setSearch(""); setStatusFilter("all"); setSelection("all"); }}
-              className="text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:underline"
+              onClick={clearSessionFilters}
+              className="focus-ring rounded text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:underline"
             >
               Clear filters
             </button>
