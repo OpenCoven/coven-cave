@@ -24,6 +24,7 @@
     "appstore:validate": "node scripts/app-store-connect.mjs validate",
     "appstore:upload": "node scripts/app-store-connect.mjs upload",
     "appstore:status": "node scripts/app-store-connect.mjs status",
+    "mobile:ios:xcodegen": "bash scripts/ios-xcodegen.sh",
     "mobile:ios:sim": "bash scripts/ios-simulator.sh",
     "uninstall:app": "bash scripts/uninstall-app.sh",
     "mobile:tailscale": "bash scripts/mobile-tailscale.sh start",
