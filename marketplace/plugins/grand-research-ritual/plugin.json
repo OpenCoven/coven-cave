@@ -16,6 +16,7 @@
     "research",
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/grand-research-ritual",
   "x-coven": {
     "displayName": "Grand Research Ritual",

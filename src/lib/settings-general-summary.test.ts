@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createGeneralSummaryLoader,
   resolveGeneralSummaryState,
   type GeneralSummaryResponse,
   type GeneralSummaryState,
@@ -14,24 +15,33 @@ const ok = (value: Record<string, unknown>): GeneralSummaryResponse => ({
 const failed: GeneralSummaryResponse = { ok: false, value: null };
 const loading: GeneralSummaryState = { status: "loading", summary: {} };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 test("General summary resolves complete source data", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "/coven" }),
-      voice: ok({
-        tts: [
-          { ready: true, verified: true },
-          { ready: true, verified: false },
-        ],
-      }),
+      config: ok({ workspacePath: "/coven" }),
       sync: ok({ config: { enabled: false } }),
     }),
     {
       status: "ready",
       summary: {
         workspacePath: "/coven",
-        readyVoices: 1,
-        totalVoices: 2,
         syncEnabled: false,
       },
     },
@@ -43,24 +53,19 @@ test("General summary exposes partial refreshes while retaining failed-source va
     status: "ready",
     summary: {
       workspacePath: "/old",
-      readyVoices: 2,
-      totalVoices: 4,
       syncEnabled: false,
     },
   };
 
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
-      daemon: ok({ workspacePath: "/new" }),
-      voice: failed,
+      config: ok({ workspacePath: "/new" }),
       sync: failed,
     }),
     {
       status: "partial",
       summary: {
         workspacePath: "/new",
-        readyVoices: 2,
-        totalVoices: 4,
         syncEnabled: false,
       },
     },
@@ -70,15 +75,13 @@ test("General summary exposes partial refreshes while retaining failed-source va
 test("General summary treats an unusable successful payload as a partial source failure", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "/coven" }),
-      voice: ok({ ok: true }),
-      sync: ok({ config: { enabled: false } }),
+      config: ok({ workspacePath: "/coven" }),
+      sync: ok({ config: {} }),
     }),
     {
       status: "partial",
       summary: {
         workspacePath: "/coven",
-        syncEnabled: false,
       },
     },
   );
@@ -89,16 +92,13 @@ test("General summary treats all-source failure as an error without discarding k
     status: "ready",
     summary: {
       workspacePath: "/coven",
-      readyVoices: 0,
-      totalVoices: 0,
       syncEnabled: true,
     },
   };
 
   assert.deepEqual(
     resolveGeneralSummaryState(current, {
-      daemon: failed,
-      voice: failed,
+      config: failed,
       sync: failed,
     }),
     {
@@ -111,8 +111,7 @@ test("General summary treats all-source failure as an error without discarding k
 test("General summary errors when successful responses contain no usable details", () => {
   assert.deepEqual(
     resolveGeneralSummaryState(loading, {
-      daemon: ok({ workspacePath: "" }),
-      voice: ok({}),
+      config: ok({ workspacePath: "" }),
       sync: ok({ config: {} }),
     }),
     {
@@ -120,4 +119,69 @@ test("General summary errors when successful responses contain no usable details
       summary: {},
     },
   );
+});
+
+test("General summary loader aborts superseded refreshes and keeps the newest result", async () => {
+  const calls: Array<{
+    input: string;
+    signal: AbortSignal | undefined;
+    request: ReturnType<typeof deferred<Response>>;
+  }> = [];
+  const fetchImpl = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const request = deferred<Response>();
+    const signal = init?.signal ?? undefined;
+    signal?.addEventListener("abort", () => request.reject(new Error(`aborted ${String(input)}`)), {
+      once: true,
+    });
+    calls.push({ input: String(input), signal, request });
+    return request.promise;
+  }) as typeof fetch;
+  const loader = createGeneralSummaryLoader({ fetchImpl });
+
+  const firstLoad = loader.load();
+  assert.equal(calls.length, 2, "one summary load fans out to the two narrow sources");
+  assert.deepEqual(calls.map((call) => call.input), ["/api/config", "/api/backup/sync"]);
+  const firstSignals = calls.slice(0, 2).map((call) => call.signal);
+
+  const secondLoad = loader.load();
+  assert.equal(calls.length, 4, "a refresh starts a new two-source batch");
+  for (const signal of firstSignals) {
+    assert.equal(signal?.aborted, true, "superseded summary loads should be aborted");
+  }
+
+  calls[2].request.resolve(jsonResponse({ ok: true, workspacePath: "/coven" }));
+  calls[3].request.resolve(jsonResponse({ ok: true, config: { enabled: true } }));
+
+  const [firstResult, secondResult] = await Promise.all([firstLoad, secondLoad]);
+  assert.equal(firstResult, null, "a superseded load should not publish stale data");
+  assert.deepEqual(secondResult, {
+    config: ok({ ok: true, workspacePath: "/coven" }),
+    sync: ok({ ok: true, config: { enabled: true } }),
+  });
+});
+
+test("General summary loader aborts the active request on dispose", async () => {
+  const calls: Array<{
+    signal: AbortSignal | undefined;
+    request: ReturnType<typeof deferred<Response>>;
+  }> = [];
+  const fetchImpl = ((_: RequestInfo | URL, init?: RequestInit) => {
+    const request = deferred<Response>();
+    const signal = init?.signal ?? undefined;
+    signal?.addEventListener("abort", () => request.reject(new Error("aborted")), {
+      once: true,
+    });
+    calls.push({ signal, request });
+    return request.promise;
+  }) as typeof fetch;
+  const loader = createGeneralSummaryLoader({ fetchImpl });
+
+  const load = loader.load();
+  loader.dispose();
+
+  assert.equal(calls.length, 2, "dispose should abort the in-flight two-source batch");
+  for (const call of calls) {
+    assert.equal(call.signal?.aborted, true);
+  }
+  assert.equal(await load, null, "a disposed loader should drop the abandoned result");
 });

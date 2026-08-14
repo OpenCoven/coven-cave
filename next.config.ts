@@ -9,6 +9,10 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
+  env: {
+    COVEN_CAVE_X_PRODUCTION_CLIENT_ID:
+      process.env.COVEN_CAVE_X_PRODUCTION_CLIENT_ID?.trim() ?? "",
+  },
   // The Next.js dev tools launcher renders in a portal at bottom-left by
   // default, which intercepts taps on Cave's mobile bottom tabs in local dev.
   devIndicators: false,
@@ -37,11 +41,26 @@ const nextConfig: NextConfig = {
   // inputs; packaged assets are copied explicitly by sidecar-bundle.sh.
   outputFileTracingExcludes: {
     "/*": [
+      "./.agents/**/*",
       "./.beads/**/*",
       "./.claude/**/*",
       "./.codex/**/*",
+      "./.design-sync/**/*",
+      // A route whose module graph reaches a `caveHome()`-derived path makes
+      // the tracer glob the checkout root, which pulls in every dot-entry it
+      // is not told to skip. `./.git/**/*` below covers a normal clone, where
+      // `.git` is a directory; in a git WORKTREE `.git` is a plain file, and
+      // only this bare entry excludes it.
+      "./.git",
+      "./.github/**/*",
+      "./.gitignore",
+      // Lifecycle tests use repo-local mkdtemp roots so the inventory can
+      // exercise real Git. A killed test can leave one behind; never let NFT
+      // turn that disposable fixture into packaged server input.
+      "./.worktree-lifecycle-fixture-*/**/*",
       "./.next/cache/**/*",
       "./.next/dev/**/*",
+      "./.tmp/**/*",
       "./src-tauri/**/*",
       "./target/**/*",
       "./target-windows/**/*",

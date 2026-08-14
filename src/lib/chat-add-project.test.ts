@@ -2,6 +2,11 @@
 import assert from "node:assert/strict";
 import { addChatProject, projectNameForRoot } from "./chat-add-project.ts";
 import {
+  LOCAL_PROJECT_CREATION_MESSAGE,
+  LOCAL_REQUEST_REQUIRED_CODE,
+  ProjectCreationError,
+} from "./project-errors.ts";
+import {
   resetProjectRegistryListenersForTests,
   subscribeProjectRegistryMutation,
 } from "./project-registry-events.ts";
@@ -31,7 +36,11 @@ assert.equal(projectNameForRoot(""), "");
   };
   const result = await addChatProject({ root: "/code/orphan", familiarId: "sage", createProject, fetchImpl });
   assert.deepEqual(result, { ok: true, projectId: "p1" });
-  assert.deepEqual(calls[0], ["create", "orphan", "/code/orphan", { emitMutation: false }]);
+  assert.equal(calls[0][0], "create");
+  assert.equal(calls[0][1], "orphan");
+  assert.equal(calls[0][2], "/code/orphan");
+  assert.equal(calls[0][3].emitMutation, false);
+  assert.equal(typeof calls[0][3].onError, "function");
   assert.equal(calls[1][1], "/api/project-grants");
   // The grant route rejects any `familiarId` field — only targetFamiliarId is sent.
   assert.deepEqual(calls[1][2], { targetFamiliarId: "sage", projectId: "p1" });
@@ -92,7 +101,60 @@ assert.equal(projectNameForRoot(""), "");
     return { ok: true, json: async () => ({}) };
   };
   const result = await addChatProject({ root: "/x", familiarId: "sage", createProject, fetchImpl });
-  assert.equal(result.ok, false);
+  assert.deepEqual(result, { ok: false, error: "could not register project" });
+  assert.equal(granted, false);
+}
+
+// A nullable creator can report the typed server failure without changing its
+// null-on-failure return contract; addChatProject must preserve both fields.
+{
+  let granted = false;
+  const result = await addChatProject({
+    root: "/remote-only-nullable",
+    familiarId: "sage",
+    createProject: async (_name, _root, options) => {
+      options?.onError?.(new ProjectCreationError(LOCAL_PROJECT_CREATION_MESSAGE, LOCAL_REQUEST_REQUIRED_CODE));
+      return null;
+    },
+    fetchImpl: async () => {
+      granted = true;
+      return { ok: true, json: async () => ({ ok: true }) };
+    },
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    error: LOCAL_PROJECT_CREATION_MESSAGE,
+    code: LOCAL_REQUEST_REQUIRED_CODE,
+  });
+  assert.equal(granted, false);
+}
+
+// When both creation paths are available, the throwing variant wins so a
+// nullable caller cannot erase a stable local-only failure contract.
+{
+  let nullableCalled = false;
+  let granted = false;
+  const result = await addChatProject({
+    root: "/remote-only",
+    familiarId: "sage",
+    createProject: async () => {
+      nullableCalled = true;
+      return null;
+    },
+    createProjectOrThrow: async () => {
+      throw new ProjectCreationError(LOCAL_PROJECT_CREATION_MESSAGE, LOCAL_REQUEST_REQUIRED_CODE);
+    },
+    fetchImpl: async () => {
+      granted = true;
+      return { ok: true, json: async () => ({ ok: true }) };
+    },
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    error: LOCAL_PROJECT_CREATION_MESSAGE,
+    code: LOCAL_REQUEST_REQUIRED_CODE,
+  });
+  assert.equal(nullableCalled, false);
   assert.equal(granted, false);
 }
 

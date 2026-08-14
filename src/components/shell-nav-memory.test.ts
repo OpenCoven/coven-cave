@@ -8,7 +8,11 @@ import * as shellLayout from "./shell-layout.ts";
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const compactWhitespace = (input: string) => input.replace(/\s+/g, " ").trim();
-const { resolveShellDestinationLayout } = shellLayout;
+const {
+  resolveShellDestinationLayout,
+  resolveShellNavWidth,
+  SHELL_NAV_DEFAULT_PX,
+} = shellLayout;
 const isShellNavCollapsedLayout =
   shellLayout.isShellNavCollapsedLayout ??
   (() => false);
@@ -18,6 +22,16 @@ const resolveShellLayoutPersistence =
 const resolveShellNavOpenPreference =
   shellLayout.resolveShellNavOpenPreference ??
   (() => ({ open: true, shouldPersist: false }));
+const resolveShellNavPolicyHandoff =
+  shellLayout.resolveShellNavPolicyHandoff ?? (() => null);
+
+assert.equal(resolveShellNavWidth("300"), 300, "a valid persisted nav width is retained");
+assert.equal(resolveShellNavWidth("999"), 420, "nav width is clamped to the desktop maximum");
+assert.equal(resolveShellNavWidth("not-a-width"), 240, "invalid nav widths use the desktop default");
+assert.equal(resolveShellNavWidth(null), 240, "missing nav widths use the desktop default");
+assert.equal(resolveShellNavWidth("Infinity"), 240, "infinite nav widths use the desktop default");
+assert.equal(resolveShellNavWidth("0"), 220, "zero nav widths are clamped to the desktop minimum");
+const storedNavWidth = resolveShellNavWidth("300");
 
 assert.deepEqual(
   resolveShellNavOpenPreference(null, false),
@@ -31,12 +45,87 @@ assert.deepEqual(
   "first-run minimization never overwrites an existing user preference",
 );
 
+// Leaving Chat for a remembered destination (Home, Tasks, Rituals, …) must not
+// collapse the sidebar the user is looking at. Chat never maintains
+// cave:shell:nav-open, and first-run minimization seeds it false, so the
+// remembered path would otherwise read a `false` nobody chose.
+const chatToHome = {
+  fromPolicy: "chat-contextual",
+  toPolicy: "remembered",
+  visibleNavOpen: true,
+  persistedOpen: false,
+  persistedFromUser: false,
+};
+
+assert.deepEqual(
+  resolveShellNavPolicyHandoff(chatToHome),
+  { open: true, persist: true },
+  "leaving Chat carries the visible sidebar forward over a seeded collapse",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, persistedFromUser: true }),
+  null,
+  "a sidebar the user collapsed themselves stays collapsed when leaving Chat",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, visibleNavOpen: false }),
+  null,
+  "leaving Chat with the nav already closed has nothing to carry",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, persistedOpen: true }),
+  null,
+  "an already-open preference needs no handoff",
+);
+
+assert.deepEqual(
+  resolveShellNavPolicyHandoff({ ...chatToHome, persistedOpen: null }),
+  { open: true, persist: true },
+  "an unwritten preference is carried like a seeded one",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, fromPolicy: "remembered" }),
+  null,
+  "remembered-to-remembered navigation keeps using the stored preference",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, toPolicy: "visit-collapsed" }),
+  null,
+  "policies that collapse on purpose are never overridden by the handoff",
+);
+
+assert.equal(
+  resolveShellNavPolicyHandoff({ ...chatToHome, fromPolicy: null }),
+  null,
+  "the first settled render is not a policy transition",
+);
+
+// The handoff has to run BEFORE the destination-layout effect reads the
+// preference, and useLayoutEffect order is declaration order.
+assert.ok(
+  shell.indexOf("resolveShellNavPolicyHandoff") <
+    shell.indexOf("const navPrefArmedGroupRef"),
+  "the policy handoff effect is declared above the destination-layout restore",
+);
+
+// Only the user-driven resize may claim authorship of the preference.
+assert.ok(
+  compactWhitespace(shell).includes('writeNavOpenPref(open, "user")'),
+  "the user-driven resize records itself as the authoritative preference",
+);
+
 assert.equal(
   resolveShellDestinationLayout({
     panelIds: ["nav", "list", "detail"],
     savedLayout: { nav: 30, list: 25, detail: 45 },
     groupSize: 375,
     defaultPanelPixels: { nav: 240, list: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 56,
     isMobile: true,
   }),
@@ -61,11 +150,54 @@ assert.deepEqual(
     savedLayout: { nav: 35, detail: 65 },
     groupSize: 1_000,
     defaultPanelPixels: { nav: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 0,
     isMobile: false,
   }),
-  { nav: 35, detail: 65 },
-  "Chat restores its own user-resized layout instead of inheriting the normal group's live width",
+  { nav: 24, detail: 76 },
+  "Chat projects the shared nav width without inheriting a normal group's detail layout",
+);
+
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "detail"],
+    savedLayout: { nav: 24, detail: 76 },
+    groupSize: 1_000,
+    defaultPanelPixels: {},
+    preferredNavPixels: storedNavWidth,
+    collapsedNavPixels: 0,
+    isMobile: false,
+  }),
+  { nav: 30, detail: 70 },
+  "Chat applies the stored 300px nav width in its contextual two-panel group",
+);
+
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "list", "detail"],
+    savedLayout: { nav: 24, list: 26, detail: 50 },
+    groupSize: 1_000,
+    defaultPanelPixels: { list: 260 },
+    preferredNavPixels: storedNavWidth,
+    collapsedNavPixels: 56,
+    isMobile: false,
+  }),
+  { nav: 30, list: 26, detail: 44 },
+  "Home applies the stored 300px nav width while retaining its saved list allocation",
+);
+
+assert.deepEqual(
+  resolveShellDestinationLayout({
+    panelIds: ["nav", "list", "detail"],
+    savedLayout: { nav: 24, list: 60, detail: 16 },
+    groupSize: 700,
+    defaultPanelPixels: { nav: 240, list: 260 },
+    preferredNavPixels: 420,
+    collapsedNavPixels: 56,
+    isMobile: false,
+  }),
+  { nav: 60, list: 37.143, detail: 2.857 },
+  "an infeasible saved list allocation falls back to its default while preserving the requested nav width",
 );
 
 assert.deepEqual(
@@ -74,11 +206,12 @@ assert.deepEqual(
     savedLayout: { nav: 0, detail: 100 },
     groupSize: 1_000,
     defaultPanelPixels: { nav: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 0,
     isMobile: false,
   }),
-  { nav: 26, detail: 74 },
-  "Chat falls back to its 260px default when no nonzero saved Chat width exists",
+  { nav: 24, detail: 76 },
+  "Chat falls back to the shared default when no nonzero saved Chat width exists",
 );
 
 assert.deepEqual(
@@ -87,6 +220,7 @@ assert.deepEqual(
     savedLayout: undefined,
     groupSize: 1_000,
     defaultPanelPixels: { nav: 240, list: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 56,
     isMobile: false,
   }),
@@ -100,6 +234,7 @@ assert.deepEqual(
     savedLayout: { nav: 5.6, detail: 94.4 },
     groupSize: 1_000,
     defaultPanelPixels: { nav: 240 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 56,
     isMobile: false,
   }),
@@ -113,6 +248,7 @@ assert.deepEqual(
     savedLayout: { nav: 4.667, detail: 95.333 },
     groupSize: 1_200,
     defaultPanelPixels: { nav: 240 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 56,
     isMobile: false,
   }),
@@ -137,6 +273,7 @@ assert.deepEqual(
     savedLayout: legacyCollapsedNormal,
     groupSize: 1_000,
     defaultPanelPixels: { nav: 240, list: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 56,
     isMobile: false,
   }),
@@ -197,11 +334,12 @@ assert.deepEqual(
     savedLayout: savedNormalLayout,
     groupSize: 1_000,
     defaultPanelPixels: { nav: 240, list: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 56,
     isMobile: false,
   }),
-  savedNormalLayout,
-  "normal navigation restores the merged list/detail proportions across collapse -> Chat -> return",
+  { nav: 24, list: 31, detail: 45 },
+  "normal navigation restores its merged list width while projecting the shared nav width",
 );
 assert.equal(
   Object.values(savedNormalLayout ?? {}).reduce((sum, size) => sum + size, 0),
@@ -228,11 +366,12 @@ assert.deepEqual(
     savedLayout: savedChatLayout,
     groupSize: 1_000,
     defaultPanelPixels: { nav: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 0,
     isMobile: false,
   }),
-  chatExpanded,
-  "Chat keeps its own last expanded width across contextual transitions",
+  { nav: 24, detail: 76 },
+  "Chat projects the shared nav width across contextual transitions",
 );
 
 assert.equal(
@@ -241,6 +380,7 @@ assert.equal(
     savedLayout: undefined,
     groupSize: 400,
     defaultPanelPixels: { nav: 240, list: 260 },
+    preferredNavPixels: SHELL_NAV_DEFAULT_PX,
     collapsedNavPixels: 56,
     isMobile: false,
   }),
@@ -252,6 +392,26 @@ assert.match(
   shell,
   /const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";/,
   "the sidebar preference persists under the cave:shell:nav-open key",
+);
+assert.match(
+  shell,
+  /const NAV_WIDTH_PREF_KEY = "cave:shell:nav-width";/,
+  "the shared sidebar width persists under exactly cave:shell:nav-width",
+);
+assert.match(
+  shell,
+  /function readNavWidthPref\(\): string \| null \{[\s\S]*?window\.localStorage\.getItem\(NAV_WIDTH_PREF_KEY\)[\s\S]*?catch \{\s*\n?\s*return null;/,
+  "reading the shared width tolerates unavailable storage",
+);
+assert.match(
+  shell,
+  /function writeNavWidthPref\(width: number\): void \{[\s\S]*?!Number\.isFinite\(width\)[\s\S]*?window\.localStorage\.setItem\(NAV_WIDTH_PREF_KEY, String\(width\)\)/,
+  "writing the shared width accepts only finite pixels and safely stringifies them",
+);
+assert.match(
+  shell,
+  /const \[preferredNavWidth, setPreferredNavWidth\] = useState\(\(\) =>\s*resolveShellNavWidth\(readNavWidthPref\(\)\),\s*\);/,
+  "the active shared width is resolved through the validated Task 2 helper",
 );
 
 assert.match(
@@ -274,17 +434,17 @@ assert.match(
 
 assert.match(
   shell,
-  /import \{[\s\S]*isShellNavCollapsedLayout,[\s\S]*resolveShellDestinationLayout,[\s\S]*resolveShellLayoutPersistence,[\s\S]*resolveShellNavOpenPreference,[\s\S]*\} from "\.\/shell-layout";/,
+  /import \{[\s\S]*isShellNavCollapsedLayout,[\s\S]*resolveShellDestinationLayout,[\s\S]*resolveShellLayoutPersistence,[\s\S]*resolveShellNavOpenPreference,[\s\S]*SHELL_NAV_DEFAULT_PX,[\s\S]*SHELL_NAV_MAX_PX,[\s\S]*SHELL_NAV_MIN_PX,[\s\S]*resolveShellNavWidth,[\s\S]*\} from "\.\/shell-layout";/,
   "Shell uses the tested destination, persistence-merge, and preference helpers",
 );
 
 const destinationLayoutEffect =
-  shell.match(/const layoutPersistenceGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy\]\);/)?.[0] ?? "";
+  shell.match(/const navPrefArmedGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[\s*mounted,[\s\S]*?preferredNavWidth,\s*\]\);/)?.[0] ?? "";
 assert.ok(destinationLayoutEffect.length > 0, "the destination group restoration effect exists");
 assert.match(
   destinationLayoutEffect,
   /if \(!mounted \|\| isMobile\) \{[\s\S]*?layoutPersistenceGroupRef\.current = null;[\s\S]*?restoredGroupRef\.current = null;[\s\S]*?return;/,
-  "mobile mode disarms persistence and desktop restoration until the viewport returns",
+  "mobile mode disarms desktop restoration until the viewport returns",
 );
 assert.match(
   destinationLayoutEffect,
@@ -298,8 +458,8 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ nav: chatContextual \? 260 : NAV_OPEN_PX, \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?collapsedNavPixels: chatContextual \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
-  "every desktop group transition resolves an expanded destination layout from its own saved width or pixel defaults",
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
+  "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
   destinationLayoutEffect,
@@ -313,8 +473,21 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /\}, \[mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy\]\);/,
-  "destination restoration reruns with the active nav policy",
+  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*preferredNavWidth,\s*\]\);/,
+  "destination restoration reruns with the active nav policy and shared width",
+);
+assert.match(
+  shell,
+  /onLayoutChanged=\{\(layout, meta\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?onLayoutChanged\(persistedLayout, meta\);[\s\S]*?const pixelWidth = navRef\.current\?\.getSize\(\)\.inPixels;[\s\S]*?!isMobile &&\s*meta\.isUserInteraction &&\s*!navCollapsed &&\s*Number\.isFinite\(pixelWidth\) &&\s*!railAutoCollapsedNavRef\.current[\s\S]*?writeNavWidthPref\(normalizedWidth\);[\s\S]*?setPreferredNavWidth\(normalizedWidth\);/,
+  "nav width persists only after a completed user separator interaction and retains group, desktop, open, and code-rail guards",
+);
+const navResizeHandler =
+  shell.match(/<Panel\s+id="nav"[\s\S]*?onResize=\{\(size\) => \{[\s\S]*?\n        \}\}/)?.[0] ?? "";
+assert.ok(navResizeHandler.length > 0, "the nav panel resize handler exists");
+assert.doesNotMatch(
+  navResizeHandler,
+  /writeNavWidthPref|setPreferredNavWidth/,
+  "observer and window-resize Panel.onResize callbacks never persist the shared width",
 );
 
 // Boot/group-switch application: after the group settles, a saved preference
@@ -407,7 +580,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /onLayoutChanged=\{\(layout, detail\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?const navCollapsed = navRef\.current\?\.isCollapsed\(\) \?\? true;[\s\S]*?const persistedLayout = resolveShellLayoutPersistence\(\{[\s\S]*?navCollapsed,[\s\S]*?savedExpandedLayout:\s*expandedLayoutRef\.current\?\.groupId === groupId[\s\S]*?previousCollapsedLayout:\s*collapsedLayoutRef\.current\?\.groupId === groupId[\s\S]*?\}\);[\s\S]*?if \(!persistedLayout\) return;\s*collapsedLayoutRef\.current = navCollapsed \? \{ groupId, layout \} : null;\s*expandedLayoutRef\.current = \{ groupId, layout: persistedLayout \};\s*onLayoutChanged\(persistedLayout, detail\);\s*\}\}/,
+  /onLayoutChanged=\{\(layout, meta\) => \{\s*if \(layoutPersistenceGroupRef\.current !== groupId\) return;[\s\S]*?const navCollapsed = navRef\.current\?\.isCollapsed\(\) \?\? true;[\s\S]*?const persistedLayout = resolveShellLayoutPersistence\(\{[\s\S]*?navCollapsed,[\s\S]*?savedExpandedLayout:\s*expandedLayoutRef\.current\?\.groupId === groupId[\s\S]*?previousCollapsedLayout:\s*collapsedLayoutRef\.current\?\.groupId === groupId[\s\S]*?\}\);[\s\S]*?if \(!persistedLayout\) return;\s*collapsedLayoutRef\.current = navCollapsed \? \{ groupId, layout \} : null;\s*expandedLayoutRef\.current = \{ groupId, layout: persistedLayout \};\s*onLayoutChanged\(persistedLayout, meta\);/,
   "desktop collapsed callbacks merge non-nav changes into each group's expanded layout while mobile and group-swap churn stay disarmed",
 );
 
@@ -415,10 +588,9 @@ assert.match(
 // churn is programmatic) and the code-rail auto-collapse must not be active.
 assert.match(
   shell,
-  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current\s*\n?\s*\) \{\s*\n\s*writeNavOpenPref\(open\);/,
+  /navPolicy === "remembered" &&\s*\n\s*navPrefArmedGroupRef\.current === groupId &&\s*\n\s*!railAutoCollapsedNavRef\.current\s*\n?\s*\) \{[\s\S]*?writeNavOpenPref\(open, "user"\);/,
   "onResize persists the state only for user-driven changes on the armed group",
 );
-
 // The code-rail coupling raises its flag BEFORE collapsing, so the resulting
 // resize is recognized as programmatic and never overwrites the preference.
 assert.match(
@@ -429,8 +601,8 @@ assert.match(
 
 assert.match(
   shell,
-  /const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;/,
-  "hover-to-peek is disabled for visit-collapsed and chat-contextual routes",
+  /const navPeekEnabled = !isMobile && !navOpen;/,
+  "hover-to-peek covers every desktop policy now that they all collapse to a rail",
 );
 assert.match(
   shell,
@@ -439,18 +611,53 @@ assert.match(
 );
 assert.match(
   shell,
-  /className=\{`shell-nav\$\{!isMobile && !chatContextual && !navOpen \? \(navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"\) : ""\}`\}/,
-  "Chat's zero-width collapsed sidebar never receives remembered navigation rail or peek styling",
+  /className=\{`shell-nav\$\{!isMobile && !navOpen \? \(navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"\) : ""\}`\}/,
+  "every collapsed desktop sidebar, Chat included, gets rail or peek styling",
 );
 assert.match(
   shell,
   /onMouseEnter=\{navPeekEnabled \? \(\) => setNavPeeking\(true\) : undefined\}/,
-  "hover enter only peeks when the remembered nav policy allows it",
+  "hover enter peeks whenever a desktop rail is showing",
 );
 assert.match(
   shell,
   /onMouseLeave=\{navPeekEnabled \? \(\) => setNavPeeking\(false\) : undefined\}/,
-  "hover leave only peeks when the remembered nav policy allows it",
+  "hover leave peeks whenever a desktop rail is showing",
+);
+
+// The reported bug: collapsing in Chat made the sidebar vanish outright. Only
+// mobile — where the nav is an overlay drawer over the content — still closes
+// to zero.
+assert.match(
+  shell,
+  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
+  "only mobile drawers close fully; every desktop surface collapses to the icon rail",
+);
+assert.match(
+  shell,
+  /collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,/,
+  "the restored destination layout describes the same collapsed width as the panel",
+);
+// Chat collapsing to a rail changes what the panel LOOKS like, not who owns the
+// remembered preference — the #4404 handoff depends on Chat never writing it.
+assert.match(
+  shell,
+  /!chatContextual &&\s*\n\s*isShellNavCollapsedLayout\(\{/,
+  "Chat still never seeds the remembered nav-open preference",
+);
+
+// The session list has no rail form, so the collapsed Code room falls back to
+// the destination rail rather than rendering a squeezed session list.
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+assert.match(
+  workspace,
+  /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/,
+  "the collapsed Code room renders the destination rail, not the session list",
+);
+assert.match(
+  workspace,
+  /onNavOpenChange=\{setNavOpen\}/,
+  "workspace tracks the shell's nav open state to drive that fallback",
 );
 
 assert.match(

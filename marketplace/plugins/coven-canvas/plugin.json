@@ -19,6 +19,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/coven-canvas",
   "x-coven": {
     "displayName": "Coven Canvas",

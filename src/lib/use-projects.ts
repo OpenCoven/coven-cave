@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
+import {
+  LOCAL_PROJECT_CREATION_MESSAGE,
+  LOCAL_REQUEST_REQUIRED_CODE,
+  ProjectCreationError,
+} from "@/lib/project-errors";
 import { isCurrentProjectScope, projectScopeKey, projectsForCurrentScope } from "./project-scope.ts";
 import { emitProjectRegistryMutation, subscribeProjectRegistryMutation } from "./project-registry-events.ts";
 import { applyProjectRegistryMutation } from "./project-registry-mutation.ts";
@@ -11,16 +16,34 @@ import type { CreateProjectOptions } from "./chat-add-project.ts";
 
 export type { CreateProjectOptions } from "./chat-add-project.ts";
 
-type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; error?: string };
+type ProjectMutationPayload = { ok?: boolean; project?: CaveProject; code?: string; error?: string };
 type CreateProjectResult =
   | { ok: true; project: CaveProject }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: string };
+
+function reportCreateFailure(options: CreateProjectOptions | undefined, error: ProjectCreationError): void {
+  try {
+    options?.onError?.(error);
+  } catch {
+    // Error reporting must not change the nullable creator's existing contract.
+  }
+}
 
 function fetchProjects(
   familiarId: string | null,
   opts?: { force?: boolean },
 ): Promise<ProjectsPayload> {
   return fetchProjectsFromCache(familiarId, opts);
+}
+
+function mergeLocallyCreatedProjects(
+  serverProjects: CaveProject[],
+  localProjects: Iterable<CaveProject>,
+): CaveProject[] {
+  const pendingLocalProjects = [...localProjects];
+  return pendingLocalProjects.length > 0
+    ? sortProjectsAlphabetically([...serverProjects, ...pendingLocalProjects])
+    : serverProjects;
 }
 
 /** Test-only: drop the module-level cache between cases. */
@@ -76,6 +99,10 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   // per-instance AbortController — the shared, coalesced request can't be
   // aborted by one of its subscribers, so late results are discarded instead.)
   const generationRef = useRef(0);
+  // A bundled create may intentionally suppress the registry event while it
+  // applies a familiar grant. Keep that local registration in the unscoped
+  // view if the GET that was already in flight returns its older snapshot.
+  const locallyCreatedProjectsRef = useRef(new Map<string, CaveProject>());
 
   const load = useCallback(async (opts?: { force?: boolean }) => {
     generationRef.current += 1;
@@ -89,7 +116,18 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       if (data.ok === false) {
         setError(data.error ?? "Failed to load projects");
       } else {
-        setProjects(sortProjectsAlphabetically(Array.isArray(data.projects) ? data.projects : []));
+        // Already deduped + sorted by the cache (cave-k0gf), once per fetch
+        // rather than once per consumer — do not re-run it here.
+        if (familiarId === null && locallyCreatedProjectsRef.current.size > 0) {
+          const serverProjects = Array.isArray(data.projects) ? data.projects : [];
+          const serverProjectIds = new Set(serverProjects.map((project) => project.id));
+          for (const projectId of serverProjectIds) {
+            locallyCreatedProjectsRef.current.delete(projectId);
+          }
+          setProjects(mergeLocallyCreatedProjects(serverProjects, locallyCreatedProjectsRef.current.values()));
+        } else {
+          setProjects(Array.isArray(data.projects) ? data.projects : []);
+        }
         setLoadedScopeKey(scopeKey);
       }
     } catch (err) {
@@ -125,6 +163,9 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   useEffect(() => {
     if (!enabled) return;
     return subscribeProjectRegistryMutation(({ mutation }) => {
+      if (mutation.kind === "delete") {
+        locallyCreatedProjectsRef.current.delete(mutation.projectId);
+      }
       setProjects((prev) => applyProjectRegistryMutation(prev, mutation));
       void load();
     });
@@ -138,9 +179,17 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
 
   const applyCreatedProject = useCallback((project: CaveProject, options?: CreateProjectOptions): CaveProject => {
     setProjects((prev) => sortProjectsAlphabetically([...prev, project]));
+    // A successful local registration is already authoritative for the
+    // unscoped operator view. Surface it even if the initial GET is still
+    // pending (or fails), while familiar-scoped views must await their grant-
+    // filtered response before becoming ready.
+    if (familiarId === null) {
+      locallyCreatedProjectsRef.current.set(project.id, project);
+      setLoadedScopeKey(scopeKey);
+    }
     if (options?.emitMutation !== false) emitProjectRegistryMutation();
     return project;
-  }, []);
+  }, [familiarId, scopeKey]);
 
   const requestCreateProject = useCallback(async (name: string, root: string, options?: CreateProjectOptions): Promise<CreateProjectResult> => {
     try {
@@ -158,14 +207,25 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       if (res.ok && data?.ok && data.project) {
         return { ok: true, project: applyCreatedProject(data.project as CaveProject, options) };
       }
+      const code = typeof data?.code === "string" ? data.code : undefined;
+      const error =
+        code === LOCAL_REQUEST_REQUIRED_CODE
+          ? LOCAL_PROJECT_CREATION_MESSAGE
+          : typeof data?.error === "string"
+            ? data.error
+            : `Could not create project (HTTP ${res.status})`;
+      reportCreateFailure(options, new ProjectCreationError(error, code));
       return {
         ok: false,
-        error: typeof data?.error === "string" ? data.error : `Could not create project (HTTP ${res.status})`,
+        error,
+        ...(code ? { code } : {}),
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not create that project.";
+      reportCreateFailure(options, new ProjectCreationError(message));
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "Could not create that project.",
+        error: message,
       };
     }
   }, [applyCreatedProject]);
@@ -178,7 +238,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
   const createProjectOrThrow = useCallback(async (name: string, root: string, options?: CreateProjectOptions): Promise<CaveProject> => {
     const result = await requestCreateProject(name, root, options);
     if (result.ok) return result.project;
-    throw new Error(result.error);
+    throw new ProjectCreationError(result.error, result.code);
   }, [requestCreateProject]);
 
   const renameProject = useCallback(async (id: string, name: string): Promise<boolean> => {
@@ -253,6 +313,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
     if (data.ok) {
+      locallyCreatedProjectsRef.current.delete(id);
       setProjects((prev) => prev.filter((project) => project.id !== id));
       emitProjectRegistryMutation({ kind: "delete", projectId: id });
       return true;

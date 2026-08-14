@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,8 +30,35 @@ const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousCovenBin = process.env.COVEN_BIN;
 const previousCodexBin = process.env.CODEX_BIN;
+const previousCovenSocket = process.env.COVEN_SOCKET;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
+
+const daemonOnlySessionId = "codex-daemon-only-resume";
+const daemonSocket = process.platform === "win32"
+  ? `\\\\.\\pipe\\cave-codex-direct-${process.pid}-${path.basename(home)}`
+  : path.join(home, "coven.sock");
+const daemon = createServer((req, res) => {
+  res.setHeader("content-type", "application/json");
+  if (req.url === "/api/v1/sessions") {
+    res.end(JSON.stringify([{
+      id: daemonOnlySessionId,
+      title: "Established Codex daemon title",
+      project_root: familiarWorkspace,
+    }]));
+    return;
+  }
+  res.statusCode = 404;
+  res.end(JSON.stringify({ error: "not found" }));
+});
+await new Promise((resolve, reject) => {
+  daemon.once("error", reject);
+  daemon.listen(daemonSocket, () => {
+    daemon.off("error", reject);
+    resolve();
+  });
+});
+process.env.COVEN_SOCKET = daemonSocket;
 
 // The fixture Codex CLI: probe-visible version/help contract plus a real
 // `exec --json` run that replays the conformance fixture. Every argv is
@@ -120,7 +148,9 @@ async function loggedCalls(file) {
 try {
   const { refreshCovenBin } = await import("@/lib/coven-bin");
   const { clearCodexRuntimeDiscoveryCache } = await import("@/lib/codex-compatibility");
-  const { saveConfig } = await import("@/lib/cave-config");
+  const { loadState, saveConfig } = await import("@/lib/cave-config");
+  const { chatSummaryTitle, defaultChatTitleForSession } = await import("@/lib/cave-chat-titles");
+  const { createCard } = await import("@/lib/cave-board");
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
@@ -209,6 +239,12 @@ try {
     /thread\.started|command_execution/,
     "no protocol payload persists as assistant text",
   );
+  let state = await loadState();
+  assert.equal(
+    state.sessionTitleAuto[done.sessionId],
+    chatSummaryTitle({ userText: "codex direct fixture prompt", assistantText: "Fixture assistant response.\n" }),
+    "a true new generic-harness session initializes and auto-names its title",
+  );
 
   const codexCalls = await loggedCalls(codexLog);
   const execRun = codexCalls.find((args) => args[0] === "exec" && !args.includes("--help"));
@@ -224,7 +260,129 @@ try {
     "a verified direct turn never starts `coven run codex`",
   );
 
+  // A project grant approved between turns changes process authority. Codex
+  // resume cannot widen an already-created sandbox reliably, so Cave must
+  // launch a fresh native thread with both the new --add-dir and bounded
+  // transcript replay. This is the end-to-end regression for cave-jf5o0.
+  const newlyGrantedRoot = path.join(home, "newly-granted-project");
+  await mkdir(newlyGrantedRoot, { recursive: true });
+  const newlyGrantedProject = await createProject({
+    name: "Newly granted fixture",
+    root: newlyGrantedRoot,
+  });
+  await grantProjectToFamiliar({
+    familiarId: "opal",
+    projectId: newlyGrantedProject.id,
+    source: "human",
+    access: "write",
+  });
+  const grantRefreshResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      sessionId: done.sessionId,
+      prompt: "continue after approving the extra project",
+    }),
+  }));
+  const { events: grantRefreshEvents } = await readSse(grantRefreshResponse);
+  assert.ok(
+    grantRefreshEvents.some(
+      (event) => event.kind === "progress" &&
+        event.id === "runtime-access-refresh" &&
+        event.status === "done",
+    ),
+    "the turn acknowledges that its live filesystem boundary was refreshed",
+  );
+  const refreshedExec = (await loggedCalls(codexLog))
+    .filter((argv) => argv[0] === "exec" && !argv.includes("--help"))
+    .at(-1);
+  assert.ok(refreshedExec, "grant refresh starts a new direct Codex process");
+  assert.equal(refreshedExec.includes("resume"), false, "the stale native sandbox is not resumed");
+  assert.deepEqual(
+    refreshedExec.slice(refreshedExec.indexOf("--add-dir"), refreshedExec.indexOf("--add-dir") + 2),
+    ["--add-dir", newlyGrantedRoot],
+    "the fresh sandbox receives the newly approved root",
+  );
+  assert.match(
+    refreshedExec.at(-1) ?? "",
+    /## Prior conversation[\s\S]*codex direct fixture prompt[\s\S]*continue after approving the extra project/,
+    "the fresh sandbox keeps recent thread context while applying the new grants",
+  );
+
+  // A submitted daemon session id is resume provenance even before Cave has a
+  // local transcript. Materialize the follow-up, but never claim its title.
+  assert.equal(await loadConversation(daemonOnlySessionId), null);
+  const daemonResumePrompt = "follow up without replacing the established title";
+  const { events: daemonResumeEvents } = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      sessionId: daemonOnlySessionId,
+      startNewConversation: true,
+      prompt: daemonResumePrompt,
+    }),
+  })));
+  assert.ok(
+    !daemonResumeEvents.findLast((event) => event.kind === "done")?.isError,
+    `daemon-only resume completes: ${JSON.stringify(daemonResumeEvents)}`,
+  );
+  const daemonResumeConversation = await loadConversation(daemonOnlySessionId);
+  assert.ok(daemonResumeConversation, "daemon-only resume is still materialized locally");
+  assert.equal(
+    daemonResumeConversation.title,
+    defaultChatTitleForSession(daemonOnlySessionId),
+    "the follow-up prompt does not become the materialized conversation title",
+  );
+  state = await loadState();
+  assert.equal(
+    state.sessionTitles[daemonOnlySessionId],
+    undefined,
+    "the established daemon title remains authoritative instead of gaining a Cave override",
+  );
+  assert.equal(
+    state.sessionTitleAuto[daemonOnlySessionId],
+    undefined,
+    "daemon-only resume never claims automatic title ownership",
+  );
+
+  // Board reserves a stable Cave id before the transcript exists. That
+  // server-owned reservation is intentionally a first exchange.
+  const boardSessionId = "codex-board-reserved-new";
+  await createCard({
+    title: "Reserved Codex task",
+    familiarId: "opal",
+    sessionId: boardSessionId,
+    cwd: familiarWorkspace,
+    projectId: project.id,
+  });
+  const boardPrompt = "implement the reserved board task";
+  const { events: boardEvents } = await readSse(await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "opal",
+      sessionId: boardSessionId,
+      startNewConversation: true,
+      projectRoot: familiarWorkspace,
+      prompt: boardPrompt,
+    }),
+  })));
+  assert.ok(
+    !boardEvents.findLast((event) => event.kind === "done")?.isError,
+    `Board-reserved new session completes: ${JSON.stringify(boardEvents)}`,
+  );
+  state = await loadState();
+  assert.equal(
+    state.sessionTitleAuto[boardSessionId],
+    chatSummaryTitle({ userText: boardPrompt, assistantText: "Fixture assistant response.\n" }),
+    "a server-owned Board reservation retains first-exchange title initialization",
+  );
+
   // ── Fallback: an unknown future version keeps the generic Coven path ──────
+  const directExecCountBeforeFallback = (await loggedCalls(codexLog))
+    .filter((args) => args[0] === "exec" && !args.includes("--help")).length;
   process.env.CODEX_BIN = codexFuture;
   clearCodexRuntimeDiscoveryCache();
   const fallbackResponse = await POST(new Request("http://localhost/api/chat/send", {
@@ -258,14 +416,12 @@ try {
   const futureCodexCalls = await loggedCalls(codexLog);
   assert.equal(
     futureCodexCalls.some((args) => args[0] === "exec" && !args.includes("--help") && args.includes("--json") && !args.includes("resume")),
-    // The direct run above already logged one exec; assert no SECOND direct
-    // exec happened by counting.
     true,
-    "sanity: the earlier direct exec is still the only one",
+    "sanity: the earlier fresh direct run remains in the call log",
   );
   assert.equal(
     futureCodexCalls.filter((args) => args[0] === "exec" && !args.includes("--help")).length,
-    1,
+    directExecCountBeforeFallback,
     "the unsupported future CLI is probed but never runs a direct exec turn",
   );
   assert.ok(
@@ -283,6 +439,9 @@ try {
   else process.env.COVEN_BIN = previousCovenBin;
   if (previousCodexBin === undefined) delete process.env.CODEX_BIN;
   else process.env.CODEX_BIN = previousCodexBin;
+  if (previousCovenSocket === undefined) delete process.env.COVEN_SOCKET;
+  else process.env.COVEN_SOCKET = previousCovenSocket;
+  await new Promise((resolve, reject) => daemon.close((error) => error ? reject(error) : resolve()));
   await rm(home, { recursive: true, force: true });
 }
 

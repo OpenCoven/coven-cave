@@ -15,6 +15,10 @@ import {
   ToolCallTracker,
   toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
+import {
+  redactSecretText,
+  redactSecretsDeep,
+} from "../../../../lib/secret-redaction.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -59,13 +63,121 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /if \(event\.replace\) \{[\s\S]*?gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace"/,
-  "a published Gateway replacement delta corrects both the live stream and persisted transcript",
+  /if \(event\.replace\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*gatewayAssistantText = event\.text;[\s\S]*?kind: "assistant_replace",\s*text: event\.text,\s*\.\.\.\(correction \? \{ toolOffsetCorrection: correction \} : \{\}\)/,
+  "a published Gateway replacement rebases persisted tools and emits the same correction for live tools",
 );
 assert.match(
   chatRoute,
-  /event\.kind === "final" && event\.text[\s\S]*?gatewayAssistantText !== event\.text[\s\S]*?kind: "assistant_replace"/,
-  "the terminal Gateway message reconciles divergent streamed text for connected clients",
+  /event\.kind === "final" && event\.text\) \{\s*if \(gatewayAssistantText !== event\.text\) \{\s*const correction = toolTextCorrection\(gatewayAssistantText, event\.text\);\s*if \(correction\) \{\s*gatewayToolTracker\.rebaseTextOffsets\(correction\.after, correction\.delta\);\s*\}\s*if \(gatewayAssistantTextEmitted\) \{[\s\S]*?kind: "assistant_replace",\s*text: event\.text,\s*\.\.\.\(correction \? \{ toolOffsetCorrection: correction \} : \{\}\)[\s\S]*?\}\s*\}\s*gatewayAssistantText = event\.text;/,
+  "a divergent terminal Gateway message emits the persisted correction for live tools",
+);
+assert.match(
+  streamEvents,
+  /export type ToolOffsetCorrection = \{ after: number; delta: number \};[\s\S]*?kind: "assistant_replace"; text: string; toolOffsetCorrection\?: ToolOffsetCorrection/,
+  "assistant replacement events may carry a numeric tool-offset correction",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /gatewayToolTracker\.rebaseTextOffsets\(\s*0\s*,/,
+  "Gateway text corrections must not directly rebase every tool from offset zero",
+);
+assert.match(
+  chatRoute,
+  /const gatewayToolTracker = new ToolCallTracker\(Date\.now, "openclaw:"\);\s*let gatewayToolProjectionEnabled = true;\s*let gatewayCompatibilityDiagnosticSent = false;/,
+  "Gateway tool activity must use a dedicated stable id namespace and per-turn compatibility fences",
+);
+assert.match(
+  chatRoute,
+  /event\.kind === "tool_start" && gatewayToolProjectionEnabled[\s\S]*?formatToolInputValue\(redactSecretsDeep\(event\.input\)\)[\s\S]*?redactSecretText\([\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?input,[\s\S]*?gatewayAssistantText\.length[\s\S]*?kind: "tool_use"[\s\S]*?consumePendingEnvelopeProgress\(event\.id\)[\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
+  "Gateway tool starts must deeply redact and text-redact input before tracking, then reconcile progress or results that arrived first",
+);
+assert.match(
+  chatRoute,
+  /event\.kind === "tool_progress" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolProgress\([\s\S]*?output,[\s\S]*?kind: "tool_use"/,
+  "Gateway tool progress must deeply redact, flatten, and text-redact output before tracker retention",
+);
+assert.match(
+  chatRoute,
+  /event\.kind === "tool_end" && gatewayToolProjectionEnabled[\s\S]*?const safeOutput = redactSecretsDeep\(event\.output\);[\s\S]*?flattenToolResultContent\(safeOutput\) \?\? formatToolInputValue\(safeOutput\)[\s\S]*?redactSecretText\(rawOutput\)[\s\S]*?gatewayToolTracker\.envelopeToolResult\([\s\S]*?output,[\s\S]*?event\.isError[\s\S]*?gatewayToolTracker\.envelopeToolUse\([\s\S]*?consumePendingEnvelopeResult\(event\.id\)/,
+  "a Gateway result must be redacted before retention and still produce one settled card when it arrives before its start",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /gatewayToolTracker\.envelopeTool(?:Use|Progress|Result)\(\s*event\.id,[\s\S]{0,160}?event\.(?:input|output)/,
+  "raw Gateway event payloads must never reach ToolCallTracker",
+);
+{
+  const npmToken = "npm_example-token-123456789";
+  const rawInput = formatToolInputValue(redactSecretsDeep({
+    command: `NPM_TOKEN=${npmToken} npm publish`,
+  }));
+  const input = rawInput === undefined ? undefined : redactSecretText(rawInput);
+  assert.doesNotMatch(input ?? "", new RegExp(npmToken), "Gateway tool input removes NPM_TOKEN values");
+  assert.match(
+    input ?? "",
+    /NPM_TOKEN=\[redacted\]/,
+    "Gateway tool input preserves the assignment while redacting its value",
+  );
+}
+assert.match(
+  chatRoute,
+  /const settleOpenGatewayTools = \(output: string\) => \{[\s\S]*?gatewayToolTracker\.failOpenCalls\(output\)[\s\S]*?push\(\{ kind: "tool_use", \.\.\.tool \}\)/,
+  "Gateway terminal fences must push every tracker settlement to live clients",
+);
+assert.match(
+  chatRoute,
+  /event\.kind === "compatibility"[\s\S]*?gatewayToolProjectionEnabled = false[\s\S]*?settleOpenGatewayTools\("\[OpenClaw tool activity became incompatible\]"\)[\s\S]*?"openclaw-tool-compatibility"[\s\S]*?"OpenClaw tool activity needs an update"[\s\S]*?"notice"/,
+  "Gateway compatibility drift must stop projection, settle cards, and emit a neutral notice",
+);
+assert.match(
+  chatRoute,
+  /event\.fingerprint[\s\S]*?\^\[0-9a-f\]\{16\}\$/i,
+  "Gateway compatibility notices may include only a stable 16-hex fingerprint",
+);
+assert.equal(
+  (chatRoute.match(/"openclaw-tool-compatibility"/g) ?? []).length,
+  1,
+  "Gateway compatibility drift must emit exactly one notice site",
+);
+assert.equal(
+  (chatRoute.match(/"OpenClaw tool activity needs an update"/g) ?? []).length,
+  1,
+  "Gateway compatibility drift must expose exactly one neutral label",
+);
+assert.match(
+  chatRoute,
+  /const abortGateway = \(toolOutcome: string\) => \{[\s\S]*?settleOpenGatewayTools\(toolOutcome\);[\s\S]*?void gatewayDispatch\.abort\(\);[\s\S]*?const stopGateway = \(\) => abortGateway\("\[tool cancelled by user\]"\);[\s\S]*?const stopDetachedGateway = \(\) => abortGateway\("\[tool did not settle before the Gateway turn ended\]"\);/,
+  "explicit Stop and detached-client expiry must share Gateway abort mechanics but retain distinct user-facing tool outcomes",
+);
+assert.match(
+  chatRoute,
+  /let detachTimeoutFired = false;[\s\S]*?detachKillTimer = setTimeout\(\(\) => \{\s*detachTimeoutFired = true;\s*stopDetachedGateway\(\);[\s\S]*?\}, CHAT_DETACH_MAX_MS\);/,
+  "the detach timeout must record its causal flag before taking the non-user interruption path",
+);
+assert.match(
+  chatRoute,
+  /const gatewayOutcome = resolveOpenClawGatewayOutcome\(\s*gatewayResult,\s*runHandle\.stopRequested,\s*detachTimeoutFired,\s*\);[\s\S]*?const \{ cancelledByUser \} = gatewayOutcome;[\s\S]*?let \{ isError \} = gatewayOutcome;[\s\S]*?gatewayAssistantText = gatewayOutcome\.emptyText;[\s\S]*?pushProgress\([\s\S]*?gatewayOutcome\.progressMessage,/,
+  "Gateway persistence and progress derive cancellation solely from the stop-registry handle and distinguish timeout-fired from remote interruptions",
+);
+assert.match(
+  chatRoute,
+  /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?markChatRunTransportSettled\(runHandle\);[\s\S]*?settleOpenGatewayTools\([\s\S]*?"\[tool did not settle before the Gateway turn ended\]"[\s\S]*?\);[\s\S]*?try \{\s*pushProgress\("save-transcript"/,
+  "every Gateway terminal state must freeze Stop, settle unfinished cards, and only then enter persistence",
+);
+assert.match(
+  chatRoute,
+  /const leadingTrimShift =\s*gatewayAssistantText\.length - gatewayAssistantText\.trimStart\(\)\.length;\s*const persistedGatewayTools = toPersistedTools\(\s*gatewayToolTracker\.snapshot\(\),\s*leadingTrimShift,\s*\);/,
+  "Gateway tool persistence must shift offsets against the trimmed assistant text",
+);
+assert.match(
+  chatRoute,
+  /\.\.\.\(persistedGatewayTools \? \{ tools: persistedGatewayTools \} : \{\}\)/,
+  "the Gateway assistant turn must persist tools only when the tracker snapshot is nonempty",
+);
+assert.match(
+  chatRoute,
+  /pushProgress\("save-transcript", "Transcript saved", "done"\);[\s\S]*?markChatRunProjectionSettled\(runHandle\);[\s\S]*?unregisterChatRun\(runHandle\);[\s\S]*?push\(\{\s*kind: "done"/,
+  "Gateway keeps projection live through transcript persistence, then settles projection and unregisters before done",
 );
 // ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
 // Source pins: the route must route BOTH tool-event sources through the
@@ -247,8 +359,78 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /hermesDirect && !hermesApi[\s\S]*?Hermes tool activity unavailable[\s\S]*?HERMES_API_URL/,
-  "the CLI fallback must disclose that structured tool activity is unavailable and how to enable it",
+  /hermesDirect && !hermesApi[\s\S]*?"Hermes tool activity unavailable[^"]*",\s*"notice",\s*"Configure valid HERMES_API_URL/,
+  "the CLI fallback must disclose that structured tool activity is unavailable and how to enable it — as an informational notice, not an error: the turn itself runs fine and only its tool bubbles are missing",
+);
+
+/**
+ * Exact source of the call that starts at `needle`, located by paren-depth
+ * scan rather than a length bound. A magic `{0,N}` window silently truncates
+ * once a call grows past it, which would drop the very status argument these
+ * assertions exist to read. An unbalanced scan returns null and fails the
+ * assertion loudly instead.
+ */
+function callSource(source: string, start: number): string | null {
+  let depth = 0;
+  for (let i = source.indexOf("(", start); i >= 0 && i < source.length; i++) {
+    if (source[i] === "(") depth += 1;
+    else if (source[i] === ")") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/** Every `pushProgress` call carrying one diagnostic id. A runtime may emit
+ *  the same id from more than one branch, and checking only the first would
+ *  leave the rest free to drift back to an error. */
+function progressCalls(source: string, id: string): (string | null)[] {
+  const calls: (string | null)[] = [];
+  const re = new RegExp(`pushProgress\\(\\s*"${id}",`, "g");
+  for (let match = re.exec(source); match; match = re.exec(source)) {
+    calls.push(callSource(source, match.index));
+  }
+  return calls;
+}
+
+// Every runtime that degrades to text-only chat reports the same fact, so they
+// must report it at the same severity. A degradation row styled as an error
+// paints a red step and an "N issues" count onto a turn that never failed.
+for (const [id, label] of [
+  ["hermes-tool-activity", "Hermes"],
+  ["claude-runtime-compatibility", "Claude"],
+  ["opencode-compatibility", "OpenCode"],
+  ["grok-compatibility", "Grok Build"],
+  ["codex-compatibility", "Codex"],
+] as const) {
+  const calls = progressCalls(chatRoute, id);
+  assert.ok(calls.length > 0, `${label}'s tool-activity diagnostic must still be emitted`);
+  for (const call of calls) {
+    assert.ok(call, `${label}'s tool-activity diagnostic must be a balanced call expression`);
+    assert.equal(
+      /"error"/.test(call),
+      false,
+      `${label}'s tool-activity degradation must be informational, not an error`,
+    );
+  }
+}
+
+// Copilot's protocol diagnostic is the one member of that family emitted
+// through `push({ kind: "progress" })` rather than pushProgress, so the loop
+// above cannot see it. Pin it on its own shape.
+const copilotDiagnostic =
+  /reportCopilotProtocolDiagnostic = [\s\S]*?push\(\{([\s\S]*?)\}\);/.exec(chatRoute);
+assert.ok(copilotDiagnostic, "Copilot's protocol diagnostic must still be emitted");
+assert.match(
+  copilotDiagnostic[1],
+  /status: "notice"/,
+  "Copilot protocol drift must be presented as a neutral notice",
+);
+assert.doesNotMatch(
+  copilotDiagnostic[1],
+  /status: "error"/,
+  "Copilot protocol drift must not regress to an error",
 );
 
 assert.match(
@@ -1186,5 +1368,95 @@ assert.match(
     undefined,
     "no tools → undefined, not an empty array",
   );
+}
+
+// Gateway mapping uses the same tracker contract as the route: native ids are
+// prefixed for SSE/persistence, reordered progress is applied after start, and
+// terminal results retain formatted payloads.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t, "openclaw:");
+  assert.equal(
+    tracker.envelopeToolProgress("call-1", formatToolInputValue({ partial: "working" })),
+    null,
+    "progress before start is retained without creating a nameless card",
+  );
+  const started = tracker.envelopeToolUse(
+    "call-1",
+    "exec",
+    formatToolInputValue({ command: "pwd" }),
+    9,
+  );
+  assert.equal(started?.id, "openclaw:call-1");
+  assert.equal(started?.status, "running");
+  assert.equal(tracker.consumePendingEnvelopeProgress("call-1")?.output, '{\n  "partial": "working"\n}');
+  t = 25;
+  const ended = tracker.envelopeToolResult(
+    "call-1",
+    formatToolInputValue({ text: "/repo", exitCode: 0 }),
+    false,
+  );
+  assert.equal(ended?.id, "openclaw:call-1");
+  assert.equal(ended?.status, "ok");
+  assert.deepEqual(toPersistedTools(tracker.snapshot(), 4), [{
+    id: "openclaw:call-1",
+    name: "exec",
+    input: '{\n  "command": "pwd"\n}',
+    output: '{\n  "text": "/repo",\n  "exitCode": 0\n}',
+    status: "ok",
+    durationMs: 25,
+    textOffset: 5,
+  }]);
+}
+
+// A terminal frame can be the first lifecycle event. The route can announce
+// the name carried by tool_end and then consume the tracker's retained result.
+{
+  const tracker = new ToolCallTracker(() => 0, "openclaw:");
+  assert.equal(
+    tracker.envelopeToolResult("result-first", formatToolInputValue({ text: "done" }), false),
+    null,
+  );
+  assert.equal(
+    tracker.envelopeToolUse("result-first", "exec", undefined, 0)?.id,
+    "openclaw:result-first",
+  );
+  assert.deepEqual(tracker.consumePendingEnvelopeResult("result-first"), {
+    id: "openclaw:result-first",
+    name: "exec",
+    input: undefined,
+    output: '{\n  "text": "done"\n}',
+    status: "ok",
+    durationMs: 0,
+  });
+}
+
+{
+  const tracker = new ToolCallTracker(() => 40, "openclaw:");
+  tracker.envelopeToolUse("cancelled", "exec");
+  assert.deepEqual(tracker.failOpenCalls("[tool cancelled by user]"), [{
+    id: "openclaw:cancelled",
+    name: "exec",
+    output: "[tool cancelled by user]",
+    status: "error",
+    durationMs: 0,
+  }]);
+  assert.deepEqual(tracker.failOpenCalls("[tool cancelled by user]"), []);
+}
+
+{
+  const tracker = new ToolCallTracker(() => 80, "openclaw:");
+  tracker.envelopeToolUse("unfinished", "read");
+  assert.deepEqual(
+    tracker.failOpenCalls("[tool did not settle before the Gateway turn ended]"),
+    [{
+      id: "openclaw:unfinished",
+      name: "read",
+      output: "[tool did not settle before the Gateway turn ended]",
+      status: "error",
+      durationMs: 0,
+    }],
+  );
+  assert.equal(toPersistedTools(tracker.snapshot(), 0)?.[0]?.status, "error");
 }
 console.log("tool persistence tracker tests passed");

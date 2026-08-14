@@ -462,10 +462,513 @@ test("podcast drafter creates bounded extractive narration segments", () => {
   }, "standard");
   assert.equal(content.kind, "podcast");
   if (content.kind !== "podcast") return;
-  assert.ok(content.script.length >= 1, "heading-less artifacts still produce a draft");
+  assert.ok(content.script.length >= 2, "heading-less artifacts still produce a draft");
   assert.ok(content.script.every((segment) => segment.text.length > 0));
   assert.ok(content.script.every((segment) => segment.text.length <= 4_000));
-  assert.ok(content.script[0].text.includes("A standalone paragraph with a claim."));
+  assert.equal(content.script[0].speaker, "host", "a host opening frames the episode");
+  assert.ok(content.script[1].text.includes("A standalone paragraph with a claim."));
+  assert.ok(
+    content.script.every(
+      (segment) => segment.speaker === "host" || segment.speaker === "guest",
+    ),
+    "every drafted segment carries a dialogue speaker",
+  );
+});
+
+test("podcast drafter drafts a host/guest dialogue with templated framing only", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Gating mechanisms",
+      "",
+      "- Gates bind proxies, not purposes.",
+      "",
+      "## Consolidation levers",
+      "",
+      "- Does goal-guarding generalize?",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const script = content.script;
+  assert.equal(script[0].speaker, "host");
+  assert.ok(
+    script[0].text.includes(mission.title),
+    "the opening names the mission title, nothing invented",
+  );
+  const framing = script.filter(
+    (segment) =>
+      segment.text.includes("Gating mechanisms") || segment.text.includes("Consolidation levers"),
+  );
+  assert.deepEqual(
+    framing.map((segment) => segment.speaker),
+    ["host", "host"],
+    "each titled section gets one host framing line",
+  );
+  assert.ok(
+    framing.every((segment) => !segment.text.includes("..")),
+    "framing reuses punctuation-aware headings",
+  );
+  // Charm review #2: host bridges rotate through distinct jobs rather than
+  // repeating one generic line per style.
+  assert.notEqual(
+    framing[0].text.replace("Gating mechanisms", "§"),
+    framing[1].text.replace("Consolidation levers", "§"),
+    "consecutive sections get different bridge copy",
+  );
+  const guests = script.filter((segment) => segment.speaker === "guest");
+  assert.ok(
+    guests.some((segment) => segment.text.includes("Gates bind proxies, not purposes.")),
+    "findings are delivered verbatim by the guest",
+  );
+  assert.deepEqual(
+    script.map((segment) => segment.id),
+    script.map((_, index) => `segment-${index + 1}`),
+    "segment ids stay sequential",
+  );
+  // Charm review #5: a section ends on the host's synthesis turn, never on
+  // the guest's last list item.
+  const last = script[script.length - 1];
+  assert.equal(last.speaker, "host", "the episode closes on a host synthesis turn");
+  assert.ok(
+    !last.text.includes("Consolidation levers"),
+    "the closing host turn is a synthesis, not an orphan framing line",
+  );
+});
+
+test("podcast drafter translates document furniture into listener questions", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Executive summary",
+      "",
+      "- Gates bind proxies, not purposes.",
+      "",
+      "## Open questions",
+      "",
+      "- Does goal-guarding generalize?",
+      "",
+      "## Recommended next steps",
+      "",
+      "- Re-run the sweep in a quarter.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const texts = content.script.map((segment) => segment.text);
+  for (const furniture of ["Executive summary", "Open questions", "Recommended next steps"]) {
+    assert.ok(
+      texts.every((text) => !text.includes(furniture)),
+      `"${furniture}" is never spoken aloud`,
+    );
+  }
+  const questions = content.script.filter((segment) =>
+    [
+      "what's the headline here?",
+      "What's still unsettled after all of this?",
+      "So where does this go from here?",
+    ].some((question) => segment.text.includes(question)),
+  );
+  assert.equal(questions.length, 3, "each furniture heading becomes a listener question");
+  assert.ok(
+    questions.every((segment) => segment.speaker === "host"),
+    "furniture questions are host turns",
+  );
+});
+
+test("podcast drafter strips citation apparatus from speech, keeps prose verbatim", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Gating mechanisms",
+      "",
+      "- Formal proofs are blocked (S8, S16; high).",
+      "- Benchmarks preserve scores, not intent (the DGM lesson).",
+      "- External outcomes should decide promotion [S01](../sources.json) [S06].",
+      "- Robust goal-guarding traces to training choices (S20 2025-06; high confidence).",
+      "- The date alone was flagged as unverified (2025-11).",
+      "- Anti-faking mitigations were characterized (verified).",
+      "- The Gödel machine (2003) proposed proof-gated self-modification, and (I) doubt it scales.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(
+    narration.includes("Formal proofs are blocked."),
+    `ledger-id parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("(the DGM lesson)"),
+    "prose parentheticals stay verbatim",
+  );
+  assert.ok(
+    narration.includes("External outcomes should decide promotion."),
+    `bracketed and link-form ledger ids never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("Robust goal-guarding traces to training choices."),
+    `dated confidence parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("The date alone was flagged as unverified.") &&
+      narration.includes("Anti-faking mitigations were characterized."),
+    `lone date and lone label parentheticals never reach speech (${narration})`,
+  );
+  assert.ok(
+    narration.includes("The Gödel machine (2003) proposed proof-gated self-modification, and (I) doubt it scales."),
+    `bare publication years and lone pronouns stay verbatim (${narration})`,
+  );
+  assert.ok(!/\bS\d{1,3}\b/.test(narration), `no bare ledger ids in speech (${narration})`);
+});
+
+test("podcast styles branch the drafter without inventing findings", () => {
+  const source = {
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Gating mechanisms",
+      "",
+      "- Gates bind proxies, not purposes.",
+      "",
+      "## Open questions",
+      "",
+      "- Does goal-guarding generalize?",
+    ].join("\n"),
+  };
+  const recap = draftPodcastContent(source, "standard", "recap");
+  assert.equal(recap.kind, "podcast");
+  if (recap.kind !== "podcast") return;
+  assert.ok(
+    recap.script.every((segment) => segment.speaker === undefined),
+    "recap is a single-narrator read-through with no dialogue turns",
+  );
+  assert.ok(
+    recap.script[0].text.includes("Gates bind proxies, not purposes."),
+    "recap starts straight into the findings, no templated opening",
+  );
+
+  const debate = draftPodcastContent(source, "standard", "debate");
+  assert.equal(debate.kind, "podcast");
+  if (debate.kind !== "podcast") return;
+  assert.ok(debate.script[0].text.includes("stress-testing"));
+  const debateUnsettled = debate.script.findIndex((segment) =>
+    segment.text.includes("What's still unsettled"),
+  );
+  const debateGates = debate.script.findIndex((segment) =>
+    segment.text.includes("Gating mechanisms"),
+  );
+  assert.ok(
+    debateUnsettled !== -1 && debateGates !== -1 && debateUnsettled < debateGates,
+    "debate leads with the contested section",
+  );
+
+  const interview = draftPodcastContent(source, "standard", "interview");
+  assert.equal(interview.kind, "podcast");
+  if (interview.kind !== "podcast") return;
+  assert.ok(
+    interview.script[0].text.includes("what actually holds up"),
+    "interview opening frames the tension, not the format",
+  );
+  assert.ok(
+    interview.script.some((segment) =>
+      segment.text.startsWith("Walk me through this part — Gating mechanisms"),
+    ),
+  );
+
+  // The default is breakdown — an unstyled call and an explicit breakdown
+  // call draft the identical script.
+  assert.deepEqual(
+    draftPodcastContent(source, "standard"),
+    draftPodcastContent(source, "standard", "breakdown"),
+  );
+});
+
+test("podcast closers restate the section's lead finding verbatim as the takeaway", () => {
+  // Charm re-review (cave-upkaf): "got it" closers acknowledged but never
+  // synthesized. A short declarative lead sentence now returns in the host's
+  // closing turn, verbatim — content-bearing synthesis without invention.
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Gating mechanisms",
+      "",
+      "- Gates bind proxies, not purposes. The rest of the section keeps going.",
+      "",
+      "## Consolidation levers",
+      "",
+      "- Does goal-guarding generalize?",
+      "",
+      "## Promotion safeguards",
+      "",
+      "- Holdouts catch the regression every time! The promotion step never saw it.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const hosts = content.script.filter((segment) => segment.speaker === "host");
+  assert.ok(
+    hosts.some((segment) =>
+      segment.text.endsWith("keep this: Gates bind proxies, not purposes."),
+    ),
+    "a declarative lead sentence is restated verbatim in the host closer",
+  );
+  // A question is not a takeaway — restating "Does it generalize?" as the
+  // synthesis would be an editorial bug, so that section falls back to the
+  // acknowledgment closer.
+  assert.ok(
+    !hosts.some((segment) => segment.text.includes(": Does goal-guarding generalize?")),
+    "question-lead sections never get a question restated as the takeaway",
+  );
+  // Non-question terminators all qualify — an exclamation is still declarative.
+  assert.ok(
+    hosts.some((segment) =>
+      segment.text.includes("Holdouts catch the regression every time!"),
+    ),
+    "an exclamation-terminated lead sentence still becomes the takeaway",
+  );
+});
+
+test("podcast closers never restate a list enumerator as the takeaway", () => {
+  // cave-8ksv1: real artifacts open sections with numbered lists, and the
+  // enumerator's own dot matched as a complete "sentence" — closers rendered
+  // "The takeaway there — 1." Strip the marker and take the real sentence.
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — decision criteria" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Decision criteria",
+      "",
+      "1. Scope of evolution decides the safeguard family. Prompts want spec regression; weights want drift benchmarks.",
+      "2. Reversibility budget comes second.",
+      "",
+      "## Numeric leads",
+      "",
+      "42. 17 3.5. The rest of this section is prose.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const hosts = content.script.filter((segment) => segment.speaker === "host");
+  assert.ok(
+    !hosts.some((segment) => /[—:] ?\d{1,3}\.$/.test(segment.text)),
+    "no closer ends on a bare enumerator",
+  );
+  assert.ok(
+    hosts.some((segment) =>
+      segment.text.includes("Scope of evolution decides the safeguard family."),
+    ),
+    "the sentence after the enumerator is the takeaway",
+  );
+  // A "sentence" with no letters is structure, not synthesis — that section
+  // falls back to the acknowledgment closer instead of restating "17 3.5."
+  assert.ok(
+    !hosts.some((segment) => segment.text.includes("17 3.5.")),
+    "letterless numeric fragments never become the takeaway",
+  );
+});
+
+test("podcast host carries at least 20% of dialogue characters on realistic findings", () => {
+  // Charm re-review (cave-upkaf): host/guest balance measured 16.2%/83.8%
+  // against a 20–30% target. Content-bearing closers are the lever; this pins
+  // the floor on a fixture shaped like a real findings artifact.
+  const bullet =
+    "The evaluated gating mechanism held its measured containment rate across every replication run. " +
+    "Reviewers traced the residual drift to prompt-surface mutations rather than weight updates. " +
+    "The strongest observed failure mode was benchmark overfitting during the promotion step. " +
+    "Holdout tasks caught the regression before any mutation was promoted to production.";
+  const markdown = [
+    "# Findings",
+    "",
+    "## Gating mechanisms",
+    "",
+    `- ${bullet}`,
+    "",
+    "## Consolidation levers",
+    "",
+    `- ${bullet}`,
+    "",
+    "## Promotion safeguards",
+    "",
+    `- ${bullet}`,
+    "",
+    "## Rollback discipline",
+    "",
+    `- ${bullet}`,
+  ].join("\n");
+  for (const style of ["breakdown", "debate", "interview"] as const) {
+    const content = draftPodcastContent({
+      mission,
+      artifact: { key: "findings", title: "Findings — eval pricing" },
+      markdown,
+    }, "standard", style);
+    assert.equal(content.kind, "podcast");
+    if (content.kind !== "podcast") return;
+    const hostChars = content.script
+      .filter((segment) => segment.speaker === "host")
+      .reduce((sum, segment) => sum + segment.text.length, 0);
+    const totalChars = content.script.reduce((sum, segment) => sum + segment.text.length, 0);
+    const share = hostChars / totalChars;
+    assert.ok(
+      share >= 0.2,
+      `${style} host share stays at or above 20% (measured ${(share * 100).toFixed(1)}%)`,
+    );
+  }
+});
+
+test("podcast interview shapes its own turns — capped guest answers, host reactions, one challenge", () => {
+  // Charm re-review (cave-9wkyq): interview was "breakdown wearing an
+  // interview opening" — 5 of 8 turns identical. Interview now caps guest
+  // turns near 100 words, reacts between the splits, and spends exactly one
+  // real challenge on the contested section.
+  const sentences = Array.from(
+    { length: 40 },
+    (_, i) => `Claim number ${i + 1} holds under repeated evaluation pressure.`,
+  ).join(" ");
+  const source = {
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Gating mechanisms",
+      "",
+      `- ${sentences}`,
+      "",
+      "## Unresolved conflicts",
+      "",
+      "- Does goal-guarding generalize?",
+      "",
+      "## Consolidation levers",
+      "",
+      "- Gates bind proxies, not purposes.",
+    ].join("\n"),
+  };
+  const interview = draftPodcastContent(source, "standard", "interview");
+  assert.equal(interview.kind, "podcast");
+  if (interview.kind !== "podcast") return;
+  const guests = interview.script.filter((segment) => segment.speaker === "guest");
+  assert.ok(guests.length > 3, "long answers split into multiple guest turns");
+  for (const turn of guests) {
+    const words = turn.text.split(/\s+/).length;
+    assert.ok(words <= 100, `guest turns stay near 100 words (got ${words})`);
+    assert.match(turn.text, /^[A-Z0-9(“"']/, "split guest turns open at a sentence boundary");
+    assert.match(turn.text, /[.!?…]["'”’)\]]*$/, "split guest turns close at a sentence boundary");
+  }
+  // The host reacts between split guest turns instead of vanishing.
+  const scripted = interview.script;
+  let sawInterjection = false;
+  for (let index = 1; index < scripted.length - 1; index += 1) {
+    if (
+      scripted[index].speaker === "host" &&
+      scripted[index - 1].speaker === "guest" &&
+      scripted[index + 1].speaker === "guest"
+    ) {
+      sawInterjection = true;
+      break;
+    }
+  }
+  assert.ok(sawInterjection, "a host reaction lands between split guest turns");
+  // Exactly one challenge per episode, and it lands on the contested section.
+  const challenges = scripted.filter((segment) =>
+    segment.text.includes("Make the case for this one."),
+  );
+  assert.equal(challenges.length, 1, "exactly one challenge per episode");
+  assert.ok(
+    challenges[0].text.includes("Unresolved conflicts"),
+    "the challenge lands on the contested section",
+  );
+  // And the interview no longer drafts the same script as breakdown.
+  const breakdown = draftPodcastContent(source, "standard", "breakdown");
+  assert.equal(breakdown.kind, "podcast");
+  if (breakdown.kind !== "podcast") return;
+  assert.ok(
+    interview.script.length !== breakdown.script.length,
+    "interview is not breakdown wearing an interview opening",
+  );
+});
+
+test("podcast drafter joins are punctuation-aware — never a double period", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Punctuated findings",
+      "",
+      "## Claim ledger (with caveats)",
+      "",
+      "- Formal proofs are blocked (by Löb's theorem).",
+      "- Does goal-guarding generalize?",
+      "- Benchmarks bind proxies (the DGM lesson)",
+      "- an unterminated bullet",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(!narration.includes(".."), `no double periods (${narration})`);
+  assert.ok(!narration.includes("?."), `no punctuation stacking after ? (${narration})`);
+  assert.ok(
+    narration.includes("(the DGM lesson) an unterminated bullet."),
+    "paren-terminated fragments are not re-punctuated",
+  );
+  assert.ok(
+    narration.includes("Claim ledger (with caveats)"),
+    "the heading still frames its details",
+  );
+});
+
+test("podcast drafter skips table-only sections instead of speaking bare headings", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Mechanism comparison",
+      "",
+      "| Mechanism | Guarantee |",
+      "|---|---|",
+      "| Proof-gated | formal |",
+      "",
+      "## Empty section",
+      "",
+      "## Detailed findings",
+      "",
+      "- Gates bind proxies, not purposes.",
+    ].join("\n"),
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const texts = content.script.map((segment) => segment.text);
+  assert.ok(
+    texts.every((text) => text !== "Mechanism comparison" && text !== "Mechanism comparison."),
+    "table-only sections never become orphan spoken headings",
+  );
+  assert.ok(
+    texts.every((text) => !text.startsWith("Empty section")),
+    "empty sections are skipped",
+  );
+  assert.ok(
+    texts.some((text) => text.includes("Gates bind proxies, not purposes.")),
+    "sections with speakable details survive",
+  );
 });
 
 test("podcast drafter clamps a long source mechanically at the local TTS limit", () => {
@@ -480,6 +983,94 @@ test("podcast drafter clamps a long source mechanically at the local TTS limit",
   assert.ok(content.script.length > 1, "long narration is split into bounded segments");
   assert.ok(content.script.every((segment) => segment.text.length <= 4_000));
   assert.ok(content.script.some((segment) => segment.text.includes("verbatim source claim")));
+});
+
+test("podcast drafter prefers sentence boundaries when splitting long units into turns", () => {
+  // Dogfood round 2 (cave-2emgc): chunks become separate spoken turns, so a
+  // continuation turn opening mid-sentence ("it can appear where you didn't…")
+  // is a speech bug. Sentences short enough to pack many per chunk.
+  const sentences = Array.from(
+    { length: 60 },
+    (_, i) => `Claim number ${i + 1} holds under repeated evaluation pressure.`,
+  ).join(" ");
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings — eval pricing" },
+    markdown: `# Long findings\n\n## Detailed findings\n\n- ${sentences}`,
+  }, "standard");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const guestTurns = content.script.filter((segment) => segment.speaker === "guest");
+  assert.ok(guestTurns.length > 1, "long unit split into multiple turns");
+  for (const turn of guestTurns) {
+    assert.match(
+      turn.text,
+      /^[A-Z0-9(“"']/,
+      `turn never opens mid-sentence (${turn.text.slice(0, 40)}…)`,
+    );
+    assert.match(
+      turn.text,
+      /[.!?…]["'”’)\]]*$/,
+      `turn never ends mid-sentence (…${turn.text.slice(-40)})`,
+    );
+  }
+});
+
+test("podcast openings speak a cleaned mission title — no trailing '.…' garbage", () => {
+  const messyMission = {
+    ...mission,
+    title: "Research and compare: Identity Preservation for Agents during Self-Evolution.…",
+  };
+  for (const style of ["breakdown", "debate", "interview"] as const) {
+    const content = draftPodcastContent({
+      mission: messyMission,
+      artifact: { key: "findings", title: "Findings" },
+      markdown: "# Findings\n\n## Detailed findings\n\n- Gates bind proxies, not purposes.",
+    }, "standard", style);
+    assert.equal(content.kind, "podcast");
+    if (content.kind !== "podcast") return;
+    const opening = content.script[0]?.text ?? "";
+    assert.ok(
+      opening.includes("“Identity Preservation for Agents during Self-Evolution”"),
+      `${style} opening speaks the framed question, cleanly terminated (${opening})`,
+    );
+    assert.ok(
+      !opening.includes("Research and compare:"),
+      `${style} opening never reads the research-prompt prefix aloud (${opening})`,
+    );
+    assert.ok(!opening.includes(".…"), `${style} opening never speaks '.…'`);
+  }
+});
+
+test("podcast drafter normalizes TTS-hostile glyphs into spoken words", () => {
+  const content = draftPodcastContent({
+    mission,
+    artifact: { key: "findings", title: "Findings" },
+    markdown: [
+      "# Findings",
+      "",
+      "## Throughput → cost curve",
+      "",
+      "- Throughput improved 3× at ≥ 90% recall (≈ baseline cost).",
+      "- Latency held near ~5 s once the spec+regression checks ran 2+2 times.",
+      "- The spec + regression pair also passes when padded, and C++ stays C++.",
+    ].join("\n"),
+  }, "standard", "debate");
+  assert.equal(content.kind, "podcast");
+  if (content.kind !== "podcast") return;
+  const narration = content.script.map((segment) => segment.text).join(" ");
+  assert.ok(narration.includes("Throughput to cost curve"), `arrow spoken as 'to' (${narration})`);
+  assert.ok(narration.includes("3 times at at least 90%"), `× and ≥ spoken (${narration})`);
+  assert.ok(narration.includes("about baseline cost"), `≈ spoken as 'about' (${narration})`);
+  assert.ok(narration.includes("about 5 s"), `~5 spoken as 'about 5' (${narration})`);
+  assert.ok(narration.includes("spec and regression"), `word+word spoken as 'and' (${narration})`);
+  assert.ok(narration.includes("spec and regression pair also passes"), `whitespace-padded word + word spoken as 'and' (${narration})`);
+  assert.ok(narration.includes("C++ stays C++"), `C++ survives normalization (${narration})`);
+  assert.ok(narration.includes("2 plus 2 times"), `digit+digit spoken as 'plus' (${narration})`);
+  for (const glyph of ["→", "×", "≥", "≈", "~"]) {
+    assert.ok(!narration.includes(glyph), `no raw ${glyph} reaches speech`);
+  }
+  assert.ok(!narration.replace(/C\+\+/g, "").includes("+"), `no raw '+' outside C++ reaches speech (${narration})`);
 });
 
 test("video storyboard drafter maps headings, bullets, and narration without invention", () => {

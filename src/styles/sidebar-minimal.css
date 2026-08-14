@@ -1,5 +1,6 @@
 /* Shell-level sidebar facade. Its order remains part of globals.css's cascade. */
 @import "./sidebar-minimal/shell-chrome.css";
+@import "./sidebar-minimal/section-tabs.css";
 @import "./sidebar-minimal/navigation-recents.css";
 @import "./sidebar-minimal/familiars.css";
 @import "./sidebar-minimal/activity-rail.css";

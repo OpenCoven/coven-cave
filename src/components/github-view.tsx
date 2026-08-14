@@ -76,10 +76,21 @@ import {
   surfaceWarmupRetryAfterSeconds,
 } from "@/lib/surface-warmup-registry";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
+import { GitHubStream } from "@/components/github-stream";
 import {
-  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON, KIND_LABEL, KIND_ORDER,
+  deriveStage,
+  facetsFor,
+  groupIntoSections,
+  GH_NEXT_STEP,
+  type GhSectionKey,
+  type GhStreamEntry,
+  type GhTone,
+} from "@/lib/github-stage";
+import {
+  GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON,
   linkedCardsForItem, orgOf, useCards, useFamiliars,
-  type ActivityResult, type Filter, type GroupBy, type PatStatus, type SortKey,
+  type ActivityResult, type Filter, type PatStatus,
 } from "./github-view-data";
 
 type Props = {
@@ -90,7 +101,9 @@ type Props = {
   /** Deep-link target from a GitHub-event inbox notification — opens that
    *  PR/issue's detail natively, even when it isn't in the activity list. */
   initialTarget?: GitHubItemTarget | null;
-  /** When set, the host owns the content filter (e.g. the Code Workshop's
+  /** Called after the view captures a host target into local detail state. */
+  onInitialTargetHandled?: () => void;
+  /** When set, the host owns the content filter (e.g. the Coding Desk's
    *  PRs/Issues/Reviews top tabs). The view is driven to this filter and hides
    *  its own filter control to avoid a redundant second switch. */
   initialFilter?: Filter | null;
@@ -524,21 +537,61 @@ function SafeMergeAction({
   item,
   linkedCards,
   familiars,
+  familiarsFailed = false,
 }: {
   item: GitHubItem;
   linkedCards: Card[];
   familiars: Familiar[];
+  /** The familiars load FAILED — an empty list then means "couldn't load",
+   *  not "none exist" (cave-59cv). */
+  familiarsFailed?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const { announce } = useAnnouncer();
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Close the familiar picker on outside click / Escape (same posture as
+  // OpenChatAction's card picker).
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onDoc(ev: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(ev.target as Node)) setPickerOpen(false);
+    }
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") setPickerOpen(false);
+    }
+    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pickerOpen]);
+
   if (item.kind !== "pr" && item.kind !== "review_request") return null;
 
   const linkedCard = linkedCards.find((card) => card.cwd) ?? linkedCards[0] ?? null;
-  const familiarId = linkedCard?.familiarId ?? familiars[0]?.id ?? null;
+  // A linked card carries a familiar the user already chose for this work.
+  // Absent that there is no correct default — safe merge creates a worktree and
+  // drives a merge, so the familiar it lands on is the user's call, not
+  // whichever one happens to sort first (cave-26sg4).
+  const linkedFamiliarId = linkedCard?.familiarId ?? null;
 
-  async function startSafeMerge(e: React.MouseEvent) {
+  function handleClick(e: React.MouseEvent) {
     e.stopPropagation();
+    setError(null);
+    if (linkedFamiliarId) {
+      void startSafeMerge(linkedFamiliarId);
+      return;
+    }
+    setPickerOpen((v) => !v);
+  }
+
+  async function startSafeMerge(familiarId: string) {
+    setPickerOpen(false);
     setBusy(true);
     setError(null);
     let safeMergeRoot: string | null = linkedCard?.cwd ?? null;
@@ -601,13 +654,42 @@ function SafeMergeAction({
         size="xs"
         variant="secondary"
         leadingIcon="ph:git-merge"
-        onClick={startSafeMerge}
+        onClick={handleClick}
         disabled={busy}
-        title="Safely merge from a worktree"
+        aria-expanded={pickerOpen}
+        title={linkedFamiliarId ? "Safely merge from a worktree" : "Safely merge — choose a familiar"}
       >
         {busy ? "Prep…" : "Merge"}
       </Button>
       {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
+
+      {pickerOpen && (
+        <div ref={pickerRef} className="gh-action-popover" onClick={(e) => e.stopPropagation()}>
+          <p className="gh-action-popover-title">Merge with…</p>
+          {familiars.length === 0 ? (
+            // An empty roster and a failed load are different claims: one says
+            // "you have none", the other says "we could not tell".
+            <p className="gh-action-popover-title">
+              {familiarsFailed ? "Could not load your familiars." : "No familiars yet."}
+            </p>
+          ) : (
+            <ul className="gh-action-popover-list">
+              {familiars.map((f) => (
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    onClick={() => void startSafeMerge(f.id)}
+                    disabled={busy}
+                    className="gh-action-popover-item"
+                  >
+                    <span className="gh-action-popover-item-title">{f.display_name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -672,6 +754,21 @@ function AddToBoardAction({
 
 type GitHubPerson = { login: string; avatarUrl: string | null; url: string | null };
 
+/** The `?pull=1` block the item route adds for pull requests. */
+type PullSummary = {
+  headRef: string;
+  baseRef: string;
+  headSha: string;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  /** null while GitHub is still computing the merge commit. */
+  mergeable: boolean | null;
+  mergeableState: string;
+  reviews: { approved: number; changesRequested: number; commented: number };
+};
+
 type ItemDetail = {
   ok: true;
   title: string;
@@ -688,6 +785,9 @@ type ItemDetail = {
   updatedAt: string | null;
   htmlUrl: string | null;
   comments: number;
+  /** Present only for pull requests — absent on issues, null when the extra
+   *  round-trip failed (the base item still renders). */
+  pull?: PullSummary | null;
 };
 
 type DetailState =
@@ -717,7 +817,9 @@ function useGitHubItemDetail(item: GitHubItem | null): DetailState {
     // uncancelled fetches burn the 60/hr unauthenticated rate limit (cave-b8ba).
     const ctl = new AbortController();
     setState({ status: "loading" });
-    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`, { signal: ctl.signal })
+    // `pull=1` adds mergeability, the review tally and the diff size — the
+    // three things the landing gates report. Issues ignore the flag.
+    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}&pull=1`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
         if (ctl.signal.aborted) return;
@@ -1629,9 +1731,8 @@ function statusPresentation(state: string): { icon: IconName; color: string } {
  * and legacy statuses, each with its timing and a link out to the run logs.
  * PR-only; issues have no checks. Read-only, so no announcer.
  */
-function GitHubChecks({ item }: { item: GitHubItem }) {
+function GitHubChecks({ item, state }: { item: GitHubItem; state: ChecksState }) {
   const isPull = item.kind === "pr" || item.kind === "review_request";
-  const state = useGitHubChecks(item, isPull);
   const data = state.status === "ready" ? state.data : null;
   const runs = data?.runs ?? [];
   const statuses = data?.statuses ?? [];
@@ -2066,6 +2167,182 @@ function WatchRepoChip({ repo }: { repo: string }) {
   );
 }
 
+// ── Landing gates ─────────────────────────────────────────────────────────────
+
+/** One merge precondition, and how close it is to clear. */
+type LandingGate = {
+  key: string;
+  label: string;
+  value: string;
+  tone: GhTone;
+  /** 0–1, drawn as the card's fill bar. */
+  progress: number;
+  title: string;
+};
+
+const GATE_ICON: Record<GhTone, IconName> = {
+  ok: "ph:check",
+  bad: "ph:x",
+  warn: "ph:warning-circle",
+  acc: "ph:sparkle",
+  mute: "ph:circle",
+};
+
+/**
+ * The three things that decide whether a pull request can land — CI, review,
+ * mergeability — as one strip, read before the title's ink is dry.
+ *
+ * Each card says what it knows and nothing more: a precondition whose data
+ * never arrived reports "not reported" in the muted tone rather than borrowing
+ * a green from a sibling. Issues get no strip at all; they have no gates, and
+ * three grey cards saying so would be worse than the space they cost.
+ */
+function landingGates(item: GitHubItem, detail: ItemDetail | null, checks: ChecksState): LandingGate[] {
+  const data = checks.status === "ready" ? checks.data : null;
+  const rollup = data?.rollup ?? item.checkStatus ?? null;
+  const failed = (data?.runs ?? []).filter(
+    (r) => checkPresentation(r.status, r.conclusion).bucket === "failed",
+  ).length;
+  const running = (data?.runs ?? []).filter(
+    (r) => checkPresentation(r.status, r.conclusion).bucket === "running",
+  ).length;
+
+  const checksGate: LandingGate =
+    rollup === "passing"
+      ? { key: "checks", label: "checks", value: "all passed", tone: "ok", progress: 1, title: "Continuous integration" }
+      : rollup === "failing"
+        ? { key: "checks", label: "checks", value: failed ? `${failed} failed` : "failing", tone: "bad", progress: 0.4, title: "Continuous integration" }
+        : rollup === "pending"
+          ? { key: "checks", label: "checks", value: running ? `${running} running` : "running", tone: "warn", progress: 0.6, title: "Continuous integration" }
+          : { key: "checks", label: "checks", value: "not reported", tone: "mute", progress: 0, title: "Continuous integration" };
+
+  const tally = detail?.pull?.reviews ?? null;
+  const reviewGate: LandingGate = !tally
+    ? { key: "review", label: "review", value: "not reported", tone: "mute", progress: 0, title: "Review verdicts on this pull request" }
+    : tally.changesRequested > 0
+      ? { key: "review", label: "review", value: `${tally.changesRequested} requesting changes`, tone: "bad", progress: 0.25, title: "Review verdicts on this pull request" }
+      : tally.approved > 0
+        ? { key: "review", label: "review", value: `${tally.approved} approval${tally.approved === 1 ? "" : "s"}`, tone: "ok", progress: 1, title: "Review verdicts on this pull request" }
+        : { key: "review", label: "review", value: "no verdict yet", tone: "warn", progress: 0.4, title: "Review verdicts on this pull request" };
+
+  const pull = detail?.pull ?? null;
+  const mergeState = pull?.mergeableState ?? "unknown";
+  const mergeGate: LandingGate =
+    pull == null
+      ? { key: "merge", label: "merge", value: "not reported", tone: "mute", progress: 0, title: "Mergeability against the base branch" }
+      : pull.mergeable === false || mergeState === "dirty"
+        ? { key: "merge", label: "merge", value: "conflicts", tone: "bad", progress: 0.2, title: "Mergeability against the base branch" }
+        : mergeState === "blocked"
+          ? { key: "merge", label: "merge", value: "blocked by a rule", tone: "warn", progress: 0.5, title: "Mergeability against the base branch" }
+          : mergeState === "behind"
+            ? { key: "merge", label: "merge", value: "behind the base", tone: "warn", progress: 0.6, title: "Mergeability against the base branch" }
+            : mergeState === "unstable"
+              ? { key: "merge", label: "merge", value: "checks unstable", tone: "warn", progress: 0.6, title: "Mergeability against the base branch" }
+              : mergeState === "draft"
+                ? { key: "merge", label: "merge", value: "draft", tone: "mute", progress: 0, title: "Mergeability against the base branch" }
+                : pull.mergeable === true
+                  ? { key: "merge", label: "merge", value: "clean", tone: "ok", progress: 1, title: "Mergeability against the base branch" }
+                  : { key: "merge", label: "merge", value: "computing…", tone: "mute", progress: 0, title: "Mergeability against the base branch" };
+
+  return [checksGate, reviewGate, mergeGate];
+}
+
+/**
+ * The gate strip. Below ~300px the three cards stop being cards — a value that
+ * ellipses to nothing is not a signal — and collapse to one label-and-value row
+ * each, measured on the element itself rather than the viewport so it still
+ * works at a dragged split the media query knows nothing about.
+ */
+function LandingGateStrip({ gates }: { gates: LandingGate[] }) {
+  const [tight, setTight] = useState(false);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const width = Math.round(entries[0].contentRect.width);
+      if (width > 0) setTight(width < 300);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={hostRef}
+      role="group"
+      aria-label="Landing signals"
+      className={`gh-gates${tight ? " gh-gates--tight" : ""}`}
+    >
+      {gates.map((gate) => (
+        <div key={gate.key} className={`gh-gate gh-tone--${gate.tone}`} title={`${gate.title} — ${gate.value}`}>
+          <span className="gh-gate-label">
+            <Icon name={GATE_ICON[gate.tone]} width={9} aria-hidden />
+            <span className="gh-gate-label-text">{gate.label}</span>
+          </span>
+          <span className="gh-gate-value">{gate.value}</span>
+          <span className="gh-gate-track" aria-hidden>
+            <span className="gh-gate-fill" style={{ width: `${Math.round(gate.progress * 100)}%` }} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A collapsible body section with a tone edge and a summary in its header. */
+function GhSection({
+  id,
+  title,
+  summary,
+  tone = "mute",
+  open,
+  onToggle,
+  count,
+  children,
+}: {
+  id: string;
+  title: string;
+  summary?: string;
+  tone?: GhTone;
+  open: boolean;
+  onToggle: () => void;
+  count?: number;
+  children: ReactNode;
+}) {
+  return (
+    <section data-gh-section={id} className={`gh-section gh-tone--${tone}`}>
+      <button type="button" className="gh-section-head focus-ring" aria-expanded={open} onClick={onToggle}>
+        <span className="gh-section-edge" aria-hidden />
+        <span className="gh-section-title">{title}</span>
+        {count != null ? <span className="gh-section-count">{count}</span> : null}
+        <span className="gh-section-spacer" />
+        {summary ? <span className="gh-section-summary">{summary}</span> : null}
+        <span className={`gh-section-caret${open ? "" : " is-collapsed"}`} aria-hidden>
+          <Icon name="ph:caret-down" width={9} />
+        </span>
+      </button>
+      {open ? <div className="gh-section-body">{children}</div> : null}
+    </section>
+  );
+}
+
+/**
+ * The selected item, read in full.
+ *
+ * Three bands, in the order a triage decision actually needs them: a masthead
+ * that identifies the item and states its landing gates; a scrolling body with
+ * the brief, the conversation, the checks and the linked Cave work; and a
+ * pinned "what to do next" drawer that names the one sentence of judgment and
+ * puts the verbs under it. The drawer is pinned rather than appended because
+ * the decision is what the panel is for — scrolling past the conversation to
+ * find the buttons put the least-read content between you and the action.
+ *
+ * `focused` raises the same panel over the list as a modal read, through a
+ * portal: an ancestor with `backdrop-filter` would otherwise become the
+ * containing block for `position:fixed` and strand it inside the split.
+ */
 function GitHubItemGlassPanel({
   item,
   linkedCards,
@@ -2075,6 +2352,9 @@ function GitHubItemGlassPanel({
   familiarsFailed = false,
   cardsFailed = false,
   countLabels,
+  focused = false,
+  backLabel = "Back to the list",
+  onUnfocus,
   onJumpToSession,
   onFocusCard,
   onAfterLink,
@@ -2087,11 +2367,49 @@ function GitHubItemGlassPanel({
   familiarsFailed?: boolean;
   cardsFailed?: boolean;
   countLabels: Record<"pr" | "review_request" | "issue", string>;
+  focused?: boolean;
+  backLabel?: string;
+  onUnfocus?: () => void;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
   onAfterLink: () => void;
 }) {
   const detailState = useGitHubItemDetail(item);
+  const isPull = item != null && (item.kind === "pr" || item.kind === "review_request");
+  const checksState = useGitHubChecks(item, isPull);
+  const [open, setOpen] = useState<Record<string, boolean>>({ brief: true, talk: true, linked: true });
+  const [factsOpen, setFactsOpen] = useState(false);
+  // Collapsed by default, as in the design. Open, the drawer takes a third of a
+  // quarter-width split and leaves the brief a couple of lines — so the
+  // collapsed header carries the gate rollup instead, and one click gets the
+  // verbs. The choice sticks for the visit: triage opens it once, not per row.
+  const [nextOpen, setNextOpen] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  // Focused, this is a real modal: trap the tab ring inside it, return focus to
+  // whatever opened it, and let the hook own Escape. Inert while docked in the
+  // split, where the panel is just another region of the page.
+  useFocusTrap(focused, panelRef, { onEscape: onUnfocus });
+
+  const toggle = useCallback((key: string) => {
+    setOpen((prev) => ({ ...prev, [key]: prev[key] === false }));
+  }, []);
+
+  // Jump: open the section first, then scroll it under the sticky rail. The
+  // section may still be collapsed on this frame, so measure on the next one.
+  const jumpTo = useCallback((key: string) => {
+    setOpen((prev) => ({ ...prev, [key]: true }));
+    requestAnimationFrame(() => {
+      const host = bodyRef.current;
+      const target = host?.querySelector<HTMLElement>(`[data-gh-section="${key}"]`);
+      if (!host || !target) return;
+      const rail = host.querySelector<HTMLElement>(".gh-jump");
+      const pad = 6 + (rail?.getBoundingClientRect().height ?? 0);
+      const delta = target.getBoundingClientRect().top - host.getBoundingClientRect().top - pad;
+      host.scrollTop = Math.max(0, host.scrollTop + delta);
+    });
+  }, []);
+
   if (!item) {
     return (
       <aside className="gh-glass-panel gh-glass-panel--empty" aria-label="GitHub item details">
@@ -2106,70 +2424,112 @@ function GitHubItemGlassPanel({
   const merged = detail?.merged ?? false;
   const stateKind = merged ? "merged" : rawState === "closed" ? "closed" : "open";
   const stateLabel = merged ? "Merged" : stateKind === "closed" ? "Closed" : "Open";
-  const openedNoun =
-    item.kind === "pr" || item.kind === "review_request" ? "pull request" : "issue";
-  const rowFamiliars = Array.from(
-    new Set(
-      linkedCards
-        .map((card) => card.familiarId)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  );
-  const kindColor = KIND_COLOR[item.kind] ?? "var(--text-muted)";
+  const openedNoun = isPull ? "pull request" : "issue";
   const detailLabel = KIND_DETAIL_LABEL[item.kind] ?? item.kind;
+  const kindColor = KIND_COLOR[item.kind] ?? "var(--text-muted)";
 
-  return (
-    <aside className="gh-glass-panel" aria-label={`${detailLabel} details`}>
-      <div className="gh-glass-aura" aria-hidden />
-      <div className="gh-glass-panel-scroll">
-        <div className="gh-glass-stat-grid" aria-label="GitHub activity counts">
-          <div className="gh-glass-stat">
-            <span>PRs</span>
-            <strong>{countLabels.pr}</strong>
-          </div>
-          <div className="gh-glass-stat">
-            <span>Reviews</span>
-            <strong>{countLabels.review_request}</strong>
-          </div>
-          <div className="gh-glass-stat">
-            <span>Issues</span>
-            <strong>{countLabels.issue}</strong>
-          </div>
+  const rowFamiliars = Array.from(
+    new Set(linkedCards.map((card) => card.familiarId).filter((id): id is string => Boolean(id))),
+  );
+  const sessionCard = linkedCards.find((card) => card.sessionId) ?? null;
+  const sessionFamiliar = sessionCard?.familiarId ? resolvedById.get(sessionCard.familiarId) : null;
+  const sessionLabel = sessionCard
+    ? sessionFamiliar?.display_name ?? sessionCard.sessionId!.slice(0, 12)
+    : null;
+
+  const stage = deriveStage(item, { linkedCount: linkedCards.length, session: sessionLabel });
+  const gates = landingGates(item, detail, checksState);
+  const worstGate =
+    gates.find((g) => g.tone === "bad")
+    ?? gates.find((g) => g.tone === "warn")
+    ?? gates.find((g) => g.tone === "mute")
+    ?? null;
+  const gateTone = worstGate?.tone ?? "ok";
+
+  const labels = detail?.labels ?? [];
+  const pull = detail?.pull ?? null;
+  const facts: { key: string; value: string }[] = [
+    { key: "repo", value: item.repo },
+    { key: "branch", value: pull?.headRef || (sessionLabel ? `${sessionLabel} (Cave)` : "no local branch") },
+    { key: "base", value: pull?.baseRef || "—" },
+    {
+      key: "size",
+      value: pull
+        ? `${pull.changedFiles} file${pull.changedFiles === 1 ? "" : "s"} · +${pull.additions} −${pull.deletions}`
+        : "—",
+    },
+    { key: "assignees", value: (detail?.assignees ?? []).map((p) => p.login).join(", ") || "unassigned" },
+    { key: "labels", value: labels.map((l) => l.name).join(", ") || "none" },
+  ].filter((f) => f.value !== "—");
+
+  const jumpTargets = [
+    { key: "brief", label: "brief" },
+    { key: "talk", label: "talk", count: detail?.comments },
+    ...(isPull ? [{ key: "checks", label: "checks" }] : []),
+    { key: "linked", label: "linked", count: linkedCards.length },
+  ];
+
+  const panel = (
+    <aside
+      ref={panelRef}
+      // Docked, it is a labelled region. Raised over the list behind a scrim it
+      // IS a modal, and saying so is what lets a screen reader treat it as one.
+      role={focused ? "dialog" : undefined}
+      aria-modal={focused ? true : undefined}
+      className={`gh-glass-panel gh-detail${focused ? " is-focused" : ""}`}
+      aria-label={`${detailLabel} details`}
+    >
+      {focused ? (
+        <div className="gh-detail-focusbar">
+          <button type="button" className="gh-detail-back focus-ring" onClick={onUnfocus}>
+            <Icon name="ph:caret-left" width={10} aria-hidden />
+            {backLabel}
+          </button>
+          <span className="gh-detail-spacer" />
+          <span className="gh-detail-esc">Esc to close</span>
         </div>
+      ) : null}
 
-        <div className="gh-glass-hero">
-          <span className="gh-glass-kind" style={{ color: kindColor }}>
-            <Icon name={KIND_ICON[item.kind] ?? "ph:github-logo"} width={15} />
+      <div className="gh-detail-mast">
+        <div className="gh-detail-kindrow">
+          <span className="gh-detail-kind" style={{ color: kindColor }}>
+            <Icon name={KIND_ICON[item.kind] ?? "ph:github-logo"} width={12} aria-hidden />
             {detailLabel}
           </span>
-          <h3>{detail?.title ?? item.title}</h3>
-          <div className="gh-issue-subline">
-            {item.number != null && (
-              <span className="gh-issue-number">
-                #{item.number}
-                <CopyButton value={`#${item.number}`} label={`Copy #${item.number}`} />
-              </span>
-            )}
-            <span className={`gh-issue-state gh-issue-state--${stateKind}`} title={stateLabel}>
-              <span className="gh-issue-state-dot" aria-hidden />
-              {stateLabel}
-            </span>
-          </div>
-          <div className="gh-issue-opened">
-            {detail?.author && <PersonChip person={detail.author} />}
-            <span className="gh-issue-opened-text">
-              {detail?.author ? "opened this " : ""}
-              {openedNoun}
-              {" · "}
-              {item.repo}
-              {" · "}
-              <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
-            </span>
-          </div>
-          <div className="[margin-top:6px]!">
-            <WatchRepoChip repo={item.repo} />
-          </div>
-          {(item.kind === "pr" || item.kind === "review_request") && (
+          {item.number != null ? <span className="gh-detail-number">#{item.number}</span> : null}
+          <span className={`gh-detail-state gh-detail-state--${stateKind}`}>
+            <span className="gh-detail-state-dot" aria-hidden />
+            {stateLabel}
+          </span>
+          <span className="gh-detail-spacer" />
+          <CopyButton value={item.url} label="Copy the link to this item" />
+        </div>
+
+        <h2 className="gh-detail-title">{detail?.title ?? item.title}</h2>
+
+        <div className="gh-detail-byline">
+          {detail?.author ? <PersonChip person={detail.author} /> : null}
+          <span className="gh-detail-byline-text">
+            {detail?.author ? "opened this " : ""}
+            {openedNoun}
+            {" · "}
+            <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
+          </span>
+        </div>
+
+        {isPull ? <LandingGateStrip gates={gates} /> : null}
+
+        <div className="gh-detail-verbs">
+          <WatchRepoChip repo={item.repo} />
+          <Button
+            size="sm"
+            variant="secondary"
+            leadingIcon="ph:arrow-square-out"
+            onClick={(e) => { e.preventDefault(); openExternalUrl(item.url); }}
+          >
+            Open on GitHub
+          </Button>
+          {isPull ? (
             <GhReviewActions
               pr={{
                 repo: item.repo,
@@ -2182,25 +2542,54 @@ function GitHubItemGlassPanel({
               }}
               familiars={familiars}
             />
-          )}
+          ) : null}
+          <button
+            type="button"
+            className="gh-detail-facts-toggle focus-ring"
+            aria-expanded={factsOpen}
+            onClick={() => setFactsOpen((v) => !v)}
+          >
+            <Icon name={factsOpen ? "ph:caret-up" : "ph:caret-down"} width={9} aria-hidden />
+            Facts
+          </button>
         </div>
 
-        <div className="gh-glass-section">
-          <div className="gh-glass-section-title">Assignees</div>
-          {detail?.assignees && detail.assignees.length > 0 ? (
-            <div className="gh-issue-people">
-              {detail.assignees.map((p) => (
-                <PersonChip key={p.login} person={p} />
-              ))}
-            </div>
-          ) : (
-            <p className="gh-glass-muted">No one assigned.</p>
-          )}
-        </div>
-        <div className="gh-glass-section">
-          <div className="gh-glass-section-title">Description</div>
+        {factsOpen ? (
+          <dl className="gh-facts">
+            {facts.map((fact) => (
+              <div key={fact.key} className="gh-facts-row">
+                <dt>{fact.key}</dt>
+                <dd>{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </div>
+
+      <div className="gh-detail-body" ref={bodyRef}>
+        <nav className="gh-jump" aria-label="Jump to a section">
+          {jumpTargets.map((target) => (
+            <button
+              key={target.key}
+              type="button"
+              className="gh-jump-pill focus-ring"
+              onClick={() => jumpTo(target.key)}
+            >
+              {target.label}
+              {target.count ? <span className="gh-jump-count">{target.count}</span> : null}
+            </button>
+          ))}
+        </nav>
+
+        <GhSection
+          id="brief"
+          title="brief"
+          summary={open.brief === false ? "what this is" : undefined}
+          open={open.brief !== false}
+          onToggle={() => toggle("brief")}
+        >
           {detailState.status === "loading" ? (
-            <p className="gh-glass-muted">Loading description…</p>
+            <p className="gh-glass-muted">Loading the description…</p>
           ) : detailState.status === "error" ? (
             <p className="gh-glass-muted">Couldn’t load the description — open on GitHub for the full thread.</p>
           ) : detail?.body?.trim() ? (
@@ -2208,25 +2597,40 @@ function GitHubItemGlassPanel({
           ) : (
             <p className="gh-glass-muted">No description provided.</p>
           )}
+          {labels.length > 0 ? (
+            <div className="gh-detail-labels">
+              {labels.map((label) => (
+                <span key={label.name} className="gh-detail-label">{label.name}</span>
+              ))}
+            </div>
+          ) : null}
+        </GhSection>
+
+        <div data-gh-section="talk">
+          <GitHubComments item={item} detail={detail} />
         </div>
 
-        <GitHubChecks item={item} />
+        {isPull ? (
+          <div data-gh-section="checks">
+            <GitHubChecks item={item} state={checksState} />
+          </div>
+        ) : null}
 
-        <GitHubComments item={item} detail={detail} />
-
-        <div className="gh-glass-section">
-          <div className="gh-glass-section-title">Linked work</div>
+        <GhSection
+          id="linked"
+          title="linked work"
+          tone={linkedCards.length > 0 ? "acc" : "mute"}
+          count={linkedCards.length}
+          open={open.linked !== false}
+          onToggle={() => toggle("linked")}
+        >
           {linkedCards.length > 0 ? (
             <div className="gh-glass-linked">
               {linkedCards.slice(0, 4).map((card) => (
                 <LinkedTaskChip
                   key={card.id}
                   card={card}
-                  familiar={
-                    card.familiarId
-                      ? resolvedById.get(card.familiarId) ?? null
-                      : null
-                  }
+                  familiar={card.familiarId ? resolvedById.get(card.familiarId) ?? null : null}
                   onFocusCard={onFocusCard}
                 />
               ))}
@@ -2234,8 +2638,7 @@ function GitHubItemGlassPanel({
           ) : (
             <p className="gh-glass-muted">No Cave tasks linked yet.</p>
           )}
-
-          {rowFamiliars.length > 0 && (
+          {rowFamiliars.length > 0 ? (
             <div className="gh-glass-familiars" aria-label="Linked familiars">
               {rowFamiliars.slice(0, 5).map((familiarId) => {
                 const familiar = resolvedById.get(familiarId);
@@ -2247,62 +2650,167 @@ function GitHubItemGlassPanel({
                 );
               })}
             </div>
-          )}
-        </div>
+          ) : null}
+        </GhSection>
+      </div>
 
-        <div className="gh-glass-actions">
-          <OpenChatAction
-            item={item}
-            linkedCards={linkedCards}
-            familiars={familiars}
-            cards={cards}
-            familiarsFailed={familiarsFailed}
-            cardsFailed={cardsFailed}
-            onJumpToSession={onJumpToSession}
-            onAfterLink={onAfterLink}
-          />
-          <AddToBoardAction
-            item={item}
-            familiars={familiars}
-            cards={cards}
-            familiarsFailed={familiarsFailed}
-            cardsFailed={cardsFailed}
-            onAfterLink={onAfterLink}
-          />
-          <SafeMergeAction
-            item={item}
-            linkedCards={linkedCards}
-            familiars={familiars}
-          />
-          <Button
-            size="xs"
-            variant="secondary"
-            leadingIcon="ph:arrow-square-out"
-            onClick={(e) => {
-              e.preventDefault();
-              openExternalUrl(item.url);
-            }}
-          >
-            GitHub
-          </Button>
-        </div>
+      <div className={`gh-next${nextOpen ? " is-open" : ""}`}>
+        <button
+          type="button"
+          className="gh-next-head focus-ring"
+          aria-expanded={nextOpen}
+          onClick={() => setNextOpen((v) => !v)}
+        >
+          <span className={`gh-next-caret${nextOpen ? " is-open" : ""}`} aria-hidden>
+            <Icon name="ph:caret-up" width={9} />
+          </span>
+          <span className="gh-next-title">what to do next</span>
+          <span className="gh-detail-spacer" />
+          {isPull ? (
+            // The headline, not all three values concatenated: collapsed, this
+            // line has room for one fact, and the one worth having is whichever
+            // gate is furthest from clear.
+            <span className={`gh-next-rollup gh-tone--${gateTone}`}>
+              <span className="gh-next-rollup-dot" aria-hidden />
+              {worstGate ? `${worstGate.label} — ${worstGate.value}` : "every gate clear"}
+            </span>
+          ) : null}
+        </button>
+
+        {nextOpen ? (
+          <div className="gh-next-body">
+            <p className={`gh-next-card gh-tone--${stage.tone}`}>{GH_NEXT_STEP[stage.key]}</p>
+
+            <div className="gh-next-verbs">
+              <OpenChatAction
+                item={item}
+                linkedCards={linkedCards}
+                familiars={familiars}
+                cards={cards}
+                familiarsFailed={familiarsFailed}
+                cardsFailed={cardsFailed}
+                onJumpToSession={onJumpToSession}
+                onAfterLink={onAfterLink}
+              />
+              <AddToBoardAction
+                item={item}
+                familiars={familiars}
+                cards={cards}
+                familiarsFailed={familiarsFailed}
+                cardsFailed={cardsFailed}
+                onAfterLink={onAfterLink}
+              />
+              <SafeMergeAction item={item} linkedCards={linkedCards} familiars={familiars} familiarsFailed={familiarsFailed} />
+            </div>
+
+            <dl className="gh-next-wire">
+              <div className="gh-facts-row">
+                <dt>github</dt>
+                <dd>
+                  {stateLabel.toLowerCase()}
+                  {isPull && pull ? ` · ${pull.commits} commit${pull.commits === 1 ? "" : "s"}` : ""}
+                  {isPull ? ` · ${gates[0].value}` : ""}
+                </dd>
+              </div>
+              <div className="gh-facts-row">
+                <dt>local</dt>
+                <dd>{sessionLabel ? `${sessionLabel} has this open` : "not checked out locally"}</dd>
+              </div>
+            </dl>
+
+            <div className="gh-next-stats" aria-label="GitHub activity counts">
+              <span className="gh-next-stat"><span>PRs</span><strong>{countLabels.pr}</strong></span>
+              <span className="gh-next-stat"><span>Reviews</span><strong>{countLabels.review_request}</strong></span>
+              <span className="gh-next-stat"><span>Issues</span><strong>{countLabels.issue}</strong></span>
+            </div>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
+
+  if (!focused) return panel;
+  return createPortal(
+    <div className="gh-detail-overlay">
+      <div className="gh-detail-scrim" onClick={onUnfocus} aria-hidden />
+      {panel}
+    </div>,
+    document.body,
+  );
 }
 
-// ── Sortable header ───────────────────────────────────────────────────────────
+/** Where the focused read returns to — named, so the way out is never a guess. */
+const FILTER_BACK_LABEL: Record<Filter, string> = {
+  all: "Back to Activity",
+  pr: "Back to PRs",
+  issue: "Back to Issues",
+  review_request: "Back to Reviews",
+};
 
-type ColDef = { key: SortKey | null; label: string; width?: string; align?: "left" | "right" };
-const COLS: ColDef[] = [
-  { key: "kind", label: "Kind", width: "82px" },
-  { key: "repo", label: "Repo", width: "180px" },
-  { key: "title", label: "Title" },
-  { key: "tasks", label: "Tasks", width: "240px" },
-  { key: null, label: "Familiars", width: "92px" },
-  { key: "updatedAt", label: "Updated", width: "80px", align: "right" },
-  { key: null, label: "", width: "210px", align: "right" },
-];
+// ── Freshness + budget ────────────────────────────────────────────────────────
+
+/**
+ * How stale the list is, as a tone rather than a timestamp nobody subtracts in
+ * their head: green under a minute, amber while it drifts, red once a fetch is
+ * failing. Ticks on its own so "synced 40s ago" doesn't quietly become a lie
+ * between polls.
+ */
+function GhSyncPill({ syncedAt, failing }: { syncedAt: number | null; failing: boolean }) {
+  const [, setTick] = useState(0);
+  // Only age a label that is on screen. Before the first successful fetch the
+  // pill renders nothing, and a ticker behind it is a timer plus a re-render
+  // per 15s for no pixels.
+  const ticking = syncedAt !== null;
+  useEffect(() => {
+    if (!ticking) return;
+    const id = window.setInterval(() => setTick((n) => n + 1), 15_000);
+    return () => window.clearInterval(id);
+  }, [ticking]);
+
+  if (syncedAt === null && !failing) return null;
+  const ageMs = syncedAt === null ? Number.POSITIVE_INFINITY : Date.now() - syncedAt;
+  const tone = failing ? "bad" : ageMs < 60_000 ? "ok" : ageMs < 300_000 ? "warn" : "mute";
+  const label = failing
+    ? "sync failing"
+    : syncedAt === null
+      ? "not synced"
+      : ageMs < 60_000
+        ? "synced just now"
+        : `synced ${Math.round(ageMs / 60_000)}m ago`;
+
+  return (
+    <span
+      className={`gh-sync gh-tone--${tone}`}
+      title="Last successful GitHub fetch — green under a minute, amber as it drifts, red once a fetch is failing"
+    >
+      <span className="gh-sync-dot" aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * The hour's GitHub API budget as a spent bar. Shown because every surface in
+ * the Cave shares one rate limit: when reviews stop loading, this is the first
+ * place to look, and a bare number doesn't say whether it is nearly gone.
+ */
+function GhBudgetMeter({ rateLimit }: { rateLimit: { remaining: number; limit: number } }) {
+  const { remaining, limit } = rateLimit;
+  if (limit <= 0) return null;
+  const left = Math.max(0, Math.min(1, remaining / limit));
+  const tone = left < 0.15 ? "bad" : left < 0.4 ? "warn" : "mute";
+  return (
+    <span
+      className={`gh-budget gh-tone--${tone}`}
+      title={`GitHub API budget for this hour — ${remaining} of ${limit} requests left. Public access gets 60/h, a PAT gets 5,000/h.`}
+    >
+      <span className="gh-budget-track" aria-hidden>
+        <span className="gh-budget-fill" style={{ width: `${Math.round(left * 100)}%` }} />
+      </span>
+      {remaining}/{limit} req
+    </span>
+  );
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -2311,6 +2819,7 @@ export function GitHubView({
   onFocusCard,
   onTasksRefresh,
   initialTarget,
+  onInitialTargetHandled,
   initialFilter,
 }: Props = {}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
@@ -2319,7 +2828,15 @@ export function GitHubView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useSurfacePreference(surfacePreferenceSpecs.github.filter);
-  // Host-driven filter (Code Workshop's PRs/Issues/Reviews tabs): follow the
+  // A filter is an axis, not a destination: a burst of chip taps collapses into
+  // one entry so Back does not become a per-tap undo.
+  const selectFilter = useTrackedSurfaceValue({
+    id: "github:filter",
+    value: filter,
+    onRestore: setFilter,
+    coalesceMs: 700,
+  });
+  // Host-driven filter (Coding Desk's PRs/Issues/Reviews tabs): follow the
   // prop whenever it changes so switching tabs re-filters the same mounted view.
   useEffect(() => {
     if (initialFilter && initialFilter !== filter) setFilter(initialFilter);
@@ -2329,13 +2846,23 @@ export function GitHubView({
   const [orgFilter, setOrgFilter] = useSurfacePreference(surfacePreferenceSpecs.github.organization);
   const [repoFilter, setRepoFilter] = useSurfacePreference(surfacePreferenceSpecs.github.repository);
   const [query, setQuery] = useState("");
-  const [groupBy, setGroupBy] = useSurfacePreference(surfacePreferenceSpecs.github.groupBy);
   const [showPatModal, setShowPatModal] = useState(false);
   const [showSubsModal, setShowSubsModal] = useState(false);
   const [retryBlocked, setRetryBlocked] = useState(false);
-  const [sortKey, setSortKey] = useSurfacePreference(surfacePreferenceSpecs.github.sortKey);
-  const [sortDir, setSortDir] = useSurfacePreference(surfacePreferenceSpecs.github.sortDir);
+  // Wall-clock of the last successful fetch, for the freshness pill. Held
+  // separately from the payload: a poll that fails leaves `activity` intact
+  // (stale data still beats none), and the pill has to say so.
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [selectedTarget, setSelectedTarget] = useSurfacePreference(surfacePreferenceSpecs.github.selected);
+  // Stream state: which stage sections the facet bar narrows to, which are
+  // collapsed, and which rows have their peek open. All per-visit — a filter
+  // you can't see the effect of is worse than one you have to re-pick.
+  const [pickedFacets, setPickedFacets] = useState<GhSectionKey[]>([]);
+  const [collapsedSections, setCollapsedSections] = useState<Partial<Record<GhSectionKey, boolean>>>({});
+  const [peeked, setPeeked] = useState<Record<string, boolean>>({});
+  // The detail panel raised over the list (Esc closes) — the design's focused
+  // read, for when a diff needs more than the split's quarter-width.
+  const [focused, setFocused] = useState(false);
   // Notifications without a PR/issue number cannot be restored semantically,
   // but still need to remain selected for the current visit.
   const [transientSelectedItemId, setTransientSelectedItemId] = useState<string | null>(null);
@@ -2343,8 +2870,10 @@ export function GitHubView({
   // user picks a row themselves — from then on selection owns the detail.
   const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
   useEffect(() => {
-    setDeepLink(initialTarget ?? null);
-  }, [initialTarget]);
+    if (!initialTarget) return;
+    setDeepLink(initialTarget);
+    onInitialTargetHandled?.();
+  }, [initialTarget, onInitialTargetHandled]);
   const selectRow = useCallback((id: string) => {
     setDeepLink(null);
     setTransientSelectedItemId(id);
@@ -2455,6 +2984,7 @@ export function GitHubView({
           : mergedActivity;
       });
       setError(null);
+      setLastSyncedAt(Date.now());
       const basePollMs = nextActivity.authed ? 90_000 : 120_000;
       const retryDelayMs = Math.max(
         activityRetryAfterSeconds(nextActivity.collections),
@@ -2578,51 +3108,47 @@ export function GitHubView({
     return m;
   }, [scoped, cards]);
 
-  const sorted = useMemo(() => {
-    const arr = [...scoped];
-    arr.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "kind":
-          cmp = (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9);
-          break;
-        case "repo": {
-          const ra = `${a.repo}#${a.number ?? 0}`;
-          const rb = `${b.repo}#${b.number ?? 0}`;
-          cmp = ra.localeCompare(rb);
-          break;
-        }
-        case "title":
-          cmp = a.title.localeCompare(b.title);
-          break;
-        case "tasks": {
-          const la = linkedMap.get(a.id)?.length ?? 0;
-          const lb = linkedMap.get(b.id)?.length ?? 0;
-          cmp = la - lb;
-          break;
-        }
-        case "updatedAt":
-          cmp = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
-          break;
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return arr;
-  }, [scoped, sortKey, sortDir, linkedMap]);
+  // Stage sections do the grouping now, so the only ordering left inside a
+  // bucket is recency — the question a sort column used to answer ("what
+  // changed last") is the one thing sections don't already say.
+  const sorted = useMemo(
+    () => [...scoped].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
+    [scoped],
+  );
 
-  // When grouping is on, bucket the already-sorted rows by org or full repo.
-  // Map insertion order follows the sort, so groups appear in sorted order too.
-  const grouped = useMemo(() => {
-    if (groupBy === "none") return null;
-    const m = new Map<string, GitHubItem[]>();
-    for (const item of sorted) {
-      const key = groupBy === "org" ? orgOf(item.repo) : item.repo;
-      const bucket = m.get(key);
-      if (bucket) bucket.push(item);
-      else m.set(key, [item]);
-    }
-    return Array.from(m.entries());
-  }, [sorted, groupBy]);
+  // Each row resolved once: stage, linked Cave work, and the familiar holding
+  // it. Sections, facet counts and the row badges all read from this, so a chip
+  // can never advertise a count the list underneath it doesn't contain.
+  const entries = useMemo<GhStreamEntry<GitHubItem>[]>(
+    () =>
+      sorted.map((item) => {
+        const linked = linkedMap.get(item.id) ?? [];
+        const withSession = linked.find((card) => card.sessionId);
+        const familiarId = withSession?.familiarId ?? linked.find((c) => c.familiarId)?.familiarId;
+        const session = withSession
+          ? (familiarId ? resolvedById.get(familiarId)?.display_name : null)
+            ?? withSession.sessionId!.slice(0, 12)
+          : null;
+        const linkage = { linkedCount: linked.length, session };
+        return { row: item, stage: deriveStage(item, linkage), ...linkage };
+      }),
+    [sorted, linkedMap, resolvedById],
+  );
+
+  const allSections = useMemo(() => groupIntoSections(filter, entries), [filter, entries]);
+  const facets = useMemo(() => facetsFor(allSections), [allSections]);
+  const sections = useMemo(
+    () => (pickedFacets.length === 0 ? allSections : allSections.filter((s) => pickedFacets.includes(s.key))),
+    [allSections, pickedFacets],
+  );
+  const shownCount = useMemo(
+    () => sections.reduce((n, s) => n + s.entries.length, 0),
+    [sections],
+  );
+  const streamRows = useMemo(
+    () => sections.flatMap((s) => (collapsedSections[s.key] ? [] : s.entries.map((e) => e.row))),
+    [sections, collapsedSections],
+  );
 
   const counts: Record<Filter, number> = useMemo(
     () => ({
@@ -2701,63 +3227,66 @@ export function GitHubView({
     };
   }, [deepLink, sorted]);
 
+  // Falls back to the first row the stream is actually showing, not the first
+  // row that exists — otherwise narrowing to a facet leaves the panel inspecting
+  // something the list no longer lists.
   const selectedItem = useMemo(
-    () => deepLinkItem ?? sorted.find(sameSelectedTarget) ?? sorted.find((item) => item.id === transientSelectedItemId) ?? sorted[0] ?? null,
-    [deepLinkItem, sorted, sameSelectedTarget, transientSelectedItemId],
+    () =>
+      deepLinkItem
+      ?? sorted.find(sameSelectedTarget)
+      ?? sorted.find((item) => item.id === transientSelectedItemId)
+      ?? streamRows[0]
+      ?? sorted[0]
+      ?? null,
+    [deepLinkItem, sorted, streamRows, sameSelectedTarget, transientSelectedItemId],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 
-  function handleSortClick(key: SortKey) {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir(key === "updatedAt" || key === "tasks" ? "desc" : "asc"); }
-  }
-
-  // Keyboard navigation for the rows: ↑/↓ + Home/End move a roving tab stop
-  // (the selected row carries tabIndex 0), selection follows focus so the
-  // detail panel tracks the keyboard, and Enter opens the item on GitHub. Keyed
-  // on the row count so the listeners (re)bind once the table mounts after the
-  // async fetch — the table isn't in the DOM during the loading/empty states.
-  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  // A facet naming a section that no longer exists would silently empty the
+  // list, so drop stale picks whenever the available sections change (tab
+  // switch, search, a bucket emptying out).
   useEffect(() => {
-    const tbody = tbodyRef.current;
-    if (!tbody) return;
-    const rowOf = (el: EventTarget | null) =>
-      (el as HTMLElement | null)?.closest?.('tr[data-gh-row="true"]') as HTMLElement | null;
-    const rows = () => Array.from(tbody.querySelectorAll<HTMLElement>('tr[data-gh-row="true"]'));
-    const focusRow = (i: number) => {
-      const list = rows();
-      if (list.length === 0) return;
-      const row = list[Math.max(0, Math.min(list.length - 1, i))];
-      if (row.dataset.itemId) selectRow(row.dataset.itemId);
-      row.focus();
-    };
+    setPickedFacets((picked) => {
+      const live = picked.filter((key) => allSections.some((s) => s.key === key));
+      return live.length === picked.length ? picked : live;
+    });
+  }, [allSections]);
+
+  const toggleFacet = useCallback((key: GhSectionKey) => {
+    setPickedFacets((picked) =>
+      picked.includes(key) ? picked.filter((k) => k !== key) : [...picked, key],
+    );
+  }, []);
+  const toggleSection = useCallback((key: GhSectionKey) => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+  const togglePeek = useCallback((id: string) => {
+    setPeeked((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+  const openDetail = useCallback((id: string) => {
+    selectRow(id);
+    setFocused(true);
+  }, [selectRow]);
+
+  const filtersDirty =
+    pickedFacets.length > 0 || query.trim().length > 0 || orgFilter !== "all" || repoFilter !== "all";
+  const clearFilters = useCallback(() => {
+    setPickedFacets([]);
+    setQuery("");
+    setOrgFilter("all");
+    setRepoFilter("all");
+  }, [setOrgFilter, setRepoFilter]);
+
+  // Esc leaves the focused read and returns to the split — the only way out
+  // that doesn't require finding a button.
+  useEffect(() => {
+    if (!focused) return;
     const onKey = (e: KeyboardEvent) => {
-      const cur = rowOf(document.activeElement);
-      const list = rows();
-      const i = cur ? list.indexOf(cur) : list.findIndex((r) => r.getAttribute("aria-selected") === "true");
-      switch (e.key) {
-        case "ArrowDown": e.preventDefault(); focusRow((i < 0 ? -1 : i) + 1); break;
-        case "ArrowUp": e.preventDefault(); focusRow((i < 0 ? list.length : i) - 1); break;
-        case "Home": e.preventDefault(); focusRow(0); break;
-        case "End": e.preventDefault(); focusRow(list.length - 1); break;
-        case "Enter": {
-          const url = cur?.dataset.url;
-          if (url) { e.preventDefault(); openExternalUrl(url); }
-          break;
-        }
-      }
+      if (e.key === "Escape") { e.preventDefault(); setFocused(false); }
     };
-    const onFocusIn = (e: FocusEvent) => {
-      const row = rowOf(e.target);
-      if (row?.dataset.itemId) selectRow(row.dataset.itemId);
-    };
-    tbody.addEventListener("keydown", onKey);
-    tbody.addEventListener("focusin", onFocusIn);
-    return () => {
-      tbody.removeEventListener("keydown", onKey);
-      tbody.removeEventListener("focusin", onFocusIn);
-    };
-  }, [sorted.length]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focused]);
 
   return (
     <GitHubProfileProvider>
@@ -2818,17 +3347,12 @@ export function GitHubView({
             </span>
           )}
 
-          {activity?.rateLimit && (
-            <span
-              className="gh-compact-rate"
-              title="GitHub API requests left this hour — public gets 60/h, a PAT gets 5,000/h"
-            >
-              {activity.rateLimit.remaining}/{activity.rateLimit.limit} req left
-            </span>
-          )}
+          <GhSyncPill syncedAt={lastSyncedAt} failing={Boolean(error)} />
+
+          {activity?.rateLimit && <GhBudgetMeter rateLimit={activity.rateLimit} />}
         </div>
 
-        {/* Host-driven filter (Code Workshop tabs) owns the switch — hide the
+        {/* Host-driven filter (Coding Desk tabs) owns the switch — hide the
             in-view chips so there is only one control. */}
         {initialFilter ? null : (
           <Tabs
@@ -2837,7 +3361,7 @@ export function GitHubView({
             size="sm"
             ariaLabel="Filter GitHub activity"
             value={filter}
-            onChange={setFilter}
+            onChange={selectFilter}
             items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
               id: f,
               label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],
@@ -2932,16 +3456,28 @@ export function GitHubView({
             title="Event subscriptions — opened PRs, CI completions"
             aria-label="Event subscriptions"
           />
+          {/* Row grouping retired with the table: the stream groups by stage,
+              and a second grouping axis on top of that only competes with it. */}
           <OverflowMenu ariaLabel="More GitHub options">
-            <PopoverLabel>Group rows</PopoverLabel>
-            {(["none", "org", "repo"] as GroupBy[]).map((g) => {
-              const labels: Record<GroupBy, string> = { none: "No grouping", org: "Group by org", repo: "Group by repo" };
-              return (
-                <PopoverItem key={g} checked={groupBy === g} onSelect={() => setGroupBy(g)}>
-                  {labels[g]}
-                </PopoverItem>
-              );
-            })}
+            <PopoverLabel>Sections</PopoverLabel>
+            <PopoverItem
+              icon="ph:caret-down"
+              onSelect={() => setCollapsedSections({})}
+            >
+              Expand every section
+            </PopoverItem>
+            <PopoverItem
+              icon="ph:caret-right"
+              onSelect={() =>
+                setCollapsedSections(
+                  Object.fromEntries(allSections.map((s) => [s.key, true])) as Partial<
+                    Record<GhSectionKey, boolean>
+                  >,
+                )
+              }
+            >
+              Collapse every section
+            </PopoverItem>
             {patStatus?.hasPat ? (
               <>
                 <PopoverSeparator />
@@ -3099,250 +3635,110 @@ export function GitHubView({
                 familiarsFailed={familiarsFailed}
                 cardsFailed={cardsFailed}
                 countLabels={countLabels}
+                focused={focused}
+                backLabel={FILTER_BACK_LABEL[filter]}
+                onUnfocus={() => setFocused(false)}
                 onJumpToSession={onJumpToSession}
                 onFocusCard={onFocusCard}
                 onAfterLink={refreshLinkedWork}
               />
             }
           >
-            <div className="board-table-wrap gh-list-panel">
-              <table className="board-table gh-table" role="grid" aria-label="GitHub activity — use arrow keys to navigate rows">
-                <thead>
-                  <tr>
-                    {COLS.map((col, i) => (
-                      <th
-                        key={`${col.label}-${i}`}
-                        style={{ width: col.width, textAlign: col.align ?? "left" }}
-                        className={col.key && sortKey === col.key ? "sorted" : ""}
-                        aria-sort={
-                          col.key
-                            ? sortKey === col.key
-                              ? sortDir === "asc"
-                                ? "ascending"
-                                : "descending"
-                              : "none"
-                            : undefined
-                        }
+            <div className="gh-list-panel">
+              {facets.length > 1 ? (
+                <div className="gh-facet-bar" role="group" aria-label="Narrow to a section">
+                  {facets.map((facet) => {
+                    const on = pickedFacets.includes(facet.key);
+                    return (
+                      <button
+                        key={facet.key}
+                        type="button"
+                        className={`gh-facet gh-tone--${facet.tone}${on ? " is-on" : ""} focus-ring`}
+                        aria-pressed={on}
+                        onClick={() => toggleFacet(facet.key)}
                       >
-                        {col.key ? (
-                          // A real <button> so the column is sortable by keyboard;
-                          // locally utility-styled to avoid touching shared table CSS.
-                          <button
-                            type="button"
-                            className="focus-ring [display:inline-flex]! [align-items:center]! [gap:2px]! [background:none]! [border:none]! [padding:0]! [font:inherit]! [color:inherit]! [cursor:pointer]!"
-                            onClick={() => handleSortClick(col.key!)}
-                          >
-                            {col.label}
-                            <span className="board-table-sort-icon">
-                              {sortKey === col.key
-                                ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
-                                : <Icon name="ph:caret-up-down" width={9} />}
-                            </span>
-                          </button>
-                        ) : (
-                          col.label
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody ref={tbodyRef}>
-                  {(() => {
-                    const renderRow = (item: GitHubItem) => {
-                  const linked = linkedMap.get(item.id) ?? [];
-                  const familiarsForRow = Array.from(
-                    new Set(
-                      linked
-                        .map((c) => c.familiarId)
-                        .filter((id): id is string => Boolean(id)),
-                    ),
-                  );
-                  return (
-                    <tr
-                      key={item.id}
-                      data-gh-row="true"
-                      data-item-id={item.id}
-                      data-url={item.url}
-                      tabIndex={selectedItem?.id === item.id ? 0 : -1}
-                      className={`gh-row reveal-scope${selectedItem?.id === item.id ? " is-selected" : ""}`}
-                      onClick={() => selectRow(item.id)}
-                      aria-selected={selectedItem?.id === item.id}
-                    >
-                      <td>
-                        <span className="gh-kind" style={{ color: KIND_COLOR[item.kind] }}>
-                          <Icon
-                            name={KIND_ICON[item.kind] ?? "ph:github-logo"}
-                            width={12}
-                          />
-                          <span>{KIND_LABEL[item.kind] ?? item.kind}</span>
-                        </span>
-                      </td>
-                      <td>
-                        <span className="gh-repo" title={item.repo}>
-                          {item.repo}
-                          {item.number != null && (
-                            <span className="gh-repo-number">#{item.number}</span>
-                          )}
-                        </span>
-                      </td>
-                      <td>
-                        <a
-                          href={item.url}
-                          className="gh-title"
+                        <span className="gh-facet-dot" aria-hidden />
+                        {facet.label}
+                        <span className="gh-facet-count">{facet.count}</span>
+                      </button>
+                    );
+                  })}
+                  {filtersDirty ? (
+                    <button type="button" className="gh-facet-clear focus-ring" onClick={clearFilters}>
+                      <Icon name="ph:x" width={9} aria-hidden />
+                      Clear filters
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {shownCount === 0 ? (
+                <div className="gh-stream-empty">
+                  <EmptyState
+                    icon="ph:funnel"
+                    headline="Nothing in these sections"
+                    subtitle="Clear the section filter to see the rest of the workstream."
+                    actions={
+                      <Button variant="secondary" leadingIcon="ph:x" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : (
+                <GitHubStream
+                  sections={sections}
+                  selectedId={selectedItem?.id ?? null}
+                  collapsed={collapsedSections}
+                  onToggleSection={toggleSection}
+                  peeked={peeked}
+                  onTogglePeek={togglePeek}
+                  onSelect={selectRow}
+                  onOpen={openDetail}
+                  // The row's hand-off. OpenChatAction opens the familiar
+                  // picker (GitHubActionPopover reads /api/familiars), so the
+                  // work always goes to a familiar the user chose from their
+                  // own roster — the stream never names or defaults one.
+                  renderHandOff={(item) => (
+                    <OpenChatAction
+                      item={item}
+                      linkedCards={linkedMap.get(item.id) ?? []}
+                      familiars={familiars}
+                      cards={cards}
+                      familiarsFailed={familiarsFailed}
+                      cardsFailed={cardsFailed}
+                      onJumpToSession={onJumpToSession}
+                      onAfterLink={refreshLinkedWork}
+                    />
+                  )}
+                  renderRowActions={(item) => {
+                    const linked = linkedMap.get(item.id) ?? [];
+                    return (
+                      <>
+                        <AddToBoardAction
+                          item={item}
+                          familiars={familiars}
+                          cards={cards}
+                          familiarsFailed={familiarsFailed}
+                          cardsFailed={cardsFailed}
+                          onAfterLink={refreshLinkedWork}
+                        />
+                        <SafeMergeAction item={item} linkedCards={linked} familiars={familiars} familiarsFailed={familiarsFailed} />
+                        <IconButton
+                          icon="ph:arrow-square-out"
+                          size="xs"
+                          title="Open on GitHub"
+                          aria-label="Open on GitHub"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             openExternalUrl(item.url);
                           }}
-                          title={item.title}
-                        >
-                          {item.title}
-                        </a>
-                        {item.draft && (
-                          <span className="gh-badge gh-badge--muted">draft</span>
-                        )}
-                        {item.checkStatus === "failing" && (
-                          <span
-                            className="gh-badge gh-badge--danger"
-                            role="img"
-                            aria-label="CI checks failing"
-                            title="CI checks failing"
-                          >
-                            checks failed
-                          </span>
-                        )}
-                        {item.checkStatus === "passing" && (
-                          <span
-                            className="gh-badge gh-badge--success"
-                            role="img"
-                            aria-label="CI checks passing"
-                            title="CI checks passing"
-                          >
-                            checks pass
-                          </span>
-                        )}
-                        {item.checkStatus === "pending" && (
-                          <span
-                            className="gh-badge gh-badge--muted"
-                            role="img"
-                            aria-label="CI checks running"
-                            title="CI checks running"
-                          >
-                            checks…
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {linked.length === 0 ? (
-                          <span className="gh-empty-cell">—</span>
-                        ) : (
-                          <div className="gh-task-chip-list">
-                            {linked.slice(0, 3).map((c) => (
-                              <LinkedTaskChip
-                                key={c.id}
-                                card={c}
-                                familiar={
-                                  c.familiarId
-                                    ? resolvedById.get(c.familiarId) ?? null
-                                    : null
-                                }
-                                onFocusCard={onFocusCard}
-                              />
-                            ))}
-                            {linked.length > 3 && (
-                              <span className="gh-task-chip-more">+{linked.length - 3}</span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {familiarsForRow.length === 0 ? (
-                          <span className="gh-empty-cell">—</span>
-                        ) : (
-                          <div className="gh-familiar-stack">
-                            {familiarsForRow.slice(0, 3).map((fid) => {
-                              const f = resolvedById.get(fid);
-                              if (!f) return null;
-                              return (
-                                <span key={fid} className="gh-familiar-stack-item" title={f.display_name}>
-                                  <FamiliarAvatar familiar={f} size="sm" />
-                                </span>
-                              );
-                            })}
-                            {familiarsForRow.length > 3 && (
-                              <span className="gh-familiar-stack-more">+{familiarsForRow.length - 3}</span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="[text-align:right]!">
-                        <RelativeTime iso={item.updatedAt} className="board-table-cell-time" />
-                      </td>
-                      <td className="[text-align:right]!">
-                        {/* §8: per-row secondary actions reveal on row hover /
-                            focus-within (touch: always visible); the selected
-                            row and rows with an action error stay revealed
-                            (state never hides — see board.css). */}
-                        <div className="gh-actions reveal-on-hover">
-                          <OpenChatAction
-                            item={item}
-                            linkedCards={linked}
-                            familiars={familiars}
-                            cards={cards}
-                            familiarsFailed={familiarsFailed}
-                            cardsFailed={cardsFailed}
-                            onJumpToSession={onJumpToSession}
-                            onAfterLink={refreshLinkedWork}
-                          />
-                          <AddToBoardAction
-                            item={item}
-                            familiars={familiars}
-                            cards={cards}
-                            familiarsFailed={familiarsFailed}
-                            cardsFailed={cardsFailed}
-                            onAfterLink={refreshLinkedWork}
-                          />
-                          <SafeMergeAction
-                            item={item}
-                            linkedCards={linked}
-                            familiars={familiars}
-                          />
-                          <IconButton
-                            icon="ph:arrow-square-out"
-                            size="xs"
-                            title="Open on GitHub"
-                            aria-label="Open on GitHub"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openExternalUrl(item.url);
-                            }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                  };
-                    return grouped
-                      ? grouped.flatMap(([key, rows]) => [
-                          <tr key={`grp:${key}`} className="gh-group-row">
-                            <td colSpan={COLS.length}>
-                              <span className="gh-group-label">
-                                <Icon
-                                  name={groupBy === "org" ? "ph:folders-bold" : "ph:git-branch-bold"}
-                                  width={11}
-                                />
-                                <span className="gh-group-name">{key}</span>
-                                <span className="gh-group-count">{rows.length}</span>
-                              </span>
-                            </td>
-                          </tr>,
-                          ...rows.map(renderRow),
-                        ])
-                      : sorted.map(renderRow);
-                  })()}
-                </tbody>
-              </table>
+                        />
+                      </>
+                    );
+                  }}
+                />
+              )}
             </div>
           </GhWorkspace>
         )}

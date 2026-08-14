@@ -64,6 +64,22 @@
   color: var(--text-muted);
 }
 
+/* ── Panes (Access · Groups · Activity) ─────────────────────────────── */
+
+/* The three peers of the project-permissions protocol. Access groups used to
+   live two levels inside a familiar's settings; promoting them to a tab here
+   is the whole point of the tablist. */
+.projects-access-panes {
+  margin-top: calc(var(--space-1) * -1);
+}
+
+.projects-access-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
 /* ── Toolbar ────────────────────────────────────────────────────────── */
 
 .projects-access-toolbar {

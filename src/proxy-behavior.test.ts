@@ -25,6 +25,7 @@ import {
   bearerFromReferer,
   bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  isTokenlessApiPeerAllowed,
   isTrustedLocalPeer,
   timingSafeEqualString,
   isHtmlNavigationRequest,
@@ -109,6 +110,23 @@ assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net"), true);
 assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net:8443"), true);
 assert.equal(isTailscaleServeHost("localhost:3000"), false);
 assert.equal(isTailscaleServeHost("127.0.0.1:3000"), false);
+
+// ─── tokenless API peer proof ─────────────────────────────────────────────
+assert.equal(
+  isTokenlessApiPeerAllowed(false, false),
+  false,
+  "a spoofed loopback Host cannot replace server-verified peer identity",
+);
+assert.equal(
+  isTokenlessApiPeerAllowed(true, false),
+  true,
+  "the custom server's direct-loopback stamp preserves tokenless development",
+);
+assert.equal(
+  isTokenlessApiPeerAllowed(false, true),
+  true,
+  "verified remote ingress remains available through its authenticated path",
+);
 
 // ─── sameOrigin ────────────────────────────────────────────────────────────
 const expected = "http://localhost:3000";
@@ -365,8 +383,13 @@ assert.equal(
 );
 assert.equal(
   shouldRequireMobileAccessCredential("localhost:3000", false, true),
+  true,
+  "a direct loopback peer still needs user-bound credentials on a shared machine",
+);
+assert.equal(
+  shouldRequireMobileAccessCredential("localhost:3000", false, true, false, true),
   false,
-  "a server-verified direct loopback peer is exempt from the mobile gate (cave-vn2r)",
+  "the Tauri app's verified per-launch sidecar credential bypasses the mobile gate",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false, false),
@@ -375,8 +398,8 @@ assert.equal(
 );
 
 // ─── isTrustedLocalPeer ───────────────────────────────────────────────────
-// The exemption above is keyed to server.ts's per-boot secret; only an exact
-// match counts, and a missing secret (Next without server.ts) fails closed.
+// The local-peer stamp still distinguishes direct from forwarded traffic, but
+// it is not user identity and cannot bypass an armed credential gate.
 assert.equal(isTrustedLocalPeer("per-boot-secret", "per-boot-secret"), true);
 assert.equal(
   isTrustedLocalPeer("guessed-value", "per-boot-secret"),

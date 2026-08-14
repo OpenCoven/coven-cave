@@ -23,6 +23,24 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// controls shipped remain decodable and replay with current defaults.
     var reasoningEffort: ChatThinkingEffort?
     var responseSpeed: ChatResponseSpeed?
+    /// Capability-aware values requested for this selected model. Legacy
+    /// fields above stay readable for old snapshots only.
+    var modelControls: [String: String]?
+    /// Runtime-confirmed controls reported on the completed assistant turn.
+    var appliedControls: [String: String]?
+    var requestedControls: [String: String]?
+    var forwardedControls: [String: String]?
+    var promptGuidanceControls: [String: String]?
+    var rejectedControlFamilies: [String]?
+    /// Model application facts from the completed turn. These use the same
+    /// requested/desired/confirmed vocabulary as web response metadata.
+    var requestedModel: String?
+    var desiredModel: String?
+    var forwardedModel: String?
+    var confirmedModel: String?
+    var modelSource: String?
+    var modelApplicationState: String?
+    var modelApplicationReason: String?
     /// Explicit model selected for this turn. Persisted so offline replay and
     /// retry preserve the user's choice.
     var modelOverride: String?
@@ -57,6 +75,21 @@ extension DisplayMessage {
     /// that retry depends on.
     static func restored(from turn: ChatTurn, familiarId: String?) -> DisplayMessage {
         let role = Role(rawValue: turn.role) ?? .assistant
+        // Sub-expressions are hoisted out of the initializer call deliberately:
+        // inline, the two ternaries plus the nested flatMap/map closure pushed
+        // this literal past the type checker's time limit and the whole target
+        // failed to compile. Keep them as typed locals.
+        let metadata = turn.responseMetadata
+        let resolvedModel = metadata?.retryModel ?? turn.modelOverride
+        let overridesByFamiliar: [String: String]? = resolvedModel.flatMap { model in
+            familiarId.map { [$0: model] }
+        }
+        let activity: [ActivityStep]? = role == .assistant
+            ? ActivityFold.steps(fromTools: turn.tools)
+            : nil
+        // Argument order follows DisplayMessage's stored-property order —
+        // appliedControls is declared before requestedControls, and the
+        // memberwise initializer requires that order.
         return DisplayMessage(
             role: role,
             familiarId: role == .assistant ? familiarId : nil,
@@ -64,13 +97,38 @@ extension DisplayMessage {
             isError: turn.isError ?? false,
             reasoningEffort: turn.reasoningEffort,
             responseSpeed: turn.responseSpeed,
-            modelOverride: turn.modelOverride,
-            modelOverridesByFamiliar: turn.modelOverride.flatMap { model in
-                familiarId.map { [$0: model] }
-            },
-            activity: role == .assistant
-                ? ActivityFold.steps(fromTools: turn.tools) : nil
+            modelControls: turn.modelControls,
+            appliedControls: metadata?.appliedControls,
+            requestedControls: metadata?.requestedControls,
+            forwardedControls: metadata?.forwardedControls,
+            promptGuidanceControls: metadata?.promptGuidanceControls,
+            rejectedControlFamilies: metadata?.rejectedControlFamilies,
+            requestedModel: metadata?.requestedModel,
+            desiredModel: metadata?.desiredModel,
+            forwardedModel: metadata?.forwardedModel,
+            confirmedModel: metadata?.confirmedModel,
+            modelSource: metadata?.modelSource,
+            modelApplicationState: metadata?.modelApplicationState,
+            modelApplicationReason: metadata?.modelApplicationReason,
+            modelOverride: resolvedModel,
+            modelOverridesByFamiliar: overridesByFamiliar,
+            modelOverrideScope: turn.modelOverrideScope,
+            activity: activity
         )
+    }
+
+    /// Restore the persisted transcript and attach an assistant's authoritative
+    /// retry model to the preceding user request, which owns retry inputs.
+    static func restoredTranscript(from turns: [ChatTurn], familiarId: String?) -> [DisplayMessage] {
+        var messages = turns.map { restored(from: $0, familiarId: familiarId) }
+        for index in turns.indices where turns[index].role == "assistant" {
+            guard let retryModel = turns[index].responseMetadata?.retryModel,
+                  let familiarId,
+                  let userIndex = messages[..<index].lastIndex(where: { $0.role == .user })
+            else { continue }
+            messages[userIndex].recordRetryModel(retryModel, for: familiarId)
+        }
+        return messages
     }
 
     /// Copy transcript content under a fresh message id while retaining the
@@ -84,8 +142,22 @@ extension DisplayMessage {
             attachmentDataUrls: message.attachmentDataUrls,
             reasoningEffort: message.reasoningEffort,
             responseSpeed: message.responseSpeed,
+            modelControls: message.modelControls,
+            appliedControls: message.appliedControls,
+            requestedControls: message.requestedControls,
+            forwardedControls: message.forwardedControls,
+            promptGuidanceControls: message.promptGuidanceControls,
+            rejectedControlFamilies: message.rejectedControlFamilies,
+            requestedModel: message.requestedModel,
+            desiredModel: message.desiredModel,
+            forwardedModel: message.forwardedModel,
+            confirmedModel: message.confirmedModel,
+            modelSource: message.modelSource,
+            modelApplicationState: message.modelApplicationState,
+            modelApplicationReason: message.modelApplicationReason,
             modelOverride: message.modelOverride,
             modelOverridesByFamiliar: message.modelOverridesByFamiliar,
+            modelOverrideScope: message.modelOverrideScope,
             activity: message.activity
         )
     }
@@ -199,8 +271,9 @@ final class ChatThread: Identifiable, Hashable {
     /// the ask but sends a fuller instruction).
     func send(_ text: String, displayText: String? = nil,
               attachments: [CaveClient.ChatAttachment] = [],
-              reasoningEffort: ChatThinkingEffort = .high,
-              responseSpeed: ChatResponseSpeed = .fast,
+              reasoningEffort: ChatThinkingEffort? = nil,
+              responseSpeed: ChatResponseSpeed? = nil,
+              modelControls: [String: String] = [:],
               modelOverride: String? = nil,
               modelOverrideScope: ChatModelOverrideScope? = nil,
               client: CaveClient, onChange: @escaping () -> Void) {
@@ -216,6 +289,7 @@ final class ChatThread: Identifiable, Hashable {
             role: .user, familiarId: nil, text: shown,
             attachmentDataUrls: attachments.map(\.dataUrl),
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope)
         messages.append(userMessage)
@@ -232,10 +306,9 @@ final class ChatThread: Identifiable, Hashable {
                                      userMessageId: userMessage.id,
                                      reasoningEffort: reasoningEffort,
                                      responseSpeed: responseSpeed,
+                                     modelControls: modelControls,
                                      modelOverride: modelOverride,
-                                     modelOverrideScope: modelOverride.flatMap {
-                                         _ in modelOverrideScope ?? .session
-                                     },
+                                     modelOverrideScope: modelOverrideScope ?? (modelOverride == nil ? nil : .session),
                                      client: client, onChange: onChange) }
         }
     }
@@ -245,8 +318,9 @@ final class ChatThread: Identifiable, Hashable {
     /// persists with the thread and `replayQueued` sends it on the next
     /// reconnect. Prose only: slash commands never route here.
     func enqueue(_ text: String, attachments: [CaveClient.ChatAttachment] = [],
-                 reasoningEffort: ChatThinkingEffort = .high,
-                 responseSpeed: ChatResponseSpeed = .fast,
+                 reasoningEffort: ChatThinkingEffort? = nil,
+                 responseSpeed: ChatResponseSpeed? = nil,
+                 modelControls: [String: String] = [:],
                  modelOverride: String? = nil,
                  modelOverrideScope: ChatModelOverrideScope? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -256,6 +330,7 @@ final class ChatThread: Identifiable, Hashable {
             role: .user, familiarId: nil, text: trimmed,
             attachmentDataUrls: attachments.map(\.dataUrl),
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
+            modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope)
         message.queued = true
@@ -279,8 +354,9 @@ final class ChatThread: Identifiable, Hashable {
             let queuedId = queuedMessage.id
             let prompt = queuedMessage.text
             let attachments = Self.attachments(fromDataUrls: queuedMessage.attachmentDataUrls)
-            let reasoningEffort = queuedMessage.reasoningEffort ?? .high
-            let responseSpeed = queuedMessage.responseSpeed ?? .fast
+            let reasoningEffort = queuedMessage.reasoningEffort
+            let responseSpeed = queuedMessage.responseSpeed
+            let modelControls = queuedMessage.modelControls ?? [:]
             mutate(queuedId) { $0.queued = false }
             updatedAt = Date()
             onChange()
@@ -301,10 +377,9 @@ final class ChatThread: Identifiable, Hashable {
                              userMessageId: queuedId,
                              reasoningEffort: reasoningEffort,
                              responseSpeed: responseSpeed,
+                             modelControls: modelControls,
                              modelOverride: queuedMessage.modelOverride,
-                             modelOverrideScope: queuedMessage.modelOverride.flatMap {
-                                 _ in queuedMessage.modelOverrideScope ?? .session
-                             },
+                             modelOverrideScope: queuedMessage.modelOverrideScope ?? (queuedMessage.modelOverride == nil ? nil : .session),
                              client: client, onChange: onChange)
                 // Re-queued mid-replay (offline again) — stop; don't spin.
                 if messages.first(where: { $0.id == queuedId })?.isQueued == true { return }
@@ -330,6 +405,10 @@ final class ChatThread: Identifiable, Hashable {
         let source = messages[..<idx].last(where: { $0.role == .user })
         let prompt = source?.text ?? ""
         let retryModel = source?.retryModel(for: familiarId)
+        let modelBinding = ChatModelTurnBinding.resolveRetry(
+            retryModel: retryModel,
+            originalScope: source?.modelOverrideScope
+        )
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard requireSendProvenance(to: [familiarId]) else { return }
         mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil }
@@ -337,10 +416,11 @@ final class ChatThread: Identifiable, Hashable {
         onChange()
         Task { await self.stream(familiarId: familiarId, prompt: prompt,
                                  into: messageId,
-                                 reasoningEffort: source?.reasoningEffort ?? .high,
-                                 responseSpeed: source?.responseSpeed ?? .fast,
-                                 modelOverride: retryModel,
-                                 modelOverrideScope: retryModel == nil ? nil : .nextMessage,
+                                 reasoningEffort: source?.reasoningEffort,
+                                 responseSpeed: source?.responseSpeed,
+                                 modelControls: source?.modelControls ?? [:],
+                                 modelOverride: modelBinding.modelOverride,
+                                 modelOverrideScope: modelBinding.scope,
                                  client: client, onChange: onChange) }
     }
 
@@ -379,9 +459,7 @@ final class ChatThread: Identifiable, Hashable {
               let familiarId = familiarIds.first,
               let sessionId = sessionIds[familiarId] else { return }
         guard let convo = try await client.conversation(sessionId: sessionId) else { return }
-        messages = convo.turns.map { turn in
-            DisplayMessage.restored(from: turn, familiarId: familiarId)
-        }
+        messages = DisplayMessage.restoredTranscript(from: convo.turns, familiarId: familiarId)
         updatedAt = Date()
     }
 
@@ -438,8 +516,9 @@ final class ChatThread: Identifiable, Hashable {
         prompt: String,
         attachments: [CaveClient.ChatAttachment] = [],
         runId: String,
-        reasoningEffort: ChatThinkingEffort = .high,
-        responseSpeed: ChatResponseSpeed = .fast,
+        reasoningEffort: ChatThinkingEffort? = nil,
+        responseSpeed: ChatResponseSpeed? = nil,
+        modelControls: [String: String] = [:],
         modelOverride: String? = nil,
         modelOverrideScope: ChatModelOverrideScope? = nil
     ) -> CaveClient.SendBody? {
@@ -458,6 +537,7 @@ final class ChatThread: Identifiable, Hashable {
             runId: runId,
             reasoningEffort: reasoningEffort,
             responseSpeed: responseSpeed,
+            modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         )
@@ -487,8 +567,9 @@ final class ChatThread: Identifiable, Hashable {
     private func stream(familiarId: String, prompt: String,
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
                         userMessageId: String? = nil,
-                        reasoningEffort: ChatThinkingEffort = .high,
-                        responseSpeed: ChatResponseSpeed = .fast,
+                        reasoningEffort: ChatThinkingEffort? = nil,
+                        responseSpeed: ChatResponseSpeed? = nil,
+                        modelControls: [String: String] = [:],
                         modelOverride: String? = nil,
                         modelOverrideScope: ChatModelOverrideScope? = nil,
                         client: CaveClient, onChange: @escaping () -> Void) async {
@@ -503,6 +584,7 @@ final class ChatThread: Identifiable, Hashable {
             runId: runId,
             reasoningEffort: reasoningEffort,
             responseSpeed: responseSpeed,
+            modelControls: modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
         ) else { return }
@@ -611,7 +693,7 @@ final class ChatThread: Identifiable, Hashable {
             flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) { $0.text = text; $0.streaming = true }
             onChange()
-        case .done(let isError, let sid, let retryModel):
+        case .done(let isError, let sid, let requestedModel, let desiredModel, let forwardedModel, let confirmedModel, let modelSource, let modelApplicationState, let modelApplicationReason, let retryModel, let requestedControls, let forwardedControls, let promptGuidanceControls, let appliedControls, let rejectedControlFamilies):
             if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
             flush(coalescer, into: messageId, onChange: onChange)
             if let userMessageId {
@@ -619,6 +701,18 @@ final class ChatThread: Identifiable, Hashable {
             }
             mutate(messageId) {
                 $0.streaming = false
+                $0.requestedControls = requestedControls
+                $0.promptGuidanceControls = promptGuidanceControls
+                $0.appliedControls = appliedControls
+                $0.rejectedControlFamilies = rejectedControlFamilies
+                $0.forwardedControls = forwardedControls
+                $0.requestedModel = requestedModel
+                $0.desiredModel = desiredModel
+                $0.forwardedModel = forwardedModel
+                $0.confirmedModel = confirmedModel
+                $0.modelSource = modelSource
+                $0.modelApplicationState = modelApplicationState
+                $0.modelApplicationReason = modelApplicationReason
                 if isError { $0.isError = true }
                 // A persisted "running" step would spin forever after reload —
                 // the turn is over, so settle the trail with its outcome.
@@ -734,13 +828,25 @@ final class ChatThread: Identifiable, Hashable {
         guard !reply.text.isEmpty, reply.text.hasPrefix(streamed) else { return false }
         if let userMessageId {
             mutate(userMessageId) {
-                $0.recordRetryModel(convo.turns[lastUser].modelOverride, for: familiarId)
+                $0.recordRetryModel(reply.responseMetadata?.retryModel ?? convo.turns[lastUser].modelOverride, for: familiarId)
             }
         }
         mutate(messageId) {
             $0.text = reply.text
             $0.isError = reply.isError ?? false
             $0.streaming = false
+            $0.requestedModel = reply.responseMetadata?.requestedModel
+            $0.desiredModel = reply.responseMetadata?.desiredModel
+            $0.forwardedModel = reply.responseMetadata?.forwardedModel
+            $0.confirmedModel = reply.responseMetadata?.confirmedModel
+            $0.modelSource = reply.responseMetadata?.modelSource
+            $0.modelApplicationState = reply.responseMetadata?.modelApplicationState
+            $0.modelApplicationReason = reply.responseMetadata?.modelApplicationReason
+            $0.requestedControls = reply.responseMetadata?.requestedControls
+            $0.forwardedControls = reply.responseMetadata?.forwardedControls
+            $0.promptGuidanceControls = reply.responseMetadata?.promptGuidanceControls
+            $0.appliedControls = reply.responseMetadata?.appliedControls
+            $0.rejectedControlFamilies = reply.responseMetadata?.rejectedControlFamilies
             if let settled = ActivityFold.settle($0.activitySteps,
                                                  success: !(reply.isError ?? false)) {
                 $0.activity = settled

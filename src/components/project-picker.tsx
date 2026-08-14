@@ -11,6 +11,12 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
+import {
+  RECENT_SECTION_SIZE,
+  loadFrecencyStore,
+  rankProjectsByFrecency,
+  rememberProjectPick,
+} from "@/lib/project-frecency";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
@@ -40,11 +46,16 @@ export type AddProjectFlow = {
  */
 export function useAddProjectFlow(args: {
   familiarId: string | null;
-  createProject: (
+  createProject?: (
     name: string,
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   projects: CaveProject[];
   onAdded: (projectId: string) => void;
 }): AddProjectFlow {
@@ -61,7 +72,8 @@ export function useAddProjectFlow(args: {
     const result = await addChatProject({
       root,
       familiarId: args.familiarId,
-      createProject: args.createProject,
+      createProject: args.createProject ?? (async () => null),
+      createProjectOrThrow: args.createProjectOrThrow,
       existingProjectId: existing?.id ?? null,
     });
     setAdding(false);
@@ -171,6 +183,50 @@ export function ProjectPickerPopover({
     );
   }, [sortedProjects, query]);
 
+  // Sampled when the popover OPENS, not on every render: picking a project
+  // must not reshuffle the section under the cursor mid-interaction, and a
+  // clock tick should not either. Suppressed while filtering — a query is
+  // already a narrower answer than "what you use a lot" (cave-ow9f).
+  const recent = useMemo(() => {
+    if (!open || query.trim()) return [];
+    return rankProjectsByFrecency(
+      sortedProjects,
+      loadFrecencyStore(),
+      Date.now(),
+      RECENT_SECTION_SIZE,
+    ).recent;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `open` is the sampling edge.
+  }, [open, sortedProjects, query]);
+
+  const renderProjectRow = (entry: CaveProject, key: string) => (
+    <PopoverItem
+      key={key}
+      leading={<ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" />}
+      checked={entry.id === selected?.id}
+      active={entry.id === selected?.id}
+      title={`${entry.root}${entry.access ? ` · ${projectAccessLabel(entry.access)} access` : ""}`}
+      onSelect={() => pick(entry)}
+    >
+      <span className="cave-project-picker__option">
+        <span className="cave-project-picker__option-heading">
+          <span className="cave-project-picker__option-name">{entry.name}</span>
+          {entry.access ? (
+            <span className="cave-project-picker__option-access">
+              {projectAccessLabel(entry.access)}
+            </span>
+          ) : null}
+        </span>
+        <span className="cave-project-picker__option-root">{entry.root}</span>
+      </span>
+    </PopoverItem>
+  );
+
+  const pick = (project: { id: string; root: string }) => {
+    rememberProjectPick(project.root);
+    onChange(project.id);
+    close();
+  };
+
   const close = () => {
     onOpenChange(false);
     setQuery("");
@@ -204,8 +260,9 @@ export function ProjectPickerPopover({
             event.preventDefault();
             const match = projectForPickerQuery(sortedProjects, query);
             if (!match) return;
-            onChange(match.id);
-            close();
+            // Same path as clicking a row: typing a project's name and pressing
+            // Enter is a pick, and frecency has to learn from it too.
+            pick(match);
           }}
           placeholder="Filter projects…"
           aria-label="Filter projects"
@@ -225,33 +282,19 @@ export function ProjectPickerPopover({
             No project
           </PopoverItem>
         ) : null}
-        {visible.map((entry) => (
-          <PopoverItem
-            key={entry.id}
-            leading={
-              <ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" />
-            }
-            checked={entry.id === selected?.id}
-            active={entry.id === selected?.id}
-            title={`${entry.root}${entry.access ? ` · ${projectAccessLabel(entry.access)} access` : ""}`}
-            onSelect={() => {
-              onChange(entry.id);
-              close();
-            }}
-          >
-            <span className="cave-project-picker__option">
-              <span className="cave-project-picker__option-heading">
-                <span className="cave-project-picker__option-name">{entry.name}</span>
-                {entry.access ? (
-                  <span className="cave-project-picker__option-access">
-                    {projectAccessLabel(entry.access)}
-                  </span>
-                ) : null}
-              </span>
-              <span className="cave-project-picker__option-root">{entry.root}</span>
-            </span>
-          </PopoverItem>
-        ))}
+        {/* cave-ow9f: a capped Recent section pins on top. The A-Z list below
+            is unchanged and still holds every project — the section is
+            additive, so a list you have learned the shape of never reorders
+            under your cursor and never develops holes. */}
+        {recent.length > 0 ? (
+          <>
+            <PopoverLabel>Recent</PopoverLabel>
+            {recent.map((entry) => renderProjectRow(entry, `recent-${entry.id}`))}
+            <PopoverSeparator />
+            <PopoverLabel>All projects</PopoverLabel>
+          </>
+        ) : null}
+        {visible.map((entry) => renderProjectRow(entry, entry.id))}
         {query.trim() && visible.length === 0 ? (
           <div className="cave-project-picker__none">No projects match</div>
         ) : null}
@@ -306,6 +349,7 @@ export function ProjectPicker({
   defaultToFirst = true,
   familiarId = null,
   createProject,
+  createProjectOrThrow,
   disabled = false,
   ariaLabel,
   className,
@@ -318,12 +362,18 @@ export function ProjectPicker({
   /** False keeps null rendered as "Choose project" until a durable id is selected. */
   defaultToFirst?: boolean;
   familiarId?: string | null;
-  /** From the caller's useProjects(); presence enables the "Add project…" row. */
+  /** From the caller's useProjects(); either creator enables the "Add project…" row. */
   createProject?: (
     name: string,
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  /** Throwing creator from the caller's useProjects(); preserves server guidance. */
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   disabled?: boolean;
   ariaLabel: string;
   className?: string;
@@ -341,9 +391,11 @@ export function ProjectPicker({
   const addFlow = useAddProjectFlow({
     familiarId,
     createProject: createProject ?? (async () => null),
+    createProjectOrThrow,
     projects,
     onAdded: onChange,
   });
+  const canAddProject = Boolean(createProject || createProjectOrThrow);
 
   return (
     <>
@@ -381,7 +433,7 @@ export function ProjectPicker({
         onChange={onChange}
         allowNoProject={allowNoProject}
         defaultToFirst={defaultToFirst}
-        onAddProject={createProject ? addFlow.beginAddProject : undefined}
+        onAddProject={canAddProject ? addFlow.beginAddProject : undefined}
         addingProject={addFlow.adding}
         ariaLabel={ariaLabel}
       />
@@ -390,7 +442,7 @@ export function ProjectPicker({
           {addFlow.addError}
         </span>
       ) : null}
-      {createProject ? addFlow.addProjectModal : null}
+      {canAddProject ? addFlow.addProjectModal : null}
     </>
   );
 }

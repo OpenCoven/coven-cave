@@ -1,6 +1,16 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { LIVE_TOOL_INPUT_CAP, LIVE_TOOL_OUTPUT_CAP, MAX_RECORDED_TOOL_EVENTS, MAX_SETTLED_ENVELOPE_IDS, MAX_SETTLED_RECONCILIATION_CALLS, ToolCallTracker, capLiveToolPayload, toPersistedTools } from "./chat-tool-events.ts";
+import {
+  LIVE_TOOL_INPUT_CAP,
+  LIVE_TOOL_OUTPUT_CAP,
+  MAX_RECORDED_TOOL_EVENTS,
+  MAX_SETTLED_ENVELOPE_IDS,
+  MAX_SETTLED_RECONCILIATION_CALLS,
+  ToolCallTracker,
+  capLiveToolPayload,
+  toolTextCorrection,
+  toPersistedTools,
+} from "./chat-tool-events.ts";
 
 const tracker = new ToolCallTracker(() => 1_000);
 assert.equal(tracker.envelopeToolResult("call_1", "late terminal output", false), null);
@@ -55,6 +65,74 @@ assert.ok((largeEnd?.output.length ?? 0) <= 16_100, "reordered results are cappe
 assert.ok(
   new TextEncoder().encode(capLiveToolPayload("😀".repeat(10_000), 16_000) ?? "").byteLength <= 16_000,
   "unicode tool payloads respect byte rather than UTF-16 code-unit caps",
+);
+
+const truncationSuffix = "\n[tool payload truncated]";
+const largeEmojiPayload = "😀".repeat((256 * 1024) / 4);
+const cappedLargeEmojiPayload = capLiveToolPayload(largeEmojiPayload, 16_000) ?? "";
+assert.ok(
+  new TextEncoder().encode(cappedLargeEmojiPayload).byteLength <= 16_000,
+  "large emoji payloads remain within the exact UTF-8 byte cap",
+);
+assert.ok(
+  cappedLargeEmojiPayload.endsWith(truncationSuffix),
+  "large emoji payloads retain the truncation marker",
+);
+assert.doesNotMatch(
+  cappedLargeEmojiPayload,
+  /\uFFFD/,
+  "UTF-8 boundary truncation never emits a replacement character",
+);
+function hasLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+assert.equal(
+  hasLoneSurrogate(cappedLargeEmojiPayload),
+  false,
+  "UTF-8 boundary truncation never emits a lone surrogate",
+);
+
+const malformedBoundaryCap = new TextEncoder().encode(truncationSuffix).byteLength + 10;
+const cappedMalformedPayload = capLiveToolPayload(
+  `ab\uD800${"x".repeat(100)}`,
+  malformedBoundaryCap,
+) ?? "";
+assert.equal(
+  cappedMalformedPayload,
+  `ab${truncationSuffix}`,
+  "malformed UTF-16 stops before a lone surrogate rather than encoding a replacement character",
+);
+assert.doesNotMatch(cappedMalformedPayload, /\uFFFD/);
+assert.equal(hasLoneSurrogate(cappedMalformedPayload), false);
+
+const emojiBoundaryCap = new TextEncoder().encode(truncationSuffix).byteLength + 5;
+assert.equal(
+  capLiveToolPayload(`abc😀${"x".repeat(100)}`, emojiBoundaryCap),
+  `abc${truncationSuffix}`,
+  "a byte cap inside a multi-byte code point backs up only to its UTF-8 boundary",
+);
+
+const asciiCap = 128;
+const cappedAsciiPayload = capLiveToolPayload("x".repeat(asciiCap + 1), asciiCap) ?? "";
+assert.equal(
+  new TextEncoder().encode(cappedAsciiPayload).byteLength,
+  asciiCap,
+  "ASCII truncation continues to fill the byte cap exactly",
+);
+assert.equal(
+  cappedAsciiPayload,
+  `${"x".repeat(asciiCap - truncationSuffix.length)}${truncationSuffix}`,
+  "ASCII truncation preserves the existing prefix and suffix behavior",
 );
 
 const linkedHook = new ToolCallTracker(() => 1_000);
@@ -211,5 +289,85 @@ largeSameName.hookEnd("Read", "first output", false);
 const largeSameNameRecords = new Map(largeSameName.snapshot().map((event) => [event.id, event]));
 assert.equal(largeSameNameRecords.get("large-a")?.output, "first output");
 assert.equal(largeSameNameRecords.get("large-b")?.output, "second output");
+
+function applyTextCorrection(
+  tracker: ToolCallTracker,
+  previous: string,
+  next: string,
+) {
+  const correction = toolTextCorrection(previous, next);
+  if (correction) tracker.rebaseTextOffsets(correction.after, correction.delta);
+  return correction;
+}
+
+const initialSnapshot = new ToolCallTracker(() => 1_000);
+initialSnapshot.envelopeToolUse("initial-snapshot", "read", undefined, 0);
+assert.equal(
+  applyTextCorrection(initialSnapshot, "", "Initial full answer"),
+  null,
+  "an initial full snapshot does not rebase a tool that happened before text",
+);
+assert.equal(initialSnapshot.snapshot()[0]?.textOffset, 0);
+
+const appendedSuffix = new ToolCallTracker(() => 1_000);
+appendedSuffix.envelopeToolUse("append-suffix", "read", undefined, 5);
+assert.deepEqual(
+  applyTextCorrection(appendedSuffix, "Hello", "Hello world"),
+  { after: 5, delta: 6 },
+  "an appended suffix corrects offsets from the old text end",
+);
+assert.equal(appendedSuffix.snapshot()[0]?.textOffset, 11);
+
+const commonPrefix = new ToolCallTracker(() => 1_000);
+commonPrefix.envelopeToolUse("before-prefix", "read", undefined, 4);
+commonPrefix.envelopeToolUse("after-prefix", "write", undefined, 10);
+assert.deepEqual(
+  applyTextCorrection(commonPrefix, "prefix old", "prefix new answer"),
+  { after: 7, delta: 7 },
+  "a divergent correction starts at the longest common prefix",
+);
+assert.deepEqual(
+  commonPrefix.snapshot().map((event) => event.textOffset),
+  [4, 17],
+  "tools before the correction boundary stay fixed while later tools shift",
+);
+
+const shortenedReplacement = new ToolCallTracker(() => 1_000);
+shortenedReplacement.envelopeToolUse("before-shortening", "read", undefined, 6);
+shortenedReplacement.envelopeToolUse("after-shortening", "write", undefined, 15);
+assert.deepEqual(
+  applyTextCorrection(shortenedReplacement, "prefix long tail", "prefix x"),
+  { after: 7, delta: -8 },
+  "a shorter replacement reports the actual correction boundary and length delta",
+);
+assert.deepEqual(
+  shortenedReplacement.snapshot().map((event) => event.textOffset),
+  [6, 7],
+  "shortening shifts only tools at or after the corrected suffix",
+);
+
+const substantialShortening = new ToolCallTracker(() => 1_000);
+substantialShortening.envelopeToolUse("before-boundary", "read", undefined, 6);
+substantialShortening.envelopeToolUse("at-boundary", "write", undefined, 7);
+substantialShortening.envelopeToolUse("after-boundary", "bash", undefined, 12);
+substantialShortening.rebaseTextOffsets(7, -100);
+assert.deepEqual(
+  substantialShortening.snapshot().map((event) => [event.id, event.textOffset]),
+  [
+    ["before-boundary", 6],
+    ["at-boundary", 7],
+    ["after-boundary", 7],
+  ],
+  "substantial shortening keeps prefix tools fixed, clamps corrected-suffix tools at the boundary, and preserves insertion order",
+);
+
+const duplicateFinal = new ToolCallTracker(() => 1_000);
+duplicateFinal.envelopeToolUse("duplicate-final", "read", undefined, 4);
+assert.equal(
+  applyTextCorrection(duplicateFinal, "same text", "same text"),
+  null,
+  "an identical final snapshot is a no-op",
+);
+assert.equal(duplicateFinal.snapshot()[0]?.textOffset, 4);
 
 console.log("chat-tool-events.test.ts: ok");

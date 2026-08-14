@@ -95,8 +95,8 @@ assert.match(
 );
 assert.match(
   home,
-  /const projectLaunchReady =[\s\S]*projectsLoadedSuccessfully[\s\S]*!projectsLoading[\s\S]*!projectsError[\s\S]*selectedProject\?\.access/,
-  "Home readiness should require a fresh accessible selected project",
+  /const projectLaunchReady = isHomeComposerProjectLaunchReady\(\{[\s\S]*familiarId: selectedFamiliarId[\s\S]*projectsLoadedSuccessfully[\s\S]*projectsLoading[\s\S]*projectsError[\s\S]*selectedProject,/,
+  "Home should pass the familiar and authoritative project state to its launch gate",
 );
 assert.doesNotMatch(home, /\ballowNoProject\b/, "Home should not offer No project for Chat launch");
 assert.doesNotMatch(

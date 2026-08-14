@@ -19,9 +19,10 @@
  * missing are omitted rather than invented.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Modal } from "@/components/ui/modal";
 import { CitationSources } from "@/components/ui/citation";
 import { ClampedText } from "@/components/ui/clamped-text";
 import { Tabs } from "@/components/ui/tabs";
@@ -31,15 +32,19 @@ import { Icon } from "@/lib/icon";
 import {
   allowedResearchActions,
   describeResearchSchedule,
+  RESEARCH_DIRECTION_MAX_LENGTH,
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
+  researchPhaseMeta,
   researchPhaseStatuses,
+  researchDiagnosticTrace,
   researchSourceStatusCounts,
   type ResearchMission,
   type ResearchMissionAction,
   type ResearchMissionActionInput,
 } from "@/lib/research-missions";
+import { generateResearchRefineDirection } from "@/lib/research-refine-direction";
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { fetchResearchWorkspacePath } from "./research-artifact-actions";
@@ -48,6 +53,15 @@ import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evide
 type Props = {
   mission: ResearchMission | null;
   showEvidence: boolean;
+  /** Collapse the evidence rail to its spine. Absent = not collapsible here
+   *  (focus mode already hides the rail outright). */
+  onCollapseEvidence?(): void;
+  /** Reopen from the spine; rendered in the rail's grid slot when collapsed. */
+  onOpenEvidence?(): void;
+  /** Current evidence-rail width in px (owned by the Desk tab's pane state). */
+  railWidth?: number;
+  /** Drag/keyboard separator bindings; absent means the rail is not resizable. */
+  railSeparatorProps?: Record<string, unknown>;
   onOpenSession(sessionId: string): void;
   onOpenUrl(url: string): void;
   /** Quick link to the Resources tab (Saved resources). */
@@ -92,9 +106,29 @@ const END_ACTIONS: ReadonlySet<ResearchMissionAction> = new Set(["cancel", "arch
 
 const LIVE_STATUSES = new Set<ResearchMission["status"]>(["queued", "planning", "running"]);
 
+function newDirectionRunId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `research-direction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function stopDirectionRun(runId: string | null) {
+  if (!runId) return;
+  void fetch("/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId }),
+  }).catch(() => {
+    // The local abort still retires the UI generation if the stop route is unavailable.
+  });
+}
+
 export function ResearchMissionDetail({
   mission,
   showEvidence,
+  onCollapseEvidence,
+  onOpenEvidence,
+  railWidth,
+  railSeparatorProps,
   onOpenSession,
   onOpenUrl,
   onShowResources,
@@ -108,13 +142,20 @@ export function ResearchMissionDetail({
   useMinuteTick();
   const [busy, setBusy] = useState(false);
   const [direction, setDirection] = useState("");
+  const [directionDrafting, setDirectionDrafting] = useState(false);
+  const [directionSuggestion, setDirectionSuggestion] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnosticsCopiedFor, setDiagnosticsCopiedFor] = useState<string | null>(null);
   // null = untouched; the retry payload then adapts to the failure instead.
   const [retryRoot, setRetryRoot] = useState<string | null>(null);
-  // Toggles the "Saved" summary's copy-workspace-path button label; reverted
-  // by copyTimer below.
+  // Toggles the "Saved" summary's copy-workspace-path button label.
   const [workspaceCopied, setWorkspaceCopied] = useState(false);
   const missionId = mission?.id ?? null;
+  // Associate the transient confirmation with the copied mission at render time.
+  // Effects run after a new mission has rendered, so a bare boolean would
+  // briefly label mission B as copied when the operator switches from A.
+  const diagnosticsCopied = diagnosticsCopiedFor === missionId;
   // Which rail pane opens on a fresh mission: a run still gathering or waiting
   // on triage opens on Sources; a settled run opens on what it produced.
   const missionStatus = mission?.status ?? null;
@@ -136,27 +177,55 @@ export function ResearchMissionDetail({
   // the user switched missions is discarded instead of applying its
   // busy/error/announce state to the wrong mission's view.
   const missionIdRef = useRef(missionId);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const directionRef = useRef(direction);
+  directionRef.current = direction;
+  const directionAbortRef = useRef<AbortController | null>(null);
+  const directionRunIdRef = useRef<string | null>(null);
+  const directionGenerationRef = useRef(0);
+  const workspaceCopyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diagnosticsCopyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A mission switch resets every piece of per-mission action state — the
   // in-flight action belongs to the previous mission (its settle handlers
   // check missionIdRef and discard), so the fresh mission starts unblocked.
   useEffect(() => {
     missionIdRef.current = missionId;
+    directionGenerationRef.current += 1;
+    stopDirectionRun(directionRunIdRef.current);
+    directionRunIdRef.current = null;
+    directionAbortRef.current?.abort();
+    directionAbortRef.current = null;
     setBusy(false);
+    setDirectionDrafting(false);
+    setDirectionSuggestion(null);
     setRetryRoot(null);
     setActionError(null);
     setDirection("");
   }, [missionId]);
 
-  // The copied-path confirmation is per-mission UI state too. Its cleanup
-  // clears any pending revert timer before the next mission's effect runs
-  // (or on unmount) so a stale timer from mission A can never flip mission
-  // B's confirmation back off early.
+  useEffect(() => () => {
+    directionGenerationRef.current += 1;
+    stopDirectionRun(directionRunIdRef.current);
+    directionRunIdRef.current = null;
+    directionAbortRef.current?.abort();
+  }, []);
+
+  // A diagnostics dialog belongs to the selected run. Close it when the user
+  // moves to another mission so its details cannot be mistaken for the new
+  // selection.
+  useEffect(() => {
+    setDiagnosticsOpen(false);
+    setDiagnosticsCopiedFor(null);
+  }, [missionId]);
+
+  // Copy confirmations are per-mission UI state. Clear both pending reverts
+  // before the next mission's effect runs (or on unmount), so a stale timer
+  // from mission A can never flip mission B's confirmation back off early.
   useEffect(() => {
     setWorkspaceCopied(false);
     return () => {
-      if (copyTimer.current) clearTimeout(copyTimer.current);
+      if (workspaceCopyTimer.current) clearTimeout(workspaceCopyTimer.current);
+      if (diagnosticsCopyTimer.current) clearTimeout(diagnosticsCopyTimer.current);
     };
   }, [missionId]);
 
@@ -181,6 +250,20 @@ export function ResearchMissionDetail({
     : iteration
       ? `pass ${iteration.number} of ${mission.bounds.maxIterations}`
       : `0 of ${mission.bounds.maxIterations} passes`;
+  const phaseStatuses = researchPhaseStatuses(mission, PHASE_IDS);
+  const phaseMeta = researchPhaseMeta(mission, PHASE_IDS);
+  // Wash width = settled phases. "Settled" counts skipped alongside succeeded:
+  // a cancelled run's remaining phases are done being waited on, so a wash
+  // frozen at 20% would read as still-in-progress.
+  const phaseProgress =
+    phaseStatuses.filter((status) => status === "succeeded" || status === "skipped").length
+    / PHASES.length;
+  // One dot per allowed pass, capped so a 40-iteration budget stays a row and
+  // not a ribbon. The count text next to it carries the exact numbers.
+  const passCount = Math.max(1, Math.min(8, mission.bounds.maxIterations));
+  const currentPass = iteration?.number ?? 0;
+  const passDots = Array.from({ length: passCount }, (_, index) =>
+    index < currentPass - 1 ? "done" : index === currentPass - 1 ? "current" : "pending");
   // The design's "draft synthesis updated · vN" tile — only when the primary
   // deliverable is still a working draft; its version is the iteration that
   // wrote it. Every mission now also carries the 3 standard refs (findings,
@@ -191,6 +274,25 @@ export function ResearchMissionDetail({
   const draftArtifact = mission.artifacts.find(
     (artifact) => artifact.relativePath === "artifacts/primary.md" && artifact.state === "working",
   );
+  const primaryArtifact = mission.artifacts.find(
+    (artifact) => artifact.relativePath === "artifacts/primary.md",
+  );
+  const diagnostics = [
+    ["Error", mission.lastError ?? "No current error"],
+    ["Status", mission.status],
+    ["Pass", iteration ? `${iteration.number} of ${mission.bounds.maxIterations}` : "No pass recorded"],
+    ["Control", iteration?.decisionReason ?? "No control decision recorded"],
+    ["Flow run", iteration?.flowRunId ?? "No flow run recorded"],
+    ["Session", sessionId ?? "No session recorded"],
+    [
+      "Primary artifact",
+      primaryArtifact
+        ? `${primaryArtifact.relativePath} · ${primaryArtifact.state}`
+        : "No primary artifact reference",
+    ],
+    ["Sources", `${mission.sources.length} recorded · ${sourceCounts.used} used`],
+  ] as const;
+  const traceJson = diagnosticsOpen ? JSON.stringify(researchDiagnosticTrace(mission), null, 2) : "";
   const isCheckpointLike = mission.status === "checkpoint" || mission.status === "paused";
   const isLive = LIVE_STATUSES.has(mission.status);
   // One line of run context above the open pane — the state the two stacked
@@ -267,6 +369,70 @@ export function ResearchMissionDetail({
       announce(`Research ${input.action} applied.`);
     },
   );
+  const draftDirection = async () => {
+    if (directionDrafting || busy) return;
+    const startedFor = mission.id;
+    const baseDraft = directionRef.current;
+    directionGenerationRef.current += 1;
+    const generation = directionGenerationRef.current;
+    directionAbortRef.current?.abort();
+    const controller = new AbortController();
+    directionAbortRef.current = controller;
+    const runId = newDirectionRunId();
+    directionRunIdRef.current = runId;
+    setDirectionDrafting(true);
+    setDirectionSuggestion(null);
+    setActionError(null);
+    try {
+      const result = await generateResearchRefineDirection({
+        mission,
+        currentDraft: baseDraft,
+        runId,
+        signal: controller.signal,
+      });
+      if (
+        generation !== directionGenerationRef.current
+        || missionIdRef.current !== startedFor
+      ) {
+        return;
+      }
+      if (result.error) {
+        if (result.error === "cancelled") return;
+        const message = `The familiar could not draft a direction: ${result.error}.`;
+        setActionError(message);
+        announce(message);
+        return;
+      }
+      if (directionRef.current === baseDraft) {
+        setDirection(result.text);
+        announce("Refined direction drafted.");
+      } else {
+        setDirectionSuggestion(result.text);
+        announce("Direction ready — your edits were kept.");
+      }
+    } catch (error) {
+      if (
+        generation !== directionGenerationRef.current
+        || missionIdRef.current !== startedFor
+      ) {
+        return;
+      }
+      const message = error instanceof Error
+        ? `The familiar could not draft a direction: ${error.message}.`
+        : "The familiar could not draft a direction.";
+      setActionError(message);
+      announce(message);
+    } finally {
+      if (
+        generation === directionGenerationRef.current
+        && missionIdRef.current === startedFor
+      ) {
+        directionAbortRef.current = null;
+        directionRunIdRef.current = null;
+        setDirectionDrafting(false);
+      }
+    }
+  };
   const runAutomationAction = async (action: "pause" | "resume" | "run-now") => {
     const automation = mission.automation;
     if (!automation) return;
@@ -308,8 +474,25 @@ export function ResearchMissionDetail({
     }
     setWorkspaceCopied(true);
     announce("Workspace path copied.");
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setWorkspaceCopied(false), 2000);
+    if (workspaceCopyTimer.current) clearTimeout(workspaceCopyTimer.current);
+    workspaceCopyTimer.current = setTimeout(() => setWorkspaceCopied(false), 2000);
+  };
+
+  const copyDiagnosticTrace = async () => {
+    const startedFor = mission.id;
+    setActionError(null);
+    const copied = await copyText(traceJson);
+    if (missionIdRef.current !== startedFor) return;
+    if (!copied) {
+      const message = "Diagnostic JSON could not be copied.";
+      setActionError(message);
+      announce(message);
+      return;
+    }
+    setDiagnosticsCopiedFor(startedFor);
+    announce("Diagnostic JSON copied to clipboard.");
+    if (diagnosticsCopyTimer.current) clearTimeout(diagnosticsCopyTimer.current);
+    diagnosticsCopyTimer.current = setTimeout(() => setDiagnosticsCopiedFor(null), 2000);
   };
 
   // Evidence-delta triage reuses the ledger's exact source-update mechanism:
@@ -346,6 +529,10 @@ export function ResearchMissionDetail({
       <div
         className="research-mission-detail__body"
         data-evidence-open={showEvidence}
+        data-evidence-spine={!showEvidence && Boolean(onOpenEvidence)}
+        style={railWidth === undefined
+          ? undefined
+          : ({ "--research-rail-width": `${railWidth}px` } as CSSProperties)}
       >
         <div className="research-desk-center">
           <header className="research-mission-detail__header">
@@ -371,27 +558,53 @@ export function ResearchMissionDetail({
             ) : null}
           </header>
 
-          {/* ── Stepper card: 6 reconciled phases + bounds row ── */}
-          <div className="research-desk-stepper">
+          {/* ── Stepper card: 6 reconciled phases + bounds row ──
+             Each node carries a meta line derived from the mission (source
+             counts, conflicts, artifacts), and the card washes left-to-right
+             in proportion to how many phases have actually settled. */}
+          <div
+            className="research-desk-stepper"
+            style={{ "--research-progress": `${Math.round(phaseProgress * 100)}%` } as CSSProperties}
+          >
+            <span className="research-desk-stepper__wash" aria-hidden />
             <ol className="research-desk-stepper__track" aria-label="Research progress">
-              {researchPhaseStatuses(mission, PHASE_IDS).map((status, index) => {
+              {phaseStatuses.map((status, index) => {
                 const [id, label] = PHASES[index];
                 const step = iteration?.steps?.find((item) => item.id === id);
                 // A stale step detail ("Searching sources…") contradicts a
                 // reconciled status; expose the detail only when the status is
                 // still the step's own report.
                 const reconciled = status !== (step?.status ?? "pending");
+                const meta = phaseMeta[index];
+                // The Control phase is where a checkpoint is waiting on a
+                // person — flag it even when its own status is still pending.
+                const awaiting = id === "control" && mission.status === "checkpoint";
                 return (
-                  <li key={id} className={`research-desk-step research-desk-step--${status}`}>
-                    <span className="research-desk-step__node" aria-hidden>
-                      {status === "succeeded" ? (
-                        <Icon name="ph:check" width={11} height={11} aria-hidden />
-                      ) : status === "failed" ? (
-                        <Icon name="ph:x" width={10} height={10} aria-hidden />
+                  <li
+                    key={id}
+                    className={`research-desk-step research-desk-step--${status}`}
+                    data-awaiting={awaiting || undefined}
+                    title={`${label} — ${meta === "—" ? status : meta}`}
+                  >
+                    <span className="research-desk-step__rail">
+                      <span className="research-desk-step__node" aria-hidden>
+                        {status === "succeeded" ? (
+                          <Icon name="ph:check" width={11} height={11} aria-hidden />
+                        ) : status === "failed" ? (
+                          <Icon name="ph:x" width={10} height={10} aria-hidden />
+                        ) : null}
+                      </span>
+                      {index < PHASES.length - 1 ? (
+                        <span className="research-desk-step__line" aria-hidden />
                       ) : null}
                     </span>
                     <span className="research-desk-step__label">{label}</span>
-                    <span className="sr-only"> — {reconciled ? status : step?.detail || status}</span>
+                    <span className="research-desk-step__meta" aria-hidden>{meta}</span>
+                    <span className="sr-only">
+                      {" — "}
+                      {reconciled ? status : step?.detail || status}
+                      {meta === "—" ? "" : `, ${meta}`}
+                    </span>
                   </li>
                 );
               })}
@@ -412,10 +625,25 @@ export function ResearchMissionDetail({
                       ) : null}
                       <span className="sr-only"> — {reading.detail}</span>
                     </dd>
+                    {reading.progress === undefined ? null : (
+                      <span
+                        className="research-bound-bar"
+                        aria-hidden
+                        style={{ "--research-bound-fill": `${Math.round(reading.progress * 100)}%` } as CSSProperties}
+                      />
+                    )}
                   </div>
                 ))}
               </dl>
-              <span className="research-desk-stepper__pass">{passNote}</span>
+              <span className="research-desk-stepper__pass" title={passNote}>
+                <span className="research-desk-stepper__pass-label">Pass</span>
+                <span className="research-desk-stepper__dots" aria-hidden>
+                  {passDots.map((state, index) => (
+                    <i key={index} data-state={state} />
+                  ))}
+                </span>
+                <span className="research-desk-stepper__pass-text">{passNote}</span>
+              </span>
             </div>
           </div>
 
@@ -424,6 +652,15 @@ export function ResearchMissionDetail({
             <div className="research-mission-stop" role="status">
               <Icon name="ph:warning" width={14} height={14} aria-hidden />
               <span>{mission.lastError}</span>
+              <Button
+                className="research-mission-stop__diagnostics"
+                size="xs"
+                variant="ghost"
+                leadingIcon="ph:terminal-window"
+                onClick={() => setDiagnosticsOpen(true)}
+              >
+                View diagnostics
+              </Button>
             </div>
           ) : iteration?.decisionReason ? (
             <div className="research-mission-decision" role="status">
@@ -431,6 +668,48 @@ export function ResearchMissionDetail({
               <p>{iteration.decisionReason}</p>
             </div>
           ) : null}
+
+          <Modal
+            open={diagnosticsOpen}
+            onClose={() => setDiagnosticsOpen(false)}
+            breadcrumb={["Research", "Diagnostics"]}
+            footerActions={(
+              <>
+                <Button variant="ghost" leadingIcon={diagnosticsCopied ? "ph:check" : "ph:copy"} onClick={copyDiagnosticTrace}>
+                  {diagnosticsCopied ? "Copied JSON" : "Copy trace JSON"}
+                </Button>
+                <Button variant="secondary" onClick={() => setDiagnosticsOpen(false)}>Close</Button>
+              </>
+            )}
+          >
+            <div className="research-mission-diagnostics">
+              <div className="research-mission-diagnostics__intro">
+                <span className="research-mission-diagnostics__eyebrow"><Icon name="ph:terminal-window" width={14} height={14} aria-hidden />Trace record</span>
+                <p>Persisted run state, ordered for incident review. Copying produces a privacy-bounded JSON report; it excludes workspace paths, source URLs, and the research brief.</p>
+              </div>
+              {actionError ? <p className="research-mission-error" role="alert">{actionError}</p> : null}
+              <section className="research-mission-diagnostics__finding" aria-labelledby="research-diagnostics-finding">
+                <span id="research-diagnostics-finding">Current finding</span>
+                <strong>{mission.lastError ?? "No failure is persisted for this mission."}</strong>
+                <p>{iteration?.steps?.some((step) => step.status === "failed") ? "A failed phase is recorded below." : "No failed phase detail was persisted; use the run and session references to continue investigation."}</p>
+              </section>
+              <dl>
+                {diagnostics.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <section className="research-mission-diagnostics__timeline" aria-labelledby="research-diagnostics-timeline">
+                <div><h3 id="research-diagnostics-timeline">Phase trace</h3><span>{iteration?.steps?.length ?? 0} recorded</span></div>
+                {iteration?.steps?.length ? <ol>{iteration.steps.map((step) => (
+                  <li key={`${step.id}-${step.type}`}><span className={`research-mission-diagnostics__phase research-mission-diagnostics__phase--${step.status}`}>{step.status}</span><strong>{step.type}</strong><p>{step.detail ?? "No phase detail recorded."}</p></li>
+                ))}</ol> : <p className="research-mission-diagnostics__empty">No phase trace was persisted for this run.</p>}
+              </section>
+              <p className="research-mission-diagnostics__availability"><Icon name="ph:info" width={14} height={14} aria-hidden />Daemon trace: not recorded. This report is mission-state evidence, not a reconstructed process log.</p>
+            </div>
+          </Modal>
 
           {/* ── Checkpoint / paused: what changed + refine box.
                 Tiles derive from real data only — a tile whose datum is
@@ -568,8 +847,8 @@ export function ResearchMissionDetail({
             </div>
           ) : null}
 
-          {/* ── Refine box: the design's "✦ Refine direction before continuing"
-                wired to the existing refine action. ── */}
+          {/* ── Refine box: the familiar may propose the next-pass direction,
+                but only the separate reviewed action continues the mission. ── */}
           {actions.includes("refine") ? (
             <div className="research-desk-refine">
               <span className="research-desk-refine__kicker">
@@ -578,18 +857,65 @@ export function ResearchMissionDetail({
               </span>
               <textarea
                 value={direction}
-                onChange={(event) => setDirection(event.target.value)}
+                onChange={(event) => {
+                  setDirection(event.target.value);
+                  setDirectionSuggestion(null);
+                }}
                 placeholder="What should the next iteration prioritize?"
                 aria-label="Refined research direction"
+                maxLength={RESEARCH_DIRECTION_MAX_LENGTH}
               />
-              <Button
-                size="xs"
-                variant="secondary"
-                disabled={busy || !direction.trim()}
-                onClick={() => void runAction({ action: "refine", direction })}
-              >
-                Refine and continue
-              </Button>
+              <div className="research-desk-refine__actions">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  leadingIcon="ph:sparkle"
+                  loading={directionDrafting}
+                  disabled={busy}
+                  onClick={() => void draftDirection()}
+                >
+                  {direction.trim() ? "Redraft with familiar" : "Draft with familiar"}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  disabled={busy || directionDrafting || !direction.trim()}
+                  onClick={() => void runAction({ action: "refine", direction })}
+                >
+                  Refine and continue
+                </Button>
+              </div>
+              {directionDrafting ? (
+                <p className="research-desk-refine__status" role="status">
+                  Reading the checkpoint and choosing the highest-value next pass…
+                </p>
+              ) : null}
+              {directionSuggestion ? (
+                <div className="research-desk-refine__suggestion">
+                  <p>Your draft changed while the familiar was working. Apply its direction?</p>
+                  <blockquote>{directionSuggestion}</blockquote>
+                  <div>
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onClick={() => {
+                        setDirection(directionSuggestion);
+                        setDirectionSuggestion(null);
+                        announce("Familiar direction applied.");
+                      }}
+                    >
+                      Apply direction
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => setDirectionSuggestion(null)}
+                    >
+                      Keep mine
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -656,7 +982,7 @@ export function ResearchMissionDetail({
             </section>
           ) : null}
 
-          {actionError ? <p className="research-mission-error" role="alert">{actionError}</p> : null}
+          {actionError && !diagnosticsOpen ? <p className="research-mission-error" role="alert">{actionError}</p> : null}
 
           {/* ── Sticky action bar: main actions left, end actions right.
                 No kbd chip — the desk has no registered shortcut to claim. ── */}
@@ -673,8 +999,27 @@ export function ResearchMissionDetail({
               spans the rail, plus pinned quick links. The pane is the full
               evidence ledger — the rail no longer stacks a partial state panel
               above a collapsed copy of the same data. ── */}
+        {showEvidence && railSeparatorProps ? (
+          <div
+            {...railSeparatorProps}
+            className="research-desk-handle research-desk-handle--rail"
+            aria-label="Resize the evidence inspector"
+            title="Drag, or use arrow keys, to resize the evidence inspector"
+          />
+        ) : null}
         {showEvidence ? (
           <aside className="research-desk-rail" aria-label="Run evidence and links">
+            {onCollapseEvidence ? (
+              <button
+                type="button"
+                className="research-desk-rail__collapse focus-ring"
+                aria-label="Collapse the evidence inspector"
+                title="Collapse the evidence inspector"
+                onClick={onCollapseEvidence}
+              >
+                <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+              </button>
+            ) : null}
             <Tabs<ResearchOutputTab>
               className="research-desk-rail__toggle"
               idPrefix="research-output"
@@ -724,6 +1069,18 @@ export function ResearchMissionDetail({
               </button>
             </div>
           </aside>
+        ) : onOpenEvidence ? (
+          <button
+            type="button"
+            className="research-desk-spine research-desk-spine--rail focus-ring"
+            aria-expanded={false}
+            aria-label={`Open the evidence inspector — ${mission.sources.length} ${mission.sources.length === 1 ? "source" : "sources"}, ${mission.artifacts.length} ${mission.artifacts.length === 1 ? "artifact" : "artifacts"}`}
+            onClick={onOpenEvidence}
+          >
+            <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+            <span className="research-desk-spine__badge" aria-hidden>{mission.sources.length}</span>
+            <span className="research-desk-spine__label" aria-hidden>Evidence</span>
+          </button>
         ) : null}
       </div>
     </section>

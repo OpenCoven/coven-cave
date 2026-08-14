@@ -24,7 +24,9 @@ export type AvatarStorageDriver = {
 };
 
 const DB_NAME = "cave-avatars";
-const DB_VERSION = 2; // v2: + projectAvatars
+// Schema versions are monotonic. v3 previously added familiarFoil; keep the
+// version even though that retired store is no longer used by this driver.
+const DB_VERSION = 3;
 const STORES: readonly AvatarStore[] = ["familiarImages", "projectAvatars"];
 
 let dbPromise: Promise<IDBDatabase> | null = null;

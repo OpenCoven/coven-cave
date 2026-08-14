@@ -53,6 +53,64 @@ assert.match(
   /covenRunSupportsModelFlag/,
   "Model forwarding must gate on the coven run --model capability probe",
 );
+// A help probe that could not run is not a CLI that lacks the flag. Keeping
+// the two apart is what stops a spawn failure or a timeout from being reported
+// to the user as an unsupported model.
+assert.match(
+  capabilityProbes,
+  /export type HelpProbeOutcome =[\s\S]*?\{ ok: true; matched: boolean \}[\s\S]*?\{ ok: false; reason: string \}/,
+  "Help probes report an incomplete probe separately from an unmatched flag",
+);
+for (const failure of [
+  // The deadline is hoisted into ONE binding that both arms the timer and
+  // names itself in the reason. Pinning the shape rather than a bare call is
+  // the point: a message that re-invoked the helper could quote a different
+  // number than the timer actually waited, which is precisely the confusion a
+  // timeout report exists to prevent.
+  /const timeoutMs = openCodeCapabilityProbeTimeoutMs\(\);[\s\S]*?did not respond within \$\{timeoutMs\}ms[\s\S]*?\}, timeoutMs\);/,
+  /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
+]) {
+  assert.match(
+    capabilityProbes,
+    failure,
+    "Timeouts and spawn errors carry the underlying reason instead of resolving false",
+  );
+}
+assert.match(
+  capabilityProbes,
+  /const probe = start\(\)\.then\(\(outcome\) => \{[\s\S]*?if \(!outcome\.ok\) write\(null\);/,
+  "Only answered capability probes are cached; a failed probe must not pin itself for the process lifetime",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunModelFlagOutcome\(\): Promise<HelpProbeOutcome>[\s\S]*?export function covenRunSupportsModel\(\): Promise<boolean> \{[\s\S]*?outcome\.ok && outcome\.matched/,
+  "The boolean model capability is derived from the outcome rather than replacing it",
+);
+assert.match(
+  capabilityProbes,
+  /export type HelpProbeOutcome =[\s\S]*?\{ ok: true; matched: boolean \}[\s\S]*?\{ ok: false; reason: string \}/,
+  "Help probes report an incomplete probe separately from an unmatched flag",
+);
+for (const failure of [
+  /did not respond within \$\{timeoutMs\}ms/,
+  /child\.on\("error", \(error: Error\) => \{[\s\S]*?ok: false, reason: `\\`\$\{command\}\\` could not be started: \$\{error\.message\}`/,
+]) {
+  assert.match(
+    capabilityProbes,
+    failure,
+    "Timeouts and spawn errors carry the underlying reason instead of resolving false",
+  );
+}
+assert.match(
+  capabilityProbes,
+  /const probe = start\(\)\.then\(\(outcome\) => \{[\s\S]*?if \(!outcome\.ok\) write\(null\);/,
+  "Only answered capability probes are cached; a failed probe must not pin itself for the process lifetime",
+);
+assert.match(
+  capabilityProbes,
+  /export function covenRunModelFlagOutcome\(\): Promise<HelpProbeOutcome>[\s\S]*?export function covenRunSupportsModel\(\): Promise<boolean> \{[\s\S]*?outcome\.ok && outcome\.matched/,
+  "The boolean model capability is derived from the outcome rather than replacing it",
+);
 assert.match(
   capabilityProbes,
   /export function hermesChatSupportsModel\(launch:[\s\S]*?\["chat", "--help"\][\s\S]*?launch\.env[\s\S]*?launch\.cwd/,
@@ -61,9 +119,32 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /binding\.harness !== "openclaw" &&[\s\S]*?probeCovenCapability\(covenRunSupportsModel\)/,
+  /const covenModelProbeDecides =[\s\S]*?binding\.harness !== "openclaw";[\s\S]*?const covenModelForwarding = covenModelProbeDecides[\s\S]*?probeCovenCapabilityOutcome\(covenRunModelFlagOutcome\)/,
   "OpenClaw never forwards --model; generic Coven forwarding uses the ready-plan-gated probe",
 );
+// A probe that never ran, or that could not complete, says nothing about the
+// model. Reporting it as an unsupported model sent users editing a setting
+// that was never the problem.
+assert.match(
+  chatRoute,
+  /const modelForwardingProbeFailure[\s\S]*?covenModelForwarding\.ran === false[\s\S]*?covenModelForwarding\.value\.ok === false/,
+  "A Coven model probe that never ran and one that failed to complete are both kept distinct from an answered probe",
+);
+assert.match(
+  chatRoute,
+  /const covenModelForwardingSupported =[\s\S]*?covenModelForwarding\.ran === true &&[\s\S]*?value\.ok === true &&[\s\S]*?value\.matched === true/,
+  "Model forwarding turns on only for a probe that ran, completed, and matched",
+);
+for (const rejection of [
+  /if \(explicitModelSelection && !modelForwardingEnabled\) \{[\s\S]*?if \(modelForwardingProbeFailure\) \{[\s\S]*?code: "model_forwarding_probe_failed"[\s\S]*?modelApplicationReason: modelForwardingProbeFailure\.reason/,
+  /if \(savedModelRejection === "forwarding"\) \{[\s\S]*?if \(modelForwardingProbeFailure\) \{[\s\S]*?code: "model_forwarding_probe_failed"[\s\S]*?modelApplicationReason: modelForwardingProbeFailure\.reason/,
+]) {
+  assert.match(
+    chatRoute,
+    rejection,
+    "A failed capability probe is reported as a probe failure with its underlying reason, never as an unsupported model",
+  );
+}
 
 assert.match(
   chatRoute,
@@ -226,8 +307,31 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /modelApplicationForHarness\(\{ supported: true, confirmed: true \}\)/,
-  "Confirming an echoed model should promote the application state to applied",
+  /else if \(confirmedModel\) \{[\s\S]*?modelApplicationFromRun\(\{[\s\S]*?confirmedModel,/,
+  "a direct runtime echo is evaluated as confirmation only in the native-runtime branch",
+);
+
+const covenModelMetadataStart = chatRoute.indexOf('else if (localRuntimePlan?.runner === "coven" && forwardModel) {');
+const nativeModelMetadataStart = chatRoute.indexOf("else if (confirmedModel) {", covenModelMetadataStart);
+assert.ok(
+  covenModelMetadataStart >= 0 && nativeModelMetadataStart > covenModelMetadataStart,
+  "Coven-forwarded model metadata must be handled before generic harness echoes",
+);
+const covenModelMetadataBlock = chatRoute.slice(covenModelMetadataStart, nativeModelMetadataStart);
+assert.match(
+  covenModelMetadataBlock,
+  /Coven forwarded the selected model; downstream acceptance was not confirmed\./,
+  "the no-echo fallback still describes forwarding as unconfirmed",
+);
+assert.match(
+  covenModelMetadataBlock,
+  /confirmed.*confirmedModel != null/,
+  "a downstream harness echo (confirmedModel) on a successful run resolves the model to applied",
+);
+assert.match(
+  covenModelMetadataBlock,
+  /if \(confirmed\) responseMetadata\.confirmedModel = confirmedModel/,
+  "confirmedModel is persisted only when the downstream harness echoed and the run succeeded",
 );
 
 console.log("model parity routing tests passed");

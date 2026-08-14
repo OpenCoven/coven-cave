@@ -1,70 +1,156 @@
 #!/usr/bin/env node --experimental-strip-types
-import { spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
-  classifyWorktree,
-  isDisposableIgnoredPath,
   renderWorktreeLifecycleReport,
   summarizeWorktreeLifecycle,
-  type WorktreeLifecycleItem,
-  type WorktreeObservation,
-  type WorktreeProcessOwner,
 } from "../src/lib/worktree-lifecycle.ts";
-import { beadIdsInText } from "../src/lib/beads-pr-management.ts";
+import {
+  acquireMaintenanceGate,
+  createFenceRenewal,
+  heartbeatMaintenanceGate,
+  releaseMaintenanceGate,
+  repositoryMaintenanceCapabilities,
+  verifyMaintenanceGateOwnership,
+} from "./maintenance-gate.mjs";
+import {
+  assessMaintenancePlaneAdmission,
+  type MaintenancePlaneCapabilities,
+} from "../src/lib/maintenance-plane-admission.ts";
+import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
+import {
+  createGitRetirementOperations,
+  parseMaxRetire,
+  retireLifecycleUnits,
+} from "./worktree-lifecycle-retirement.ts";
+import {
+  createMetadataRepairOperations,
+  repairOrphanedWorktreeMetadata,
+} from "./worktree-lifecycle-metadata-repair.ts";
 
 type Options = {
   repo: string | null;
   root: string;
   json: boolean;
   nowMs: number;
+  apply: boolean;
+  maxRetire: number;
+  /**
+   * Opt in to running --apply while the known-pending maintenance planes
+   * (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. Never implicit:
+   * absent this, --apply behaves exactly as it did. The local plane is still
+   * required — see assessMaintenancePlaneAdmission.
+   */
+  allowUnenforcedPlanes: boolean;
 };
 
-type CommandResult = {
+type PatrolInventory = ReturnType<typeof collectWorktreeLifecycleInventory>;
+type PatrolSummary = ReturnType<typeof summarizeWorktreeLifecycle>;
+type MaintenanceCapabilities = ReturnType<typeof repositoryMaintenanceCapabilities>;
+type RetirementReport = ReturnType<typeof retireLifecycleUnits>;
+type MetadataRepairReport = ReturnType<typeof repairOrphanedWorktreeMetadata>;
+type PatrolItem = PatrolSummary["items"][number];
+type RetirementBlock = RetirementReport["blocked"][number];
+type RemoteDeletionProposal = RetirementReport["remoteDeletionProposals"][number];
+type MaintenanceGateHandle = object;
+type AcquireMaintenanceGateResult =
+  | {
+      ok: true;
+      handle: MaintenanceGateHandle;
+    }
+  | {
+      ok: false;
+      reason?: string;
+    };
+
+type RetirementApplyDependencies = {
+  acquireMaintenanceGate: (options: {
+    ownerId: string;
+    purpose: string;
+    repoDir: string;
+  }) => AcquireMaintenanceGateResult;
+  releaseMaintenanceGate: (handle: MaintenanceGateHandle) => {
+    ok: boolean;
+    reason?: string;
+  };
+  heartbeatMaintenanceGate: (handle: MaintenanceGateHandle) => {
+    ok: boolean;
+    reason?: string;
+  };
+  verifyMaintenanceGateOwnership: (handle: MaintenanceGateHandle) => {
+    ok: boolean;
+    reason?: string;
+  };
+  createGitRetirementOperations: typeof createGitRetirementOperations;
+  retireLifecycleUnits: typeof retireLifecycleUnits;
+  createMetadataRepairOperations: typeof createMetadataRepairOperations;
+  repairOrphanedWorktreeMetadata: typeof repairOrphanedWorktreeMetadata;
+  collectWorktreeLifecycleInventory: typeof collectWorktreeLifecycleInventory;
+  /**
+   * Optional, and injected so a test can observe renewal without waiting out
+   * the throttle.
+   *
+   * Optional because the existing apply tests build explicit dependency
+   * literals rather than spreading the defaults, so a required field would
+   * arrive undefined in every one of them and fail as a TypeError inside the
+   * inventory try/catch — which surfaces as a confusing postInventoryError
+   * rather than as the missing wiring it actually is.
+   *
+   * The real {@link createFenceRenewal} deliberately skips the first call and
+   * then renews at most every FENCE_RENEWAL_INTERVAL_MS, which is correct in
+   * production and invisible in a test that finishes in milliseconds — every
+   * call would be throttled, so a missing renewal and a working one look
+   * identical. Injecting the factory lets a test supply an unthrottled one.
+   */
+  createFenceRenewal?: typeof createFenceRenewal;
+};
+
+const APPLY_OWNER_ID = "worktree-lifecycle-patrol";
+const APPLY_PURPOSE = "worktree lifecycle metadata repair and retirement apply";
+const defaultRetirementApplyDependencies: RetirementApplyDependencies = {
+  acquireMaintenanceGate: acquireMaintenanceGate as unknown as RetirementApplyDependencies["acquireMaintenanceGate"],
+  heartbeatMaintenanceGate: heartbeatMaintenanceGate as unknown as RetirementApplyDependencies["heartbeatMaintenanceGate"],
+  releaseMaintenanceGate: releaseMaintenanceGate as unknown as RetirementApplyDependencies["releaseMaintenanceGate"],
+  verifyMaintenanceGateOwnership: verifyMaintenanceGateOwnership as unknown as RetirementApplyDependencies["verifyMaintenanceGateOwnership"],
+  createGitRetirementOperations,
+  retireLifecycleUnits,
+  createMetadataRepairOperations,
+  repairOrphanedWorktreeMetadata,
+  collectWorktreeLifecycleInventory,
+  createFenceRenewal,
+};
+
+type RetirementApplyResult = {
+  metadataRepair: MetadataRepairReport;
+  retirement: RetirementReport;
+  postInventory?: PatrolInventory;
+  postInventoryError?: string;
+  warning?: string;
+};
+
+type ApplyFailureReason =
+  | "metadata-repair-blocked"
+  | "retirement-blocked"
+  | "maintenance-gate-release-failed"
+  | "post-apply-inventory-failed";
+
+type RetirementApplyOutcomeReason = string;
+
+type RetirementApplyOutcome = {
   ok: boolean;
-  status: number | null;
-  stdout: string;
-  stderr: string;
+  status: 0 | 1;
+  reason?: RetirementApplyOutcomeReason;
 };
 
-type WorktreeEntry = {
-  path: string;
-  head: string;
-  branch: string | null;
-};
-
-type PullRequest = {
-  number: number;
-  html_url: string;
-  state: "open" | "closed";
-  draft: boolean;
-  merged_at: string | null;
-  head: { ref: string; sha: string };
-};
-
-type WorkflowRun = {
-  head_branch: string | null;
-  head_sha: string;
-  html_url: string;
-};
-
-const ACTIVE_WORKFLOW_STATES = [
-  "queued",
-  "in_progress",
-  "requested",
-  "waiting",
-  "pending",
-];
-const PROTECTED_BRANCHES = new Set(["main", "__dolt_remote_info__"]);
-const BEAD_STATUSES = new Set(["open", "in_progress", "blocked", "deferred", "closed"]);
-const CLAIM_STATES = new Set(["active", "expired"]);
-
-function parseArgs(argv: string[]): Options {
+export function parseArgs(argv: string[]): Options {
   const options: Options = {
     repo: null,
     root: process.cwd(),
     json: false,
     nowMs: Date.now(),
+    apply: false,
+    maxRetire: parseMaxRetire(undefined),
+    allowUnenforcedPlanes: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -80,6 +166,20 @@ function parseArgs(argv: string[]): Options {
       case "--json":
         options.json = true;
         break;
+      case "--apply":
+        options.apply = true;
+        break;
+      case "--allow-unenforced-planes":
+        options.allowUnenforcedPlanes = true;
+        break;
+      case "--max-retire": {
+        const value = argv[++index];
+        if (value === undefined) {
+          throw new Error("--max-retire requires an integer from 1 through 10");
+        }
+        options.maxRetire = parseMaxRetire(value);
+        break;
+      }
       case "--now": {
         const value = Date.parse(argv[++index] ?? "");
         if (!Number.isFinite(value)) throw new Error("--now requires an ISO timestamp");
@@ -102,719 +202,737 @@ function parseArgs(argv: string[]): Options {
 }
 
 function printHelp() {
-  console.log(`Usage: node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OWNER/REPO [--root PATH] [--json]
+  console.log(`Usage: node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OWNER/REPO [--root PATH] [--json] [--apply] [--max-retire 1..10]
 
-Builds a read-only lifecycle report for every registered worktree. The patrol
-correlates local state with claims, Beads, pull requests, workflow runs, and
-live process cwd ownership. It never removes worktrees or branches.`);
+Builds a read-only lifecycle report for every registered worktree and direct
+local branch. The patrol correlates local state with claims, Beads, Coven
+sessions, pull requests, workflow runs, and live process cwd ownership. It never
+repairs metadata, removes worktrees, or removes branches unless --apply becomes
+maintenance planes are enforced.
+
+--apply refuses with exit 2 before assessing any unit while the Beads or GitHub
+maintenance planes are unenforced (cave-3aqvr). The coven plane is
+opportunistic -- enforced when Coven's released maintenance protocol is
+available, unenforced when it is not -- so it may be missing too. Retire
+cleanup-ready units by hand through the archive-tag route in CLAUDE.md, or opt
+in below.
+
+--allow-unenforced-planes opts in to running --apply while the known-pending
+planes (coven/beads/github, cave-wqa0b.2/.3/.4) are unenforced. The local plane
+is still required and is never waivable: it performs the exclusion that stops
+two actors retiring the same unit. Every degraded run is announced on stderr
+naming the waived planes before any unit is touched (cave-s03wp).`);
 }
 
-function command(
-  executable: string,
-  args: string[],
-  cwd: string,
-  timeout = 30_000,
-): CommandResult {
-  const result = spawnSync(executable, args, {
-    cwd,
-    encoding: "utf8",
-    timeout,
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return {
-    ok: result.status === 0,
-    status: result.status,
-    stdout: typeof result.stdout === "string" ? result.stdout : "",
-    stderr: typeof result.stderr === "string" ? result.stderr.trim() : "",
-  };
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
-function git(root: string, args: string[], timeout?: number): CommandResult {
-  return command("git", ["-C", root, ...args], root, timeout);
+function summarizeInventory(inventory: PatrolInventory): PatrolSummary {
+  return summarizeWorktreeLifecycle(inventory.items, inventory.budgets, inventory.globalErrors);
 }
 
-function requiredGit(root: string, args: string[]): string {
-  const result = git(root, args);
-  if (!result.ok) {
-    throw new Error(result.stderr || `git ${args.join(" ")} failed`);
+/**
+ * Managed-creation exceptions on beads whose worktrees are already gone.
+ *
+ * Inventory only tallies exceptions for units it still sees (validMetadata ∩
+ * registered units). When a unit is removed but the exception sub-object stays
+ * on the bead, the budget line reads "0 expired" and the residue is invisible
+ * (cave-4oor6). An expired exception grants nothing, so this is hygiene — make
+ * it visible in the read-only report. Dropping the sub-object is apply-side
+ * work and stays gated with everything else.
+ */
+export type ExpiredOrphanedException = {
+  beadId: string;
+  path: string;
+  branch: string;
+  owner: string;
+  expiresAt: string;
+  reason: string;
+};
+
+export function listExpiredOrphanedExceptions(
+  inventory: Pick<PatrolInventory, "orphanedMetadata">,
+  nowMs: number,
+): ExpiredOrphanedException[] {
+  const found: ExpiredOrphanedException[] = [];
+  for (const candidate of inventory.orphanedMetadata) {
+    const exception = candidate.record.exception;
+    if (!exception) continue;
+    const expiresAtMs = Date.parse(exception.expiresAt);
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs > nowMs) continue;
+    found.push({
+      beadId: candidate.beadId,
+      path: candidate.path,
+      branch: candidate.branch,
+      owner: exception.owner,
+      expiresAt: exception.expiresAt,
+      reason: exception.reason,
+    });
   }
-  return result.stdout;
-}
-
-function parseWorktrees(raw: string): WorktreeEntry[] {
-  const records = raw.split("\0\0").filter(Boolean);
-  return records.map((record) => {
-    const fields = record.split("\0").filter(Boolean);
-    const worktree = fields.find((field) => field.startsWith("worktree "));
-    const head = fields.find((field) => field.startsWith("HEAD "));
-    const branch = fields.find((field) => field.startsWith("branch "));
-    if (!worktree || !head) throw new Error("malformed git worktree inventory");
-    return {
-      path: worktree.slice("worktree ".length),
-      head: head.slice("HEAD ".length),
-      branch: branch?.slice("branch refs/heads/".length) ?? null,
-    };
-  });
-}
-
-function parseJson<T>(raw: string, label: string): T {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    throw new Error(`${label} returned malformed JSON`);
-  }
-}
-
-function normalizePath(candidate: string): string {
-  try {
-    return realpathSync(candidate);
-  } catch {
-    return path.resolve(candidate);
-  }
-}
-
-function parseProcessOwners(raw: string): {
-  owners: Array<WorktreeProcessOwner & { cwd: string }>;
-  partial: boolean;
-} {
-  const owners: Array<WorktreeProcessOwner & { cwd: string }> = [];
-  let record:
-    | {
-        pid: number | null;
-        command: string | null;
-        sawCwdField: boolean;
-        cwd: string | null;
-      }
-    | null = null;
-  let partial = false;
-
-  const finishRecord = () => {
-    if (!record) return;
-    if (
-      record.pid === null ||
-      record.command === null ||
-      !record.sawCwdField ||
-      record.cwd === null
-    ) {
-      partial = true;
-    } else {
-      owners.push({ pid: record.pid, command: record.command, cwd: record.cwd });
-    }
-  };
-
-  for (const line of raw.split("\n")) {
-    if (!line) continue;
-    const pidMatch = line.match(/^p([1-9]\d*)$/);
-    if (pidMatch) {
-      finishRecord();
-      const pid = Number(pidMatch[1]);
-      record = {
-        pid: Number.isSafeInteger(pid) ? pid : null,
-        command: null,
-        sawCwdField: false,
-        cwd: null,
-      };
-      if (record.pid === null) partial = true;
-    } else if (line.startsWith("p")) {
-      finishRecord();
-      record = { pid: null, command: null, sawCwdField: false, cwd: null };
-      partial = true;
-    } else if (line.startsWith("c")) {
-      if (!record || record.command !== null || line.length === 1) partial = true;
-      else record.command = line.slice(1);
-    } else if (line === "fcwd") {
-      if (!record || record.sawCwdField) partial = true;
-      else record.sawCwdField = true;
-    } else if (line.startsWith("n")) {
-      const cwd = line.slice(1);
-      if (
-        !record ||
-        !record.sawCwdField ||
-        record.cwd !== null ||
-        !path.isAbsolute(cwd)
-      ) {
-        partial = true;
-      } else {
-        record.cwd = normalizePath(cwd);
-      }
-    } else {
-      partial = true;
-    }
-  }
-  finishRecord();
-  return { owners, partial };
-}
-
-function processOwnersFor(
-  worktreePath: string,
-  owners: Array<WorktreeProcessOwner & { cwd: string }>,
-): WorktreeProcessOwner[] {
-  const root = normalizePath(worktreePath);
-  const prefix = `${root}${path.sep}`;
-  return owners
-    .filter((owner) => owner.cwd === root || owner.cwd.startsWith(prefix))
-    .map(({ pid, command: processCommand }) => ({ pid, command: processCommand }));
-}
-
-function statusState(root: string): {
-  changes: string[];
-  ignoredPaths: string[];
-  nonDisposableIgnoredPaths: string[];
-  error: string | null;
-} {
-  const result = git(root, [
-    "-c",
-    "status.showUntrackedFiles=all",
-    "-c",
-    "core.fileMode=true",
-    "-c",
-    "core.fsmonitor=false",
-    "status",
-    "--porcelain=v2",
-    "-z",
-    "--untracked-files=all",
-    "--ignored=matching",
-    "--ignore-submodules=none",
-  ]);
-  if (!result.ok) {
-    return {
-      changes: [],
-      ignoredPaths: [],
-      nonDisposableIgnoredPaths: [],
-      error: result.stderr || "git status failed",
-    };
-  }
-  const entries = result.stdout.split("\0").filter(Boolean);
-  const changes = entries.filter((entry) => !entry.startsWith("# ") && !entry.startsWith("! "));
-  const ignoredPaths = entries
-    .filter((entry) => entry.startsWith("! "))
-    .map((entry) => entry.slice(2));
-  const nonDisposableIgnoredPaths = ignoredPaths.filter(
-    (ignoredPath) => !isDisposableIgnoredPath(ignoredPath),
+  return found.sort(
+    (left, right) =>
+      left.beadId.localeCompare(right.beadId) || left.path.localeCompare(right.path),
   );
-  return { changes, ignoredPaths, nonDisposableIgnoredPaths, error: null };
 }
 
-function indexFlags(root: string): { flags: string[]; error: string | null } {
-  const result = git(root, ["ls-files", "-v", "-z"]);
-  if (!result.ok) {
-    return { flags: [], error: result.stderr || "git index flag inventory failed" };
-  }
+function formatExpiredOrphanedException(entry: ExpiredOrphanedException): string {
+  return `- ${entry.beadId} ${entry.branch} @ ${entry.path} (owner ${entry.owner}; expired ${entry.expiresAt})`;
+}
+
+/**
+ * Malformed metadata records that describe no unit the patrol can see.
+ *
+ * A record is charged to the branch and path it names (cave-g9byt), so one
+ * whose worktree was removed outside the lifecycle lands on nothing and would
+ * report as clean. It is still a defect on someone's bead — and the record that
+ * caused cave-g9byt was exactly this shape — so the patrol names it without
+ * moving any unit into a lane over it.
+ */
+function orphanedMetadataClaims(inventory: PatrolInventory): string[] {
+  return [
+    ...new Set(
+      inventory.metadataClaimErrors
+        .filter((claim) => {
+          // A record naming neither a usable branch nor a usable path is not
+          // orphaned — it is unnameable, so it stays charged to every unit and
+          // is already visible in their lanes. Reporting it here would say the
+          // opposite of what the header promises: that nothing is blocked by it.
+          if (claim.branch.length === 0 && claim.path === null) return false;
+          return !inventory.items.some(
+            (item) =>
+              (claim.branch.length > 0 && item.branch === claim.branch) ||
+              (claim.path !== null && item.path === claim.path),
+          );
+        })
+        .flatMap((claim) => claim.errors),
+    ),
+  ];
+}
+
+function renderOrphanedMetadataClaims(inventory: PatrolInventory): string {
+  const claims = orphanedMetadataClaims(inventory);
+  if (claims.length === 0) return "";
+  return [
+    "",
+    "Malformed worktree metadata on beads whose units are gone (no unit is blocked by these;",
+    "the owning bead should repair or drop the record):",
+    ...claims.map((claim) => `- ${claim}`),
+  ].join("\n");
+}
+
+function buildJsonReport(
+  options: Options,
+  inventory: PatrolInventory,
+  summary: PatrolSummary,
+  extras: Record<string, unknown> = {},
+) {
+  const orphanedClaims = orphanedMetadataClaims(inventory);
+  const expiredOrphanedExceptions = listExpiredOrphanedExceptions(inventory, options.nowMs);
   return {
-    flags: result.stdout
-      .split("\0")
-      .filter((entry) => /^[a-zS] /.test(entry)),
-    error: null,
+    ok: true,
+    generatedAt: new Date(options.nowMs).toISOString(),
+    ...summary,
+    orphanedMetadata: inventory.orphanedMetadata,
+    orphanedMetadataCount: inventory.orphanedMetadata.length,
+    orphanedMetadataErrors: inventory.orphanedMetadataErrors,
+    orphanedMetadataErrorCount: inventory.orphanedMetadataErrors.length,
+    inventoryFingerprint: inventory.inventoryFingerprint,
+    expiredOrphanedExceptions,
+    expiredOrphanedExceptionCount: expiredOrphanedExceptions.length,
+    ...(orphanedClaims.length > 0 ? { orphanedMetadataClaims: orphanedClaims } : {}),
+    ...extras,
   };
 }
 
-function updatedAt(
-  root: string,
-  branch: string | null,
-  exactMergeAt: string | null,
-): {
-  value: number | null;
-  error: string | null;
-} {
-  const commit = git(root, ["log", "-1", "--format=%ct", "HEAD"]);
-  const reflogs = [
-    git(root, ["reflog", "show", "-1", "--date=unix", "--format=%gd", "HEAD"]),
-    ...(branch
+function renderJsonReport(
+  options: Options,
+  inventory: PatrolInventory,
+  summary: PatrolSummary,
+  extras: Record<string, unknown> = {},
+): string {
+  return JSON.stringify(buildJsonReport(options, inventory, summary, extras), null, 2);
+}
+
+function renderApplyUnavailable(
+  options: Options,
+  inventory: PatrolInventory,
+  summary: PatrolSummary,
+  capabilities: MaintenanceCapabilities,
+): number {
+  const missingPlanes = (["local", "coven", "beads", "github"] as const).filter(
+    (plane) => capabilities[plane].enforced === false,
+  );
+  if (options.json) {
+    console.log(
+      renderJsonReport(options, inventory, summary, {
+        ok: false,
+        reason: "gate-incomplete",
+        missingPlanes,
+        ...capabilities,
+      }),
+    );
+  } else {
+    // Name the blocking work and the route that does function. Bare
+    // "missing maintenance planes" reads as a local fault, so sessions retry
+    // it, then reach for `git worktree add` -- the unmanaged fallback whose
+    // worktrees carry no lifecycle metadata and can never be retired at all
+    // (cave-l52dt). The planes are unimplemented, not unavailable (cave-3aqvr).
+    // The blocking Bead per plane is read from the capability's own `source`
+    // rather than a second map here, so this cannot drift from the gate.
+    console.error(
+      [
+        `worktree-lifecycle-patrol: --apply unavailable; missing maintenance planes: ${missingPlanes.join(", ")}`,
+        "",
+        "This is not a local fault and a retry will not clear it. These planes are",
+        "not yet enforced by their listed maintenance-plane owners:",
+        ...missingPlanes.map(
+          (plane) => `  ${plane.padEnd(7)} blocked on ${capabilities[plane].source || "an unfiled Bead"}`,
+        ),
+        "",
+        "Until those land, automated retirement is unavailable and hand-retirement",
+        "is the expected path -- NOT a workaround. Retire a cleanup-ready unit via",
+        "the archive-tag route in CLAUDE.md (worktree-guard section), and prove",
+        "retention BEFORE removing anything: a merged PR is not retention, because",
+        "a squash-merge leaves the branch commits on no remote ref. Tag the exact",
+        "head, push the tag, confirm it is on the REMOTE, then remove.",
+        "",
+        "Tracked by cave-3aqvr.",
+      ].join("\n"),
+    );
+  }
+  return 2;
+}
+
+export function evaluateRetirementApplyOutcome(
+  result: Pick<
+    RetirementApplyResult,
+    "retirement" | "metadataRepair" | "warning" | "postInventoryError"
+  > & { metadataRepair?: MetadataRepairReport },
+): RetirementApplyOutcome {
+  const failures: ApplyFailureReason[] = [];
+  if (
+    result.metadataRepair &&
+    (result.metadataRepair.blocked.length > 0 ||
+      result.metadataRepair.partial.length > 0)
+  ) {
+    failures.push("metadata-repair-blocked");
+  }
+  if (result.retirement.blocked.length > 0) failures.push("retirement-blocked");
+  if (result.warning) failures.push("maintenance-gate-release-failed");
+  if (result.postInventoryError) failures.push("post-apply-inventory-failed");
+  if (failures.length === 0) {
+    return { ok: true, status: 0 };
+  }
+  return {
+    ok: false,
+    status: 1,
+    reason: failures.join("-and-") as RetirementApplyOutcomeReason,
+  };
+}
+
+export function renderApplyReport(
+  summary: PatrolSummary,
+  retirement: RetirementReport,
+  warning?: string,
+  postInventoryError?: string,
+  metadataRepair: MetadataRepairReport = emptyMetadataRepairReport(),
+) {
+  const outcome = evaluateRetirementApplyOutcome({
+    metadataRepair,
+    retirement,
+    warning,
+    postInventoryError,
+  });
+  const retired = [...retirement.retired].sort(comparePatrolItems).map(formatRetiredItem);
+  const blocked = [...retirement.blocked].sort(compareRetirementBlocks).map(formatBlockedItem);
+  const cleanupReady = [...retirement.cleanupReady]
+    .sort(comparePatrolItems)
+    .map(formatRetiredItem);
+  const remoteDeletionProposals = [...retirement.remoteDeletionProposals]
+    .sort(compareRemoteDeletionProposals)
+    .map(formatRemoteDeletionProposal);
+  const repairedMetadata = metadataRepair.repaired.map(formatMetadataRepairCandidate);
+  const blockedMetadata = metadataRepair.blocked.map(formatMetadataRepairBlock);
+  const partialMetadata = metadataRepair.partial.map(formatMetadataRepairBlock);
+  const pendingMetadata = metadataRepair.pending.map(formatMetadataRepairCandidate);
+  const lines = [
+    ...(postInventoryError
       ? [
-          git(root, [
-            "reflog",
-            "show",
-            "-1",
-            "--date=unix",
-            "--format=%gd",
-            `refs/heads/${branch}`,
-          ]),
+          `Post-apply inventory: unavailable (${postInventoryError})`,
+          "Lifecycle snapshot: pre-apply fallback",
+          "",
         ]
       : []),
+    renderWorktreeLifecycleReport(summary, { includeFooter: false }),
+    "",
+    `Apply result: ${outcome.ok ? "ok" : `failed (${outcome.reason})`}`,
+    `Metadata repaired: ${metadataRepair.repaired.length}`,
+    `Metadata blocked: ${metadataRepair.blocked.length + metadataRepair.partial.length}`,
+    `Retired: ${retirement.retired.length}`,
+    `Blocked: ${retirement.blocked.length}`,
+    `Cleanup-ready remaining: ${
+      postInventoryError ? "unknown" : summary.counts["retire-after-gate"]
+    }`,
   ];
-  const epochs: number[] = [];
-  if (commit.ok && /^\d+$/.test(commit.stdout.trim())) {
-    epochs.push(Number(commit.stdout.trim()) * 1000);
+  pushSection(lines, "Orphaned metadata repaired", repairedMetadata);
+  pushSection(lines, "Orphaned metadata blocked", blockedMetadata);
+  pushSection(lines, "Orphaned metadata partial", partialMetadata);
+  pushSection(lines, "Orphaned metadata pending", pendingMetadata);
+  pushSection(lines, "Locally retired", retired);
+  pushSection(lines, "Cleanup-ready but not processed", cleanupReady);
+  pushSection(lines, "Blocked during apply", blocked);
+  pushSection(lines, "Remote-deletion proposals", remoteDeletionProposals);
+  if (warning) {
+    lines.push("", `Warning: ${warning}`);
   }
-  for (const reflog of reflogs) {
-    const match = reflog.stdout.trim().match(/@\{(\d+)\}$/);
-    if (reflog.ok && match) epochs.push(Number(match[1]) * 1000);
-  }
-  if (exactMergeAt !== null) {
-    const mergeEpoch = Date.parse(exactMergeAt);
-    if (Number.isFinite(mergeEpoch)) epochs.push(mergeEpoch);
-  }
-  if (
-    epochs.length === 0 ||
-    !commit.ok ||
-    !/^\d+$/.test(commit.stdout.trim()) ||
-    reflogs.some(
-      (reflog) => !reflog.ok || !/@\{(\d+)\}$/.test(reflog.stdout.trim()),
-    )
-  ) {
-    return {
-      value: epochs.length > 0 ? Math.max(...epochs) : null,
-      error: "branch/worktree recency unavailable",
-    };
-  }
-  return { value: Math.max(...epochs), error: null };
+  return lines.join("\n");
 }
 
-function fetchPullRequests(
-  repo: string,
-  root: string,
-  branches: string[],
-): { pullRequests: PullRequest[]; error: string | null } {
-  const pullRequests: PullRequest[] = [];
-  for (const branch of [...new Set(branches)].filter((name) => !PROTECTED_BRANCHES.has(name))) {
-    const result = command(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--repo",
-        repo,
-        "--state",
-        "all",
-        "--head",
-        branch,
-        "--limit",
-        "101",
-        "--json",
-        "number,url,state,isDraft,mergedAt,baseRefName,headRefName,headRefOid",
-      ],
-      root,
-      60_000,
-    );
-    if (!result.ok) {
-      return {
-        pullRequests: [],
-        error: result.stderr || `pull request inventory unavailable for ${branch}`,
-      };
-    }
-    try {
-      const parsed = parseJson<
-        Array<{
-          number: number;
-          url: string;
-          state: "OPEN" | "CLOSED" | "MERGED";
-          isDraft: boolean;
-          mergedAt: string | null;
-          baseRefName: string;
-          headRefName: string;
-          headRefOid: string;
-        }>
-      >(result.stdout, `GitHub pull request inventory for ${branch}`);
-      if (
-        !Array.isArray(parsed) ||
-        !parsed.every(
-          (pr) =>
-            Number.isInteger(pr.number) &&
-            typeof pr.url === "string" &&
-            (pr.state === "OPEN" || pr.state === "CLOSED" || pr.state === "MERGED") &&
-            typeof pr.isDraft === "boolean" &&
-            (pr.state === "MERGED"
-              ? typeof pr.mergedAt === "string" && Number.isFinite(Date.parse(pr.mergedAt))
-              : pr.mergedAt === null) &&
-            typeof pr.baseRefName === "string" &&
-            pr.baseRefName.length > 0 &&
-            pr.headRefName === branch &&
-            /^[0-9a-f]{40,64}$/.test(pr.headRefOid),
-        )
-      ) {
-        throw new Error();
-      }
-      if (parsed.length >= 101) {
-        return {
-          pullRequests: [],
-          error: `pull request inventory exceeded the safe per-branch limit for ${branch}`,
-        };
-      }
-      pullRequests.push(
-        ...parsed.map((pr): PullRequest => ({
-          number: pr.number,
-          html_url: pr.url,
-          state: pr.state === "OPEN" ? "open" : "closed",
-          draft: pr.isDraft,
-          merged_at:
-            pr.state === "MERGED" && pr.baseRefName === "main" ? pr.mergedAt : null,
-          head: { ref: pr.headRefName, sha: pr.headRefOid },
-        })),
-      );
-    } catch {
-      return {
-        pullRequests: [],
-        error: `pull request inventory returned malformed data for ${branch}`,
-      };
-    }
-  }
-  return { pullRequests, error: null };
+function formatGateFailure(action: "acquire" | "release", reason?: string) {
+  return `failed to ${action} maintenance gate: ${reason ?? `unknown ${action} error`}`;
 }
 
-function fetchWorkflows(
-  repo: string,
-  root: string,
-): { runs: WorkflowRun[]; error: string | null } {
-  const runs: WorkflowRun[] = [];
-  for (const state of ACTIVE_WORKFLOW_STATES) {
-    const result = command(
-      "gh",
-      [
-        "api",
-        "--hostname",
-        "github.com",
-        "--paginate",
-        "--slurp",
-        "-X",
-        "GET",
-        `repos/${repo}/actions/runs`,
-        "-f",
-        "per_page=100",
-        "-f",
-        `status=${state}`,
-      ],
-      root,
-      120_000,
-    );
-    if (!result.ok) {
-      return { runs: [], error: result.stderr || `workflow inventory failed for ${state}` };
-    }
-    try {
-      const pages = parseJson<Array<{ total_count: number; workflow_runs: WorkflowRun[] }>>(
-        result.stdout,
-        "GitHub workflow inventory",
-      );
-      if (
-        !Array.isArray(pages) ||
-        pages.length === 0 ||
-        !pages.every(
-          (page) =>
-            page !== null &&
-            typeof page === "object" &&
-            Number.isInteger(page.total_count) &&
-            page.total_count >= 0 &&
-            Array.isArray(page.workflow_runs) &&
-            page.workflow_runs.every(
-              (run) =>
-                run !== null &&
-                typeof run === "object" &&
-                (run.head_branch === null || typeof run.head_branch === "string") &&
-                typeof run.head_sha === "string" &&
-                /^[0-9a-f]{40,64}$/.test(run.head_sha) &&
-                typeof run.html_url === "string" &&
-                run.html_url.length > 0,
-            ),
-        )
-      ) {
-        throw new Error();
-      }
-      const firstPage = pages[0];
-      if (!firstPage) throw new Error();
-      const totals = new Set(pages.map((page) => page.total_count));
-      const stateRuns = pages.flatMap((page) => page.workflow_runs);
-      if (totals.size !== 1) {
-        return {
-          runs: [],
-          error: `workflow inventory returned inconsistent totals for ${state}`,
-        };
-      }
-      const total = firstPage.total_count;
-      if (total >= 1_000) {
-        return {
-          runs: [],
-          error: `workflow inventory reached GitHub's 1000-run cap for ${state}`,
-        };
-      }
-      if (stateRuns.length !== total) {
-        return {
-          runs: [],
-          error: `workflow inventory returned partial data for ${state}`,
-        };
-      }
-      runs.push(...stateRuns);
-    } catch {
-      return { runs: [], error: `workflow inventory returned malformed data for ${state}` };
-    }
-  }
-  return { runs, error: null };
+function formatItemIdentity(item: PatrolItem): string {
+  const label = item.branch ?? item.ref ?? "(detached)";
+  const kind = item.kind === "branch-only" ? " [branch-only]" : "";
+  const location = item.kind === "branch-only" || item.path === null ? "" : ` @ ${item.path}`;
+  return `${label}${kind}${location}`;
 }
 
-function fetchClaims(root: string): {
-  claims: Array<{ branch: string; agent_id: string; state: string }>;
-  error: string | null;
-} {
-  const result = command("coven", ["claim", "status", "--json"], root);
-  if (!result.ok) return { claims: [], error: result.stderr || "Coven claims unavailable" };
-  try {
-    const parsed = parseJson<{
-      claims: Array<{ branch: string; agent_id: string; state: string }>;
-    }>(result.stdout, "Coven claims");
-    if (
-      !Array.isArray(parsed.claims) ||
-      !parsed.claims.every(
-        (claim) =>
-          claim !== null &&
-          typeof claim === "object" &&
-          typeof claim.branch === "string" &&
-          claim.branch.length > 0 &&
-          typeof claim.agent_id === "string" &&
-          claim.agent_id.length > 0 &&
-          typeof claim.state === "string" &&
-          CLAIM_STATES.has(claim.state),
-      )
-    ) {
-      throw new Error();
-    }
-    return { claims: parsed.claims, error: null };
-  } catch {
-    return { claims: [], error: "Coven claims returned malformed data" };
-  }
+function formatRetiredItem(item: PatrolItem): string {
+  const beadHint = item.metadata?.beadId
+    ? ` — bead ${item.metadata.beadId} may still be open; close it if acceptance criteria landed`
+    : "";
+  return `- ${formatItemIdentity(item)} (oid ${item.head})${beadHint}`;
 }
 
-function fetchTasks(root: string): {
-  tasks: Array<{ id: string; status: string; text: string }>;
-  error: string | null;
-} {
-  const result = command(
-    "bd",
-    ["list", "--limit", "0", "--include-gates", "--include-infra", "--include-templates", "--json"],
-    root,
-    120_000,
-  );
-  if (!result.ok) return { tasks: [], error: result.stderr || "Beads inventory unavailable" };
-  try {
-    const parsed = parseJson<
-      Array<{
-        id: string;
-        status: string;
-        title?: string;
-        description?: string;
-        notes?: string;
-        external_ref?: string;
-      }>
-    >(result.stdout, "Beads inventory");
-    if (
-      !Array.isArray(parsed) ||
-      !parsed.every(
-        (task) =>
-          task !== null &&
-          typeof task === "object" &&
-          typeof task.id === "string" &&
-          task.id.length > 0 &&
-          typeof task.status === "string" &&
-          BEAD_STATUSES.has(task.status) &&
-          typeof task.title === "string" &&
-          (task.description === undefined ||
-            task.description === null ||
-            typeof task.description === "string") &&
-          (task.notes === undefined || task.notes === null || typeof task.notes === "string") &&
-          (task.external_ref === undefined ||
-            task.external_ref === null ||
-            typeof task.external_ref === "string"),
-      )
-    ) {
-      throw new Error();
-    }
-    return {
-      tasks: parsed
-        .filter((task) => task.status !== "closed")
-        .map((task) => ({
-          id: task.id,
-          status: task.status,
-          text: [
-            task.title ?? "",
-            task.description ?? "",
-            task.notes ?? "",
-            task.external_ref ?? "",
-          ].join("\n"),
-        })),
-      error: null,
-    };
-  } catch {
-    return { tasks: [], error: "Beads inventory returned malformed data" };
-  }
+function formatBlockedItem(item: RetirementBlock): string {
+  const label = item.branch ?? item.ref ?? "(detached)";
+  return `- [${item.partial ? "PARTIAL" : "BLOCKED"}] ${label} (oid ${item.oid}): ${item.reason}`;
 }
 
-function fetchProcessOwners(): {
-  owners: Array<WorktreeProcessOwner & { cwd: string }>;
-  error: string | null;
-} {
-  const result = command("lsof", ["-d", "cwd", "-F", "pcn"], path.parse(process.cwd()).root);
-  const parsed = parseProcessOwners(result.stdout);
-  if (!result.ok) {
-    return {
-      owners: parsed.owners,
-      error: result.stderr || "process cwd inventory unavailable",
-    };
-  }
-  if (result.stderr) {
-    return {
-      owners: parsed.owners,
-      error: "process cwd inventory reported incomplete data",
-    };
-  }
-  if (!result.stdout.trim() || parsed.partial) {
-    return {
-      owners: parsed.owners,
-      error: "process cwd inventory returned malformed or partial data",
-    };
-  }
-  return { owners: parsed.owners, error: null };
+function formatRemoteDeletionProposal(proposal: RemoteDeletionProposal): string {
+  const mergedPr =
+    proposal.mergedPr === null ? "merged PR none" : `merged PR #${proposal.mergedPr}`;
+  return `- ${proposal.ref} remote oid ${proposal.oid}; local retirement oid ${proposal.localRetirementOid}; ${mergedPr}; separate authorization required before any remote deletion`;
 }
 
-function refsContaining(root: string, head: string): {
-  refs: string[];
-  error: string | null;
-} {
-  const result = git(root, ["branch", "-r", "--contains", head, "--format=%(refname:short)"]);
-  if (!result.ok) return { refs: [], error: result.stderr || "remote containment check failed" };
+function emptyMetadataRepairReport(): MetadataRepairReport {
   return {
-    refs: result.stdout
-      .split("\n")
-      .map((ref) => ref.trim())
-      .filter(Boolean),
-    error: null,
+    repaired: [],
+    blocked: [],
+    partial: [],
+    pending: [],
   };
 }
 
-function onDefaultBranch(root: string, head: string): {
-  value: boolean;
-  error: string | null;
-} {
-  const result = git(root, ["merge-base", "--is-ancestor", head, "refs/remotes/origin/main"]);
-  if (result.status === 0) return { value: true, error: null };
-  if (result.status === 1) return { value: false, error: null };
-  return { value: false, error: result.stderr || "default-branch ancestry check failed" };
+function formatMetadataRepairCandidate(
+  candidate: PatrolInventory["orphanedMetadata"][number],
+): string {
+  return `- ${candidate.beadId} ${candidate.location} ${candidate.branch} at ${candidate.path}`;
 }
 
-function matchingTasks(
-  branch: string | null,
-  worktreePath: string,
-  tasks: Array<{ id: string; text: string }>,
-): string[] {
-  if (!branch || PROTECTED_BRANCHES.has(branch)) return [];
-  const branchBeadIds = new Set(beadIdsInText(branch));
-  return tasks
-    .filter(
-      (task) =>
-        branchBeadIds.has(task.id.toLowerCase()) ||
-        task.text.includes(branch) ||
-        task.text.includes(worktreePath),
-    )
-    .map((task) => task.id);
+function formatMetadataRepairBlock(
+  blocked: MetadataRepairReport["blocked"][number] | MetadataRepairReport["partial"][number],
+): string {
+  return `- ${blocked.beadId} ${blocked.location}: ${blocked.reason}`;
 }
 
-function collect(options: Options): WorktreeLifecycleItem[] {
-  const root = realpathSync(options.root);
-  const commonGitDir = requiredGit(root, [
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-common-dir",
-  ]).trim();
-  const primaryPath = normalizePath(path.dirname(commonGitDir));
-  const initialRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
-  const entries = parseWorktrees(initialRaw);
-
-  const prs = fetchPullRequests(
-    options.repo!,
-    root,
-    entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])),
-  );
-  const workflows = fetchWorkflows(options.repo!, root);
-  const claims = fetchClaims(root);
-  const tasks = fetchTasks(root);
-  const processes = fetchProcessOwners();
-  const globalErrors = [prs.error, workflows.error, claims.error, tasks.error, processes.error].filter(
-    (error): error is string => error !== null,
-  );
-
-  const observations: WorktreeObservation[] = entries.map((entry) => {
-    const state = statusState(entry.path);
-    const flags = indexFlags(entry.path);
-    const remoteRefs = refsContaining(entry.path, entry.head);
-    const ancestry = onDefaultBranch(entry.path, entry.head);
-    const branchPrs = entry.branch
-      ? prs.pullRequests.filter((pr) => pr.head.ref === entry.branch)
-      : [];
-    const exactMerged = branchPrs.find(
-      (pr) => pr.merged_at !== null && pr.head.sha === entry.head,
+function renderPatrolReport(
+  summary: PatrolSummary,
+  inventory: PatrolInventory,
+  nowMs: number = Date.now(),
+): string {
+  // Annotate the budget line so expired-orphaned exceptions are not invisible
+  // (cave-4oor6). Inventory still counts only unit-matched exceptions; the
+  // third term is residue on beads whose worktrees are already gone.
+  const expiredOrphaned = listExpiredOrphanedExceptions(inventory, nowMs);
+  let lifecycleReport = renderWorktreeLifecycleReport(summary, { includeFooter: false });
+  if (expiredOrphaned.length > 0) {
+    lifecycleReport = lifecycleReport.replace(
+      /^(Managed exceptions: \d+ active \| \d+ expired)$/m,
+      `$1 | ${expiredOrphaned.length} expired, orphaned`,
     );
-    const latestMerged = exactMerged ?? branchPrs.find((pr) => pr.merged_at !== null);
-    const recency = updatedAt(entry.path, entry.branch, exactMerged?.merged_at ?? null);
-    const openPrs = branchPrs
-      .filter((pr) => pr.state === "open")
-      .map((pr) => ({ number: pr.number, url: pr.html_url }));
-    const activeWorkflowUrls = workflows.runs
-      .filter(
-        (run) =>
-          run.head_sha === entry.head ||
-          (entry.branch !== null && run.head_branch === entry.branch),
-      )
-      .map((run) => run.html_url);
-    const probeErrors = [
-      ...globalErrors,
-      state.error,
-      flags.error,
-      recency.error,
-      remoteRefs.error,
-      ancestry.error,
-    ].filter((error): error is string => error !== null);
-
-    return {
-      path: entry.path,
-      branch: entry.branch,
-      head: entry.head,
-      isPrimary: normalizePath(entry.path) === primaryPath,
-      protectedBranch: entry.branch !== null && PROTECTED_BRANCHES.has(entry.branch),
-      changes: state.changes,
-      ignoredPaths: state.ignoredPaths,
-      nonDisposableIgnoredPaths: state.nonDisposableIgnoredPaths,
-      indexFlags: flags.flags,
-      processOwners: processOwnersFor(entry.path, processes.owners),
-      claimOwners: entry.branch
-        ? claims.claims
-            .filter((claim) => claim.branch === entry.branch && claim.state === "active")
-            .map((claim) => claim.agent_id)
-        : [],
-      taskIds: matchingTasks(entry.branch, entry.path, tasks.tasks),
-      openPrs,
-      mergedPr: latestMerged
-        ? {
-            number: latestMerged.number,
-            url: latestMerged.html_url,
-            headOid: latestMerged.head.sha,
-          }
-        : null,
-      activeWorkflowUrls,
-      headOnDefaultBranch: ancestry.value,
-      remoteRefsContainingHead: remoteRefs.refs,
-      updatedAtMs: recency.value,
-      probeErrors,
-    };
+  }
+  const lines = [lifecycleReport];
+  pushSection(
+    lines,
+    "Expired, orphaned managed-creation exceptions (grants nothing; drop under --apply when gated)",
+    expiredOrphaned.map(formatExpiredOrphanedException),
+  );
+  const orphaned = inventory.orphanedMetadata.map((candidate) => {
+    const disposition = candidate.repairable
+      ? "repairable by gated apply"
+      : `not repairable: ${candidate.reasons.join("; ")}`;
+    return `${formatMetadataRepairCandidate(candidate)}; ${disposition}`;
   });
+  pushSection(lines, "Orphaned metadata", orphaned);
+  const malformedClaims = renderOrphanedMetadataClaims(inventory);
+  if (malformedClaims) {
+    lines.push(malformedClaims);
+  }
+  lines.push("", "Report only. No worktree, branch, or Bead metadata was changed.");
+  return lines.join("\n");
+}
 
-  const finalRaw = requiredGit(root, ["worktree", "list", "--porcelain", "-z"]);
-  if (finalRaw !== initialRaw) {
-    throw new Error("worktree inventory changed during patrol; rerun against a stable inventory");
+function compareText(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+function comparePatrolItems(left: PatrolItem, right: PatrolItem): number {
+  return (
+    compareText(formatItemIdentity(left), formatItemIdentity(right)) ||
+    compareText(left.head, right.head)
+  );
+}
+
+function compareRetirementBlocks(left: RetirementBlock, right: RetirementBlock): number {
+  return (
+    Number(left.partial) - Number(right.partial) ||
+    compareText(left.branch ?? left.ref ?? "(detached)", right.branch ?? right.ref ?? "(detached)") ||
+    compareText(left.oid, right.oid) ||
+    compareText(left.reason, right.reason)
+  );
+}
+
+function compareRemoteDeletionProposals(
+  left: RemoteDeletionProposal,
+  right: RemoteDeletionProposal,
+): number {
+  return (
+    compareText(left.ref, right.ref) ||
+    compareText(left.oid, right.oid) ||
+    compareText(left.localRetirementOid, right.localRetirementOid) ||
+    (left.mergedPr ?? -1) - (right.mergedPr ?? -1)
+  );
+}
+
+function pushSection(
+  lines: string[],
+  title: string,
+  entries: string[],
+) {
+  lines.push("", `${title} (${entries.length})${entries.length === 0 ? ": none" : ""}`);
+  if (entries.length === 0) {
+    return;
+  }
+  lines.push(...entries);
+}
+
+export function runRetirementApply(
+  options: Options,
+  inventory: PatrolInventory,
+  dependencies: RetirementApplyDependencies = defaultRetirementApplyDependencies,
+): RetirementApplyResult {
+  const acquired = dependencies.acquireMaintenanceGate({
+    ownerId: APPLY_OWNER_ID,
+    purpose: APPLY_PURPOSE,
+    repoDir: options.root,
+  });
+  if (!acquired.ok) {
+    throw new Error(formatGateFailure("acquire", acquired.reason));
   }
 
-  return observations.map((observation) =>
-    classifyWorktree(observation, options.nowMs),
-  );
+  let metadataRepair: MetadataRepairReport | undefined;
+  let retirement: RetirementReport | undefined;
+  let postInventory: PatrolInventory | undefined;
+  let postInventoryError: string | undefined;
+  let thrown: unknown;
+  try {
+    const repairableOrphans = (inventory.orphanedMetadata ?? []).filter(
+      (candidate) => candidate.repairable,
+    );
+    // Reserve a retirement slot before metadata repair spends the budget.
+    //
+    // --max-retire is one allowance shared by two jobs, and repair is served
+    // first. Whenever there were at least maxRetire repairable records, repair
+    // took all of it, gitLimit fell to 0, and retireLifecycleUnits was never
+    // called — so the run retired nothing while still listing the units it
+    // could have retired, which reads as "considered and declined" rather than
+    // "never got a slot". Measured on two consecutive runs against this
+    // checkout: 3 repaired, 0 retired, with 15 records pending; at three
+    // repairs a run it would take five clean runs before a single worktree
+    // became eligible, and hand-retirement keeps adding residue faster than
+    // that (cave-xbc87). See cave-1si7i.
+    //
+    // The reservation is one slot, not a second budget: total mutations still
+    // cannot exceed maxRetire, which is what bounds an unattended sweep's blast
+    // radius (scripts/worktree-sweep.sh pins --max-retire 3 and says not
+    // to raise it). It is taken only when something is actually retirable, so a
+    // run with nothing to retire still spends the whole allowance on repair,
+    // exactly as before.
+    //
+    // The lane test matches retireLifecycleUnits' own eligibility filter
+    // (worktree-lifecycle-retirement.ts:161); anything else would reserve a
+    // slot for work that cannot happen.
+    const retirableAtGate = inventory.items.some(
+      (item) => item.lane === "retire-after-gate",
+    );
+    // Only reserve when there is more than one slot to divide. With
+    // --max-retire 1 a reservation would not share the budget, it would just
+    // move the starvation onto repair — which is the same defect wearing the
+    // other hat, and it would contradict the established behaviour that a
+    // single-slot run spends it on repair.
+    const retirementReservation = retirableAtGate && options.maxRetire >= 2 ? 1 : 0;
+    const repairLimit = Math.min(
+      Math.max(0, options.maxRetire - retirementReservation),
+      repairableOrphans.length,
+    );
+    metadataRepair = dependencies.repairOrphanedWorktreeMetadata({
+      candidates: inventory.orphanedMetadata ?? [],
+      maxRepairs: repairLimit,
+      gateHandle: acquired.handle,
+      repositoryRoot: options.root,
+      operations: dependencies.createMetadataRepairOperations({
+        root: options.root,
+      }),
+    });
+    const gitLimit = options.maxRetire - repairLimit;
+    const operations = dependencies.createGitRetirementOperations({
+      root: options.root,
+      repo: options.repo!,
+      gateHandle: acquired.handle,
+      nowMs: options.nowMs,
+    });
+    retirement =
+      gitLimit > 0
+        ? dependencies.retireLifecycleUnits({
+            items: inventory.items,
+            gateHandle: acquired.handle,
+            operations,
+            maxRetire: String(gitLimit),
+          })
+        : {
+            retired: [],
+            blocked: [],
+            cleanupReady: inventory.items
+              .filter((item) => item.lane === "retire-after-gate")
+              .sort(comparePatrolItems),
+            attempts: [],
+            remoteDeletionProposals: [],
+          };
+    const heartbeat = dependencies.heartbeatMaintenanceGate(acquired.handle);
+    if (!heartbeat.ok) {
+      postInventoryError =
+        `failed to heartbeat maintenance gate before post-apply inventory: ${
+          heartbeat.reason ?? "unknown heartbeat error"
+        }`;
+    } else {
+      const ownershipBefore =
+        dependencies.verifyMaintenanceGateOwnership(acquired.handle);
+      if (!ownershipBefore.ok) {
+        postInventoryError =
+          `lost maintenance gate ownership before post-apply inventory: ${
+            ownershipBefore.reason ?? "unknown ownership error"
+          }`;
+      } else {
+        try {
+          // Renew the fence AS the inventory works, not merely before it.
+          //
+          // This is the longest operation inside the fence — on a large
+          // checkout it outlives the 120s Coven lease on its own (measured at
+          // 141s against COVEN_OWNER_LEASE_MS), so heartbeating once above and
+          // verifying ownership afterwards is not enough: the lease is already
+          // gone by the time the inventory returns, the ownership check below
+          // cannot pass, and the release at the end of this function fails with
+          // "maintenance lease expired".
+          //
+          // createFenceRenewal anchors renewal to progress rather than to a
+          // timer, which is the only thing that works here: the inventory is
+          // synchronous throughout (spawnSync for git and gh), so it never
+          // yields and no timer callback would ever run. The create path solved
+          // exactly this for its own inventory in cave-cs9g1; this call site
+          // was left behind. See cave-ykj47.
+          //
+          // Throwing on a failed heartbeat is deliberate and matches
+          // createFenceRenewal's fail-closed contract: if the fence is gone,
+          // continuing would do unexcluded work while believing otherwise. The
+          // catch below turns that into a reported postInventoryError rather
+          // than an abort, because the retirement above has already happened
+          // and its result must still be reported.
+          const makeFenceRenewal =
+            dependencies.createFenceRenewal ?? createFenceRenewal;
+          const renewFenceDuringPostInventory = makeFenceRenewal(() => {
+            const renewed = dependencies.heartbeatMaintenanceGate(acquired.handle);
+            if (!renewed.ok) {
+              throw new Error(
+                `failed to heartbeat maintenance gate during post-apply inventory: ${
+                  renewed.reason ?? "unknown heartbeat error"
+                }`,
+              );
+            }
+          });
+          const candidatePostInventory =
+            dependencies.collectWorktreeLifecycleInventory({
+              repo: options.repo!,
+              root: options.root,
+              nowMs: options.nowMs,
+              onProgress: renewFenceDuringPostInventory,
+            });
+          const ownershipAfter =
+            dependencies.verifyMaintenanceGateOwnership(acquired.handle);
+          if (!ownershipAfter.ok) {
+            postInventoryError =
+              `lost maintenance gate ownership after post-apply inventory: ${
+                ownershipAfter.reason ?? "unknown ownership error"
+              }`;
+          } else {
+            const unreconciled = metadataRepair.repaired.filter((repaired) =>
+              (candidatePostInventory.orphanedMetadata ?? []).some(
+                (candidate) =>
+                  candidate.beadId === repaired.beadId &&
+                  candidate.location === repaired.location &&
+                  candidate.branch === repaired.branch &&
+                  candidate.path === repaired.path,
+              ),
+            );
+            if (unreconciled.length > 0) {
+              postInventoryError =
+                `post-apply inventory still reports repaired orphaned metadata: ${unreconciled
+                  .map((candidate) => `${candidate.beadId}:${candidate.location}`)
+                  .join(", ")}`;
+            } else {
+              postInventory = candidatePostInventory;
+            }
+          }
+        } catch (error) {
+          postInventoryError =
+            `failed to collect post-apply inventory: ${errorMessage(error)}`;
+        }
+      }
+    }
+  } catch (error) {
+    thrown = error;
+  }
+
+  let releaseWarning: string | undefined;
+  try {
+    const released = dependencies.releaseMaintenanceGate(acquired.handle);
+    if (!released.ok) {
+      releaseWarning = formatGateFailure("release", released.reason);
+    }
+  } catch (error) {
+    releaseWarning = formatGateFailure("release", errorMessage(error));
+  }
+
+  if (thrown !== undefined) {
+    if (releaseWarning) {
+      throw new Error(`${errorMessage(thrown)}; ${releaseWarning}`, {
+        cause: thrown instanceof Error ? thrown : undefined,
+      });
+    }
+    throw thrown;
+  }
+
+  if (metadataRepair === undefined || retirement === undefined) {
+    throw new Error("apply completed without metadata repair and retirement results");
+  }
+
+  return {
+    metadataRepair,
+    retirement,
+    ...(postInventory ? { postInventory } : {}),
+    ...(postInventoryError ? { postInventoryError } : {}),
+    ...(releaseWarning ? { warning: releaseWarning } : {}),
+  };
 }
 
-try {
-  const options = parseArgs(process.argv.slice(2));
-  const items = collect(options);
-  const summary = summarizeWorktreeLifecycle(items);
+export function main(argv = process.argv.slice(2)): number {
+  const options = parseArgs(argv);
+  const inventory = collectWorktreeLifecycleInventory({
+    repo: options.repo!,
+    root: options.root,
+    nowMs: options.nowMs,
+  });
+  const summary = summarizeInventory(inventory);
+
+  if (options.apply) {
+    const capabilities = repositoryMaintenanceCapabilities();
+    const admission = assessMaintenancePlaneAdmission({
+      capabilities: capabilities as unknown as MaintenancePlaneCapabilities,
+      allowUnenforcedPlanes: options.allowUnenforcedPlanes,
+    });
+    if (!admission.ok) {
+      // A refusal the flag cannot lift reads differently from the ordinary
+      // gate-incomplete one, and saying so stops an operator adding the flag
+      // again harder when the local plane is what is missing.
+      if (admission.code !== "gate-incomplete") {
+        console.error(`worktree-lifecycle-patrol: --apply refused; ${admission.diagnostic}`);
+        return 2;
+      }
+      return renderApplyUnavailable(options, inventory, summary, capabilities);
+    }
+    if (admission.degraded) {
+      // Audit before acting, not after: if the run dies mid-retirement, the
+      // record of which planes were waived must already exist. stderr so it
+      // survives --json consumers reading stdout.
+      console.error(
+        [
+          "worktree-lifecycle-patrol: DEGRADED APPLY — proceeding with unenforced maintenance planes",
+          `  waived: ${admission.waivedPlanes.join(", ")}`,
+          ...admission.waivedPlanes.map(
+            (plane) =>
+              `    ${plane.padEnd(7)} ${capabilities[plane]?.source || "no source recorded"}`,
+          ),
+          "  local plane is enforced; exclusion still applies.",
+          "  Authorized by --allow-unenforced-planes (cave-s03wp).",
+        ].join("\n"),
+      );
+    }
+  }
+
+  if (options.apply) {
+    const {
+      metadataRepair,
+      retirement,
+      postInventory,
+      postInventoryError,
+      warning,
+    } = runRetirementApply(options, inventory);
+    const outcome = evaluateRetirementApplyOutcome({
+      metadataRepair,
+      retirement,
+      postInventoryError,
+      warning,
+    });
+    const reportingInventory = postInventory ?? inventory;
+    const postSummary = summarizeInventory(reportingInventory);
+    console.log(
+      options.json
+        ? renderJsonReport(options, reportingInventory, postSummary, {
+            ok: outcome.ok,
+            ...(outcome.reason ? { reason: outcome.reason } : {}),
+            ...(warning ? { warning } : {}),
+            inventoryPhase: postInventory ? "post-apply" : "pre-apply-fallback",
+            ...(postInventoryError ? { postInventoryError } : {}),
+            metadataRepair,
+            retirement,
+          })
+        : `${renderApplyReport(
+            postSummary,
+            retirement,
+            warning,
+            postInventoryError,
+            metadataRepair,
+          )}${renderOrphanedMetadataClaims(reportingInventory)}`,
+    );
+    return outcome.status;
+  }
+
   console.log(
     options.json
-      ? JSON.stringify({ ok: true, generatedAt: new Date(options.nowMs).toISOString(), ...summary }, null, 2)
-      : renderWorktreeLifecycleReport(summary),
+      ? renderJsonReport(options, inventory, summary)
+      : renderPatrolReport(summary, inventory, options.nowMs),
   );
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`worktree-lifecycle-patrol: ${message}`);
-  process.exit(1);
+  return 0;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    process.exit(main());
+  } catch (error) {
+    console.error(`worktree-lifecycle-patrol: ${errorMessage(error)}`);
+    process.exit(1);
+  }
 }

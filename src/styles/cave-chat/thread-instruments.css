@@ -28,10 +28,28 @@
 /* ── Spine — left gutter, scrolls with the content ───────────────────────── */
 
 .cave-thread-spine {
+  /* Stamp lane. The clock sits in its OWN column left of the node ring rather
+     than sliding under it — a 26px ring painted over a ~30px stamp left every
+     turn reading as a half-covered smudge ("23:00" with the circle across the
+     "00").
+
+     Sized from the clock STRING, not a px guess: `--cave-spine-stamp-chars` is
+     how many characters the longest stamp in this thread needs, and the lane
+     derives from the stamp's own mono type scale. 24-hour locales need 5
+     ("23:00"); 12-hour ones need 8 ("11:00 PM") and can raise the knob without
+     any other value in this file moving. */
+  --cave-spine-stamp-chars: 5;
+  /* 0.62em is the digit advance of the mono stack at this size — the ratio the
+     stamp actually renders at, so the lane tracks a font change instead of
+     silently going back under the ring. */
+  --cave-spine-stamp-lane: calc(var(--cave-spine-stamp-chars) * 0.62 * var(--text-2xs));
+  --cave-spine-stamp-gap: var(--space-1);
+  --cave-spine-node-inset: calc(var(--cave-spine-stamp-lane) + var(--cave-spine-stamp-gap));
   position: absolute;
   top: 0;
   left: 0;
-  width: 64px;
+  /* The ring column plus its hover slack, pushed right by the stamp lane. */
+  width: calc(var(--cave-spine-node-inset) + var(--space-6) + var(--space-6));
   z-index: 10;
   opacity: 0.45;
   transition: opacity 180ms ease;
@@ -45,14 +63,15 @@
 .cave-thread-spine__line {
   position: absolute;
   top: 0;
-  left: 31px;
+  /* Centred under the 26px ring, which now starts at the node inset. */
+  left: calc(var(--cave-spine-node-inset) + 13px);
   width: 1px;
   background: var(--border-hairline);
 }
 
 .cave-thread-spine__node {
   position: absolute;
-  left: 18px;
+  left: var(--cave-spine-node-inset);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -102,11 +121,22 @@
 }
 
 .cave-thread-spine__time {
-  /* The design overlays the stamp at the gutter's left edge, sliding just
-     under the node's ring — right-anchoring it would clip at the pane edge. */
+  /* Right-anchored into the lane, so the stamp ENDS a gap short of the ring
+     instead of running beneath it. The spine only mounts at a wide scroller
+     (THREAD_INSTRUMENTS_MIN_WIDTH), so the lane has room to grow leftward
+     without reaching the pane edge.
+
+     The lane also clips: a stamp longer than its column is cut at the left
+     rather than sliding back under the ring, which keeps the failure mode
+     "unreadable prefix" instead of "unreadable everything". */
   position: absolute;
   top: 1px;
-  left: -18px;
+  left: auto;
+  right: 100%;
+  margin-right: var(--cave-spine-stamp-gap);
+  width: var(--cave-spine-stamp-lane);
+  overflow: hidden;
+  text-align: right;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   color: var(--text-muted);

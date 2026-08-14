@@ -73,6 +73,21 @@ export function consumeCovenTabPending(): boolean {
   return pending;
 }
 
+// Which coven to select once the tab opens. Promoting a solo chat (cave-9xadi)
+// creates a group and then hands off to the coven surface, which otherwise
+// mounts with no active group and would drop you on the empty state — next to
+// the coven you just made. Same latch discipline as covenTabPending: set
+// synchronously before the mode flips, consumed once by whoever mounts.
+let pendingCovenGroupId: string | null = null;
+export function markCovenGroupPending(groupId: string): void {
+  pendingCovenGroupId = groupId.trim() || null;
+}
+export function consumeCovenGroupPending(): string | null {
+  const pending = pendingCovenGroupId;
+  pendingCovenGroupId = null;
+  return pending;
+}
+
 // Same latch for the Skills tab (familiar scope): the composer "+" menu's
 // "Manage skills" lives on surfaces (Home) where ChatSurface may not be
 // mounted yet, so the mode flip + fire-and-forget event can race its listener.

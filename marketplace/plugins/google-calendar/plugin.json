@@ -18,6 +18,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/google-calendar",
   "x-coven": {
     "displayName": "Google Calendar",

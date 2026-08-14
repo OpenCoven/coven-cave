@@ -20,6 +20,7 @@
     "skills",
     "prompts"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/worldbuilding",
   "x-coven": {
     "displayName": "Worldbuilding",

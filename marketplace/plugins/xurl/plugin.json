@@ -19,6 +19,7 @@
     "network",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/xurl",
   "x-coven": {
     "displayName": "xurl",

@@ -78,7 +78,8 @@ assert.match(
   "SyntaxBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
 );
 
-const markdownBlock = /export function MarkdownBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const markdownBlock =
+  /export function MarkdownBlock\([\s\S]*?\n\}\n\nfunction escHtml/.exec(source)?.[0] ?? "";
 assert.match(
   markdownBlock,
   /useWireCopyButtons\(/,
@@ -90,7 +91,8 @@ assert.match(
   "MarkdownBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
 );
 
-const markdownContent = /function MarkdownContent\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const markdownContent =
+  /function MarkdownContent\([\s\S]*?\n\}\n\nexport function ProgressiveMarkdownBlock/.exec(source)?.[0] ?? "";
 assert.match(
   markdownContent,
   /useWireCopyButtons\(/,
@@ -98,11 +100,9 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// Centered reading column (cave-xsq.1) — supersedes the 2026-06-18 full-width
-// decision: the transcript + composer share ONE comfortable measure
-// (--cave-chat-measure) and sit in a centered column so long responses read
-// like ChatGPT instead of running edge-to-edge on a wide pane. The old 920px /
-// 1180px hardcoded caps stay gone (the measure is now a token).
+// Centered reading column (cave-xsq.1): the transcript keeps one comfortable
+// measure while the composer can use the full dock width. The old 920px /
+// 1180px hardcoded caps stay gone (the reading measure is now a token).
 // ---------------------------------------------------------------------------
 
 assert.match(
@@ -112,7 +112,7 @@ assert.match(
 );
 // The 2026-07-21 wide-column pass supersedes chat-revamp 1b's 760px: the
 // transcript reads on a roomier 1024px (64rem) column — long responses and
-// code blocks get width — still shared by the suggestion row and composer.
+// code blocks get width — still shared by the suggestion row.
 // Pin the exact value so drift in either direction is a deliberate decision.
 {
   const measure = /--cave-chat-measure:\s*([\d.]+)rem/.exec(css);
@@ -141,8 +141,8 @@ assert.doesNotMatch(
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearComposerShell,
-  /max-width:\s*var\(--cave-chat-measure\)/,
-  "Linear composer shell shares the thread's reading measure so the input aligns under the column",
+  /max-width:\s*100%/,
+  "Linear composer shell should use the full dock width",
 );
 
 // ---------------------------------------------------------------------------

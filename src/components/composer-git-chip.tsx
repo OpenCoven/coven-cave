@@ -108,15 +108,19 @@ export function GitBranchMenuPopover({
   open,
   onOpenChange,
   anchorRef,
+  placement = "top-start",
   projectRoot,
   onSwitched,
   pr,
   onOpenPr,
   onOpenChanges,
+  ariaLabel = "Switch branch",
+  menuLabel = "Branches",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  placement?: "bottom-start" | "top-start";
   /** Repo root the menu operates on (undefined disables everything). */
   projectRoot: string | undefined;
   /** Called after a successful branch switch (e.g. reload the status poll). */
@@ -127,6 +131,10 @@ export function GitBranchMenuPopover({
   onOpenPr?: (url: string) => void;
   /** …and the Git-changes drill-through. */
   onOpenChanges?: () => void;
+  /** Accessible and visible heading for the opened popover. */
+  ariaLabel?: string;
+  /** Accessible name for the menu body. */
+  menuLabel?: string;
 }) {
   const root = projectRoot?.trim() ? projectRoot : undefined;
   const menuOpen = open;
@@ -273,12 +281,12 @@ export function GitBranchMenuPopover({
         else onOpenChange(true);
       }}
       anchorRef={anchorRef}
-      placement="top-start"
+      placement={placement}
       minWidth={240}
-      ariaLabel="Switch branch"
+      ariaLabel={ariaLabel}
     >
-      <PopoverBody role="menu" ariaLabel="Branches">
-        <PopoverLabel>Switch branch</PopoverLabel>
+      <PopoverBody role="menu" ariaLabel={menuLabel}>
+        <PopoverLabel>{ariaLabel}</PopoverLabel>
         {rows === null ? (
           <div className="cave-composer-git-chip__menu-note">Loading branches…</div>
         ) : (

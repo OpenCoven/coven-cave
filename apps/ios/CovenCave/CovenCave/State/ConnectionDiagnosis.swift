@@ -83,6 +83,15 @@ struct ConnectionDiagnosis: Equatable, Sendable {
         systemImage: "exclamationmark.triangle.fill"
     )
 
+    static func credentialFailure(_ message: String) -> ConnectionDiagnosis {
+        ConnectionDiagnosis(
+            title: "Pair this Cave again",
+            message: message,
+            guidance: "Open Cave on the desktop → “Open on phone”, then scan the QR code or paste the invite link here.",
+            systemImage: "lock.trianglebadge.exclamationmark"
+        )
+    }
+
     static func diagnosis(for failure: ProbeFailure?) -> ConnectionDiagnosis {
         guard let failure else { return .generic }
         switch failure {

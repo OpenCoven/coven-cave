@@ -124,6 +124,36 @@
 .cave-md em     { font-style: italic; color: var(--text-secondary); }
 .cave-md del    { text-decoration: line-through; color: var(--text-muted); opacity: 0.7; }
 
+.cave-response-status {
+  --response-status-color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-5);
+  padding-inline: var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--response-status-color) 38%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--response-status-color) 14%, transparent);
+  color: var(--response-status-color);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: var(--tracking-wide);
+  line-height: 1;
+  vertical-align: 0.08em;
+}
+
+.cave-response-status[data-tone="success"] {
+  --response-status-color: var(--color-success);
+}
+
+.cave-response-status[data-tone="warning"] {
+  --response-status-color: var(--color-warning);
+}
+
+.cave-response-status[data-tone="danger"] {
+  --response-status-color: var(--color-danger);
+}
+
 .cave-md a {
   color: var(--accent-presence-soft);
   text-decoration: underline;

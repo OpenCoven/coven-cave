@@ -222,8 +222,18 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*if \(openclawLaunch\.unresolvedWindowsShim\)[\s\S]*openclaw_unsafe_shell/,
-  "OpenClaw chat should fail closed when it cannot resolve a Windows npm shim's JavaScript target",
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*requiredFiles:\s*openclawLaunch\.requiredFiles,[\s\S]*openclawAvailability\.state !== "ready"/,
+  "OpenClaw chat should fail closed when the launch plan is not ready",
+);
+assert.match(
+  chatRoute,
+  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*unresolvedWindowsShim: openclawLaunch\.unresolvedWindowsShim === true/,
+  "OpenClaw chat should classify an unresolved Windows npm shim through the shared availability contract",
+);
+assert.match(
+  chatRoute,
+  /const openclawAvailability = evaluateRuntimeAvailability\(\{[\s\S]*runner: "openclaw"[\s\S]*command: openclawLaunch\.command[\s\S]*requiredFiles: openclawLaunch\.requiredFiles[\s\S]*\}\);[\s\S]*if \(openclawAvailability\.state !== "ready"\)[\s\S]*return;[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command/,
+  "OpenClaw chat should use the shared passive availability gate before spawning",
 );
 
 assert.match(
@@ -246,8 +256,8 @@ assert.match(
 
 assert.match(
   openclawBridge,
-  /"agent"[\s\S]*"--agent"[\s\S]*agentId[\s\S]*"--message"[\s\S]*harnessPrompt[\s\S]*"--json"/,
-  "OpenClaw native chat should call openclaw agent with the resolved agent id and JSON output",
+  /executionMode === "local" \? \["--local"\] : \[\]/,
+  "OpenClaw native chat should keep the CLI Gateway route by default and select embedded mode explicitly",
 );
 
 assert.match(
@@ -271,7 +281,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /const openclawLaunch = openClawLaunchCommand\(\);[\s\S]*const spawnArgv = \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\];[\s\S]*spawn\(openclawLaunch\.command, spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: false/,
+  /const spawnChild = \(mode: "gateway" \| "local"\) => \{[\s\S]*openClawAgentArgs\(args\.harnessPrompt, agentId, conversationId, mode\)[\s\S]*spawn\((?:\/\* turbopackIgnore: true \*\/ )?openclawLaunch\.command, \[\.\.\.openclawLaunch\.fixedArgs, \.\.\.argv\],[\s\S]*env: openclawEnv,[\s\S]*shell: false/,
   "OpenClaw chat should invoke resolved npm shims through Node without shell parsing untrusted prompts",
 );
 
@@ -335,6 +345,11 @@ assert.match(
   "Response metadata should expose unsupported/saved state instead of claiming application",
 );
 assert.match(
+  chatRoute,
+  /savedModelSelectionRejection\(\{[\s\S]*?desiredModel,[\s\S]*?modelState,[\s\S]*?harness: binding\.harness,[\s\S]*?modelForwardingEnabled,[\s\S]*?invalidSavedModel,[\s\S]*?\}\)/,
+  "Saved model selections must fail closed when the runtime cannot accept or forward them",
+);
+assert.match(
   modelHelpers,
   /const sessionModel =[\s\S]*modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null/,
   "Session-scoped model overrides should feed the response model state, not only desiredModel",
@@ -376,29 +391,19 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  chatRoute,
-  /reasoningEffort\?: string;/,
-  "Send body should accept the composer thinking control value",
-);
-assert.match(
-  chatRoute,
-  /responseSpeed\?: string;/,
-  "Send body should accept the composer speed control value",
-);
-assert.match(
   chatView,
-  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed/,
-  "ChatView should send selected Thinking and Speed controls through the existing chat send body",
+  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*modelControls: controlsOverride\?\.modelControls \?\? modelControls/,
+  "ChatView should send the selected-model capability map through the chat send body",
 );
 assert.match(
   chatRoute,
-  /type OfflineChatQueuePayload = Pick<[\s\S]*\|\s*"reasoningEffort"[\s\S]*\|\s*"responseSpeed"/,
-  "Offline queued sends should preserve response controls from any composer surface",
+  /type OfflineChatQueuePayload = Pick<[\s\S]*\|\s*"modelControls"/,
+  "Offline queued sends should preserve selected-model controls",
 );
 assert.match(
   chatRoute,
-  /const payload: OfflineChatQueuePayload = \{[\s\S]*reasoningEffort: args\.body\.reasoningEffort,[\s\S]*responseSpeed: args\.body\.responseSpeed/,
-  "The send route should carry composer responseSpeed through offline queue payloads",
+  /const payload: OfflineChatQueuePayload = \{[\s\S]*modelControls: args\.body\.modelControls/,
+  "The send route should carry selected-model controls through offline queue payloads",
 );
 assert.match(
   modelHelpers,
@@ -406,14 +411,14 @@ assert.match(
   "Chat send model helpers should turn composer controls into harness-visible instructions",
 );
 assert.match(
-  modelHelpers,
-  /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
-  "Chat send model helpers should continue accepting responseSpeed from all composer send bodies",
+  chatRoute,
+  /promptOnlyModelControls/,
+  "Chat send route should only turn explicitly prompt-only capabilities into prompt guidance",
 );
 assert.match(
   modelHelpers,
-  /export function persistedTurnControls\([\s\S]*reasoningEffort: normalizeReasoningEffort\(body\.reasoningEffort\),[\s\S]*responseSpeed: normalizeResponseSpeed\(body\.responseSpeed\),[\s\S]*cleanModelId\(retryModel\)/,
-  "Completed user turns should retain normalized controls and only a confirmed or routed retry model",
+  /export function persistedTurnControls\([\s\S]*body\.modelControls[\s\S]*modelControls: body\.modelControls[\s\S]*cleanModelId\(retryModel\)[\s\S]*modelOverrideScope === "runtime-default"/,
+  "Completed user turns should retain selected controls, a confirmed retry model, or model-less runtime-default intent",
 );
 assert.equal(
   (
@@ -421,8 +426,8 @@ assert.equal(
       /\.\.\.persistedTurnControls\((?:args\.body|body), responseMetadata\.retryModel\)/g,
     ) ?? []
   ).length,
-  4,
-  "OpenClaw and native stub plus transcript writers should persist retry controls",
+  6,
+  "OpenClaw, native stubs, and transcript writers should persist retry controls",
 );
 assert.match(
   chatRoute,
@@ -514,6 +519,27 @@ assert.match(
   /const generationOrigin = existingConversation\?\.origin \?\? body\.origin/,
   "a request must not relabel an existing user chat as a projectless hidden generation",
 );
+// cave-o3nq7: the hidden-generation exemption must be decided by the shared
+// helper, which admits only the familiar's own workspace. The old inline
+// `resumeCwd ?? resolvedFamiliarWorkspace` adopted a daemon session's
+// project_root — from a list that is global and carries no familiar id — with
+// authorizeChatProjectLaunch skipped entirely.
+assert.match(
+  chatRoute,
+  /const projectlessLaunch = projectlessGenerationLaunch\(\{[\s\S]*?origin: generationOrigin,[\s\S]*?resumeCwd,[\s\S]*?familiarWorkspace: resolvedFamiliarWorkspace,[\s\S]*?\}\)/,
+  "the projectless branch should delegate to the shared launch decision",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /generationRoot = sshRuntime \? homedir\(\) : \(resumeCwd \?\? resolvedFamiliarWorkspace\)/,
+  "a hidden generation must not adopt a resume cwd without the launch gate",
+);
+const projectlessDecisionIndex = chatRoute.indexOf('projectlessLaunch.kind === "workspace"');
+const projectlessGateIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");
+assert.ok(
+  projectlessDecisionIndex >= 0 && projectlessDecisionIndex < projectlessGateIndex,
+  "the auth-free workspace case must be the only branch that skips the launch gate",
+);
 
 const authorizeLaunchIndex = chatRoute.indexOf("await authorizeChatProjectLaunch");
 const offlineLaunchIndex = chatRoute.indexOf("const offlineChatResponse = await maybeQueueOfflineChat");
@@ -542,8 +568,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /filterProjectsForFamiliar\(projects, body\.familiarId\)/,
-  "Local Cave chat should derive grant-aware project roots for the familiar before building the runtime prompt",
+  /listAccessibleProjects\(projects, body\.familiarId\)/,
+  "Local Cave chat should derive grant-aware project roots (with each root's access level) for the familiar before building the runtime prompt",
 );
 
 assert.match(
@@ -554,14 +580,20 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /projectRootAccess: grantedProjectRootAccess/,
+  "The runtime prompt should carry each granted root's read/write access level so the boundary preamble can annotate it",
+);
+
+assert.match(
+  chatRoute,
   /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/project-permissions";/,
   "Chat send should import the shared project-permission chokepoint",
 );
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
-  "Chat send should resolve exact and worktree roots through the shared chat-project-access helper",
+  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
 );
 
 assert.match(
@@ -578,8 +610,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /body\.startNewConversation[\s\S]*!existingConversation[\s\S]*taskCard\?\.projectId[\s\S]*taskCard\.cwd === body\.projectRoot[\s\S]*projectIdOverride: taskWorktreeProjectId/,
-  "A fresh Board worktree handoff should authorize through its persisted task project instead of treating the worktree as an unregistered project",
+  /authorizeChatProjectLaunch\([\s\S]*resolveProjectId: \(requestedRoot, resolvedRoot\) =>[\s\S]*taskWorktreeProjectAccessId\(\{[\s\S]*startNewConversation: Boolean\(body\.startNewConversation\),[\s\S]*hasExistingConversation: Boolean\(existingConversation\),[\s\S]*taskProjectId: taskCard\?\.projectId,[\s\S]*taskCwd: taskCard\?\.cwd,[\s\S]*requestedProjectRoot: requestedRoot,[\s\S]*resolvedCwd: resolvedRoot,[\s\S]*\}\) \?\?[\s\S]*chatProjectAccessId/,
+  "A fresh Board worktree handoff should authorize through its persisted task project only after checking the resolved cwd remains inside that project",
 );
 
 assert.doesNotMatch(
@@ -604,6 +636,30 @@ assert.match(
   chatRoute,
   /const harnessPrompt = buildPromptWithBoundaryReminder\(scopedPrompt, body\.sessionId\)/,
   "The harness prompt should carry the corrective boundary reminder when the previous turn went out of bounds",
+);
+
+assert.match(
+  chatRoute,
+  /const runtimeAccessFingerprint = buildRuntimeAccessFingerprint\(/,
+  "Every local turn should fingerprint the effective project grants handed to the harness",
+);
+
+assert.match(
+  chatRoute,
+  /existingConversation[\s\S]*runtimeAccessFingerprint !== runtimeAccessFingerprint[\s\S]*buildResumeRetryPrompt\(harnessPrompt, existingConversation\)/,
+  "A resumed conversation whose live grant set changed should start a fresh sandbox with bounded transcript replay",
+);
+
+assert.match(
+  chatRoute,
+  /conv\.runtimeAccessFingerprint = runtimeAccessFingerprint/,
+  "Successful turns should persist the grant fingerprint used by their native harness session",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\([\s\S]*?"runtime-access-refresh"[\s\S]*?"Filesystem access refreshed"[\s\S]*?"done"/,
+  "A grant-triggered sandbox refresh should be observable in the turn timeline",
 );
 
 assert.match(
@@ -704,18 +760,34 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await setDefaultSessionTitleIfMissing\(finalSessionId, chatTitle\)/,
+  /await setDefaultStubTitleAuto\(finalSessionId, chatTitle\)/,
   "Fresh chats should store a Cave-side title override so daemon prompt-derived titles do not win in the session list",
 );
 
 assert.match(
   chatRoute,
-  /async function setDefaultSessionTitleIfMissing[\s\S]*await setSessionTitle\(sessionId, title\)/,
-  "The default title override helper should preserve existing titles and write only through the Cave title override path",
+  /async function setDefaultStubTitleAuto[\s\S]{0,400}setSessionTitleAutoIfOwned/,
+  "The default title override helper must use the atomic auto-owned write (setSessionTitleAutoIfOwned)",
 );
 
 assert.match(
   boardRoute,
   /isTrustedChatHarness\(binding\.harness\)/,
   "Board step enrichment should enforce the same trusted Coven harness gate",
+);
+
+// cave-o3nq7 review (#4582): the exemption's containment test must run on a
+// symlink-RESOLVED resume root. resolveLocalRuntimeCwd realpaths the root it is
+// handed and enforces only "inside $HOME", so a lexical check on the raw string
+// would let a symlink inside the familiar's own workspace resolve into another
+// project with authorizeChatProjectLaunch skipped.
+assert.match(
+  chatRoute,
+  /const resumeCwdResolved = resumeCwd\s*\?\s*await realpath\(resumeCwd\)\.catch\(\(\) => undefined\)\s*:\s*undefined/,
+  "the resume root is symlink-resolved, and an unresolvable root yields undefined",
+);
+assert.match(
+  chatRoute,
+  /projectlessGenerationLaunch\(\{[\s\S]*?resumeCwdResolved,[\s\S]*?\}\)/,
+  "the launch decision receives the resolved resume root",
 );

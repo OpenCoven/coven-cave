@@ -16,7 +16,7 @@ import type { ProjectAccessLevel } from "../project-access-levels.ts";
 describe("classifyProjectSection", () => {
   it("classifies familiar-workspace roots as workspaces", () => {
     assert.equal(
-      classifyProjectSection("/Users/buns/.coven/workspaces/familiars/nova"),
+      classifyProjectSection("/home/test/.coven/workspaces/familiars/nova"),
       "workspaces",
     );
     assert.equal(classifyProjectSection("/home/x/.coven/workspaces/team"), "workspaces");
@@ -24,7 +24,7 @@ describe("classifyProjectSection", () => {
 
   it("classifies everything else as repositories", () => {
     assert.equal(
-      classifyProjectSection("/Users/buns/Documents/GitHub/OpenCoven/coven-cave"),
+      classifyProjectSection("/home/test/Documents/GitHub/OpenCoven/coven-cave"),
       "repositories",
     );
     assert.equal(classifyProjectSection(""), "repositories");

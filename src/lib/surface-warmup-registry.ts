@@ -6,8 +6,6 @@ import { defineResource, invalidate, read, warm, type SurfaceWarmCacheRead } fro
 export type SurfaceWarmupSurface = WarmableSidebarSurface;
 export type SurfaceWarmResult = { backpressured: boolean };
 
-const GITHUB_WARMUP_REMAINING_FLOOR = 10;
-
 class SurfaceWarmupBackpressureError extends Error {
   readonly retryAfterSeconds: number;
 
@@ -36,7 +34,6 @@ export function surfaceWarmupRetryAfterSeconds(error: unknown): number {
 }
 
 export const surfaceWarmupResources = {
-  github: ["github:pat", "github:activity", "github:familiars", "board:cards"],
   marketplace: ["marketplace:catalog", "marketplace:skills"],
   board: ["board:cards"],
   schedules: ["schedules:inbox", "schedules:automations"],
@@ -127,13 +124,7 @@ export async function warmSurface(
   for (const resource of surfaceWarmupResources[surface]) {
     if (!canContinue()) return { backpressured: false };
     try {
-      const result = await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
-      // GitHub's landing response reports the remaining upstream allowance. Do
-      // not spend the last few calls on background work: direct navigation can
-      // still read this cache, but the coordinator stops its remaining queue.
-      if (resource === "github:activity" && (result.data.rateLimit?.remaining ?? Infinity) <= GITHUB_WARMUP_REMAINING_FLOOR) {
-        return { backpressured: true };
-      }
+      await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
     } catch (error) {
       if (error instanceof SurfaceWarmupBackpressureError) return { backpressured: true };
       // Landing resources are independent. A transient failure in one API

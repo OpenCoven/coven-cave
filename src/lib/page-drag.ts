@@ -6,6 +6,8 @@
  * than React props.
  */
 
+import { workspacePageDefinition } from "./workspace-page-registry.ts";
+
 /** DataTransfer type carried by a page drag (value = the page/mode id). */
 export const PAGE_DRAG_MIME = "application/x-cave-page";
 
@@ -22,14 +24,8 @@ export type PageDragDetail = {
   label: string;
 };
 
-/** Pages that should never be openable in a split (heavy/stateful surfaces,
- *  or modes that redirect out of the workspace — journal → Settings).
- *  Role Surface rooms (`surface:<id>`) are also excluded: they are
- *  per-familiar workspaces, not draggable pages. */
-const NON_SPLITTABLE = new Set(["terminal", "journal"]);
-
 export function isSplittablePage(mode: string): boolean {
-  return !NON_SPLITTABLE.has(mode) && !mode.startsWith("surface:");
+  return workspacePageDefinition(mode) !== null;
 }
 
 export function emitPageDragStart(detail: PageDragDetail): void {

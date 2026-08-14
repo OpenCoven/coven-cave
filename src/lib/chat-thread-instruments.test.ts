@@ -152,6 +152,60 @@ const instrumentStyles = readFileSync(
   "utf8",
 );
 
+test("the spine stamp sits in its own lane, never under the node ring", () => {
+  // The stamp used to be placed at `left: -18px` on a node inset by 18px, so
+  // it started at the gutter's x=0 and ran ~30px right — straight beneath the
+  // 26px ring, which paints over it. Right-anchoring is what keeps the clock
+  // legible, so pin the anchor rather than any one offset.
+  assert.match(
+    instrumentStyles,
+    /\.cave-thread-spine__time \{[^}]*right: 100%;/,
+    "the stamp must end at the node's left edge, not start at the gutter's",
+  );
+  assert.match(
+    instrumentStyles,
+    /\.cave-thread-spine__time \{[^}]*margin-right: var\(--cave-spine-stamp-gap\);/,
+    "a gap must separate the stamp from the ring",
+  );
+  assert.doesNotMatch(
+    instrumentStyles,
+    /\.cave-thread-spine__time \{[^}]*left: -/,
+    "a negative left pulls the stamp back under the ring — the original bug",
+  );
+
+  // The ring column and the rule under it must both be pushed right by the
+  // same lane, or widening the lane just moves the collision instead of
+  // removing it.
+  for (const [selector, expected] of [
+    [".cave-thread-spine__node", "left: var(--cave-spine-node-inset);"],
+    [".cave-thread-spine__line", "left: calc(var(--cave-spine-node-inset) + 13px);"],
+  ] as const) {
+    const block = new RegExp(`\\${selector} \\{[^}]*${expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+    assert.match(instrumentStyles, block, `${selector} must derive from the stamp lane`);
+  }
+
+  // The lane is sized from the clock STRING, not a px guess: a 12-hour locale
+  // renders "11:00 PM" where a 24-hour one renders "23:00", and only a
+  // character-count knob survives that difference on someone else's machine.
+  assert.match(
+    instrumentStyles,
+    /--cave-spine-stamp-chars: \d+;/,
+    "the lane must be driven by a character count",
+  );
+  assert.match(
+    instrumentStyles,
+    /--cave-spine-stamp-lane: calc\(var\(--cave-spine-stamp-chars\) \* [\d.]+ \* var\(--text-2xs\)\)/,
+    "the lane must derive from the stamp's own type scale, so a font change moves it too",
+  );
+  // Clipping keeps an over-long stamp cut at the left instead of sliding back
+  // under the ring — an unreadable prefix beats an unreadable whole.
+  assert.match(
+    instrumentStyles,
+    /\.cave-thread-spine__time \{[^}]*overflow: hidden;/,
+    "an over-long stamp must clip inside its lane",
+  );
+});
+
 test("instrument controls use the shared focus ring and no dead running class", () => {
   assert.match(instruments, /className=\{`cave-thread-spine__node focus-ring/);
   assert.match(instruments, /className=\{`cave-thread-map__row focus-ring/);

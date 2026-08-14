@@ -1,0 +1,75 @@
+{
+  "source": {
+    "repo": "openclaw/openclaw",
+    "commit": "d66b514a7e7565d89c87ab6f1a509623128093f0",
+    "paths": [
+      "src/gateway/server-chat.ts",
+      "src/gateway/server-chat.agent-events.test.ts",
+      "ui/src/pages/activity/tool-activity.ts"
+    ]
+  },
+  "frames": [
+    {
+      "event": "agent",
+      "payload": {
+        "runId": "run-1",
+        "seq": 3,
+        "stream": "tool",
+        "ts": 1000,
+        "data": {
+          "phase": "start",
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "args": { "command": "echo hi" }
+        }
+      }
+    },
+    {
+      "event": "agent",
+      "payload": {
+        "runId": "run-1",
+        "seq": 7,
+        "stream": "tool",
+        "ts": 1100,
+        "data": {
+          "phase": "update",
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "partialResult": "hi"
+        }
+      }
+    },
+    {
+      "event": "agent",
+      "payload": {
+        "runId": "run-1",
+        "seq": 9,
+        "stream": "tool",
+        "ts": 1200,
+        "data": {
+          "phase": "result",
+          "toolCallId": "tool-1",
+          "name": "exec",
+          "result": { "text": "hi", "exitCode": 0 },
+          "isError": false
+        }
+      }
+    },
+    {
+      "event": "session.tool",
+      "payload": {
+        "runId": "run-2",
+        "seq": 5,
+        "stream": "tool",
+        "ts": 1300,
+        "data": {
+          "phase": "result",
+          "toolCallId": "tool-2",
+          "name": "edit",
+          "result": { "status": "failed", "text": "validation failed" },
+          "isError": true
+        }
+      }
+    }
+  ]
+}

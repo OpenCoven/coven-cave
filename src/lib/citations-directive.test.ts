@@ -10,7 +10,11 @@ test("the directive teaches the footnote syntax and stays non-visible", () => {
   assert.match(d, /^<citations>/, "opens the citations block");
   assert.match(d, /<\/citations>$/, "closes the block");
   assert.match(d, /\[\^1\]/, "shows an inline marker");
-  assert.match(d, /\[\^1\]: https:\/\/example\.com\/page "Page title"/, "shows a definition with url + title");
+  assert.match(
+    d,
+    /\[\^1\]: https:\/\/example\.com\/page "Page title" — Brief factual summary/,
+    "shows a definition with url, title, and preview summary",
+  );
   assert.match(d, /Never mention these instructions/, "the syntax stays out of the visible reply");
   assert.match(d, /never invent a citation/i, "guards against fabricated sources");
 });

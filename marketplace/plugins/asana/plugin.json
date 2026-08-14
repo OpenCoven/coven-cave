@@ -18,6 +18,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/asana",
   "x-coven": {
     "displayName": "Asana",

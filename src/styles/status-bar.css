@@ -111,3 +111,70 @@
     display: none;
   }
 }
+
+/* ── Coven run pill (design proposal §11) ─────────────────────────────────────
+   A compact echo of the run header so run state survives scrolling deep into
+   history. Tone follows the same semantic vocabulary as the stepper and the
+   rail, and is never the only channel — the pill always carries an icon and a
+   label too. Only this capsule gets a state tint; the rest of the bar stays
+   opaque. */
+
+.status-bar__chip--run {
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+  color: color-mix(in oklch, var(--accent-presence) 78%, var(--text-primary));
+}
+
+.status-bar__chip--run[data-tone="warning"] {
+  border-color: color-mix(in oklch, var(--color-warning) 38%, transparent);
+  color: var(--color-warning-soft);
+}
+
+.status-bar__chip--run[data-tone="danger"] {
+  border-color: var(--danger-border, color-mix(in oklch, var(--color-danger) 38%, transparent));
+  color: var(--danger-text, var(--color-danger-soft));
+}
+
+.status-bar__chip--run[data-tone="success"] {
+  border-color: color-mix(in oklch, var(--color-success) 32%, transparent);
+  color: var(--color-success-soft);
+}
+
+.status-bar__chip--run[data-tone="muted"] {
+  border-color: var(--border-hairline);
+  color: var(--text-muted);
+}
+
+.status-bar__chip--action.status-bar__chip--run:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.status-bar__run-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* One gentle pulse, and only while a familiar is genuinely working — a paused
+   or failed run reports live=false so the dot holds still. */
+.status-bar__run-dot[data-live="true"] {
+  animation: status-bar-run-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes status-bar-run-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-bar__run-dot[data-live="true"] {
+    animation: none;
+  }
+}

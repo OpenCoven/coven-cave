@@ -8,12 +8,21 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 10px 6px 10px;
+  /* No padding of its own. .cnav declares none either, so both rails start at
+     the same offset inside the shared .shell-nav — a 10px block padding here
+     pushed Home's entire column down relative to Chat's, which read as the rail
+     jumping on every toggle. Horizontal insets come from --rail-pad per band. */
+  padding: 0;
   font-size: var(--text-base);
   color: var(--text-secondary);
-  gap: 10px;
-  background: linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 55%, transparent), transparent 42%),
-    var(--bg-base);
+  /* No blanket column gap. It applied between EVERY top-level band, which the
+     Chat rail (.cnav) has no equivalent of — so the section tabs and the shared
+     header sat 10px lower in Home than in Chat and the rail jumped vertically
+     on every toggle. The shared bands carry their own margins instead. */
+  gap: 0;
+  /* The panel surface belongs to .shell-nav — one background for both
+     sections, so toggling Home <-> Chat cannot change the rail's shade. */
+  background: transparent;
   transition: transform 200ms ease;
 }
 
@@ -63,44 +72,11 @@
   border-color: transparent;
 }
 
-/* Header familiar switcher (cave-vtk9) — the scope selector on every page.
-   Zero horizontal padding so the trigger's edges line up exactly with the
-   New-chat CTA below it (.sidebar-actions is also flush). */
-.sidebar-familiar-switch {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  flex-shrink: 0;
-  padding: 0;
-}
-.sidebar-familiar-switch .familiar-quickswitch {
-  min-width: 0;
-  flex: 1;
-}
-/* The trigger wears the New-chat CTA's exact chrome (outlined accent, 34px,
-   control radius) as a full-width multiselector dropdown — the two stacked
-   full-width controls read as one family; the caret marks the selector. */
-.sidebar-familiar-switch .familiar-switcher__trigger--labeled {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  min-height: 34px;
-  gap: 10px;
-  padding: 0 var(--space-2);
-  justify-content: flex-start;
-  border-radius: var(--radius-control);
-  border: 2px solid var(--accent-presence);
-  background: transparent;
-}
-.sidebar-familiar-switch .familiar-switcher__trigger--labeled:hover {
-  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
-  border-color: var(--accent-presence);
-}
-.sidebar-familiar-switch .familiar-switcher__trigger-label {
-  font-size: var(--text-base);
-  font-weight: 600;
-}
+/* The familiar switcher and New chat live in .rail-header (see
+   styles/globals/rail-header.css) — ONE declaration shared with the Chat
+   section. They used to be forked here as .sidebar-familiar-switch and the
+   .sidebar-actions CTA, which is how the two rails drifted apart. */
+
 .sidebar-title {
   font-size: var(--text-base);
   font-weight: 600;
@@ -129,7 +105,7 @@
 
 /* ── Header CTA ──────────────────────────────────────────────────────────── */
 .sidebar-actions {
-  padding: 0 0 6px;
+  padding: 0 var(--rail-pad) 6px;
   flex-shrink: 0;
 }
 
@@ -160,25 +136,7 @@
   color: var(--text-primary);
 }
 
-/* "New chat" is the top CTA — a filled accent button: solid --accent-presence
-   with its paired on-accent ink (--accent-presence-foreground, not
-   --text-primary — monochrome palettes vanish the label otherwise), so the
-   panel's one primary action stands out. Hover shifts through
-   --accent-presence-hover, the direction-aware WCAG-AA pair (cave-c7hy). */
-.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
-  background: var(--accent-presence);
-  color: var(--accent-presence-foreground);
-  border: 2px solid var(--accent-presence);
-  font-weight: 600;
-}
-
-.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: var(--accent-presence-hover);
-  color: var(--accent-presence-foreground);
-  border-color: var(--accent-presence-hover);
-}
-
-.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row .sidebar-action-icon {
+.sidebar-action-icon {
   opacity: 1;
 }
 
@@ -309,22 +267,27 @@
   /* Sections are separated by whitespace alone (no rules) for a calmer,
      Codex-style nav. */
   gap: var(--space-1);
-  padding: 2px 0 2px;
+  /* The rail's one inset, same as .rail-header above and .sidebar-foot below —
+     the nav rows must line up with the scope switcher and New chat, not sit a
+     step outside them. Kept in the shorthand deliberately: a separate
+     padding-inline earlier in this block is silently overridden by this line. */
+  padding: 0 var(--rail-pad) 2px;
 }
 
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
 .sidebar-foot {
   flex-shrink: 0;
-  padding: var(--space-2) 6px 0;
+  padding: var(--space-2) var(--rail-pad) 0;
   /* Softer than a full hairline — the footer should read as a calm boundary,
      not a hard rule competing with the nav. */
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
-  /* Compact icon row: Dashboard · Notifications · Settings share one line as
-     equal-width icon buttons (labels are tooltips). Reclaims the vertical space
-     three stacked labeled rows used to take. The rail + mobile drawer restore a
-     vertical stack below. */
+  /* Stacked labeled rows, the same shape as the destinations above. This was a
+     compact one-line icon row that reclaimed vertical space, but it was also
+     the single worst offender in issue 4351: the collapsed rail has to stack these
+     buttons, so on hover-peek Dashboard flew 39px right and Settings 138px.
+     One column in both states costs ~34px and moves nothing. */
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: var(--space-1);
 }
 
@@ -333,12 +296,11 @@
   position: relative;
   display: flex;
   align-items: center;
-  /* Compact row: each button is an equal-width, centered icon target. */
-  justify-content: center;
-  flex: 1;
+  justify-content: flex-start;
+  flex: none;
   min-width: 0;
-  gap: 10px;
-  padding: 0 var(--space-2);
+  gap: 6px;
+  padding: 0 var(--rail-lead);
   border-radius: var(--radius-control);
   border: 0;
   background: transparent;
@@ -347,7 +309,7 @@
   cursor: pointer;
   text-align: left;
   transition: background 0.12s ease, color 0.12s ease;
-  min-height: 34px;
+  min-height: var(--rail-control);
 }
 
 .sidebar-foot-icon-btn {
@@ -406,8 +368,7 @@
 }
 
 .sidebar-foot-label {
-  /* Tooltip-only in the compact icon row; the rail/mobile drawer re-show it. */
-  display: none;
+  /* Visible in the expanded panel (the rail hides it, like every other label). */
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;

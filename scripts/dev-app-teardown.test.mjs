@@ -70,15 +70,22 @@ mkdirSync(fakeScripts, { recursive: true });
 mkdirSync(fakeBin, { recursive: true });
 
 copyFileSync(path.join(scriptsDir, "dev-app.sh"), path.join(fakeScripts, "dev-app.sh"));
+copyFileSync(path.join(scriptsDir, "dev-app-origin-health.mjs"), path.join(fakeScripts, "dev-app-origin-health.mjs"));
+copyFileSync(path.join(scriptsDir, "dev-port-owner.mjs"), path.join(fakeScripts, "dev-port-owner.mjs"));
+copyFileSync(path.join(scriptsDir, "ports.mjs"), path.join(fakeScripts, "ports.mjs"));
 chmodSync(path.join(fakeScripts, "dev-app.sh"), 0o755);
 writeFileSync(path.join(fakeScripts, "whisper-runtime-dev-env.sh"), "# stub for tests\n");
 
 const fakePnpm = (port, pidFile) => `#!/usr/bin/env bash
-echo "tauri $$" >>"${pidFile}"
+if [ "$1" = "dev" ]; then
+echo "server $$" >>"${pidFile}"
 node -e '
-  const net = require("net");
+  const http = require("http");
   const fs = require("fs");
-  const server = net.createServer(() => {});
+  const server = http.createServer((request, response) => {
+    response.writeHead(204);
+    response.end();
+  });
   server.listen(${port}, "127.0.0.1", () => {
     fs.appendFileSync("${pidFile}", "server " + process.pid + "\\n");
   });
@@ -86,6 +93,32 @@ node -e '
 ' &
 child=$!
 wait "$child"
+else
+echo "tauri $$" >>"${pidFile}"
+node -e "setInterval(() => {}, 1000)" &
+child=$!
+wait "$child"
+fi
+`;
+
+const fakeHungPnpm = (port, pidFile) => `#!/usr/bin/env bash
+echo "server_command $$" >>"${pidFile}"
+node -e '
+  const net = require("net");
+  const fs = require("fs");
+  const server = net.createServer(() => {});
+  server.listen(${port}, "127.0.0.1", () => {
+    fs.appendFileSync("${pidFile}", "origin " + process.pid + "\\n");
+  });
+  setInterval(() => {}, 1000);
+' &
+child=$!
+wait "$child"
+`;
+
+const fakeUnavailablePnpm = (pidFile) => `#!/usr/bin/env bash
+echo "server_command $$" >>"${pidFile}"
+exit 0
 `;
 
 const readPids = (pidFile) =>
@@ -115,7 +148,7 @@ async function assertTeardown(signal) {
       PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
       PORT: String(port),
       COVEN_CAVE_AUTH_TOKEN: "",
-      COVEN_CAVE_DEV_SERVER_GRACE_SECONDS: "0",
+      COVEN_CAVE_DEV_SERVER_GRACE_SECONDS: "2",
     },
   });
   wrapper.unref();
@@ -125,7 +158,12 @@ async function assertTeardown(signal) {
     await waitFor(() => probePort(port), {
       label: `the fake dev server to bind port ${port}`,
     });
-    pids = readPids(pidFile);
+    await waitFor(() => {
+      pids = readPids(pidFile);
+      return Boolean(pids.tauri && pids.server);
+    }, {
+      label: "the launcher to complete HTTP readiness and start the Tauri child",
+    });
     assert.ok(pids.tauri, "the launcher must actually start the Tauri child");
     assert.ok(pids.server, "the Tauri child must own the dev server process");
 
@@ -159,9 +197,97 @@ async function assertTeardown(signal) {
   }
 }
 
+async function assertHungOriginStopsOwnedTree() {
+  const port = await freePort();
+  const pidFile = path.join(root, "pids-hung-origin.txt");
+  writeFileSync(path.join(fakeBin, "pnpm"), fakeHungPnpm(port, pidFile));
+  chmodSync(path.join(fakeBin, "pnpm"), 0o755);
+
+  const wrapper = spawn("bash", [path.join(fakeScripts, "dev-app.sh")], {
+    cwd: root,
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+      PORT: String(port),
+      COVEN_CAVE_AUTH_TOKEN: "",
+      COVEN_CAVE_DEV_SERVER_GRACE_SECONDS: "2",
+    },
+  });
+  wrapper.unref();
+
+  let pids = {};
+  try {
+    await waitFor(() => probePort(port), {
+      label: `the HTTP-hung fake origin to bind port ${port}`,
+    });
+    pids = readPids(pidFile);
+    assert.ok(pids.server_command, "the launcher must start the owned HTTP-hung origin before judging it");
+    assert.ok(pids.origin, "the owned dev-server command must own the HTTP-hung origin process");
+
+    await waitFor(() => !isAlive(wrapper.pid), {
+      timeoutMs: 12_000,
+      label: "the launcher to exit after its bounded HTTP readiness grace period",
+    });
+    await waitFor(async () => !(await probePort(port)), {
+      label: `port ${port} to be released when the HTTP-hung origin is rejected`,
+    });
+
+    assert.equal(isAlive(Number(pids.server_command)), false, "preflight failure must stop the owned dev-server command");
+    assert.equal(isAlive(Number(pids.origin)), false, "preflight failure must not leave the rejected origin process alive");
+  } finally {
+    for (const pid of [wrapper.pid, Number(pids.server_command), Number(pids.origin)]) {
+      if (Number.isFinite(pid) && pid > 0) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
+    }
+  }
+}
+
+async function assertUnavailableOriginNeverOpensTauri() {
+  const port = await freePort();
+  const pidFile = path.join(root, "pids-unavailable-origin.txt");
+  writeFileSync(path.join(fakeBin, "pnpm"), fakeUnavailablePnpm(pidFile));
+  chmodSync(path.join(fakeBin, "pnpm"), 0o755);
+
+  const wrapper = spawn("bash", [path.join(fakeScripts, "dev-app.sh")], {
+    cwd: root,
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+      PORT: String(port),
+      COVEN_CAVE_AUTH_TOKEN: "",
+      COVEN_CAVE_DEV_SERVER_GRACE_SECONDS: "2",
+    },
+  });
+  wrapper.unref();
+
+  try {
+    await waitFor(() => !isAlive(wrapper.pid), {
+      timeoutMs: 12_000,
+      label: "the launcher to exit when its selected loopback origin never becomes available",
+    });
+    const records = readFileSync(pidFile, "utf8");
+    assert.match(records, /server_command/, "the launcher must attempt to start its selected dev server");
+    assert.doesNotMatch(records, /tauri/, "an unavailable origin must fail before Tauri can open a black window");
+    assert.equal(await probePort(port), false, "an unavailable selected port must remain unavailable after preflight failure");
+  } finally {
+    try {
+      process.kill(wrapper.pid, "SIGKILL");
+    } catch {}
+  }
+}
+
 try {
   await assertTeardown("SIGTERM");
   await assertTeardown("SIGINT");
+  await assertHungOriginStopsOwnedTree();
+  await assertUnavailableOriginNeverOpensTauri();
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

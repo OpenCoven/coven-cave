@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { buildCovenMarkersDirective } from "./coven-marker-directive.ts";
 import { sliceGitHubBlocks } from "./github-blocks.ts";
+import { isRenderableImageSrc, sliceImageBlocks } from "./image-blocks.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
+import { sliceSpecBlocks } from "./spec-blocks.ts";
 
 const directive = buildCovenMarkersDirective();
 
@@ -24,6 +26,20 @@ assert.match(
   directive,
   /proposal card the user must tap/,
   "action markers must be described as tap-to-fire proposals",
+);
+for (const reason of ["input", "approval", "credentials", "decision"]) {
+  assert.match(directive, new RegExp(`\\b${reason}\\b`), `attention reason ${reason} taught`);
+}
+const attentionExample = directive.match(/Choose a release channel\.\n<coven:attention reason="decision" \/>/)?.[0];
+assert.ok(attentionExample, "directive carries a concrete parseable attention example");
+const { extractChatAttentionMarker } = await import("./chat-attention-marker.ts");
+assert.deepEqual(
+  extractChatAttentionMarker(attentionExample),
+  {
+    visible: "Choose a release channel.\n",
+    request: { reason: "decision" },
+  },
+  "the taught attention example must parse into a concrete request",
 );
 
 // ── Lockstep: the directive's own example markers must parse (github-blocks) ─
@@ -53,6 +69,45 @@ assert.deepEqual(
   skill.updates,
   [{ name: "the-skill", stage: "running", note: "short status" }],
   "the taught skill example must parse into a stage update",
+);
+
+const exampleImage = directive.match(/<coven:image\s[^>]*\/>/)?.[0];
+assert.ok(exampleImage, "directive carries an image-marker example");
+const imagePieces = sliceImageBlocks(exampleImage);
+const deck = imagePieces.find((p) => p.kind === "carousel")?.carousel;
+assert.equal(deck?.images.length, 1, "the taught image example must parse into a one-image deck");
+assert.ok(
+  isRenderableImageSrc(deck?.images[0].src),
+  "the taught image example must use a src the parser accepts",
+);
+assert.match(
+  directive,
+  /collapse into ONE browsable carousel/,
+  "the merge rule is the whole point — teach it, or familiars emit N separate cards",
+);
+assert.match(
+  directive,
+  /group="…"/,
+  "the group attribute must be taught alongside adjacency",
+);
+assert.match(
+  directive,
+  /To deliver a workspace-local file as a visible chat attachment, emit a fenced `coven:attachment` marker/,
+  "the runtime teaches the server-backed local-file handoff",
+);
+assert.match(
+  directive,
+  /Do not claim an image or file was shown unless the reply contains a renderable image marker or a workspace-local attachment marker/,
+  "completion language is gated on visible delivery evidence",
+);
+
+const exampleSpec = directive.match(/`{3,}spec title="[^"]+"\n[\s\S]*?\n`{3,}/)?.[0];
+assert.ok(exampleSpec, "directive carries a spec-fence example");
+const specPieces = sliceSpecBlocks(exampleSpec);
+assert.equal(
+  specPieces.filter((piece) => piece.kind === "spec").length,
+  1,
+  "the taught spec example must parse into a document card",
 );
 
 // ── Coverage: every parseable kind/stage is taught ───────────────────────────

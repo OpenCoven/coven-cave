@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/maintainer-bar",
   "x-coven": {
     "displayName": "MaintainerBar \u2014 Maintainer Menu Bar Skill",

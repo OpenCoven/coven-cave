@@ -1,5 +1,10 @@
-import { NextResponse } from "next/server.js";
-import { loadConfig, bindingFor, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
+import { NextResponse } from "next/server";
+import {
+  bindingFor,
+  initializeSessionTitleOwnership,
+  loadConfig,
+  recordSessionFamiliar,
+} from "@/lib/cave-config";
 import { saveConversation } from "@/lib/cave-conversations";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { loadProjects } from "@/lib/cave-projects";
@@ -28,8 +33,8 @@ const deps: VoiceChatCreateDeps = {
   },
   saveConversation,
   recordSessionFamiliar,
-  setSessionTitle: async (sessionId, title) => {
-    await setSessionTitle(sessionId, title);
+  initializeSessionTitleOwnership: async (sessionId, title) => {
+    await initializeSessionTitleOwnership(sessionId, title);
   },
   defaultTitle: (sessionId) => defaultChatTitleForSession(sessionId),
 };

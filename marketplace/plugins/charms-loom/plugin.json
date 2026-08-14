@@ -18,6 +18,7 @@
   "capabilities": [
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/charms-loom",
   "x-coven": {
     "displayName": "Charm's Loom",

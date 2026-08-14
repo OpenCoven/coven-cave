@@ -1,6 +1,11 @@
 import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  hasUnclosedMarkdownComment,
+  stripCompleteMarkdownComments,
+} from "../document-reader.ts";
+import { parseMdDocument } from "../md-frontmatter.ts";
 import { parseMemorySourceContext } from "@/lib/memory-source-context";
 import {
   classifyMemoryFilePath,
@@ -50,10 +55,19 @@ async function readHead(filePath: string): Promise<string | undefined> {
   }
 }
 
+function hasAmbiguousLeadingFrontmatter(head: string): boolean {
+  const open = head.match(/^---\r?\n/);
+  if (!open) return false;
+  return !/\r?\n---(?:\r?\n|$)/.test(head.slice(open[0].length));
+}
+
 /** Body excerpt from a file head: frontmatter stripped, first 200 chars. */
 export function readExcerpt(head: string): string | undefined {
-  const body = head.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-  return body.slice(0, 200) || undefined;
+  if (hasAmbiguousLeadingFrontmatter(head)) return undefined;
+  const body = parseMdDocument(head).body;
+  if (hasUnclosedMarkdownComment(body)) return undefined;
+  const cleaned = stripCompleteMarkdownComments(body).trim();
+  return cleaned.slice(0, 200) || undefined;
 }
 
 // ── Entry cache ───────────────────────────────────────────────────────────────

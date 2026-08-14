@@ -1,11 +1,10 @@
 // @ts-nocheck
 // Packaged Cave runs the status module directly on Windows. Reproduce npm's
 // global shim layout (including its extensionless PATH shadow) and verify the
-// API reports the launcher that `where` selected and the version that launcher
-// actually executes.
+// API reports the verified launcher from explicit PATH entries and never lets
+// Windows' cwd-before-PATH search substitute a project-planted executable.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { openCovenToolStatuses } from "./opencoven-tools-status.ts";
@@ -20,6 +19,7 @@ if (process.platform !== "win32") {
     PATH: process.env.PATH,
     npm_config_prefix: process.env.npm_config_prefix,
   };
+  const originalCwd = process.cwd();
 
   try {
     await mkdir(npmDir, { recursive: true });
@@ -35,6 +35,7 @@ if (process.platform !== "win32") {
       path.join(npmDir, "coven.cmd"),
       'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@opencoven\\cli\\bin\\coven.js" %*\r\n',
     );
+    await copyFile(process.execPath, path.join(root, "coven.exe"));
 
     // In the packaged-server process `npm` is not directly spawnable on
     // Windows (it is a .cmd shim), so the latest-version probe fails closed
@@ -42,16 +43,7 @@ if (process.platform !== "win32") {
     process.env.APPDATA = root;
     delete process.env.npm_config_prefix;
     process.env.PATH = [npmDir, original.PATH].filter(Boolean).join(path.delimiter);
-
-    // `where` sees npm's extensionless shadow and the .cmd launcher. The
-    // status probe must display the latter because it is the spawnable path
-    // that covenLaunchCommandForBinary then resolves without shell mode.
-    const matches = execFileSync("where", ["coven"], { encoding: "utf8", env: process.env })
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map((entry) => path.normalize(entry).toLowerCase());
-    assert.ok(matches.includes(path.join(npmDir, "coven").toLowerCase()), "coven has its npm extensionless PATH shadow");
-    assert.ok(matches.includes(path.join(npmDir, "coven.cmd").toLowerCase()), "coven has its npm .cmd PATH launcher");
+    process.chdir(root);
 
     const tools = await openCovenToolStatuses();
     assert.equal(tools.length, 1, "only coven-cli is a tracked tool after unification");
@@ -60,9 +52,10 @@ if (process.platform !== "win32") {
     assert.deepEqual(
       { binary: cli?.binary, path: cli?.path, current: cli?.current, installed: cli?.installed },
       { binary: "coven", path: path.join(npmDir, "coven.cmd"), current: "0.1.1", installed: true },
-      "Coven CLI status displays the .cmd path selected by where and its own JavaScript target version",
+      "Coven CLI status ignores cwd-planted coven.exe and probes the absolute PATH .cmd target",
     );
   } finally {
+    process.chdir(originalCwd);
     if (original.APPDATA === undefined) delete process.env.APPDATA;
     else process.env.APPDATA = original.APPDATA;
     if (original.PATH === undefined) delete process.env.PATH;

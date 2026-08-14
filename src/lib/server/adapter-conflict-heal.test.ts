@@ -17,7 +17,7 @@ import {
 import { ensureAdapterManifestScaffold } from "./adapter-manifest-scaffold.ts";
 
 const CLI_ERROR =
-  "Error: external harness adapter `copilot` in /Users/buns/.coven/adapters/copilot.json conflicts with a built-in harness";
+  "Error: external harness adapter `copilot` in /home/test/.coven/adapters/copilot.json conflicts with a built-in harness";
 
 function legacyHermesShimManifest(): string {
   return `${JSON.stringify({
@@ -45,7 +45,7 @@ test("detectBuiltinAdapterConflict parses the released CLI error line", () => {
   const conflict = detectBuiltinAdapterConflict(CLI_ERROR);
   assert.deepEqual(conflict, {
     id: "copilot",
-    manifestPath: "/Users/buns/.coven/adapters/copilot.json",
+    manifestPath: "/home/test/.coven/adapters/copilot.json",
   });
 });
 

@@ -17,7 +17,7 @@ import "@/styles/cave-chat/thread-instruments.css";
 // live in the transcript's existing side gutters as overlays, so they add no
 // layout shift and simply stay home on panes too narrow to have gutters.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { Icon } from "@/lib/icon";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
@@ -38,6 +38,10 @@ import {
 export const THREAD_INSTRUMENTS_MIN_WIDTH = 1360;
 /** The spine reads as an instrument, not a decoration, from a few turns up. */
 const SPINE_MIN_TURNS = 2;
+// Floor for the stamp lane, in characters: the 24-hour "23:00" every locale
+// falls back to. Keeps the gutter from collapsing on a thread whose stamps are
+// all missing, which would put the ring back where the clock belongs.
+const SPINE_STAMP_MIN_CHARS = 5;
 const MAP_MIN_EVENTS = 4;
 /** Map row height (px) — mirrors the design's 15px rows. */
 const MAP_ROW_H = 15;
@@ -211,9 +215,23 @@ export function ChatThreadSpine({
   const placed = nodes.filter((n) => offsets.has(n.turnId));
   if (placed.length < SPINE_MIN_TURNS) return null;
   const lineEnd = Math.max(...placed.map((n) => offsets.get(n.turnId)!)) + 40;
+  // Size the stamp lane from the clock strings this thread ACTUALLY renders.
+  // The format is the reader's own (12- vs 24-hour, and a locale may append a
+  // narrow no-break space before AM/PM), so the width cannot be known at
+  // author time: "23:00" is 5 characters where "11:00 PM" is 8. A machine
+  // whose clock is wider than the CSS default would otherwise clip its own
+  // timestamps — the failure this lane was introduced to end.
+  const stampChars = Math.max(
+    SPINE_STAMP_MIN_CHARS,
+    ...placed.map((n) => n.time?.length ?? 0),
+  );
 
   return (
-    <nav className="cave-thread-spine" aria-label="Turns in this thread">
+    <nav
+      className="cave-thread-spine"
+      aria-label="Turns in this thread"
+      style={{ "--cave-spine-stamp-chars": stampChars } as CSSProperties}
+    >
       <span className="cave-thread-spine__line" style={{ height: lineEnd }} aria-hidden />
       {placed.map((node) => (
         <SpineNodeButton

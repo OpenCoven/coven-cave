@@ -10,7 +10,11 @@ assert.match(src, /import .*ChatArtifactViewer.* from "@\/components\/chat-artif
 assert.match(src, /extractArtifactBlocks/, "uses extractArtifactBlocks to find blocks");
 assert.match(src, /function splitTextForArtifacts/, "has the text→segments splitter");
 assert.match(src, /<ChatArtifactViewer\b/, "renders the viewer as a block segment");
-assert.match(src, /splitTextForArtifacts\(visible/, "splits the plain text path (no tools)");
+assert.match(
+  src,
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\),\s*\),\s*artifactCtx,\s*\),\s*onOpenUrl,/,
+  "splits specs, image decks, artifacts, and GitHub cards without crossing an inline block",
+);
 assert.match(
   src,
   /const preceding = text\.slice\(cursor, b\.index\)\.trim\(\)/,

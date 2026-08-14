@@ -18,6 +18,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/gmail",
   "x-coven": {
     "displayName": "Gmail",

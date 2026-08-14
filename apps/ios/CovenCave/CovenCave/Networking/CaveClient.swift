@@ -169,7 +169,7 @@ struct CaveClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = CaveConnection.accessToken {
+        if let token = try CaveConnection.credentialForRequest(to: url) {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let body {
@@ -331,7 +331,7 @@ struct CaveClient {
         if let updatedAt, !updatedAt.isEmpty {
             items.append(URLQueryItem(name: "v", value: updatedAt))
         }
-        if let token = CaveConnection.accessToken {
+        if let token = try? CaveConnection.credentialForRequest(to: comps.url ?? base) {
             items.append(URLQueryItem(name: "coven_access_token", value: token))
         }
         if !items.isEmpty { comps.queryItems = items }
@@ -435,6 +435,45 @@ struct CaveClient {
         return try await patchTask(cardId: cardId, payload: payload)
     }
 
+    /// Server-side flags a session patch can carry.
+    ///
+    /// The contract is that an unset field is ABSENT from the body:
+    /// `/api/sessions/{id}` updates a flag only when its key is present, so
+    /// sending `false` for a flag the caller never touched would silently
+    /// unarchive a chat you only meant to pin. Synthesised `Encodable` already
+    /// omits nil optionals, so this encoder is not correcting it — it is
+    /// stating the requirement at the point it matters, so that adding a
+    /// non-optional field or a `?? false` default reads as the mistake it is.
+    struct SessionFlagsPatch: Encodable {
+        var archived: Bool?
+        var pinned: Bool?
+        enum CodingKeys: String, CodingKey { case archived, pinned }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if let archived { try c.encode(archived, forKey: .archived) }
+            if let pinned { try c.encode(pinned, forKey: .pinned) }
+        }
+    }
+
+    /// `PATCH /api/sessions/{id}` — archive/summon and pin/unpin. Both flags are
+    /// optional; pass only what changed.
+    func setSessionFlags(sessionId: String, archived: Bool? = nil, pinned: Bool? = nil) async throws {
+        let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        let payload = try JSONEncoder().encode(SessionFlagsPatch(archived: archived, pinned: pinned))
+        let req = try request("api/sessions/\(escaped)", method: "PATCH", body: payload)
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
+    /// `DELETE /api/sessions/{id}` — sacrifice a session (tombstoned in cave
+    /// state, so the call is idempotent and safe to retry).
+    func deleteSession(sessionId: String) async throws {
+        let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        let req = try request("api/sessions/\(escaped)", method: "DELETE")
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
     /// `DELETE /api/board/{id}` — remove a task.
     func deleteTask(cardId: String) async throws {
         let req = try request("api/board/\(cardId)", method: "DELETE")
@@ -469,9 +508,16 @@ struct CaveClient {
     }
 
     /// The model this chat resolves to, plus the pickable menu for its runtime.
-    func chatModelState(familiarId: String, sessionId: String?) async throws -> ChatModelStateResponse {
+    /// `previewModel` is read-only and resolves controls for a staged model
+    /// before a new chat has a server session or durable model intent.
+    func chatModelState(
+        familiarId: String,
+        sessionId: String?,
+        previewModel: String? = nil
+    ) async throws -> ChatModelStateResponse {
         var path = "api/chat/model-state?familiarId=\(urlQuery(familiarId))"
         if let sessionId, !sessionId.isEmpty { path += "&sessionId=\(urlQuery(sessionId))" }
+        if let previewModel { path += "&model=\(urlQuery(previewModel))" }
         let req = try request(path)
         let (data, resp) = try await data(for: req)
         try Self.check(resp)
@@ -484,10 +530,31 @@ struct CaveClient {
 
     /// Set the model for this chat (`session` scope) or the familiar (`familiar-default`).
     @discardableResult
-    func setChatModel(familiarId: String, sessionId: String?, model: String, scope: String) async throws -> ChatModelStateResponse {
-        var body: [String: String] = ["familiarId": familiarId, "model": model, "scope": scope]
-        if let sessionId, !sessionId.isEmpty { body["sessionId"] = sessionId }
-        let payload = try JSONEncoder().encode(body)
+    func setChatModel(familiarId: String, sessionId: String?, model: String?, scope: String) async throws -> ChatModelStateResponse {
+        struct Body: Encodable {
+            let familiarId: String
+            let sessionId: String?
+            let model: String?
+            let scope: String
+
+            enum CodingKeys: String, CodingKey {
+                case familiarId, sessionId, model, scope
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(familiarId, forKey: .familiarId)
+                try container.encodeIfPresent(sessionId, forKey: .sessionId)
+                if let model {
+                    try container.encode(model, forKey: .model)
+                } else {
+                    try container.encodeNil(forKey: .model)
+                }
+                try container.encode(scope, forKey: .scope)
+            }
+        }
+        let payload = try JSONEncoder().encode(
+            Body(familiarId: familiarId, sessionId: sessionId, model: model, scope: scope))
         let req = try request("api/chat/model-state", method: "PATCH", body: payload)
         let (data, resp) = try await data(for: req)
         try Self.check(resp)
@@ -519,8 +586,12 @@ struct CaveClient {
         /// re-attachable after a transport drop.
         var runId: String? = nil
         /// Real per-send controls consumed by `/api/chat/send`.
-        var reasoningEffort: ChatThinkingEffort = .high
-        var responseSpeed: ChatResponseSpeed = .fast
+        /// Legacy fields remain decodable/encodable for older callers and
+        /// persisted turns, but new capability-aware sends leave them nil.
+        /// A nil value must not become an implicit prompt-only request.
+        var reasoningEffort: ChatThinkingEffort? = nil
+        var responseSpeed: ChatResponseSpeed? = nil
+        var modelControls: [String: String]? = nil
         /// A model selected before the first server session exists travels with
         /// the send instead of mutating the familiar's global default.
         var modelOverride: String? = nil
@@ -776,6 +847,45 @@ struct CaveClient {
     }
 
     struct ReminderActionResponse: Decodable { var ok: Bool; var error: String?; var item: Reminder? }
+
+    /// What a bulk call actually did, per item (cave-ioswipe.2). The endpoint
+    /// echoes only what it changed, so an id requested but present in NEITHER
+    /// list did not take effect — that absence is the per-item failure signal,
+    /// and it is why a partial failure no longer has to revert the whole batch.
+    struct BulkInboxOutcome: Decodable {
+        var ok: Bool
+        var updated: [Reminder]
+        var deletedIds: [String]
+
+        enum CodingKeys: String, CodingKey { case ok, updated, deletedIds }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+            updated = (try? c.decode([Reminder].self, forKey: .updated)) ?? []
+            deletedIds = (try? c.decode([String].self, forKey: .deletedIds)) ?? []
+        }
+    }
+
+    /// `POST /api/inbox/bulk` — one round trip for read/unread/dismiss/done/
+    /// delete over many ids, replacing N sequential per-id calls.
+    ///
+    /// Snooze is deliberately NOT routed here: the endpoint has no `snooze`
+    /// action and no slot for its `minutes` argument. AppModel fans that one out
+    /// with bounded concurrency instead, which the bead's acceptance criteria
+    /// allow ("one round trip OR bounded concurrency"). Extending the server
+    /// action set is a separate, deliberate change — not something to slip in.
+    func bulkInboxAction(_ action: String, ids: [String]) async throws -> BulkInboxOutcome {
+        let body = try JSONSerialization.data(withJSONObject: ["action": action, "ids": ids])
+        let req = try request("api/inbox/bulk", method: "POST", body: body)
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(BulkInboxOutcome.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
 
     /// `POST /api/inbox/{id}/{action}` — done / dismiss / snooze. Returns the
     /// server's updated item when present.

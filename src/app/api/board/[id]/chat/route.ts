@@ -5,6 +5,8 @@ import { loadProjects, projectById } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
+import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -206,10 +208,54 @@ export async function POST(
   // override that was chosen for this exact canonical harness. Legacy or stale
   // overrides are cleared before launch and the familiar's current default is
   // used instead.
+  const cardModelHarness = card.modelOverrideHarness
+    ? canonicalHarnessId(card.modelOverrideHarness)
+    : null;
   const taskModelOverride =
-    card.modelOverride && card.modelOverrideHarness === binding.harness
-      ? card.modelOverride
+    card.modelOverride && cardModelHarness === binding.harness
+      ? cleanModelId(card.modelOverride)
       : null;
+  if (card.modelOverride && cardModelHarness === binding.harness && !taskModelOverride) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "invalid_model_override",
+        error: "The task model id is not safe for launch.",
+      },
+      { status: 400 },
+    );
+  }
+  if (taskModelOverride && !isModelAllowedByRuntime(binding.harness, taskModelOverride)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "unsupported_model_override",
+        error: "The task model id is not allowed by this runtime.",
+      },
+      { status: 400 },
+    );
+  }
+  const configuredModel = binding.model ? cleanModelId(binding.model) : null;
+  if (binding.model && !configuredModel) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "invalid_configured_model",
+        error: "The familiar's configured model id is not safe for launch.",
+      },
+      { status: 400 },
+    );
+  }
+  if (configuredModel && !isModelAllowedByRuntime(binding.harness, configuredModel)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "unsupported_configured_model",
+        error: "The familiar's configured model is not allowed by this runtime.",
+      },
+      { status: 400 },
+    );
+  }
   if (card.modelOverride && !taskModelOverride) {
     await updateCard(card.id, { modelOverride: null, modelOverrideHarness: null });
   }
@@ -281,6 +327,10 @@ export async function POST(
       projectRoot: sessionRoot,
       worktree,
       initialPrompt: buildInitialTaskChatPrompt(card),
+      // Native Chat owns the first launch for local OpenClaw and Copilot.
+      // Carry only the card's validated explicit choice; ChatView sends it as
+      // a session override, which persists the conversation intent on send.
+      ...(taskModelOverride ? { initialModelOverride: taskModelOverride } : {}),
       bridge: "native-chat",
     });
   };
@@ -337,7 +387,9 @@ export async function POST(
     body: {
       projectRoot: sessionRoot,
       harness: binding.harness,
-      model: taskModelOverride ?? binding.model,
+      ...((taskModelOverride ?? configuredModel)
+        ? { model: taskModelOverride ?? configuredModel }
+        : {}),
       prompt: buildInitialTaskChatPrompt(card),
       // Non-interactive launch: the daemon streams the initial prompt's
       // assistant output instead of spawning a fullscreen, never-reaped harness

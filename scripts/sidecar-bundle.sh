@@ -31,7 +31,8 @@ cleanup_staging() {
 trap cleanup_staging EXIT
 
 bundle_piper_runtime() {
-  local platform asset expected_sha archive extract_root executable runtime_root actual_sha
+  local platform asset expected_sha archive extract_root executable runtime_executable_path runtime_root actual_sha
+  local phonemize_asset phonemize_sha phonemize_archive phonemize_extract_root phonemize_lib_path phonemize_lib_root mac_executable
   platform="$(node -p 'process.platform')"
   case "$platform/$(node -p 'process.arch')" in
     linux/x64)
@@ -47,11 +48,15 @@ bundle_piper_runtime() {
     darwin/arm64)
       asset="piper_macos_aarch64.tar.gz"
       expected_sha="6b1eb03b3735946cb35216e063e7eebcc33a6bbf5dd96ec0217959bf1cdcb0cc"
+      phonemize_asset="piper-phonemize_macos_aarch64.tar.gz"
+      phonemize_sha="78a9c28b3c94baf6e9526b2e386ce547909abaec4f31aadd7e16b01fbfe5f322"
       executable="piper"
       ;;
     darwin/x64)
       asset="piper_macos_x64.tar.gz"
       expected_sha="ced85c0a3df13945b1e623b878a48fdc2854d5c485b4b67f62857cf551deaf8b"
+      phonemize_asset="piper-phonemize_macos_x64.tar.gz"
+      phonemize_sha="9ec6e300c0d012a663758bc45a097b47ee759761a3b91c7742de042af789d84b"
       executable="piper"
       ;;
     *)
@@ -82,15 +87,64 @@ bundle_piper_runtime() {
     *.zip) unzip -q "$archive" -d "$extract_root" ;;
     *.tar.gz) tar -xzf "$archive" -C "$extract_root" ;;
   esac
-  runtime_root="$(dirname "$(find "$extract_root" -type f -name "$executable" -print -quit)")"
-  if [ -z "$runtime_root" ] || [ ! -f "$runtime_root/$executable" ]; then
+  runtime_executable_path="$(find "$extract_root" -type f -name "$executable" -print -quit)"
+  if [ -z "$runtime_executable_path" ]; then
     echo "ERROR: Piper archive does not contain $executable" >&2
     exit 1
   fi
+  runtime_root="$(dirname "$runtime_executable_path")"
   cp -a "$runtime_root/." "$PIPER_RUNTIME_DIR/"
   chmod +x "$PIPER_RUNTIME_DIR/$executable" 2>/dev/null || true
   if [ -f "$PIPER_RUNTIME_DIR/espeak-ng" ]; then
     chmod +x "$PIPER_RUNTIME_DIR/espeak-ng"
+  fi
+
+  if [ "$platform" = "darwin" ]; then
+    # Piper's pinned macOS archives omit every @rpath dylib used by piper,
+    # piper_phonemize, and espeak-ng. The matching piper-phonemize release
+    # contains that closure, including the compatibility-name symlinks.
+    phonemize_archive="$PNPM_STAGE/$phonemize_asset"
+    phonemize_extract_root="$PNPM_STAGE/piper-phonemize-runtime"
+    echo "==> downloading pinned Piper phonemize runtime $phonemize_asset"
+    curl --fail --location --retry 3 --silent --show-error \
+      "https://github.com/rhasspy/piper-phonemize/releases/download/2023.11.14-4/$phonemize_asset" \
+      --output "$phonemize_archive"
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual_sha="$(sha256sum "$phonemize_archive" | awk '{print $1}')"
+    else
+      actual_sha="$(shasum -a 256 "$phonemize_archive" | awk '{print $1}')"
+    fi
+    if [ "$actual_sha" != "$phonemize_sha" ]; then
+      echo "ERROR: Piper phonemize runtime checksum mismatch for $phonemize_asset" >&2
+      exit 1
+    fi
+
+    rm -rf "$phonemize_extract_root"
+    mkdir -p "$phonemize_extract_root"
+    tar -xzf "$phonemize_archive" -C "$phonemize_extract_root"
+    phonemize_lib_path="$(find "$phonemize_extract_root" -type f -name 'libpiper_phonemize.*.dylib' -print -quit)"
+    if [ -z "$phonemize_lib_path" ]; then
+      echo "ERROR: Piper phonemize archive does not contain the required macOS dylib closure" >&2
+      exit 1
+    fi
+    phonemize_lib_root="$(dirname "$phonemize_lib_path")"
+    if [ ! -e "$phonemize_lib_root/libespeak-ng.1.dylib" ] \
+      || [ ! -e "$phonemize_lib_root/libonnxruntime.1.14.1.dylib" ] \
+      || [ ! -e "$phonemize_lib_root/libpiper_phonemize.1.dylib" ]; then
+      echo "ERROR: Piper phonemize archive does not contain the required macOS dylib closure" >&2
+      exit 1
+    fi
+    cp -a "$phonemize_lib_root/"*.dylib "$PIPER_RUNTIME_DIR/"
+
+    # The upstream executables load these libraries through @rpath but ship no
+    # LC_RPATH command. Keep the relocatable closure flat and resolve it beside
+    # each executable; the release pipeline signs these modified Mach-O files.
+    for mac_executable in piper piper_phonemize espeak-ng; do
+      if [ -f "$PIPER_RUNTIME_DIR/$mac_executable" ]; then
+        chmod +x "$PIPER_RUNTIME_DIR/$mac_executable"
+        install_name_tool -add_rpath @executable_path "$PIPER_RUNTIME_DIR/$mac_executable"
+      fi
+    done
   fi
 }
 

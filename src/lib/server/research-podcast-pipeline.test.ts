@@ -18,6 +18,7 @@ const {
   concatPcmWav,
   createPodcastMediaJobDefinition,
   readBoundedElevenLabsAudio,
+  trimPcmWavSilence,
 } = await import("./research-podcast-pipeline.ts");
 const {
   openResearchGenerationMedia,
@@ -88,12 +89,47 @@ function jobContext(
 test("PCM WAV concatenation preserves one valid header and all samples", () => {
   const result = concatPcmWav([wav([1, 2]), wav([3, 4])]);
   assert.equal(new TextDecoder().decode(result.slice(0, 4)), "RIFF");
-  const view = new DataView(result.buffer);
+  const view = new DataView(result.buffer, result.byteOffset, result.byteLength);
   assert.equal(view.getUint32(40, true), 8);
   assert.deepEqual(
     [0, 1, 2, 3].map((index) => view.getInt16(44 + index * 2, true)),
     [1, 2, 3, 4],
   );
+});
+
+test("segment silence trimming caps dead air while preserving every audible sample", () => {
+  // 5s of silence on each side of 100 loud frames at the 8kHz test rate.
+  const silence = (seconds: number) => new Array<number>(seconds * 8_000).fill(0);
+  const speech = new Array<number>(100).fill(1_000);
+  const trimmed = trimPcmWavSilence(wav([...silence(5), ...speech, ...silence(5)]));
+  const view = new DataView(trimmed.buffer, trimmed.byteOffset, trimmed.byteLength);
+  // Kept: 250ms lead (2000 frames) + speech (100) + 450ms tail (3600 frames).
+  assert.equal(view.getUint32(40, true), (2_000 + 100 + 3_600) * 2, "silence capped on both sides");
+  assert.equal(view.getInt16(44 + 2_000 * 2, true), 1_000, "first audible sample survives");
+  assert.equal(view.getInt16(44 + (2_000 + 99) * 2, true), 1_000, "last audible sample survives");
+});
+
+test("segment silence trimming leaves natural pauses and silent segments alone", () => {
+  const shortPause = new Array<number>(800).fill(0); // 100ms at 8kHz
+  const speech = new Array<number>(50).fill(2_000);
+  const natural = wav([...shortPause, ...speech, ...shortPause]);
+  assert.equal(trimPcmWavSilence(natural), natural, "sub-cap silence is untouched");
+  const silent = wav(new Array<number>(1_600).fill(0));
+  assert.equal(trimPcmWavSilence(silent), silent, "an all-silent segment passes through unmasked");
+});
+
+test("segment silence trimming passes a partial-frame data chunk through untouched", () => {
+  // 5s silence + speech + 5s silence would normally trim, but a data chunk
+  // that is not a whole number of frames is malformed — flooring would drop
+  // the trailing partial-frame bytes, so the segment must pass through.
+  const samples = [...new Array<number>(40_000).fill(0), ...new Array<number>(100).fill(1_000), ...new Array<number>(40_000).fill(0)];
+  const malformed = new Uint8Array(wav(samples).length + 1);
+  malformed.set(wav(samples));
+  malformed[malformed.length - 1] = 0x7f; // stray trailing byte: dataLength % blockAlign !== 0
+  const view = new DataView(malformed.buffer, malformed.byteOffset, malformed.byteLength);
+  view.setUint32(4, malformed.length - 8, true);
+  view.setUint32(40, samples.length * 2 + 1, true);
+  assert.equal(trimPcmWavSilence(malformed), malformed, "partial-frame segment is returned unchanged");
 });
 
 test("podcast uses the exact frozen provider and voice and stores measured metadata", async () => {
@@ -154,6 +190,39 @@ test("podcast uses the exact frozen provider and voice and stores measured metad
     assert.equal(result.content.audio?.voice, config.voice);
     assert.equal(result.content.audio?.durationMs, 1);
   }
+});
+
+test("dialogue segments synthesize with their speaker's frozen voice", async () => {
+  const config = renderConfig({
+    voices: { host: "piper-amy", guest: "piper-lessac-medium" },
+  });
+  const calls: Array<{ text: string; voice: string }> = [];
+  const definition = createPodcastMediaJobDefinition(
+    {
+      familiarId: "nova",
+      generationId: "podcast-dialogue-voices",
+      script: [
+        { id: "segment-1", text: "Welcome in.", speaker: "host" },
+        { id: "segment-2", text: "A verbatim finding.", speaker: "guest" },
+        { id: "segment-3", text: "Legacy narration." },
+      ],
+      renderConfig: config,
+    },
+    {
+      synthesize: async (text, _provider, voice) => {
+        calls.push({ text, voice });
+        return { bytes: wav([1]), voice };
+      },
+    },
+  );
+  const result = await definition.run(jobContext());
+  assert.deepEqual(calls, [
+    { text: "Welcome in.", voice: "piper-amy" },
+    { text: "A verbatim finding.", voice: "piper-lessac-medium" },
+    // Speaker-less segments keep the primary voice — old drafts render unchanged.
+    { text: "Legacy narration.", voice: "piper-amy" },
+  ]);
+  assert.equal(result.content.kind, "podcast");
 });
 
 test("a segment failure is honest and names the failing index", async () => {

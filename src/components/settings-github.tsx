@@ -6,7 +6,7 @@
  *
  * Empty `github.orgScope` means every membership. A selected subset persists
  * in app preferences and is consumed by GitHubView itself, so the setting is
- * shared with the standalone GitHub surface without duplicating filter logic.
+ * shared across Coding Desk's GitHub tabs without duplicating filter logic.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";

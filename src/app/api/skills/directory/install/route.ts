@@ -77,6 +77,7 @@ export async function POST(req: Request) {
 
   try {
     const { stdout, stderr } = await execFileAsync("npx", args, {
+      windowsHide: true,
       cwd: process.cwd(),
       timeout: INSTALL_TIMEOUT_MS,
       maxBuffer: MAX_INSTALL_BUFFER,

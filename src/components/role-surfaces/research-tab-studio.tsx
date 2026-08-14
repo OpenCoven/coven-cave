@@ -34,8 +34,10 @@ import {
   type ResearchGenerationReadiness,
   type ResearchMediaLength,
   type ResearchMediaProvider,
+  type ResearchPodcastStyle,
 } from "@/lib/research-generations";
 import type { ResearchTabProps } from "./researcher-surface";
+import { describeProviderChips, researchProviderChips } from "./research-studio-providers";
 import {
   GenerationConfigModal,
   GenerationReviewModal,
@@ -61,6 +63,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [readiness, setReadiness] = useState<ResearchGenerationReadiness | null>(null);
+  const providerChips = useMemo(() => researchProviderChips(readiness), [readiness]);
 
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [configKind, setConfigKind] = useState<ResearchGenerationCreatableKind | null>(null);
@@ -68,6 +71,8 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [mediaProvider, setMediaProvider] =
     useState<ResearchMediaProvider>("local");
   const [mediaVoice, setMediaVoice] = useState("");
+  const [mediaGuestVoice, setMediaGuestVoice] = useState("");
+  const [mediaStyle, setMediaStyle] = useState<ResearchPodcastStyle>("breakdown");
   const [mediaLength, setMediaLength] =
     useState<ResearchMediaLength>("standard");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -260,6 +265,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     setCreateError(null);
     setDirections("");
     if (!isResearchGenerationKind(kind) && readiness) {
+      const elevenLabsShortVideoDefaultIsReady =
+        kind === "short-video" &&
+        readiness.providers.elevenlabs.ready &&
+        readiness.providers.elevenlabs.defaultVoiceId.trim().length > 0;
       const localSelectionIsValid =
         mediaProvider === "local" &&
         readiness.providers.local.ready &&
@@ -270,7 +279,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         mediaProvider === "elevenlabs" &&
         readiness.providers.elevenlabs.ready &&
         mediaVoice.trim().length > 0;
-      if (!localSelectionIsValid && !elevenLabsSelectionIsValid) {
+      if (elevenLabsShortVideoDefaultIsReady) {
+        setMediaProvider("elevenlabs");
+        setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
+      } else if (!localSelectionIsValid && !elevenLabsSelectionIsValid) {
         const firstLocalVoice = readiness.providers.local.voices[0];
         if (readiness.providers.local.ready && firstLocalVoice) {
           setMediaProvider("local");
@@ -280,7 +292,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
         }
       }
-      if (kind === "short-video" && mediaLength === "extended") {
+      if (kind === "short-video") {
         setMediaLength("standard");
       }
     }
@@ -303,6 +315,17 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
               provider: mediaProvider,
               voice: mediaVoice,
               length: mediaLength,
+              ...(configKind === "podcast" &&
+              mediaStyle !== "recap" &&
+              mediaGuestVoice.trim().length > 0
+                ? {
+                    voices: {
+                      host: mediaVoice,
+                      guest: mediaGuestVoice.trim(),
+                    },
+                  }
+                : {}),
+              ...(configKind === "podcast" ? { style: mediaStyle } : {}),
             },
           }
         : {}),
@@ -335,8 +358,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     directions,
     effectiveSourceId,
     familiarId,
+    mediaGuestVoice,
     mediaLength,
     mediaProvider,
+    mediaStyle,
     mediaVoice,
   ]);
 
@@ -443,6 +468,27 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       <header className="research-studio__header">
         <h2>Studio</h2>
         <p>Turn finished research into shareable drafts — extracted from each run&rsquo;s cited findings.</p>
+        {/* Provider strip: why a card is disabled, before you click it. Each
+            chip carries the readiness endpoint's own hint, so the chip and the
+            card it blocks say the same thing. */}
+        <div
+          className="research-studio__providers"
+          role="group"
+          aria-label={describeProviderChips(providerChips)}
+        >
+          {providerChips.map((chip) => (
+            <span
+              key={chip.id}
+              className="research-studio__provider"
+              data-state={chip.state}
+              title={`${chip.name} — ${chip.detail}`}
+            >
+              <i aria-hidden />
+              {chip.name}
+              <span className="sr-only"> — {chip.detail}</span>
+            </span>
+          ))}
+        </div>
       </header>
 
       <div className="research-studio__sources">
@@ -775,9 +821,18 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onDirectionsChange={setDirections}
           readiness={readiness}
           mediaProvider={mediaProvider}
-          onMediaProviderChange={setMediaProvider}
+          onMediaProviderChange={(provider) => {
+            setMediaProvider(provider);
+            // Guest voices are provider-specific; a stale one must not leak
+            // into the other provider's render config.
+            setMediaGuestVoice("");
+          }}
           mediaVoice={mediaVoice}
           onMediaVoiceChange={setMediaVoice}
+          mediaGuestVoice={mediaGuestVoice}
+          onMediaGuestVoiceChange={setMediaGuestVoice}
+          mediaStyle={mediaStyle}
+          onMediaStyleChange={setMediaStyle}
           mediaLength={mediaLength}
           onMediaLengthChange={setMediaLength}
           error={createError}

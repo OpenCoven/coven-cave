@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "overview": {
+    "generatedAt": "2026-07-26T10:00:00Z",
+    "totals": {
+      "entries": 1,
+      "familiars": 1,
+      "verified": 0,
+      "needsReview": 0,
+      "unknown": 1
+    },
+    "lastUpdatedAt": "2026-07-26T09:56:00Z",
+    "capabilities": {
+      "detail": true,
+      "verification": false,
+      "attestationMetadata": false,
+      "supersessionHistory": false,
+      "mutations": false
+    },
+    "verification": {
+      "state": "unavailable",
+      "checkedAt": "2026-07-26T10:00:00Z",
+      "manifest": null,
+      "index": null,
+      "issues": []
+    }
+  }
+}

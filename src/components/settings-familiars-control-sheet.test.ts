@@ -102,10 +102,13 @@ assert.match(
 assert.match(vaultRoute, /normalizeVaultScope\(body\.scope\)/, "Vault writes can persist a familiar grant");
 assert.match(vaultRoute, /export async function PATCH/, "Vault exposes a scope-only mutation");
 
-// Preserve the five real Studio surfaces and the fixed autosave/offline footer.
-for (const label of ["Identity", "Brain", "Memory", "Projects", "Vault"]) {
+// Preserve the four real Studio surfaces and the fixed autosave/offline footer.
+// Projects left for Chat → Projects (cave-2tmly), which now owns the grant
+// matrix, access groups, and access history in one place.
+for (const label of ["Identity", "Brain", "Memory", "Vault"]) {
   assert.match(inline, new RegExp(`label: "${label}"`), `${label} remains in the Studio`);
 }
+assert.doesNotMatch(inline, /label: "Projects"/, "Projects is no longer a Studio tab");
 assert.match(inline, /Changes save automatically/, "The fixed save-status footer remains");
 assert.match(
   styles,

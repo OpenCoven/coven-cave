@@ -39,8 +39,8 @@ for (const alias of ["groupchat", "journal", "flow"]) {
 assert.equal(MODE_ALIASES["familiar-work-queue"], "board");
 assert.match(
   workspace,
-  /mode === "board" \|\| mode === "familiar-work-queue"[\s\S]{0,400}?<BoardView\s+key=\{mode\}\s+initialTab=\{mode === "familiar-work-queue" \? "queue" : "tasks"\}/,
-  "the familiar-work-queue alias renders the Tasks surface on its Queue tab (keyed remount)",
+  /mode === "board" \|\| mode === "familiar-work-queue"[\s\S]{0,400}?<BoardView\s+key=\{mode\}\s+initialTab=\{mode === "familiar-work-queue" \|\| variant === "queue" \? "queue" : "tasks"\}/,
+  "the familiar-work-queue alias or queue page variant renders the Tasks surface on its Queue tab (keyed remount)",
 );
 assert.match(
   workspace,
@@ -51,16 +51,16 @@ assert.match(
 assert.equal(MODE_ALIASES.calendar, "inbox");
 assert.match(
   workspace,
-  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar" \? "calendar" : "overview"\}/,
-  "the calendar alias renders the Rituals surface on its Calendar tab (keyed remount)",
+  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar" \|\| variant === "calendar" \? "calendar" : "overview"\}/,
+  "the calendar alias or page variant renders the Rituals surface on its Calendar tab (keyed remount)",
 );
 
 assert.equal(MODE_ALIASES.roles, "marketplace");
 assert.equal(MODE_ALIASES.capabilities, "marketplace");
 assert.match(
   workspace,
-  /mode === "marketplace" \|\| mode === "roles" \|\| mode === "capabilities"[\s\S]{0,500}?key=\{mode\}\s+initialSection=\{mode === "roles" \? "roles" : mode === "capabilities" \? "capabilities" : "browse"\}/,
-  "the roles/capabilities aliases render the Marketplace hub on their sections (keyed remount)",
+  /mode === "marketplace" \|\| mode === "roles" \|\| mode === "capabilities"[\s\S]{0,700}?key=\{mode\}[\s\S]*?mode === "roles" \|\| variant === "roles"[\s\S]*?\? "roles"[\s\S]*?mode === "capabilities" \|\| variant === "capabilities"[\s\S]*?\? "capabilities"[\s\S]*?: "browse"/,
+  "the roles/capabilities aliases or page variants render the Marketplace hub on their sections (keyed remount)",
 );
 
 assert.equal(MODE_ALIASES.code, "surface:code");
@@ -69,10 +69,16 @@ assert.match(
   /if \(next === "code"\) \{[\s\S]{0,700}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\)\)/,
   'setMode\'s "code" branch must land on the Coding familiar\'s room (MODE_ALIASES.code = "surface:code", cave-cc5r)',
 );
+assert.equal(MODE_ALIASES.github, "surface:code");
 assert.match(
   workspace,
-  /mode === "github" \?[\s\S]{0,500}?<GitHubView[\s\S]{0,300}?initialTarget=\{githubTarget\}/,
-  "the canonical github mode renders the standalone GitHub surface with its deep-link target (cave-cc5r)",
+  /if \(next === "github"\) \{[\s\S]{0,500}?enqueuePendingCodeNavigation\(\{\s*kind: "tab",\s*topTab: "activity",\s*nonce: Date\.now\(\),?\s*\}\);[\s\S]{0,300}?commitMode\(roleSurfaceMode\(CODE_SURFACE_ID\), "github"\)/,
+  'setMode migrates legacy "github" requests to Coding Desk Activity',
+);
+assert.doesNotMatch(
+  workspace,
+  /mode === "github" \?/,
+  "github is compatibility intent, never a standalone render branch",
 );
 assert.doesNotMatch(
   workspace,
@@ -85,13 +91,18 @@ assert.doesNotMatch(
 
 assert.match(
   urlState,
-  /function readModeParam\(\): WorkspaceMode \| null \{[\s\S]{0,300}?isWorkspaceMode\(raw\)/,
-  "?mode= deep links validate via isWorkspaceMode (canonical + alias vocabulary)",
+  /function readWorkspacePageParam\(name: string\): WorkspacePageId \| null \{[\s\S]{0,350}?return isWorkspacePageId\(raw\) \? raw : null;[\s\S]*?function readModeParam\(\): WorkspacePageId \| null \{\s*return readWorkspacePageParam\("mode"\);/,
+  "?mode= deep links validate built-in, supplemental, and role-surface pages through the shared registry",
 );
 assert.match(
   workspace,
   /if \(last && \(isWorkspaceMode\(last\) \|\| isRoleSurfaceMode\(last\)\)\) setMode\(last as CaveMode\)/,
   "persisted last-surface restore validates via isWorkspaceMode and lets setMode route aliases",
+);
+assert.match(
+  workspace,
+  /useEffect\(\(\) => \{\s*if \(!activeId\) return;\s*if \(!isRoleSurfaceMode\(mode\)\) \{\s*setLastSurface\(activeId, mode\);\s*return;\s*\}\s*const roleSurfaceId = parseRoleSurfaceMode\(mode\);\s*if \(!roleSurfaceId\) return;\s*if \(!roleSurfaceSession\.rolesLoaded\) return;\s*if \(!roleSurfaceSession\.rolesLoadedSuccessfully\) return;\s*if \(!roleSurfaceSession\.visibleSurfaces\.some\(\(surface\) => surface\.id === roleSurfaceId\)\) return;\s*setLastSurface\(activeId, mode\);\s*\}, \[\s*activeId,\s*mode,\s*roleSurfaceSession\.rolesLoaded,\s*roleSurfaceSession\.rolesLoadedSuccessfully,\s*roleSurfaceSession\.visibleSurfaces,\s*\]\);/,
+  "role rooms persist only after successful role resolution confirms the exact room is visible for the active familiar",
 );
 assert.doesNotMatch(
   workspace,

@@ -41,19 +41,28 @@ struct RootView: View {
         .overlay {
             ConnectedMomentOverlay()
         }
-        // While the pill is up over the shell, quietly re-probe so a desktop
-        // that comes back (restarted, woke from sleep) reconnects on its own.
-        // The Connect screen has its own ticker for the pre-surfaces case;
-        // the hasLoadedSurfaces guard keeps the two from double-probing.
-        // Keyed on scenePhase so backgrounding stops the timer.
+        // Keep the active app connected for long sessions. Unreachable Cave
+        // instances retry every tick; a nominally connected instance gets a
+        // cheap heartbeat once a minute so a same-path desktop restart is
+        // discovered before the user's next send.
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
+            var connectedTicks = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 if Task.isCancelled { return }
-                guard app.hasLoadedSurfaces,
-                      case .unreachable = app.connectionState else { continue }
-                await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+                switch app.connectionState {
+                case .connected:
+                    connectedTicks += 1
+                    guard connectedTicks >= 6 else { continue }
+                    connectedTicks = 0
+                    await app.maintainConnectionWhileActive()
+                case .unreachable where app.hasLoadedSurfaces:
+                    connectedTicks = 0
+                    await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+                default:
+                    connectedTicks = 0
+                }
             }
         }
         .background(chrome.bgBase.ignoresSafeArea())
@@ -162,8 +171,18 @@ private struct ReconnectPill: View {
 struct MainShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
-    @State private var presentedOverlay: MainOverlay?
-    @State private var projectToOpen: ProjectInfo?
+    @State private var presentedOverlay: MainOverlay? = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-open-search") {
+            return .search
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-open-projects") {
+            return .projects(nil)
+        }
+        #endif
+        return nil
+    }()
+    @State private var overlayDismissalAction: (() -> Void)?
     @State private var terminal = PtyTerminal()
     @State private var terminalCwd: String?
 
@@ -177,8 +196,7 @@ struct MainShellView: View {
                     set: { app.navigationDrawerOpen = $0 }
                 ),
                 openProjects: { project in
-                    projectToOpen = project
-                    presentedOverlay = .projects
+                    presentedOverlay = .projects(project)
                 },
                 openFamiliars: { presentedOverlay = .familiars },
                 openThread: { app.requestOpen($0) },
@@ -186,24 +204,39 @@ struct MainShellView: View {
                     app.selectedTab = .chats
                     app.newChatRequested = true
                 },
-                searchChats: {
-                    app.selectedTab = .chats
-                    app.chatSearchRequested = true
-                }
+                openSearch: { presentedOverlay = .search }
             )
             .zIndex(100)
         }
-        .fullScreenCover(item: $presentedOverlay) { overlay in
+        .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
             switch overlay {
-            case .projects:
-                ProjectsPanel(initialProject: projectToOpen) {
+            case .projects(let project):
+                ProjectsPanel(initialProject: project) {
                     presentedOverlay = nil
-                    projectToOpen = nil
                 }
             case .familiars: FamiliarsListView { familiar in
-                presentedOverlay = nil
-                app.requestOpen(app.directThread(for: familiar.id))
+                dismissOverlay {
+                    app.requestOpen(app.directThread(for: familiar.id))
+                }
             }
+            case .search:
+                GlobalSearchView(
+                    dismiss: { presentedOverlay = nil },
+                    openThread: { thread in
+                        dismissOverlay { app.requestOpen(thread) }
+                    },
+                    openProject: { project in
+                        presentedOverlay = .projects(project)
+                    },
+                    openFamiliar: { familiar in
+                        dismissOverlay {
+                            app.requestOpen(app.directThread(for: familiar.id))
+                        }
+                    },
+                    openTask: { card in
+                        dismissOverlay { app.requestOpenTask(card) }
+                    }
+                )
             }
         }
         // Command confirmations float above the whole shell so they're visible
@@ -217,6 +250,13 @@ struct MainShellView: View {
                     app.selectedTab = tab
                 } label: { EmptyView() }
                 .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                // An EmptyView label gives VoiceOver nothing to announce, so
+                // without this each shortcut lands in the accessibility tree as
+                // an unnamed button. They only host the ⌘-key equivalents and
+                // duplicate the tab bar, which is already reachable — so hide
+                // them from assistive tech rather than inventing names for
+                // controls a VoiceOver user should never land on.
+                .accessibilityHidden(true)
             }
         }
         // Keep the app chrome in step with desktop theme changes: re-fetch while
@@ -231,6 +271,20 @@ struct MainShellView: View {
                 if app.connectionState == .connected { await app.loadTheme() }
                 try? await Task.sleep(for: .seconds(20))
             }
+        }
+    }
+
+    private func dismissOverlay(then action: @escaping () -> Void) {
+        overlayDismissalAction = action
+        presentedOverlay = nil
+    }
+
+    private func runOverlayDismissalAction() {
+        let action = overlayDismissalAction
+        overlayDismissalAction = nil
+        Task { @MainActor in
+            await Task.yield()
+            action?()
         }
     }
 
@@ -249,10 +303,18 @@ struct MainShellView: View {
     }
 }
 
-private enum MainOverlay: String, Identifiable {
-    case projects
+private enum MainOverlay: Identifiable {
+    case projects(ProjectInfo?)
     case familiars
-    var id: String { rawValue }
+    case search
+
+    var id: String {
+        switch self {
+        case .projects(let project): "projects:\(project?.id ?? "root")"
+        case .familiars: "familiars"
+        case .search: "search"
+        }
+    }
 }
 
 struct ConnectingView: View {

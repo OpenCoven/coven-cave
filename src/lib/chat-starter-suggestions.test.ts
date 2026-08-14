@@ -122,3 +122,37 @@ test("absent taskCards behaves exactly as before", () => {
     deriveStarterSuggestions({ ...args, taskCards: [] }),
   );
 });
+
+// ── /auto discovery pill ────────────────────────────────────────────────────
+
+test("the /auto pill surfaces on a quiet project day and prefills the command", () => {
+  const out = deriveStarterSuggestions({
+    cards: [],
+    sessions: [],
+    projectName: "Cast Codes",
+    nowMs: NOW_MS,
+  });
+  const auto = out.find((s) => s.id === "auto-mission");
+  assert.ok(auto, "a project with nothing pressing has room to teach /auto");
+  assert.equal(auto.text, "/auto ", "clicking parks the cursor after the command, not a whole prompt");
+});
+
+test("earned context always outranks the /auto pill", () => {
+  const out = deriveStarterSuggestions({
+    cards: [reviewCard("a")],
+    sessions: [sessionAt(hoursAgoIso(1))],
+    projectName: "Cast Codes",
+    nowMs: NOW_MS,
+  });
+  assert.ok(!out.some((s) => s.id === "auto-mission"));
+});
+
+test("no project means no /auto pill — a mission needs somewhere to happen", () => {
+  const out = deriveStarterSuggestions({
+    cards: [],
+    sessions: [],
+    projectName: null,
+    nowMs: NOW_MS,
+  });
+  assert.ok(!out.some((s) => s.id === "auto-mission"));
+});

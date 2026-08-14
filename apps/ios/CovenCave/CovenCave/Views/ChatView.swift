@@ -29,8 +29,7 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("cave.chat.thinking") private var thinkingRaw = ChatThinkingEffort.high.rawValue
-    @AppStorage("cave.chat.responseSpeed") private var responseSpeedRaw = ChatResponseSpeed.fast.rawValue
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var thread: ChatThread
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
@@ -42,13 +41,28 @@ struct ChatView: View {
     @State private var showModelPicker = false
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
+    @State private var modelPickerAllowsRuntimeDefault = false
+    @State private var modelPickerProvenance: String?
     @State private var sessionModelState: ChatModelState?
+    @State private var modelControlCapabilities: [ChatModelControlCapability] = []
+    @State private var modelControlValues: [String: String] = [:]
+    @State private var modelBindingScope: String?
+    @State private var modelPresentationScope = ChatModelPresentationScope()
     @State private var modelRequests = ChatModelRequestCoordinator()
     @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showTasks = false
     @State private var permissionsFamiliar: Familiar?
     @State private var showPermissionFamiliarPicker = false
     @State private var showSessionDetails = false
+    @State private var showSessionPicker = false
+    @State private var showVoiceCall = false
+    /// Inert navigation path handed to the session picker to satisfy its
+    /// binding. The picker runs in `onSelect` mode, so it never pushes — a
+    /// chosen session is switched to via `switchToSession` instead. Pushing
+    /// here would strand the selection: this sheet's `NavigationStack` is not
+    /// bound to it.
+    @State private var pickerPath: [ChatRoute] = []
+    @Namespace private var pickerZoomNamespace
     @State private var atBottom = true
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
@@ -106,6 +120,22 @@ struct ChatView: View {
         return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
+
+    // A voice call targets a single familiar, so the call button only appears
+    // on one-to-one threads whose familiar is known. Group threads have no
+    // single callee.
+    private var voiceCallFamiliar: Familiar? {
+        guard !thread.isGroup, let id = thread.familiarIds.first else { return nil }
+        return app.familiar(id)
+    }
+
+    // The server session for the callee, when the thread already has one.
+    // Empty for a brand-new chat; the call engine treats that as a fresh
+    // session for the familiar.
+    private var voiceCallSessionId: String {
+        guard let id = thread.familiarIds.first else { return "" }
+        return thread.sessionIds[id] ?? ""
+    }
 
     private func writeDraftPersistence(_ value: String, key: String) {
         if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -190,6 +220,17 @@ struct ChatView: View {
                 .accessibilityLabel("\(thread.title), \(chatPresence.label)")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                if let familiar = voiceCallFamiliar {
+                    Button {
+                        Haptics.tap()
+                        showVoiceCall = true
+                    } label: {
+                        Image(systemName: "phone.fill")
+                    }
+                    .accessibilityLabel("Call \(familiar.displayName)")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Haptics.tap()
                     showSessionDetails.toggle()
@@ -221,7 +262,12 @@ struct ChatView: View {
             }
         }
         .sheet(isPresented: $showModelPicker) {
-            ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent, onSelect: { id in
+            ModelPickerSheet(
+                options: presentedModelPickerOptions,
+                current: modelPresentationIsCurrent ? modelPickerCurrent : "",
+                allowsRuntimeDefault: presentedModelPickerAllowsRuntimeDefault,
+                provenance: presentedModelPickerProvenance,
+                onSelect: { id in
                 guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return }
                 _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
             }, onSwitchFamiliar: { showFamiliarPicker = true })
@@ -255,6 +301,15 @@ struct ChatView: View {
         }
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
+        }
+        .fullScreenCover(isPresented: $showVoiceCall) {
+            if let familiar = voiceCallFamiliar {
+                LiveVoiceCallView(
+                    familiar: familiar,
+                    sessionId: voiceCallSessionId,
+                    client: app.client
+                )
+            }
         }
         // A new chat linked to a task acquires its server session only after the
         // first reply; once streaming stops, push that sessionId onto the card.
@@ -312,6 +367,43 @@ struct ChatView: View {
         .fullScreenCover(item: $zoomTarget) { target in
             ZoomableContentView(target: target)
         }
+        .sheet(isPresented: $showSessionPicker) {
+            if let familiarId = thread.familiarIds.first,
+               let familiar = app.familiar(familiarId) {
+                NavigationStack {
+                    FamiliarThreadsView(familiar: familiar,
+                                        path: $pickerPath,
+                                        zoomNamespace: pickerZoomNamespace,
+                                        onSelect: { chosen in switchToSession(chosen) },
+                                        currentThreadId: thread.id)
+                }
+            } else {
+                // Group threads and any thread whose familiar no longer
+                // resolves have no per-familiar session list to show. Say so
+                // rather than presenting an empty sheet.
+                ContentUnavailableView {
+                    Label("No sessions to pick", systemImage: "bubble.left.and.bubble.right")
+                } description: {
+                    Text("This conversation isn't scoped to a single familiar.")
+                }
+            }
+        }
+    }
+
+    /// Switch the chat to a session chosen in the picker: close the picker,
+    /// then hand the thread to the chat list, which makes it the detail
+    /// column's conversation and clears any pushed navigation. The chosen
+    /// session then stays put until something asks for another one.
+    ///
+    /// Re-picking the session already open only closes the sheet — routing it
+    /// through `requestOpen` would rebuild the very chat being looked at.
+    private func switchToSession(_ chosen: ChatThread) {
+        showSessionPicker = false
+        guard chosen.id != thread.id else { return }
+        // Persist the composer draft before the detail column swaps away.
+        flushDraftPersistence()
+        Haptics.tap()
+        app.switchConversation(to: chosen, currentThreadId: thread.id)
     }
 
     private var sessionDetailsCard: some View {
@@ -340,18 +432,39 @@ struct ChatView: View {
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
             Divider()
-            sessionControlRow(systemImage: "brain") {
-                Picker("Thinking", selection: $thinkingRaw) {
-                    ForEach(ChatThinkingEffort.allCases) { effort in
-                        Text(effort.label).tag(effort.rawValue)
-                    }
-                }
-            }
+            sessionDetailRow(
+                "Inventory",
+                value: ChatModelInventoryProvenancePresentation.label(for: presentedModelPickerProvenance),
+                systemImage: "info.circle"
+            )
             Divider()
-            sessionControlRow(systemImage: "gauge.with.dots.needle.50percent") {
-                Picker("Speed", selection: $responseSpeedRaw) {
-                    ForEach(ChatResponseSpeed.allCases) { speed in
-                        Text(speed.label).tag(speed.rawValue)
+            Button {
+                showSessionDetails = false
+                showSessionPicker = true
+            } label: {
+                sessionDetailRow(
+                    "Session",
+                    value: thread.title,
+                    systemImage: "bubble.left.and.bubble.right",
+                    showsChevron: true
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("Switch session")
+            .accessibilityLabel("Session")
+            .accessibilityValue(thread.title)
+            .disabled(thread.isGroup)
+            ForEach(presentedModelControlCapabilities) { capability in
+                Divider()
+                sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
+                    Picker(capability.delivery == "prompt-only" ? "\(capability.label) (Prompt guidance)" : "\(capability.label) (Native)",
+                           selection: Binding(
+                            get: { modelControlValues[capability.family] ?? "" },
+                            set: { modelControlValues[capability.family] = $0 }
+                           )) {
+                        ForEach(capability.values) { option in
+                            Text(option.label).tag(option.value)
+                        }
                     }
                 }
             }
@@ -362,21 +475,25 @@ struct ChatView: View {
         .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
     }
 
+    @ViewBuilder
     private var projectContext: some View {
-        ChatProjectPicker(
-            familiarIds: thread.familiarIds,
-            recentRoots: app.recentProjectRoots,
-            selectedRoot: $thread.projectRoot,
-            isResolved: $projectResolved,
-            locked: !thread.canChangeProject,
-            requiresExplicitSelection: thread.needsProjectSelection
-        ) {
-            thread.needsProjectSelection = false
-            app.touch(thread)
+        if thread.canChangeProject && (thread.needsProjectSelection || !thread.canSendMessages) {
+            ChatProjectPicker(
+                familiarIds: thread.familiarIds,
+                recentRoots: app.recentProjectRoots,
+                selectedRoot: $thread.projectRoot,
+                isResolved: $projectResolved,
+                refreshToken: 0,
+                requiresExplicitSelection: thread.needsProjectSelection,
+                onResolved: {
+                    thread.needsProjectSelection = false
+                    app.touch(thread)
+                }
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(chrome.bgRaised)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(chrome.bgRaised)
     }
 
     private func sessionControlRow<Control: View>(
@@ -398,11 +515,15 @@ struct ChatView: View {
 
     private var sessionModelLabel: String {
         if let pendingModelOverride = thread.pendingModelOverride {
-            return modelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
+            if pendingModelOverride.isEmpty { return "Runtime default" }
+            return presentedModelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
                 ?? conciseModelName(pendingModelOverride)
         }
-        guard let state = sessionModelState else { return thread.isGroup ? "Per familiar" : "Loading…" }
-        return modelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
+        guard let state = presentedSessionModelState else {
+            return thread.isGroup ? "Per familiar" : "Loading…"
+        }
+        if state.effectiveModel.isEmpty { return "Runtime default" }
+        return presentedModelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? conciseModelName(state.effectiveModel)
     }
 
@@ -418,18 +539,93 @@ struct ChatView: View {
 
     private var sessionRuntimeLabel: String {
         if thread.isGroup { return "Per familiar" }
-        guard let state = sessionModelState else { return "Unavailable" }
+        guard let state = presentedSessionModelState else { return "Unavailable" }
         return state.runtime?.isEmpty == false ? state.runtime! : state.harness
     }
 
-    private var modelStateLoadKey: String {
-        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return "group" }
-        return "\(familiarId):\(modelSessionId(familiarId) ?? "new")"
+    private var modelStateLoadKey: ChatModelRequestTarget? { currentModelLoadTarget }
+
+    private var currentModelLoadTarget: ChatModelRequestTarget? {
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return nil }
+        return makeModelRequestTarget(
+            familiarId: familiarId,
+            sessionId: modelSessionId(familiarId)
+        )
     }
 
     private var currentModelRequestTarget: ChatModelRequestTarget? {
-        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return nil }
-        return ChatModelRequestTarget(familiarId: familiarId, sessionId: modelSessionId(familiarId))
+        currentModelLoadTarget?.withBindingScope(modelBindingScope)
+    }
+
+    private func makeModelRequestTarget(
+        familiarId: String,
+        sessionId: String?
+    ) -> ChatModelRequestTarget {
+        let session = sessionId.flatMap { id in
+            app.serverSessions.first(where: { $0.id == id })
+        }
+        let harness = (session?.harness ?? app.familiar(familiarId)?.harness)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let runtime = session?.runtime?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var identity: [String] = []
+        if let harness, !harness.isEmpty { identity.append("harness:\(harness)") }
+        if let runtime, !runtime.isEmpty { identity.append("runtime:\(runtime)") }
+        return ChatModelRequestTarget(
+            familiarId: familiarId,
+            sessionId: sessionId,
+            runtimeIdentity: identity.isEmpty ? nil : identity.joined(separator: "|")
+        )
+    }
+
+    private var modelPresentationIsCurrent: Bool {
+        modelPresentationScope.isCurrent(for: currentModelRequestTarget)
+    }
+
+    private var presentedModelPickerOptions: [ChatModelOption] {
+        modelPresentationIsCurrent ? modelPickerOptions : []
+    }
+
+    private var presentedModelPickerAllowsRuntimeDefault: Bool {
+        // A Cave-owned default still needs an explicit clear action after a
+        // session model has been selected; runtime ownership only controls
+        // whether the unselected state is the normal initial default.
+        modelPresentationIsCurrent && (modelPickerAllowsRuntimeDefault || sessionModelState != nil)
+    }
+
+    private var presentedModelPickerProvenance: String? {
+        modelPresentationIsCurrent ? modelPickerProvenance : nil
+    }
+
+    private var presentedModelControlCapabilities: [ChatModelControlCapability] {
+        modelPresentationIsCurrent ? modelControlCapabilities : []
+    }
+
+    private var presentedSessionModelState: ChatModelState? {
+        modelPresentationIsCurrent ? sessionModelState : nil
+    }
+
+    private func prepareModelStateLoad(for target: ChatModelRequestTarget?) {
+        guard modelPresentationScope.beginLoading(for: target) else { return }
+        sessionModelState = nil
+        modelPickerOptions = []
+        modelPickerCurrent = ""
+        modelPickerAllowsRuntimeDefault = false
+        modelPickerProvenance = nil
+        modelControlCapabilities = []
+        modelControlValues = [:]
+    }
+
+    private func rekeyModelPresentation(
+        for target: ChatModelRequestTarget,
+        response: ChatModelStateResponse
+    ) -> Bool {
+        guard let responseTarget = modelPresentationScope.rekeyForResponse(
+            for: target,
+            currentTarget: currentModelRequestTarget,
+            bindingScope: response.presentationBindingScope
+        ) else { return false }
+        modelBindingScope = response.presentationBindingScope
+        return currentModelRequestTarget == responseTarget
     }
 
     private var turnModelBinding: ChatModelTurnBinding {
@@ -438,55 +634,120 @@ struct ChatView: View {
         }
         return ChatModelTurnBinding.resolve(
             pendingModel: thread.pendingModelOverride,
-            confirmedState: sessionModelState,
+            confirmedState: presentedSessionModelState,
             hasSession: modelSessionId(familiarId) != nil
         )
-    }
-
-    private var thinkingEffort: ChatThinkingEffort {
-        ChatThinkingEffort(rawValue: thinkingRaw) ?? .high
-    }
-
-    private var responseSpeed: ChatResponseSpeed {
-        ChatResponseSpeed(rawValue: responseSpeedRaw) ?? .fast
     }
 
     private func conciseModelName(_ id: String) -> String {
         id.split(separator: "/").last.map(String.init) ?? id
     }
 
+    private var linkedGitHubContext: (link: CardGitHubLink, url: URL)? {
+        app.linkedTasks(for: thread)
+            .flatMap(\.githubLinks)
+            .compactMap { link in
+                validGitHubURL(for: link).map { (link, $0) }
+            }
+            .first
+    }
+
+    private func validGitHubURL(for link: CardGitHubLink) -> URL? {
+        let kind = link.kind.lowercased()
+        guard ["pr", "review_request", "issue"].contains(kind),
+              let number = link.number,
+              let url = URL(string: link.url),
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "github.com",
+              url.user == nil,
+              url.password == nil,
+              url.port == nil
+        else { return nil }
+
+        let repo = link.repo.split(separator: "/", omittingEmptySubsequences: true)
+        let path = url.pathComponents.filter { $0 != "/" }
+        let expectedKind = kind == "issue" ? "issues" : "pull"
+        guard repo.count == 2,
+              path.count >= 4,
+              path[0].caseInsensitiveCompare(String(repo[0])) == .orderedSame,
+              path[1].caseInsensitiveCompare(String(repo[1])) == .orderedSame,
+              path[2].lowercased() == expectedKind,
+              path[3] == String(number)
+        else { return nil }
+        return url
+    }
+
+    private func githubContextLabel(_ link: CardGitHubLink) -> String {
+        let kind = link.kind.lowercased() == "issue" ? "Issue" : "PR"
+        guard let number = link.number else { return kind }
+        return "\(kind) #\(number)"
+    }
+
     private var linkedContextStrip: some View {
         let cards = app.linkedTasks(for: thread)
-        return Button {
-            showTasks = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "checklist")
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            if let context = linkedGitHubContext {
+                Link(destination: context.url) {
+                    HStack(spacing: 6) {
+                        Image(systemName: context.link.kind.lowercased() == "issue"
+                              ? "smallcircle.filled.circle" : "arrow.triangle.branch")
+                        Text(githubContextLabel(context.link))
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(chrome.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text(cards.first?.title ?? "Open Tasks")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 36)
+                    .background(chrome.accent.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(chrome.accent.opacity(0.35), lineWidth: 1))
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(githubContextLabel(context.link)) on GitHub")
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 52)
-            .background(chrome.bgRaised)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(chrome.border).frame(height: 1)
+
+            Button {
+                showTasks = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "checklist")
+                        .foregroundStyle(chrome.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(cards.first?.title ?? "Open Tasks")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityHint("Opens tasks linked to this conversation")
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Opens tasks linked to this conversation")
+        .padding(.horizontal, 14)
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
+        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .frame(minHeight: 52)
+        .background(chrome.bgRaised)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(chrome.border).frame(height: 1)
+        }
     }
 
     private func sessionDetailRow(
@@ -1174,8 +1435,7 @@ struct ChatView: View {
             // the next reconnect (AppModel.flushQueuedMessages).
             if app.connectionState != .connected {
                 thread.enqueue(outgoing, attachments: attachments,
-                               reasoningEffort: thinkingEffort,
-                               responseSpeed: responseSpeed,
+                               modelControls: modelControlValues,
                                modelOverride: modelBinding.modelOverride,
                                modelOverrideScope: modelBinding.scope)
                 app.touch(thread)
@@ -1183,8 +1443,7 @@ struct ChatView: View {
                 return
             }
             thread.send(outgoing, attachments: attachments,
-                        reasoningEffort: thinkingEffort,
-                        responseSpeed: responseSpeed,
+                        modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
                         client: client) { app.touch(thread) }
@@ -1200,16 +1459,14 @@ struct ChatView: View {
         }
         let modelBinding = turnModelBinding
         if app.connectionState != .connected {
-            thread.enqueue(text, reasoningEffort: thinkingEffort,
-                           responseSpeed: responseSpeed,
+            thread.enqueue(text, modelControls: modelControlValues,
                            modelOverride: modelBinding.modelOverride,
                            modelOverrideScope: modelBinding.scope)
             app.touch(thread)
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
-        thread.send(text, reasoningEffort: thinkingEffort,
-                    responseSpeed: responseSpeed,
+        thread.send(text, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1336,14 +1593,20 @@ struct ChatView: View {
             return
         }
         let sessionId = modelSessionId(familiarId)
-        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
+        prepareModelStateLoad(for: target)
         guard let request = modelRequests.beginLoad(for: target) else { return }
         let resp: ChatModelStateResponse
         do {
             resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
-            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  rekeyModelPresentation(for: target, response: resp) else { return }
             sessionModelState = resp.state
             modelPickerOptions = resp.options ?? []
+            modelPickerAllowsRuntimeDefault =
+                resp.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = resp.inventory?.provenance ?? "unavailable"
             if ChatModelTurnBinding.shouldClearPending(
                 thread.pendingModelOverride,
                 confirmedState: resp.state,
@@ -1354,7 +1617,12 @@ struct ChatView: View {
             }
             modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
         } catch {
-            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget) else { return }
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  modelPresentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: currentModelRequestTarget
+                  ) else { return }
+            if sessionModelState == nil { modelPickerProvenance = "unavailable" }
             thread.appendSystem("Couldn't load the model list. Is the desktop reachable?", isError: true)
             app.touch(thread)
             return
@@ -1363,7 +1631,7 @@ struct ChatView: View {
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmed.isEmpty {
-            guard !options.isEmpty else {
+            guard modelPickerAllowsRuntimeDefault || !options.isEmpty else {
                 thread.appendSystem("This runtime has no model menu — type /model <id> to set one.")
                 app.touch(thread)
                 return
@@ -1371,6 +1639,13 @@ struct ChatView: View {
             modelPickerOptions = options
             modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
             showModelPicker = true
+            return
+        }
+
+        if ["default", "runtime-default"].contains(trimmed.lowercased()) {
+            if let task = selectModel(nil, familiarId: familiarId, sessionId: sessionId) {
+                await task.value
+            }
             return
         }
 
@@ -1395,20 +1670,42 @@ struct ChatView: View {
     /// turn as a one-message override until GET confirms durable session state.
     @discardableResult
     private func selectModel(
-        _ model: String,
+        _ model: String?,
         familiarId: String,
         sessionId: String?
     ) -> Task<Void, Never>? {
-        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+        let stagedModel = model ?? ""
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
         modelRequests.beginIntent(for: target)
-        thread.pendingModelOverride = model
-        modelPickerCurrent = model
+        thread.pendingModelOverride = stagedModel
+        modelPickerCurrent = stagedModel
+        modelControlCapabilities = []
+        modelControlValues = [:]
         app.touch(thread)
         Haptics.tap()
 
-        guard sessionId != nil else {
+        guard sessionId != nil || model == nil else {
+            // A new chat has no session PATCH to reconcile. Still resolve the
+            // selected model's capabilities immediately so the first Send
+            // cannot inherit controls from the previously selected model (or
+            // appear to support none simply because the thread is new).
+            guard let client = app.client,
+                  let request = modelRequests.beginLoad(for: target) else {
+                app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
+                return nil
+            }
             app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
-            return nil
+            return modelMutationQueue.enqueue {
+                await self.loadPendingModelCapabilities(
+                    model: stagedModel,
+                    familiarId: familiarId,
+                    sessionId: sessionId,
+                    target: target,
+                    request: request,
+                    client: client
+                )
+            }
         }
         guard let client = app.client else {
             app.showToast("Model queued for this chat", systemImage: "cpu", style: .warning)
@@ -1419,15 +1716,57 @@ struct ChatView: View {
             var mutationFailed = false
             do {
                 _ = try await client.setChatModel(
-                    familiarId: familiarId, sessionId: sessionId, model: model, scope: "session")
+                    familiarId: familiarId,
+                    sessionId: sessionId,
+                    model: model,
+                    scope: sessionId == nil ? "familiar-default" : "session")
             } catch {
                 mutationFailed = true
             }
             await finishModelMutation(
                 mutation,
-                model: model,
+                model: stagedModel,
                 mutationFailed: mutationFailed
             )
+        }
+    }
+
+    /// Resolve controls for a staged model before a new chat owns a session.
+    /// The server treats `model` on GET as a read-only next-message preview, so
+    /// this cannot mutate familiar/session intent or race the eventual Send.
+    private func loadPendingModelCapabilities(
+        model: String,
+        familiarId: String,
+        sessionId: String?,
+        target: ChatModelRequestTarget,
+        request: ChatModelRequest,
+        client: CaveClient
+    ) async {
+        do {
+            let response = try await client.chatModelState(
+                familiarId: familiarId,
+                sessionId: sessionId,
+                previewModel: model
+            )
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  thread.pendingModelOverride == model,
+                  rekeyModelPresentation(for: target, response: response) else { return }
+            sessionModelState = response.state
+            modelControlCapabilities = response.controls ?? []
+            let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
+                ($0.family, Set($0.values.map(\.value)))
+            })
+            modelControlValues = modelControlValues.filter {
+                allowed[$0.key]?.contains($0.value) == true
+            }
+            modelPickerOptions = response.options ?? []
+            modelPickerAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = response.inventory?.provenance ?? "unavailable"
+            modelPickerCurrent = model
+            app.touch(thread)
+        } catch {
+            // The model selection remains staged and will still ride the first
+            // turn. Keep controls empty rather than inventing legacy globals.
         }
     }
 
@@ -1448,9 +1787,7 @@ struct ChatView: View {
         case .success:
             break
         }
-        guard let finalState = reconciliation.response,
-              finalState.state.source == "session",
-              finalState.state.effectiveModel == model else {
+        guard let finalState = reconciliation.response else {
             thread.appendSystem(
                 mutationFailed
                     ? "Couldn't switch the model."
@@ -1458,6 +1795,28 @@ struct ChatView: View {
                 isError: true
             )
             app.touch(thread)
+            return
+        }
+        let confirmed = model.isEmpty
+            ? finalState.state.source == "runtime-default"
+                && finalState.state.effectiveModel.isEmpty
+            : finalState.state.source == "session"
+                && finalState.state.effectiveModel == model
+        guard confirmed else {
+            thread.appendSystem(
+                mutationFailed
+                    ? "Couldn't switch the model."
+                    : "Couldn't confirm the model change.",
+                isError: true
+            )
+            app.touch(thread)
+            return
+        }
+        if model.isEmpty {
+            thread.pendingModelOverride = nil
+            thread.appendSystem("Model reset to runtime default.")
+            app.touch(thread)
+            Haptics.tap()
             return
         }
         let label = finalState.options?.first { $0.id == finalState.state.effectiveModel }?.label
@@ -1472,25 +1831,44 @@ struct ChatView: View {
         reconciling expectedTarget: ChatModelRequestTarget? = nil
     ) async -> (outcome: ChatModelReconciliationOutcome, response: ChatModelStateResponse?) {
         guard !thread.isGroup,
-              let client = app.client,
               let familiarId = thread.familiarIds.first else {
-            sessionModelState = nil
-            modelPickerOptions = []
+            prepareModelStateLoad(for: nil)
             return expectedTarget == nil ? (.failed, nil) : (.superseded, nil)
         }
         let sessionId = modelSessionId(familiarId)
-        let target = ChatModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
-        guard expectedTarget == nil || expectedTarget == target,
-              let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
+        prepareModelStateLoad(for: target)
+        guard expectedTarget == nil || expectedTarget == target else { return (.superseded, nil) }
+        guard let client = app.client else {
+            if modelPresentationScope.canApplyResponse(
+                for: target,
+                currentTarget: currentModelRequestTarget
+            ) {
+                modelPickerProvenance = "unavailable"
+            }
+            return (.failed, nil)
+        }
+        guard let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
         do {
             let response = try await client.chatModelState(
                 familiarId: familiarId,
                 sessionId: sessionId)
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: false)
-            guard outcome == .applied else { return (outcome, nil) }
+            guard outcome == .applied,
+                  rekeyModelPresentation(for: target, response: response)
+            else { return (outcome, nil) }
             sessionModelState = response.state
+            modelControlCapabilities = response.controls ?? []
+            let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
+                ($0.family, Set($0.values.map(\.value)))
+            })
+            modelControlValues = modelControlValues.filter { allowed[$0.key]?.contains($0.value) == true }
             modelPickerOptions = response.options ?? []
+            modelPickerAllowsRuntimeDefault =
+                response.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = response.inventory?.provenance ?? "unavailable"
             if ChatModelTurnBinding.shouldClearPending(
                 thread.pendingModelOverride,
                 confirmedState: response.state,
@@ -1504,7 +1882,12 @@ struct ChatView: View {
         } catch {
             let outcome = modelRequests.reconciliationOutcome(
                 for: request, currentTarget: currentModelRequestTarget, failed: true)
-            guard outcome == .failed else { return (outcome, nil) }
+            guard outcome == .failed,
+                  modelPresentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: currentModelRequestTarget
+                  ) else { return (outcome, nil) }
+            if sessionModelState == nil { modelPickerProvenance = "unavailable" }
             return (.failed, nil)
         }
     }
@@ -1528,8 +1911,7 @@ struct ChatView: View {
             return
         }
         let modelBinding = turnModelBinding
-        thread.send(trimmed, reasoningEffort: thinkingEffort,
-                    responseSpeed: responseSpeed,
+        thread.send(trimmed, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
                     client: client) { app.touch(thread) }
@@ -1673,19 +2055,17 @@ struct ChatView: View {
                 return
             }
 
-            let destinationModel = destination.pendingModelOverride
-            let destinationScope: ChatModelOverrideScope? = destinationModel.map { _ in
-                destination.sessionIds[familiar.id]?.isEmpty == false
-                    ? .nextMessage
-                    : .session
-            }
+            let destinationModelBinding = ChatModelTurnBinding.resolve(
+                pendingModel: destination.pendingModelOverride,
+                confirmedState: nil,
+                hasSession: destination.sessionIds[familiar.id]?.isEmpty == false
+            )
             destination.send(
                 prompt,
                 displayText: displayText,
-                reasoningEffort: thinkingEffort,
-                responseSpeed: responseSpeed,
-                modelOverride: destinationModel,
-                modelOverrideScope: destinationScope,
+                modelControls: [:],
+                modelOverride: destinationModelBinding.modelOverride,
+                modelOverrideScope: destinationModelBinding.scope,
                 client: client
             ) {
                 app.touch(destination)

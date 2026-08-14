@@ -19,6 +19,25 @@
             "statusMessage": "Checking worktree/branch safety…",
             "timeout": 15,
             "type": "command"
+          },
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-autolock.mjs\"",
+            "statusMessage": "Protecting at-risk worktrees…",
+            "timeout": 15,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-retention-push.mjs\"",
+            "statusMessage": "Retaining commits on origin…",
+            "timeout": 60,
+            "type": "command"
           }
         ],
         "matcher": "Bash"
@@ -29,6 +48,17 @@
         "hooks": [
           {
             "command": "bd prime --hook-json",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-session-exit-retirement.mjs\"",
             "type": "command"
           }
         ],

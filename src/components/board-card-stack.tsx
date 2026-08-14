@@ -10,6 +10,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 // Order mirrors BoardKanban's COLUMNS so users get a consistent left-to-
@@ -58,7 +59,10 @@ export function BoardCardStack({
   onOpenTaskChat,
   chatLinkingId,
 }: Props) {
-  const [filter, setFilter] = useState<FilterValue>("all");
+  const {
+    value: filter,
+    select: selectFilter,
+  } = useSurfaceHistory<FilterValue>({ id: "board:stack-filter", initial: "all", coalesceMs: 700 });
   // Resolve familiars ONCE (5 hook subscriptions) and use O(1) lookups per row —
   // replaces the per-row linear familiar/session scans + per-row resolution.
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
@@ -104,7 +108,7 @@ export function BoardCardStack({
         className="board-card-stack__filters"
         ariaLabel="Filter by status"
         value={filter}
-        onChange={setFilter}
+        onChange={selectFilter}
         items={filterTabs}
       />
 

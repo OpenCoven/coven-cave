@@ -5,6 +5,11 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./voice-engine-settings.tsx", import.meta.url), "utf8");
 
+test("local speech is owned by Settings → Voice", () => {
+  assert.match(source, /Settings → Voice controls/);
+  assert.doesNotMatch(source, /Settings → General controls/);
+});
+
 test("local speech settings manages the verified model registry through supported endpoints", () => {
   assert.match(source, /fetch\("\/api\/voice\/engines", \{ cache: "no-store" \}\)/);
   assert.match(source, /fetch\("\/api\/voice\/engines\/downloads", \{ cache: "no-store" \}\)/);

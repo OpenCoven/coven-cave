@@ -5,6 +5,7 @@ import "@/styles/chat-artifact.css";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 import {
@@ -83,7 +84,12 @@ export function ChatArtifactViewer({
   ));
   const [code, setCode] = useState(initialCode);
   const [kind, setKind] = useState<ArtifactKind>(initialKind);
-  const [tab, setTab] = useState<"canvas" | "code">("canvas");
+  // Canvas/Code is a view axis on the artifact, so a burst collapses.
+  const { value: tab, select: selectTab, show: setTab } = useSurfaceHistory<"canvas" | "code">({
+    id: "artifact:view",
+    initial: "canvas",
+    coalesceMs: 700,
+  });
   const [editing, setEditing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -698,7 +704,7 @@ export function ChatArtifactViewer({
           size="sm"
           ariaLabel="Artifact view"
           value={tab}
-          onChange={setTab}
+          onChange={selectTab}
           items={[
             { id: "canvas", label: "Canvas", icon: "ph:squares-four" },
             { id: "code", label: "Code", icon: "ph:code" },
@@ -769,7 +775,7 @@ export function ChatArtifactViewer({
               <div className="chat-artifact__error" role="alert">
                 <Icon name="ph:warning-circle-fill" width={15} />
                 <span className="chat-artifact__error-msg">{runtimeError}</span>
-                <button type="button" className="chat-artifact__error-fix" onClick={() => setTab("code")}>View code</button>
+                <button type="button" className="chat-artifact__error-fix" onClick={() => selectTab("code")}>View code</button>
               </div>
             ) : null}
           </div>

@@ -3,6 +3,12 @@
 import { useSyncExternalStore } from "react";
 
 import {
+  isCanonicalPreferencesPayload,
+  mergePreferencesPatches,
+  queueAppPreferencesPatch,
+  readBootstrap,
+} from "./app-preferences-core.ts";
+import {
   applyPreferencesPatch,
   createDefaultPreferences,
   legacyStorageToPreferencesPatch,
@@ -12,8 +18,14 @@ import {
   type CavePreferencesPatch,
 } from "./preferences-schema.ts";
 
-const BOOTSTRAP_ID = "cave-preferences-bootstrap";
 const CHANNEL_NAME = "cave:app-preferences";
+
+declare global {
+  interface Window {
+    __COVEN_CAVE_PREFERENCES__?: unknown;
+    __COVEN_CAVE_PREFERENCES_AUTHORITATIVE__?: boolean;
+  }
+}
 
 // Only these non-secret, user-facing values are eligible for one-time import.
 // The schema helper is an additional allowlist/normalization boundary.
@@ -39,30 +51,6 @@ const LEGACY_KEYS = [
   "cave:mobile-mode-enabled",
   "cave:backdrop:v1",
 ] as const;
-
-declare global {
-  interface Window {
-    __COVEN_CAVE_PREFERENCES__?: unknown;
-    __COVEN_CAVE_PREFERENCES_AUTHORITATIVE__?: boolean;
-  }
-}
-
-function readBootstrap(): CavePreferences | null {
-  if (typeof window === "undefined") return null;
-  const direct = window.__COVEN_CAVE_PREFERENCES__;
-  if (direct && window.__COVEN_CAVE_PREFERENCES_AUTHORITATIVE__ !== false) {
-    return normalizeCavePreferences(direct);
-  }
-  if (typeof document === "undefined") return null;
-  const node = document.getElementById(BOOTSTRAP_ID);
-  if (!node?.textContent) return null;
-  if (node.getAttribute("data-authoritative") === "false") return null;
-  try {
-    return normalizeCavePreferences(JSON.parse(node.textContent));
-  } catch {
-    return null;
-  }
-}
 
 function activeStorage(): Storage | null {
   try {
@@ -93,31 +81,10 @@ function hasOwnKeys(value: object): boolean {
   return Object.keys(value).length > 0;
 }
 
-function isCanonicalPreferencesPayload(value: unknown): value is CavePreferences {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const candidate = value as Partial<CavePreferences>;
-  return candidate.version === 1 &&
-    typeof candidate.initialized === "boolean" &&
-    typeof candidate.revision === "number" &&
-    Boolean(candidate.appearance && typeof candidate.appearance === "object") &&
-    Boolean(candidate.general && typeof candidate.general === "object") &&
-    Boolean(candidate.phone && typeof candidate.phone === "object");
-}
-
-function mergePatch(left: CavePreferencesPatch, right: CavePreferencesPatch): CavePreferencesPatch {
-  const merge = (a: unknown, b: unknown): unknown => {
-    if (!b || typeof b !== "object" || Array.isArray(b)) return b;
-    const base = a && typeof a === "object" && !Array.isArray(a) ? a as Record<string, unknown> : {};
-    const out: Record<string, unknown> = { ...base };
-    for (const [key, value] of Object.entries(b as Record<string, unknown>)) {
-      out[key] = merge(base[key], value);
-    }
-    return out;
-  };
-  return merge(left, right) as CavePreferencesPatch;
-}
-
-let authoritativeBootstrap = readBootstrap();
+let authoritativeBootstrap = readBootstrap({
+  window: typeof window === "undefined" ? undefined : window,
+  document: typeof document === "undefined" ? undefined : document,
+});
 let snapshot = authoritativeBootstrap ?? createDefaultPreferences(false);
 let canonicalInitialized = authoritativeBootstrap?.initialized === true;
 let canonicalLoaded = authoritativeBootstrap !== null;
@@ -283,7 +250,7 @@ async function drain(options: { keepalive?: boolean } = {}): Promise<boolean> {
     if (result.ok) continue;
     // Preserve the failed patch for a later retry. Newer writes win when the
     // failed request overlaps the same leaf.
-    pendingPatch = mergePatch(patch, pendingPatch);
+    pendingPatch = mergePreferencesPatches(patch, pendingPatch);
     ok = false;
     if (result.retryable) scheduleRetry();
     else retryBlocked = "terminal";
@@ -333,8 +300,9 @@ export function useAppPreferences(): CavePreferences {
 export function updateAppPreferences(patch: CavePreferencesPatch): void {
   synchronizeStorageIdentity();
   if (!hasOwnKeys(patch)) return;
-  pendingPatch = mergePatch(pendingPatch, patch);
-  snapshot = applyPreferencesPatch(snapshot, patch);
+  const queued = queueAppPreferencesPatch(snapshot, pendingPatch, patch);
+  pendingPatch = queued.pendingPatch;
+  snapshot = applyPreferencesPatch(snapshot, queued.patch);
   if (!canonicalInitialized) snapshot = { ...snapshot, initialized: false };
   mirrorLegacy(snapshot);
   notify();
@@ -397,7 +365,7 @@ export function initializeAppPreferences(): Promise<CavePreferences> {
       // The legacy snapshot is the base; any interaction queued while the app
       // was booting wins at the same leaf. Detach exactly this payload so writes
       // arriving during the request remain pending for the next serialized send.
-      const patch = mergePatch(migration, pendingPatch);
+      const patch = mergePreferencesPatches(migration, pendingPatch);
       pendingPatch = {};
       // An empty PATCH is meaningful here: it marks a brand-new central store
       // initialized without inventing any legacy values.
@@ -409,7 +377,7 @@ export function initializeAppPreferences(): Promise<CavePreferences> {
       } else {
         // Retry the same initialization payload later; writes made while it was
         // in flight remain newer and therefore win during the merge.
-        pendingPatch = mergePatch(patch, pendingPatch);
+        pendingPatch = mergePreferencesPatches(patch, pendingPatch);
         if (result.retryable) scheduleRetry();
         else retryBlocked = "terminal";
       }

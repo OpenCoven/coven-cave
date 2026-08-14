@@ -13,6 +13,7 @@ import type { InboxItem } from "./cave-inbox";
 import type { DailyReportBreakdown, DailyReportStats, RecentReport } from "./daily-report";
 import { dateSlug, isSameLocalDay } from "./daily-report.ts";
 import type { DailyReportPayload, MergedPr, SessionGroup } from "./daily-report-facts";
+import { repoFromGithubSubTag } from "./github-sub-tags.ts";
 
 // ── shapes ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,9 @@ export type DayEvent = {
   tone: DayTone;
   href?: string;
   familiarId?: string | null;
+  /** Machine discriminator retained from inbox-backed events so derived
+   *  surfaces can group them without matching visible copy. */
+  auto?: string | null;
   /** Set on merge events — lets a surface open the rich GitHub card for it
    *  instead of sending the reader out to github.com. */
   pr?: { repo: string; number: number };
@@ -279,6 +283,7 @@ export function dayEvents(
       at: item.firedAt as string,
       label: item.title,
       familiarId: item.familiarId ?? null,
+      auto: item.auto ?? null,
     });
   }
 
@@ -429,14 +434,46 @@ function chapterKicker(events: DayEvent[]): string {
  *  coven-runtimes") and the shipped table carries the detail. */
 const SPINE_MERGE_DETAIL_LIMIT = 2;
 
+function prOpenedFromAuto(auto: string | null | undefined): { repo: string; number: number } | null {
+  if (!auto?.startsWith("github-sub:pr-opened:")) return null;
+  const repo = repoFromGithubSubTag(auto);
+  const hash = auto.lastIndexOf("#");
+  const rawNumber = hash === -1 ? "" : auto.slice(hash + 1);
+  if (!repo || !/^[1-9]\d*$/.test(rawNumber)) return null;
+  return { repo, number: Number(rawNumber) };
+}
+
+function repoListDetail(repos: string[]): string | undefined {
+  if (repos.length === 0) return undefined;
+  if (repos.length <= 3) return repos.join(" · ");
+  return `${repos.slice(0, 3).join(" · ")} +${repos.length - 3}`;
+}
+
 export function deriveSpine(chapters: Chapter[]): SpineEntry[] {
   const out: SpineEntry[] = [];
+  const mergedPrKeys = new Set(
+    chapters.flatMap((chapter) =>
+      chapter.events
+        .filter((event) => event.kind === "merge" && event.pr)
+        .map((event) => prKey(event.pr?.repo, event.pr?.number)),
+    ),
+  );
+  const seenOpenedPrKeys = new Set<string>();
 
   for (const chapter of chapters) {
     const merges = chapter.events.filter((e) => e.kind === "merge");
     const others = chapter.events.filter((e) => e.kind !== "merge");
+    const openedPrs: { event: DayEvent; repo: string; number: number }[] = [];
 
     for (const e of others) {
+      const openedPr = prOpenedFromAuto(e.auto);
+      if (openedPr) {
+        const key = prKey(openedPr.repo, openedPr.number);
+        if (mergedPrKeys.has(key) || seenOpenedPrKeys.has(key)) continue;
+        seenOpenedPrKeys.add(key);
+        openedPrs.push({ event: e, ...openedPr });
+        continue;
+      }
       out.push({
         id: e.id,
         at: e.at,
@@ -445,6 +482,30 @@ export function deriveSpine(chapters: Chapter[]): SpineEntry[] {
         detail: e.detail,
         chapterIndex: chapter.index,
         count: 1,
+      });
+    }
+
+    if (openedPrs.length === 1) {
+      const [opened] = openedPrs;
+      out.push({
+        id: opened.event.id,
+        at: opened.event.at,
+        tone: opened.event.tone,
+        label: opened.event.label,
+        detail: opened.event.detail,
+        chapterIndex: chapter.index,
+        count: 1,
+      });
+    } else if (openedPrs.length > 1) {
+      const repos = [...new Set(openedPrs.map(({ repo }) => repoBasename(repo)))];
+      out.push({
+        id: `chapter-pr-opened:${chapter.index}`,
+        at: openedPrs[0].event.at,
+        tone: openedPrs[0].event.tone,
+        label: `${openedPrs.length} PRs opened${repos.length ? ` across ${repos.length} ${repos.length === 1 ? "repo" : "repos"}` : ""}`,
+        detail: repoListDetail(repos),
+        chapterIndex: chapter.index,
+        count: openedPrs.length,
       });
     }
 
@@ -467,18 +528,13 @@ export function deriveSpine(chapters: Chapter[]): SpineEntry[] {
     }
 
     const repos = [...new Set(merges.map((m) => (m.detail ?? "").split("#")[0]).filter(Boolean))];
-    const where =
-      repos.length === 0
-        ? ""
-        : repos.length <= 3
-          ? repos.join(" · ")
-          : `${repos.slice(0, 3).join(" · ")} +${repos.length - 3}`;
+    const where = repoListDetail(repos);
     out.push({
       id: `chapter-merges:${chapter.index}`,
       at: merges[0].at,
       tone: "success",
       label: `${merges.length} merges${repos.length ? ` across ${repos.length} ${repos.length === 1 ? "repo" : "repos"}` : ""}`,
-      detail: where || undefined,
+      detail: where,
       chapterIndex: chapter.index,
       count: merges.length,
     });

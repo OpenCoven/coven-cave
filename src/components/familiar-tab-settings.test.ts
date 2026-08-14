@@ -19,8 +19,11 @@ assert.match(settings, /export function FamiliarSettingsSection\(/);
 assert.match(settings, /FamiliarStudioIdentityTab/);
 assert.match(settings, /FamiliarStudioBrainTab/);
 assert.match(settings, /FamiliarStudioMemoryTab/);
-assert.match(settings, /FamiliarStudioProjectsTab/);
-assert.match(settings, /import \{ AccessGroupsSection \} from "@\/components\/access-groups-section"/);
+// Projects moved wholesale to Chat → Projects (cave-2tmly): no grant matrix,
+// no access-groups section, and a `projects` target redirects there.
+assert.doesNotMatch(settings, /FamiliarStudioProjectsTab/);
+assert.doesNotMatch(settings, /AccessGroupsSection/);
+assert.match(settings, /CHAT_OPEN_PROJECTS_EVENT/);
 assert.match(settings, /ChatSettingsView/);
 assert.doesNotMatch(
   settings,
@@ -31,13 +34,15 @@ assert.match(settings, /import type \{ FamiliarSettingsTab \} from "@\/lib\/chat
 assert.match(settings, /\{ id: "chat", label: "Chat" \}/);
 assert.match(settings, /tab === "chat" \? <ChatSettingsView \/>/);
 assert.match(settings, /<VaultPanel[\s\S]{0,100}familiarId=\{familiar\.id\}/);
-assert.match(settings, /<AccessGroupsSection[\s\S]{0,100}familiars=\{allFamiliars\}/);
 assert.match(settings, /familiar\.id/);
 assert.match(settings, /localDaemonReady/);
 assert.match(settings, /allFamiliars/);
 assert.match(settings, /<Tabs<FamiliarSettingsTab>/);
 assert.match(settings, /initialTab\?: FamiliarSettingsTab/);
-assert.match(settings, /useState<FamiliarSettingsTab>\(initialTab \?\? "identity"\)/);
+assert.match(
+  settings,
+  /useState<FamiliarSettingsTab>\(\s*initialTab && initialTab !== "projects" \? initialTab : "identity",?\s*\)/,
+);
 assert.match(
   styles,
   /\.familiar-tab__settings\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1;/,

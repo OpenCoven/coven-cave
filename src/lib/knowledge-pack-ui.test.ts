@@ -18,19 +18,19 @@ assert.equal(
 );
 
 assert.deepEqual(buildSeedRequest("worldbuilding", "vault"), { packId: "worldbuilding", target: "vault" });
-assert.deepEqual(buildSeedRequest("worldbuilding", "project", "/Users/buns/story", "world/regions"), {
+assert.deepEqual(buildSeedRequest("worldbuilding", "project", "/home/test/story", "world/regions"), {
   packId: "worldbuilding",
   target: "project",
-  projectRoot: "/Users/buns/story",
+  projectRoot: "/home/test/story",
   subfolder: "world/regions",
 });
-assert.deepEqual(buildSeedRequest("worldbuilding", "project", "/Users/buns/story", ""), {
+assert.deepEqual(buildSeedRequest("worldbuilding", "project", "/home/test/story", ""), {
   packId: "worldbuilding",
   target: "project",
-  projectRoot: "/Users/buns/story",
+  projectRoot: "/home/test/story",
 });
 assert.throws(() => buildSeedRequest("Worldbuilding", "vault"), /Pack id must be a lowercase slug/);
 assert.throws(() => buildSeedRequest("worldbuilding", "project"), /Project root is required/);
-assert.throws(() => buildSeedRequest("worldbuilding", "project", "/Users/buns/story", "World"), /Use lowercase slug segments/);
+assert.throws(() => buildSeedRequest("worldbuilding", "project", "/home/test/story", "World"), /Use lowercase slug segments/);
 
 console.log("knowledge-pack-ui.test.ts: ok");

@@ -584,7 +584,7 @@ xcodebuild -quiet build \
   -destination 'platform=iOS Simulator,id=8E08D33E-D46E-40D6-921C-6B8475046CFC' \
   CODE_SIGNING_ALLOWED=NO
 xcrun simctl install booted \
-  /Users/buns/Library/Developer/Xcode/DerivedData/CovenCave-dzmowrhvcyskqggugzwiftgejwqr/Build/Products/Debug-iphonesimulator/CovenCave.app
+  /Users/<someone>/Library/Developer/Xcode/DerivedData/CovenCave-dzmowrhvcyskqggugzwiftgejwqr/Build/Products/Debug-iphonesimulator/CovenCave.app
 xcrun simctl launch --terminate-running-process booted \
   ai.opencoven.cave --ui-preview-connecting
 xcrun simctl io booted screenshot /tmp/coven-cave-ios-quiet-portal.png

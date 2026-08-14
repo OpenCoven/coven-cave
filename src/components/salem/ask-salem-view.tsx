@@ -16,7 +16,12 @@ import { Icon } from "@/lib/icon";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
+import {
+  inventoryProvenanceLabel,
+  useRuntimeModelInventory,
+  type RuntimeModelInventoryResult,
+} from "@/lib/use-runtime-model-options";
 import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { SalemCat, type SalemMood } from "./salem-cat";
 import {
@@ -32,12 +37,23 @@ import {
 const INTRO =
   "This is my study — ask away. I'm preloaded with the OpenCoven docs corpus and I'll pull in anything relevant from your own Cave: chats, tasks, and memories. Answers are written by the familiar you pick up top, so the model you already connected does the thinking.";
 
-/** The connected model an option advertises: the familiar's saved model, or
- *  its harness default when none is pinned yet. */
-function familiarModelLabel(familiar: Familiar): string {
-  if (familiar.model?.trim()) return familiar.model.trim();
-  const harness = familiar.harnessOverride ?? familiar.harness ?? familiar.defaultHarness;
-  return harness ? defaultModelForRuntime(harness) : "default model";
+/** The connected model an option advertises. An absent model is deliberately
+ *  shown as an ownership state, never as a static catalog entitlement. */
+function familiarModelLabel(
+  familiar: Familiar,
+  inventory?: RuntimeModelInventoryResult,
+): string {
+  const base = familiar.model === ""
+    ? "Runtime default"
+    : familiar.model?.trim() || (() => {
+    const harness = familiar.harnessOverride ?? familiar.harness ?? familiar.defaultHarness;
+    if (!harness || runtimeOwnsModelDefault(harness)) return "Runtime default";
+    return "Cave default";
+  })();
+  if (inventory) {
+    return `${base} · ${inventoryProvenanceLabel(inventory.provenance, inventory.loading)}`;
+  }
+  return base;
 }
 
 /** Fetch one local corpus, degrading to null so a single failed source never
@@ -108,6 +124,14 @@ export function AskSalemView({
     }
     return pickAskFamiliar(familiars, activeFamiliarId);
   }, [familiars, pickedFamiliarId, activeFamiliarId]);
+  const selectedHarness = selectedFamiliar?.harnessOverride
+    ?? selectedFamiliar?.harness
+    ?? selectedFamiliar?.defaultHarness
+    ?? "";
+  const selectedInventory = useRuntimeModelInventory(
+    selectedHarness,
+    selectedFamiliar?.id ?? null,
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: smoothScrollBehavior() });
@@ -191,7 +215,10 @@ export function AskSalemView({
                 >
                   {familiars.map((f) => (
                     <option key={f.id} value={f.id}>
-                      {f.display_name} — {familiarModelLabel(f)}
+                      {f.display_name} — {familiarModelLabel(
+                        f,
+                        f.id === selectedFamiliar.id ? selectedInventory : undefined,
+                      )}
                     </option>
                   ))}
                 </select>

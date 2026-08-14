@@ -1,13 +1,6 @@
 import Foundation
 
 extension CaveClient {
-    private static let devSharedSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 25
-        config.waitsForConnectivity = true
-        return URLSession(configuration: config)
-    }()
-
     /// Project roots remain shared by Terminal and the chat Projects panel.
     func projects() async throws -> [ProjectInfo] {
         try await projects(familiarId: nil)
@@ -50,10 +43,10 @@ extension CaveClient {
 
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = CaveConnection.accessToken {
+        if let token = try CaveConnection.credentialForRequest(to: url) {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let (data, response) = try await Self.devSharedSession.data(for: request)
+        let (data, response) = try await data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw Self.serverResponseError(statusCode: http.statusCode, data: data)
         }

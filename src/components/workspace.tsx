@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
-import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
+import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
@@ -13,11 +13,24 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import {
   isWorkspaceMode,
-  resolveWorkspaceModeAlias,
-  type CanonicalWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
-import { clearChatHash, clearModeParam, readChatHash, readModeParam } from "@/lib/workspace-url-state";
+import { workspacePageDefinition, type WorkspacePageVariant } from "@/lib/workspace-page-registry";
+import {
+  normalizeWorkspacePaneRequest,
+  workspacePaneRequestKey,
+  type WorkspacePaneRequest,
+} from "@/lib/workspace-pane-request";
+import { navSectionForMode, type NavSection } from "@/lib/nav-section";
+import { useIsMobile } from "@/lib/use-viewport";
+import {
+  clearChatHash,
+  clearModeParam,
+  readChatHash,
+  readModeParam,
+  readSplitPageParam,
+  readSplitSideParam,
+} from "@/lib/workspace-url-state";
 import {
   canMoveWorkspaceNavigation,
   createWorkspaceNavigationHistory,
@@ -26,6 +39,14 @@ import {
   replaceWorkspaceNavigation,
   restoreWorkspaceNavigation,
 } from "@/lib/workspace-navigation-history";
+import {
+  CHAT_SESSION_LEVEL,
+  canMoveSurfaceHistory,
+  moveSurfaceHistory,
+  subscribeSurfaceHistory,
+  surfaceHistoryGateOpen,
+} from "@/lib/surface-history";
+import { useOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
 // a new in-shell surface from main.
@@ -34,14 +55,15 @@ import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import {
-  shouldApplyStartupOnboardingStatus,
-  type OnboardingStatusPayload,
+  shouldApplyStartupOnboardingBootstrap,
+  type OnboardingBootstrapStatusPayload,
 } from "@/lib/onboarding-gate";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
 import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
+import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
@@ -58,6 +80,7 @@ import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
 import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
 import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
@@ -68,15 +91,47 @@ import {
   rejectPendingCanonicalMemorySelection,
   type PendingCanonicalMemorySelection,
 } from "@/lib/canonical-memory";
-import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
+import {
+  classifyDaemonConnectionTravelCadence,
+  classifyDaemonStatusPoll,
+} from "@/lib/daemon-status-classification";
+import {
+  createDaemonConnectionSupervisor,
+  type DaemonConnectionPoll,
+} from "@/lib/daemon-connection-supervisor";
+import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
+import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
-  createDaemonStatusRequestGate,
   runWorkspaceDaemonStart,
 } from "@/lib/daemon-desktop-auto-start";
+import {
+  daemonRecoveryPresentation,
+  initialDaemonRecoveryPresentation,
+} from "@/lib/daemon-recovery-presentation";
+import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
+import {
+  CHAT_ATTENTION_UNPROVEN_SCOPE,
+  applyChatAttentionSettlementToRows,
+  applyChatAttentionProjections,
+  chatAttentionProjectionScopeKey,
+  clearSessionAttentionRows,
+  createChatAttentionProjectionState,
+  forgetChatAttentionProjections,
+  isCurrentSessionListRequest,
+  recordChatAttentionClear,
+  settleChatAttentionClear,
+} from "@/lib/chat-attention-projection";
+import {
+  CHAT_ATTENTION_CLEAR_EVENT,
+  CHAT_ATTENTION_SETTLE_EVENT,
+  attentionClearFromEvent,
+  attentionClearedSessionId,
+  attentionSettlementFromEvent,
+} from "@/lib/chat-attention-events";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
@@ -88,7 +143,6 @@ import {
   FamiliarsView,
   FamiliarWorkQueueView,
   FamiliarGlyphPicker,
-  GitHubView,
   GrimoireView,
   InboxEscalationsView,
   MarketplaceView,
@@ -97,9 +151,11 @@ import {
   OnboardingOverlay,
   OpenCovenSubmissionPage,
   RailInspector,
-  SalemChatPanel,
   AskSalemView,
   ShortcutsSheet,
+  DashboardSurface,
+  SettingsShell,
+  RailTerminalPanel,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
@@ -125,7 +181,6 @@ import {
 } from "@/lib/daily-narrative";
 import type { Familiar, SessionRow } from "@/lib/types";
 import {
-  getRoleSurface,
   isRoleSurfaceMode,
   parseRoleSurfaceMode,
   roleSurfaceMode,
@@ -147,6 +202,12 @@ import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import { RunningSessionsPopover } from "@/components/running-sessions-popover";
 import { NotificationBell } from "@/components/notification-bell";
 import { StatusBar } from "@/components/status-bar";
+import {
+  COVEN_JUMP_TO_RUN_EVENT,
+  covenRunPillServerSnapshot,
+  covenRunPillSnapshot,
+  subscribeCovenRunPill,
+} from "@/lib/coven-run-signal";
 import { sessionStatusTone } from "@/lib/session-status";
 import { sessionPrStatus } from "@/lib/session-pr-status";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
@@ -160,7 +221,11 @@ import {
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
-import { enqueuePendingCodeOpen, type PendingCodeOpen } from "@/lib/pending-code-open";
+import { enqueuePendingCodeOpen, type PendingCodeOpen, type PendingCodeOrigin } from "@/lib/pending-code-open";
+import {
+  clearPendingCodeNavigation,
+  enqueuePendingCodeNavigation,
+} from "@/lib/pending-code-navigation";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
@@ -191,31 +256,12 @@ type WorkspaceMode = WorkspaceModeFromDaemon;
 // plus registered Role Surfaces via the generic `surface:<id>` mode.
 type CaveMode = WorkspaceMode | RoleSurfaceMode;
 
-// What the drag-to-split secondary pane is showing: either a draggable page
-// (a workspace mode) or one of the companion surfaces (Salem / Memory /
-// Browser) that were re-homed here when the right rail was removed.
-type SplitTarget =
-  | { kind: "page"; mode: WorkspaceMode }
-  | { kind: "salem" }
-  | { kind: "memory" }
-  | { kind: "browser" };
-
-const SPLIT_COMPANION_TITLES: Record<Exclude<SplitTarget["kind"], "page">, string> = {
-  salem: "Salem",
-  memory: "Memory",
-  browser: "Browser",
-};
-
-function splitTargetKey(target: SplitTarget): string {
-  return target.kind === "page" ? `page:${target.mode}` : target.kind;
+function splitTargetTitle(target: WorkspacePaneRequest): string {
+  return workspacePageDefinition(target.requestedPageId)?.title ?? target.requestedPageId;
 }
 
-function splitTargetTitle(target: SplitTarget): string {
-  return target.kind === "page" ? WORKSPACE_MODE_TITLES[target.mode] : SPLIT_COMPANION_TITLES[target.kind];
-}
-
-function splitTargetRendersMode(target: SplitTarget, mode: CanonicalWorkspaceMode): boolean {
-  return target.kind === "page" && resolveWorkspaceModeAlias(target.mode) === mode;
+function splitTargetRendersMode(target: WorkspacePaneRequest, mode: WorkspaceMode): boolean {
+  return target.pageId === mode;
 }
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
@@ -223,28 +269,6 @@ function splitTargetRendersMode(target: SplitTarget, mode: CanonicalWorkspaceMod
 // surface. Labels mirror the sidebar's canonical vocabulary (issue #3283 —
 // one surface, one name): alias modes that render another surface's view
 // (calendar, familiar-work-queue) reuse that surface's name.
-const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
-  agents: "Familiars",
-  home: "Home",
-  chat: "Chat",
-  groupchat: "Group Chat",
-  board: "Tasks",
-  calendar: "Rituals",
-  inbox: "Rituals",
-  browser: "Browser",
-  github: "GitHub",
-  code: "Code",
-  roles: "Roles",
-  marketplace: "Marketplace",
-  flow: "Flow",
-  submissions: "Submissions",
-  capabilities: "Capabilities",
-  "familiar-work-queue": "Tasks",
-  journal: "Journal",
-  grimoire: "Memories",
-  salem: "Ask Salem",
-};
-
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
 // thread, same in-app hash idiom as `#card-<id>`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
@@ -301,6 +325,8 @@ export function Workspace() {
     familiarsLoaded,
     familiarRosterLoadedSuccessfully,
   );
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const {
     projects: registeredProjects,
@@ -338,6 +364,8 @@ export function Workspace() {
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
+  const baseSessionScopeKeyByIdRef = useRef(new Map<string, string>());
+  const chatAttentionProjectionRef = useRef(createChatAttentionProjectionState());
   const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
   const githubTasksRef = useRef<GitHubTask[] | null>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
@@ -356,6 +384,23 @@ export function Workspace() {
     setRosterSettledPendingCanonicalMemorySelection,
   ] = useState<PendingCanonicalMemorySelection | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Back closes an overlay before it navigates. Opening records an entry;
+  // Escape or the close button consumes it, so Back never reopens what the
+  // user just dismissed.
+  const { openOverlay: openPalette, closeOverlay: closePalette } = useOverlayHistory({
+    id: "overlay:palette",
+    open: paletteOpen,
+    setOpen: setPaletteOpen,
+  });
+  const { openOverlay: openShortcuts, closeOverlay: closeShortcuts } = useOverlayHistory({
+    id: "overlay:shortcuts",
+    open: shortcutsOpen,
+    setOpen: setShortcutsOpen,
+  });
+  // The ? shortcut toggles from inside a keydown listener that does not
+  // resubscribe per render, so it reads the ref rather than a stale capture.
+  const shortcutsOpenRef = useRef(shortcutsOpen);
+  shortcutsOpenRef.current = shortcutsOpen;
   // Home-first boot: every fresh launch (desktop app window or web tab)
   // opens on the Home surface — the daily overview with the universal
   // composer — per operator direction (this reverses cave-hsa6's chat-first
@@ -363,6 +408,9 @@ export function Workspace() {
   // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
   // before, so restored sessions and share links still land where they point.
   const [mode, setModeRaw] = useState<CaveMode>("home");
+  const [primaryPaneRequest, setPrimaryPaneRequest] = useState<WorkspacePaneRequest | null>(null);
+  const primaryPaneRequestRef = useRef(primaryPaneRequest);
+  primaryPaneRequestRef.current = primaryPaneRequest;
   const modeRef = useRef<CaveMode>("home");
   const navigationRestoreRef = useRef(false);
   const suppressInitialChatHistoryPushRef = useRef(false);
@@ -376,6 +424,8 @@ export function Workspace() {
   const pendingChatNavigationDirectionRef = useRef<number | null>(null);
   const chatHashRestoredForCurrentModeRef = useRef(false);
   const commitMode = useCallback((next: CaveMode, historyDestination: CaveMode = next) => {
+    primaryPaneRequestRef.current = null;
+    setPrimaryPaneRequest(null);
     modeRef.current = next;
     setModeRaw(next);
     // The rendered surface can be canonical while the navigation intent selects
@@ -449,6 +499,15 @@ export function Workspace() {
       commitMode("inbox");
       return;
     }
+    if (next === "github") {
+      enqueuePendingCodeNavigation({
+        kind: "tab",
+        topTab: "activity",
+        nonce: Date.now(),
+      });
+      commitMode(roleSurfaceMode(CODE_SURFACE_ID), "github");
+      return;
+    }
     if (next === "code") {
       // Code is the Coding familiar's room (cave-cc5r): every legacy entry
       // point (?mode=code deep links, palette intents, cave:navigate-mode,
@@ -470,18 +529,64 @@ export function Workspace() {
     setMode(updated.entries[updated.index]);
     navigationRestoreRef.current = false;
   }, [setMode]);
+  const selectGrimoireViewTracked = useTrackedSurfaceValue<"docs" | "graph" | "journal">({
+    id: "grimoire:view",
+    value: grimoireView,
+    onRestore: setGrimoireView,
+  });
   const selectGrimoireView = useCallback((next: "docs" | "graph" | "journal") => {
     // Docs and Journal are navigation destinations, not merely transient
     // presentation. Record them through the same alias funnel so the active
     // tab is restored when history returns to Memories.
+    //
+    // That funnel only records when the destination differs from the current
+    // mode entry, and Graph has no alias at all — so switching Docs↔Graph
+    // inside the surface used to record nothing. Record on the view level
+    // exactly when the mode funnel will not, or one click costs two Back
+    // presses.
+    const history = navigationHistoryRef.current;
+    const entry = history.entries[history.index];
+    const modeWillRecord =
+      next === "journal" ? entry !== "journal" : next === "docs" ? entry !== "grimoire" : false;
     if (next === "journal") {
+      if (!modeWillRecord) selectGrimoireViewTracked("journal");
       setMode("journal");
       return;
     }
-    setGrimoireView(next);
+    if (modeWillRecord) setGrimoireView(next);
+    else selectGrimoireViewTracked(next);
     if (next === "docs") setMode("grimoire");
-  }, [setMode, setGrimoireView]);
+  }, [setMode, setGrimoireView, selectGrimoireViewTracked]);
+  // Surfaces register their own levels, so whether Back is available depends on
+  // state the Workspace does not hold. Subscribe rather than derive, and fall
+  // back to false on the server where no surface has mounted.
+  const surfaceCanGoBack = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => canMoveSurfaceHistory(-1),
+    () => false,
+  );
+  // The active coven run, for the status bar's pill. GroupChatView lives three
+  // layers down inside ChatSurface; subscribing here keeps ChatSurface out of a
+  // relay role it has no stake in. Empty on the server, where no coven mounts.
+  const covenRun = useSyncExternalStore(
+    subscribeCovenRunPill,
+    covenRunPillSnapshot,
+    covenRunPillServerSnapshot,
+  );
+  const surfaceCanGoForward = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => canMoveSurfaceHistory(1),
+    () => false,
+  );
+  const chatSessionLevelOpen = useSyncExternalStore(
+    subscribeSurfaceHistory,
+    () => surfaceHistoryGateOpen(CHAT_SESSION_LEVEL),
+    () => true,
+  );
   const moveChatNavigation = useCallback((direction: -1 | 1) => {
+    // Chat's scope strip gates this: the session trail is only what the user
+    // sees on the Sessions tab.
+    if (!surfaceHistoryGateOpen(CHAT_SESSION_LEVEL)) return false;
     if (modeRef.current !== "chat" || !canMoveWorkspaceNavigation(chatNavigationHistoryRef.current, direction)) return false;
     const current = chatNavigationHistoryRef.current;
     const updated = moveWorkspaceNavigation(current, direction);
@@ -491,14 +596,20 @@ export function Workspace() {
     window.history.go(offset);
     return true;
   }, []);
+  // Back steps up exactly one level, deepest first: the chat session stack,
+  // then any in-surface level a surface registered (Chat's scope strip), then
+  // the mode. Without the middle step, Back from a chat sub-tab left the whole
+  // surface instead of returning to the previous tab.
   const goBack = useCallback(() => {
     // The chat stack is browser-backed for shareable hashes, but never lets a
     // direct deep link (which has no app-owned predecessor) escape the app.
     if (moveChatNavigation(-1)) return;
+    if (moveSurfaceHistory(-1)) return;
     navigateWorkspaceHistory(-1);
   }, [moveChatNavigation, navigateWorkspaceHistory]);
   const goForward = useCallback(() => {
     if (moveChatNavigation(1)) return;
+    if (moveSurfaceHistory(1)) return;
     navigateWorkspaceHistory(1);
   }, [moveChatNavigation, navigateWorkspaceHistory]);
   useEffect(() => {
@@ -532,6 +643,97 @@ export function Workspace() {
       window.removeEventListener("cave:chat-history-replace", onChatHistoryReplace);
     };
   }, []);
+  useEffect(() => {
+    const onChatAttentionClear = (event: Event) => {
+      const detail = attentionClearFromEvent(event);
+      const sessionId = detail?.sessionId ?? attentionClearedSessionId(event);
+      if (!sessionId) return;
+      if (detail) {
+        // Workspace's own accepted canonical row (from the latest /api/sessions/list
+        // poll it has patched into baseSessionsRef) is fresher authority than a
+        // baseline carried on the clear event: that event was built from ChatView's
+        // local snapshot at emit time, which can predate a poll that already
+        // resolved a real, non-none attention row (the race this guards against —
+        // an accepted poll lands, then a stale "none" event arrives after it). Only
+        // fall back to the event's baseline when Workspace has no row for this
+        // session (absent — e.g. a different familiar's off-list session) or its
+        // own row is "none" and so cannot represent pre-clear canonical state
+        // (either truly no attention ever existed, or it was already patched to
+        // none by an earlier optimistic clear and tells us nothing new).
+        const acceptedRow = baseSessionsRef.current.find((session) => session.id === detail.sessionId);
+        const acceptedCanonical = acceptedRow && acceptedRow.attention.state !== "none"
+          ? acceptedRow.attention
+          : null;
+        const baselineAttention = acceptedCanonical ??
+          detail.baselineAttention ??
+          acceptedRow?.attention ??
+          sessionsRef.current.find((session) => session.id === detail.sessionId)?.attention;
+        // Preserve the scope of the request that actually supplied this row.
+        // A row's familiar identity is not request provenance: all-familiars
+        // responses contain familiar-owned rows and collapse some rows.
+        const recordResult = recordChatAttentionClear(
+          chatAttentionProjectionRef.current,
+          detail.sessionId,
+          detail.operationId,
+          baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
+            CHAT_ATTENTION_UNPROVEN_SCOPE,
+          baselineAttention,
+          detail.clearWatermark,
+        );
+        if (!recordResult.recorded) return;
+      }
+      // Invalidate any in-flight loadSessions before patching state: a load
+      // started before this clear (mount, the 4s poll, a scope change) can
+      // still be in flight and resolve *after* it with a stale, pre-clear
+      // attention snapshot, silently resurrecting the attention this handler
+      // just cleared. Bumping the shared reqId makes loadSessions' own
+      // isCurrent() guard drop that stale response; a fresh loadSessions()
+      // call (e.g. the failure-path reconciliation below) still gets its own
+      // newer reqId and is unaffected.
+      loadSessionsReqRef.current += 1;
+      // Patch only THIS session's attention to none on both the canonical
+      // base rows and the currently rendered rows. This is an optimistic
+      // clear, not a canonical response: applyChatAttentionProjections also
+      // RETIRES operations (it may delete the just-recorded projection once
+      // it judges a response eligible), which is only safe to run against an
+      // accepted `/api/sessions/list` response carrying its own real request
+      // id (see loadSessions below) — never against these cached arrays with
+      // a synthetic, merely-incremented reqId. Doing so here would let this
+      // handler retire its own operation before any real response ever
+      // confirmed the clear.
+      baseSessionsRef.current = clearSessionAttentionRows(baseSessionsRef.current, sessionId);
+      setSessions((currentSessions) => clearSessionAttentionRows(currentSessions, sessionId));
+    };
+    const onChatAttentionSettle = (event: Event) => {
+      const detail = attentionSettlementFromEvent(event);
+      if (!detail) return;
+      const settlement = settleChatAttentionClear(
+        chatAttentionProjectionRef.current,
+        detail.sessionId,
+        detail.operationId,
+        detail.outcome,
+        loadSessionsReqRef.current + 1,
+      );
+      const currentRowScopeKey = baseSessionScopeKeyByIdRef.current.get(detail.sessionId) ??
+        CHAT_ATTENTION_UNPROVEN_SCOPE;
+      baseSessionsRef.current = applyChatAttentionSettlementToRows(
+        baseSessionsRef.current,
+        settlement,
+        currentRowScopeKey,
+      );
+      setSessions((currentSessions) => applyChatAttentionSettlementToRows(
+        currentSessions,
+        settlement,
+        currentRowScopeKey,
+      ));
+    };
+    window.addEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
+    window.addEventListener(CHAT_ATTENTION_SETTLE_EVENT, onChatAttentionSettle);
+    return () => {
+      window.removeEventListener(CHAT_ATTENTION_CLEAR_EVENT, onChatAttentionClear);
+      window.removeEventListener(CHAT_ATTENTION_SETTLE_EVENT, onChatAttentionSettle);
+    };
+  }, []);
   // Chat mode replaces the global nav with the project-grouped Chats sidebar.
   // Its Home button exits Chat, restoring the normal navigation.
   // Whether the first daemon status poll has resolved. Until it has, the daemon
@@ -548,17 +750,26 @@ export function Workspace() {
   // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
   const [authExpired, setAuthExpired] = useState(false);
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
+  const [daemonRecovery, setDaemonRecovery] = useState(initialDaemonRecoveryPresentation);
   const daemonHealthyStreakRef = useRef(0);
-  const daemonStatusRequestGateRef = useRef<ReturnType<typeof createDaemonStatusRequestGate> | null>(null);
-  if (daemonStatusRequestGateRef.current === null) {
-    daemonStatusRequestGateRef.current = createDaemonStatusRequestGate();
-  }
-  const startDaemonRef = useRef<() => Promise<void>>(async () => {});
+  const daemonConnectionSupervisorRef = useRef<ReturnType<typeof createDaemonConnectionSupervisor> | null>(null);
+  const daemonTravelReconcileRequesterRef = useRef<ReturnType<typeof createDaemonTravelReconcileRequester> | null>(null);
+  const startDaemonRef = useRef<({ automatic }?: { automatic?: boolean }) => Promise<void>>(async () => {});
   const daemonAutoStartCoordinatorRef = useRef<ReturnType<typeof createDaemonDesktopAutoStartCoordinator> | null>(null);
   if (daemonAutoStartCoordinatorRef.current === null) {
-    daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(() => {
-      void startDaemonRef.current();
-    });
+    daemonAutoStartCoordinatorRef.current = createDaemonDesktopAutoStartCoordinator(
+      () => {
+        void startDaemonRef.current({ automatic: true });
+      },
+      {
+        // Read per decision, not captured: Settings → Daemon → Automation can
+        // flip this mid-session and the next 5s poll must respect it
+        // (cave-bqywj). Off by default; boot auto-start is unaffected either
+        // way.
+        autoRestartEnabled: () => readDaemonAutomation().autoRestart,
+        now: () => Date.now(),
+      },
+    );
   }
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const browserNavigationIdRef = useRef(Date.now() * 1024);
@@ -580,19 +791,22 @@ export function Workspace() {
     }
   }, []);
 
-  // Drag-to-split: up to three secondary surfaces opened beside the primary
-  // one (four visible pages total). Targets are draggable pages or companion
-  // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
-  // `splitSide` preserves the familiar 2-page left/right snap behavior.
-  const [splitTargets, setSplitTargets] = useState<SplitTarget[]>([]);
+  // Drag-to-split: every registered request gets a stable instance so aliases
+  // can coexist and stateful surfaces never collide with their sibling.
+  const paneInstanceCounterRef = useRef(0);
+  const nextPaneInstanceId = useCallback(() => {
+    paneInstanceCounterRef.current += 1;
+    return `workspace-pane-${paneInstanceCounterRef.current}`;
+  }, []);
+  const [splitTargets, setSplitTargets] = useState<WorkspacePaneRequest[]>([]);
   const [splitSide, setSplitSide] = useState<"left" | "right">("right");
-  const addSplitTarget = useCallback((target: SplitTarget, side: "left" | "right" = "right") => {
+  const addSplitTarget = useCallback((target: WorkspacePaneRequest, side: "left" | "right" = "right") => {
     if (chatProjectBlockedRef.current && splitTargetRendersMode(target, "chat")) {
       setMode("home");
       return;
     }
     setSplitSide(side);
-    setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, splitTargetKey));
+    setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, workspacePaneRequestKey));
   }, []);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
@@ -612,15 +826,14 @@ export function Workspace() {
   const [onboardingResolved, setOnboardingResolved] = useState(false);
   const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
-  // Its refs and job polling intentionally survive close/reopen cycles so an
-  // in-flight install is not forgotten and daemon auto-start stays one-shot.
+  // Server-owned bootstrap progress persists independently; keeping the host
+  // mounted makes close/reopen cheap and retains local focus/announcement refs.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
   const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
-  const [githubAssignedCount, setGithubAssignedCount] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
   // show a per-familiar count when a familiar is scoped, and the grand total
   // only when "All familiars" is selected.
@@ -642,17 +855,19 @@ export function Workspace() {
     whenText: string;
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
-  // Deep-link target for the native GitHub surface (a GitHub-event inbox
-  // notification's PR/issue). The standalone GitHub surface hosts it for every
-  // familiar (cave-cc5r); the target clears on leaving so a later manual visit
-  // doesn't re-open a stale item.
-  const [githubTarget, setGithubTarget] = useState<GitHubItemTarget | null>(null);
-  useEffect(() => {
-    if (mode !== "github" && githubTarget) setGithubTarget(null);
-  }, [mode, githubTarget]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
+  const { openOverlay: showReminderOverlay, closeOverlay: closeReminderModal } = useOverlayHistory({
+    id: "overlay:reminder",
+    open: reminderModalOpen,
+    setOpen: setReminderModalOpen,
+  });
+  const { openOverlay: openMobileHandoff, closeOverlay: closeMobileHandoff } = useOverlayHistory({
+    id: "overlay:mobile-handoff",
+    open: mobileHandoffOpen,
+    setOpen: setMobileHandoffOpen,
+  });
   // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
   const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
@@ -691,8 +906,10 @@ export function Workspace() {
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
   modeRef.current = mode;
-  const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
+  // Keep an already-open role room from undoing an explicit switch to the All
+  // or multi-familiar scope. The room can stay honestly unavailable until the
+  // user selects a unique owner row; deep links and mode changes still narrow.
+  const roleSurfaceScopeChangeSuppressedModeRef = useRef<string | null>(null);
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
@@ -746,43 +963,27 @@ export function Workspace() {
   // (fetches its own unscoped roster/session data once per check).
   useMilestoneWatch();
 
-  const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
-    const requestGate = daemonStatusRequestGateRef.current!;
-    const requestId = requestGate.begin();
-    let result: ReturnType<typeof classifyDaemonStatusPoll>;
-    let credentialAccepted = false;
-    try {
-      const res = await fetch("/api/daemon/status", { cache: "no-store" });
-      const payload = await res.json().catch(() => null);
-      result = classifyDaemonStatusPoll({
-        responseStatus: res.status,
-        responseOk: res.ok,
-        payload,
-      });
-      // A real non-401 response proves the Cave credential is accepted again.
-      credentialAccepted = res.status !== 401;
-    } catch {
-      result = classifyDaemonStatusPoll({
-        responseStatus: 0,
-        responseOk: false,
-        payload: null,
-        error: "status request failed",
-      });
+  const applyDaemonConnectionPoll = useCallback((poll: DaemonConnectionPoll, context: { fresh: boolean }) => {
+    const travelCadence = classifyDaemonConnectionTravelCadence(poll.payload);
+    if (travelCadence === "hub-unreachable") {
+      daemonTravelReconcileRequesterRef.current?.observeHubState("unreachable");
+    } else if (travelCadence === "hub-reachable") {
+      daemonTravelReconcileRequesterRef.current?.observeHubState("reachable");
+    } else if (travelCadence === "non-hub") {
+      daemonTravelReconcileRequesterRef.current?.observeHubState("inactive");
     }
-
-    // An explicit refresh after Start can overtake an older background poll.
-    // Only the newest request may publish state, or that stale offline result
-    // can put the banner back after the daemon is already healthy.
-    if (!requestGate.isLatest(requestId)) return;
+    const result = classifyDaemonStatusPoll(poll);
     // The coordinator pins this first accepted decision. Later polls may update
     // live UI state, but can never turn into a delayed automatic restart.
     daemonAutoStartCoordinatorRef.current!.observeStatus(result);
     if (result.kind === "running") {
+      setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "running" }));
       setAcceptedLocalDaemonHealthy(result.targetMode === "local");
     } else {
       setAcceptedLocalDaemonHealthy(false);
     }
-    if (credentialAccepted) setAuthExpired(false);
+    // A real non-401 response proves the Cave credential is accepted again.
+    if (poll.responseStatus !== 401) setAuthExpired(false);
 
     setDaemonStatusResolved(true);
     if (result.kind === "auth-expired") {
@@ -798,6 +999,7 @@ export function Workspace() {
 
     setDaemonStatusUnavailable(null);
     if (result.kind === "offline") {
+      setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "offline" }));
       daemonHealthyStreakRef.current = 0;
       setDaemonRunning(false);
       setDaemonOffline(true);
@@ -810,16 +1012,24 @@ export function Workspace() {
     // healthy answer is enough to clear the banner immediately — without it
     // the "Start daemon" banner lingered for a poll cycle (~5s) after the
     // daemon was already up.
-    if (opts?.trusted) daemonHealthyStreakRef.current = 2;
+    if (context.fresh) daemonHealthyStreakRef.current = 2;
     if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
   }, []);
 
-  const startDaemon = useCallback(async () => {
+  const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean; fresh?: boolean }) => {
+    await daemonConnectionSupervisorRef.current?.refresh({ fresh: opts?.fresh === true || opts?.trusted === true });
+  }, []);
+
+  const startDaemon = useCallback(async ({ automatic = false }: { automatic?: boolean } = {}) => {
+    setDaemonRecovery((current) => daemonRecoveryPresentation(current, {
+      type: automatic ? "automatic-start" : "manual-start",
+    }));
     // The release-alignment trigger may be replacing the CLI after observing
     // this same offline state. Starting the old binary during that window can
     // lock coven.exe on Windows and make the update fail.
     await waitForDaemonUpdateIdle();
-    await runWorkspaceDaemonStart({
+    const outcome = await runWorkspaceDaemonStart({
+      automatic,
       fetchImpl: fetch,
       dismissError: () => dismissBanner("daemon-start-error"),
       reportError: (message) => pushBanner({
@@ -829,12 +1039,71 @@ export function Workspace() {
       }),
       refreshStatus: refreshDaemonStatus,
     });
+    if (automatic) {
+      setDaemonRecovery((current) => daemonRecoveryPresentation(current, { type: "start-outcome", outcome }));
+    }
   }, [dismissBanner, pushBanner, refreshDaemonStatus]);
   startDaemonRef.current = startDaemon;
 
   useEffect(() => {
     daemonAutoStartCoordinatorRef.current!.observePlatform(tauriPlatform);
   }, [tauriPlatform]);
+
+  useEffect(() => {
+    const reliabilityObserver = createTauriDaemonReliabilityObserver({
+      tauriAvailable: () => tauriPlatform === "desktop",
+    });
+    const requester = createDaemonTravelReconcileRequester({
+      request: async ({ signal }) => {
+        const response = await fetch("/api/daemon/travel/reconcile", {
+          method: "POST",
+          cache: "no-store",
+          signal,
+        });
+        if (!response.ok) throw new Error("daemon travel reconcile failed");
+      },
+    });
+    const supervisor = createDaemonConnectionSupervisor({
+      request: async ({ signal, fresh }) => {
+        const response = await fetch(fresh ? "/api/daemon/connection?fresh=1" : "/api/daemon/connection", {
+          cache: "no-store",
+          signal,
+        });
+        const payload = await response.json().catch(() => null);
+        return {
+          responseStatus: response.status,
+          responseOk: response.ok,
+          payload,
+        };
+      },
+      publish: applyDaemonConnectionPoll,
+      observe: reliabilityObserver,
+      isVisible: () => !document.hidden,
+    });
+    daemonTravelReconcileRequesterRef.current = requester;
+    daemonConnectionSupervisorRef.current = supervisor;
+
+    const onDaemonConnectionVisibilityChange = () => {
+      const visible = !document.hidden;
+      requester.setActive(visible);
+      supervisor.setVisible(visible);
+    };
+
+    requester.setActive(!document.hidden);
+    document.addEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
+    supervisor.start();
+    return () => {
+      document.removeEventListener("visibilitychange", onDaemonConnectionVisibilityChange);
+      requester.stop();
+      supervisor.stop();
+      daemonTravelReconcileRequesterRef.current = null;
+      daemonConnectionSupervisorRef.current = null;
+    };
+  }, [applyDaemonConnectionPoll, tauriPlatform]);
+
+  useRefreshOnFocus(() => {
+    void daemonConnectionSupervisorRef.current?.refresh({ fresh: true });
+  });
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
@@ -875,14 +1144,13 @@ export function Workspace() {
   }, [activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId]);
 
   useEffect(() => {
-    // Salem was re-homed from the (removed) right rail into the drag-to-split
-    // pane — its launcher now opens Salem beside the current surface.
     const openSalem = () => {
-      addSplitTarget({ kind: "salem" });
+      const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), "salem");
+      if (request) addSplitTarget(request);
     };
     window.addEventListener("cave:salem-open", openSalem);
     return () => window.removeEventListener("cave:salem-open", openSalem);
-  }, [addSplitTarget]);
+  }, [addSplitTarget, nextPaneInstanceId]);
 
   // Cross-surface "create a familiar" bridge. The dock (and any deep surface
   // that can't reach openOnboarding directly) announces intent and the
@@ -899,14 +1167,31 @@ export function Workspace() {
     return () => window.removeEventListener("cave:onboarding-open", openCreate);
   }, []);
 
-  // `?mode=<WorkspaceMode>` deep link: external links can land directly on a
-  // surface. Runs once on mount,
-  // mirrors the hash deep-link idiom — switch then strip the param so reloads
-  // and back/forward stay clean.
   useEffect(() => {
     const target = readModeParam();
-    if (!target) return;
-    setMode(target);
+    const splitTarget = readSplitPageParam();
+    if (!target && !splitTarget) return;
+
+    const primary = target
+      ? normalizeWorkspacePaneRequest("workspace-primary-link", target)
+      : null;
+    if (primary && target) {
+      if (isWorkspaceMode(target) || isRoleSurfaceMode(target)) setMode(target);
+      else {
+        primaryPaneRequestRef.current = primary;
+        setPrimaryPaneRequest(primary);
+      }
+    }
+
+    if (splitTarget) {
+      const secondary = normalizeWorkspacePaneRequest("workspace-secondary-link", splitTarget);
+      if (
+        secondary &&
+        (!primary || workspacePaneRequestKey(primary) !== workspacePaneRequestKey(secondary))
+      ) {
+        addSplitTarget(secondary, readSplitSideParam());
+      }
+    }
     clearModeParam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -934,13 +1219,16 @@ export function Workspace() {
   // left pending.
   useEffect(() => {
     const enqueue = (kind: PendingCodeOpen["kind"], e: Event) => {
-      const detail = (e as CustomEvent<{ path?: string; line?: number }>).detail;
+      // `origin` is set only when the open came from a chat code block
+      // (cave-f6mu9); the Code surface shows it as a source-context card so
+      // the reader can see — and walk back — why they are looking at this file.
+      const detail = (e as CustomEvent<{ path?: string; line?: number; origin?: PendingCodeOrigin }>).detail;
       if (!detail?.path) return;
       const sessionId = activeChatSessionIdRef.current ?? undefined;
       enqueuePendingCodeOpen(
         kind === "files"
-          ? { kind, path: detail.path, line: detail.line, sessionId, nonce: Date.now() }
-          : { kind, path: detail.path, sessionId, nonce: Date.now() },
+          ? { kind, path: detail.path, line: detail.line, sessionId, origin: detail.origin, nonce: Date.now() }
+          : { kind, path: detail.path, sessionId, origin: detail.origin, nonce: Date.now() },
       );
       setMode("code");
     };
@@ -965,21 +1253,12 @@ export function Workspace() {
     };
   }, []);
 
-  // Daemon status poll (previously lived on DaemonBar before chrome consolidation)
-  // — pauses while the tab is hidden and refreshes on return (usePausablePoll).
-  useEffect(() => {
-    void refreshDaemonStatus();
-  }, [refreshDaemonStatus]);
-  usePausablePoll(() => void refreshDaemonStatus(), 5000, {
-    pauseWhileInputActive: true,
-  });
-
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat. While the access
   // token is rejected the daemon state is unknowable — suppress this banner
   // in favour of the re-auth one (cave-wkp5).
   useEffect(() => {
-    if (!daemonOffline || authExpired) {
+    if (!daemonOffline || authExpired || daemonRecovery.quiet) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
@@ -997,7 +1276,7 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, authExpired, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, authExpired, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
 
   // A status-service failure, timeout, malformed response, or non-local target
   // problem does not prove the local daemon is stopped. Keep that uncertainty
@@ -1014,7 +1293,7 @@ export function Workspace() {
       cta: {
         label: "Retry",
         onClick: () => {
-          void refreshDaemonStatus();
+          void refreshDaemonStatus({ fresh: true });
         },
       },
     });
@@ -1116,6 +1395,11 @@ export function Workspace() {
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
   // click replaces the scope with just that familiar (today's behavior).
   const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => {
+    if (id == null || opts?.multi) {
+      roleSurfaceScopeChangeSuppressedModeRef.current = isRoleSurfaceMode(modeRef.current)
+        ? modeRef.current
+        : null;
+    }
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
     // A multi-toggle shouldn't yank the surface around — only a plain single
@@ -1127,7 +1411,8 @@ export function Workspace() {
     // routes compatibility modes (flow, journal, groupchat, …) onto their
     // canonical surface via MODE_ALIASES (cave-nwi8, cave-m4ih.3).
     // A persisted Role Surface mode restores too — if this familiar no longer
-    // holds the role, the visibility effect below falls back generically.
+    // holds the role, the room stays on RoleSurfaceHost's explicit closed-door
+    // state and the persistence guard below preserves the prior valid surface.
     if (last && (isWorkspaceMode(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
@@ -1157,7 +1442,6 @@ export function Workspace() {
 
       const tasks = normalizeGitHubTasks(json);
       githubTasksRef.current = tasks;
-      setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
       setSessions((currentSessions) => {
         const baseSessions = baseSessionsRef.current.length > 0
           ? baseSessionsRef.current
@@ -1167,8 +1451,8 @@ export function Workspace() {
         return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
       });
     } catch {
-      // Keep the last-known-good count and session context. The next scheduled
-      // or explicit refresh will retry without blanking GitHub metadata.
+      // Keep the last-known-good session context. The next scheduled or
+      // explicit refresh will retry without blanking GitHub metadata.
     } finally {
       if (force) loadGitHubTasksForceInFlightRef.current -= 1;
     }
@@ -1176,16 +1460,24 @@ export function Workspace() {
 
   const loadSessions = useCallback(() => {
     // Sequence guard. loadSessions runs from mount, the 4s poll, the
-    // familiars-refresh event, and — because `activeId` is a dep — re-fires
-    // whenever the active-familiar SCOPE changes. It scopes the fetch to that
-    // familiar's granted projects, so a load started under scope A that resolves
+    // familiars-refresh event, and the active-scope effect. The callback stays
+    // stable so background send settlements always read the latest activeId ref.
+    // It scopes the fetch to that familiar's granted projects, so a load started
+    // under scope A that resolves
     // *after* the user switches to scope B would paint A's sessions under B
     // until the next poll healed it. A monotonic reqId (replacing the old
     // in-flight-promise dedup, which additionally *skipped* the new-scope load
     // while A was still in flight) drops every superseded load's writes, so only
     // the newest scope ever reaches state.
+    const capturedActiveId = activeIdRef.current;
+    const capturedScopeKey = chatAttentionProjectionScopeKey(capturedActiveId);
     const reqId = ++loadSessionsReqRef.current;
-    const isCurrent = () => reqId === loadSessionsReqRef.current;
+    const isCurrent = () => isCurrentSessionListRequest({
+      requestId: reqId,
+      currentRequestId: loadSessionsReqRef.current,
+      capturedScopeKey,
+      currentScopeKey: chatAttentionProjectionScopeKey(activeIdRef.current),
+    });
 
     return (async () => {
       let baseSessionsApplied = false;
@@ -1198,8 +1490,8 @@ export function Workspace() {
         // contradictory versus the clean project-scoped familiar homes. Scoped
         // views already drop them via project-grant scoping, so collapse is only
         // applied to the unscoped view.
-        const scope = activeId
-          ? `?familiarId=${encodeURIComponent(activeId)}`
+        const scope = capturedActiveId
+          ? `?familiarId=${encodeURIComponent(capturedActiveId)}`
           : "?collapseFamiliarWorkspace=1";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
@@ -1213,8 +1505,19 @@ export function Workspace() {
         }
 
         setSessionsError(false);
-        const baseSessions = filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current);
+        const baseSessions = applyChatAttentionProjections(
+          chatAttentionProjectionRef.current,
+          filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current),
+          reqId,
+          capturedScopeKey,
+        );
         baseSessionsRef.current = baseSessions;
+        baseSessionScopeKeyByIdRef.current = new Map(
+          baseSessions.map((session) => [
+            session.id,
+            capturedScopeKey,
+          ]),
+        );
         const visibleSessions = githubTasksRef.current
           ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
           : baseSessions;
@@ -1230,16 +1533,20 @@ export function Workspace() {
         if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
     })();
-  }, [activeId]);
+  }, []);
 
   const handleSessionsDeleted = useCallback((sessionIds: readonly string[]) => {
     const confirmedIds = recordDeletedSessionIds(locallyDeletedSessionIdsRef.current, sessionIds);
     if (confirmedIds.length === 0) return;
+    forgetChatAttentionProjections(chatAttentionProjectionRef.current, confirmedIds);
 
     baseSessionsRef.current = filterDeletedSessions(
       baseSessionsRef.current,
       locallyDeletedSessionIdsRef.current,
     );
+    for (const sessionId of confirmedIds) {
+      baseSessionScopeKeyByIdRef.current.delete(sessionId);
+    }
     setSessions((currentSessions) => {
       const nextSessions = filterDeletedSessions(
         currentSessions,
@@ -1256,9 +1563,11 @@ export function Workspace() {
 
   useEffect(() => {
     loadFamiliars();
-    loadSessions();
     void loadGitHubTasks();
-  }, [loadFamiliars, loadSessions, loadGitHubTasks]);
+  }, [loadFamiliars, loadGitHubTasks]);
+  useEffect(() => {
+    void loadSessions();
+  }, [activeId, loadSessions]);
   // Composers rebind a familiar's runtime through /api/config (the runtime
   // chip). Surfaces reading the roster's familiar.harness (e.g. the chat
   // empty-state identity line) shouldn't wait for the next natural reload —
@@ -1303,7 +1612,7 @@ export function Workspace() {
         unlistenOpen = await listen("tray:open-inbox", () => setMode("inbox"));
         unlistenNew = await listen("tray:new-reminder", () => {
           setReminderModalDefaults({ fireAt: "", title: "", whenText: "" });
-          setReminderModalOpen(true);
+          showReminderOverlay();
         });
       } catch {
         /* harmless in browser dev */
@@ -1314,10 +1623,6 @@ export function Workspace() {
       unlistenNew?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (activeId) setLastSurface(activeId, mode);
-  }, [activeId, mode]);
 
   // Keep prefs accessible to the SSE callback without re-subscribing on every
   // mute toggle.
@@ -1577,28 +1882,25 @@ export function Workspace() {
     setPendingFirstProjectGrant(null);
   }, [canReconcilePendingFirstProjectGrant, pendingFirstProjectGrant, reconciledPendingFirstProjectGrant]);
 
-  // First-run: auto-open onboarding if setup is missing and the user hasn't
-  // explicitly skipped or finished it. The decision lives in the shared
-  // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
-  // finish-state (cave-219): both read bare server `complete` now that Coven
-  // Code is an optional runtime rather than a requirement. See
-  // onboarding-gate.ts for the structural-steps vs daemon-down rationale.
+  // First-run uses the staged bootstrap state instead of the legacy technical
+  // readiness checklist. A confirmed interrupted job always resumes; before
+  // confirmation the existing dismissal flag still suppresses auto-open.
   useEffect(() => {
     let cancelled = false;
     const skipped =
       typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
     void (async () => {
       try {
-        const res = await fetch("/api/onboarding/status", { cache: "no-store" });
+        const res = await fetch("/api/onboarding/bootstrap", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as OnboardingStatusPayload;
+        const json = (await res.json()) as OnboardingBootstrapStatusPayload;
         if (
-          shouldApplyStartupOnboardingStatus({
+          shouldApplyStartupOnboardingBootstrap({
             status: json,
             cancelled,
             manuallyOpened: manualOnboardingOpenedRef.current,
           }) &&
-          !skipped
+          (!skipped || json.confirmed === true)
         ) {
           setAutoFinishOnboarding(true);
           setOnboardingOpen(true);
@@ -1627,7 +1929,7 @@ export function Workspace() {
         const k = e.key.toLowerCase();
         if (k === "k") {
           e.preventDefault();
-          setPaletteOpen(true);
+          openPalette();
           return;
         }
         // ⌘J (Ctrl+J off-Mac) → jump straight into a fresh chat with the active
@@ -1643,7 +1945,7 @@ export function Workspace() {
         // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
         if (e.key === "/") {
           e.preventDefault();
-          setShortcutsOpen((open) => !open);
+          if (shortcutsOpenRef.current) closeShortcuts(); else openShortcuts();
         }
         return;
       }
@@ -1651,7 +1953,7 @@ export function Workspace() {
       // input/textarea/contentEditable — typing "?" must stay typing.
       if (e.key === "?" && !isEditableTarget(e.target)) {
         e.preventDefault();
-        setShortcutsOpen(true);
+        openShortcuts();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1885,8 +2187,8 @@ export function Workspace() {
 
   const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
     setReminderModalDefaults({ fireAt, title, whenText });
-    setReminderModalOpen(true);
-  }, []);
+    showReminderOverlay();
+  }, [showReminderOverlay]);
 
   // Acknowledge a real inbox item: stamps readAt so the bell badge quiets, but
   // the notification stays listed until dismissed/done. No-ops server-side on
@@ -1977,16 +2279,20 @@ export function Workspace() {
   }, [openFamiliarSession]);
 
   // GitHub PR/issue URLs (github-watcher notifications, reminder links) open
-  // the NATIVE GitHub surface with the item's detail — never a browser tab.
+  // natively in Coding Desk with the item's detail — never a browser tab.
   // Returns false for anything that isn't a github.com item URL so callers
   // fall back to their existing behavior (cave-qcsv).
   const openGitHubTarget = useCallback((url: string | null | undefined): boolean => {
     const target = parseGitHubItemUrl(url);
     if (!target) return false;
-    setGithubTarget(target);
-    setMode("github");
+    enqueuePendingCodeNavigation({
+      kind: "github-item",
+      target,
+      nonce: Date.now(),
+    });
+    setMode("code");
     return true;
-  }, []);
+  }, [setMode]);
 
   const openUrlInApp = useCallback((url: string) => {
     if (openGitHubTarget(url)) {
@@ -2089,7 +2395,7 @@ export function Workspace() {
     const onContinueOnPhone = (event: Event) => {
       const detail = (event as CustomEvent<{ chatId?: string }>).detail;
       setMobileHandoffChatId(detail?.chatId ?? null);
-      setMobileHandoffOpen(true);
+      openMobileHandoff();
     };
     window.addEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
     return () => {
@@ -2321,40 +2627,39 @@ export function Workspace() {
   // Open a page in the split beside the current surface (drag-to-split drop).
   const openSplitPage = useCallback(
     (m: string, side: "left" | "right") => {
-      if (!m || m === mode || !isWorkspaceMode(m)) return;
-      addSplitTarget({ kind: "page", mode: m }, side);
+      const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), m);
+      const primary = primaryPaneRequest ?? normalizeWorkspacePaneRequest("primary", mode);
+      if (!request || (primary && workspacePaneRequestKey(request) === workspacePaneRequestKey(primary))) {
+        return;
+      }
+      addSplitTarget(request, side);
     },
-    [addSplitTarget, mode],
+    [addSplitTarget, mode, nextPaneInstanceId, primaryPaneRequest],
   );
 
-  // (cave-gg5d) The old "cave:salem-undock" dispatches here had NO listener
-  // anywhere — SalemChatPanel's unmount does the real teardown.
   const closeSplit = useCallback(() => {
     setSplitTargets([]);
   }, []);
 
   const closeSplitTile = useCallback((id: string) => {
-    setSplitTargets((prev) => removeSecondaryWorkspaceTile(prev, id, splitTargetKey));
+    setSplitTargets((prev) => removeSecondaryWorkspaceTile(prev, id, workspacePaneRequestKey));
   }, []);
 
-  // Promote a split tile to the sole surface (its divider was dragged past the
-  // far edge, collapsing the primary). Only page tiles map to a primary mode —
-  // switching to it makes the redundant-split effect below clear the tile.
-  // Companion tiles (Salem / Memory / Browser) have no primary mode, so they
-  // stay put (the host leaves them at max width instead).
   const promoteSplitTile = useCallback(
     (id: string) => {
-      const target = splitTargets.find((t) => splitTargetKey(t) === id);
-      if (target?.kind === "page") setMode(target.mode);
+      const target = splitTargets.find((request) => workspacePaneRequestKey(request) === id);
+      if (target && isWorkspaceMode(target.requestedPageId)) setMode(target.requestedPageId);
     },
-    [splitTargets],
+    [setMode, splitTargets],
   );
 
-  // Page splits showing the same page as the primary are redundant — clear them
-  // (e.g. the user navigated the primary surface to a page in the split).
   useEffect(() => {
-    setSplitTargets((prev) => prev.filter((target) => target.kind !== "page" || target.mode !== mode));
-  }, [mode]);
+    const primary = primaryPaneRequestRef.current
+      ?? normalizeWorkspacePaneRequest("primary", modeRef.current);
+    if (!primary) return;
+    const primaryKey = workspacePaneRequestKey(primary);
+    setSplitTargets((prev) => prev.filter((target) => workspacePaneRequestKey(target) !== primaryKey));
+  }, [mode, primaryPaneRequest]);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
@@ -2399,6 +2704,12 @@ export function Workspace() {
     }
     if (intent.kind === "go-to-surface") {
       setMode(intent.mode as WorkspaceMode);
+      if (intent.familiarId) {
+        // Aggregate room rows carry their deterministic owner. Narrowing first
+        // gives RoleSurfaceHost the familiar-bound context it requires while
+        // preserving the room selected from the launcher.
+        selectFamiliarScope(intent.familiarId, { preserveSurface: true });
+      }
       shellRef.current?.dismissNavMobile();
       return;
     }
@@ -2548,11 +2859,9 @@ export function Workspace() {
         setMode("journal"); // opens the Grimoire on its Journal tab (see setMode)
         return true;
       case "/canvas":
-        // The Canvas page moved to feature/journal-canvas-surface. /canvas is
-        // chat-inline now: hand off to a fresh chat and let its composer's
-        // /canvas handler take over (args typed here aren't forwarded).
-        startFamiliarChat(activeId);
-        return true;
+        // /canvas is chat-inline. Home falls back to a new chat with the exact
+        // command so ChatView can execute it after mounting.
+        return false;
       case "/chats":
       case "/agents":
       case "/chat":
@@ -2573,10 +2882,10 @@ export function Workspace() {
         return true;
       }
       case "/palette":
-        setPaletteOpen(true);
+        openPalette();
         return true;
       case "/shortcuts":
-        setShortcutsOpen(true);
+        openShortcuts();
         return true;
       case "/projects":
         markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
@@ -2602,13 +2911,13 @@ export function Workspace() {
             return true;
           }
         }
-        setPaletteOpen(true);
+        openPalette();
         return true;
       }
       case "/attach": {
         const sid = args.trim();
         if (!sid) {
-          setPaletteOpen(true);
+          openPalette();
           return true;
         }
         // Find which familiar this session belongs to so we surface the right rail row
@@ -2635,7 +2944,8 @@ export function Workspace() {
       case "/codex":
       case "/claude":
         // These need composer context; route to the chat view's slash handler.
-        routerRef.current?.runSlash(command);
+        if (!routerRef.current) return false;
+        routerRef.current.runSlash(command);
         return true;
     }
     return false;
@@ -2758,9 +3068,9 @@ export function Workspace() {
     [inboxItemsWithEphemeral],
   );
 
-  // Role Surfaces: build the shared context from the live session and resolve
-  // which registered surfaces the active familiar should see. Entirely
-  // registry-driven — the shell never branches on a specific role.
+  // Role Surfaces: build shared context from the live session and resolve
+  // which registered surfaces the active familiar or selected scope should
+  // see. Entirely registry-driven — the shell never branches on a specific role.
   // `onPaletteIntent` is re-created every render, so the room's focus-card
   // service goes through a ref to keep the context identity stable.
   const onPaletteIntentRef = useRef<(intent: PaletteIntent) => void>(() => {});
@@ -2771,8 +3081,15 @@ export function Workspace() {
   const refreshTasksFromRoom = useCallback(() => {
     void loadGitHubTasks(true);
   }, [loadGitHubTasks]);
+  const roleSurfaceFamiliars = useMemo(
+    () => scopeIds.size === 0
+      ? visibleFamiliars
+      : visibleFamiliars.filter((candidate) => scopeIds.has(candidate.id)),
+    [scopeIds, visibleFamiliars],
+  );
   const roleSurfaceSession = useRoleSurfaceSession({
     familiar: active,
+    familiars: roleSurfaceFamiliars,
     sessions,
     activeSessionId: activeChatSessionId,
     daemonRunning,
@@ -2782,14 +3099,73 @@ export function Workspace() {
     refreshTasks: refreshTasksFromRoom,
   });
 
-  // If the current mode is a Role Surface this familiar can't see (role
-  // unassigned, surface unregistered, familiar switched away), fall back home.
-  useEffect(() => {
-    if (!isRoleSurfaceMode(mode)) return;
-    if (!roleSurfaceSession.rolesLoaded) return;
+  // A room can be launched from a deep link while the scope is still All (or
+  // multi-select). Resolve a unique owner before the host renders its
+  // familiar-bound context. Sidebar/palette clicks do this in the same event;
+  // this effect covers restored URLs and persisted last-surface state.
+  useLayoutEffect(() => {
+    const suppressedMode = roleSurfaceScopeChangeSuppressedModeRef.current;
+    if (suppressedMode !== null && suppressedMode !== mode) {
+      roleSurfaceScopeChangeSuppressedModeRef.current = null;
+    }
+    if (activeId !== null || !isRoleSurfaceMode(mode)) return;
+    if (roleSurfaceScopeChangeSuppressedModeRef.current === mode) return;
     const surfaceId = parseRoleSurfaceMode(mode);
-    if (!roleSurfaceSession.visibleSurfaces.some((s) => s.id === surfaceId)) setMode("home");
-  }, [mode, roleSurfaceSession.rolesLoaded, roleSurfaceSession.visibleSurfaces, setMode]);
+    if (!surfaceId) return;
+    const owners = roleSurfaceSession.surfaceFamiliarIds[surfaceId];
+    if (owners?.length === 1) {
+      selectFamiliarScope(owners[0]!, { preserveSurface: true });
+    }
+  }, [activeId, mode, roleSurfaceSession.surfaceFamiliarIds, selectFamiliarScope]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    if (!isRoleSurfaceMode(mode)) {
+      setLastSurface(activeId, mode);
+      return;
+    }
+    const roleSurfaceId = parseRoleSurfaceMode(mode);
+    if (!roleSurfaceId) return;
+    if (!roleSurfaceSession.rolesLoaded) return;
+    if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
+    if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === roleSurfaceId)) return;
+    setLastSurface(activeId, mode);
+  }, [
+    activeId,
+    mode,
+    roleSurfaceSession.rolesLoaded,
+    roleSurfaceSession.rolesLoadedSuccessfully,
+    roleSurfaceSession.visibleSurfaces,
+  ]);
+
+  useEffect(() => {
+    // setMode("github") updates modeRef.current synchronously before React
+    // rerenders. Use that authoritative intent here because other passive
+    // effects from the old render can still flush in the same batch.
+    if (modeRef.current !== roleSurfaceMode(CODE_SURFACE_ID)) {
+      clearPendingCodeNavigation();
+      return;
+    }
+    if (
+      !activeFamiliarHydrated
+      || !familiarsLoaded
+      || !familiarRosterLoadedSuccessfully
+    ) return;
+    if (!roleSurfaceSession.rolesLoaded) return;
+    if (!roleSurfaceSession.rolesLoadedSuccessfully) return;
+    if (!roleSurfaceSession.visibleSurfaces.some((surface) => surface.id === CODE_SURFACE_ID)) {
+      clearPendingCodeNavigation();
+    }
+  }, [
+    mode,
+    roleSurfaceSession.context,
+    roleSurfaceSession.rolesLoaded,
+    roleSurfaceSession.rolesLoadedSuccessfully,
+    roleSurfaceSession.visibleSurfaces,
+    activeFamiliarHydrated,
+    familiarsLoaded,
+    familiarRosterLoadedSuccessfully,
+  ]);
 
   useEffect(() => {
     const openPendingBrowserUrl = () => {
@@ -2819,13 +3195,15 @@ export function Workspace() {
   // "open in split" so the active highlight stays honest after drag-to-split
   // (dropping opens the page beside the primary WITHOUT changing `mode`).
   const splitPageModes = useMemo(
-    () => splitTargets.filter((t): t is Extract<SplitTarget, { kind: "page" }> => t.kind === "page").map((t) => t.mode),
+    () => splitTargets
+      .map((request) => request.requestedPageId)
+      .filter((pageId): pageId is WorkspaceMode => isWorkspaceMode(pageId)),
     [splitTargets],
   );
   const browserVisible = useMemo(
     () =>
       mode === "browser" ||
-      splitTargets.some((target) => target.kind === "browser" || (target.kind === "page" && target.mode === "browser")),
+      splitTargets.some((target) => target.pageId === "browser"),
     [mode, splitTargets],
   );
 
@@ -2834,17 +3212,44 @@ export function Workspace() {
     deactivateAllNativeBrowserWebviews();
   }, [browserVisible]);
 
+  // The global left-rail section (cave-24d2r). Derived from the active surface
+  // rather than stored, so the rail and the surface can never disagree — deep
+  // links, ⌘K and restored last-surface strings all land in the right room.
+  const navSection = navSectionForMode(mode);
+  // Mirrors the Shell's nav panel open/collapsed state (Shell already fires
+  // onNavOpenChange; this is the first consumer). Drives which component the
+  // nav hosts when collapsed — see contextualNav below. Starts open to match
+  // the Shell's own pre-hydration assumption for the Code room.
+  const [navOpen, setNavOpen] = useState(true);
+  // Same breakpoint the Shell uses; on mobile the nav is a drawer, not a rail.
+  const isMobile = useIsMobile();
+  const handleSectionChange = useCallback(
+    (next: NavSection) => {
+      if (navSectionForMode(modeRef.current) === next) return;
+      // Each room has a landing surface: Code opens Chat (its session list is
+      // right there in the rail), Home opens the overview.
+      setMode(next === "code" ? "chat" : "home");
+      shellRef.current?.dismissNavMobile();
+    },
+    [setMode],
+  );
+
   const sidebar = (
     <SidebarMinimal
       mode={mode}
+      section={navSection}
+      onSectionChange={handleSectionChange}
       splitPageModes={splitPageModes}
-      // Registered Role Surfaces visible for the active familiar — rendered by
+      // Registered Role Surfaces visible for the active scope — rendered by
       // the sidebar as generic rows (rooms), never named in shell code.
       roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({
         mode: roleSurfaceMode(surface.id),
         label: surface.title,
         iconName: surface.iconName,
         description: surface.description,
+        familiarId: roleSurfaceSession.surfaceFamiliarIds[surface.id]?.length === 1
+          ? roleSurfaceSession.surfaceFamiliarIds[surface.id]![0]
+          : undefined,
       }))}
       sessions={sessions}
       activeSessionId={activeChatSessionId}
@@ -2881,10 +3286,6 @@ export function Workspace() {
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
-      githubAssignedCount={githubAssignedCount}
-      // The Code room carries its own GitHub tab — hide the standalone row
-      // while the room is visible for the active familiar (cave-cc5r).
-      hideGithubRow={roleSurfaceSession.visibleSurfaces.some((s) => s.id === CODE_SURFACE_ID)}
     />
   );
 
@@ -2917,6 +3318,7 @@ export function Workspace() {
         setMode(nextMode);
         shellRef.current?.dismissNavMobile();
       }}
+      onSectionChange={handleSectionChange}
       onDeleteSession={async (session) => {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
@@ -2931,7 +3333,6 @@ export function Workspace() {
         shellRef.current?.dismissNavMobile();
         openUrlInApp(url);
       }}
-      scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
         shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");
@@ -2939,12 +3340,35 @@ export function Workspace() {
     />
   );
 
-  const contextualNav = mode === "chat" ? chatSidebar : sidebar;
+  // The Code room keeps the session-list rail across all of its surfaces (Chat,
+  // the workbench, the browser); Home uses the destination rail.
+  //
+  // ...but only while the nav is EXPANDED. The session list has no icon-rail
+  // form, so a collapsed Code room used to render it at zero width and the
+  // sidebar vanished outright — no rail, no peek target, no way to reach any
+  // other destination. Collapsed, fall back to SidebarMinimal, which does have
+  // rail chrome; it carries `section`, so the rail shows the Code room's own
+  // destinations and its Home/Chat section tabs.
+  //
+  // Deliberately keyed on navOpen and NOT on hover-peek: peek is an overlay
+  // that leaves the collapse state alone, so keying on it would remount this
+  // subtree on every mouse pass.
+  //
+  // Mobile is exempt: there is no rail there — the nav is a full-width overlay
+  // drawer — so the session list is always the right content, and navOpen
+  // tracks the desktop panel rather than the drawer (it reads false while the
+  // drawer is open). Without this the mobile Chat drawer rendered the
+  // destination sidebar and lost its search field.
+  const contextualNav =
+    navSection === "code" && (navOpen || isMobile) ? chatSidebar : sidebar;
 
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
   // secondary.
-  const renderSurface = (mode: CaveMode): ReactNode =>
+  const renderSurface = (
+    mode: CaveMode,
+    { variant = "default", instanceId }: { variant?: WorkspacePageVariant; instanceId?: string } = {},
+  ): ReactNode =>
     isRoleSurfaceMode(mode) ? (
       // Generic Role Surface host — the registry decides what renders here.
       <RoleSurfaceHost
@@ -3009,13 +3433,15 @@ export function Workspace() {
         onFamiliarScopeChange={selectFamiliarScope}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onActiveSessionChange={setActiveChatSessionId}
-        onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
+        onSessionStarted={loadSessions}
         onSessionsChanged={loadSessions}
         onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInApp}
+        initialScope={variant === "group" ? "coven" : "conversation"}
+        scopeHistoryId={instanceId ? `chat:scope:${instanceId}` : undefined}
       />
     ) : mode === "board" || mode === "familiar-work-queue" ? (
       // Tasks and the Work Queue are one surface (cave-oa1z, the Schedules
@@ -3023,7 +3449,7 @@ export function Workspace() {
       // opens that tab; keying on the mode remounts so deep links land on it.
       <BoardView
         key={mode}
-        initialTab={mode === "familiar-work-queue" ? "queue" : "tasks"}
+        initialTab={mode === "familiar-work-queue" || variant === "queue" ? "queue" : "tasks"}
         queueSlot={<FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} embedded activeFamiliarId={activeId} />}
         familiars={familiars}
         sessions={sessions}
@@ -3041,7 +3467,7 @@ export function Workspace() {
       />
     ) : mode === "grimoire" ? (
       <GrimoireView
-        view={grimoireView}
+        view={variant === "journal" ? "journal" : grimoireView}
         onViewChange={selectGrimoireView}
         familiars={familiars}
         activeFamiliarId={activeId}
@@ -3053,12 +3479,12 @@ export function Workspace() {
       // remounts so the deep link lands on it.
       <InboxEscalationsView
         key={mode}
-        initialTab={mode === "calendar" ? "calendar" : "overview"}
+        initialTab={mode === "calendar" || variant === "calendar" ? "calendar" : "overview"}
         familiars={familiars}
         onNewReminder={() => openReminderModal()}
         onEditReminder={(item) => {
           setEditingReminder(item);
-          setReminderModalOpen(true);
+          showReminderOverlay();
         }}
         onOpenLink={openReminderLink}
         calendarSlot={
@@ -3084,7 +3510,7 @@ export function Workspace() {
               if (item.sessionId) {
                 openFamiliarSession(item.sessionId, item.familiarId);
               } else if (item.link) {
-                // GitHub-event notifications open the native GitHub surface;
+                // GitHub-event notifications open natively in Coding Desk;
                 // other links use their normal open paths.
                 openReminderLink(item.link);
               }
@@ -3104,16 +3530,6 @@ export function Workspace() {
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
       />
-    ) : mode === "github" ? (
-      // Standalone GitHub surface — every familiar keeps it (cave-cc5r). The
-      // Code workbench (which carries its own GitHub tab) lives in the Coding
-      // familiar's room; GitHub-item deep links land here for everyone.
-      <GitHubView
-        onJumpToSession={openFamiliarSession}
-        onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        initialTarget={githubTarget}
-        onTasksRefresh={() => void loadGitHubTasks(true)}
-      />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
       // modes still resolve here (deep links / navigate-mode) but land on
@@ -3121,8 +3537,14 @@ export function Workspace() {
       // so deep links land.
       <MarketplaceView
         key={mode}
-        initialSection={mode === "roles" ? "roles" : mode === "capabilities" ? "capabilities" : "browse"}
-        familiars={resolvedFamiliars}
+        initialSection={
+          mode === "roles" || variant === "roles"
+            ? "roles"
+            : mode === "capabilities" || variant === "capabilities"
+              ? "capabilities"
+              : "browse"
+        }
+        activeFamiliarId={activeId}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
     ) : mode === "submissions" ? (
@@ -3131,8 +3553,9 @@ export function Workspace() {
       <AskSalemView familiars={familiars} activeFamiliarId={activeId} />
     ) : (
       <HomeComposer
-        familiars={familiars}
+        familiars={resolvedFamiliars}
         activeFamiliarId={activeId}
+        onSetActiveFamiliar={setActiveId}
         sessions={sessions}
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
@@ -3140,7 +3563,7 @@ export function Workspace() {
         onStartVoiceCall={(fid, projectRoot) => startVoiceChat(fid, projectRoot)}
         onNavigateToBoard={() => setMode("board")}
         onToast={pushToast}
-        onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
+        onSlash={handleSlashIntent}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
       />
     );
@@ -3174,73 +3597,137 @@ export function Workspace() {
         taskCount={boardTaskCount}
         onViewTasks={() => setMode("board")}
         onOpenPr={(url) => openUrlInApp(url)}
+        run={covenRun}
+        onJumpToRun={() => {
+          // setMode("groupchat") already owns the whole open-the-coven-tab
+          // path (latch + mode commit + event), so the pill reuses it rather
+          // than growing a second navigation route into the same surface.
+          setMode("groupchat");
+          window.setTimeout(
+            () => window.dispatchEvent(new CustomEvent(COVEN_JUMP_TO_RUN_EVENT)),
+            0,
+          );
+        }}
       />
     ) : null;
 
+  const primaryDefinition = workspacePageDefinition(primaryPaneRequest?.requestedPageId ?? mode);
   const detailContent = renderSurface(mode);
-  const detail = (
-    <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-      <h1 className="sr-only">
-        {(isRoleSurfaceMode(mode)
-          ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
-          : WORKSPACE_MODE_TITLES[mode]) ?? "CovenCave"}
-      </h1>
-      {firstProjectGateOpen ? (
-        <FirstProjectGate
-          open={firstProjectGateOpen}
-          familiarId={projectGateFamiliarId}
-          pendingGrant={reconciledPendingFirstProjectGrant}
-          onPendingGrantChange={setPendingFirstProjectGrant}
-          loadingProjects={projectsLoading}
-          projectsError={projectsError}
-          registeredProjects={registeredProjects}
-          createProjectOrThrow={createProjectOrThrow}
-          reloadProjects={reloadProjects}
-        />
-      ) : null}
-      <div
-        className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"
-        aria-hidden={firstProjectGateOpen ? true : undefined}
-        inert={firstProjectGateOpen || undefined}
-      >
-        {detailContent}
+  const defaultDetail = (
+    <WorkspacePanePage
+      instanceId="workspace-primary"
+      landmark={primaryDefinition?.landmark ?? "Workspace"}
+    >
+      <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+        <h1 className="sr-only">{primaryDefinition?.title ?? "CovenCave"}</h1>
+        {firstProjectGateOpen ? (
+          <FirstProjectGate
+            open={firstProjectGateOpen}
+            familiarId={projectGateFamiliarId}
+            pendingGrant={reconciledPendingFirstProjectGrant}
+            onPendingGrantChange={setPendingFirstProjectGrant}
+            loadingProjects={projectsLoading}
+            projectsError={projectsError}
+            registeredProjects={registeredProjects}
+            createProjectOrThrow={createProjectOrThrow}
+            reloadProjects={reloadProjects}
+          />
+        ) : null}
+        <div
+          className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"
+          aria-hidden={firstProjectGateOpen ? true : undefined}
+          inert={firstProjectGateOpen || undefined}
+        >
+          {detailContent}
+        </div>
+        {firstProjectGateOpen ? null : statusBar}
       </div>
-      {/* Phase-D status strip: a flex sibling of the flex-1 content above, so
-          it claims its 28px and the surface shrinks around it. Hidden while
-          the first-project gate holds the surface inert. */}
-      {firstProjectGateOpen ? null : statusBar}
-    </div>
+    </WorkspacePanePage>
   );
 
-  // Split tiles: dragged-in pages (heavy/stateful surfaces like terminal are
-  // excluded from drag) or re-homed companion surfaces (Salem / Memory / Browser).
-  const renderSplitTargetContent = (target: SplitTarget): ReactNode =>
-    target.kind === "page" ? (
-      target.mode !== mode ? (
-        <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-          {renderSurface(target.mode)}
-        </div>
-      ) : null
-    ) : target.kind === "salem" ? (
-      <SalemChatPanel
-        familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
-        model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
+  function renderPaneRequest(
+    request: WorkspacePaneRequest,
+    onUnavailable: () => void,
+  ): ReactNode {
+    const definition = workspacePageDefinition(request.requestedPageId);
+    if (!definition) return null;
+
+    if (request.pageId === "memory") {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <RailInspector
+            familiar={active}
+            localDaemonReady={localDaemonReady}
+            onOpenFullView={() => setMode("agents")}
+          />
+        </WorkspacePanePage>
+      );
+    }
+
+    if (request.pageId === "terminal") {
+      const session = activeChatSessionId
+        ? sessions.find((candidate) => candidate.id === activeChatSessionId) ?? null
+        : null;
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <RailTerminalPanel
+            sessionId={activeChatSessionId}
+            projectRoot={session?.project_root ?? null}
+            active
+            paneInstanceId={request.instanceId}
+          />
+        </WorkspacePanePage>
+      );
+    }
+
+    if (request.pageId === "settings") {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <SettingsShell embedded />
+        </WorkspacePanePage>
+      );
+    }
+
+    if (request.pageId === "dashboard") {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <DashboardSurface />
+        </WorkspacePanePage>
+      );
+    }
+
+    if (isWorkspaceMode(request.pageId) || isRoleSurfaceMode(request.pageId)) {
+      return (
+        <WorkspacePanePage instanceId={request.instanceId} landmark={definition.landmark}>
+          <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+            {renderSurface(request.pageId, { variant: request.variant, instanceId: request.instanceId })}
+          </div>
+        </WorkspacePanePage>
+      );
+    }
+
+    return (
+      <WorkspacePanePage
+        instanceId={request.instanceId}
+        landmark={definition.landmark}
+        unavailable={{
+          reason: `${definition.title} is not available in this workspace yet.`,
+          recoveryLabel: "Show workspace",
+          onRecover: onUnavailable,
+        }}
       />
-    ) : target.kind === "memory" ? (
-      <RailInspector
-        familiar={active}
-        localDaemonReady={localDaemonReady}
-        onOpenFullView={() => setMode("agents")}
-      />
-    ) : (
-      <BrowserPane label="companion" active={browserVisible} />
     );
+  }
+
+  const detail = primaryPaneRequest
+    ? renderPaneRequest(primaryPaneRequest, () => setPrimaryPaneRequest(null))
+    : defaultDetail;
 
   const splitTiles: DetailSplitTile[] = splitTargets
-    .map((target) => ({
-      id: splitTargetKey(target),
-      title: splitTargetTitle(target),
-      content: renderSplitTargetContent(target),
+    .map((request) => ({
+      id: workspacePaneRequestKey(request),
+      title: splitTargetTitle(request),
+      content: renderPaneRequest(request, () => closeSplitTile(workspacePaneRequestKey(request))),
     }))
     .filter((tile) => tile.content != null);
 
@@ -3267,8 +3754,16 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         historyNavigation={{
-          canGoBack: canMoveWorkspaceNavigation(chatNavigationHistory, -1) || canMoveWorkspaceNavigation(navigationHistory, -1),
-          canGoForward: canMoveWorkspaceNavigation(chatNavigationHistory, 1) || canMoveWorkspaceNavigation(navigationHistory, 1),
+          // Mirror goBack/goForward exactly, gate included — a button enabled
+          // for a stack the traversal then refuses reads as a dead control.
+          canGoBack:
+            (chatSessionLevelOpen && canMoveWorkspaceNavigation(chatNavigationHistory, -1)) ||
+            surfaceCanGoBack ||
+            canMoveWorkspaceNavigation(navigationHistory, -1),
+          canGoForward:
+            (chatSessionLevelOpen && canMoveWorkspaceNavigation(chatNavigationHistory, 1)) ||
+            surfaceCanGoForward ||
+            canMoveWorkspaceNavigation(navigationHistory, 1),
           goBack,
           goForward,
         }}
@@ -3282,6 +3777,7 @@ export function Workspace() {
         onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
         navPolicy={mode === "chat" ? "chat-contextual" : "remembered"}
+        onNavOpenChange={setNavOpen}
         topBar={({ navDrawerOpen }) => (
           <>
             <FamiliarMenuBar
@@ -3314,11 +3810,11 @@ export function Workspace() {
               }
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
-              onOpenSearch={() => setPaletteOpen(true)}
+              onOpenSearch={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
-                setPaletteOpen(true);
+                openPalette();
               }}
               onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
@@ -3328,15 +3824,15 @@ export function Workspace() {
               onOpenQuickChat={() => startFamiliarChat(activeId)}
             />
             <TopBar
-              onOpenPalette={() => setPaletteOpen(true)}
+              onOpenPalette={() => openPalette()}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
                 setTopSearchQuery(query);
-                setPaletteOpen(true);
+                openPalette();
               }}
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
-              onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
+              onOpenMobileHandoff={() => openMobileHandoff()}
               onOpenQuickChat={() => startFamiliarChat(activeId)}
               inboxItems={inboxItemsWithEphemeral}
               familiars={familiars}
@@ -3377,7 +3873,7 @@ export function Workspace() {
       {paletteOpen && (
         <CommandPalette
           open
-          onClose={() => setPaletteOpen(false)}
+          onClose={closePalette}
           familiars={familiars}
           sessions={sessions}
           activeFamiliarId={activeId}
@@ -3385,6 +3881,9 @@ export function Workspace() {
             mode: roleSurfaceMode(surface.id),
             label: surface.title,
             description: surface.description,
+            familiarId: roleSurfaceSession.surfaceFamiliarIds[surface.id]?.length === 1
+              ? roleSurfaceSession.surfaceFamiliarIds[surface.id]![0]
+              : undefined,
           }))}
           initialQuery={topSearchQuery}
           onQueryChange={setTopSearchQuery}
@@ -3392,7 +3891,7 @@ export function Workspace() {
         />
       )}
 
-      {shortcutsOpen && <ShortcutsSheet open onClose={() => setShortcutsOpen(false)} />}
+      {shortcutsOpen && <ShortcutsSheet open onClose={closeShortcuts} />}
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
@@ -3410,7 +3909,7 @@ export function Workspace() {
         <NewReminderModal
           open
           onClose={() => {
-            setReminderModalOpen(false);
+            closeReminderModal();
             setEditingReminder(null);
           }}
           familiars={familiars}
@@ -3488,7 +3987,7 @@ export function Workspace() {
           open
           chatId={mobileHandoffChatId}
           onClose={() => {
-            setMobileHandoffOpen(false);
+            closeMobileHandoff();
             setMobileHandoffChatId(null);
           }}
           mobileModeEnabled={mobileModeEnabled}

@@ -1,5 +1,6 @@
 import { inflateRawSync, gunzipSync } from "node:zlib";
-import { mkdir, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, lstat, mkdir, open, symlink } from "node:fs/promises";
 import path from "node:path";
 
 const MAX_EXPANDED_BYTES = 768_000_000;
@@ -17,12 +18,12 @@ function u32(buffer: Buffer, offset: number): number {
   return buffer.readUInt32LE(offset);
 }
 
-function tarNumber(buffer: Buffer): number {
+function tarNumber(buffer: Buffer, field: string): number {
   const text = buffer.toString("utf8").replace(/\0/g, "").trim();
   if (!text) return 0;
-  if (!/^[0-7]+$/.test(text)) throw archiveError("tar entry has an invalid size");
+  if (!/^[0-7]+$/.test(text)) throw archiveError(`tar entry has an invalid ${field}`);
   const value = Number.parseInt(text, 8);
-  if (!Number.isSafeInteger(value) || value < 0) throw archiveError("tar entry has an invalid size");
+  if (!Number.isSafeInteger(value) || value < 0) throw archiveError(`tar entry has an invalid ${field}`);
   return value;
 }
 
@@ -36,7 +37,7 @@ export function safeArchiveDestination(root: string, entryName: string): string 
   if (parts.some((part) => !part || part === "." || part === "..")) {
     throw archiveError("entry path escapes its archive root");
   }
-  const destination = path.resolve(root, ...parts);
+  const destination = path.resolve(/* turbopackIgnore: true */ root, ...parts);
   const relative = path.relative(root, destination);
   if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw archiveError("entry path escapes its archive root");
@@ -44,17 +45,69 @@ export function safeArchiveDestination(root: string, entryName: string): string 
   return destination;
 }
 
-async function writeArchiveEntry(root: string, name: string, data: Buffer, directory: boolean) {
-  const destination = safeArchiveDestination(root, name);
-  if (directory) {
-    await mkdir(destination, { recursive: true });
-    return;
+async function ensureArchiveDirectory(root: string, directory: string): Promise<void> {
+  const relative = path.relative(root, directory);
+  if (!relative) return;
+  let current = root;
+  for (const part of relative.split(path.sep)) {
+    current = path.join(/* turbopackIgnore: true */ current, part);
+    try {
+      const details = await lstat(/* turbopackIgnore: true */ current);
+      if (!details.isDirectory() || details.isSymbolicLink()) {
+        throw archiveError("entry path crosses a link or non-directory");
+      }
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      await mkdir(/* turbopackIgnore: true */ current);
+    }
   }
-  await mkdir(path.dirname(destination), { recursive: true });
-  await writeFile(destination, data, { mode: 0o644 });
 }
 
-/** Extract a gzip tar archive without permitting symlinks, special files, or traversal. */
+async function writeArchiveEntry(root: string, name: string, data: Buffer, directory: boolean, mode = 0o644) {
+  const destination = safeArchiveDestination(root, name);
+  if (directory) {
+    await ensureArchiveDirectory(root, destination);
+    await chmod(/* turbopackIgnore: true */ destination, mode & 0o777);
+    return;
+  }
+  await ensureArchiveDirectory(root, path.dirname(destination));
+  let handle;
+  try {
+    handle = await open(/* turbopackIgnore: true */ destination, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, mode & 0o777);
+    await handle.writeFile(data);
+    await handle.chmod(mode & 0o777);
+  } catch (error) {
+    throw archiveError(error instanceof Error ? `could not create regular file (${error.message})` : "could not create regular file");
+  } finally {
+    await handle?.close();
+  }
+}
+
+function safeArchiveLinkTarget(root: string, entryName: string, linkName: string): string {
+  if (!linkName || linkName.includes("\0") || linkName.startsWith("/") || /^[A-Za-z]:/.test(linkName)) {
+    throw archiveError("link target is absolute or empty");
+  }
+  const destination = safeArchiveDestination(root, entryName);
+  const resolvedTarget = path.resolve(/* turbopackIgnore: true */ path.dirname(destination), ...linkName.replace(/\\/g, "/").split("/"));
+  const relative = path.relative(root, resolvedTarget);
+  if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw archiveError("link target escapes its archive root");
+  }
+  return linkName;
+}
+
+async function writeArchiveLink(root: string, name: string, linkName: string): Promise<void> {
+  const destination = safeArchiveDestination(root, name);
+  const target = safeArchiveLinkTarget(root, name, linkName);
+  await ensureArchiveDirectory(root, path.dirname(destination));
+  try {
+    await symlink(target, destination);
+  } catch (error) {
+    throw archiveError(error instanceof Error ? `could not create symbolic link (${error.message})` : "could not create symbolic link");
+  }
+}
+
+/** Extract a gzip tar archive without permitting special files or traversal. */
 export async function extractSafeTarGz(archive: Buffer, destination: string): Promise<void> {
   let tar: Buffer;
   try {
@@ -65,6 +118,8 @@ export async function extractSafeTarGz(archive: Buffer, destination: string): Pr
   let offset = 0;
   let entries = 0;
   let expanded = 0;
+  const links: Array<{ name: string; target: string }> = [];
+  let pendingLongName: string | null = null;
   while (offset < tar.length) {
     const header = tar.subarray(offset, offset + 512);
     if (header.length !== 512) throw archiveError("tar header is truncated");
@@ -72,23 +127,42 @@ export async function extractSafeTarGz(archive: Buffer, destination: string): Pr
     if (++entries > MAX_ENTRIES) throw archiveError("too many archive entries");
     const name = header.subarray(0, 100).toString("utf8").replace(/\0.*$/, "");
     const prefix = header.subarray(345, 500).toString("utf8").replace(/\0.*$/, "");
-    const entryName = prefix ? `${prefix}/${name}` : name;
-    const size = tarNumber(header.subarray(124, 136));
+    const headerEntryName = prefix ? `${prefix}/${name}` : name;
+    const mode = tarNumber(header.subarray(100, 108), "mode");
+    const size = tarNumber(header.subarray(124, 136), "size");
     const type = String.fromCharCode(header[156] || 0);
     const dataStart = offset + 512;
     const dataEnd = dataStart + size;
     if (dataEnd > tar.length) throw archiveError("tar entry is truncated");
     expanded += size;
     if (expanded > MAX_EXPANDED_BYTES) throw archiveError("expanded archive exceeds the safe limit");
-    if (type === "0" || type === "\0") {
-      await writeArchiveEntry(destination, entryName, tar.subarray(dataStart, dataEnd), false);
-    } else if (type === "5") {
-      await writeArchiveEntry(destination, entryName, Buffer.alloc(0), true);
+    if (type === "L") {
+      if (pendingLongName) throw archiveError("tar long-name metadata is not followed by an entry");
+      const longName = tar.subarray(dataStart, dataEnd).toString("utf8").replace(/\0.*$/, "");
+      // GNU tar uses this metadata record for the following entry's path. It
+      // never creates a file itself, but validate it now so no unsafe name can
+      // be carried into that next entry.
+      safeArchiveDestination(destination, longName);
+      pendingLongName = longName;
     } else {
-      throw archiveError("archive contains a link or unsupported special file");
+      const entryName = pendingLongName ?? headerEntryName;
+      pendingLongName = null;
+      if (type === "0" || type === "\0") {
+      await writeArchiveEntry(destination, entryName, tar.subarray(dataStart, dataEnd), false, mode);
+      } else if (type === "5") {
+      await writeArchiveEntry(destination, entryName, Buffer.alloc(0), true, mode);
+      } else if (type === "2") {
+      const target = header.subarray(157, 257).toString("utf8").replace(/\0.*$/, "");
+      safeArchiveLinkTarget(destination, entryName, target);
+      links.push({ name: entryName, target });
+      } else {
+      throw archiveError("archive contains an unsupported entry type");
+      }
     }
     offset = dataStart + Math.ceil(size / 512) * 512;
   }
+  if (pendingLongName) throw archiveError("tar long-name metadata is not followed by an entry");
+  for (const link of links) await writeArchiveLink(destination, link.name, link.target);
 }
 
 function zipEndOfCentralDirectoryOffset(archive: Buffer): number {

@@ -101,6 +101,89 @@ pub(super) fn check_app_translocation() {
     }
 }
 
+/// Report the GUI that already owns desktop reachability, then leave.
+///
+/// Exits the process rather than returning an error to Tauri's setup hook.
+/// On macOS that hook runs inside tao's `did_finish_launching`, an
+/// Objective-C callback that cannot unwind, so a propagated error becomes a
+/// panic in a non-unwinding frame and the runtime aborts with SIGABRT — a
+/// crash report for the entirely ordinary case of launching a second copy.
+/// This mirrors `check_app_translocation`: say what happened, exit cleanly.
+#[cfg(desktop)]
+pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
+    log::warn!(
+        "[cave] another CovenCave GUI (pid {pid}) already owns desktop reachability; this instance is exiting"
+    );
+    show_fatal_dialog(&format!(
+        "CovenCave is already running (process {pid}).\n\nSwitch to the window that is already open, or quit it before starting another copy."
+    ));
+    std::process::exit(1);
+}
+
+/// The variable `scripts/dev-app.sh` sets to the file this GUI touches once
+/// startup finishes. Nothing else sets it, so an app started any other way
+/// never writes a marker.
+#[cfg(desktop)]
+pub(super) const DEV_STARTUP_MARKER_ENV: &str = "COVEN_CAVE_DEV_STARTUP_MARKER";
+
+/// The launcher is only watching when the variable names an actual path.
+#[cfg(desktop)]
+pub(super) fn dev_startup_marker_path(value: Option<String>) -> Option<std::path::PathBuf> {
+    let value = value?;
+    if value.trim().is_empty() {
+        return None;
+    }
+    Some(std::path::PathBuf::from(value))
+}
+
+/// Only ever fill in the empty file the launcher already created.
+///
+/// `mktemp` makes the marker before exporting it, so a zero-length file is
+/// what this is meant to find. Refusing to create or truncate anything else
+/// means a stale `COVEN_CAVE_DEV_STARTUP_MARKER` left in a shell profile
+/// cannot clobber a real file on every launch — and truncating a file that is
+/// already empty destroys nothing. Checking the *content* rather than the
+/// directory keeps this honest on Windows, where the launcher hands over a
+/// `cygpath -w` spelling that need not match `temp_dir()` textually.
+#[cfg(desktop)]
+pub(super) fn marker_is_the_launchers_placeholder(path: &std::path::Path) -> bool {
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.len() == 0)
+        .unwrap_or(false)
+}
+
+/// Non-empty on purpose: the launcher tests the file with `[ -s ]`, so an
+/// empty write would read exactly like a GUI that never got here.
+#[cfg(desktop)]
+pub(super) fn write_dev_startup_marker(path: &std::path::Path) -> std::io::Result<()> {
+    std::fs::write(path, "startup-completed\n")
+}
+
+/// Tell `scripts/dev-app.sh` that setup finished and a window exists.
+///
+/// `tauri dev` forwards a clean non-zero exit but returns 0 when the app dies
+/// from a signal, so its status alone cannot separate a crash during startup
+/// from an ordinary quit — the launcher reported success having opened no
+/// window (cave-g8n5v). This marker is the missing evidence. Call it at the
+/// very end of the setup closure, after everything that can fail with `?` has
+/// already succeeded; written any earlier it would vouch for a startup that
+/// had not finished.
+#[cfg(desktop)]
+pub(super) fn announce_startup_completed() {
+    let Some(path) = dev_startup_marker_path(std::env::var(DEV_STARTUP_MARKER_ENV).ok()) else {
+        return;
+    };
+    if !marker_is_the_launchers_placeholder(&path) {
+        return;
+    }
+    if let Err(error) = write_dev_startup_marker(&path) {
+        log::warn!(
+            "[cave] could not write the dev startup marker at {}: {error}",
+            path.display()
+        );
+    }
+}
+
 // This hook sits below Tao/Tauri's event dispatch. WRY waits for WebView2
 // environment/controller creation inside a nested Windows message pump. A
 // WM_CLOSE received there is otherwise buffered by Tao until the active event

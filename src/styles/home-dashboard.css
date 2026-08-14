@@ -145,14 +145,84 @@
     opacity: 1;
   }
 }
+/* ── New-session hero ("Chat Session - Prototype.dc.html", cave-n3jg2) ──────
+   The handoff frames the whole hero as one card and lights it from two
+   corners, so the surface reads as a threshold rather than as the top of a
+   list. Both washes and all three specks are drawn with color-mix off
+   `--accent-presence` and the foreground, so the card survives every palette
+   and both modes without a second hue.
+
+   The specks are radial-gradient dots, not elements: three of them at ~2px,
+   which is the size that reads as "the dark has depth" rather than as dust. */
+.home-dash__board-head {
+  position: relative;
+  padding: var(--space-8) var(--space-8) var(--space-6);
+  border: 1px solid color-mix(in oklch, var(--foreground) 5%, transparent);
+  border-radius: var(--radius-panel);
+  background:
+    radial-gradient(
+      560px 320px at 12% 0%,
+      color-mix(in oklch, var(--accent-presence) 8%, transparent),
+      transparent 68%
+    ),
+    radial-gradient(
+      420px 260px at 88% 30%,
+      color-mix(in oklch, var(--accent-presence-soft) 5%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      2px 2px at 23% 18%,
+      color-mix(in oklch, var(--accent-presence) 55%, transparent) 45%,
+      transparent 55%
+    ),
+    radial-gradient(
+      2px 2px at 67% 8%,
+      color-mix(in oklch, var(--accent-presence-soft) 50%, transparent) 45%,
+      transparent 55%
+    ),
+    radial-gradient(
+      2px 2px at 45% 30%,
+      color-mix(in oklch, var(--foreground) 30%, transparent) 45%,
+      transparent 55%
+    );
+}
+
 .home-dash__headline {
   margin: 0;
   font-family: var(--font-eb-garamond), "EB Garamond", serif;
   font-weight: 500;
-  font-size: var(--text-display);
-  line-height: 1.05;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
+  /* The display token is the floor, not the size: this is the one identity
+     moment on the surface and the mock lets it grow with the pane. */
+  font-size: clamp(var(--text-display), 5.6vw, 56px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  background: linear-gradient(
+    105deg,
+    var(--text-primary) 34%,
+    var(--accent-presence) 92%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+/* Windows High Contrast strips background images, which would leave the
+   headline transparent on transparent — hand the colour back. */
+@media (forced-colors: active) {
+  .home-dash__headline {
+    background: none;
+    color: CanvasText;
+  }
+}
+
+/* The one line that names the two ways off this page. */
+.home-dash__lede {
+  margin: 0;
+  max-width: 520px;
+  font-size: var(--text-md);
+  line-height: var(--leading-relaxed);
+  color: var(--text-muted);
+  text-wrap: pretty;
 }
 /* Identity meta under the headline — harness · model, quiet mono text. */
 .home-dash__meta {
@@ -178,152 +248,100 @@
   margin-right: var(--space-2);
 }
 
-/* Filter tabs */
-.home-dash__filters {
+/* ── Inline composer (Chat.dc.html 2b) ──────────────────────────────────── */
+/* The brief sits under the hero on a brand-new chat, where the mock puts it.
+   It is ChatView's OWN composer handed down, so this only undoes the dock
+   chrome — the docked element is a page-width band with a hairline top and a
+   gradient that only reads correctly pinned to the bottom of the pane. */
+.home-dash__composer .cave-composer-dock {
+  padding: 0;
+  border-top: 0;
+  background: none;
+}
+
+/* The dashboard root carries `select-none` — the launcher is chrome, not prose,
+   and dragging across it should not paint a selection. The composer now lives
+   INSIDE that root, so selection has to be handed back explicitly or the brief
+   cannot be selected with the mouse. user-select inherits, so one declaration
+   on the wrapper covers the textarea and every label under it.
+   Not theoretical: `user-select: none` computes onto the textarea, and WebKit
+   honours it on form controls — the desktop shell is WKWebView. Chromium still
+   allows keyboard select-all, which is why this survives a shallow check.
+   Restores parity with the docked composer, which has no select-none ancestor. */
+.home-dash__composer {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* The board clips (no-scroll design) and is a size container. Neither reaches
+   the pickers: ui/popover portals to document.body, so it is neither clipped
+   by the overflow nor trapped by container-type the way a fixed-position
+   descendant would be. Nothing to undo here — noted because the reverse has
+   bitten this repo before. */
+
+/* 2b trails the config row with "Save as default" and the start hint. They ride
+   under the composer rather than inside it: the composer is shared with the
+   docked and home surfaces, and these two are new-session-only chrome. */
+.home-dash__composer-trail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+.home-dash__save-default {
   display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  background: var(--bg-sunken);
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-}
-.home-dash__filter {
-  padding: 5px 13px;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  cursor: pointer;
+  border-radius: var(--radius-control);
   background: transparent;
-  border: 0;
-  white-space: nowrap;
-  transition: color var(--duration-fast, 120ms), background var(--duration-fast, 120ms);
-}
-.home-dash__filter:hover {
+  font-size: var(--text-sm);
   color: var(--text-secondary);
-}
-.home-dash__filter.is-active {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-.home-dash__filter-count {
-  color: var(--text-muted);
-  margin-left: 5px;
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: var(--text-2xs);
-}
-.home-dash__filter.is-active .home-dash__filter-count {
-  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
-/* Section scaffold (Open work / Recent threads) */
-.home-dash__section {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-}
-.home-dash__section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.home-dash__section-link {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-.home-dash__section-link:hover {
-  color: var(--accent-presence);
-}
-
-/* Open-work rows */
-.home-dash__work {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.home-dash__work-row {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 13px 15px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  transition: border-color var(--duration-fast, 120ms), transform var(--duration-fast, 120ms);
-}
-.home-dash__work-row:hover {
+.home-dash__save-default:hover:not(:disabled) {
+  color: var(--foreground);
   border-color: var(--border-strong);
-  transform: translateY(-1px);
 }
-.home-dash__work-chip {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-pill);
-  font: 600 10px var(--font-jetbrains-mono), monospace;
-  flex-shrink: 0;
+
+.home-dash__save-default:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
 }
-.home-dash__work-chip[data-kind="blocked"] {
-  background: var(--danger-bg);
-  border: 1px solid var(--danger-border);
-  color: var(--danger-text);
-}
-.home-dash__work-chip[data-kind="inbox"],
-.home-dash__work-chip[data-kind="backlog"],
-.home-dash__work-chip[data-kind="review"] {
-  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, var(--border-hairline));
-  color: var(--accent-presence);
-}
-.home-dash__work-title {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-base);
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-dash__work-meta {
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: var(--text-2xs);
+
+/* Saved is a state, not a dead control — it stays legible rather than dimming
+   to the usual disabled grey, because it is reporting a fact. */
+.home-dash__save-default:disabled {
+  cursor: default;
   color: var(--text-muted);
-  flex-shrink: 0;
+  border-style: dashed;
 }
-.home-dash__work-priority {
-  font-size: var(--text-xs);
-  flex-shrink: 0;
-}
-.home-dash__work-priority[data-priority="high"] {
-  color: var(--color-warning);
-}
-.home-dash__work-priority[data-priority="urgent"] {
-  color: var(--color-danger);
-}
-/* Visual "Resume" CTA — reads as a secondary button but is a non-interactive
-   span so it never nests a real <button> inside the clickable row. The row's
-   hover deepens its border to signal the whole card is actionable. */
-.home-dash__work-resume {
+
+.home-dash__start-hint {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  flex-shrink: 0;
-  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.home-dash__start-hint kbd {
+  padding: 1px 5px;
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-elevated);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  transition: border-color var(--duration-fast, 120ms), color var(--duration-fast, 120ms);
+  border-radius: var(--radius-sm);
+  font: inherit;
 }
-.home-dash__work-row:hover .home-dash__work-resume {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
+
+/* Empty board — the one state with no band to show. */
 .home-dash__work-empty {
   padding: 22px 15px;
   border: 1px dashed var(--border-hairline);
@@ -333,63 +351,30 @@
   text-align: center;
 }
 
-/* Recent threads */
-.home-dash__recent {
-  display: flex;
-  flex-direction: column;
-}
-.home-dash__recent-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 9px var(--space-2);
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  transition: background var(--duration-fast, 120ms) var(--ease-standard, ease);
-}
-.home-dash__recent-row:hover {
-  background: var(--bg-hover);
-}
-.home-dash__recent-title {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-dash__recent-time {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
 /* ── No-scroll fit tiers ────────────────────────────────────────────────── */
 /* The board never scrolls (overflow: hidden), so short panes shed the
    quietest content instead of clipping it. The board carries no vertical
-   padding, so the queried height equals the pane height. Measured budgets:
-   full board ≈635px, ≈503px without Recent threads (of which 24px is bottom
-   padding — panes down to 480 clip padding only, never content), ≈294px at
-   the tight tier, ≈198px at the floor. Rules target only descendants of
-   .home-dash__board (an element can never match its own @container query),
-   and stay last in the file so these equal-specificity overrides win the
-   cascade. */
-/* Shed order follows the design's priority: the mock encodes it as width
-   (chats widest, queue smallest), so the Queue group goes first and the
-   recent threads follow one tier down (cave-3lonn). */
+   padding, so the queried height equals the pane height. Rules target only
+   descendants of .home-dash__board (an element can never match its own
+   @container query), and stay last in the file so these equal-specificity
+   overrides win the cascade.
+
+   Since Chat.dc.html 2b turned each source into a band, shedding is per band
+   rather than per section. Shed order follows the design's own priority — the
+   mock encodes it as band width (chats widest, queue smallest) — so Reviews
+   goes first and the resumable Chats band is the last one standing. */
 @container (max-height: 760px) {
-  .home-dash__section--queue,
-  .home-dash__section--reviews {
+  .cave-sf__band[data-kind="reviews"] {
     display: none;
   }
 }
 @container (max-height: 650px) {
-  .home-dash__section--recent {
+  .cave-sf__band[data-kind="queue"] {
+    display: none;
+  }
+}
+@container (max-height: 560px) {
+  .cave-sf__band[data-kind="chats"] {
     display: none;
   }
 }
@@ -402,15 +387,16 @@
   .home-dash__meta {
     display: none;
   }
-  .home-dash__work-row:nth-child(n + 4) {
+  /* The strip keeps two tiles; the rest stay reachable by scrolling it. */
+  .cave-sf__tile:nth-child(n + 3) {
     display: none;
   }
 }
 @container (max-height: 300px) {
-  .home-dash__section-head {
+  .cave-sf__head {
     display: none;
   }
-  .home-dash__work-row:nth-child(n + 3) {
+  .cave-sf__tile:nth-child(n + 2) {
     display: none;
   }
 }

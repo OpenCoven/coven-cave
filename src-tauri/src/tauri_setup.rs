@@ -16,6 +16,18 @@ fn msi_verbose_log_installer_args(log_path: &std::path::Path) -> [std::ffi::OsSt
     [std::ffi::OsString::from("/L*V"), quoted_log_path]
 }
 
+#[cfg(all(desktop, not(target_os = "windows")))]
+fn native_startup_terminal_after_window_build(
+    success_evidence: NativeStartupTerminalEvidence,
+    build_succeeded: bool,
+) -> NativeStartupTerminalEvidence {
+    if build_succeeded {
+        success_evidence
+    } else {
+        NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Unknown)
+    }
+}
+
 #[cfg(test)]
 mod updater_argument_tests {
     use super::msi_verbose_log_installer_args;
@@ -70,6 +82,30 @@ mod updater_argument_tests {
             )
         );
         assert_eq!(parameters.to_string_lossy().matches('"').count(), 2);
+    }
+}
+
+#[cfg(all(test, desktop, not(target_os = "windows")))]
+mod native_startup_terminal_tests {
+    use super::native_startup_terminal_after_window_build;
+    use crate::reliability_metrics::{NativeStartupTerminalEvidence, ReliabilityFailureClass};
+
+    #[test]
+    fn main_window_build_is_part_of_the_native_startup_terminal() {
+        assert_eq!(
+            native_startup_terminal_after_window_build(
+                NativeStartupTerminalEvidence::AuthenticatedReady,
+                true,
+            ),
+            NativeStartupTerminalEvidence::AuthenticatedReady
+        );
+        assert_eq!(
+            native_startup_terminal_after_window_build(
+                NativeStartupTerminalEvidence::AuthenticatedReady,
+                false,
+            ),
+            NativeStartupTerminalEvidence::Failed(ReliabilityFailureClass::Unknown)
+        );
     }
 }
 
@@ -236,6 +272,8 @@ pub fn run() {
     #[cfg(desktop)]
     let reachability_runtime = Arc::new(DesktopReachabilityRuntime::default());
     #[cfg(desktop)]
+    let reliability_recorder = Arc::new(ReliabilityRecorder::default());
+    #[cfg(desktop)]
     let builder = builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
@@ -258,6 +296,7 @@ pub fn run() {
             browser::browser_commands::browser_report_title,
             browser::browser_commands::browser_report_scroll,
             shell_open,
+            open_x_oauth_url,
             shell_open_path,
             shell_pick_directory,
             set_traffic_lights_visible,
@@ -271,6 +310,7 @@ pub fn run() {
             speech::speech_stt_stop,
             desktop_reachability_status,
             desktop_reachability_configure,
+            record_daemon_reliability_measurement,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
             #[cfg(target_os = "windows")]
@@ -280,12 +320,31 @@ pub fn run() {
         ])
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
+        .manage(Arc::clone(&reliability_recorder))
         .manage(browser::BrowserLifecycleState::default());
+    // Registered on every desktop platform even though the watcher thread is
+    // non-Windows: the teardown path reads this flag unconditionally, and a
+    // missing state would silently make that a no-op.
+    #[cfg(desktop)]
+    let builder = builder.manage(Arc::new(SidecarSupervisor::default()));
     #[cfg(all(desktop, target_os = "windows"))]
     let builder = builder.manage(Arc::new(SidecarStartupControl::new()));
     #[cfg(desktop)]
     builder
         .setup(move |app| {
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                app.state::<Arc<ReliabilityRecorder>>()
+                    .configure(app_data_dir);
+            }
+            if let Ok(app_local_data_dir) = app.path().app_local_data_dir() {
+                let diagnostics_path =
+                    app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
+                if let Err(error) =
+                    sidecar_diagnostics::reset_native_diagnostics_file(&diagnostics_path)
+                {
+                    log::warn!("[cave] could not reset native diagnostics for this launch: {error}");
+                }
+            }
             // The updater's Windows pre-exit path clears the application
             // resource table after validating the package and before starting
             // msiexec. Dropping this guard stops/reaps the sidecar even though
@@ -306,7 +365,16 @@ pub fn run() {
             check_app_translocation();
 
             app.handle().plugin(tauri_plugin_notification::init())?;
-            prepare_gui_reachability(app.handle())?;
+            // A second GUI must not be reported through `?`. This closure is
+            // Tauri's setup hook, which on macOS runs inside tao's
+            // `did_finish_launching` — an Objective-C callback that cannot
+            // unwind — so an error here aborts with SIGABRT instead of
+            // surfacing the conflict. Report it and exit like a translocated
+            // app does. Genuine ownership failures still propagate.
+            match prepare_gui_reachability(app.handle())? {
+                GuiReachability::Acquired => {}
+                GuiReachability::AlreadyOwnedBy { pid } => report_existing_gui_owner(pid),
+            }
             discord_presence::start();
 
             // Desktop auto-update: updater checks/downloads/installs signed
@@ -335,6 +403,8 @@ pub fn run() {
             // checkout could not boot `pnpm dev:app` at all — and when a
             // stale bundle did exist, the dev app silently rendered an old
             // production build instead of live code.
+            #[cfg(not(target_os = "windows"))]
+            let mut pending_native_startup_terminal = None;
             let main_url: Option<tauri::Url> = if let Some(dev_url) = live_dev_server_url(app) {
                 Some(dev_url)
             } else {
@@ -350,18 +420,65 @@ pub fn run() {
 
                     let startup_control =
                         Arc::clone(app.state::<Arc<SidecarStartupControl>>().inner());
-                    spawn_sidecar_startup(app.handle().clone(), startup_control)?;
+                    spawn_sidecar_startup(
+                        app.handle().clone(),
+                        startup_control,
+                        NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,
+                        "sidecar-startup",
+                        1,
+                    )?;
+                    spawn_sidecar_supervisor(app.handle().clone());
                     None
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
-                    let sidecar_url = match start_sidecar_runtime(app.handle(), |_| {}, || false) {
-                        Ok(url) => url,
-                        Err(SidecarStartError::Cancelled) => {
-                            fatal_exit("sidecar startup was cancelled")
+                    let startup_started = std::time::Instant::now();
+                    let sidecar_url = match start_sidecar_runtime(
+                        app.handle(),
+                        "sidecar-startup",
+                        1,
+                        |_| {},
+                        || false,
+                    ) {
+                        Ok(url) => {
+                            pending_native_startup_terminal = Some((
+                                startup_started,
+                                NativeStartupTerminalEvidence::AuthenticatedReady,
+                            ));
+                            url
                         }
-                        Err(SidecarStartError::Failed(error)) => fatal_exit(&error),
+                        Err(SidecarStartError::Cancelled) => {
+                            record_native_startup_terminal(
+                                app.handle(),
+                                startup_started.elapsed(),
+                                NativeStartupTerminalEvidence::Cancelled,
+                            );
+                            let error = app
+                                .state::<SidecarState>()
+                                .stop_after_startup_error(
+                                    "sidecar startup was cancelled".to_string(),
+                                );
+                            fatal_exit(&error)
+                        }
+                        Err(SidecarStartError::Failed {
+                            message,
+                            failure_class,
+                        }) => {
+                            record_native_startup_terminal(
+                                app.handle(),
+                                startup_started.elapsed(),
+                                NativeStartupTerminalEvidence::Failed(failure_class),
+                            );
+                            let error = app
+                                .state::<SidecarState>()
+                                .stop_after_startup_error(message);
+                            fatal_exit(&error)
+                        }
                     };
+                    // Nothing watched the child after this point: if node
+                    // died an hour later the window kept pointing at a dead
+                    // port, silently. cave-qg38n.
+                    spawn_sidecar_supervisor(app.handle().clone());
                     Some(sidecar_url)
                 }
             };
@@ -410,8 +527,38 @@ pub fn run() {
                         }
                     }
                 }
-                if let Err(e) = main_window.build() {
-                    fatal_exit(&format!("failed to build main window: {}", e));
+                match main_window.build() {
+                    Ok(_) => {
+                        #[cfg(not(target_os = "windows"))]
+                        if let Some((started, success_evidence)) =
+                            pending_native_startup_terminal.take()
+                        {
+                            record_native_startup_terminal(
+                                app.handle(),
+                                started.elapsed(),
+                                native_startup_terminal_after_window_build(
+                                    success_evidence,
+                                    true,
+                                ),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        #[cfg(not(target_os = "windows"))]
+                        if let Some((started, success_evidence)) =
+                            pending_native_startup_terminal.take()
+                        {
+                            record_native_startup_terminal(
+                                app.handle(),
+                                started.elapsed(),
+                                native_startup_terminal_after_window_build(
+                                    success_evidence,
+                                    false,
+                                ),
+                            );
+                        }
+                        fatal_exit(&format!("failed to build main window: {}", e));
+                    }
                 }
             }
 
@@ -597,6 +744,11 @@ pub fn run() {
                 }
             }
 
+            // Last statement in the closure on purpose: every `?` above has
+            // already succeeded, so the marker only ever vouches for a startup
+            // that actually finished. See announce_startup_completed.
+            announce_startup_completed();
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -620,6 +772,14 @@ pub fn run() {
 
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
+                    // Before the stop, never after: the supervisor polls every
+                    // couple of seconds, and a flag set afterwards races it
+                    // into respawning the sidecar we are deliberately killing.
+                    if let Some(supervisor) =
+                        window.app_handle().try_state::<Arc<SidecarSupervisor>>()
+                    {
+                        supervisor.request_stop();
+                    }
                     let sidecar_stopped = match window.app_handle().try_state::<SidecarState>() {
                         Some(state) => match state.stop() {
                             Ok(()) => true,

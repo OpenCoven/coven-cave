@@ -7,6 +7,42 @@ import { appTokenTtlMs } from "./mobile-token-refresh.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 
+export function shouldAllowMagicDnsFallback({
+  serveOk,
+  statusOk,
+}: {
+  serveOk: boolean;
+  statusOk: boolean;
+}) {
+  // A successful `serve` mutation proves the requested backend was published,
+  // even when a follow-up status read is unavailable. A failed mutation,
+  // including macOS CLIError 3, needs a matching route in status before it can
+  // be used; a MagicDNS name only identifies the machine, not a Serve route.
+  return serveOk && !statusOk;
+}
+
+export function serveRouteFailure({
+  backendUrl,
+  serveError,
+  statusError,
+  routeReason,
+}: {
+  backendUrl: string;
+  serveError?: string | null;
+  statusError?: string | null;
+  routeReason?: string | null;
+}) {
+  const guidance =
+    `Tailscale Serve did not publish ${backendUrl}. ` +
+    "Enable HTTPS for this tailnet at https://login.tailscale.com/admin/dns, then retry.";
+  const stderr = serveError?.trim() || statusError?.trim() || undefined;
+  const reason = routeReason?.trim();
+  return {
+    error: [stderr, reason, guidance].filter(Boolean).join(" "),
+    stderr,
+  };
+}
+
 type TailscaleServeStatus = {
   Web?: Record<
     string,
@@ -72,6 +108,7 @@ function loginShellPath(): string | null {
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
     const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
+      windowsHide: true,
       encoding: "utf-8",
       timeout: 4000,
     });
@@ -206,10 +243,12 @@ export function tailnetDiscoveryProof({
   selfStatus,
   serveStatus,
   backendUrl,
+  allowMagicDnsFallback = true,
 }: {
   selfStatus: unknown;
   serveStatus: unknown;
   backendUrl: string;
+  allowMagicDnsFallback?: boolean;
 }): TailnetDiscoveryProof {
   const fromServe = findServeUrl(serveStatus, backendUrl);
   const host = magicDnsHost(selfStatus);
@@ -222,7 +261,7 @@ export function tailnetDiscoveryProof({
     };
   }
 
-  const fromMagicDns = magicDnsServeUrl(selfStatus);
+  const fromMagicDns = allowMagicDnsFallback ? magicDnsServeUrl(selfStatus) : null;
   if (fromMagicDns && host) {
     return {
       ok: true,
@@ -234,7 +273,9 @@ export function tailnetDiscoveryProof({
 
   return {
     ok: false,
-    reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName",
+    reason: allowMagicDnsFallback
+      ? "tailscale serve URL not found and status --self had no MagicDNS DNSName"
+      : `tailscale serve route not found for ${backendUrl}`,
   };
 }
 
@@ -254,12 +295,19 @@ export function nativeAppDiscoveryProof({
   selfStatus,
   serveStatus,
   backendUrl,
+  allowMagicDnsFallback = true,
 }: {
   selfStatus: unknown;
   serveStatus: unknown;
   backendUrl: string;
+  allowMagicDnsFallback?: boolean;
 }): NativeAppDiscoveryProof {
-  const tailnet = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl });
+  const tailnet = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl,
+    allowMagicDnsFallback,
+  });
   if (tailnet.ok) return tailnet;
 
   const serveUrl = nativeHttpServeUrl(selfStatus, backendUrl);

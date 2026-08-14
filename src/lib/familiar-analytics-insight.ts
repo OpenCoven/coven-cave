@@ -4,9 +4,14 @@
 // renders the result as a tinted insight banner above the KPI row.
 
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data";
+import type { ThreadConfidence } from "@/lib/thread-confidence";
 
 export type InsightTone = "good" | "warn" | "bad";
 export type AnalyticsInsight = { text: string; tone: InsightTone };
+export type AnalyticsInsightScope = {
+  confidence: ThreadConfidence;
+  threadReportCount: number;
+};
 
 const HEALTH_PHRASE: Record<string, string> = {
   active: "actively used",
@@ -32,8 +37,10 @@ function joinClauses(parts: string[]): string {
 export function deriveAnalyticsInsight(
   model: FamiliarAnalyticsModel,
   healRequestCount: number,
+  scope?: AnalyticsInsightScope,
 ): AnalyticsInsight {
-  const c = model.confidence;
+  const c = scope?.confidence ?? model.confidence;
+  const threadReportCount = scope?.threadReportCount ?? model.threadReports.length;
   const g = model.growthReport;
   const contract = model.contractReport;
   const contractTotal = contract?.properties.length ?? 0;
@@ -57,7 +64,7 @@ export function deriveAnalyticsInsight(
   if (lowThreadConfidence) {
     concerns.push(`thread confidence low (${c.score}/100)`);
   }
-  if (model.threadReports.length > 0) positives.push(`${model.threadReports.length} thread signal report${model.threadReports.length === 1 ? "" : "s"}`);
+  if (threadReportCount > 0) positives.push(`${threadReportCount} thread signal report${threadReportCount === 1 ? "" : "s"}`);
 
   const contractFailing = contractTotal > 0 && !contract!.pass;
   const tone: InsightTone =

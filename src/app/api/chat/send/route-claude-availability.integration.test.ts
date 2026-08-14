@@ -59,7 +59,11 @@ if (process.platform === "win32") {
   await writeFile(covenShim, '"%~dp0\\coven.js" %*\r\n');
 } else {
   covenShim = path.join(covenBinDir, "coven");
-  await writeFile(covenShim, `#!/usr/bin/env node\n${shim}`, { mode: 0o755 });
+  await writeFile(
+    covenShim,
+    `#!/bin/sh\nexec "${process.execPath}" "${shimScript}" "$@"\n`,
+    { mode: 0o755 },
+  );
 }
 
 // A launchable stand-in Claude for the cases that need the INNER layer ready.

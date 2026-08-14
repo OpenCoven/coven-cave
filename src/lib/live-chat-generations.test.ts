@@ -199,3 +199,67 @@ test("staging after clear is a null no-op and cannot resurrect metadata", async 
   assert.equal(staged, null);
   assert.equal(registry.read("s1"), null);
 });
+
+test("moving a run to its replacement session removes the origin alias", async () => {
+  const registry = makeMetadataRegistry();
+  assert.equal(typeof registry.move, "function", "registry exposes guarded key migration");
+  registry.record({
+    sessionId: "origin-a",
+    turns: [{ id: "a1", text: "streaming" }],
+    activeLeafId: "a1",
+    controller: controller(),
+    updatedAt: 1,
+    runId: "run-old",
+    health: { phase: "streaming", cursor: 3 },
+  });
+
+  const moved = registry.move(
+    "origin-a",
+    "replacement-b",
+    (snapshot) => snapshot.runId === "run-old",
+  );
+  await flushMicrotasks();
+
+  assert.equal(registry.read("origin-a"), null, "the origin key cannot remain as a zombie");
+  assert.equal(moved?.sessionId, "replacement-b");
+  assert.equal(registry.read("replacement-b")?.runId, "run-old");
+});
+
+test("guarded alias cleanup preserves a newer run under the origin key", async () => {
+  const registry = makeMetadataRegistry();
+  assert.equal(typeof registry.clearIf, "function", "registry exposes guarded cleanup");
+  registry.record({
+    sessionId: "origin-a",
+    turns: [],
+    activeLeafId: "",
+    controller: controller(),
+    updatedAt: 1,
+    runId: "run-old",
+    health: { phase: "streaming", cursor: 1 },
+  });
+  registry.move("origin-a", "replacement-b", (snapshot) => snapshot.runId === "run-old");
+  registry.record({
+    sessionId: "origin-a",
+    turns: [],
+    activeLeafId: "",
+    controller: controller(),
+    updatedAt: 2,
+    runId: "run-new",
+    health: { phase: "streaming", cursor: 0 },
+  });
+
+  assert.equal(
+    registry.clearIf("origin-a", (snapshot) => snapshot.runId === "run-old"),
+    false,
+    "the old run cannot clear a replacement registered later under A",
+  );
+  assert.equal(
+    registry.clearIf("replacement-b", (snapshot) => snapshot.runId === "run-old"),
+    true,
+    "the old run still clears its final alias",
+  );
+  await flushMicrotasks();
+
+  assert.equal(registry.read("origin-a")?.runId, "run-new");
+  assert.equal(registry.read("replacement-b"), null);
+});

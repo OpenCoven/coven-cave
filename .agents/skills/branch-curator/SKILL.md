@@ -22,13 +22,46 @@ Preserve a branch or worktree when any of these signals apply:
 - Any non-closed Bead names the branch, worktree, surface, or owner.
 - It heads an open or draft pull request, or its CI is still running.
 - It is a same-day backup, rescue, archive, or WIP snapshot without a disposition.
-- Its tip or reflog changed in the last 24 hours. Recency is unconditional;
+- Its tip or reflog changed in the last 8 hours. Recency is unconditional;
   known ownership does not override it.
 - It contains local or remote commits whose disposition is not proven.
 - Its local branch ref is symbolic rather than a direct commit ref.
 
 Treat `main`, the default branch, Beads/Dolt sync refs such as
 `__dolt_remote_info__`, and other tool-owned refs as protected infrastructure.
+
+## Prevent accumulation
+Managed worktrees require one active Bead, structured
+owner/purpose/disposition metadata, and one registered worktree per Bead by
+default. Warn at 12 worktrees or 30 local branches. Exceeding a budget never
+authorizes deletion; new managed work requires safe retirement or a bounded
+owner/reason/expiry exception.
+
+For managed creation:
+
+```bash
+pnpm beads:worktrees:create --bead cave-123 --branch fix/cave-123-example \
+  --owner kitty --purpose "Repair example"
+```
+
+Raw `git worktree add` remains available but is not universally
+intercepted; it does not exempt the resulting worktree from lifecycle policy.
+
+Recovery and archive dispositions require an owner, reason, and review date.
+An overdue review creates follow-up work and never changes the item into a
+deletion candidate.
+
+## Routine lifecycle patrol
+Use `pnpm beads:worktrees` for the read-only inventory. It covers registered
+worktrees and branch-only refs. Treat `retire-after-gate` as cleanup-ready, not
+as deletion authorization.
+
+`pnpm beads:worktrees:apply` may retire local state only when its capability
+report proves the full Coven, Beads, GitHub, and local maintenance transaction
+is enforced. `gate-incomplete` is a successful safety decision: preserve every
+candidate. Automatic apply retires at most three units unless you pass an
+explicit `--max-retire` value from 1 through 10. Automatic mode never deletes
+remote refs; report proposals only.
 
 ## Start with durable coordination
 In a Beads repository:
@@ -80,6 +113,14 @@ while IFS= read -r -d '' branch; do
     { printf '%s\n' 'PRESERVE - branch inventory failed'; exit 1; }
   local_ref="refs/heads/$branch"
   printf 'branch=%q\n' "$branch"
+  case "$local_ref" in
+    refs/heads/main|refs/heads/__dolt_remote_info__)
+      printf '%s\n' 'PRESERVE - protected or tool-owned ref'
+      continue
+      ;;
+    refs/heads/*) ;;
+    *) printf '%s\n' 'PRESERVE - invalid local branch ref'; continue ;;
+  esac
   if symbolic_target=$(git symbolic-ref -q "$local_ref"); then
     printf 'PRESERVE - symbolic ref -> %s\n' "$symbolic_target"
     continue
@@ -101,6 +142,10 @@ done < <(
 )
 ```
 Do not parse displays back into commands; the loop variable is authoritative.
+This early structural filter is not deletion authority. The normative deletion
+proof resolves the live remote default branch and reruns its executable
+protected/tool-owned ref guard immediately before every destructive
+transaction.
 For every listed worktree, bind its literal path as `worktree_path`, then run:
 ```bash
 worktree_status=$(git -C "$worktree_path" \
@@ -349,6 +394,18 @@ esac
 An open matching PR or active workflow makes the branch live. Query failure
 makes it uncertain.
 
+When GitHub has squash-merged the exact candidate and auto-deleted its source
+branch, do not turn a full remote namespace scan into deletion evidence. The
+manual profile may select one exact merged-PR retention source only after the
+fresh PR inventory identifies the candidate head, the PR detail endpoint
+confirms `closed` + merged state on the repository default branch, and
+`refs/pull/<number>/head` advertises the audited OID. Pass that repository,
+remote, PR number, and base to the strict guard. The guard independently
+reauthenticates all of them, fetches only that one source ref, and rechecks it
+for drift. Any missing, open, mismatched, malformed, or moving PR proof is
+uncertainty. Generic branch/tag retention keeps its existing bounded scan; a
+large unrelated ref namespace is never a reason to raise or bypass that bound.
+
 For other candidates, inspect unique work using fully qualified refs:
 ```bash
 local_ref="refs/heads/$branch"
@@ -375,30 +432,43 @@ Use exactly one decision for each local branch:
 
 If every branch is live, recovery, or uncertain, delete nothing and say so.
 
-## Require an exclusive deletion gate
-Read-only inventory and PR creation may run alongside other sessions. Ref or
-worktree deletion may not. Final checks and deletion otherwise form a
-check-then-act race: a new session, claim, task, PR, CI run, or dirty file can
-appear without changing the audited branch OID.
+## Choose the deletion profile
 
-Before classifying anything as `DELETE`, require a documented repository-wide
-cleanup gate that:
-1. quiesces every existing repository writer, including harnesses, worktrees,
-   hooks, automation, and external clients;
-2. prevents new sessions, claims, worktree writes, task ownership/status
-   changes, PR creation/reopening, workflow dispatches, and other ownership or
-   liveness transitions;
-3. is respected by every supported harness, launcher, task system, Git host
-   client, and workflow trigger;
-4. has one auditable owner and bounded lifetime; and
-5. remains held from the final ownership/state checks through all local and
-   remote mutations and post-action verification.
+Read-only inventory and PR creation may run alongside other sessions. Before
+classifying anything as `DELETE`, choose exactly one profile and record it in
+the owning Bead. Never silently fall from the automatic profile into the manual
+profile.
 
-A branch claim, Bead assignment, PID snapshot, advisory claim file, or verbal
-"nobody is using it" does not provide exclusion. If the repository has no
-enforced gate, preserve deletion candidates and report that cleanup is blocked
-on an exclusive maintenance window. Do not invent a lock file that other tools
-do not honor.
+### Automatic retirement
+
+Unattended retirement requires the full repository-wide maintenance gate. It
+must quiesce and exclude every supported local and remote writer, have one
+auditable owner and bounded lifetime, and remain held from final checks through
+postcondition verification. If any enforcement plane is absent, automatic
+retirement remains proposal-only. Automatic retirement never deletes remote
+refs.
+
+### Maintainer-authorized manual cleanup
+
+A current maintainer may explicitly authorize a bounded manual cleanup in the
+current task. Record the instruction, repository, exact candidate set,
+local-only or local-and-remote scope, Bead, session, branch, worktree, and
+audited default-branch OID before mutation. Historical, standing, inferred, or
+unbounded permission is insufficient, and local cleanup authority does not
+imply remote deletion.
+
+The manual profile substitutes current authorization plus exact fail-closed
+proof for the unavailable cross-system transaction. It still must acquire and
+retain the local maintenance lease, rerun every Beads, GitHub, process,
+worktree, ref, recency, archive, and recovery check immediately before each
+mutation, and stop on any query failure, new or changed candidate-owning owner
+or activity, drift, or uncertainty. It must run and never bypass
+`worktree-guard`.
+
+Authorization expires when the batch ends, the local lease is lost, an audited
+OID or owner changes, or task context changes. It never permits direct pushes
+to `main`, protected-ref mutation, forced worktree removal, deletion of unique
+work, or continuation after a failed or uncertain postcondition.
 
 ## Open a PR only for PR-shaped work
 A branch is PR-shaped only when all of these are true:
@@ -439,9 +509,15 @@ and do not open or describe a PR as verified.
 ## Delete only after proof
 Before any worktree or ref deletion, read and follow
 [Deletion proof](references/deletion-proof.md) in full. It is normative and
-must run under the exclusive gate. If the file, a proof, a parse, or a
-postcondition is unavailable or uncertain, preserve. Never bypass
-`worktree-guard` merely to finish a sweep.
+must run under the recorded automatic or manual profile. If the profile,
+authorization, local lease, worktree guard, a proof, a parse, or a postcondition
+is unavailable or uncertain, preserve. Never bypass `worktree-guard` merely to
+finish a sweep.
+
+If a strict worktree-guard refusal appears to be a false positive, stop the
+cleanup. Fix the guard in a separate task with a regression test, verify both
+strict and legacy behavior, then begin a new cleanup batch with fresh inventory
+and authorization; never retry the refused removal in the current batch.
 ## Preserve at-risk work without touching its source
 When unowned work needs a safety copy, leave the source worktree unchanged.
 Create the snapshot from the source HEAD in a separate worktree, reproduce only

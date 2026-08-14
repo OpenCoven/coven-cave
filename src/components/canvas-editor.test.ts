@@ -1,7 +1,8 @@
 // @ts-nocheck
 // Canvas sketch editor (design-handoff redesign): the full-surface editor with
-// Select / Comment / Edit modes, persisted component comments, live inspector
-// style overrides, and the design chat that refines + persists the sketch.
+// Interact / Select / Comment / Edit modes, persisted component comments,
+// live inspector style overrides, and the design chat that refines + persists
+// the sketch.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -124,6 +125,7 @@ assert.match(
 
 // ── Editor source pins ──────────────────────────────────────────────────────
 const editor = readFileSync(new URL("./canvas-editor.tsx", import.meta.url), "utf8");
+const editorStyles = readFileSync(new URL("../styles/canvas-editor.css", import.meta.url), "utf8");
 
 // Contract the gallery agent wires against.
 assert.match(editor, /export function CanvasEditor\(props: \{/, "CanvasEditor is exported");
@@ -136,6 +138,11 @@ assert.match(
   "editor reports server-accepted artifact updates",
 );
 assert.match(editor, /import "@\/styles\/canvas-editor\.css";/, "editor imports its stylesheet");
+assert.doesNotMatch(
+  editorStyles,
+  /\.canvas-editor__play-(?:card|row)\b/,
+  "retired Play mode does not leave dead stylesheet selectors",
+);
 
 // Inspector wiring replicates the viewer's deliberate security boundary.
 assert.match(
@@ -170,17 +177,35 @@ assert.doesNotMatch(
   "the sketch frame never gains the app origin",
 );
 
-// Modes: one segmented control, selection enabled in every mode.
+// Modes: live interaction is the safe default; inspection is opt-in.
 assert.match(
   editor,
-  /modeButton\("select", "Select", "Select components"\)[\s\S]{0,200}?modeButton\("comment", "Comment", "Pin comments to components"\)[\s\S]{0,200}?modeButton\("edit", "Edit", "Edit fonts, borders, padding"\)/,
-  "the three modes render with the mock's tooltips",
+  /useState<EditorMode>\("interact"\)/,
+  "the editor opens with artifact controls available",
+);
+assert.match(
+  editor,
+  /modeButton\("interact", "Interact", "Use the sketch"\)[\s\S]{0,200}?modeButton\("select", "Select", "Select components"\)[\s\S]{0,200}?modeButton\("comment", "Comment", "Pin comments to components"\)[\s\S]{0,200}?modeButton\("edit", "Edit", "Edit fonts, borders, padding"\)/,
+  "the four modes render with clear tooltips",
 );
 assert.match(editor, /aria-pressed=\{mode === id\}/, "mode toggles expose pressed state");
+// The inspector's injected handler preventDefaults every trusted click, so
+// leaving it on is what made a generated sketch impossible to actually use.
+// Play mode turns it off; nothing else may.
 assert.match(
   editor,
-  /if \(!inspectorLoaded\) return;[\s\S]{0,120}?setEnabled\(true\)/,
-  "selection is enabled in every mode once the inspector authenticates",
+  /if \(!inspectorLoaded\) return;[\s\S]{0,160}?setEnabled\(mode !== "interact"\)/,
+  "the inspector yields pointer and keyboard events only in Interact mode",
+);
+assert.match(
+  editor,
+  /setEnabled\(mode !== "interact"\)[\s\S]{0,300}?\[inspectorLoaded, mode\]/,
+  "changing modes updates the authenticated inspector",
+);
+assert.match(
+  editor,
+  /mode === "interact"[\s\S]{0,300}?Use the sketch normally/,
+  "Interact mode explains that the artifact is live",
 );
 
 // Escape routes through the shared resolver: field → selection → expand.

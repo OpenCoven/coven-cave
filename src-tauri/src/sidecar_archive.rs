@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
+use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION};
 
 // `sidecar_archive` is itself a file module. Keep the extracted siblings at
 // `src/` so the native-host module layout stays flat on every target.
@@ -23,16 +24,22 @@ mod sidecar_archive_preparation;
 
 use sidecar_archive_cache::{
     acquire_cache_lock, cleanup_staging_before_extraction, create_staging_directory,
-    remove_cache_path, required_free_space, try_acquire_cache_lock,
+    remove_cache_path, remove_cache_path_io, required_free_space, try_acquire_cache_lock,
 };
 pub(crate) use sidecar_archive_cleanup::cleanup_stale_sidecar_runtimes;
-use sidecar_archive_extraction::{extract_archive, tree_metrics};
+use sidecar_archive_extraction::extract_archive;
+#[cfg(test)]
+use sidecar_archive_extraction::tree_metrics;
+#[cfg(test)]
+use sidecar_archive_manifest::ARCHIVE_FORMAT;
 use sidecar_archive_manifest::{
-    cache_key, is_sha256, read_manifest, SidecarArchiveManifest, ARCHIVE_FORMAT,
-    MANIFEST_SCHEMA_VERSION, MAX_ARCHIVE_BYTES, MAX_FILE_COUNT, MAX_UNPACKED_BYTES,
+    cache_key, is_sha256, read_manifest, SidecarArchiveManifest, MANIFEST_SCHEMA_VERSION,
+    MAX_FILE_COUNT, MAX_UNPACKED_BYTES,
 };
+use sidecar_archive_preparation::prepare_runtime_from_files;
+#[cfg(test)]
 use sidecar_archive_preparation::{
-    prepare_runtime_from_files, prepare_runtime_from_files_with_space,
+    activate_extracted_cache_with, prepare_runtime_from_files_with_space, ACTIVATION_RETRY_DELAYS,
 };
 
 const MIN_FREE_SPACE_RESERVE_BYTES: u64 = 64 * 1024 * 1024;

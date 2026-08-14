@@ -25,18 +25,21 @@ fn unix_now() -> i64 {
 
 fn build_activity(started_at: i64) -> activity::Activity<'static> {
     activity::Activity::new()
-        .details("Desktop control room for OpenCoven")
-        .state("Working with familiars")
+        .details("Summoning familiars")
+        .state("In the Cave")
         .timestamps(activity::Timestamps::new().start(started_at))
         .assets(
             activity::Assets::new()
                 .large_image(ASSET_KEY)
                 .large_text("CovenCave")
-                .large_url("https://covencave.ai"),
+                // Discord caps an activity at two buttons, so the repository
+                // link lives on the clickable art asset and both buttons stay
+                // free for the two destinations that recruit.
+                .large_url("https://github.com/OpenCoven/coven-cave"),
         )
         .buttons(vec![
-            activity::Button::new("Open CovenCave", "https://covencave.ai"),
-            activity::Button::new("View on GitHub", "https://github.com/OpenCoven/coven-cave"),
+            activity::Button::new("Join the Coven", "https://discord.gg/opencoven"),
+            activity::Button::new("Enter the Cave", "https://opencoven.ai"),
         ])
 }
 
@@ -192,14 +195,35 @@ mod tests {
         let activity = build_activity(1_700_000_000);
         let serialized = serde_json::to_value(activity).expect("activity should serialize");
 
-        assert_eq!(serialized["details"], "Desktop control room for OpenCoven");
-        assert_eq!(serialized["state"], "Working with familiars");
+        assert_eq!(serialized["details"], "Summoning familiars");
+        assert_eq!(serialized["state"], "In the Cave");
         assert_eq!(serialized["assets"]["large_image"], ASSET_KEY);
-        assert_eq!(serialized["timestamps"]["start"], 1_700_000_000);
-        assert_eq!(serialized["buttons"][0]["url"], "https://covencave.ai");
         assert_eq!(
-            serialized["buttons"][1]["url"],
+            serialized["assets"]["large_url"],
             "https://github.com/OpenCoven/coven-cave"
+        );
+        assert_eq!(serialized["timestamps"]["start"], 1_700_000_000);
+        assert_eq!(serialized["buttons"][0]["label"], "Join the Coven");
+        assert_eq!(
+            serialized["buttons"][0]["url"],
+            "https://discord.gg/opencoven"
+        );
+        assert_eq!(serialized["buttons"][1]["label"], "Enter the Cave");
+        assert_eq!(serialized["buttons"][1]["url"], "https://opencoven.ai");
+    }
+
+    #[test]
+    fn activity_stays_within_the_two_button_discord_limit() {
+        let activity = build_activity(1_700_000_000);
+        let serialized = serde_json::to_value(activity).expect("activity should serialize");
+
+        let buttons = serialized["buttons"]
+            .as_array()
+            .expect("activity should carry buttons");
+        assert!(
+            buttons.len() <= 2,
+            "Discord rejects an activity with more than 2 buttons, got {}",
+            buttons.len()
         );
     }
 

@@ -368,23 +368,37 @@
   padding: 10px clamp(16px, 3vw, 34px) var(--space-4);
 }
 
-/* ── Typed follow-up cards above the composer ─────────────────────────────── */
+/* ── Typed follow-up options in the composer footer ───────────────────────── */
 .cave-chat-followups {
+  flex: 0 0 100%;
   width: 100%;
-  max-width: var(--cave-chat-measure);
-  margin: 0 auto;
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-hairline);
 }
 
-/* The dock is the one place next steps read as a compact prompt palette: the
+.cave-chat-followups .cave-followup-cards__grid {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-template-columns: none;
+}
+
+/* The footer is the one place next steps read as a compact prompt palette: the
    full typed-action metadata remains available to assistive technology through
    each button's aria-label, while the visual row stays as quiet as the input. */
+.cave-chat-followups .cave-followup-cards > small {
+  display: none;
+}
+
 .cave-chat-followups .cave-followup-card {
-  display: block;
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
   border-color: var(--border-strong);
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-1) var(--space-3);
   color: var(--text-secondary);
   text-align: center;
   text-overflow: ellipsis;
@@ -406,12 +420,28 @@
   display: none;
 }
 
+.cave-chat-followups .cave-followup-card__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.cave-chat-followups .cave-followup-card__separator {
+  display: inline;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
 .cave-chat-followups .cave-followup-card__title {
-  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
-  font-size: var(--text-base);
-  font-weight: 500;
   text-overflow: ellipsis;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* Typed assistant suggestions keep their effect legible before activation.
@@ -421,8 +451,7 @@
 
 .cave-followup-cards__grid {
   display: grid;
-  /* Chat.dc.html 2a ⑤ — suggestions take equal shares of ONE row (next-paths
-     caps the strip at 4), so the strip never renders a ragged 2+1 (#2672). */
+  /* Suggestions take equal shares of one row up to the parser's product cap. */
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
   gap: var(--space-2);
@@ -445,6 +474,10 @@
   gap: var(--space-2);
 }
 
+.cave-followup-card__separator {
+  display: none;
+}
+
 .cave-followup-card__recommended {
   color: var(--color-success);
   font-weight: 650;
@@ -456,19 +489,24 @@
 }
 
 @media (max-width: 40rem) {
-  /* Narrow panes stack the cards instead of squeezing four abreast. */
+  /* Historical in-turn cards stack; the composer strip keeps its compact row. */
   .cave-followup-cards__grid {
     grid-auto-flow: row;
     grid-auto-columns: unset;
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .cave-chat-followups .cave-followup-card {
+    min-height: var(--touch-target);
+    padding-inline: var(--space-2);
+  }
 }
 
 
 .cave-chat-linear .cave-composer-shell {
-  /* Shares the thread's centered measure (cave-xsq.1) so the input sits directly
-     under the conversation column; base rule centers via margin auto. */
-  max-width: var(--cave-chat-measure);
+  /* Let the writing surface use the full dock even while the transcript keeps
+     its centered reading measure. */
+  max-width: 100%;
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -481,21 +519,21 @@
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-/* Reference composer treatment: ChatView keeps the utility controls quiet and
-   makes one bright, square send control the clear end of the input row. */
+/* The in-chat action chrome stays compact so the full-width writing surface
+   remains dominant. Mobile restores touch-safe targets below. */
 .cave-chat-linear .cave-composer-footer-action,
 .cave-chat-linear .cave-composer-plus {
-  width: var(--space-10);
-  height: var(--space-10);
+  width: var(--space-6);
+  height: var(--space-6);
 }
 
 .cave-chat-linear .cave-composer-control-row {
-  min-height: var(--space-10);
+  min-height: var(--space-6);
 }
 
 .cave-chat-linear .cave-composer-send {
-  width: var(--space-10);
-  height: var(--space-10);
+  width: var(--space-6);
+  height: var(--space-6);
   border-color: transparent;
   border-radius: var(--radius-control);
   background: var(--text-primary);
@@ -511,10 +549,13 @@
   background: var(--text-primary);
 }
 
+/* The glyph rides ON the danger fill, so it needs the on-danger foreground —
+   --danger-text is `var(--color-danger)` (red type for neutral surfaces) and
+   painted the cancel ✕ the same color as the button, leaving a blank square. */
 .cave-chat-linear .cave-composer-send--busy,
 .cave-chat-linear .cave-composer-send--busy:hover {
   background: var(--color-danger);
-  color: var(--danger-text);
+  color: var(--color-danger-foreground);
 }
 
 @media (max-width: 720px) {
@@ -560,6 +601,17 @@
    translateY runs in the negative direction so the dock rides up above
    the keyboard rather than getting pinned under it. */
 @media (max-width: 767px) {
+  .cave-chat-linear .cave-composer-footer-action,
+  .cave-chat-linear .cave-composer-plus,
+  .cave-chat-linear .cave-composer-send {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+
+  .cave-chat-linear .cave-composer-control-row {
+    min-height: var(--touch-target);
+  }
+
   .cave-chat-linear-header {
     position: sticky;
     top: 0;
@@ -582,6 +634,16 @@
   .cave-chat-meta-line,
   .cave-chat-linked-context {
     display: none;
+  }
+
+  /* Keep the header context strip visible on mobile with full touch targets. */
+  .cave-chat-header-context {
+    display: block;
+    padding-inline-start: 0;
+  }
+
+  .cave-chat-header-context .cave-context-chip {
+    min-height: var(--touch-target);
   }
 
   .cave-mobile-header-identity {

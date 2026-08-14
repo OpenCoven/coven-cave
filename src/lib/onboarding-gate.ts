@@ -13,6 +13,12 @@ export type OnboardingStatusPayload = {
   steps?: Record<string, { ok?: boolean }>;
 };
 
+export type OnboardingBootstrapStatusPayload = {
+  complete?: boolean;
+  needsSetup?: boolean;
+  confirmed?: boolean;
+};
+
 export type StartupOnboardingStatusDecision = {
   status: OnboardingStatusPayload;
   cancelled: boolean;
@@ -64,6 +70,29 @@ export function shouldApplyStartupOnboardingStatus({
   manuallyOpened,
 }: StartupOnboardingStatusDecision): boolean {
   return !cancelled && !manuallyOpened && shouldAutoOpenOnboarding(status);
+}
+
+export function shouldAutoOpenOnboardingBootstrap(
+  payload: OnboardingBootstrapStatusPayload,
+): boolean {
+  if (payload.complete) return false;
+  return payload.confirmed === true || payload.needsSetup === true;
+}
+
+export function shouldApplyStartupOnboardingBootstrap({
+  status,
+  cancelled,
+  manuallyOpened,
+}: {
+  status: OnboardingBootstrapStatusPayload;
+  cancelled: boolean;
+  manuallyOpened: boolean;
+}): boolean {
+  return (
+    !cancelled &&
+    !manuallyOpened &&
+    shouldAutoOpenOnboardingBootstrap(status)
+  );
 }
 
 export function isLatestOnboardingStatusRequest({

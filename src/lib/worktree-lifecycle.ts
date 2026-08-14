@@ -1,3 +1,10 @@
+import {
+  isAbsolute,
+  normalize as normalizePath,
+  parse as parsePath,
+  sep as pathSeparator,
+} from "node:path";
+
 export type WorktreeLifecycleLane =
   | "active"
   | "recovery"
@@ -5,6 +12,9 @@ export type WorktreeLifecycleLane =
   | "retire-after-gate"
   | "uncertain"
   | "protected";
+
+export type LifecycleUnitKind = "worktree" | "branch-only";
+export type LifecycleDisposition = "active" | "pr" | "recovery" | "archive";
 
 export type WorktreeProcessOwner = {
   pid: number;
@@ -20,8 +30,33 @@ export type WorktreeMergedPrRef = WorktreePrRef & {
   headOid: string;
 };
 
-export type WorktreeObservation = {
-  path: string;
+export type ManagedCreationException = {
+  owner: string;
+  reason: string;
+  expiresAt: string;
+  additionalPaths: string[];
+};
+
+export type WorktreeLifecycleMetadata = {
+  beadId: string;
+  owner: string;
+  purpose: string;
+  disposition: LifecycleDisposition;
+  createdAt: string;
+  reason?: string;
+  reviewAfter?: string;
+  exception?: ManagedCreationException | null;
+};
+
+export type WorktreeRemoteRef = {
+  ref: string;
+  oid: string;
+};
+
+export type WorktreeLifecycleObservation = {
+  kind: LifecycleUnitKind;
+  path: string | null;
+  ref: string | null;
   branch: string | null;
   head: string;
   isPrimary: boolean;
@@ -32,7 +67,19 @@ export type WorktreeObservation = {
   indexFlags: string[];
   processOwners: WorktreeProcessOwner[];
   claimOwners: string[];
+  /**
+   * Non-closed beads that OWN this unit — a structured lifecycle record naming
+   * its branch or path, or a bead id embedded in the branch name. These block
+   * retirement.
+   */
   taskIds: string[];
+  /**
+   * Non-closed beads whose free text merely NAMES this unit's branch or head
+   * OID. Reported so the reader can see who is discussing the unit, never
+   * treated as a claim on it — see matchingTasks in
+   * scripts/worktree-lifecycle-inventory.ts for why a mention is not ownership.
+   */
+  mentionTaskIds: string[];
   openPrs: WorktreePrRef[];
   mergedPr: WorktreeMergedPrRef | null;
   activeWorkflowUrls: string[];
@@ -40,9 +87,73 @@ export type WorktreeObservation = {
   remoteRefsContainingHead: string[];
   updatedAtMs: number | null;
   probeErrors: string[];
+  metadata: WorktreeLifecycleMetadata | null;
+  /**
+   * Everything disqualifying this unit's metadata. The unit fails closed on all
+   * of it.
+   */
+  metadataErrors: string[];
+  /**
+   * The subset of {@link metadataErrors} that is repository-wide — true no
+   * matter which unit is being resolved, because it is derived from the beads
+   * alone rather than from this branch or path.
+   *
+   * Only these may abort an operation on a DIFFERENT unit. Everything else in
+   * `metadataErrors` names one unit and belongs to it: an ownership conflict, a
+   * duplicate record or path, a path that does not match its branch. Treating
+   * those as repository-wide is what made one bead's bad record refuse creation
+   * for every other bead (cave-1x9pz, and cave-g9byt before it).
+   */
+  metadataGlobalErrors: string[];
+  remoteRef: WorktreeRemoteRef | null;
+  sessionIds: string[];
 };
 
-export type WorktreeLifecycleItem = WorktreeObservation & {
+type LegacyWorktreeObservation = Pick<
+  WorktreeLifecycleObservation,
+  | "branch"
+  | "head"
+  | "isPrimary"
+  | "protectedBranch"
+  | "changes"
+  | "ignoredPaths"
+  | "nonDisposableIgnoredPaths"
+  | "indexFlags"
+  | "processOwners"
+  | "claimOwners"
+  | "taskIds"
+  | "mentionTaskIds"
+  | "openPrs"
+  | "mergedPr"
+  | "activeWorkflowUrls"
+  | "headOnDefaultBranch"
+  | "remoteRefsContainingHead"
+  | "updatedAtMs"
+  | "probeErrors"
+> & {
+  path: string;
+};
+
+type WorktreeObservationCompatibilityFields = Partial<
+  Pick<
+    WorktreeLifecycleObservation,
+    | "kind"
+    | "ref"
+    | "metadata"
+    | "metadataErrors"
+    // Optional alongside `metadataErrors` so a legacy observation that predates
+    // the split still parses; it reads as "nothing here is repository-wide",
+    // which is the conservative answer for a caller that never classified.
+    | "metadataGlobalErrors"
+    | "remoteRef"
+    | "sessionIds"
+  >
+>;
+
+export type WorktreeObservation = LegacyWorktreeObservation &
+  WorktreeObservationCompatibilityFields;
+
+export type WorktreeLifecycleItem = WorktreeLifecycleObservation & {
   lane: WorktreeLifecycleLane;
   reasons: string[];
 };
@@ -50,9 +161,115 @@ export type WorktreeLifecycleItem = WorktreeObservation & {
 export type WorktreeLifecycleSummary = {
   items: WorktreeLifecycleItem[];
   counts: Record<WorktreeLifecycleLane, number>;
+  budgets: WorktreeLifecycleBudgets;
+  /**
+   * Probe failures that describe the CHECKOUT rather than any single unit — a
+   * stale default-branch tracking ref, an unreadable origin identity, a Beads
+   * or workflow query that did not answer.
+   *
+   * Every unit still fails closed on these, and each one still carries the
+   * string in its own `probeErrors`; that is what stops a unit being retired
+   * while the fact it depends on is unverified, and it must not be traded away
+   * for a tidier report. What this field buys is the ability to SAY SO ONCE.
+   * Without it, one stale tracking ref is indistinguishable from N genuinely
+   * uncertain units: on 2026-08-11 that produced 39 uncertain units all
+   * carrying the same sentence, with nothing to indicate it was a single fact.
+   */
+  globalErrors: string[];
 };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export type WorktreeLifecycleRenderOptions = {
+  includeFooter?: boolean;
+};
+
+// These thresholds serve two surfaces with deliberately different arithmetic.
+// The patrol reports `exceeded` as `count > budget` — "the repository is over
+// its budget right now". Managed creation refuses at `count >= budget`, because
+// one more unit is what would take it over. So at exactly the budget the patrol
+// reports nothing while creation is refused; that is the intended reading of
+// "creating a worktree WOULD exceed", not an off-by-one.
+//
+// For the patrol the number is advisory, which is what "warning" names. For
+// creation it is a hard refusal, so the refusal text in
+// {@link assessManagedWorktreeCreation} deliberately does not call it a warning.
+//
+// 2026-08-04 (cave-qpwx0): 12 -> 20, at the repository owner's direction. The
+// count is repo-wide, so 12 stopped describing this checkout some time ago —
+// over a single session it moved 22 -> 17 -> 22 -> 34 -> 13 -> 17 while six
+// worktrees were retired and roughly twenty were created. A gate that refuses
+// on every invocation is not a budget, it is an outage: it taught sessions to
+// reach for the unmanaged `git worktree add` fallback, whose units carry no
+// lifecycle metadata and can therefore never be retired (cave-l52dt) — the
+// exact sprawl this number exists to bound.
+//
+// The budget is chosen to sit above the observed working set rather than above
+// the peak. Bursts past it are expected and are what the attributed, expiring
+// `--exception-*` path is for; the refusal prints that invocation (cave-no5nr).
+// If this needs raising again, check first whether the concurrent-session count
+// has genuinely grown or whether units are simply not being retired on merge —
+// the second is the failure this number is meant to surface, and raising it
+// would hide exactly the signal worth having.
+//
+// 2026-08-09 (cave-gzks3): 20 -> 28, after running that check rather than
+// asserting it. The patrol reported 18 attached worktrees with **zero** merged
+// PRs across the entire set, zero classified `cleanup-ready`, and zero
+// `uncertain`; two held live process cwds and nine held uncommitted changes.
+// Nothing was retirable and being left unretired — every unit was live work, so
+// this is the first branch of that check (genuine growth), not the second. Four
+// of the eighteen were created by concurrent sessions during a single session,
+// which is the growth rate the number now has to absorb.
+//
+// BRANCH_WARNING_BUDGET moves with it, and must. Managed creation always makes a
+// branch, so local branches track worktrees plus whatever is not currently
+// checked out; leaving branches at 30 under a 28-worktree budget would just move
+// the refusal to the branch gate and reproduce the outage one line down. 38
+// keeps the worktree gate the binding one while staying under the 40-branch cap
+// `branch-cap.yml` enforces on the remote — above that, CI rolls a newly created
+// branch back and the local gate would be admitting what the remote rejects.
+export const WORKTREE_WARNING_BUDGET = 28;
+export const BRANCH_WARNING_BUDGET = 38;
+
+// Only branch-attached worktrees count against the admission budget.
+//
+// 2026-08-05 (cave-oenag): four detached units appeared at once — three review
+// scratch worktrees and one under /private/tmp — occupying a fifth of the
+// budget. With the budget at 20 and creation refusing at `count >= 20`, three
+// stale scratch units are the difference between managed creation working and
+// every session being refused.
+//
+// The exclusion is structural rather than a naming heuristic. The managed
+// creator always makes a branch, so a detached unit is by construction not one
+// of its units: the patrol cannot retire it (no `metadata.coven.worktree`
+// record, so it classes `uncertain` forever) and `pnpm beads:worktrees:apply`
+// will never touch it. Counting it therefore lets units the gate has no
+// authority over refuse the ones it does — the outage described in the
+// WORKTREE_WARNING_BUDGET note above, arriving by a different route.
+//
+// They are excluded, not hidden: `registered` and `detached` are reported
+// alongside `count` so a checkout accumulating scratch space still says so.
+export type WorktreeLifecycleBudgets = {
+  worktrees: {
+    /** Branch-attached units — the number the budget is assessed against. */
+    count: number;
+    /** Every registered worktree, including detached scratch space. */
+    registered: number;
+    /** `registered - count`: detached units, excluded from the assessment. */
+    detached: number;
+    warning: typeof WORKTREE_WARNING_BUDGET;
+    exceeded: boolean;
+  };
+  branches: {
+    count: number;
+    warning: typeof BRANCH_WARNING_BUDGET;
+    exceeded: boolean;
+  };
+  exceptions: {
+    active: number;
+    expired: number;
+  };
+};
+
+export const RETIREMENT_COOLDOWN_MS = 8 * 60 * 60 * 1000;
 const RECOVERY_BRANCH = /^(?:backup|archive|rescue)\//i;
 const WIP_BRANCH = /(?:^|[/-])wip(?:$|[/-])/i;
 const DISPOSABLE_IGNORED_ROOTS = [
@@ -70,8 +287,37 @@ const DISPOSABLE_IGNORED_ROOTS = [
   "test-results",
 ];
 
+/** Hook artifacts written under `.claude/` that are machine-local bookkeeping,
+ *  gitignored, and safe to discard during worktree retirement. */
+const DISPOSABLE_HOOK_ARTIFACTS = new Set([
+  ".claude/worktree-autolock.stamp",
+  ".claude/worktree-autolock.log",
+  ".claude/worktree-retention-push.stamp",
+  ".claude/worktree-retention-push.log",
+  ".claude/worktree-guard-bypass.log",
+]);
+
+/**
+ * Prefix an `active` unit's probe errors carry in its reason list, where an
+ * `uncertain` unit carries them verbatim. Shared so the renderer can recognise
+ * a repository-wide failure in either spelling — matching only the bare form
+ * left every active unit repeating a fact the report had already stated.
+ */
+const PROBE_WARNING_PREFIX = "probe warning: ";
+
+
+const HUMAN_LANE_LABELS: Record<WorktreeLifecycleLane, string> = {
+  active: "active",
+  recovery: "recovery",
+  cooldown: "cooldown",
+  "retire-after-gate": "cleanup-ready",
+  uncertain: "uncertain",
+  protected: "protected",
+};
+
 export function isDisposableIgnoredPath(candidate: string): boolean {
-  const normalized = candidate.replace(/\\/g, "/").replace(/^\.\/|\/+$/g, "");
+  const platformPath = pathSeparator === "\\" ? candidate.replace(/\\/g, "/") : candidate;
+  const normalized = platformPath.replace(/^\.\/|\/+$/g, "");
   if (
     normalized === ".DS_Store" ||
     normalized === "next-env.d.ts" ||
@@ -79,12 +325,15 @@ export function isDisposableIgnoredPath(candidate: string): boolean {
   ) {
     return true;
   }
+  if (DISPOSABLE_HOOK_ARTIFACTS.has(normalized)) {
+    return true;
+  }
   return DISPOSABLE_IGNORED_ROOTS.some(
     (root) => normalized === root || normalized.startsWith(`${root}/`),
   );
 }
 
-function activeReasons(observation: WorktreeObservation): string[] {
+function activeReasons(observation: WorktreeLifecycleObservation): string[] {
   const reasons: string[] = [];
   if (observation.changes.length > 0) {
     reasons.push(
@@ -114,7 +363,12 @@ function activeReasons(observation: WorktreeObservation): string[] {
     reasons.push(`active claim: ${observation.claimOwners.join(", ")}`);
   }
   if (observation.taskIds.length > 0) {
-    reasons.push(`non-closed Beads: ${observation.taskIds.join(", ")}`);
+    // Say what the relationship IS. "non-closed Beads: <id>" could not
+    // distinguish "this bead owns the unit" from "this bead mentions it", so a
+    // false blocker read exactly like genuine in-flight work and the next
+    // operator correctly preserved the unit. Mentions are deliberately absent
+    // from this list: they are rendered separately and block nothing.
+    reasons.push(`non-closed Beads (owns): ${observation.taskIds.join(", ")}`);
   }
   if (observation.openPrs.length > 0) {
     reasons.push(`open PR ${observation.openPrs.map((pr) => `#${pr.number}`).join(", ")}`);
@@ -122,97 +376,346 @@ function activeReasons(observation: WorktreeObservation): string[] {
   if (observation.activeWorkflowUrls.length > 0) {
     reasons.push(`${observation.activeWorkflowUrls.length} active workflow run(s)`);
   }
+  if (observation.sessionIds.length > 0) {
+    reasons.push(`active session: ${observation.sessionIds.join(", ")}`);
+  }
   return reasons;
+}
+
+function reviewAfterReasons(metadata: WorktreeLifecycleMetadata, nowMs: number): string[] {
+  const { reviewAfter } = metadata;
+  if (!reviewAfter) return [];
+  const reviewAfterMs = Date.parse(reviewAfter);
+  if (!Number.isFinite(reviewAfterMs) || reviewAfterMs >= nowMs) return [];
+  return [`owner follow-up: ${metadata.owner} reviewAfter ${reviewAfter} is overdue`];
+}
+
+export function normalizeAbsoluteWorktreePath(
+  candidate: string | null | undefined,
+): string | null {
+  if (typeof candidate !== "string" || candidate.includes("\0")) return null;
+  if (candidate.length === 0 || !isAbsolute(candidate)) return null;
+  try {
+    let normalized = normalizePath(candidate);
+    if (normalized.length === 0 || !isAbsolute(normalized)) return null;
+    const root = parsePath(normalized).root;
+    while (normalized.length > root.length && normalized.endsWith(pathSeparator)) {
+      normalized = normalized.slice(0, -pathSeparator.length);
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
+}
+
+function applicableManagedCreationException({
+  exception,
+  requestedPath,
+  nowMs,
+}: {
+  exception?: ManagedCreationException | null;
+  requestedPath: string | null;
+  nowMs: number;
+}): ManagedCreationException | null {
+  if (!exception) return null;
+  if (exception.owner.trim().length === 0 || exception.reason.trim().length === 0) {
+    return null;
+  }
+  const expiresAtMs = Date.parse(exception.expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) return null;
+  const normalizedRequestedPath = normalizeAbsoluteWorktreePath(requestedPath);
+  if (normalizedRequestedPath === null) return null;
+  return exception.additionalPaths.some(
+    (additionalPath) =>
+      normalizeAbsoluteWorktreePath(additionalPath) === normalizedRequestedPath,
+  )
+    ? exception
+    : null;
+}
+
+function recoveryDispositionReasons(
+  metadata: WorktreeLifecycleMetadata,
+  nowMs: number,
+): string[] {
+  const reasons = [`lifecycle disposition ${metadata.disposition} requires preservation inventory`];
+  if (metadata.reason) reasons.push(`metadata note: ${metadata.reason}`);
+  return [...reasons, ...reviewAfterReasons(metadata, nowMs)];
+}
+
+function metadataBackfillReason(): string {
+  return "structured lifecycle metadata backfill required before automated retirement can proceed";
+}
+
+// A detached unit with no metadata is not a managed worktree awaiting backfill —
+// the managed creator always makes a branch, so this one came from somewhere
+// else: a review harness, or `git worktree add --detach` for a read-only build.
+// Both reach the same `uncertain` lane, and neither is ever auto-retired, but
+// they call for opposite responses: backfill is impossible here (there is no
+// bead to write the record onto), while the owning tool is what should clean up.
+// Saying "backfill required" sends the reader after a remedy that cannot apply.
+//
+// The wording deliberately does not call these units disposable. cave-oenag
+// found three detached review worktrees holding 29–45 commits that existed on
+// no remote — at that moment they were the only reachable copy of that work.
+function detachedScratchReason(): string {
+  return (
+    "detached HEAD with no lifecycle metadata: no branch points at this work, so " +
+    "the managed creator did not make it — expect tooling scratch space. Automated " +
+    "retirement still refuses it; removal is by hand and loses any commit reachable " +
+    "only from this HEAD, so prove retention first (git branch/tag --contains)"
+  );
+}
+
+function withReasons(item: WorktreeLifecycleObservation, lane: WorktreeLifecycleLane, reasons: string[]) {
+  return {
+    ...item,
+    lane,
+    reasons,
+  };
+}
+
+function divergentRemoteRefReason(remoteRef: WorktreeRemoteRef): string {
+  return `same-named remote ref ${remoteRef.ref} diverges from local HEAD`;
+}
+
+type ClassifyLifecycleUnitOptions = {
+  allowLegacyMissingMetadata: boolean;
+};
+
+function classifyLifecycleUnitInternal(
+  observation: WorktreeLifecycleObservation,
+  nowMs: number,
+  options: ClassifyLifecycleUnitOptions,
+): WorktreeLifecycleItem {
+  if (observation.isPrimary || observation.protectedBranch) {
+    return withReasons(observation, "protected", [
+      observation.isPrimary ? "primary checkout" : "protected branch",
+    ]);
+  }
+
+  const live = activeReasons(observation);
+  if (live.length > 0) {
+    return withReasons(observation, "active", [
+      ...live,
+      ...observation.probeErrors.map((error) => `${PROBE_WARNING_PREFIX}${error}`),
+    ]);
+  }
+
+  if (observation.probeErrors.length > 0) {
+    return withReasons(observation, "uncertain", observation.probeErrors);
+  }
+
+  if (observation.metadataErrors.length > 0) {
+    return withReasons(observation, "uncertain", observation.metadataErrors);
+  }
+
+  const legacyMissingMetadata = options.allowLegacyMissingMetadata && observation.metadata === null;
+  if (!observation.metadata) {
+    if (legacyMissingMetadata) {
+      return classifyLifecycleUnitWithoutMetadata(observation, nowMs);
+    }
+    if (!observation.branch) {
+      return withReasons(observation, "uncertain", [detachedScratchReason()]);
+    }
+    return withReasons(observation, "uncertain", [metadataBackfillReason()]);
+  }
+
+  if (!observation.branch) {
+    return withReasons(observation, "recovery", [
+      "detached HEAD",
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
+  if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
+    return withReasons(observation, "recovery", [
+      "branch name identifies a recovery or WIP snapshot",
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
+  if (
+    observation.metadata.disposition === "recovery" ||
+    observation.metadata.disposition === "archive"
+  ) {
+    return withReasons(
+      observation,
+      "recovery",
+      recoveryDispositionReasons(observation.metadata, nowMs),
+    );
+  }
+
+  if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
+    return withReasons(observation, "recovery", [
+      `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
+  const landed = observation.headOnDefaultBranch || observation.mergedPr !== null;
+  if (!landed) {
+    return withReasons(observation, "recovery", [
+      "HEAD is not proven landed on the default branch or an exact merged PR",
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
+  // A managed creation exception is admission authority only: it lifts the
+  // budget refusal in `assessManagedWorktreeCreation` so the unit can be
+  // created. It deliberately does NOT survive into retirement. Control only
+  // reaches here once `landed` is true, so honoring the exception at this point
+  // pinned merged, clean worktrees as `active` until a calendar expiry that
+  // outlived the work by days. That is the ratchet cave-8dpxq removes: every
+  // exception granted to escape a full budget went on to hold the budget full,
+  // forcing the next session to request another one.
+  //
+  // Retirement stays gated by the 8-hour cooldown, the repository-wide
+  // maintenance gate, and the deletion proof below, so dropping the exception
+  // here reclassifies landed work without authorizing any new deletion.
+
+  if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
+    return withReasons(observation, "recovery", [
+      divergentRemoteRefReason(observation.remoteRef),
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
+  if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
+    return withReasons(observation, "uncertain", [
+      "branch/worktree recency is unavailable",
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
+  const ageMs = nowMs - observation.updatedAtMs;
+  if (ageMs < RETIREMENT_COOLDOWN_MS) {
+    return withReasons(observation, "cooldown", [
+      "landed work remains inside the mandatory 8-hour cooldown",
+      ...reviewAfterReasons(observation.metadata, nowMs),
+    ]);
+  }
+
+  return withReasons(observation, "retire-after-gate", [
+    "clean landed work is older than 8 hours",
+    "removal still requires the repository-wide maintenance gate and final deletion proof",
+    ...reviewAfterReasons(observation.metadata, nowMs),
+  ]);
+}
+
+function classifyLifecycleUnitWithoutMetadata(
+  observation: WorktreeLifecycleObservation,
+  nowMs: number,
+): WorktreeLifecycleItem {
+  if (!observation.branch) {
+    return withReasons(observation, "recovery", ["detached HEAD"]);
+  }
+
+  if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
+    return withReasons(observation, "recovery", [
+      "branch name identifies a recovery or WIP snapshot",
+    ]);
+  }
+
+  if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
+    return withReasons(observation, "recovery", [
+      `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
+    ]);
+  }
+
+  const landed = observation.headOnDefaultBranch || observation.mergedPr !== null;
+  if (!landed) {
+    return withReasons(observation, "recovery", [
+      "HEAD is not proven landed on the default branch or an exact merged PR",
+    ]);
+  }
+
+  if (observation.remoteRef && observation.remoteRef.oid !== observation.head) {
+    return withReasons(observation, "recovery", [divergentRemoteRefReason(observation.remoteRef)]);
+  }
+
+  if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
+    return withReasons(observation, "uncertain", ["branch/worktree recency is unavailable"]);
+  }
+
+  const ageMs = nowMs - observation.updatedAtMs;
+  if (ageMs < RETIREMENT_COOLDOWN_MS) {
+    return withReasons(observation, "cooldown", [
+      "landed work remains inside the mandatory 8-hour cooldown",
+    ]);
+  }
+
+  return withReasons(observation, "retire-after-gate", [
+    "clean landed work is older than 8 hours",
+    "removal still requires the repository-wide maintenance gate and final deletion proof",
+  ]);
+}
+
+export function classifyLifecycleUnit(
+  observation: WorktreeLifecycleObservation,
+  nowMs = Date.now(),
+): WorktreeLifecycleItem {
+  return classifyLifecycleUnitInternal(observation, nowMs, {
+    allowLegacyMissingMetadata: false,
+  });
+}
+
+function normalizeLegacyRef(branch: string | null, ref: string | null | undefined): string | null {
+  return ref ?? (branch ? `refs/heads/${branch}` : null);
+}
+
+function hasOwnProperty(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function normalizeWorktreeObservation(
+  observation: WorktreeObservation,
+): {
+  observation: WorktreeLifecycleObservation;
+  allowLegacyMissingMetadata: boolean;
+} {
+  const allowLegacyMissingMetadata = !hasOwnProperty(observation, "metadata");
+  return {
+    allowLegacyMissingMetadata,
+    observation: {
+      kind: observation.kind ?? "worktree",
+      path: observation.path,
+      ref: normalizeLegacyRef(observation.branch, observation.ref),
+      branch: observation.branch,
+      head: observation.head,
+      isPrimary: observation.isPrimary,
+      protectedBranch: observation.protectedBranch,
+      changes: observation.changes,
+      ignoredPaths: observation.ignoredPaths,
+      nonDisposableIgnoredPaths: observation.nonDisposableIgnoredPaths,
+      indexFlags: observation.indexFlags,
+      processOwners: observation.processOwners,
+      claimOwners: observation.claimOwners,
+      taskIds: observation.taskIds,
+      mentionTaskIds: observation.mentionTaskIds ?? [],
+      openPrs: observation.openPrs,
+      mergedPr: observation.mergedPr,
+      activeWorkflowUrls: observation.activeWorkflowUrls,
+      headOnDefaultBranch: observation.headOnDefaultBranch,
+      remoteRefsContainingHead: observation.remoteRefsContainingHead,
+      updatedAtMs: observation.updatedAtMs,
+      probeErrors: observation.probeErrors,
+      metadata: observation.metadata ?? null,
+      metadataErrors: observation.metadataErrors ?? [],
+      metadataGlobalErrors: observation.metadataGlobalErrors ?? [],
+      remoteRef: observation.remoteRef ?? null,
+      sessionIds: observation.sessionIds ?? [],
+    },
+  };
 }
 
 export function classifyWorktree(
   observation: WorktreeObservation,
   nowMs = Date.now(),
 ): WorktreeLifecycleItem {
-  if (observation.isPrimary || observation.protectedBranch) {
-    return {
-      ...observation,
-      lane: "protected",
-      reasons: [observation.isPrimary ? "primary checkout" : "protected branch"],
-    };
-  }
-
-  const live = activeReasons(observation);
-  if (live.length > 0) {
-    return {
-      ...observation,
-      lane: "active",
-      reasons: [
-        ...live,
-        ...observation.probeErrors.map((error) => `probe warning: ${error}`),
-      ],
-    };
-  }
-
-  if (observation.probeErrors.length > 0) {
-    return {
-      ...observation,
-      lane: "uncertain",
-      reasons: observation.probeErrors,
-    };
-  }
-
-  if (!observation.branch) {
-    return { ...observation, lane: "recovery", reasons: ["detached HEAD"] };
-  }
-
-  if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
-    return {
-      ...observation,
-      lane: "recovery",
-      reasons: ["branch name identifies a recovery or WIP snapshot"],
-    };
-  }
-
-  if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
-    return {
-      ...observation,
-      lane: "recovery",
-      reasons: [
-        `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
-      ],
-    };
-  }
-
-  const landed = observation.headOnDefaultBranch || observation.mergedPr !== null;
-  if (!landed) {
-    return {
-      ...observation,
-      lane: "recovery",
-      reasons: ["HEAD is not proven landed on the default branch or an exact merged PR"],
-    };
-  }
-
-  if (observation.updatedAtMs === null || !Number.isFinite(observation.updatedAtMs)) {
-    return {
-      ...observation,
-      lane: "uncertain",
-      reasons: ["branch/worktree recency is unavailable"],
-    };
-  }
-
-  const ageMs = nowMs - observation.updatedAtMs;
-  if (ageMs < DAY_MS) {
-    return {
-      ...observation,
-      lane: "cooldown",
-      reasons: ["landed work remains inside the mandatory 24-hour cooldown"],
-    };
-  }
-
-  return {
-    ...observation,
-    lane: "retire-after-gate",
-    reasons: [
-      "clean landed work is older than 24 hours",
-      "removal still requires the repository-wide maintenance gate and final deletion proof",
-    ],
-  };
+  const normalized = normalizeWorktreeObservation(observation);
+  return classifyLifecycleUnitInternal(normalized.observation, nowMs, {
+    allowLegacyMissingMetadata: normalized.allowLegacyMissingMetadata,
+  });
 }
 
 const LANE_ORDER: WorktreeLifecycleLane[] = [
@@ -226,33 +729,215 @@ const LANE_ORDER: WorktreeLifecycleLane[] = [
 
 export function summarizeWorktreeLifecycle(
   items: WorktreeLifecycleItem[],
+  budgets: WorktreeLifecycleBudgets,
+  globalErrors: string[] = [],
 ): WorktreeLifecycleSummary {
   const counts = Object.fromEntries(LANE_ORDER.map((lane) => [lane, 0])) as Record<
     WorktreeLifecycleLane,
     number
   >;
   for (const item of items) counts[item.lane] += 1;
-  return { items, counts };
+  return { items, counts, budgets, globalErrors: [...new Set(globalErrors)] };
+}
+
+function assertNonnegativeInteger(name: string, value: number): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a nonnegative integer`);
+  }
+}
+
+export function calculateLifecycleBudgets({
+  worktreeCount,
+  detachedWorktreeCount = 0,
+  branchCount,
+  activeExceptions,
+  expiredExceptions,
+}: {
+  /** Every registered worktree, detached ones included. */
+  worktreeCount: number;
+  /**
+   * How many of `worktreeCount` have no branch. Defaults to 0, which reproduces
+   * the pre-cave-oenag arithmetic for callers that do not distinguish them.
+   */
+  detachedWorktreeCount?: number;
+  branchCount: number;
+  activeExceptions: number;
+  expiredExceptions: number;
+}): WorktreeLifecycleBudgets {
+  assertNonnegativeInteger("worktreeCount", worktreeCount);
+  assertNonnegativeInteger("detachedWorktreeCount", detachedWorktreeCount);
+  assertNonnegativeInteger("branchCount", branchCount);
+  assertNonnegativeInteger("activeExceptions", activeExceptions);
+  assertNonnegativeInteger("expiredExceptions", expiredExceptions);
+  if (detachedWorktreeCount > worktreeCount) {
+    throw new Error("detachedWorktreeCount must not exceed worktreeCount");
+  }
+
+  const attachedWorktreeCount = worktreeCount - detachedWorktreeCount;
+
+  return {
+    worktrees: {
+      count: attachedWorktreeCount,
+      registered: worktreeCount,
+      detached: detachedWorktreeCount,
+      warning: WORKTREE_WARNING_BUDGET,
+      exceeded: attachedWorktreeCount > WORKTREE_WARNING_BUDGET,
+    },
+    branches: {
+      count: branchCount,
+      warning: BRANCH_WARNING_BUDGET,
+      exceeded: branchCount > BRANCH_WARNING_BUDGET,
+    },
+    exceptions: {
+      active: activeExceptions,
+      expired: expiredExceptions,
+    },
+  };
+}
+
+/**
+ * Every reason this returns is lifted by a valid exception — each one is guarded
+ * on `!validException` below. Callers may therefore present the `--exception-*`
+ * invocation as a real remedy for any refusal from here, which is not true of
+ * refusals assembled elsewhere.
+ */
+export function assessManagedWorktreeCreation({
+  beadId,
+  requestedPath,
+  nowMs,
+  existingPaths,
+  budgets,
+  exception,
+}: {
+  beadId: string;
+  requestedPath: string;
+  nowMs: number;
+  existingPaths: string[];
+  budgets: WorktreeLifecycleBudgets;
+  exception?: ManagedCreationException | null;
+}): { allowed: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const validException = applicableManagedCreationException({ exception, requestedPath, nowMs });
+
+  if (existingPaths.length > 0 && !validException) {
+    reasons.push(`active Bead ${beadId} already owns a registered worktree`);
+  }
+  if (!validException && budgets.worktrees.count >= budgets.worktrees.warning) {
+    reasons.push(
+      `creating a worktree would exceed the ${WORKTREE_WARNING_BUDGET}-worktree budget`,
+    );
+  }
+  if (!validException && budgets.branches.count >= budgets.branches.warning) {
+    reasons.push(
+      `creating a branch would exceed the ${BRANCH_WARNING_BUDGET}-local-branch budget`,
+    );
+  }
+
+  return {
+    allowed: reasons.length === 0,
+    reasons,
+  };
 }
 
 function labelFor(item: WorktreeLifecycleItem): string {
-  return item.branch ?? "(detached)";
+  return item.branch ?? item.ref ?? "(detached)";
 }
 
-export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary): string {
+function humanReason(item: WorktreeLifecycleItem, reason: string): string {
+  if (
+    item.lane === "recovery" &&
+    reason.startsWith("owner follow-up:") &&
+    reason.endsWith(" is overdue")
+  ) {
+    return `overdue recovery review: ${reason}`;
+  }
+  if (reason.startsWith("duplicate structured worktree metadata records for ")) {
+    return `duplicate Bead ownership: ${reason}`;
+  }
+  return reason;
+}
+
+export function renderWorktreeLifecycleReport(
+  summary: WorktreeLifecycleSummary,
+  options: WorktreeLifecycleRenderOptions = {},
+): string {
+  const { includeFooter = true } = options;
   const { counts } = summary;
+  const { detached, registered } = summary.budgets.worktrees;
+  // Say so when the assessed number is smaller than the registered one, so the
+  // exclusion is legible rather than a discrepancy the reader has to derive.
+  const detachedNote =
+    detached > 0
+      ? ` — ${detached} detached unit${detached === 1 ? "" : "s"} not counted (${registered} registered)`
+      : "";
   const lines = [
-    `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} retire after gate | ${counts.uncertain} uncertain | ${counts.protected} protected`,
-    "Report only. No worktree or branch was changed.",
+    `Worktree lifecycle: ${summary.items.length} registered | ${counts.active} active | ${counts.recovery} recovery | ${counts.cooldown} cooldown | ${counts["retire-after-gate"]} cleanup-ready | ${counts.uncertain} uncertain | ${counts.protected} protected`,
+    `Worktree budget: ${summary.budgets.worktrees.count}/${summary.budgets.worktrees.warning} (${summary.budgets.worktrees.exceeded ? "exceeded" : "within budget"})${detachedNote}`,
+    `Local branch budget: ${summary.budgets.branches.count}/${summary.budgets.branches.warning} (${summary.budgets.branches.exceeded ? "exceeded" : "within budget"})`,
+    `Managed exceptions: ${summary.budgets.exceptions.active} active | ${summary.budgets.exceptions.expired} expired`,
   ];
+
+  // State the checkout-level failures ONCE, before the lanes. Each affected
+  // unit still fails closed on them and still carries them in probeErrors —
+  // this only stops the report repeating one fact N times, where N is however
+  // many units the checkout happens to hold, and where the repetition is
+  // indistinguishable from N independent problems.
+  const globalErrors = summary.globalErrors;
+  const globalErrorSet = new Set(globalErrors);
+  if (globalErrors.length > 0) {
+    // Deliberately does NOT claim every unit is affected: a protected unit
+    // returns from classification before probe errors are read, so it carries
+    // none of these. Overclaiming here would be the same kind of error this
+    // section exists to correct, one direction over.
+    lines.push(
+      "",
+      `Repository-wide probe failures (${globalErrors.length}) — these describe the checkout rather than any one unit. Each affected unit fails closed on them and does not repeat them below:`,
+    );
+    for (const error of globalErrors) lines.push(`- ${error}`);
+  }
 
   for (const lane of LANE_ORDER) {
     const items = summary.items.filter((item) => item.lane === lane);
     if (items.length === 0) continue;
-    lines.push("", lane);
+    lines.push("", HUMAN_LANE_LABELS[lane]);
     for (const item of items) {
-      lines.push(`- ${labelFor(item)} @ ${item.path}`);
-      for (const reason of item.reasons) lines.push(`  ${reason}`);
+      const location = item.kind === "branch-only" || !item.path ? "" : ` @ ${item.path}`;
+      const kind = item.kind === "branch-only" ? " [branch-only]" : "";
+      lines.push(`- ${labelFor(item)}${kind}${location}`);
+      // Drop the copies of a checkout-level failure that were already stated
+      // above. `reasons` keeps them — this is presentation, not classification,
+      // and every consumer reading the item still sees the full list.
+      //
+      // Both spellings have to be matched: an `uncertain` unit carries the
+      // probe error verbatim, while an `active` unit carries it prefixed with
+      // "probe warning: " (classifyLifecycleUnitInternal). Matching only the
+      // bare form would leave every active unit still repeating it.
+      const ownReasons = item.reasons.filter(
+        (reason) =>
+          !globalErrorSet.has(reason) &&
+          !(
+            reason.startsWith(PROBE_WARNING_PREFIX) &&
+            globalErrorSet.has(reason.slice(PROBE_WARNING_PREFIX.length))
+          ),
+      );
+      const suppressed = item.reasons.length - ownReasons.length;
+      for (const reason of ownReasons) lines.push(`  ${humanReason(item, reason)}`);
+      // Only when suppression would otherwise leave the unit with NO
+      // explanation at all: a bare line reads like a bug in the report rather
+      // than a deliberate omission. A unit that still shows a reason of its own
+      // needs no pointer — the heading above already accounts for the
+      // repository-wide failures, and repeating that per unit is the noise this
+      // whole change exists to remove.
+      if (suppressed > 0 && ownReasons.length === 0) {
+        lines.push(
+          `  ${suppressed} repository-wide probe failure${suppressed === 1 ? "" : "s"} (listed above)`,
+        );
+      }
+      // Informational, never a lane input: these beads name the unit without
+      // claiming it. Printed so the reader can still find the conversation.
+      if (item.mentionTaskIds.length > 0) {
+        lines.push(`  mentions (not blocking): ${item.mentionTaskIds.join(", ")}`);
+      }
       for (const change of item.changes) lines.push(`  change: ${change}`);
       for (const ignoredPath of item.nonDisposableIgnoredPaths) {
         lines.push(`  non-disposable ignored: ${ignoredPath}`);
@@ -261,5 +946,8 @@ export function renderWorktreeLifecycleReport(summary: WorktreeLifecycleSummary)
     }
   }
 
+  if (includeFooter) {
+    lines.push("", "Report only. No worktree or branch was changed.");
+  }
   return lines.join("\n");
 }

@@ -81,16 +81,34 @@ test("packages owned only by retired runtime modules stay removed", () => {
   }
 });
 
-test("BottomTerminal has no inert broadcast interface", () => {
+test("BottomTerminal's broadcast interface is wired, not inert", () => {
   const terminal = readFileSync(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
+  const workspace = readFileSync(
+    new URL("./code-terminal-workspace.tsx", import.meta.url),
+    "utf8",
+  );
 
-  for (const deadIdentifier of [
-    "paneId",
-    "registerWriter",
-    "onUserInput",
-    "broadcastPaneId",
-    "writerRef",
-  ]) {
+  // This guard used to require the broadcast surface be ABSENT, because an
+  // earlier attempt shipped the props with no consumer. cave-98o51 gave them
+  // one — the Coding Desk's split terminal center — so the rule inverts rather
+  // than disappears: the interface may exist only while something drives it.
+  for (const liveIdentifier of ["onUserInput", "writerRef"]) {
+    assert.match(terminal, new RegExp(`\\b${liveIdentifier}\\b`));
+    assert.match(
+      workspace,
+      new RegExp(`\\b${liveIdentifier}\\b`),
+      `${liveIdentifier} exists on BottomTerminal, so a consumer must drive it`,
+    );
+  }
+  assert.match(
+    workspace,
+    /terminalBroadcastTargets\(/,
+    "broadcast targets come from the pure model, which excludes the source pane",
+  );
+
+  // These never gained a consumer. A pane's identity stays with the host; the
+  // terminal only knows its thread id.
+  for (const deadIdentifier of ["paneId", "registerWriter", "broadcastPaneId"]) {
     assert.doesNotMatch(terminal, new RegExp(`\\b${deadIdentifier}\\b`));
   }
 });

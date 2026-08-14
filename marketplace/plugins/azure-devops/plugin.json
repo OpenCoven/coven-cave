@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/azure-devops",
   "x-coven": {
     "displayName": "Azure DevOps",

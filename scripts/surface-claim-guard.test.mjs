@@ -1,6 +1,6 @@
 // Tests for the surface-claim PreToolUse hook (scripts/surface-claim-guard.mjs).
 // The hook must: record a session's claim on edited shared-checkout files, warn
-// on cross-session collisions, prune expired claims, skip worktree paths, and —
+// on cross-session collisions, prune expired claims, canonicalise worktree paths, and —
 // above all — NEVER block or fail a tool (always exit 0, even on garbage input).
 
 import assert from "node:assert/strict";
@@ -91,13 +91,57 @@ function readClaims(dir) {
   assert.ok(claims.liveSession, "the live session's claim replaces it");
 }
 
-// ── 5. Edits inside .worktrees/ are skipped (already isolated) ────────────────
+// ── 5. Edits inside .worktrees/ are CANONICALISED, not skipped (cave-ahc91) ───
+// They were skipped, which made every session the hook exists to coordinate
+// invisible to it: the convention mandates a worktree per concurrent session.
 {
   const dir = freshProject();
   const res = runHook({ projectDir: dir, sessionId: "wtSession", filePath: path.join(dir, ".worktrees/x/src/bar.ts") });
-  assert.equal(res.status, 0, "hook exits 0 for worktree paths");
-  assert.equal(res.stdout.trim(), "", "no output for worktree edits");
-  assert.equal(readClaims(dir), null, "no claim recorded for an isolated worktree edit");
+  assert.equal(res.status, 0, "hook still never blocks");
+  const claims = readClaims(dir);
+  assert.ok(claims, "a worktree edit is recorded");
+  assert.deepEqual(claims.wtSession.surfaces, ["src/bar.ts"], "surface is repo-relative, worktree prefix stripped");
+  assert.equal(claims.wtSession.worktree, "x", "the claim records which worktree it came from");
+}
+
+// ── 5b. The same file in two different worktrees is ONE surface ───────────────
+// The whole point: isolation protects the filesystem, not the reasoning.
+{
+  const dir = freshProject();
+  runHook({ projectDir: dir, sessionId: "sessA", filePath: path.join(dir, ".worktrees/alpha/src/shared.ts") });
+  const res = runHook({ projectDir: dir, sessionId: "sessB", filePath: path.join(dir, ".worktrees/beta/src/shared.ts") });
+  assert.equal(res.status, 0, "still advisory");
+  // Parse rather than regex the raw stdout: it is JSON, and matching the
+  // envelope would be sensitive to escaping rather than to the message.
+  const out = JSON.parse(res.stdout);
+  assert.match(out.systemMessage, /Multi-session collision/, "collides across worktrees");
+  assert.match(out.systemMessage, /src\/shared\.ts/, "names the canonical surface, not a worktree path");
+  assert.match(out.systemMessage, /in worktree alpha/, "names the other session's worktree");
+}
+
+// ── 5c. A worktree edit collides with a primary-checkout edit of the same file ─
+{
+  const dir = freshProject();
+  runHook({ projectDir: dir, sessionId: "primarySess", filePath: path.join(dir, "src/shared.ts") });
+  const res = runHook({ projectDir: dir, sessionId: "wtSess", filePath: path.join(dir, ".worktrees/gamma/src/shared.ts") });
+  const out = JSON.parse(res.stdout);
+  assert.match(out.systemMessage, /Multi-session collision/, "primary and worktree edits are the same surface");
+  assert.match(out.systemMessage, /src\/shared\.ts/, "names the canonical surface");
+  assert.match(out.systemMessage, /on the primary checkout/, "names where the other session is working");
+}
+
+// ── 5d. The ledger stays in the primary checkout, never inside a worktree ─────
+// Deriving it from the project root would give a worktree-rooted session its own
+// claims.json, so no session would ever see another's — inertness by another route.
+{
+  const dir = freshProject();
+  const wtRoot = path.join(dir, ".worktrees", "delta");
+  mkdirSync(path.join(wtRoot, "src"), { recursive: true });
+  const res = runHook({ projectDir: wtRoot, sessionId: "rootedInWt", filePath: path.join(wtRoot, "src/x.ts") });
+  assert.equal(res.status, 0);
+  assert.ok(readClaims(dir), "claim landed in the primary checkout's ledger");
+  assert.equal(existsSync(path.join(wtRoot, ".claude", "claims.json")), false, "no ledger inside the worktree");
+  assert.deepEqual(readClaims(dir).rootedInWt.surfaces, ["src/x.ts"], "surface is repo-relative");
 }
 
 // ── 6. Edits under .claude/ and node_modules/ are not tracked ─────────────────

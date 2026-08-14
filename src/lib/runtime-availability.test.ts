@@ -17,6 +17,7 @@ import {
   missingRunnerMessage,
   resolveHermesLaunch,
   runtimeProcessFailure,
+  runtimeLaunchDiagnostics,
   runtimeLaunchFailedMessage,
   summarizeRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
@@ -63,6 +64,32 @@ try {
     /(?:^|[\\/])grok(?:\.exe)?$/,
     "ready reports the exact executable name selected from the spawn PATH",
   );
+  const redactedDiagnostics = runtimeLaunchDiagnostics({
+    runner: "codex",
+    exitCode: 1,
+    emittedDiagnostic: false,
+    launcher: { identity: "coven", command: "coven", availability: ready, env: { PATH: [emptyDir, binDir].join(path.delimiter) } },
+    adapter: { identity: "codex", command: executable, availability: ready, env: { PATH: binDir } },
+  });
+  assert.deepEqual(redactedDiagnostics.failure, { kind: "process-exit", exitCode: 1, emittedDiagnostic: false });
+  assert.equal(redactedDiagnostics.launcher?.source, "PATH");
+  assert.equal(redactedDiagnostics.launcher?.pathEntryIndex, 1);
+  assert.equal(redactedDiagnostics.adapter?.source, "absolute-command");
+  assert.equal(JSON.stringify(redactedDiagnostics).includes(scratch), false, "diagnostics must not expose local paths");
+  const overrideRedaction = runtimeLaunchDiagnostics({
+    runner: "codex", emittedDiagnostic: false,
+    launcher: { identity: "coven", command: "/private/customer-secret-launcher", availability: ready, env: {} },
+  });
+  assert.equal(overrideRedaction.launcher?.command, "coven", "override-derived filenames must never persist");
+  const windowsPathIndex = runtimeLaunchDiagnostics({
+    runner: "codex", emittedDiagnostic: false, platform: "win32",
+    launcher: {
+      identity: "coven", command: "coven.exe",
+      availability: { state: "ready", runner: "coven", resolvedPath: "c:\\tools\\coven.exe" },
+      env: { Path: "C:\\Tools;C:\\Elsewhere" },
+    },
+  });
+  assert.equal(windowsPathIndex.launcher?.pathEntryIndex, 0, "Windows PATH matching is case-insensitive");
 
   const linuxBinDir = "/runtime-availability/bin";
   const linuxClaudeDir = "/runtime-availability/claude-bin";
@@ -239,7 +266,7 @@ try {
 
   // Verification matrix: binary absent from every discovery location →
   // missing, with per-runner install/PATH remediation.
-  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode"] as const) {
+  for (const runner of ["coven", "codex", "copilot", "grok", "hermes", "opencode", "openclaw"] as const) {
     const missing = evaluateRuntimeAvailability({
       runner,
       command: runner === "coven" ? "coven" : runner,
@@ -264,12 +291,23 @@ try {
     );
   }
 
+  assert.equal(
+    runtimeLaunchFailedMessage("openclaw"),
+    "OpenClaw CLI failed to start. Check its installation and try again.",
+    "OpenClaw spawn races should use the shared value-free launch-failure contract",
+  );
+
   // The chat client's "Open Setup" recovery matches this exact phrase
   // (src/components/chat-view.test.ts); the availability gate must keep it.
   assert.match(
     missingRunnerMessage("coven"),
     /Coven CLI not found on PATH/,
     "Coven missing copy stays pinned to the client recovery matcher",
+  );
+  assert.equal(
+    runtimeLaunchFailedMessage("openclaw"),
+    "OpenClaw CLI failed to start. Check its installation and try again.",
+    "OpenClaw spawn races should use the shared value-free launch-failure contract",
   );
 
   const emptyPath = evaluateRuntimeAvailability({
@@ -483,6 +521,16 @@ try {
     runtimeProcessFailure("hermes").code,
     RUNTIME_AVAILABILITY_ERROR_CODES.process_failed,
     "a started Hermes process has a structured error distinct from availability",
+  );
+  assert.match(
+    runtimeProcessFailure("codex", { exitCode: 1, emittedDiagnostic: false }).message,
+    /Codex CLI exited with an error \(exit code 1\).*did not emit an error message.*local runtime configuration/i,
+    "a silent Codex/Coven exit names its safe exit code without guessing at authentication",
+  );
+  assert.doesNotMatch(
+    runtimeProcessFailure("codex", { exitCode: 1, emittedDiagnostic: true }).message,
+    /stderr|token|path/i,
+    "runtime process diagnostics report only that output was withheld, never its contents",
   );
 
   // A resolved npm shim may produce a direct Node + script launch. Both the

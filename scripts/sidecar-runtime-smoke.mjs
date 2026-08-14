@@ -7,6 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+// The file-count ceiling is read from sidecar-runtime-budget.json through this
+// module rather than repeated here — see cave-0ia8h.
+import { SIDECAR_RUNTIME_BUDGETS } from "./sidecar-runtime-closure.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stagedSidecarRoot = path.join(root, "src-tauri", "resources", "server");
@@ -222,7 +225,13 @@ async function writeHangingDaemonFixture(rootDir, marker) {
   if (process.platform === "win32") {
     await writeFile(
       fixture,
-      `@echo off\r\n"${bundledNode}" "${daemonScript}"\r\n`,
+      [
+        "@ECHO off",
+        "SETLOCAL",
+        "CALL :find_dp0",
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\hanging-daemon-child.cjs" %*',
+        "",
+      ].join("\r\n"),
       "utf8",
     );
   } else {
@@ -256,7 +265,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_814);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= SIDECAR_RUNTIME_BUDGETS.fileCount);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -278,6 +287,9 @@ async function main() {
     "marketplace/plugins/prompt-pack-essentials/plugin.json",
     "public/sandbox/react-runtime.js",
     "public/sandbox/tailwind.js",
+    "node_modules/next/dist/compiled/webpack/webpack-lib.js",
+    "node_modules/next/dist/compiled/webpack/webpack.js",
+    "node_modules/next/dist/compiled/webpack/bundle5.js",
     "vault.yaml",
     "workflows/release-review.yaml",
   ]) {
@@ -560,6 +572,11 @@ async function main() {
       },
       general: { stopPhrase: "halt", celebrations: false },
       phone: { mobileMode: false },
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "eleven_turbo_v2_5",
+        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+      },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
       method: "PATCH",
@@ -623,6 +640,7 @@ async function main() {
     assert.equal(restored.appearance.backdrop.image.mime, "image/png");
     assert.deepEqual(restored.general, preferencePatch.general);
     assert.deepEqual(restored.phone, preferencePatch.phone);
+    assert.deepEqual(restored.voice, preferencePatch.voice);
 
     const documentResponse = await fetch(baseUrl, {
       headers: authenticatedHeaders(baseUrl),

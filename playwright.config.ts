@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolvePort } from "./scripts/ports.mjs";
 
 // Playwright config — three viewport projects so the same specs in
 // tests/mobile/ run against desktop AND two real mobile presets.
@@ -12,14 +13,15 @@ import { join } from "node:path";
 // real device.
 //
 // The dev server: started via `webServer` so `pnpm test:e2e:mobile`
-// can run without a separate terminal. PORT is fixed to 3100 so the
-// e2e runs don't collide with `pnpm dev` on the default 3000.
+// can run without a separate terminal. The port is fixed at the e2e
+// entry of the shared contract (scripts/ports.mjs) so e2e runs collide
+// neither with `pnpm dev` on 3000 nor with a packaged build on 3020.
 //
 // COVEN_CAVE_E2E=1 is set in the env so the daemon path can short-
 // circuit to a deterministic test stub (today: no-op; tests that
 // need a daemon should mock /api/*).
 
-const PORT = Number(process.env.PORT ?? 3100);
+const PORT = resolvePort("e2e", process.env);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_RUN_ID = randomUUID();
 const E2E_PROJECTS_PATH = join(tmpdir(), `cave-e2e-projects-${E2E_RUN_ID}.json`);
@@ -30,9 +32,13 @@ const E2E_CAVE_HOME = join(tmpdir(), `cave-e2e-cave-${E2E_RUN_ID}`);
 const E2E_COVEN_SOCKET = join(tmpdir(), `cave-e2e-socket-${E2E_RUN_ID}.sock`);
 const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
 const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
+
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
-const SETUP_FOCUS_VISIBILITY_TEST = /keeps setup-header focus indicators visible inside the horizontal scroller$/;
+const SETUP_FOCUS_VISIBILITY_TEST =
+  /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
+// Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
+const WARMUP_SETUP = /warmup\.setup\.ts/;
 
 // Most existing specs exercise an already-onboarded workspace. Seed that
 // baseline explicitly now that chat/home correctly block an empty registry;
@@ -95,6 +101,18 @@ export default defineConfig({
     // synthetic mobile credential so proxy.ts owns the ingress marker.
     extraHTTPHeaders: {
       "x-coven-cave-local-peer": E2E_LOCAL_PEER_FIXTURE,
+      // COVEN_CAVE_ACCESS_TOKEN is armed on the webServer, so it is armed for
+      // EVERY project — and since loopback stopped counting as identity
+      // (cave-ruw4z), every e2e client is an access-gated client. The
+      // local-peer stamp marks a request direct rather than forwarded, which
+      // is routing, not a credential.
+      //
+      // Scoping this to only the mutating `preferences-*` chain was wrong and
+      // failed loudly: every other project's page loads sat on the gate for
+      // their full 45s timeout, and the job was cancelled at ~63 minutes.
+      // The paired-mobile boundary spec still owns its own ingress, because it
+      // overrides `extraHTTPHeaders` wholesale rather than inheriting this.
+      authorization: `Bearer ${E2E_MOBILE_ACCESS_FIXTURE}`,
     },
   },
   projects: [
@@ -103,8 +121,19 @@ export default defineConfig({
     // prior value, then release the normal fully-parallel projects. This keeps
     // the desktop/Chromium-mobile/WebKit coverage without leaking scale=125
     // into unrelated tests or racing another project's cleanup.
+    // Under `next dev` a `next/dynamic` chunk is COMPILED on first open, so the
+    // first test to open a lazy surface pays that cold compile inside its own
+    // assertion budget — 28.3s cold vs 2-3s warm, against 30s timeouts, which
+    // is exactly why keyboard-shortcuts and task-work-fit rotated between
+    // "flaky" and "failed" on CI (cave-ct2k7). Pay it once here instead.
+    {
+      name: "warmup",
+      testMatch: WARMUP_SETUP,
+      use: { ...devices["Desktop Chrome"] },
+    },
     {
       name: "preferences-desktop",
+      dependencies: ["warmup"],
       testMatch: MOBILE_FOUNDATIONS_SPEC,
       grep: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Desktop Chrome"] },

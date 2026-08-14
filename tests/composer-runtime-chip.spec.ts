@@ -82,7 +82,12 @@ async function seed(page: Page): Promise<Mutable> {
       state.configPatches.push(body);
       const fam = body?.familiars?.nova;
       if (fam?.harness) state.harness = fam.harness;
-      if (fam?.model) state.effectiveModel = fam.model;
+      // Empty is the explicit runtime-default sentinel. Preserve it in the
+      // stateful mock so the follow-up model-state GET cannot resurrect the
+      // previous runtime's model.
+      if (fam && Object.prototype.hasOwnProperty.call(fam, "model")) {
+        state.effectiveModel = fam.model ?? "";
+      }
       return route.fulfill({ json: { ok: true } });
     }
     return route.fulfill({ json: { ok: true, config: {} } });
@@ -133,17 +138,19 @@ test.describe("composer runtime picker (context chips)", () => {
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true })).toBeVisible();
 
-    // The PATCH carries the harness + that runtime's default model.
+    // The PATCH carries the harness + explicit runtime-default intent. A
+    // curated catalog is a picker seed, never an implicit launch override.
     await expect(() => {
       const fam = state.configPatches.at(-1)?.familiars as
         | Record<string, { harness?: string; model?: string }>
         | undefined;
       expect(fam?.nova?.harness).toBe("claude");
-      expect(fam?.nova?.model ?? "").toMatch(/^anthropic\//);
+      expect(Object.prototype.hasOwnProperty.call(fam?.nova ?? {}, "model")).toBe(true);
+      expect(fam?.nova?.model).toBe("");
     }).toPass({ timeout: 10_000 });
 
     // Pill flips (optimistic, then reconciled by the model-state refetch).
-    await expect(pill).toContainText("Claude Opus", { timeout: 10_000 });
+    await expect(pill).toContainText("Claude Code", { timeout: 10_000 });
 
     // cave:familiars-refresh refetched the roster…
     await expect(() => expect(state.familiarsServed).toBeGreaterThan(servedBefore)).toPass({ timeout: 10_000 });

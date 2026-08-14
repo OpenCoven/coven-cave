@@ -54,6 +54,7 @@ const DIFF_CAP_CHARS = 200 * 1024;
 /** Run git via execFile (argument array, no shell interpolation). */
 function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync("git", args, {
+    windowsHide: true,
     cwd,
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
@@ -73,11 +74,11 @@ function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stder
 /** Network git (push) and `gh` can take longer than the read-only 10s budget. */
 const NET_TIMEOUT_MS = 60_000;
 function gitLong(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("git", args, { cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+  return execFileAsync("git", args, { windowsHide: true, cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
 }
 /** Run the GitHub CLI (argument array, no shell) for PR creation. */
 function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("gh", args, { cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+  return execFileAsync("gh", args, { windowsHide: true, cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
 }
 
 const PR_URL_RE = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/;

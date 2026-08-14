@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Icon } from "@/lib/icon";
 import {
   resolveSpeechPlan,
@@ -51,7 +51,23 @@ let activeStop: (() => void) | null = null;
 
 type SpeakState = "idle" | "loading" | "playing";
 
-export function SpeakBubble({ text, familiarId }: { text: string; familiarId?: string }) {
+export type SpeakBubbleController = {
+  toggle(): void;
+};
+
+export function SpeakBubble({
+  text,
+  familiarId,
+  hidden = false,
+  controllerRef,
+  onStateChange,
+}: {
+  text: string;
+  familiarId?: string;
+  hidden?: boolean;
+  controllerRef?: MutableRefObject<SpeakBubbleController | null>;
+  onStateChange?: (state: SpeakState) => void;
+}) {
   const [state, setState] = useState<SpeakState>("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
@@ -86,6 +102,9 @@ export function SpeakBubble({ text, familiarId }: { text: string; familiarId?: s
   // Stop on unmount — a bubble scrolled out of a virtualized list should not
   // keep talking.
   useEffect(() => () => { teardown(); if (activeStop === stop) activeStop = null; }, []);
+  useEffect(() => {
+    onStateChange?.(state);
+  }, [onStateChange, state]);
 
   const speak = async () => {
     activeStop?.();
@@ -154,13 +173,23 @@ export function SpeakBubble({ text, familiarId }: { text: string; familiarId?: s
   };
 
   const busy = state !== "idle";
+  const toggle = () => (busy ? stop() : void speak());
+  useEffect(() => {
+    if (!controllerRef) return;
+    controllerRef.current = { toggle };
+    return () => {
+      controllerRef.current = null;
+    };
+  });
+
   return (
     <button
       type="button"
+      hidden={hidden}
       aria-label={busy ? "Stop reading response" : "Read response aloud"}
       title={busy ? "Stop" : "Read aloud"}
       aria-pressed={busy}
-      onClick={() => (busy ? stop() : void speak())}
+      onClick={toggle}
       className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
     >
       {/* Names come from the curated ICON_NAMES union — `ph:speaker-high-fill`

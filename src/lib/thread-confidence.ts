@@ -83,7 +83,15 @@ export function threadConfidenceLabel(score: number): ThreadConfidenceLabel {
  * (hasData false, score 0) — never a fake "Low".
  */
 export function deriveThreadConfidence(reports: ThreadSelfReport[]): ThreadConfidence {
-  const aggregate = aggregateThreadSignals(reports);
+  // Sanitize once, here, and count from the same set the aggregate scores.
+  // `reports` crosses the wire, so its type is a claim rather than a fact: a
+  // redaction budget once delivered the string "[redacted]", whose `.length`
+  // of 10 would otherwise read as ten reports' worth of data (cave-p9dsb).
+  const usable = (Array.isArray(reports) ? reports : []).filter(
+    (report): report is ThreadSelfReport =>
+      Boolean(report) && typeof report === "object" && typeof report.id === "string",
+  );
+  const aggregate = aggregateThreadSignals(usable);
   const values: Record<ThreadMetricKey, number> = {
     confidence: clampScore(aggregate.averageConfidence),
     toolReliability: clampScore(aggregate.averageToolReliability),
@@ -96,7 +104,7 @@ export function deriveThreadConfidence(reports: ThreadSelfReport[]): ThreadConfi
     value: values[key],
     weight: THREAD_METRIC_WEIGHTS[key],
   }));
-  const hasData = reports.length > 0;
+  const hasData = usable.length > 0;
   const score = hasData
     ? clampScore(metrics.reduce((sum, metric) => sum + metric.value * metric.weight, 0))
     : 0;
@@ -104,7 +112,7 @@ export function deriveThreadConfidence(reports: ThreadSelfReport[]): ThreadConfi
   return {
     score,
     label: threadConfidenceLabel(score),
-    reportCount: reports.length,
+    reportCount: usable.length,
     hasData,
     metrics,
     contextCounts: aggregate.contextCounts,

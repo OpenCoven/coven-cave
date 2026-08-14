@@ -127,6 +127,21 @@
       "roleAffinity": []
     },
     {
+      "name": "tweet-thread-lab",
+      "displayName": "Tweet Thread Lab",
+      "category": "Social",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tweet-thread-lab"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
       "name": "filesystem",
       "displayName": "Filesystem",
       "category": "Core MCP",

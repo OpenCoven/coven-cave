@@ -1,0 +1,14 @@
+{
+  "note": "Single source of truth for the sidecar runtime file-count budget. Edit fileCount HERE and nowhere else: scripts/sidecar-runtime-closure.mjs reads this file, scripts/sidecar-runtime-smoke.mjs derives from that, and src-tauri/build.rs generates the Rust MAX_FILE_COUNT const from it. Before cave-0ia8h the same number was hand-synced across six places and drifted; sidecar-bundle-deps.test.mjs now fails if a literal reappears.",
+  "raising": "Raising this is a deliberate, reviewed act, not a reflex when CI goes red. Set it from the GOVERNING platform measurement (Windows runs a few files above Ubuntu; a budget set from an Ubuntu-only figure has reddened windows-latest more than once) and record that measurement below. The reasoning history lives beside SIDECAR_RUNTIME_BUDGETS in scripts/sidecar-runtime-closure.mjs.",
+  "fileCount": 6109,
+  "measurement": {
+    "on": "2026-08-06",
+    "governingPlatform": "windows",
+    "windows": 5959,
+    "ubuntu": 5957,
+    "headroom": 150,
+    "headroomRationale": "About one week of the measured ~21 closure-files/day drift. At this headroom the gate no longer notices organic drift and is not meant to; what it still catches is a single change dragging a whole subtree in, which is hundreds of files at once.",
+    "bead": "cave-oqawv"
+  }
+}

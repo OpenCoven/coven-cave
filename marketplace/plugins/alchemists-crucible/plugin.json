@@ -16,6 +16,7 @@
     "research",
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/alchemists-crucible",
   "x-coven": {
     "displayName": "Alchemist's Crucible",

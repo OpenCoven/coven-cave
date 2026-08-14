@@ -150,6 +150,7 @@ export async function fileAsanaItemAsBead(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "create",
+        surface: "shared",
         title: item.title,
         description: [item.projectName ? `Asana project: ${item.projectName}` : null, `Asana task: ${item.url}`]
           .filter(Boolean)

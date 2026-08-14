@@ -33,6 +33,31 @@ assert.match(shell, /savedFlash \? \(\s*\n[\s\S]{0,220}?<span role="status"/, "t
 
 // Untouched docs must round-trip byte-identical: raw is canonical state.
 assert.match(shell, /const \[raw, setRaw\] = useState\(value\)/, "raw document string is the canonical state");
+assert.match(
+  shell,
+  /splitLeadingMdComments\(doc\.body\)/,
+  "Visual mode derives a metadata-free presentation body",
+);
+assert.match(
+  shell,
+  /defaultValue=\{presentation\.visibleBody\}/,
+  "Milkdown never receives the leading metadata comment",
+);
+assert.match(
+  shell,
+  /const visualHiddenPrefixRef = useRef\(presentation\.hiddenPrefix\)/,
+  "Visual mode keeps a mount-scoped hidden metadata prefix ref",
+);
+assert.match(
+  shell,
+  /useEffect\(\(\) => \{\s*\n\s*visualHiddenPrefixRef\.current = presentation\.hiddenPrefix;\s*\n\s*\}, \[visualEpoch\]\)/,
+  "the hidden metadata prefix refreshes only when the visual mount epoch changes",
+);
+assert.match(
+  shell,
+  /joinLeadingMdComments\(\s*visualHiddenPrefixRef\.current,\s*visibleBody/,
+  "Visual edits reattach the stable hidden metadata prefix",
+);
 
 // ── Visual mode: Milkdown Crepe wiring ───────────────────────────────────────
 
@@ -120,6 +145,21 @@ assert.match(
   "marker-bearing merges land in MARKDOWN mode where the markers are editable",
 );
 assert.match(shell, /setBaseline\(current\.currentText\)/, "take-theirs re-baselines on the disk text");
+assert.match(
+  shell,
+  /const refreshVisualEpoch = useCallback\(\(\) => \{[\s\S]*?setVisualEpoch\(\(n\) => n \+ 1\);[\s\S]*?\}, \[\]\);/,
+  "conflict exits refresh the visual epoch before remounting Visual mode",
+);
+assert.match(
+  shell,
+  /resolveKeepMine = useCallback\(\(\) => \{[\s\S]*?refreshVisualEpoch\(\);[\s\S]*?setConflict\(null\);[\s\S]*?void save\(\);[\s\S]*?\}, \[refreshVisualEpoch, save\]\);/,
+  "Keep Mine bumps the visual epoch before resaving the draft",
+);
+assert.match(
+  shell,
+  /onDismiss=\{\(\) => \{[\s\S]*?refreshVisualEpoch\(\);[\s\S]*?setConflict\(null\);[\s\S]*?\}\}/,
+  "Dismiss bumps the visual epoch before returning to editing",
+);
 
 // ── Theme: crepe vars ride the Cave tokens ───────────────────────────────────
 

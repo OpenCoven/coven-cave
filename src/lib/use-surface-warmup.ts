@@ -5,7 +5,7 @@ import { markEnd, markStart } from "@/lib/perf/marks";
 import { abortWarm, invalidateIfDefined } from "@/lib/surface-warm-cache";
 import type { SurfaceWarmupSurface } from "@/lib/surface-warmup-registry";
 
-const ORDER: readonly SurfaceWarmupSurface[] = ["board", "schedules", "github", "marketplace", "grimoire", "agents"];
+const ORDER: readonly SurfaceWarmupSurface[] = ["board", "schedules", "marketplace", "grimoire", "agents"];
 
 function scheduleIdle(callback: () => void): () => void {
   if (typeof window === "undefined") return () => {};

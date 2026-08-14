@@ -31,11 +31,15 @@ assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, 
 assert.match(source, /buildWorkflowRunPrompt\(workflow, body\.inputs\)/, "session executor compiles the manifest and runtime inputs into a run prompt");
 assert.match(source, /path:\s*"\/api\/v1\/sessions"/, "session executor spawns a daemon agent session");
 assert.match(source, /harness:\s*binding\.harness/, "session executor honors the familiar's harness binding");
-assert.match(source, /model:\s*binding\.model/, "session executor honors the familiar's model binding");
 assert.match(
   source,
-  /\{\s*harness:\s*config\.defaults\.harness,\s*model:\s*config\.defaults\.model\s*\}/,
-  "unassigned workflows inherit both default harness and default model",
+  /\.\.\.\(binding\.model \? \{ model: binding\.model \} : \{\}\)/,
+  "session executor honors explicit bindings and omits an absent runtime-owned model",
+);
+assert.match(
+  source,
+  /runtimeOwnsModelDefault\(initialBinding\.harness\)[\s\S]{0,120}model:\s*""/,
+  "unbound runtime-owned workflow sessions defer to the daemon default instead of Cave's global model",
 );
 assert.match(source, /\{\s*familiarId\s*\}/, "session executor passes the familiar to the daemon natively (camelCase familiarId, as the daemon keys on)");
 assert.match(source, /isAllowedHarness\(binding\.harness\)/, "session executor guards the harness allow-list");
@@ -64,7 +68,7 @@ assert.match(
 // flows. SSH/hub copilot stays on the daemon.
 assert.match(
   source,
-  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,1200}startCopilotFlowRun\(/,
+  /binding\.harness === "copilot" && !sshBound && !hubAuthority[\s\S]{0,1400}startCopilotFlowRunWithTransportBoundary\(/,
   "a local copilot workflow spawns the CLI directly instead of an orphaned daemon TUI",
 );
 assert.match(
@@ -84,14 +88,19 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(capabilityFailure\)[\s\S]*?return NextResponse\.json\([\s\S]*?status: 409[\s\S]*?startCopilotFlowRun\(/,
+  /if \(capabilityFailure\)[\s\S]*?return NextResponse\.json\([\s\S]*?status: 409[\s\S]*?startCopilotFlowRunWithTransportBoundary\(/,
   "a failed capability gate cannot start a direct workflow session",
 );
 const compatibilityGateIndex = source.indexOf("if (!spec)");
-const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRun", compatibilityGateIndex);
+const directCopilotLaunchIndex = source.indexOf("startCopilotFlowRunWithTransportBoundary", compatibilityGateIndex);
 assert.ok(
   compatibilityGateIndex >= 0 && directCopilotLaunchIndex > compatibilityGateIndex,
   "an unsupported local Copilot workflow returns before creating a durable running workflow record",
+);
+assert.match(
+  source,
+  /startCopilotFlowRunWithTransportBoundary\(\{[\s\S]*?permissionMode: "unattended"[\s\S]*?\}, finishSession\)/,
+  "workflow bookkeeping is completed through the exact-owner rollback boundary",
 );
 
 console.log("workflow run route.test.ts: ok");

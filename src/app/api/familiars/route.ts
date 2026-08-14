@@ -16,6 +16,8 @@ import {
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";
+import { loadPreferences } from "@/lib/server/preferences-store";
+import { voiceBindingForNewFamiliar } from "@/lib/voice/new-familiar-defaults";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +118,8 @@ export async function GET(req: Request) {
       autoSelfReport: configEntry.autoSelfReport ?? false,
       asanaEnabled: configEntry.asanaEnabled,
       asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
+      xResearchEnabled: configEntry.xResearchEnabled === true,
+      xPublishEnabled: configEntry.xPublishEnabled === true,
       ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
       avatarUrl: avatar
         ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
@@ -244,6 +248,8 @@ export async function POST(req: Request) {
 
   // Upsert only this familiar's binding. No `defaults` key → global defaults
   // are preserved (see the doc comment above).
+  const preferences = await loadPreferences();
+  const voiceBinding = voiceBindingForNewFamiliar(preferences.voice);
   await saveConfig({
     familiars: {
       [draft.id]: {
@@ -251,6 +257,10 @@ export async function POST(req: Request) {
         model: draft.model,
         ...(draft.hermesProfile ? { hermesProfile: draft.hermesProfile } : {}),
         ...(draft.runtime ? { runtime: draft.runtime } : {}),
+        voiceProvider: null,
+        voiceModel: null,
+        voiceName: null,
+        ...voiceBinding,
       },
     },
   });
@@ -272,7 +282,6 @@ export async function POST(req: Request) {
   // Re-creating a removed id must clear its tombstone: the roster GET hides
   // tombstoned ids, so a stale entry would make the new familiar invisible.
   await takeTombstone(draft.id).catch(() => {});
-
   // Scaffold the Familiar Contract (SOUL.md / IDENTITY.md / ward.toml /
   // MEMORY.md) so the new familiar is contract-compliant from birth instead of
   // showing up for "rehabilitation" in the Studio Contract tab. Best-effort and

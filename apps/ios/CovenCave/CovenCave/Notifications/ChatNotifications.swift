@@ -15,7 +15,7 @@ enum ChatNotifications {
     /// Settings → Notifications toggle (default on; authorization still gates).
     static let enabledKey = "cave.chat.notifications"
     /// Longest reply preview shown in the banner body.
-    static let previewCap = 160
+    nonisolated static let previewCap = 160
 
     static var isEnabled: Bool {
         UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
