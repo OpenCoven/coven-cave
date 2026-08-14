@@ -339,6 +339,22 @@ export function encodeClientStreamEvent(seq: number, event: ClientStreamEvent): 
   return encoder.encode(`id: ${seq}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
+/**
+ * A synthetic reconciliation has no canonical run-buffer entry. Its frame
+ * repeats the caller's last committed canonical cursor rather than claiming
+ * `cursor + 1`, which may become the next real event. A reconnect therefore
+ * continues at the still-unconsumed canonical sequence.
+ */
+export function encodeClientReconcileEvent(
+  cursor: number,
+  conversationId: string,
+): Uint8Array {
+  return encodeClientStreamEvent(cursor, {
+    type: "reconcile_required",
+    conversationId,
+  });
+}
+
 function sseHeaders(): HeadersInit {
   return {
     "content-type": "text/event-stream; charset=utf-8",
@@ -520,6 +536,26 @@ export function createResumedRunStream(
           return false;
         }
       };
+      const replayHasReplacementCheckpointBeforeAssistantMutation = () => {
+        if (!subscription) return false;
+        // A previous synthetic reconciliation can close immediately before
+        // the producer appends its authoritative replacement. That retained
+        // replacement is a new canonical checkpoint, so replay it instead of
+        // issuing another synthetic frame that would keep the cursor pinned.
+        for (const entry of subscription.replay) {
+          try {
+            const event = JSON.parse(entry.json) as { kind?: unknown; text?: unknown };
+            if (event.kind === "assistant_replace") return typeof event.text === "string";
+            if (
+              event.kind === "assistant_chunk"
+              && (typeof event.text !== "string" || event.text.length > 0)
+            ) return false;
+          } catch {
+            return false;
+          }
+        }
+        return false;
+      };
 
       const nextEvent = () => {
         if (subscription && replayIndex < subscription.replay.length) {
@@ -608,11 +644,10 @@ export function createResumedRunStream(
       }
       if (subscription.cursorAhead) {
         try {
-          controller.enqueue(encodeClientStreamEvent(cursor + 1, {
-            type: "reconcile_required",
-            conversationId: context.conversationId,
-          }));
-          lastEmittedSeq = cursor + 1;
+          controller.enqueue(
+            encodeClientReconcileEvent(subscription.latestSeq, context.conversationId),
+          );
+          lastEmittedSeq = subscription.latestSeq;
         } catch {
           // The transport already closed.
         }
@@ -621,13 +656,13 @@ export function createResumedRunStream(
         return;
       }
       const reconcileSeq = subscription.gapBeforeSeq
-        ?? (subscription.translatorSeedComplete ? null : cursor + 1);
+        ?? (subscription.translatorSeedComplete
+          || replayHasReplacementCheckpointBeforeAssistantMutation()
+          ? null
+          : cursor);
       if (reconcileSeq !== null) {
         try {
-          controller.enqueue(encodeClientStreamEvent(reconcileSeq, {
-            type: "reconcile_required",
-            conversationId: context.conversationId,
-          }));
+          controller.enqueue(encodeClientReconcileEvent(reconcileSeq, context.conversationId));
           lastEmittedSeq = reconcileSeq;
         } catch {
           // The transport already closed.
