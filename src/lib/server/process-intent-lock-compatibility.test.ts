@@ -672,6 +672,7 @@ if (workerMode) {
         artifacts.some((name) =>
           name.startsWith(".intent-") ||
           name.startsWith(".quiescence-") ||
+          name.startsWith(".publisher") ||
           name.startsWith(".published-") ||
           /^\d{24}-\d+-[a-f0-9]{16}-[a-f0-9]+\.lock$/.test(name)
         ),

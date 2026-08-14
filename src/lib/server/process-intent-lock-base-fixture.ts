@@ -44,7 +44,7 @@ async function processStartIdentity(pid: number): Promise<string | null> {
         "-NonInteractive",
         "-Command",
         script,
-      ]);
+      ], { windowsHide: true });
       const startedAt = stdout.trim();
       if (startedAt) return `win32:${startedAt}`;
     } else {
@@ -53,7 +53,7 @@ async function processStartIdentity(pid: number): Promise<string | null> {
         "lstart=",
         "-p",
         String(pid),
-      ]);
+      ], { windowsHide: true });
       const startedAt = stdout.trim().replace(/\s+/g, " ");
       if (startedAt) return `${process.platform}:${startedAt}`;
     }

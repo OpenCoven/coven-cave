@@ -113,6 +113,34 @@ test("simultaneous current contenders do not livelock while yielding stale prior
   await loserRelease();
 });
 
+test("high-contention current publishers make progress without gate churn", {
+  timeout: 15_000,
+}, async () => {
+  const intentsDirectory = path.join(temporary, "high-contention-current");
+  const contenderCount = 40;
+  let publishedGates = 0;
+
+  await Promise.all(
+    Array.from({ length: contenderCount }, async (_, index) => {
+      const release = await acquireProcessIntentLock({
+        intentsDirectory,
+        label: `high-contention current ${index}`,
+        timeoutMs: 10_000,
+        publicationStage: async (stage) => {
+          if (stage === "gate-parent-synced") publishedGates += 1;
+        },
+      });
+      await release();
+    }),
+  );
+
+  assert.equal(
+    publishedGates,
+    contenderCount,
+    "each contender should publish exactly one compatibility gate",
+  );
+});
+
 test("an arbitrarily old live-owner intent is never reclaimed", async () => {
   const intentsDirectory = path.join(temporary, "live-owner");
   const releaseLiveOwner = await acquireProcessIntentLock({

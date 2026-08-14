@@ -678,5 +678,5 @@ test("a transient terminal write failure is reconciled after storage recovers", 
     () => `generation ${generationId} never reached failed`,
   );
   assert.equal(failed?.status, "failed");
-  assert.equal(failed?.error, "interrupted by runner ownership loss");
+  assert.equal(failed?.error, "renderer failed while storage was unavailable");
 });

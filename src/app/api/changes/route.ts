@@ -97,6 +97,7 @@ function gitWithInput(
       "git",
       args,
       {
+        windowsHide: true,
         cwd,
         timeout: GIT_TIMEOUT_MS,
         maxBuffer: MAX_GIT_BUFFER,

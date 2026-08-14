@@ -23,9 +23,13 @@ const PREVIOUS_INTENT_STATE_NAME =
 const RELEASED_INTENT_NAME = /^\.released-/;
 const QUIESCENCE_PROBE_NAME =
   /^\.quiescence-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.probe$/;
+const PUBLISHER_CLAIM_NAME =
+  /^\.publisher-(\d+)-([a-f0-9]{16})-([a-f0-9]+)\.tmp$/;
+const PUBLISHER_LOCK_NAME = ".publisher.lock";
 const INTENT_OWNER_FILE = "owner.json";
 const INTENT_GATE_FILE = "gate.json";
 const MALFORMED_INTENT_GRACE_MS = 30_000;
+const PUBLISHER_IDENTITY_GRACE_MS = 250;
 const execFileAsync = promisify(execFile);
 const pendingIntentRemovals = new Map<
   string,
@@ -569,6 +573,20 @@ async function removeStaleIntentArtifacts(
         await removeIntent(pathname);
         return;
       }
+      const publisherClaim = PUBLISHER_CLAIM_NAME.exec(name);
+      if (publisherClaim) {
+        const pid = Number(publisherClaim[1]);
+        if (!Number.isSafeInteger(pid) || pid <= 0) return;
+        const identity = await processStartIdentity(pid);
+        if (
+          identity !== null &&
+          identityHash(identity) === publisherClaim[2]
+        ) {
+          return;
+        }
+        await removeIntent(pathname);
+        return;
+      }
       if (RELEASED_INTENT_NAME.test(name)) {
         await removeIntent(pathname);
         return;
@@ -902,6 +920,162 @@ async function prepareIntentDraft(
   }
 }
 
+async function preparePublisherClaim(
+  options: ProcessIntentLockOptions,
+  owner: IntentOwner,
+): Promise<string> {
+  for (;;) {
+    const claimPath = path.join(
+      /* turbopackIgnore: true */ options.intentsDirectory,
+      `.publisher-${owner.pid}-${owner.startIdentityHash}-` +
+        `${randomBytes(8).toString("hex")}.tmp`,
+    );
+    try {
+      await mkdir(/* turbopackIgnore: true */ claimPath, { mode: 0o700 });
+      try {
+        const ownerHandle = await open(
+          /* turbopackIgnore: true */ path.join(claimPath, INTENT_OWNER_FILE),
+          "wx",
+          0o600,
+        );
+        try {
+          await ownerHandle.writeFile(`${JSON.stringify(owner)}\n`);
+          await ownerHandle.sync();
+        } finally {
+          await ownerHandle.close();
+        }
+        await fsyncDirectoryIfSupported(claimPath);
+        return claimPath;
+      } catch (error) {
+        await rm(
+          /* turbopackIgnore: true */ claimPath,
+          { force: true, recursive: true },
+        );
+        throw error;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw error;
+    }
+  }
+}
+
+async function acquireCompatibilityPublisher(
+  options: ProcessIntentLockOptions,
+  owner: IntentOwner,
+  deadline: number,
+): Promise<() => Promise<void>> {
+  const claimPath = await preparePublisherClaim(options, owner);
+  const lockPath = path.join(
+    /* turbopackIgnore: true */ options.intentsDirectory,
+    PUBLISHER_LOCK_NAME,
+  );
+  let published = false;
+  let observedOwner: IntentOwner | null = null;
+  let observedAt = 0;
+  try {
+    for (;;) {
+      assertCanContinue(deadline, options.label, options.signal);
+      try {
+        await rename(
+          /* turbopackIgnore: true */ claimPath,
+          /* turbopackIgnore: true */ lockPath,
+        );
+        published = true;
+        try {
+          await fsyncDirectoryIfSupported(options.intentsDirectory);
+        } catch (error) {
+          await retireIntent(lockPath);
+          throw error;
+        }
+        let released = false;
+        return async () => {
+          if (released) return;
+          released = true;
+          await retireIntent(lockPath);
+        };
+      } catch (error) {
+        if (!(await renameCollision(error, lockPath))) throw error;
+      }
+
+      let lockInfo: Awaited<ReturnType<typeof lstat>>;
+      try {
+        lockInfo = await lstat(/* turbopackIgnore: true */ lockPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      let lockOwner: IntentOwner | null = null;
+      if (!lockInfo.isSymbolicLink() && lockInfo.isDirectory()) {
+        try {
+          const parsed = JSON.parse(
+            await readFile(
+              /* turbopackIgnore: true */ path.join(
+                lockPath,
+                INTENT_OWNER_FILE,
+              ),
+              "utf8",
+            ),
+          ) as Partial<IntentOwner>;
+          if (
+            Number.isSafeInteger(parsed.pid) &&
+            Number(parsed.pid) > 0 &&
+            typeof parsed.startIdentityHash === "string" &&
+            /^[a-f0-9]{16}$/.test(parsed.startIdentityHash)
+          ) {
+            lockOwner = {
+              pid: Number(parsed.pid),
+              startIdentityHash: parsed.startIdentityHash,
+            };
+          }
+        } catch {
+          // A malformed publisher receives the same fail-closed grace as a
+          // partially published legacy intent.
+        }
+      }
+
+      if (lockOwner) {
+        if (sameOwner(lockOwner, owner)) {
+          await waitBeforeRetry(deadline, options.label, options.signal);
+          continue;
+        }
+        if (!processIsAlive(lockOwner.pid)) {
+          await retireIntent(lockPath);
+          continue;
+        }
+        const now = Date.now();
+        if (observedOwner === null || !sameOwner(lockOwner, observedOwner)) {
+          observedOwner = lockOwner;
+          observedAt = now;
+        }
+        if (now - observedAt < PUBLISHER_IDENTITY_GRACE_MS) {
+          await waitBeforeRetry(deadline, options.label, options.signal);
+          continue;
+        }
+        const identity = await processStartIdentity(lockOwner.pid);
+        assertCanContinue(deadline, options.label, options.signal);
+        if (
+          identity === null ||
+          identityHash(identity) !== lockOwner.startIdentityHash
+        ) {
+          await retireIntent(lockPath);
+          continue;
+        }
+        observedAt = Date.now();
+      } else if (
+        Date.now() - lockInfo.mtimeMs >=
+        MALFORMED_INTENT_GRACE_MS
+      ) {
+        await retireIntent(lockPath);
+        continue;
+      }
+      await waitBeforeRetry(deadline, options.label, options.signal);
+    }
+  } finally {
+    if (!published) await removeIntent(claimPath);
+  }
+}
+
 async function publishCompatibilityGate(
   intentsDirectory: string,
   owner: IntentOwner,
@@ -914,63 +1088,72 @@ async function publishCompatibilityGate(
       `${order}-${owner.pid}-${owner.startIdentityHash}-` +
       `${randomBytes(8).toString("hex")}.lock`;
     await options.publicationStage?.("gate-name-selected");
-    const preBarrierLegacyNames = await establishLegacyQuiescence(
+    const releasePublisher = await acquireCompatibilityPublisher(
       options,
       owner,
       deadline,
     );
-    if (preBarrierLegacyNames.length > 0) {
-      await options.acquisitionStage?.("waiting-for-pre-barrier-legacy");
-      const removed = await removeStaleLegacyIntents(options, deadline);
-      if (!removed) {
-        await waitBeforeRetry(deadline, options.label, options.signal);
-      }
-      continue;
-    }
-    await options.publicationStage?.("legacy-quiescence-established");
-    const pathname = path.join(
-      /* turbopackIgnore: true */ intentsDirectory,
-      name,
-    );
-    let created = false;
     try {
-      const handle = await open(
-        /* turbopackIgnore: true */ pathname,
-        "wx",
-        0o600,
+      const preBarrierLegacyNames = await establishLegacyQuiescence(
+        options,
+        owner,
+        deadline,
       );
-      created = true;
-      try {
-        await handle.writeFile(
-          `${JSON.stringify({
-            ...owner,
-            protocol: 2,
-            preBarrierLegacyNames,
-          })}\n`,
-        );
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await fsyncDirectoryIfSupported(intentsDirectory);
-      await options.publicationStage?.("gate-parent-synced");
-      const afterGateLegacyNames = legacySnapshot(
-        (await listIntentEntries(intentsDirectory)).filter(
-          (entry) => entry.name !== name,
-        ),
-      );
-      await options.publicationStage?.("gate-legacy-rescanned");
-      if (!sameSnapshot(preBarrierLegacyNames, afterGateLegacyNames)) {
-        await retireGateBeforeRestart(pathname, options, deadline);
+      if (preBarrierLegacyNames.length > 0) {
         await options.acquisitionStage?.("waiting-for-pre-barrier-legacy");
-        await waitBeforeRetry(deadline, options.label, options.signal);
+        const removed = await removeStaleLegacyIntents(options, deadline);
+        if (!removed) {
+          await waitBeforeRetry(deadline, options.label, options.signal);
+        }
         continue;
       }
-      return { name, path: pathname, preBarrierLegacyNames };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
-      if (created) await removeIntent(pathname);
-      throw error;
+      await options.publicationStage?.("legacy-quiescence-established");
+      const pathname = path.join(
+        /* turbopackIgnore: true */ intentsDirectory,
+        name,
+      );
+      let created = false;
+      try {
+        const handle = await open(
+          /* turbopackIgnore: true */ pathname,
+          "wx",
+          0o600,
+        );
+        created = true;
+        try {
+          await handle.writeFile(
+            `${JSON.stringify({
+              ...owner,
+              protocol: 2,
+              preBarrierLegacyNames,
+            })}\n`,
+          );
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        await fsyncDirectoryIfSupported(intentsDirectory);
+        await options.publicationStage?.("gate-parent-synced");
+        const afterGateLegacyNames = legacySnapshot(
+          (await listIntentEntries(intentsDirectory)).filter(
+            (entry) => entry.name !== name,
+          ),
+        );
+        await options.publicationStage?.("gate-legacy-rescanned");
+        if (!sameSnapshot(preBarrierLegacyNames, afterGateLegacyNames)) {
+          await retireGateBeforeRestart(pathname, options, deadline);
+          await options.acquisitionStage?.("waiting-for-pre-barrier-legacy");
+          await waitBeforeRetry(deadline, options.label, options.signal);
+          continue;
+        }
+        return { name, path: pathname, preBarrierLegacyNames };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+        if (created) await removeIntent(pathname);
+        throw error;
+      }
+    } finally {
+      await releasePublisher();
     }
   }
 }
