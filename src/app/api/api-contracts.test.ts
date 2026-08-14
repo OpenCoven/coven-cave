@@ -418,11 +418,6 @@ function effectiveRouteSource(file: string, source: string): string {
       readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "client-v1", "responses.ts"), "utf8"),
     );
   }
-  if (source.includes('from "@/lib/server/chat-send-service"')) {
-    parts.push(
-      readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "chat-send-service.ts"), "utf8"),
-    );
-  }
   return parts.join("\n");
 }
 
@@ -591,7 +586,7 @@ for (const contract of contracts) {
 // OpenClaw bridge) carry the guard.
 {
   const sendSource = readFileSync(
-    path.join(apiRoot, "..", "..", "lib", "server", "chat-send-service.ts"),
+    path.join(apiRoot, "chat", "send", "route.ts"),
     "utf8",
   );
   const sseSource = readFileSync(

@@ -7,7 +7,7 @@ import {
 } from "./coven-identity-canon.ts";
 
 const canon = await readFile(new URL("./coven-identity-canon.ts", import.meta.url), "utf8");
-const chatRoute = await readFile(new URL("./server/chat-send-service.ts", import.meta.url), "utf8");
+const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 const salemContext = await readFile(new URL("../components/salem/salem-context.ts", import.meta.url), "utf8");
 const salemRoute = await readFile(new URL("../app/api/salem/route.ts", import.meta.url), "utf8");
 
