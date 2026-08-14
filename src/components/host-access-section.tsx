@@ -10,25 +10,28 @@ import { SettingsGroup } from "@/components/ui/settings-group";
 
 type Capability = { id: string; label: string; description: string };
 type Grant = { id: string; familiarId: string; sessionId: string; capability: string; grantedAt: string; expiresAt: string };
+type Session = { id: string; title: string };
 
 /** Host authority is intentionally not another project toggle. It is visible
  * here so “Full” cannot be mistaken for administrator or OS-service access. */
 export function HostAccessSection({ familiarId }: { familiarId?: string | null }) {
   const [catalog, setCatalog] = useState<Capability[]>([]);
   const [grants, setGrants] = useState<Grant[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState("");
   const load = useCallback(async () => {
     try {
-      const response = await fetch("/api/host-capability-grants", { cache: "no-store" });
+      const response = await fetch(`/api/host-capability-grants${familiarId ? `?familiarId=${encodeURIComponent(familiarId)}` : ""}`, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error("load failed");
       setCatalog(Array.isArray(body.catalog) ? body.catalog : []);
       setGrants(Array.isArray(body.grants) ? body.grants : []);
+      setSessions(Array.isArray(body.sessions) ? body.sessions : []);
       setError(null);
     } catch { setError("Couldn’t load host access."); }
-  }, []);
+  }, [familiarId]);
   useEffect(() => { void load(); }, [load]);
   const visible = useMemo(() => grants.filter((grant) => !familiarId || grant.familiarId === familiarId), [grants, familiarId]);
   const revoke = useCallback(async (grant: Grant) => {
@@ -64,8 +67,8 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
         ) : (
           <div className="divide-y divide-[var(--border-hairline)]">
             <div className="px-4 py-3">
-              <label className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]" htmlFor="host-access-session">Session ID</label>
-              <input id="host-access-session" value={sessionId} onChange={(event) => setSessionId(event.target.value)} placeholder="Session requesting host access" className="focus-ring mt-1 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-sunken)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]" />
+              <label className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]" htmlFor="host-access-session">Cave session</label>
+              <select id="host-access-session" value={sessionId} onChange={(event) => setSessionId(event.target.value)} className="focus-ring mt-1 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-sunken)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"><option value="">Choose a session…</option>{sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}</select>
               <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">Approval applies only to this familiar and session for 30 minutes. It starts a fresh native session before use.</p>
             </div>
             {catalog.map((capability) => <div key={capability.id} className="flex items-center justify-between gap-3 px-4 py-3">
