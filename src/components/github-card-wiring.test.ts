@@ -148,6 +148,11 @@ assert.match(
   "the branch to delete comes from GitHub's own PR object",
 );
 assert.match(
+  mergeRoute,
+  /headRepo\.toLowerCase\(\) !== repo\.toLowerCase\(\)/,
+  "fork PR cleanup cannot target a same-named branch in the base repository",
+);
+assert.match(
   composer,
   /effective !== "approve" && !body/,
   "empty bodies are blocked for every verb GitHub requires one for; approve is the sole exception",
