@@ -65,8 +65,14 @@ assert.match(
 
 assert.match(
   chatProjectSidebar,
-  /onClick=\{\(\) => \{[\s\S]*onSelect\(key\);[\s\S]*onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*aria-expanded=\{expanded\}[\s\S]*className=\{\[[\s\S]*flex min-w-0 flex-1 items-center/,
+  /onClick=\{\(\) => \{[\s\S]*onSelect\(key\);[\s\S]*if \(!hasSearch\) onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*aria-expanded=\{projectVisible\}[\s\S]*className=\{\[[\s\S]*flex min-h-\[38px\] min-w-0 flex-1 items-center/,
   "Project rows should make the full label/count area the collapse trigger instead of only the caret",
+);
+
+assert.match(
+  chatProjectSidebar,
+  /<section[\s\S]*aria-label=\{organization\.label\}[\s\S]*<button[\s\S]*type="button"[\s\S]*className="focus-ring[\s\S]*aria-expanded=\{organizationVisible\}/,
+  "Open project mode should render accessible organization sections with full-row disclosure buttons",
 );
 
 assert.match(
