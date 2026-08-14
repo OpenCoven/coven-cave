@@ -8270,6 +8270,7 @@ function splitSegmentsForGitHub(
  */
 function splitSegmentsForSpecs(
   segments: MessageBubbleSegment[],
+  onOpenUrl?: (url: string) => void,
 ): MessageBubbleSegment[] {
   return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
     if (segment.kind !== "text") return [segment];
@@ -8282,7 +8283,7 @@ function splitSegmentsForSpecs(
       return [{
         kind: "block" as const,
         key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
-        node: <ChatSpecCard spec={piece.spec} />,
+        node: <ChatSpecCard spec={piece.spec} onOpenUrl={onOpenUrl} />,
       }];
     });
   });
@@ -8806,7 +8807,7 @@ function TurnRowImpl({
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
-          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }]),
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
         ),
         artifactCtx,
       ),
