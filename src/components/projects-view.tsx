@@ -26,12 +26,11 @@ import {
   accessStateMeta,
   filterProjectsByQuery,
   nextAccessState,
-  sectionModels,
   setAllOps,
   type AccessOp,
   type AccessState,
-  type SectionModel,
 } from "@/lib/projects/access-page";
+import { projectOrganizationGroups } from "@/lib/project-organizations";
 import {
   accessLedger,
   grantChips,
@@ -131,12 +130,11 @@ const VIEW_STORAGE_KEY = "cave:projects:view";
 
 /**
  * The Chat → Projects surface: one familiar's project-access map. Pick a
- * familiar, see every registered project — grouped into workspaces and
- * repositories, or flattened into one list via the toolbar toggle (persisted
- * per profile) — and click a row to cycle its direct grant — no access → read
- * → full → none — against /api/project-grants. Effective levels fold in
- * access-group grants (union-max), and the supreme familiar renders locked
- * at Full everywhere.
+ * familiar, see every registered project — grouped by organization in Grid,
+ * or reordered into Rows and Tree audits via the persisted toolbar switcher —
+ * and click a row to cycle its direct grant — no access → read → full → none
+ * — against /api/project-grants. Effective levels fold in access-group grants
+ * (union-max), and the supreme familiar renders locked at Full everywhere.
  */
 export function ProjectsView({ familiars = [], activeFamiliarId = null }: ProjectsViewProps) {
   const { announce } = useAnnouncer();
@@ -412,9 +410,11 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [announce],
   );
   const filtered = useMemo(() => filterProjectsByQuery(projects, query), [projects, query]);
-  // Grid keeps the workspace/repository split; rows and tree impose their own
-  // ordering, so they read from the flat filtered set.
-  const sections = useMemo(() => sectionModels(filtered, true), [filtered]);
+  const hasSearch = query.trim().length > 0;
+  const organizationSections = useMemo(
+    () => projectOrganizationGroups(filtered),
+    [filtered],
+  );
 
   /** The header's proportional access bar — always the whole map. */
   const ledger = useMemo(() => accessLedger(counts), [counts]);
@@ -603,8 +603,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   );
 
   const setAllInSection = useCallback(
-    (section: SectionModel<CaveProject>, target: AccessState) => {
-      const ids = section.projects.map((p) => p.id);
+    (projectsInSection: readonly CaveProject[], label: string, target: AccessState) => {
+      const ids = projectsInSection.map((project) => project.id);
       const ops = setAllOps(ids, directByProject, target);
       if (ops.length === 0) {
         announce("Nothing to change.");
@@ -612,7 +612,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       }
       void applyOps(
         ops,
-        `${section.label}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
+        `${label}: ${ops.length} ${ops.length === 1 ? "project" : "projects"} set to ${accessStateMeta(target).label}.`,
       );
     },
     [directByProject, applyOps, announce],
@@ -974,7 +974,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       </div>
     );
   } else {
-    // Grid: cards, split into workspaces and repositories.
+    // Grid: cards grouped alphabetically by canonical organization.
     body = (
       <>
         {supreme && familiar ? (
@@ -983,30 +983,37 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             {familiarLabel(familiar)} is the supreme familiar — full access to everything, always.
           </p>
         ) : null}
-        {sections.map((section) => {
-          const rows = section.projects
+        {organizationSections.map((section) => {
+          const organization = section.organization;
+          const rows = section.items
             .map((project) => rowsById.get(project.id))
             .filter((row): row is (typeof viewRows)[number] => Boolean(row));
-          const isCollapsed = collapsed.has(section.key);
+          const organizationCollapsed = collapsed.has(organization.key);
+          const organizationVisible = hasSearch || !organizationCollapsed;
+          const organizationLabel = hasSearch
+            ? `${organization.label} projects shown for search`
+            : organization.label;
           return (
-            <section key={section.key} className="projects-access-section" aria-label={section.label}>
+            <section key={organization.key} className="projects-access-section" aria-label={organization.label}>
               <header className="projects-access-section-head">
                 <button
                   type="button"
                   className="projects-access-section-toggle focus-ring"
-                  aria-expanded={!isCollapsed}
-                  onClick={() => toggleSection(section.key)}
+                  onClick={hasSearch ? undefined : () => toggleSection(organization.key)}
+                  disabled={hasSearch}
+                  aria-expanded={organizationVisible}
+                  aria-label={organizationLabel}
                 >
                   <Icon
-                    className={`projects-access-caret${isCollapsed ? " is-closed" : ""}`}
+                    className={`projects-access-caret${organizationVisible ? "" : " is-closed"}`}
                     name="ph:caret-down"
                     width={10}
                     aria-hidden
                   />
-                  <span className="projects-access-section-title">{section.label}</span>
+                  <span className="projects-access-section-title">{organization.label}</span>
                   <span className="projects-access-section-count">{rows.length}</span>
                   {/* Folding a section must never hide that something in it is granted. */}
-                  {isCollapsed ? (
+                  {!organizationVisible ? (
                     <>
                       <span className="projects-access-mix">
                         {sectionMix(rows.map((row) => row.state)).map((chip) => (
@@ -1035,8 +1042,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                       type="button"
                       className={`projects-access-setall-btn is-${target} focus-ring`}
                       disabled={controlsDisabled}
-                      title={`Set every project in ${section.label} to ${accessStateMeta(target).label}`}
-                      onClick={() => setAllInSection(section, target)}
+                      title={`Set every project in ${organization.label} to ${accessStateMeta(target).label}`}
+                      onClick={() => setAllInSection(section.items, organization.label, target)}
                     >
                       <span className="projects-access-dot" aria-hidden />
                       {accessStateMeta(target).label}
@@ -1044,7 +1051,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                   ))}
                 </span>
               </header>
-              {!isCollapsed ? (
+              {organizationVisible ? (
                 <ul className="projects-access-grid">{rows.map(renderCard)}</ul>
               ) : null}
             </section>

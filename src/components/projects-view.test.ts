@@ -63,9 +63,34 @@ test("rows cycle a direct grant against /api/project-grants", () => {
   assert.match(view, /resolveEffectiveAccess\(\{/, "pills show the effective level (direct ∪ groups)");
   assert.match(view, /setOptimistic\(/, "mutations render optimistically");
   assert.match(view, /await loadGrants\(\)/, "server snapshot is re-fetched after a mutation");
-  assert.match(view, /sectionModels\(filtered, true\)/, "the grid keeps the workspace/repository split; rows and tree impose their own order");
   assert.match(view, /setAllOps\(/, "bulk actions compute the minimal op set");
   assert.match(view, /keeps \$\{accessStateMeta\(row\.state\)\.label\} via/, "group-held access explains itself instead of firing a no-op revoke");
+});
+
+test("the grid groups project cards by organization without changing their kind", () => {
+  assert.match(
+    view,
+    /const organizationSections = useMemo\(\s*\(\) => projectOrganizationGroups\(filtered\),\s*\[filtered\],\s*\)/,
+    "Grid sections derive from canonical project organizations",
+  );
+  assert.match(view, /organizationSections\.map\(\(section\) => \{/, "Grid renders the organization sections");
+  assert.match(view, /const organization = section\.organization;/, "each section reads its organization metadata");
+  assert.match(
+    view,
+    /section\.items\s*\.map\(\(project\) => rowsById\.get\(project\.id\)\)/,
+    "organization projects resolve through the existing access rows",
+  );
+  assert.match(
+    view,
+    /<section key=\{organization\.key\}[\s\S]{0,120}aria-label=\{organization\.label\}/,
+    "section identity and accessible label come from the organization",
+  );
+  assert.match(
+    view,
+    /title=\{`Set every project in \$\{organization\.label\} to \$\{accessStateMeta\(target\)\.label\}`\}/,
+    "section controls name the organization label",
+  );
+  assert.match(view, /projectKind\(project\.root\)/, "cards retain repository/workspace kind semantics");
 });
 
 test("stale project permissions are visible and repaired only after an explicit human confirmation", () => {
@@ -144,7 +169,22 @@ test("bulk select sets several projects at once", () => {
 test("collapsing a section still reports what is granted inside it", () => {
   assert.match(view, /sectionMix\(rows\.map\(\(row\) => row\.state\)\)/, "collapsed sections show their access mix");
   assert.match(view, /sectionPeek\(rows\.map\(\(row\) => row\.name\)\)/, "and a name peek");
-  assert.match(view, /aria-expanded=\{!isCollapsed\}/, "the section toggle reports its state");
+  assert.match(view, /const hasSearch = query\.trim\(\)\.length > 0;/, "search state ignores whitespace-only queries");
+  assert.match(
+    view,
+    /const organizationCollapsed = collapsed\.has\(organization\.key\);[\s\S]*const organizationVisible = hasSearch \|\| !organizationCollapsed;/,
+    "search visibility is effective state layered over the stored collapsed preference",
+  );
+  assert.match(
+    view,
+    /const organizationLabel = hasSearch[\s\S]*projects shown for search[\s\S]*onClick=\{hasSearch \? undefined : \(\) => toggleSection\(organization\.key\)\}[\s\S]*disabled=\{hasSearch\}[\s\S]*aria-expanded=\{organizationVisible\}[\s\S]*aria-label=\{organizationLabel\}/,
+    "search-forced organization disclosures are truthful, expanded, and unable to mutate stored state",
+  );
+  assert.match(
+    view,
+    /\{!organizationVisible \? \([\s\S]*sectionMix[\s\S]*sectionPeek[\s\S]*\) : null\}[\s\S]*\{organizationVisible \? \([\s\S]*rows\.map\(renderCard\)/,
+    "effective visibility drives both the collapsed summary and matching card rendering",
+  );
   assert.match(css, /\.projects-access-mix \{/, "the mix chips are styled");
 });
 
