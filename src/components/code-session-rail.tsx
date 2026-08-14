@@ -65,6 +65,7 @@ export function CodeSessionRail({
 }: CodeSessionRailProps) {
   const groups = groupCodeRailSessions(sessions);
   const openRailClassName = onExpand ? "py-2" : "overflow-y-auto py-2";
+
   const newButton = open && onNewSession ? (
     <div className="px-2 pb-1">
       <button
@@ -102,6 +103,7 @@ export function CodeSessionRail({
       className={`flex h-full min-h-0 flex-col ${
         open ? openRailClassName : "items-center gap-1"
       }`}
+
     >
       {newButton}
       {groups.map((group) => (

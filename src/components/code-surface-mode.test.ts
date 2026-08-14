@@ -520,6 +520,7 @@ assert.match(
   "the session navigation applies the layout-specific open-state scrolling contract",
 );
 
+
 assert.match(
   composer,
   /streamFamiliarText\(\{\s*familiarId: row\.familiarId,\s*sessionId: row\.id,/,

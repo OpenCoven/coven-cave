@@ -154,6 +154,12 @@ export const SUITES = {
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/x-api.test.ts",
+    "src/lib/tweet-thread-protocol.test.ts",
+    "src/lib/tweet-thread-validation.test.ts",
+    "src/lib/tweet-thread-scoring.test.ts",
+    "src/lib/tweet-thread-blinding.test.ts",
+    "scripts/tweet-thread-protocol-drift.test.mjs",
+    "scripts/tweet-thread-validator.test.mjs",
     "src/lib/server/familiar-avatar-mutation.test.ts",
     "src/lib/server/x-app-config.test.ts",
     "src/lib/server/x-client.test.ts",
@@ -1266,6 +1272,7 @@ export const SUITES = {
     "src/lib/testing/wait-for.test.ts",
     "src/lib/server/research-landing.test.ts",
     "src/lib/server/claude-models.test.ts",
+    "src/lib/server/claude-opus5-routability.test.ts",
     "src/lib/server/copilot-models.test.ts",
     "src/lib/server/grok-models.test.ts",
     "src/lib/server/hermes-models.test.ts",
@@ -1713,6 +1720,7 @@ export const SUITES = {
 const STRIP_TYPES_MJS = new Set([
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
+  "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
@@ -1734,6 +1742,9 @@ const ALIAS_LOADER = new Set([
   // values, so the resolver has to be loaded or the file throws
   // ERR_MODULE_NOT_FOUND before a single assertion runs.
   "src/lib/server/beads-delivery-source.test.ts",
+  // Imports the send route's chat-send-models.ts for its launch-boundary
+  // predicate, and that module resolves "@/lib/..." across its whole graph.
+  "src/lib/server/claude-opus5-routability.test.ts",
   // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
   // for the project allow-list; the suite cannot load without the resolver.
   "src/lib/search-provider.test.ts",
