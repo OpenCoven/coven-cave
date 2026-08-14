@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import type { BdResult } from "@/lib/server/beads-cli";
+import type { BdResult } from "./beads-cli.ts";
 import {
   __clearBeadsDeliveryOverviewCacheForTests,
   __getBeadsDeliveryOverviewEpochForTests,

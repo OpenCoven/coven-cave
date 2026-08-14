@@ -134,7 +134,7 @@ test("workspace wires the first-project gate through pending-aware policy and re
   );
   assert.match(
     src,
-    /const detailContent = renderSurface\(mode\);[\s\S]*const detail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*<div[\s\S]*className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"[\s\S]*aria-hidden=\{firstProjectGateOpen \? true : undefined\}[\s\S]*inert=\{firstProjectGateOpen \|\| undefined\}[\s\S]*>\s*\{detailContent\}\s*<\/div>[\s\S]*<\/div>/,
+    /const detailContent = renderSurface\(mode\);[\s\S]*const defaultDetail = \([\s\S]*\{firstProjectGateOpen \? \([\s\S]*<FirstProjectGate[\s\S]*\) : null\}[\s\S]*<div[\s\S]*className="workspace-detail-content flex h-full min-h-0 min-w-0 flex-1 flex-col"[\s\S]*aria-hidden=\{firstProjectGateOpen \? true : undefined\}[\s\S]*inert=\{firstProjectGateOpen \|\| undefined\}[\s\S]*>\s*\{detailContent\}\s*<\/div>[\s\S]*<\/div>/,
     "workspace renders the gate as an absolute sibling overlay and puts the underlying surface inside an inert, full-height wrapper",
   );
   assert.match(src, /mode === "chat" \? \(\s*<ChatSurface/, "Chat stays a direct render branch");
