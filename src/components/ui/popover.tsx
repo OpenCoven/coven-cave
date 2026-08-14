@@ -406,6 +406,7 @@ export function PopoverItem({
       title={title}
       role={semantic === "button" ? undefined : selectable ? selectableRole : "menuitem"}
       aria-checked={semantic === "button" ? undefined : selectable ? checked : undefined}
+      aria-pressed={semantic === "button" && selectable ? checked : undefined}
     >
       {leading ?? (icon ? <Icon name={icon} width={13} aria-hidden /> : null)}
       <span>{children}</span>
