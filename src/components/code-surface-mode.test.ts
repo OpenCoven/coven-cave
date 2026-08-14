@@ -73,13 +73,10 @@ assert.match(
 
 // ── Workspace wiring ─────────────────────────────────────────────────────────
 
-// cave-x6rw replaced the inline WORKSPACE_MODE_TITLES map with the workspace
-// page registry, and its own test asserts the map is gone. The canonical-label
-// contract is unchanged — it just lives in the registry now (cave-ktvy0).
 assert.match(
   pageRegistry,
-  /code: \{[\s\S]*?title: "Code"/,
-  "the page registry names the Code surface (canonical-nav agreement)",
+  /code: \{\s*id: "code",\s*title: "Code",\s*canonicalId: CODE_ROLE_SURFACE_MODE,/,
+  "the page registry names the Code alias and maps it to the canonical role surface",
 );
 assert.match(
   workspace,

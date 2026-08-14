@@ -484,6 +484,8 @@ def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
+    if plugin.get("skill") or plugin.get("kind") in {"craft", "knowledge-pack"}:
+        manifest["skills"] = "./skills/"
     if plugin.get("mcpServers"):
         manifest["mcpServers"] = plugin["mcpServers"]
     if plugin.get("userConfig"):

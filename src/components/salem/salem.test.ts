@@ -95,23 +95,31 @@ const workspace = await readFile(path.join(root, "src/components/workspace.tsx")
 // The right companion rail was removed; Salem was re-homed into the
 // drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-// cave-x6rw routes launcher opens through a normalized pane request instead of a
-// bare {kind} literal. Same contract — the Salem launcher opens Salem in the
-// drag-to-split pane — asserted on the new call shape (cave-ktvy0).
-assert.match(workspace, /normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), "salem"\)[\s\S]{0,120}?addSplitTarget\(request\)/, "Salem launcher must open Salem in the drag-to-split pane");
-// cave-x6rw promoted the quick-ask surface to a registered page: workspace mounts
-// AskSalemView at mode === "salem". The lazy-boundary contract is unchanged, so
-// this pins the surface actually imported (cave-ktvy0).
-assert.match(workspace, /import \{[\s\S]*AskSalemView[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
+assert.match(
+  workspace,
+  /const request = normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), "salem"\);[\s\S]*if \(request\) addSplitTarget\(request\);/,
+  "Salem launcher must open a normalized Salem page in the drag-to-split pane",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*AskSalemView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  "workspace should lazy-load the Ask Salem page",
+);
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-// Salem is a registered page now: workspace renders <AskSalemView> at
-// mode === "salem", scoped by the active familiar rather than a familiarId prop
-// on a panel. Same contract, current shape (cave-ktvy0).
-assert.match(workspace, /<AskSalemView\s+familiars=\{/, "workspace must render Salem in the split");
-assert.match(workspace, /<AskSalemView[\s\S]*?activeFamiliarId=\{activeId\}/, "workspace must render Salem scoped to the active familiar");
+assert.match(
+  workspace,
+  /mode === "salem" \? \(\s*<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
+  "workspace renders Ask Salem with the familiar roster and active familiar",
+);
 
 // 7. CSS classes present
-const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");
+const css = (
+  await Promise.all([
+    "src/app/globals.css",
+    "src/styles/globals/foundations.css",
+    "src/styles/globals/surface-compact-calendar.css",
+  ].map((file) => readFile(path.join(root, file), "utf8")))
+).join("\n");
 assert.doesNotMatch(css, /\.salem-perch|--salem-proximity/, "floating Salem perch CSS should stay removed");
 assert.match(css, /\.salem-panel/, "must have .salem-panel CSS");
 assert.match(css, /\.salem-panel--rail/, "must support Salem inside the right rail");

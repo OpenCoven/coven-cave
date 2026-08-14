@@ -24,11 +24,9 @@ assert.match(
 assert.match(chatView, /function splitSegmentsForImages\(/, "has the segments→image splitter");
 assert.match(chatView, /function splitSegmentsForArtifacts\(/, "has a segment-preserving artifact splitter");
 assert.match(chatView, /<ImageCarousel images=\{p\.carousel\.images\} \/>/, "mounts the carousel as a block segment");
-// Nesting order, not arity (28166ad01): splitSegmentsForSpecs gained an
-// onOpenUrl argument. Last file still carrying the old shape (cave-ktvy0).
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]/,
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
   "settled path splits images before GitHub/artifact cards, so one group deck can span either boundary",
 );
 assert.match(

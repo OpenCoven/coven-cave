@@ -62,6 +62,7 @@ const ws = read("./workspace.tsx");
 const sidebar = read("./sidebar-minimal.tsx");
 const navigation = read("../lib/workspace-navigation.ts");
 const pageDrag = read("../lib/page-drag.ts");
+const pageRegistry = read("../lib/workspace-page-registry.ts");
 const slash = read("../lib/slash-commands.ts");
 
 // ── Workspace: "journal" is a redirect-only mode (like groupchat) ────────────
@@ -83,15 +84,17 @@ assert.match(navigation, /id: "journal", label: "Journal", iconName: "ph:book-op
 assert.doesNotMatch(navigation, /generated sketches/, "the Journal description no longer promises the canvas");
 assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar consumes the section-filtered visible registry");
 
-// ── A redirect is not a page: journal can't be dragged into a split ─────────
-// cave-x6rw deliberately RETIRED this exclusion: 177d96fd2 deleted the two
-// "terminal/journal is excluded from drag-to-split" tests from page-drag.test.ts
-// and replaced them with "registered pages are splittable", naming terminal,
-// journal and surface:research-desk explicitly. Splittability is now a registry
-// question — a page is draggable iff it is registered — so this file asserts the
-// surviving contract (journal stays a real, registered page) and leaves the
-// splittability contract to page-drag.test.ts, which owns it (cave-ktvy0).
-assert.match(pageDrag, /workspacePageDefinition\(mode\) !== null/, "splittability is a registry lookup");
+// ── Journal is a registered Memories variant, so split requests preserve it ─
+assert.match(
+  pageRegistry,
+  /journal: \{\s*id: "journal",\s*title: "Journal",\s*canonicalId: "grimoire",\s*variant: "journal",/,
+  "journal is registered as the Memories Journal variant",
+);
+assert.match(
+  pageDrag,
+  /return workspacePageDefinition\(mode\) !== null;/,
+  "drag-to-split accepts every registered page variant, including Journal",
+);
 
 // ── Slash palette copy matches the new home ───────────────────────────────────
 assert.match(slash, /name: "\/journal"/, "the /journal slash command survives the redirect");

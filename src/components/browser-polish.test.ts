@@ -5,7 +5,10 @@ import { readFile } from "node:fs/promises";
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const tabState = await readFile(new URL("./browser-tab-state.ts", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
-const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const browserResponsiveStyles = await readFile(
+  new URL("../styles/globals/calendar-agenda.css", import.meta.url),
+  "utf8",
+);
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const nativeLifecycle = await readFile(new URL("../lib/native-browser-lifecycle.ts", import.meta.url), "utf8");
 const navigationQueue = await readFile(new URL("../lib/browser-navigation-queue.ts", import.meta.url), "utf8");
@@ -101,22 +104,22 @@ assert.match(pane, /browser-toolbar-button/, "Browser toolbar buttons should exp
 assert.match(pane, /browser-address-form/, "Browser address form should expose a mobile hook");
 assert.match(pane, /browser-address-input/, "Browser address input should expose a mobile hook");
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-tab-rail\s*\{[\s\S]*display:\s*none/,
   "Mobile browser should hide the hover rail instead of exposing tiny offscreen controls",
 );
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-toolbar\s*\{[\s\S]*transform:\s*none !important[\s\S]*pointer-events:\s*auto !important/,
   "Mobile browser toolbar should stay visible without relying on hover or keyboard shortcuts",
 );
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-toolbar-button\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile browser toolbar buttons should meet the shared touch target",
 );
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-address-input\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile browser address input should meet the shared touch target",
 );
@@ -224,13 +227,9 @@ assert.match(
   /import \{ deactivateAllNativeBrowserWebviews \} from "@\/lib\/native-browser-lifecycle"/,
   "Workspace uses the shared native browser cleanup helper",
 );
-// cave-x6rw normalized split payloads into WorkspacePaneRequest, collapsing the
-// old discriminated union (kind === "browser" | kind === "page" && mode ===
-// "browser") into a single pageId. Same contract: the browser counts as visible
-// from the primary mode OR any split pane (cave-ktvy0).
 assert.match(
   workspace,
-  /mode === "browser" \|\|[\s\S]{0,180}target\.pageId === "browser"/,
+  /mode === "browser" \|\|[\s\S]{0,180}splitTargets\.some\(\(target\) => target\.pageId === "browser"\)/,
   "Workspace tracks browser visibility across primary and split panes",
 );
 assert.match(

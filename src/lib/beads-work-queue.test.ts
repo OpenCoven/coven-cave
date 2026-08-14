@@ -225,8 +225,8 @@ assert.equal(
   if (!/mode === "board" \|\| mode === "familiar-work-queue"/.test(workspace)) {
     throw new Error("workspace must resolve the legacy familiar-work-queue mode onto the merged Tasks surface");
   }
-  if (!/initialTab=\{mode === "familiar-work-queue"[^}]*\? "queue" : "tasks"\}/.test(workspace)) {
-    throw new Error("the legacy mode must deep-link onto the queue tab");
+  if (!/initialTab=\{mode === "familiar-work-queue" \|\| variant === "queue" \? "queue" : "tasks"\}/.test(workspace)) {
+    throw new Error("the legacy mode and queue variant must deep-link onto the queue tab");
   }
   if (!/queueSlot=\{<FamiliarWorkQueueView[^>]*embedded/.test(workspace)) {
     throw new Error("the queue rides the Tasks page as an embedded slot");

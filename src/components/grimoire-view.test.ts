@@ -9,18 +9,23 @@ const view = [
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
 
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
 
 assert.match(modeType, /\| "grimoire"/, "grimoire is a WorkspaceMode");
-// cave-x6rw replaced the inline WORKSPACE_MODE_TITLES map with the workspace
-// page registry, and its own test asserts the map is gone. The canonical-label
-// contract is unchanged — it just lives in the registry now (cave-ktvy0).
-assert.match(pageRegistry, /grimoire: \{[\s\S]*?title: "Memories"/, "grimoire has a page title (sr-only h1) reading Memories");
-assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{[^}]*grimoireView\}/, "grimoire mode renders GrimoireView with the controlled view");
+assert.match(
+  pageRegistry,
+  /grimoire: \{\s*id: "grimoire",\s*title: "Memories",/,
+  "grimoire has a page-registry title reading Memories",
+);
+assert.match(
+  workspace,
+  /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{variant === "journal" \? "journal" : grimoireView\}/,
+  "grimoire mode renders the controlled view while preserving Journal page variants",
+);
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire", "journal"\);/, "the journal mode routes into the Grimoire Journal tab and preserves that destination in history");

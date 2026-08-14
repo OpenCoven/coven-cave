@@ -63,6 +63,18 @@ assert.equal(
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}",
   "late pull_request delivery and its recovery dispatch must share one concurrency key",
 );
+// Sharing the key is deliberate; CANCELLING across it is not. A dispatch
+// resolves to the same group as the run it is rescuing, so with a blanket
+// cancel-in-progress it kills that run and the required check never reports —
+// observed on #4618, where one head collected three cancelled runs and no
+// verdict, each cancellation feeding ci-recovery's `cancelled_latest_run`
+// wedge test and provoking the next dispatch (cave-f22tp). Excluded from
+// cancellation, a dispatch queues behind the in-flight run instead.
+assert.equal(
+  ciWorkflow.concurrency["cancel-in-progress"],
+  "${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}",
+  "a recovery dispatch must never cancel the run it exists to rescue",
+);
 const expectedJobGuards = {
   paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
   ios:

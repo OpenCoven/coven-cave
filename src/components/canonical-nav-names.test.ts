@@ -2,7 +2,7 @@
 // Canonical navigation vocabulary (issue #3283, bead cave-m4ih.1): one surface,
 // one user-facing name, on every platform. The lightweight workspace navigation
 // registry is the source of truth; the desktop sidebar, mobile bottom tabs, and
-// workspace sr-title map
+// workspace page registry
 // must agree with it for every destination they share. This pin exists because
 // the same surface previously shipped as "Tasks" (desktop) / "Board" (mobile)
 // and "Rituals" (desktop) / "Rites" (mobile) at the same time.
@@ -10,9 +10,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
-const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
-const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
 
 // Extract `id -> label` pairs from `{ id: "...", label: "..." }` object rows.
 function extractLabels(source, blockName, blockRe) {
@@ -77,33 +76,34 @@ assert.deepEqual(
   "sidebar primary cluster (→ mobile tabs) should be the four daily destinations",
 );
 
-// ── The sr-only h1 / split-tile title map agrees for sidebar destinations ────
-// cave-x6rw replaced the inline WORKSPACE_MODE_TITLES map with the workspace
-// page registry, and its own test asserts the map is gone. The canonical-label
-// contract is unchanged — it just lives in the registry now (cave-ktvy0).
-const titlesBlock = pageRegistry.match(
+// ── Page definitions agree with the navigation vocabulary ───────────────────
+const pagesBlock = pageRegistry.match(
   /const WORKSPACE_MODE_PAGES = freezePageMap\(\{[\s\S]*?\n\} satisfies Record<WorkspaceMode, WorkspacePageDefinition>\);/,
 )?.[0];
-assert.ok(titlesBlock, "the WORKSPACE_MODE_PAGES registry should be extractable");
-const modeTitles = new Map();
-for (const m of titlesBlock.matchAll(/\n  "?([a-z-]+)"?: \{[\s\S]*?title: "([^"]+)"/g)) {
-  modeTitles.set(m[1], m[2]);
+assert.ok(pagesBlock, "WORKSPACE_MODE_PAGES should be extractable");
+const pageDefinitions = new Map();
+for (const m of pagesBlock.matchAll(
+  /(?:^|\n)\s*"?([a-z-]+)"?: \{\s*id: "([^"]+)",\s*title: "([^"]+)",\s*canonicalId: ([^,\n]+),/g,
+)) {
+  pageDefinitions.set(m[1], {
+    id: m[2],
+    title: m[3],
+    canonicalId: m[4].trim().replaceAll('"', ""),
+  });
 }
-assert.ok(modeTitles.size > 0, "the registry should yield mode titles");
 for (const [id, canonical] of registryLabels) {
-  const title = modeTitles.get(id);
-  if (title === undefined) continue;
+  const definition = pageDefinitions.get(id);
+  if (definition === undefined) continue;
   assert.equal(
-    title,
+    definition.title,
     canonical,
-    `WORKSPACE_MODE_TITLES["${id}"] must use the canonical navigation label "${canonical}", got "${title}"`,
+    `WORKSPACE_MODE_PAGES["${id}"] must use the canonical navigation label "${canonical}", got "${definition.title}"`,
   );
 }
 
-// Alias modes that render another surface's view keep that surface's name —
-// they must never introduce a new peer vocabulary (issue #3283 acceptance:
-// "Compatibility aliases do not appear as peer destinations").
-assert.equal(modeTitles.get("calendar"), modeTitles.get("inbox"), "calendar is a tab of Rituals, not a new name");
-assert.equal(modeTitles.get("familiar-work-queue"), modeTitles.get("board"), "the work queue is a tab of Tasks, not a new name");
+// Alias pages retain distinct, descriptive titles while resolving to the
+// canonical surface instead of introducing peer navigation destinations.
+assert.equal(pageDefinitions.get("calendar")?.canonicalId, "inbox", "calendar is a tab of Rituals");
+assert.equal(pageDefinitions.get("familiar-work-queue")?.canonicalId, "board", "the work queue is a tab of Tasks");
 
 console.log("canonical-nav-names: ok");

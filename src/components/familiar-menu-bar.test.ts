@@ -235,14 +235,10 @@ assert.match(
   /<FamiliarMenuBar[\s\S]*searchQuery=\{topSearchQuery\}[\s\S]*onSearchQueryChange=\{\(query\) => \{[\s\S]*setTopSearchQuery\(query\);[\s\S]*openPalette\(\);/,
   "desktop menu bar search shares the same palette query/open wiring as mobile top bar",
 );
-// Same contract, new surface: cave-x6rw re-homed the quick-ask into a registered
-// page, so workspace renders <AskSalemView> at mode === "salem" and the launcher
-// opens it through a pane request. Salem remains available in the split pane —
-// which is what this assertion is for (cave-ktvy0).
 assert.match(
   workspace,
-  /<AskSalemView\s+familiars=\{[\s\S]*?activeFamiliarId=\{/,
-  "Salem should remain available — re-homed into the drag-to-split pane",
+  /<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
+  "Salem should remain available as a registered page in the drag-to-split pane",
 );
 assert.doesNotMatch(
   workspace,
