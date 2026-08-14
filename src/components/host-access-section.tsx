@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { StandardSelect } from "@/components/ui/select";
 
 type Capability = { id: string; label: string; description: string };
 type Grant = { id: string; familiarId: string; sessionId: string; capability: string; grantedAt: string; expiresAt: string };
@@ -67,8 +68,15 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
         ) : (
           <div className="divide-y divide-[var(--border-hairline)]">
             <div className="px-4 py-3">
-              <label className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]" htmlFor="host-access-session">Cave session</label>
-              <select id="host-access-session" value={sessionId} onChange={(event) => setSessionId(event.target.value)} className="focus-ring mt-1 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-sunken)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"><option value="">Choose a session…</option>{sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}</select>
+              <p className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">Cave session</p>
+              <StandardSelect
+                id="host-access-session"
+                label="Cave session"
+                value={sessionId}
+                onChange={setSessionId}
+                options={[{ value: "", label: "Choose a session…" }, ...sessions.map((session) => ({ value: session.id, label: session.title }))]}
+                className="focus-ring mt-1 flex h-8 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-sunken)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
+              />
               <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">Approval applies only to this familiar and session for 30 minutes. It starts a fresh native session before use.</p>
             </div>
             {catalog.map((capability) => <div key={capability.id} className="flex items-center justify-between gap-3 px-4 py-3">

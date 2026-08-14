@@ -463,6 +463,7 @@ export const SUITES = {
     "src/components/settings-familiars-section.test.ts",
     "src/components/settings-familiars-control-sheet.test.ts",
     "src/components/familiar-studio-projects-tab.test.ts",
+    "src/components/host-access-section.test.ts",
     "src/components/access-groups-section.test.ts",
     "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",
