@@ -6,7 +6,10 @@
 // pairing-store.ts's `claimApprovedPairing` / `finalizeApprovedPairingClaim`
 // / `rollbackApprovedPairingClaim` for the exclusivity invariants this relies
 // on: at most one claim can ever be outstanding per record, so this module
-// never needs to worry about issuing two active credentials for a retry.
+// never needs to worry about issuing two active credentials for a retry. A
+// terminal receipt keeps the token encrypted under the pairing secret for a
+// bounded exact-retry window; a claimant fence is checked immediately before
+// every token-bearing success.
 //
 // Every dependency this needs is injected (module-level default, overridable
 // per call) rather than imported and called directly inline — same pattern
@@ -71,6 +74,7 @@ export type PairingExchangeDeps = {
       claimId?: string;
     },
     recoveryClaimId: string | null,
+    claimId: string,
     now: number,
   ) => ReturnType<typeof settlePairingCredentialSettlement>;
 };
@@ -150,8 +154,8 @@ function hasIssuedReplayReceipt(
  *      id, still-pending/denied/expired/consumed request, or a DIFFERENT key
  *      after completion all fail generically (`classifyUnclaimable`). The
  *      exact same key gets a stronger answer: a concurrent duplicate reports
- *      `processing`, and a post-success replay reports `already_exchanged`
- *      without re-revealing the bearer token.
+ *      `processing`, and a post-success replay returns its original bearer
+ *      token only while the encrypted terminal receipt remains live.
  *   2. `await deps.issueCredential(...)` runs OUTSIDE any destructive
  *      mutation of the pairing store — a failure here has touched nothing
  *      the store cares about yet.
@@ -193,10 +197,7 @@ export async function exchangePairingRequest(
   if (recovered.kind === "pending") {
     return { kind: "processing", retryAfterMs: 1_000 };
   }
-  if (recovered.kind === "replay") {
-    return { kind: "already_exchanged", credential: recovered.credential };
-  }
-  if (recovered.kind === "issued") {
+  if (recovered.kind === "issued" || recovered.kind === "replay") {
     // If this process still has the original in-memory pairing claim, finish
     // its tombstone as well. A restart quite properly reports `missing`
     // here; the durable journal remains the recovery authority in that case.
@@ -221,7 +222,7 @@ export async function exchangePairingRequest(
       });
     }
     try {
-      if (!await settle(settlementContext, recovered.recoveryClaimId, now)) {
+      if (!await settle(settlementContext, recovered.recoveryClaimId, recovered.claimId, now)) {
         return { kind: "recovery_pending" };
       }
     } catch (error) {
@@ -231,6 +232,7 @@ export async function exchangePairingRequest(
       });
       return { kind: "recovery_pending" };
     }
+    crashAtPairingSettlementPoint("after-credential-settlement-before-return");
     return { kind: "ok", token: recovered.token, credential: recovered.credential };
   }
 
@@ -313,7 +315,7 @@ export async function exchangePairingRequest(
   }
   crashAtPairingSettlementPoint("after-pairing-finalize");
   try {
-    if (!await settle(settlementContext, null, now)) {
+    if (!await settle(settlementContext, null, claimed.claimId, now)) {
       return { kind: "recovery_pending" };
     }
   } catch (error) {
@@ -324,7 +326,7 @@ export async function exchangePairingRequest(
     });
     return { kind: "recovery_pending" };
   }
-
+  crashAtPairingSettlementPoint("after-credential-settlement-before-return");
   return { kind: "ok", token: issued.token, credential: issued.credential };
 }
 

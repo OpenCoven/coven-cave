@@ -9,6 +9,8 @@ import { promisify } from "node:util";
 
 import {
   PAIRING_CLAIM_STALE_MS,
+  PAIRING_EXCHANGE_RETRY_AFTER_MS,
+  claimApprovedPairingWithIdempotency,
   createPairingRequest,
   decidePairingRequest,
   readPairingRequest,
@@ -21,9 +23,14 @@ import {
   issueCredential,
   issueCredentialForPairingSettlement,
   listCredentials,
+  PAIRING_CREDENTIAL_RECOVERY_TTL_MS,
+  PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES,
+  recordCredentialUse,
   recoverPairingCredentialSettlement,
+  settlePairingCredentialSettlement,
   verifyCredential,
 } from "./credential-store.ts";
+import { setAtomicWriteTestHooksForTest } from "../atomic-write.ts";
 import { hashNormalizedRequest } from "./idempotency-store.ts";
 
 const execFileAsync = promisify(execFile);
@@ -69,6 +76,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   resetPairingRequestsForTest();
+  setAtomicWriteTestHooksForTest(null);
 });
 
 type CrashedExchange = {
@@ -143,13 +151,25 @@ test("a crash before issuance leaves no replacement and keeps the prior credenti
   await assert.rejects(readFile(clientCredentialSettlementJournalPath(), "utf8"), { code: "ENOENT" });
 });
 
-for (const point of ["after-credential-write", "after-pairing-finalize"]) {
+for (const point of [
+  "after-credential-write",
+  "after-pairing-finalize",
+  "after-credential-settlement-before-return",
+]) {
   test(`a subprocess crash ${point} recovers one exact retry without leaking its token to disk`, async () => {
     const previous = await issueCredential(approvedPairing(), Date.now());
     const crashed = await crashExchange(point);
     const rawBeforeRecovery = await readFile(clientCredentialSettlementJournalPath(), "utf8");
     assert.match(rawBeforeRecovery, /"ciphertext"/);
-    assert.equal((await journal()).transactions.length, 1);
+    const beforeRecovery = await journal();
+    assert.equal(
+      beforeRecovery.transactions.length,
+      point === "after-credential-settlement-before-return" ? 0 : 1,
+    );
+    assert.equal(
+      beforeRecovery.replays.length,
+      point === "after-credential-settlement-before-return" ? 1 : 0,
+    );
 
     const [first, duplicate] = await Promise.all([
       exchangePairingRequest(
@@ -167,13 +187,18 @@ for (const point of ["after-credential-write", "after-pairing-finalize"]) {
         Date.now(),
       ),
     ]);
-    const recovered = first.kind === "ok" ? first : duplicate;
-    assert.equal(recovered.kind, "ok", "one exact retry must recover the issued bearer token");
-    if (recovered.kind !== "ok") return;
+    const successful = [first, duplicate].filter((result) => result.kind === "ok");
+    assert.ok(successful.length >= 1, "an exact retry must recover the issued bearer token");
+    const recovered = successful[0];
+    if (!recovered || recovered.kind !== "ok") return;
+    assert.ok(
+      successful.every((result) => result.kind === "ok" && result.token === recovered.token),
+      "concurrent exact retries may replay only the original token",
+    );
     const other = first.kind === "ok" ? duplicate : first;
     assert.ok(
-      other.kind === "processing" || other.kind === "already_exchanged",
-      "a concurrent retry may wait for recovery or observe its terminal receipt, but must never get a second token",
+      other.kind === "ok" || other.kind === "processing" || other.kind === "already_exchanged",
+      "a concurrent retry may receive the same replay, wait for recovery, or observe terminal metadata",
     );
     assert.ok(await verifyCredential(recovered.token), "the recovered token must be the active credential");
     assert.equal(await verifyCredential(previous.token), null, "the recovered replacement supersedes its predecessor");
@@ -184,6 +209,16 @@ for (const point of ["after-credential-write", "after-pairing-finalize"]) {
     const settled = await journal();
     assert.deepEqual(settled.transactions, [], "durably settled transactions are cleaned from the journal");
     assert.equal(settled.replays.length, 1, "a bounded encrypted replay receipt remains for terminal idempotency");
+
+    const exactReplay = await exchangePairingRequest(
+      crashed.pairingId,
+      crashed.pairingSecret,
+      crashed.idempotencyKey,
+      crashed.requestHash,
+      Date.now(),
+    );
+    assert.equal(exactReplay.kind, "ok", "the bounded terminal receipt replays an exact retry");
+    if (exactReplay.kind === "ok") assert.equal(exactReplay.token, recovered.token);
   });
 }
 
@@ -232,7 +267,230 @@ test("an exact retry recovers a credential when process-local pairing finalizati
   if (retry.kind !== "ok") return;
   assert.ok(await verifyCredential(retry.token));
   const terminalReplay = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
-  assert.equal(terminalReplay.kind, "already_exchanged");
+  assert.equal(terminalReplay.kind, "ok");
+  if (terminalReplay.kind === "ok") assert.equal(terminalReplay.token, retry.token);
+});
+
+test("a terminal replay fences an older recovery claimant before it can return its token", async () => {
+  const { request, secret } = createPairingRequest(approvedPairing(), 1_000);
+  decidePairingRequest(request.id, "approved", 1_001);
+  const key = crypto.randomUUID();
+  const hash = requestHash(request.id);
+  const claim = claimApprovedPairingWithIdempotency(request.id, secret, key, hash, 1_002);
+  assert.equal(claim.kind, "claimed");
+  if (claim.kind !== "claimed") return;
+
+  const context = {
+    pairingId: request.id,
+    pairingSecret: secret,
+    idempotencyKey: key,
+    requestHash: hash,
+    claimId: claim.claimId,
+  };
+  await issueCredentialForPairingSettlement(approvedPairing(), context, 1_003);
+  const older = await recoverPairingCredentialSettlement(context, 1_004);
+  assert.equal(older.kind, "issued");
+  if (older.kind !== "issued") return;
+  const newer = await recoverPairingCredentialSettlement(
+    context,
+    1_004 + PAIRING_EXCHANGE_RETRY_AFTER_MS,
+  );
+  assert.equal(newer.kind, "issued");
+  if (newer.kind !== "issued") return;
+  assert.notEqual(newer.recoveryClaimId, older.recoveryClaimId);
+  assert.equal(
+    await settlePairingCredentialSettlement(
+      context,
+      newer.recoveryClaimId,
+      newer.claimId,
+      1_005 + PAIRING_EXCHANGE_RETRY_AFTER_MS,
+    ),
+    true,
+  );
+
+  const stale = await exchangePairingRequest(request.id, secret, key, hash, 1_006, {
+    ...defaultPairingExchangeDeps,
+    recover: async () => older,
+  });
+  assert.deepEqual(
+    stale,
+    { kind: "recovery_pending" },
+    "the old claimant must fail the terminal fence before exposing a token",
+  );
+  assert.equal("token" in stale, false);
+
+  const winningReplay = await exchangePairingRequest(request.id, secret, key, hash, 1_007);
+  assert.equal(winningReplay.kind, "ok");
+  if (winningReplay.kind === "ok") assert.equal(winningReplay.token, newer.token);
+});
+
+test("terminal replay expires without restoring a predecessor or serving a different request identity", async () => {
+  const previous = await issueCredential(approvedPairing(), 1_000);
+  const { request, secret } = createPairingRequest(approvedPairing(), 1_001);
+  decidePairingRequest(request.id, "approved", 1_002);
+  const key = crypto.randomUUID();
+  const hash = requestHash(request.id);
+  const claim = claimApprovedPairingWithIdempotency(request.id, secret, key, hash, 1_003);
+  assert.equal(claim.kind, "claimed");
+  if (claim.kind !== "claimed") return;
+  const context = {
+    pairingId: request.id,
+    pairingSecret: secret,
+    idempotencyKey: key,
+    requestHash: hash,
+    claimId: claim.claimId,
+  };
+  const issued = await issueCredentialForPairingSettlement(approvedPairing(), context, 1_004);
+  assert.equal(await settlePairingCredentialSettlement(context, null, claim.claimId, 1_005), true);
+
+  const differentIdentity = await recoverPairingCredentialSettlement({
+    ...context,
+    idempotencyKey: crypto.randomUUID(),
+  }, 1_006);
+  assert.deepEqual(differentIdentity, { kind: "none" }, "a different idempotency key never replays a token");
+
+  const afterExpiry = 1_004 + PAIRING_CREDENTIAL_RECOVERY_TTL_MS + 1;
+  assert.deepEqual(await recoverPairingCredentialSettlement(context, afterExpiry), { kind: "none" });
+  assert.ok(await verifyCredential(issued.token), "expiry removes only recovery material");
+  assert.equal(await verifyCredential(previous.token), null, "terminal replay expiry must not restore the predecessor");
+});
+
+test("a terminal replay survives mutable credential use within its recovery window", async () => {
+  const { request, secret } = createPairingRequest(approvedPairing(), 1_000);
+  decidePairingRequest(request.id, "approved", 1_001);
+  const key = crypto.randomUUID();
+  const hash = requestHash(request.id);
+  const claim = claimApprovedPairingWithIdempotency(request.id, secret, key, hash, 1_002);
+  assert.equal(claim.kind, "claimed");
+  if (claim.kind !== "claimed") return;
+  const context = {
+    pairingId: request.id,
+    pairingSecret: secret,
+    idempotencyKey: key,
+    requestHash: hash,
+    claimId: claim.claimId,
+  };
+  const issued = await issueCredentialForPairingSettlement(approvedPairing(), context, 1_003);
+  assert.equal(await settlePairingCredentialSettlement(context, null, claim.claimId, 1_004), true);
+  await recordCredentialUse(issued.credential.id, 1_003 + 60_001);
+
+  const replay = await recoverPairingCredentialSettlement(context, 1_005);
+  assert.equal(replay.kind, "replay");
+  if (replay.kind === "replay") assert.equal(replay.token, issued.token);
+});
+
+test("settlement capacity never evicts a live terminal replay before its expiry", async () => {
+  const firstContext = {
+    pairingId: crypto.randomUUID(),
+    pairingSecret: "first-replay-secret",
+    idempotencyKey: crypto.randomUUID(),
+    requestHash: "f".repeat(64),
+    claimId: crypto.randomUUID(),
+  };
+  const firstIssued = await issueCredentialForPairingSettlement(
+    { ...approvedPairing(), installationId: crypto.randomUUID() },
+    firstContext,
+    1_000,
+  );
+  assert.equal(
+    await settlePairingCredentialSettlement(firstContext, null, firstContext.claimId, 1_001),
+    true,
+  );
+
+  for (let index = 1; index < PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES; index += 1) {
+    const context = {
+      pairingId: crypto.randomUUID(),
+      pairingSecret: `replay-secret-${index}`,
+      idempotencyKey: crypto.randomUUID(),
+      requestHash: `${index.toString(16).padStart(64, "0")}`,
+      claimId: crypto.randomUUID(),
+    };
+    await issueCredentialForPairingSettlement(
+      { ...approvedPairing(), installationId: crypto.randomUUID() },
+      context,
+      1_000 + index,
+    );
+    assert.equal(
+      await settlePairingCredentialSettlement(context, null, context.claimId, 1_001 + index),
+      true,
+    );
+  }
+
+  const overflowContext = {
+    pairingId: crypto.randomUUID(),
+    pairingSecret: "overflow-replay-secret",
+    idempotencyKey: crypto.randomUUID(),
+    requestHash: "e".repeat(64),
+    claimId: crypto.randomUUID(),
+  };
+  await issueCredentialForPairingSettlement(
+    { ...approvedPairing(), installationId: crypto.randomUUID() },
+    overflowContext,
+    2_000,
+  );
+  assert.equal(
+    await settlePairingCredentialSettlement(overflowContext, null, overflowContext.claimId, 2_001),
+    false,
+    "a full replay journal leaves the new transaction recoverable instead of evicting an older replay",
+  );
+  const firstReplay = await recoverPairingCredentialSettlement(firstContext, 2_002);
+  assert.equal(firstReplay.kind, "replay");
+  if (firstReplay.kind === "replay") assert.equal(firstReplay.token, firstIssued.token);
+  const fullJournal = await journal();
+  assert.equal(fullJournal.replays.length, PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES);
+  assert.equal(fullJournal.transactions.length, 1);
+});
+
+test("a post-rename credential durability fault is recovered as the original exact token", async () => {
+  const previous = await issueCredential(approvedPairing(), Date.now());
+  const { request, secret } = createPairingRequest(approvedPairing());
+  decidePairingRequest(request.id, "approved");
+  const key = crypto.randomUUID();
+  const hash = requestHash(request.id);
+  let injected = false;
+  setAtomicWriteTestHooksForTest({
+    beforeDirectorySync: (_directory, target) => {
+      if (target !== clientCredentialStorePath() || injected) return;
+      injected = true;
+      throw new Error("injected credential directory-sync failure");
+    },
+  });
+
+  const failed = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
+  assert.deepEqual(failed, { kind: "issue_failed" });
+  assert.equal(injected, true);
+
+  setAtomicWriteTestHooksForTest(null);
+  const recovered = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
+  assert.equal(recovered.kind, "ok");
+  if (recovered.kind !== "ok") return;
+  assert.ok(await verifyCredential(recovered.token));
+  assert.equal(await verifyCredential(previous.token), null, "recovery keeps the persisted replacement authoritative");
+});
+
+test("a pre-sync journal durability fault leaves the approved pairing and authority unchanged", async () => {
+  const { request, secret } = createPairingRequest(approvedPairing());
+  decidePairingRequest(request.id, "approved");
+  const key = crypto.randomUUID();
+  const hash = requestHash(request.id);
+  let injected = false;
+  setAtomicWriteTestHooksForTest({
+    beforeTempSync: (_tmp, target) => {
+      if (target !== clientCredentialSettlementJournalPath() || injected) return;
+      injected = true;
+      throw new Error("injected settlement journal temp-sync failure");
+    },
+  });
+
+  const failed = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
+  assert.deepEqual(failed, { kind: "issue_failed" });
+  assert.equal(injected, true);
+  assert.equal((await listCredentials()).length, 0);
+  assert.equal(readPairingRequest(request.id, secret)?.status, "approved");
+
+  setAtomicWriteTestHooksForTest(null);
+  const retry = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
+  assert.equal(retry.kind, "ok");
 });
 
 test("a corrupt durable journal fails closed before credential issuance and leaves approval retryable", async () => {
