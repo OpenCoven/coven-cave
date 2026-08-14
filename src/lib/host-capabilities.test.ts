@@ -15,6 +15,8 @@ assert.deepEqual(
 assert.equal(capabilities.hostCapabilitiesForPlatform("linux").length, 2, "Linux entries stay platform-gated");
 assert.equal(capabilities.hostCapabilitiesForPlatform("darwin").length, 2, "macOS entries stay platform-gated");
 assert.equal(capabilities.hostCapabilityById("windows.hyperv.audit.write"), null, "write authority is absent from the initial catalog");
+assert.equal(capabilities.hostCapabilityHasAdapter("windows.hyperv.audit.read"), true, "only the broker-backed Windows capability is actionable");
+assert.equal(capabilities.hostCapabilityHasAdapter("linux.system.audit.read"), false, "Linux capability placeholders cannot be approved before an adapter ships");
 
 const now = Date.now();
 const grant = await capabilities.grantHostCapability({ familiarId: "clove", sessionId: "session-1", capability: "windows.hyperv.audit.read", actor: "loopback", now, platform: "win32" });

@@ -9,7 +9,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import { StandardSelect } from "@/components/ui/select";
 
-type Capability = { id: string; label: string; description: string };
+type Capability = { id: string; label: string; description: string; adapter: string | null };
 type Grant = { id: string; familiarId: string; sessionId: string; capability: string; grantedAt: string; expiresAt: string };
 type Session = { id: string; title: string };
 
@@ -59,7 +59,7 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
   return (
     <div className="space-y-4">
       <p className="px-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-        Project Full access applies only to project files. It never grants operating-system, virtualization, credential, or administrator access.
+        Project Full access applies only to project files. A host grant authorizes one registered broker; it never grants arbitrary shell, operating-system, credential, or administrator access.
       </p>
       {error ? <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p> : null}
       <SettingsGroup label="Host capabilities" description="Off by default · session-bound · expires automatically">
@@ -77,14 +77,14 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
                 options={[{ value: "", label: "Choose a session…" }, ...sessions.map((session) => ({ value: session.id, label: session.title }))]}
                 className="focus-ring mt-1 flex h-8 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-sunken)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)]"
               />
-              <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">Approval applies only to this familiar and session for 30 minutes. It starts a fresh native session before use.</p>
+              <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">Approval applies only to this familiar and session for 30 minutes. It starts a fresh native session and authorizes only the registered broker.</p>
             </div>
             {catalog.map((capability) => <div key={capability.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <div>
               <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{capability.label}</p>
               <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">{capability.description}</p>
               </div>
-              <Button variant="secondary" size="xs" disabled={busy === capability.id} onClick={() => void approve(capability)}>{busy === capability.id ? "Approving…" : "Approve"}</Button>
+              {capability.adapter ? <Button variant="secondary" size="xs" disabled={busy === capability.id} onClick={() => void approve(capability)}>{busy === capability.id ? "Approving…" : "Approve"}</Button> : <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No adapter installed</span>}
             </div>)}
           </div>
         )}

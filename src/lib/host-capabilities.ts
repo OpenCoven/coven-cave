@@ -11,30 +11,35 @@ export const HOST_CAPABILITY_CATALOG = [
     platform: "win32",
     label: "Hyper-V audit",
     description: "Read VM, switch, checkpoint, VHD-chain, and integration-service inventory.",
+    adapter: "windows-hyperv-broker",
   },
   {
     id: "linux.system.audit.read",
     platform: "linux",
     label: "System audit",
     description: "Read system-service and host-health inventory through a constrained adapter.",
+    adapter: null,
   },
   {
     id: "linux.containers.audit.read",
     platform: "linux",
     label: "Containers audit",
     description: "Read container-runtime inventory through a constrained adapter.",
+    adapter: null,
   },
   {
     id: "macos.system.audit.read",
     platform: "darwin",
     label: "System audit",
     description: "Read macOS system inventory through a constrained adapter.",
+    adapter: null,
   },
   {
     id: "macos.virtualization.audit.read",
     platform: "darwin",
     label: "Virtualization audit",
     description: "Read virtualization inventory through a constrained adapter.",
+    adapter: null,
   },
 ] as const;
 
@@ -112,6 +117,9 @@ export function hostCapabilitiesForPlatform(platform: NodeJS.Platform = process.
 export function hostCapabilityById(value: unknown) {
   return HOST_CAPABILITY_CATALOG.find((entry) => entry.id === value) ?? null;
 }
+export function hostCapabilityHasAdapter(value: HostCapabilityId): boolean {
+  return Boolean(hostCapabilityById(value)?.adapter);
+}
 function isLive(grant: HostCapabilityGrant, now = Date.now()) { return Date.parse(grant.expiresAt) > now; }
 async function pruneExpired(store: Store, now = Date.now()) {
   const expired = store.grants.filter((grant) => !isLive(grant, now));
@@ -143,6 +151,7 @@ export async function activeHostCapabilities(input: { familiarId: string; sessio
 export async function grantHostCapability(input: { familiarId: string; sessionId: string; capability: HostCapabilityId; expiresAt?: string; actor: "loopback" | "mobile"; now?: number; platform?: NodeJS.Platform }) {
   const definition = hostCapabilityById(input.capability);
   if (!definition || definition.platform !== (input.platform ?? process.platform)) throw new Error("host capability is unavailable on this platform");
+  if (!definition.adapter) throw new Error("host capability has no registered adapter");
   const now = input.now ?? Date.now();
   const requested = input.expiresAt ? Date.parse(input.expiresAt) : now + DEFAULT_GRANT_MS;
   if (!Number.isFinite(requested) || requested <= now || requested > now + MAX_GRANT_MS) throw new Error("expiry must be in the next eight hours");
