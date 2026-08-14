@@ -15,6 +15,8 @@
      user is trying to make the *text* bigger, and the rail has a fixed width
      that oversized links would overflow. */
   --reader-text-scale: 1;
+  --document-reader-column-width: 62rem;
+  --document-reader-column-gutter: var(--space-8);
 
   display: grid;
   min-height: 0;
@@ -26,6 +28,11 @@
 
 .document-reader--rail {
   grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+}
+
+.document-reader--compact {
+  --document-reader-column-width: 48rem;
+  --document-reader-column-gutter: var(--space-4);
 }
 
 .document-reader__toc {
@@ -103,7 +110,9 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-2);
+  width: min(100%, var(--document-reader-column-width));
+  margin: 0 auto;
+  padding: 0 var(--document-reader-column-gutter) var(--space-2);
   pointer-events: none;
 }
 
@@ -177,14 +186,13 @@
 }
 
 .document-reader__column {
-  width: min(100%, 62rem);
+  width: min(100%, var(--document-reader-column-width));
   margin: 0 auto;
-  padding: 0 var(--space-8);
+  padding: 0 var(--document-reader-column-gutter);
 }
 
 .document-reader--compact .document-reader__column {
-  width: min(100%, 48rem);
-  padding: 0 var(--space-4);
+  width: min(100%, var(--document-reader-column-width));
 }
 
 .document-reader__kicker {
@@ -384,6 +392,10 @@ h6.document-reader__heading {
 
   .document-reader__column {
     padding: 0 var(--space-3);
+  }
+
+  .document-reader__toolbar {
+    padding-inline: var(--space-3);
   }
 
   .document-reader__title {

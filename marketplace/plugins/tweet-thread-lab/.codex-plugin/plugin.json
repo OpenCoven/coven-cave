@@ -1,0 +1,25 @@
+{
+  "name": "tweet-thread-lab",
+  "version": "0.1.0",
+  "description": "Generate, optimize, compare, validate, and prepare evidence-backed X/Twitter threads as portable, cross-harness run artifacts without publishing them.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Tweet Thread Lab",
+    "shortDescription": "Generate, optimize, compare, validate, and prepare evidence-backed X/Twitter threads as portable, cross-harness run artifacts without publishing them.",
+    "longDescription": "Use when generating, optimizing, comparing, validating, or preparing an X/Twitter thread from a brief and evidence, or when another harness needs portable tweet-thread run artifacts. Do not use for generic one-off social posts.",
+    "developerName": "OpenCoven",
+    "category": "Social",
+    "capabilities": [
+      "x",
+      "twitter",
+      "thread",
+      "optimization",
+      "evaluation",
+      "portable-artifacts"
+    ],
+    "defaultPrompt": "Help me use Tweet Thread Lab safely."
+  }
+}

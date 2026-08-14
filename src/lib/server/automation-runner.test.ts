@@ -56,7 +56,18 @@ async function writeOfficialWindowsCodexFixture(
   ]);
   const shim = path.join(directory, "codex.cmd");
   await writeFile(shim, '"%~dp0\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
-  return { shim, script, native, packageRoot };
+  const [canonicalShim, canonicalScript, canonicalNative, canonicalPackageRoot] = await Promise.all([
+    realpath(shim),
+    realpath(script),
+    realpath(native),
+    realpath(packageRoot),
+  ]);
+  return {
+    shim: canonicalShim,
+    script: canonicalScript,
+    native: canonicalNative,
+    packageRoot: canonicalPackageRoot,
+  };
 }
 
 const source = await readFile(new URL("./automation-runner.ts", import.meta.url), "utf8");
@@ -283,7 +294,7 @@ test("Finder-style macOS discovery resolves Codex from the supplied augmented PA
     { ...base, model: null, cwds: [directory], prompt: "research" },
     { env: { NODE_ENV: "test", PATH: directory }, platform: "darwin" },
   );
-  assert.equal(inv.command, binary);
+  assert.equal(inv.command, await realpath(binary));
   assert.equal(inv.args[0], "exec");
 });
 
