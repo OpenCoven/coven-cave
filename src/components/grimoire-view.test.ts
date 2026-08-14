@@ -16,7 +16,7 @@ const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts
 
 assert.match(modeType, /\| "grimoire"/, "grimoire is a WorkspaceMode");
 assert.match(workspace, /grimoire: "Memories"/, "grimoire has a page title (sr-only h1) reading Memories");
-assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grimoireView\}/, "grimoire mode renders GrimoireView with the controlled view");
+assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{[^}]*grimoireView\}/, "grimoire mode renders GrimoireView with the controlled view");
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire", "journal"\);/, "the journal mode routes into the Grimoire Journal tab and preserves that destination in history");

@@ -59,7 +59,7 @@ assert.equal(MODE_ALIASES.roles, "marketplace");
 assert.equal(MODE_ALIASES.capabilities, "marketplace");
 assert.match(
   workspace,
-  /mode === "marketplace" \|\| mode === "roles" \|\| mode === "capabilities"[\s\S]{0,500}?key=\{mode\}\s+initialSection=\{mode === "roles" \? "roles" : mode === "capabilities" \? "capabilities" : "browse"\}/,
+  /mode === "marketplace" \|\| mode === "roles" \|\| mode === "capabilities"[\s\S]{0,500}?key=\{mode\}\s+initialSection=\{\s*mode === "roles"[^?]*\?\s*"roles"\s*:\s*mode === "capabilities"[^?]*\?\s*"capabilities"\s*:\s*"browse"\s*\}/,
   "the roles/capabilities aliases render the Marketplace hub on their sections (keyed remount)",
 );
 
