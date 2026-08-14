@@ -199,6 +199,18 @@ function completionUnconfirmedResponse(): Response {
   });
 }
 
+async function isRetryableClientError(response: Response): Promise<boolean> {
+  if (response.status < 400 || response.status >= 500) return false;
+  try {
+    const body = await response.clone().json() as {
+      error?: { retryable?: unknown };
+    };
+    return body.error?.retryable === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Runs `execute` under Task 6's idempotency ledger:
  *
@@ -215,15 +227,15 @@ function completionUnconfirmedResponse(): Response {
  *     unexpected — reports a fixed, secret-free, retryable 503 rather than
  *     leaking any raw thrown message/path.
  *
- * After `execute` returns, its response is persisted ONLY when its status is
- * < 500: every 2xx/4xx business outcome (success, not_found, forbidden,
- * invalid_request, ...) is deterministic and safe to replay verbatim on a
- * retry. A >= 500 response is never persisted — the claim stays pending and
- * becomes reclaimable once its retry window elapses, so a transient failure
- * is never cached as a permanent, false "completed" result. If `execute`
- * itself throws, the same rule applies (nothing is persisted) and this
- * function returns a safe generic 500 rather than letting a raw error reach
- * the wire.
+ * After `execute` returns, its response is persisted only when it is a
+ * deterministic result: every 2xx and non-retryable 4xx business outcome
+ * (success, not_found, forbidden, invalid_request, ...) is safe to replay
+ * verbatim. A >= 500 response or retryable 4xx is never persisted — the
+ * claim stays pending and becomes reclaimable once its retry window elapses,
+ * so a transient/in-progress state is never cached as a permanent completed
+ * result. If `execute` itself throws, the same rule applies (nothing is
+ * persisted) and this function returns a safe generic 500 rather than
+ * letting a raw error reach the wire.
  *
  * `execute` receives an `IdempotentMutationExecuteContext` carrying this
  * call's `requestHash` and a `effectId` derived from it
@@ -302,10 +314,10 @@ export async function runIdempotentMutation(
     return clientV1Error(500, "internal_error", "An internal error occurred. Please try again later.", true);
   }
 
-  if (response.status >= 500) {
-    // A >= 500 business outcome is never persisted — see this function's
-    // doc comment. The claim stays pending/reclaimable; the caller still
-    // gets this one real (already-safe, generic-by-construction) response.
+  if (response.status >= 500 || await isRetryableClientError(response)) {
+    // Transient outcomes are never persisted — see this function's doc
+    // comment. The claim stays pending/reclaimable; the caller still gets
+    // this one real (already-safe, generic-by-construction) response.
     return response;
   }
 

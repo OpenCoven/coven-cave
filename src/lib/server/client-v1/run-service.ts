@@ -39,6 +39,7 @@ import {
 } from "./idempotency-store.ts";
 import {
   ClientRunOperationStoreError,
+  clientRunOperationLaunchingRetryAfterMs,
   launchClientRunOperation,
   readClientRunOperation,
   reserveClientRunOperation,
@@ -85,7 +86,11 @@ type StoredClientRunMetadata = ClientRunMetadata & {
   internalRunId: string;
 };
 
-type StoredRunStatus = "attachable" | "reconcile_required" | "manual_recovery_required";
+type StoredRunStatus =
+  | "attachable"
+  | "launching"
+  | "reconcile_required"
+  | "manual_recovery_required";
 type StoredRunState = "launching" | "launched";
 
 type StoredRunReceipt = {
@@ -97,6 +102,11 @@ type StoredRunReceipt = {
 type ResolvedStoredRun = StoredRunReceipt & {
   response: Response;
 };
+
+export type ClientRunLookup =
+  | { kind: "found"; metadata: StoredClientRunMetadata }
+  | { kind: "launching"; metadata: StoredClientRunMetadata; retryAfterMs: number }
+  | { kind: "not_found" };
 
 export type ClientRetryInput = {
   operationId: string;
@@ -269,6 +279,7 @@ export type ClientRunServiceDeps = {
   resolveAttachments: typeof resolveAndBindClientAttachments;
   executeChatSend: typeof executeChatSend;
   requestChatStop: typeof requestChatStop;
+  now: () => number;
 };
 
 const defaultDeps: ClientRunServiceDeps = {
@@ -283,6 +294,7 @@ const defaultDeps: ClientRunServiceDeps = {
     resolveAndBindClientAttachments(ids, credentialId, conversationId),
   executeChatSend,
   requestChatStop,
+  now: () => Date.now(),
 };
 
 function claimFailure(kind: ClaimOperationResult["kind"]): Response {
@@ -382,6 +394,29 @@ function manualRecoveryRequired(metadata: ClientRunMetadata): Response {
   );
 }
 
+export function clientRunLaunchingInProgress(
+  metadata: ClientRunMetadata,
+  retryAfterMs: number,
+): Response {
+  const response = clientV1Error(
+    409,
+    "operation_already_started",
+    "This run is still launching. Retry shortly.",
+    true,
+    {
+      details: {
+        runId: metadata.runId,
+        conversationId: metadata.conversationId,
+        resumePath: metadata.resumePath,
+        status: "launching",
+        runState: "launching",
+      },
+    },
+  );
+  response.headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+  return response;
+}
+
 function responseFromStored(stored: ClientOperationResponse): Response {
   return Response.json(stored.body, { status: stored.status });
 }
@@ -452,6 +487,15 @@ async function resolveStoredRunStatus(
       response: alreadyStarted(metadata),
     };
   }
+  const launchRetryAfterMs = clientRunOperationLaunchingRetryAfterMs(record, deps.now());
+  if (launchRetryAfterMs !== null) {
+    return {
+      metadata,
+      status: "launching",
+      runState: "launching",
+      response: clientRunLaunchingInProgress(metadata, launchRetryAfterMs),
+    };
+  }
   const stored = await readStoredRunReceipt(deps, record.operationId, credentialId);
   if (stored) {
     if (aliasAttachableRunBuffer(stored.metadata, credentialId)) {
@@ -495,7 +539,7 @@ async function persistRunStatusResponse(
   claimId: string | null,
   status: ResolvedStoredRun,
 ): Promise<void> {
-  if (!claimId) return;
+  if (!claimId || status.status === "launching") return;
   try {
     const completed = await deps.completeOperation(
       { key: input.operationId, claimId },
@@ -507,6 +551,35 @@ async function persistRunStatusResponse(
   } catch (error) {
     console.warn("[client-v1] failed to persist run launch receipt:", error);
   }
+}
+
+async function lookupClientRun(
+  deps: ClientRunServiceDeps,
+  runId: string,
+  credentialId: string,
+): Promise<ClientRunLookup> {
+  if (!isUuid(runId) || !isUuid(credentialId)) return { kind: "not_found" };
+  const reserved = await deps.readRunOperation({
+    operationId: runId,
+    credentialId,
+  });
+  if (reserved?.state === "launched") {
+    const metadata = metadataForRecord(reserved);
+    aliasAttachableRunBuffer(metadata, credentialId);
+    return { kind: "found", metadata };
+  }
+  if (reserved?.state === "launching") {
+    const metadata = metadataForRecord(reserved);
+    if (aliasAttachableRunBuffer(metadata, credentialId)) {
+      return { kind: "found", metadata };
+    }
+    const retryAfterMs = clientRunOperationLaunchingRetryAfterMs(reserved, deps.now());
+    if (retryAfterMs !== null) return { kind: "launching", metadata, retryAfterMs };
+  }
+  const stored = await readStoredRunReceipt(deps, runId, credentialId);
+  if (!stored || stored.status === "manual_recovery_required") return { kind: "not_found" };
+  aliasAttachableRunBuffer(stored.metadata, credentialId);
+  return { kind: "found", metadata: stored.metadata };
 }
 
 export function createClientRunService(overrides: Partial<ClientRunServiceDeps> = {}) {
@@ -732,25 +805,13 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
       }, launched.record.internalRunId);
     },
 
+    async inspectRun(runId: string, credentialId: string): Promise<ClientRunLookup> {
+      return lookupClientRun(deps, runId, credentialId);
+    },
+
     async findRun(runId: string, credentialId: string): Promise<StoredClientRunMetadata | null> {
-      if (!isUuid(runId) || !isUuid(credentialId)) return null;
-      const reserved = await deps.readRunOperation({
-        operationId: runId,
-        credentialId,
-      });
-      if (reserved?.state === "launched") {
-        const metadata = metadataForRecord(reserved);
-        aliasAttachableRunBuffer(metadata, credentialId);
-        return metadata;
-      }
-      if (reserved?.state === "launching") {
-        const metadata = metadataForRecord(reserved);
-        if (aliasAttachableRunBuffer(metadata, credentialId)) return metadata;
-      }
-      const stored = await readStoredRunReceipt(deps, runId, credentialId);
-      if (!stored || stored.status === "manual_recovery_required") return null;
-      aliasAttachableRunBuffer(stored.metadata, credentialId);
-      return stored.metadata;
+      const result = await service.inspectRun(runId, credentialId);
+      return result.kind === "found" ? result.metadata : null;
     },
 
     async findReplayableResponse(runId: string, credentialId: string): Promise<Response | null> {
@@ -785,8 +846,12 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
       principal: ClientPrincipal,
       originalRequest?: Request,
     ): Promise<Response> {
-      const metadata = await service.findRun(priorRunId, principal.credentialId);
-      if (!metadata) return clientV1Error(404, "not_found", "Run not found.", false);
+      const run = await service.inspectRun(priorRunId, principal.credentialId);
+      if (run.kind === "launching") {
+        return clientRunLaunchingInProgress(run.metadata, run.retryAfterMs);
+      }
+      if (run.kind !== "found") return clientV1Error(404, "not_found", "Run not found.", false);
+      const metadata = run.metadata;
       const prepared = await deps.authorizeConversation(metadata.conversationId, async (conversation) => {
         const active = resolveActivePath(
           conversation.turns,
@@ -835,8 +900,12 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
     },
 
     async stop(runId: string, principal: ClientPrincipal): Promise<Response> {
-      const metadata = await service.findRun(runId, principal.credentialId);
-      if (!metadata) return clientV1Error(404, "not_found", "Run not found.", false);
+      const run = await service.inspectRun(runId, principal.credentialId);
+      if (run.kind === "launching") {
+        return clientRunLaunchingInProgress(run.metadata, run.retryAfterMs);
+      }
+      if (run.kind !== "found") return clientV1Error(404, "not_found", "Run not found.", false);
+      const metadata = run.metadata;
       const authorized = await deps.authorizeConversation(
         metadata.conversationId,
         async () => true,
