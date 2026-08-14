@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  canonicalizeAndRecordRunStreamEvent,
   ensureTerminalFailure,
   hasRunBuffer,
   getRunBufferStatus,
@@ -16,6 +17,99 @@ import type { StreamEvent } from "@/lib/stream-events";
 // through a bounded ring so GET /api/chat/stream can replay from a cursor and
 // tail the live run. These are the resumability semantics the iOS re-attach
 // will build on.
+
+test("synchronous Gateway callbacks record canonical events before accepted returns", () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer(["gateway-sync-early"]);
+  const live: Array<{ event: StreamEvent; seq: number | undefined }> = [];
+  const push = (event: StreamEvent) => {
+    const recorded = canonicalizeAndRecordRunStreamEvent(run, event);
+    if (recorded) live.push(recorded);
+  };
+
+  const dispatch = () => {
+    push({ kind: "assistant_chunk", text: "early Gateway text" });
+    return { kind: "accepted" as const };
+  };
+  const accepted = dispatch();
+
+  assert.equal(accepted.kind, "accepted");
+  assert.deepEqual(live, [{
+    event: { kind: "assistant_chunk", text: "early Gateway text" },
+    seq: 1,
+  }], "the live callback receives the exact canonical entry and its stable cursor");
+  const resumed = subscribeRunStream("gateway-sync-early", 0, () => {}, () => {});
+  assert.ok(resumed && !resumed.done);
+  assert.deepEqual(
+    resumed.replay.map((entry) => ({ seq: entry.seq, event: JSON.parse(entry.json) })),
+    live,
+    "a client reconnecting after the accepted response replays the early event verbatim",
+  );
+  resetRunBuffersForTest();
+});
+
+test("an oversized synchronous Gateway callback terminates the canonical run and drops later callbacks", () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer(["gateway-sync-oversized"]);
+  const live: Array<{ event: StreamEvent; seq: number | undefined }> = [];
+  const push = (event: StreamEvent) => {
+    const recorded = canonicalizeAndRecordRunStreamEvent(run, event);
+    if (recorded) live.push(recorded);
+  };
+
+  const dispatch = () => {
+    push({ kind: "assistant_chunk", text: "x".repeat(RUN_STREAM_EVENT_MAX_BYTES) });
+    push({ kind: "assistant_chunk", text: "must not be recorded or emitted" });
+    return { kind: "accepted" as const };
+  };
+  assert.equal(dispatch().kind, "accepted");
+
+  assert.deepEqual(live, [{
+    event: {
+      kind: "error",
+      code: "stream_event_too_large",
+      message: "The run failed.",
+    },
+    seq: 1,
+  }], "the replacement is the sole emitted terminal and later callbacks are rejected");
+  const resumed = subscribeRunStream("gateway-sync-oversized", 0, () => {}, () => {});
+  assert.ok(resumed);
+  assert.deepEqual(
+    resumed.replay.map((entry) => ({ seq: entry.seq, event: JSON.parse(entry.json) })),
+    live,
+    "resume exposes the exact replacement sent live, never the oversized payload or later event",
+  );
+  assert.equal(getRunBufferStatus("gateway-sync-oversized")?.latestSeq, 1);
+  run.finish();
+  assert.equal(getRunBufferStatus("gateway-sync-oversized")?.done, true);
+  resetRunBuffersForTest();
+});
+
+test("Gateway launch rejection closes its reserved buffer with one terminal failure", () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer(["gateway-launch-rejected"]);
+  const live: Array<{ event: StreamEvent; seq: number | undefined }> = [];
+  const failLaunch = () => {
+    const recorded = canonicalizeAndRecordRunStreamEvent(run, {
+      kind: "error",
+      code: "openclaw_gateway_dispatch_failed",
+      message: "Cave could not start the OpenClaw Gateway turn.",
+    });
+    if (recorded) live.push(recorded);
+    run.finish();
+  };
+
+  failLaunch();
+  const status = getRunBufferStatus("gateway-launch-rejected");
+  assert.deepEqual(live.map(({ seq, event }) => ({ seq, kind: event.kind })), [{ seq: 1, kind: "error" }]);
+  assert.equal(status?.done, true, "a rejected launch cannot leave a false live run behind");
+  assert.equal(
+    canonicalizeAndRecordRunStreamEvent(run, { kind: "assistant_chunk", text: "late callback" }),
+    null,
+    "callbacks after rejected launch cannot revive its terminal buffer",
+  );
+  resetRunBuffersForTest();
+});
 
 test("replays past the cursor, tails live events, and finish closes tails", () => {
   resetRunBuffersForTest();
@@ -95,6 +189,24 @@ test("attach/detach hooks fire on first tail and last drop only", () => {
 
   handle.finish();
   assert.deepEqual(calls, ["attach", "detach"], "finish never fires hooks");
+  resetRunBuffersForTest();
+});
+
+test("installing hooks after an early tail reconciles the active attachment", () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer(["run-late-hooks"]);
+  const tail = subscribeRunStream("run-late-hooks", 0, () => {}, () => {});
+  assert.ok(tail && !tail.done);
+
+  const calls: string[] = [];
+  run.setHooks({
+    attach: () => calls.push("attach"),
+    detach: () => calls.push("detach"),
+  });
+  assert.deepEqual(calls, ["attach"], "the later stop handle learns a tail already attached");
+
+  tail.unsubscribe();
+  assert.deepEqual(calls, ["attach", "detach"], "the same tail re-arms cleanup when it drops");
   resetRunBuffersForTest();
 });
 
