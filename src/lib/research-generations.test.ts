@@ -30,8 +30,8 @@ test("extractive and media kind unions stay explicit and composable", () => {
   assert.equal(isResearchGenerationMediaKind("slides"), false);
 });
 
-test("generation directions use the shared 5,000-character ceiling", () => {
-  assert.equal(RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH, 5_000);
+test("generation directions use the shared 10,000-character ceiling", () => {
+  assert.equal(RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH, 10_000);
   assert.equal(
     validateCreateResearchGenerationInput({
       familiarId: "nova", kind: "blog", sourceMissionId: "m-1",

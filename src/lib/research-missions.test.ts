@@ -82,8 +82,8 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
 });
 
 test("research prompt limits retain the requested intent and direction capacity", () => {
-  assert.equal(RESEARCH_INTENT_MAX_LENGTH, 20_000);
-  assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 5_000);
+  assert.equal(RESEARCH_INTENT_MAX_LENGTH, 25_000);
+  assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 10_000);
   assert.equal(
     validateCreateResearchMissionInput({ ...validMission(), intent: "i".repeat(RESEARCH_INTENT_MAX_LENGTH) }).ok,
     true,
