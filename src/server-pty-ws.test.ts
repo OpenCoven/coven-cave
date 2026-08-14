@@ -107,7 +107,7 @@ assert.match(
 // token, so the terminal must not 403 a device the REST surface already admits.
 assert.match(
   src,
-  /const tailnetAuthenticated = resolveTailnetPeer\(req\) !== null;/,
+  /const tailnetNodeId = resolveTailnetPeer\(req\);\s*const tailnetAuthenticated = tailnetNodeId !== null;/,
   "PTY upgrade treats an allowlisted tailnet device as authenticated",
 );
 assert.match(
@@ -134,6 +134,16 @@ assert.match(
   "origin gate accepts a scheme-agnostic same-host Origin (Serve-terminated TLS)",
 );
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
+assert.match(
+  src,
+  /COVEN_CAVE_PASSKEY_REQUIRED === "1"[\s\S]{0,150}!isDirectLoopbackRequest\(req\)[\s\S]{0,150}!hasValidPasskeyPresence\(req, tailnetNodeId\)/,
+  "remote PTY upgrades enforce passkey presence because they bypass Next middleware",
+);
+assert.match(
+  src,
+  /timingSafeEqualString\(parts\[5\], expected\)[\s\S]{0,100}expiresAt > Date\.now\(\)[\s\S]{0,100}parts\[2\] === tailnetNodeId/,
+  "PTY presence verification checks the signature, expiry, and tailnet-device binding",
+);
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
 // src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
 // pairing flow mints them and the phone renews them monthly. The WS gate must

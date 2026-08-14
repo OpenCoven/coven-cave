@@ -67,6 +67,7 @@ const FORWARDING_HEADERS = [
 ];
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const PRESENCE_COOKIE = "coven_passkey_presence";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
@@ -143,6 +144,19 @@ function getTokensFromCookie(header) {
   }
   return tokens;
 }
+function getCookie(header, name) {
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key !== name) continue;
+    try {
+      return decodeURIComponent(rest.join("="));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 function timingSafeEqualString(a, b) {
   const aBytes = Buffer.from(a);
   const bBytes = Buffer.from(b);
@@ -173,6 +187,22 @@ function isValidSignedAccessToken(value, secret) {
   if (!parts[2] || !parts[3]) return false;
   const expected = createHmac("sha256", secret).update(`v1.${parts[1]}.${parts[2]}`).digest("base64url");
   return timingSafeEqualString(parts[3], expected);
+}
+function hasValidPasskeyPresence(req, tailnetNodeId) {
+  if (!tailnetNodeId) return false;
+  const secret = process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
+  const token = getCookie(req.headers.cookie, PRESENCE_COOKIE);
+  if (!secret || !token) return false;
+  const parts = token.split(".");
+  if (parts.length !== 6 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  const field = /^[A-Za-z0-9_-]+$/;
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0 || !field.test(parts[2]) || !field.test(parts[3]) || !parts[4] || !parts[5]) {
+    return false;
+  }
+  const body = parts.slice(0, 5).join(".");
+  const expected = createHmac("sha256", secret).update(body).digest("base64url");
+  return timingSafeEqualString(parts[5], expected) && expiresAt > Date.now() && parts[2] === tailnetNodeId;
 }
 function bearerToken(req) {
   const auth = req.headers.authorization ?? "";
@@ -692,7 +722,8 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  const tailnetAuthenticated = resolveTailnetPeer(req) !== null;
+  const tailnetNodeId = resolveTailnetPeer(req);
+  const tailnetAuthenticated = tailnetNodeId !== null;
   const tokenAuthenticated = tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -700,6 +731,11 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
   if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  if (process.env.COVEN_CAVE_PASSKEY_REQUIRED === "1" && !isDirectLoopbackRequest(req) && !hasValidPasskeyPresence(req, tailnetNodeId)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
