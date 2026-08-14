@@ -2,15 +2,15 @@
 
 import "@/styles/cave-composer.css";
 
-// ComposerContextChips — the composer footer's context controls (cave-g21f):
-// project, model, and (for repo-rooted chats) branch ride as separate,
+// ComposerContextChips — adaptive context controls (cave-g21f):
+// Placed in the new-chat composer footer and active-chat header. Project,
+// model, and (for repo-rooted chats) worktree/branch ride as independent,
 // individually labelled chips. Each opens its own picker popover anchored to
 // the chip itself (ProjectPickerPopover, ComposerRuntimePopover,
-// GitBranchMenuPopover), so every existing flow — project switching +
-// add-project, runtime/model switching, branch switch / new worktree / PR
-// open / git-changes drill-through — stays one click away. This replaced the
-// combined "Project · Model · branch" pill and its hub popover (2026-07-22)
-// on both the chat and home composers.
+// GitBranchMenuPopover), so every workflow — project switching + add-project,
+// runtime/model switching, branch switch / new worktree / PR open / git-changes
+// drill-through — stays one click away. This replaced the combined
+// "Project · Model · branch" pill and its hub popover (2026-07-22).
 
 import { useMemo, useRef, useState, type RefObject } from "react";
 import { Icon } from "@/lib/icon";
@@ -26,9 +26,13 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import type { CreateProjectOptions } from "@/lib/chat-add-project";
-import type { RuntimeModelOption } from "@/lib/runtime-models";
+import { projectAccessLabel } from "@/lib/project-access-levels";
+import {
+  runtimeOwnsModelDefault,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 
-export type ComposerContextView = null | "project" | "model" | "branch";
+export type ComposerContextView = null | "project" | "model" | "branch" | "worktree";
 
 export type ComposerContextProps = {
   projects: CaveProject[];
@@ -37,17 +41,27 @@ export type ComposerContextProps = {
   onProjectChange: (id: string) => void;
   allowNoProject?: boolean;
   familiarId?: string | null;
-  /** From the caller's useProjects(); presence enables the "Add project…" row. */
+  /** From the caller's useProjects(); either creator enables the "Add project…" row. */
   createProject?: (
     name: string,
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  /** Throwing creator from the caller's useProjects(); preserves server guidance. */
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
-  onPickModel: (id: string) => void;
+  onPickModel: (id: string | null) => void;
+  /** cave-pkapw: the session's current model when it differs from the
+   *  familiar's default — null when there is nothing to promote. */
+  promotableModel?: string | null;
+  onPromoteModelToDefault?: () => void;
   /** Chat disables model switching while streaming (runtime-chip parity). */
   modelDisabled?: boolean;
   /** Enables the branch chip for repo-rooted chats (undefined/non-repo
@@ -55,7 +69,15 @@ export type ComposerContextProps = {
   projectRoot?: string;
   /** Opens the branch PR in the app's browser pane; falls back to window.open. */
   onOpenUrl?: (url: string) => void;
+  /** Ad-hoc root the chat runs in — enables the picker's in-place
+   *  "Register this folder" row (spec 2026-07-24). */
+  registerCurrentRoot?: string;
+  onRegisterCurrentRoot?: () => void;
+  /** New-session composers sit near the top of the page, so their menus should
+   *  prefer opening below. Docked composers keep each picker's existing side. */
+  popoverPlacement?: "bottom-start" | "top-start";
   disabled?: boolean;
+  ariaLabel?: string;
 };
 
 export type ComposerContextController = ReturnType<typeof useComposerContextActions>;
@@ -69,18 +91,29 @@ export function useComposerContextActions(config: ComposerContextProps) {
    config.projectValue === NO_PROJECT_ID
      ? null
      : (config.projectValue
-         ? sortedProjects.find((project) => project.id === config.projectValue) ?? sortedProjects[0]
+         ? sortedProjects.find((project) => project.id === config.projectValue)
          : sortedProjects[0]) ?? null;
+  const emptyProjectLabel = config.allowNoProject ? "No project" : "Choose project";
+  const selectedProjectLabel = selectedProject
+    ? `${selectedProject.name}${
+        selectedProject.access ? ` · ${projectAccessLabel(selectedProject.access)}` : ""
+      }`
+    : emptyProjectLabel;
 
   const addFlow = useAddProjectFlow({
    familiarId: config.familiarId ?? null,
    createProject: config.createProject ?? (async () => null),
+   createProjectOrThrow: config.createProjectOrThrow,
    projects: config.projects,
    onAdded: config.onProjectChange,
   });
+  const canAddProject = Boolean(config.createProject || config.createProjectOrThrow);
 
   const runtimeName = runtimeDisplayName(config.runtime);
-  const modelLabel = runtimeModelLabel(config.modelValue, config.modelOptions);
+  const modelLabel =
+    !config.modelValue && runtimeOwnsModelDefault(config.runtime)
+      ? "Runtime default"
+      : runtimeModelLabel(config.modelValue, config.modelOptions);
 
   const root = config.projectRoot?.trim() ? config.projectRoot : undefined;
   const { loaded, notARepo, branch, count, worktree, reload } = useChangesSummary(
@@ -93,7 +126,7 @@ export function useComposerContextActions(config: ComposerContextProps) {
   const dirtyLabel =
     count > 0 ? `${count} uncommitted change${count === 1 ? "" : "s"}` : "clean";
   const summary = [
-    selectedProject ? selectedProject.name : "No project",
+    selectedProjectLabel,
     modelLabel ?? runtimeName,
   ].join(" · ");
 
@@ -101,7 +134,10 @@ export function useComposerContextActions(config: ComposerContextProps) {
    config,
    sortedProjects,
    selectedProject,
+   emptyProjectLabel,
+   selectedProjectLabel,
    addFlow,
+   canAddProject,
     runtimeName,
     modelLabel,
     root,
@@ -153,26 +189,35 @@ export function ComposerContextPickers({
         value={context.config.projectValue}
         onChange={context.config.onProjectChange}
         allowNoProject={context.config.allowNoProject}
-        onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
+        onAddProject={context.canAddProject ? context.addFlow.beginAddProject : undefined}
         addingProject={context.addFlow.adding}
+        registerCurrentRoot={context.config.registerCurrentRoot}
+        onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
+        placement={context.config.popoverPlacement === "bottom-start" ? "bottom-start" : undefined}
         ariaLabel="Choose project"
       />
       <ComposerRuntimePopover
         open={view === "model"}
         onOpenChange={(open) => onViewChange(open ? "model" : null)}
         anchorRef={anchorRef}
+        placement={context.config.popoverPlacement}
         runtime={context.config.runtime}
         modelValue={context.config.modelValue}
         modelOptions={context.config.modelOptions}
         onPickRuntime={context.config.onPickRuntime}
         onPickModel={context.config.onPickModel}
+        promotableModel={context.config.promotableModel ?? null}
+        onPromoteModelToDefault={context.config.onPromoteModelToDefault}
       />
       <GitBranchMenuPopover
-        open={view === "branch"}
-        onOpenChange={(open) => onViewChange(open ? "branch" : null)}
+        open={view === "branch" || view === "worktree"}
+        onOpenChange={(open) => onViewChange(open ? view : null)}
         anchorRef={anchorRef}
+        placement={context.config.popoverPlacement}
         projectRoot={context.root}
         onSwitched={context.reload}
+        ariaLabel={view === "worktree" ? "Worktree actions" : undefined}
+        menuLabel={view === "worktree" ? "Worktree actions" : undefined}
         {...branchPopoverExtras(context)}
       />
       {context.addFlow.addError ? (
@@ -180,7 +225,7 @@ export function ComposerContextPickers({
           {context.addFlow.addError}
         </span>
       ) : null}
-      {context.config.createProject ? context.addFlow.addProjectModal : null}
+      {context.canAddProject ? context.addFlow.addProjectModal : null}
     </>
   );
 }
@@ -188,14 +233,18 @@ export function ComposerContextPickers({
 export function ComposerContextChips(props: ComposerContextProps) {
   const [menu, setMenu] = useState<ComposerContextView>(null);
   const projectRef = useRef<HTMLButtonElement | null>(null);
-  const modelRef = useRef<HTMLButtonElement | null>(null);
+  const worktreeRef = useRef<HTMLButtonElement | null>(null);
   const branchRef = useRef<HTMLButtonElement | null>(null);
+  const modelRef = useRef<HTMLButtonElement | null>(null);
   const context = useComposerContextActions(props);
-  const projectLabel = context.selectedProject?.name ?? "No project";
+  const projectLabel = context.selectedProjectLabel;
+  const projectAccess = context.selectedProject?.access
+    ? projectAccessLabel(context.selectedProject.access)
+    : null;
   const modelLabel = context.modelLabel ?? context.runtimeName;
 
   return (
-    <>
+    <div className="cave-context-controls" role="group" aria-label={props.ariaLabel ?? "Chat context"}>
       <button
         ref={projectRef}
         type="button"
@@ -204,7 +253,11 @@ export function ComposerContextChips(props: ComposerContextProps) {
         aria-haspopup="dialog"
         aria-expanded={menu === "project"}
         aria-label={`Project: ${projectLabel} — change project`}
-        title={context.selectedProject?.root ?? "No project selected"}
+        title={
+          context.selectedProject
+            ? `${context.selectedProject.root}${projectAccess ? ` · ${projectAccess} access` : ""}`
+            : context.emptyProjectLabel
+        }
         onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
       >
         <span className="cave-context-chip__lead" aria-hidden>
@@ -222,6 +275,47 @@ export function ComposerContextChips(props: ComposerContextProps) {
         <span className="cave-context-chip__text">{projectLabel}</span>
         <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
       </button>
+      {context.hasGit && context.worktree ? (
+        <button
+          ref={worktreeRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled}
+          aria-haspopup="menu"
+          aria-expanded={menu === "worktree"}
+          aria-label={`Worktree: ${context.worktree} — open worktree actions`}
+          title={`Worktree: ${context.worktree} · ${context.dirtyLabel}`}
+          onClick={() => setMenu((c) => (c === "worktree" ? null : "worktree"))}
+        >
+          <span className="cave-context-chip__lead" aria-hidden>
+            <Icon name="ph:tree-structure" width={13} aria-hidden />
+          </span>
+          <span className="cave-context-chip__text">{context.worktree}</span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+      ) : null}
+      {context.hasGit ? (
+        <button
+          ref={branchRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled}
+          aria-haspopup="menu"
+          aria-expanded={menu === "branch"}
+          aria-label={`Branch: ${context.branch} — switch branch or create a worktree`}
+          title={`Branch: ${context.branch} · ${context.dirtyLabel}`}
+          onClick={() => setMenu((c) => (c === "branch" ? null : "branch"))}
+        >
+          <span className="cave-context-chip__lead" aria-hidden>
+            <Icon name="ph:git-branch" width={13} aria-hidden />
+          </span>
+          <span className="cave-context-chip__text">
+            {context.branch}
+            {context.count > 0 ? ` · +${context.count}` : ""}
+          </span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+      ) : null}
       <button
         ref={modelRef}
         type="button"
@@ -239,29 +333,6 @@ export function ComposerContextChips(props: ComposerContextProps) {
         <span className="cave-context-chip__text">{modelLabel}</span>
         <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
       </button>
-      {context.hasGit ? (
-        <button
-          ref={branchRef}
-          type="button"
-          className="cave-context-chip focus-ring"
-          disabled={props.disabled}
-          aria-haspopup="menu"
-          aria-expanded={menu === "branch"}
-          aria-label={`Branch: ${context.branch} — switch branch or create a worktree`}
-          title={`Branch: ${context.branch} · ${context.dirtyLabel}${context.worktree ? ` · Worktree: ${context.worktree}` : ""}`}
-          onClick={() => setMenu((c) => (c === "branch" ? null : "branch"))}
-        >
-          <span className="cave-context-chip__lead" aria-hidden>
-            <Icon name="ph:git-branch" width={13} aria-hidden />
-          </span>
-          <span className="cave-context-chip__text">
-            {context.branch}
-            {context.count > 0 ? ` · +${context.count}` : ""}
-            {context.worktree ? ` · ${context.worktree}` : ""}
-          </span>
-          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
-        </button>
-      ) : null}
 
       <ProjectPickerPopover
         open={menu === "project"}
@@ -271,25 +342,45 @@ export function ComposerContextChips(props: ComposerContextProps) {
         value={context.config.projectValue}
         onChange={context.config.onProjectChange}
         allowNoProject={context.config.allowNoProject}
-        onAddProject={context.config.createProject ? context.addFlow.beginAddProject : undefined}
+        onAddProject={context.canAddProject ? context.addFlow.beginAddProject : undefined}
         addingProject={context.addFlow.adding}
+        registerCurrentRoot={context.config.registerCurrentRoot}
+        onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
+        placement={context.config.popoverPlacement === "bottom-start" ? "bottom-start" : undefined}
         ariaLabel="Choose project"
       />
       <ComposerRuntimePopover
         open={menu === "model"}
         onOpenChange={(open) => setMenu(open ? "model" : null)}
         anchorRef={modelRef}
+        placement={context.config.popoverPlacement}
         runtime={context.config.runtime}
         modelValue={context.config.modelValue}
         modelOptions={context.config.modelOptions}
         onPickRuntime={context.config.onPickRuntime}
         onPickModel={context.config.onPickModel}
+        promotableModel={context.config.promotableModel ?? null}
+        onPromoteModelToDefault={context.config.onPromoteModelToDefault}
       />
+      {context.hasGit && context.worktree ? (
+        <GitBranchMenuPopover
+          open={menu === "worktree"}
+          onOpenChange={(open) => setMenu(open ? "worktree" : null)}
+          anchorRef={worktreeRef}
+          placement={context.config.popoverPlacement}
+          projectRoot={context.root}
+          onSwitched={context.reload}
+          ariaLabel="Worktree actions"
+          menuLabel="Worktree actions"
+          {...branchPopoverExtras(context)}
+        />
+      ) : null}
       {context.hasGit ? (
         <GitBranchMenuPopover
           open={menu === "branch"}
           onOpenChange={(open) => setMenu(open ? "branch" : null)}
           anchorRef={branchRef}
+          placement={context.config.popoverPlacement}
           projectRoot={context.root}
           onSwitched={context.reload}
           {...branchPopoverExtras(context)}
@@ -300,7 +391,7 @@ export function ComposerContextChips(props: ComposerContextProps) {
           {context.addFlow.addError}
         </span>
       ) : null}
-      {context.config.createProject ? context.addFlow.addProjectModal : null}
-    </>
+      {context.canAddProject ? context.addFlow.addProjectModal : null}
+    </div>
   );
 }

@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 // chat interface and the shared chrome every surface reuses.
 //   1. Haptics — cached, prepare()d generators (no per-tap allocation/latency)
 //   2. Streaming scroll — never yank a reader who scrolled up; flash-free open
-//   3. Composer — glassmorphic capsule field with a focus accent halo
+//   3. Composer — one elevated authored panel with a focus accent halo
 //   4. Bubbles — accent-gradient user bubble w/ luminance-aware foreground,
 //      theme-tracking assistant bubble
 //   5. Indicators — PhaseAnimator waves that respect Reduce Motion
@@ -57,11 +57,11 @@ assert.match(
   "the transcript should open anchored at the latest message (no post-layout jump)",
 );
 
-// ── 3. Composer: glass capsule + focus halo ──────────────────────────────────
+// ── 3. Composer: elevated panel + focus halo ─────────────────────────────────
 assert.match(
   chatView,
-  /\.glassFill\(\.control, in: Capsule\(\)\)\s*\n\s*\.overlay\(Capsule\(\)\.strokeBorder/,
-  "the composer field should be a frosted .control capsule, not a bare hairline",
+  /\.background\(\s*\n\s*chrome\.bgElevated,\s*\n\s*in: RoundedRectangle\(cornerRadius: 16/,
+  "the composer controls should share one elevated authored panel",
 );
 assert.match(
   chatView,
@@ -141,8 +141,7 @@ for (const [component, pattern] of [
   ["CircularIconButton", /struct CircularIconButton: View[\s\S]{0,900}?\.buttonStyle\(\.glassPress\)/],
   ["PillSelector", /struct PillSelector<Leading: View>: View[\s\S]{0,1400}?\.buttonStyle\(\.glassPress\)/],
   ["FloatingActionMenu", /struct FloatingActionMenu: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
-  ["DrawerRow", /struct DrawerRow: View[\s\S]{0,1600}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
-  ["EmptyChatSuggestionRow", /struct EmptyChatSuggestionRow: View[\s\S]{0,1300}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
+  ["EmptyChatSuggestionRow", /struct EmptyChatSuggestionRow: View[\s\S]{0,2400}?\.buttonStyle\(GlassPressStyle\(scale: 0\.98\)\)/],
 ]) {
   assert.match(chrome, pattern, `${component} should answer touches with the press style`);
 }

@@ -111,18 +111,20 @@ see `docs/mobile-tailscale.md`.
 - [ ] `/api/*` requests offline → fail immediately, not from a stale
   200. Daemon-offline banner reflects.
 
-## Tauri-mobile shell (phase 6)
+## Native iOS app (phase 6)
 
-(Only if you have Xcode / Android Studio installed and have run
-`pnpm tauri ios init` / `pnpm tauri android init`.)
+(Only if you have Xcode installed. The mobile client is the native Swift app
+at `apps/ios/CovenCave` — see [`ios-native-rebuild.md`](ios-native-rebuild.md).
+Run it with `pnpm mobile:ios:sim`. The automated performance evidence and
+remaining physical-device gates are tracked in
+[`performance/ios-performance-audit.md`](performance/ios-performance-audit.md).)
 
-- [ ] iOS simulator + Android emulator: app launches, points at the
-  configured remote daemon, primary flows (chat, board, inbox) work.
-- [ ] Bottom-terminal surface shows the "Terminal is only available
-  inside the CovenCave desktop app" placeholder.
-- [ ] Browser-pane surface drops to the iframe fallback.
+- [ ] iOS simulator: app launches, pairs to the daemon exposed via
+  `pnpm mobile:tailscale:app`, primary flows (chat, board, inbox) work.
 - [ ] First push notification: OS permission sheet appears once; after
   granted, local notifications fire.
+- [ ] Real iPhone: complete the cold-launch, memory-pressure, thermal, energy,
+  and Wi-Fi/cellular handoff gates listed in the native performance audit.
 
 ## Perf budget (phase 7)
 

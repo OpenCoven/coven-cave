@@ -66,10 +66,35 @@ git diff --cached --no-color --unified=0 > "$DIFF_FILE"
 ADDED_FILE="$TMPDIR_RUN/added"
 awk '/^\+\+\+ /{next} /^\+/{sub(/^\+/,""); print}' "$DIFF_FILE" > "$ADDED_FILE"
 
+# Values that are self-evidently not credentials. Deliberately narrow, and
+# applied ONLY to the two generic shape heuristics below (Bearer / password
+# assignment) — never to a vendor pattern, because a real sk-ant-… or ghp_…
+# does not become safe by containing the word "test".
+#
+# The marker has to appear INSIDE the matched value, not merely somewhere on
+# the line, so a real key cannot slip through by sharing a line with the word
+# "example". The filter is still line-granular like the Tailscale check below,
+# so a line carrying BOTH a synthetic and a real token would be skipped; keep
+# fixtures on their own lines.
+SYNTHETIC='(synthetic|placeholder|example|dummy|fake|sample|redacted|changeme|not-a-real|your[_-]?(token|key|secret))'
+
 scan() {
-  local label="$1" pattern="$2"
+  local label="$1" pattern="$2" allow="${3:-}"
   local hits
-  hits=$(grep -InE -e "$pattern" "$ADDED_FILE" || true)
+  if [ -n "$allow" ]; then
+    # Filter per MATCH, not per line. A line-granular `grep -v` would drop the
+    # whole line when any part of it looked synthetic, so
+    #     const a = "Bearer synthetic-token", b = "Bearer <a real one>"
+    # would suppress the real secret too. Extract each match with -o and keep
+    # only those that do NOT carry a synthetic marker.
+    hits=$(grep -IonE -e "$pattern" "$ADDED_FILE" 2>/dev/null | while IFS= read -r entry; do
+      [ -n "$entry" ] || continue
+      match=${entry#*:}
+      printf '%s' "$match" | grep -qE -e "$allow" || printf '%s\n' "$entry"
+    done)
+  else
+    hits=$(grep -InE -e "$pattern" "$ADDED_FILE" || true)
+  fi
   if [ -n "$hits" ]; then
     fail "possible $label in staged diff:"
     printf '%s\n' "$hits" | head -5 | sed 's/^/    /' >&2
@@ -89,9 +114,11 @@ scan "OpenAI key"            'sk-[A-Za-z0-9]{32,}'
 scan "Anthropic key"         'sk-ant-[A-Za-z0-9_-]{20,}'
 scan "Google API key"        'AIza[0-9A-Za-z_-]{30,}'
 scan "Telegram bot token"    '(^|[^0-9])[0-9]{8,11}:[A-Za-z0-9_-]{30,}'
-scan "Bearer token"          'Bearer[[:space:]]+[A-Za-z0-9_.-]{16,}'
+scan "Bearer token"          'Bearer[[:space:]]+[A-Za-z0-9_.-]{16,}' \
+     "Bearer[[:space:]]+[A-Za-z0-9_.-]*$SYNTHETIC[A-Za-z0-9_.-]*"
 scan "PEM private key"       'BEGIN ((RSA|EC|OPENSSH|DSA|PGP|ENCRYPTED) )?PRIVATE KEY'
-scan "password assignment"   '(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*["'\''][^"'\''[:space:]]{8,}["'\'']'
+scan "password assignment"   '(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*["'\''][^"'\''[:space:]]{8,}["'\'']' \
+     "(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*[\"']*[^\"'[:space:]]*$SYNTHETIC[^\"'[:space:]]*[\"']*"
 
 # Tailscale Serve hostnames are not credentials, but real MagicDNS hostnames
 # can identify Val's private tailnet/machine. Allow examples and placeholders.

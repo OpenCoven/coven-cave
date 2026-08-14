@@ -1,9 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const src = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+assert.equal(packageJson.type, "module", "Node loads server.ts and TypeScript scripts as ESM without reparsing warnings");
 
 assert.match(src, /new WebSocketServer\(\{ noServer: true \}\)/, "server owns a noServer WebSocket upgrade handler");
 assert.match(src, /pathname !== "\/api\/pty-ws"/, "server only handles /api/pty-ws upgrades");
@@ -52,12 +54,25 @@ assert.match(
   "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
 );
 // The 401 applies when a remote/mobile credential is configured. With neither
-// token (the local desktop app / dev server) the loopback host+origin gate is
-// the protection, preserving credential-less local connections — #714 dropped
-// that guard and 401'd every local terminal. Native mobile mode configures
-// only COVEN_CAVE_AUTH_TOKEN, so it must also trigger auth.
+// token (plain local development) the loopback host+origin gate is the
+// protection. Once either credential exists, even loopback callers must prove
+// they hold it before the server will spawn or adopt a shell.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
-assert.match(src, /if \(isPtyAuthRequired\(\) && !tokenAuthenticated && !isDirectLoopbackRequest\(req\)\)/, "PTY upgrade 401s on missing credentials when any PTY auth token is configured, except for a socket-verified direct loopback peer (cave-vn2r)");
+assert.match(
+  src,
+  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
+  "PTY upgrade authentication closes the credential-less path whenever either token is configured",
+);
+// ...and it decides that WITHOUT consulting loopback at all. The positive
+// assertion above would still pass if someone re-introduced a direct-loopback
+// escape hatch beside it, which is exactly the bypass cave-ruw4z removed: TCP
+// loopback proves the caller is on this machine, never which OS user it is, so
+// any local account could otherwise adopt a shell as the Cave process owner.
+assert.doesNotMatch(
+  src,
+  /shouldRejectUnauthenticatedPtyUpgrade\([\s\S]{0,400}?isDirectLoopbackRequest/,
+  "no direct-loopback term may re-enter the PTY rejection decision",
+);
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present
 // (tailscale serve delivers remote phones over loopback WITH x-forwarded-*),
@@ -86,8 +101,8 @@ assert.match(
 );
 assert.match(
   src,
-  /delete req\.headers\[LOCAL_PEER_HEADER\];\s*if \(isDirectLoopbackRequest\(req\)\) \{\s*req\.headers\[LOCAL_PEER_HEADER\] = LOCAL_PEER_SECRET;/,
-  "client-supplied local-peer headers are stripped before the server stamps its own",
+  /delete req\.headers\[LOCAL_PEER_HEADER\];\s*delete req\.headers\[TAILNET_PEER_HEADER\];\s*if \(isDirectLoopbackRequest\(req\)\) \{\s*req\.headers\[LOCAL_PEER_HEADER\] = LOCAL_PEER_SECRET;/,
+  "client-supplied local-peer and tailnet-peer headers are both stripped before the server stamps its own",
 );
 assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth accepts the sidecar token query param used by native WebSockets");
 // Credentials are verified BEFORE the source gate: a paired device over
@@ -99,7 +114,12 @@ assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth 
 assert.match(
   src,
   /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false;/,
-  "PTY upgrade verifies the access or sidecar token before the source gate",
+  "PTY upgrade requires a cryptographic access or sidecar credential before relaxing the source gate",
+);
+assert.doesNotMatch(
+  src,
+  /tailnetAuthenticated \|\|/,
+  "spoofable forwarding headers cannot substitute for a PTY bearer credential",
 );
 assert.match(
   src,
@@ -163,7 +183,8 @@ assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade 
 assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server classifies loopback WebSocket hosts");
 assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
 assert.match(src, /sameOrigin\(req\.headers\.origin/, "server rejects cross-origin WebSocket upgrades");
-assert.match(src, /process\.env\.HOSTNAME \?\? "127\.0\.0\.1"/, "server binds to loopback by default");
+assert.match(src, /const hostname = loopbackHostname\(\)/, "server binds only through the loopback selector");
+assert.doesNotMatch(src, /process\.env\.HOSTNAME \?\?/, "ambient HOSTNAME values cannot bypass validation");
 assert.match(src, /pty\.spawn\(defaultShell\(\),\s*defaultShellArgs\(\)/, "server hardcodes shell and args");
 assert.doesNotMatch(src, /query\.command|query\.args|query\.env/, "renderer must not supply process authority through query params");
 assert.match(src, /statSync\(raw\)/, "projectRoot is stat-validated before use as cwd");
@@ -197,6 +218,7 @@ assert.match(
 );
 assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
+assert.match(src, /frame\[0\]\s*=\s*0x06/, "cursor-aware clients receive a replay-cursor control frame");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");
 assert.match(src, /tag === 0x04/, "server receives resize tag 0x04");
 assert.match(src, /tag === 0x05/, "server receives an explicit kill tag 0x05 (cave-wujw)");
@@ -215,7 +237,11 @@ assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server ver
 // Tailscale Serve forwards the <host>.ts.net Host. The iOS terminal may use
 // that host only after the mobile access token authenticates the upgrade;
 // tailnet membership alone must not relax the host gate.
-assert.match(src, /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false/, "the upgrade credential is verified before the host gate");
+assert.match(
+  src,
+  /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false;/,
+  "a cryptographic upgrade credential is verified before the host gate",
+);
 assert.match(
   src,
   /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);\s*\n\s*return false;/,
@@ -306,13 +332,13 @@ assert.match(
 //    socket after adoptSession swapped session.ws — one replay then silence.
 assert.match(
   src,
-  /shell\.onData\(\(data: string\) => \{[\s\S]*?if \(session\.ws\) sendPtyData\(session\.ws, data\)/,
-  "live PTY output routes to the current session.ws, not the spawn-time socket",
+  /shell\.onData\(\(data: string\) => \{[\s\S]*?queuePtyOutput\(threadId, session, bytes\)/,
+  "live PTY output enters the current session's bounded output queue",
 );
 assert.match(
   src,
-  /session\.scrollbackBytes > 0[\s\S]{0,80}sendPtyData\(ws, Buffer\.concat\(session\.scrollback\)/,
-  "adoptSession replays the scrollback ring to a reattaching client",
+  /replayPtyOutput\(threadId, session, replayCursor\)/,
+  "adoptSession replays only the retained cursor suffix, or legacy full ring",
 );
 // 3. A detach grace window: on socket close the shell is detached (session.ws
 //    nulled) and a timer reaps it later, instead of an immediate kill. A quick
@@ -324,7 +350,7 @@ assert.match(
 );
 assert.match(
   src,
-  /ws\.on\("close", \(\) => \{[\s\S]*?session\.ws = null;[\s\S]*?setTimeout\([\s\S]*?DETACH_GRACE_MS\)/,
+  /function detachPtyConsumer\([\s\S]*?session\.ws = null;[\s\S]*?armPtyDetach\(threadId, session\)/,
   "closing the socket detaches and arms a reap timer rather than killing the shell immediately",
 );
 assert.match(
@@ -346,6 +372,42 @@ assert.match(
   "detach grace defaults to 5 minutes so a backgrounded phone reattaches to a live shell",
 );
 
+// High-output sessions must not create an unbounded application queue or let
+// ws retain unlimited bytes for a stalled browser. The PTY remains alive; only
+// the current socket is closed with the retryable RFC 6455 code 1013.
+assert.match(src, /const PTY_FRAME_COALESCE_MS = 8/, "output coalescing has a short bounded latency");
+assert.match(src, /const PTY_FRAME_MAX_BYTES = 16 \* 1024/, "each output frame is bounded");
+assert.match(src, /const PTY_WS_BUFFERED_AMOUNT_LIMIT = 512 \* 1024/, "WebSocket buffering has a ceiling");
+assert.match(
+  src,
+  /ws\.bufferedAmount \+ payload\.length \+ 1 > PTY_WS_BUFFERED_AMOUNT_LIMIT[\s\S]{0,160}evictSlowPtyConsumer/,
+  "a slow consumer is evicted before buffered output exceeds the cap",
+);
+assert.match(
+  src,
+  /ws\.close\(PTY_SLOW_CONSUMER_CLOSE_CODE, PTY_SLOW_CONSUMER_CLOSE_REASON\)/,
+  "slow clients receive a retryable close reason",
+);
+assert.match(
+  src,
+  /const PTY_SLOW_CONSUMER_CLOSE_CODE = 1013/,
+  "slow-client eviction uses WebSocket Try Again Later",
+);
+assert.match(
+  src,
+  /function clearPendingPtyOutput[\s\S]*?pendingOutputBytes = 0/,
+  "a detached or replaced client cannot donate stale queued bytes to the next client",
+);
+
+// Cursor protocol: absence preserves existing full replay. New bridge clients
+// negotiate with -1, receive the retained stream origin, then reconnect with
+// their last delivered absolute byte cursor.
+assert.match(src, /function parsePtyReplayCursor/, "server parses the opt-in replay cursor");
+assert.match(src, /query\.ptyReplayCursor/, "upgrade passes the cursor into PTY attachment");
+assert.match(src, /replayCursor === undefined/, "legacy clients retain full replay");
+assert.match(src, /scrollbackFrom\(session, start\)/, "cursor replay starts at the retained byte suffix");
+assert.match(src, /const reset = replayCursor !== -1 && !validCursor/, "expired cursors request a client reset before full fallback replay");
+
 // Idle keep-alive: Node's 5s default closes idle sockets just as pooled
 // clients (URLSession on iOS, tailscale serve upstreams) reuse them, which
 // surfaces as sporadic "network connection lost". headersTimeout must stay
@@ -357,6 +419,22 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
 // this inline block keeps the production build bundle-free while covering the
 // legacy maxKeys behavior that URLSearchParams does not preserve by default.
 {
+  const hostnameBlock = src.match(
+    /function loopbackHostname\([\s\S]*?return "127\.0\.0\.1";\n}/,
+  );
+  assert.ok(hostnameBlock, "server defines a testable loopback-only hostname selector");
+  const loopbackHostname = new Function(
+    `${hostnameBlock[0]}; return loopbackHostname;`,
+  )();
+  for (const hostname of ["127.0.0.1", "localhost", "::1"]) {
+    assert.equal(loopbackHostname(hostname), hostname, `${hostname} remains a supported loopback bind`);
+  }
+  for (const hostname of ["0.0.0.0", "192.168.1.20", "cave-host", ""]) {
+    assert.equal(loopbackHostname(hostname), "127.0.0.1", `${hostname || "empty"} cannot expose the server`);
+  }
+}
+
+{
   const parserBlock = src.match(
     /type UpgradeQuery[\s\S]+?(?=\nfunction isPtyAuthRequired)/,
   );
@@ -364,7 +442,7 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
   const { transformSync } = await import("esbuild");
   const transformed = transformSync(
     `${parserBlock[0]}\nexport { parseUpgradeTarget };`,
-    { loader: "ts", format: "esm", target: "node22" },
+    { loader: "ts", format: "esm", target: "node24" },
   );
   const parserModule = await import(
     `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`
@@ -404,6 +482,172 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     undefined,
     "empty segments consume maxKeys so credentials beyond the legacy cutoff stay ignored",
   );
+
+}
+
+{
+  const cursorBlock = src.match(/function firstQueryValue[\s\S]+?(?=\ntype UpgradeQuery)/);
+  assert.ok(cursorBlock, "cursor parser is available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${cursorBlock[0]}\nexport { parsePtyReplayCursor };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  const cursorModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const parsePtyReplayCursor = cursorModule.parsePtyReplayCursor as (
+    raw: string | string[] | undefined,
+  ) => number | undefined | null;
+  assert.equal(parsePtyReplayCursor(undefined), undefined, "missing cursor preserves legacy replay");
+  assert.equal(parsePtyReplayCursor("-1"), -1, "-1 negotiates cursor support on first attach");
+  assert.equal(parsePtyReplayCursor("42"), 42, "safe integer cursor is accepted");
+  assert.equal(parsePtyReplayCursor("4.2"), null, "fractional cursor is rejected");
+  assert.equal(parsePtyReplayCursor("-2"), null, "only the documented -1 sentinel is accepted");
+  assert.equal(parsePtyReplayCursor("9007199254740992"), null, "unsafe integer cursor is rejected");
+}
+
+// Execute the pure ring helpers independently of Next, node-pty, and an
+// actual socket. This protects both the one-large-chunk memory cap and exact
+// cursor slicing used for reconnect replay.
+{
+  const ringBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction getTokensFromCookie)/);
+  assert.ok(ringBlock, "scrollback helpers are available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${ringBlock[0]}\nexport { appendScrollback, scrollbackFrom, SCROLLBACK_LIMIT_BYTES };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  const ringModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const appendScrollback = ringModule.appendScrollback as (session: {
+    scrollback: Buffer[];
+    scrollbackBytes: number;
+    scrollbackStart: number;
+    streamEnd: number;
+  }, data: Buffer) => void;
+  const scrollbackFrom = ringModule.scrollbackFrom as (session: {
+    scrollback: Buffer[];
+    scrollbackStart: number;
+  }, cursor: number) => Buffer[];
+  const limit = ringModule.SCROLLBACK_LIMIT_BYTES as number;
+  const session = { scrollback: [] as Buffer[], scrollbackBytes: 0, scrollbackStart: 0, streamEnd: 0 };
+
+  appendScrollback(session, Buffer.from("first"));
+  appendScrollback(session, Buffer.from("-second"));
+  assert.equal(session.streamEnd, 12, "stream end advances by delivered bytes");
+  assert.equal(Buffer.concat(scrollbackFrom(session, 5)).toString(), "-second", "cursor suffix excludes already delivered bytes");
+
+  const large = Buffer.alloc(limit + 17, 0x78);
+  appendScrollback(session, large);
+  assert.equal(session.scrollbackBytes, limit, "one oversized PTY callback cannot exceed scrollback cap");
+  assert.equal(session.scrollbackStart, session.streamEnd - limit, "oversized callback advances retained cursor origin");
+  assert.equal(Buffer.concat(scrollbackFrom(session, session.scrollbackStart)).length, limit, "retained replay is bounded and byte exact");
+  assert.equal(
+    session.scrollback[0].buffer.byteLength,
+    limit,
+    "the retained tail owns a right-sized allocation instead of pinning the oversized callback",
+  );
+}
+
+// Exercise the coalescer with a socket double. This catches regressions that a
+// source-pattern test cannot: small bursts must become one frame, every frame
+// stays capped, and a slow consumer is detached without killing its PTY.
+{
+  const stateBlock = src.match(/type PtySession[\s\S]+?(?=\nfunction getTokensFromCookie)/);
+  const streamingBlock = src.match(/function sendPtyData[\s\S]+?(?=\nfunction sendPtyExit)/);
+  assert.ok(stateBlock && streamingBlock, "streaming helpers are available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${stateBlock[0]}\n${streamingBlock[0]}\nexport { PTY_FRAME_MAX_BYTES, PTY_WS_BUFFERED_AMOUNT_LIMIT, queuePtyOutput };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  (globalThis as typeof globalThis & { WebSocket: { OPEN: number } }).WebSocket = { OPEN: 1 };
+  const streamModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const queuePtyOutput = streamModule.queuePtyOutput as (
+    threadId: string,
+    session: Record<string, unknown>,
+    data: Buffer,
+  ) => void;
+  const frameLimit = streamModule.PTY_FRAME_MAX_BYTES as number;
+  const bufferedLimit = streamModule.PTY_WS_BUFFERED_AMOUNT_LIMIT as number;
+  const sent: Buffer[] = [];
+  const ws = {
+    readyState: 1,
+    bufferedAmount: 0,
+    send(frame: Buffer) { sent.push(frame); },
+    close() {},
+  };
+  const session = {
+    ws,
+    pendingOutput: [] as Buffer[],
+    pendingOutputBytes: 0,
+    flushTimer: null as NodeJS.Timeout | null,
+    detachTimer: null as NodeJS.Timeout | null,
+    pty: { kill() { throw new Error("slow-consumer eviction must not kill the PTY"); } },
+  };
+  queuePtyOutput("coalesce", session, Buffer.from("one"));
+  queuePtyOutput("coalesce", session, Buffer.from("-two"));
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  assert.deepEqual(sent.map((frame) => frame.subarray(1).toString()), ["one-two"], "a short output burst is coalesced into one frame");
+
+  // #598 baseline metric: the legacy path emitted one frame per PTY callback.
+  // A deterministic same-tick burst must materially reduce
+  // `pty_output_frames_per_burst`, not merely prove that two writes can merge.
+  const burstFrames: Buffer[] = [];
+  const burstWs = {
+    ...ws,
+    send(frame: Buffer) { burstFrames.push(frame); },
+  };
+  const burst = {
+    ...session,
+    ws: burstWs,
+    pendingOutput: [] as Buffer[],
+    pendingOutputBytes: 0,
+    flushTimer: null as NodeJS.Timeout | null,
+    detachTimer: null as NodeJS.Timeout | null,
+  };
+  const legacyFrames = 128;
+  for (let i = 0; i < legacyFrames; i++) {
+    queuePtyOutput("frame-metric", burst, Buffer.from(`line-${i.toString().padStart(3, "0")}\n`));
+  }
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  assert.ok(
+    burstFrames.length <= legacyFrames / 8,
+    `#598 pty_output_frames_per_burst must improve materially: before=${legacyFrames} after=${burstFrames.length}`,
+  );
+  console.log(
+    JSON.stringify({
+      metric: "pty_output_frames_per_burst",
+      issue: 598,
+      before: legacyFrames,
+      after: burstFrames.length,
+    }),
+  );
+
+  const oversizedCallback = Buffer.alloc(frameLimit * 8 + 3, 0x61);
+  queuePtyOutput("coalesce", session, oversizedCallback);
+  assert.ok(sent.slice(1).every((frame) => frame.length - 1 <= frameLimit), "large output is split into bounded frames");
+  assert.equal(session.pendingOutputBytes, 3, "only the short final frame remains queued");
+  assert.notEqual(
+    session.pendingOutput[0]?.buffer,
+    oversizedCallback.buffer,
+    "a short pending frame must not pin an oversized PTY callback allocation",
+  );
+  assert.ok(
+    (session.pendingOutput[0]?.buffer.byteLength ?? 0) <= frameLimit,
+    "pending output owns a bounded backing allocation",
+  );
+
+  const slowWs = { ...ws, bufferedAmount: bufferedLimit, closeCode: 0, close(code: number) { this.closeCode = code; } };
+  const slow = { ...session, ws: slowWs, pendingOutput: [] as Buffer[], pendingOutputBytes: 0, flushTimer: null, detachTimer: null };
+  queuePtyOutput("slow", slow, Buffer.alloc(frameLimit, 0x62));
+  assert.equal(slowWs.closeCode, 1013, "only a slow WebSocket is evicted with Try Again Later");
+  assert.equal(slow.ws, null, "slow consumer is detached while the PTY remains owned by its session");
+  if (slow.detachTimer) clearTimeout(slow.detachTimer);
 }
 
 // Twin parity: `pnpm start` runs the committed server.mjs, not server.ts, so a
@@ -415,10 +659,16 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
   const { buildSync } = await import("esbuild");
   const serverTsUrl = new URL("../server.ts", import.meta.url);
   const out = buildSync({
-    entryPoints: [serverTsUrl.pathname],
+    // fileURLToPath, never .pathname: on Windows a file:// pathname is
+    // `/C:/…`, and esbuild resolves that leading slash as an absolute path
+    // from the drive root, so the entry point does not exist. That threw
+    // before any assertion in this file could run, which meant the whole
+    // suite — every parity and security check below — was silently absent on
+    // Windows rather than failing loudly.
+    entryPoints: [fileURLToPath(serverTsUrl)],
     bundle: false,
     platform: "node",
-    target: "node22",
+    target: "node24",
     format: "esm",
     write: false,
   });

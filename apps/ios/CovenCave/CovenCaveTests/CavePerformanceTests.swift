@@ -90,6 +90,33 @@ final class CavePerformanceTests: XCTestCase {
         XCTAssertEqual(recorder.counter("network.request"), 3)
     }
 
+    func testSynchronousMeasureRecordsDurationAndCount() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let clock = TestPerformanceClock(values: [.zero, .milliseconds(7)])
+
+        let value = recorder.measureSynchronous("markdown.webview.init", clock: clock) { 42 }
+
+        XCTAssertEqual(value, 42)
+        XCTAssertEqual(recorder.snapshot()["markdown.webview.init"],
+                       CavePerformanceSample(count: 1,
+                                             latestMilliseconds: 7,
+                                             maximumMilliseconds: 7))
+    }
+
+    func testExplicitSpanRecordsAcrossAnAsynchronousBoundary() {
+        let recorder = CavePerformanceRecorder(enabled: true)
+        let clock = TestPerformanceClock(values: [.zero, .milliseconds(19)])
+
+        let span = recorder.begin("markdown.webview.init", clock: clock)
+        recorder.end(span)
+        recorder.end(span)
+
+        XCTAssertEqual(recorder.snapshot()["markdown.webview.init"],
+                       CavePerformanceSample(count: 1,
+                                             latestMilliseconds: 19,
+                                             maximumMilliseconds: 19))
+    }
+
     func testMeasureEvictsOldestDistinctSampleWhenSampleKeyLimitIsReached() async {
         let recorder = CavePerformanceRecorder(enabled: true, sampleKeyLimit: 2)
 
@@ -158,10 +185,42 @@ final class CavePerformanceTests: XCTestCase {
 
     func testSharedRecorderUsesCompileTimeDefault() {
         #if DEBUG
-        XCTAssertTrue(CavePerformanceRecorder.shared.isEnabled)
+        let isDebugBuild = true
         #else
-        XCTAssertFalse(CavePerformanceRecorder.shared.isEnabled)
+        let isDebugBuild = false
         #endif
+        XCTAssertEqual(
+            CavePerformanceRecorder.shared.isEnabled,
+            CavePerformanceRecorder.shouldEnableShared(
+                isDebugBuild: isDebugBuild,
+                environment: ProcessInfo.processInfo.environment,
+                arguments: ProcessInfo.processInfo.arguments
+            )
+        )
+    }
+
+    func testReleaseInstrumentationCanBeEnabledExplicitly() {
+        XCTAssertFalse(
+            CavePerformanceRecorder.shouldEnableShared(
+                isDebugBuild: false,
+                environment: [:],
+                arguments: []
+            )
+        )
+        XCTAssertTrue(
+            CavePerformanceRecorder.shouldEnableShared(
+                isDebugBuild: false,
+                environment: ["CAVE_PERFORMANCE_INSTRUMENTATION": "1"],
+                arguments: []
+            )
+        )
+        XCTAssertTrue(
+            CavePerformanceRecorder.shouldEnableShared(
+                isDebugBuild: false,
+                environment: [:],
+                arguments: ["CovenCave", "--performance-instrumentation"]
+            )
+        )
     }
 
     func testInstrumentationRecordRetainsSuppliedSpanName() {

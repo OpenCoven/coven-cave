@@ -2,10 +2,13 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
-const source = readFileSync(
+const shellSource = readFileSync(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
+const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
+const daemonSource = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
+const source = `${shellSource}\n${daemonSource}`;
 const sectionsUrl = new URL("./settings-sections.ts", import.meta.url);
 const overviewUrl = new URL("./settings-overview.tsx", import.meta.url);
 const sections = existsSync(sectionsUrl) ? readFileSync(sectionsUrl, "utf8") : "";
@@ -14,18 +17,62 @@ const globals = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const shellResponsiveCss = readFileSync(
+  new URL("../styles/globals/shell-responsive.css", import.meta.url),
+  "utf8",
+);
 const dashboardCssUrl = new URL("../styles/dashboard.css", import.meta.url);
 const dashboardCss = existsSync(dashboardCssUrl) ? readFileSync(dashboardCssUrl, "utf8") : "";
+const aboutSource = readFileSync(
+  new URL("./settings-about.tsx", import.meta.url),
+  "utf8",
+);
+const workspacePathField = shellSource.match(/function WorkspacePathField\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+const aboutCss = readFileSync(
+  new URL("../styles/settings-about.css", import.meta.url),
+  "utf8",
+);
+const phoneSource = readFileSync(
+  new URL("./settings-phone.tsx", import.meta.url),
+  "utf8",
+);
+const phoneCss = readFileSync(
+  new URL("../styles/settings-phone.css", import.meta.url),
+  "utf8",
+);
+const generalSection = shellSource.match(/function GeneralSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+const voiceSection = shellSource.match(/function VoiceSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+assert.doesNotMatch(
+  generalSection,
+  /<VoiceEngineSettings \/>/,
+  "General no longer renders local speech management",
+);
+assert.match(
+  voiceSection,
+  /className="settings-voice"[\s\S]*<SettingsPage[\s\S]*section="voice"[\s\S]*<VoiceProviderSettings localSpeechSettings=\{<VoiceEngineSettings \/>\} \/>/,
+  "Voice uses the standard Settings page and composes local engines at the provider-owned position",
+);
+assert.doesNotMatch(
+  voiceSection,
+  /variant="control-sheet"/,
+  "Voice retains the default overview treatment",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-voice\s*\{[\s\S]{0,160}container-name:\s*settings-general;[\s\S]{0,100}container-type:\s*inline-size/,
+  "Voice participates in the existing narrow Settings row and ruled-header container queries",
+);
 
 assert.match(
   source,
-  /const \[section, setSection\] = useState<Section>\("general"\)/,
+  /useSurfaceHistory<Section>\(\{\s*id:\s*"settings:section",\s*initial:\s*"general"\s*\}\)/,
   "SettingsShell should render the same initial section on server and client",
 );
 
 assert.doesNotMatch(
   source,
-  /useState<Section>\(initialSection\)/,
+  /useState<Section>\(initialSection\)|initial:\s*initialSection/,
   "SettingsShell must not read window.location.hash during the first client render",
 );
 
@@ -63,7 +110,7 @@ assert.match(
   "Settings back control should expose a mobile hit-area hook",
 );
 assert.match(
-  globals,
+  shellResponsiveCss,
   /@media \(max-width: 767px\) \{[\s\S]*\.settings-back-button\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Settings mobile back control should meet the shared touch target",
 );
@@ -132,24 +179,24 @@ assert.match(
   "Settings text actions should share the native touch-target floor",
 );
 assert.match(
-  dashboardCss,
-  /\.settings-mobile-switch\s*\{[\s\S]*?min-width:\s*64px[\s\S]*?min-height:\s*var\(--touch-target\)/,
-  "Mobile mode switch should meet the native touch-target floor",
+  phoneSource,
+  /className=\{`settings-switch focus-ring/,
+  "Phone controls should use the shared track-and-knob switch",
 );
 assert.match(
-  source,
-  /className=\{`settings-mobile-switch/,
-  "Mobile mode switch should use the dedicated touch-target switch class",
+  phoneSource,
+  /<Button[\s\S]*size="sm"[\s\S]*Setup guide/,
+  "Mobile setup guide should use the shared Button primitive",
 );
 assert.match(
-  source,
-  /className="settings-touch-action[\s\S]*Setup guide/,
-  "Mobile setup guide link should use the shared Settings action touch target",
+  aboutSource,
+  /settings-about-link-card[\s\S]*focus-ring/,
+  "About external cards should keep the shared keyboard focus treatment",
 );
 assert.match(
-  source,
-  /className="settings-touch-action[\s\S]*\{l\.label\}/,
-  "About external links should use the shared Settings action touch target",
+  aboutCss,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*\.settings-about-link-card[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "About external cards should meet the shared touch-target floor on coarse pointers",
 );
 // Settings section nav exposes the active section to assistive tech.
 assert.match(
@@ -262,7 +309,7 @@ assert.match(
 
 assert.match(
   overview,
-  /export function SettingsOverview\(\{ section \}: \{ section: Section \}\)/,
+  /export function SettingsOverview\(/,
   "SettingsOverview should live outside the shell component",
 );
 
@@ -320,34 +367,107 @@ assert.match(source, /announce\("Daemon connection saved\."\)/, "saving the daem
 assert.match(source, /announce\(ok \? "Theme synced to phone\." : "Couldn't reach the daemon to sync\.", ok \? "polite" : "assertive"\)/, "resync announces its result");
 assert.match(source, /announce\(`Imported theme/, "importing a theme announces");
 assert.match(source, /aria-label="Workspace path"/, "the workspace path field is labelled");
+assert.ok(workspacePathField.length > 0, "WorkspacePathField source should remain discoverable");
+assert.match(workspacePathField, /const ctl = new AbortController\(\)/, "the workspace path field should own its AbortController");
+assert.match(
+  workspacePathField,
+  /fetch\("\/api\/config\/workspace-path", \{ cache: "no-store", signal: ctl\.signal \}\)/,
+  "the workspace path field should read the narrow workspace-path route",
+);
+assert.doesNotMatch(
+  workspacePathField,
+  /\/api\/daemon\/status/,
+  "the workspace path field should not mount a full daemon-status read just to render workspacePath",
+);
+assert.match(
+  workspacePathField,
+  /if \(ctl\.signal\.aborted\) return;/,
+  "the workspace path field should stay silent after unmount while applying workspacePath",
+);
+assert.match(workspacePathField, /return \(\) => ctl\.abort\(\)/, "the workspace path field should abort on unmount");
+
+// Browse used to mean "hand the path to the OS file manager": a no-op on the
+// web build, and never a way to CHANGE the root. It now opens the in-app
+// folder browser (no native dialog) and persists the pick; revealing the
+// folder natively survives as its own desktop-only control.
+assert.match(
+  workspacePathField,
+  /<DirectoryPickerModal\s+open=\{pickerOpen\}/,
+  "Browse opens the shared in-app folder browser",
+);
+assert.match(
+  workspacePathField,
+  /setFieldError\(""\);\s*setPickerOpen\(true\);/,
+  "the Browse button clears a stale failure before reopening the picker",
+);
+assert.doesNotMatch(
+  workspacePathField,
+  /openError/,
+  "the shared alert slot is not named for only one of the two failures it carries",
+);
+assert.match(
+  workspacePathField,
+  /method: "POST",[\s\S]*body: JSON\.stringify\(\{ dir \}\)/,
+  "choosing a folder persists it through the workspace-path route",
+);
+assert.match(workspacePathField, /announce\("Workspace path saved\."\)/, "a saved path announces");
+assert.match(
+  workspacePathField,
+  /disabled=\{Boolean\(envPin\) \|\| saving\}/,
+  "an env-pinned workspace root cannot be changed from Settings",
+);
+assert.match(
+  workspacePathField,
+  /Pinned by the \{envPin\} environment variable\./,
+  "an env pin explains itself instead of silently ignoring the pick",
+);
+assert.match(
+  workspacePathField,
+  /aria-label="Open workspace folder in file manager"/,
+  "revealing the folder natively survives as its own control",
+);
+assert.match(
+  shellSource,
+  /import \{ DirectoryPickerModal \} from "@\/components\/directory-picker-modal"/,
+  "the settings shell reuses the shared picker rather than a second browser",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-workspace-actions\s*\{[\s\S]*?display:\s*flex/,
+  "the workspace row lays its actions out in a row",
+);
 assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
-assert.match(source, /connectionError && <span role="alert"/, "the daemon save error is a live alert");
+assert.match(source, /connectionError (?:&&|\?) <span role="alert"/, "the daemon save error is a live alert");
 
 // (cave-rj0z) var(--danger) is NOT a defined token — only --color-danger
 // exists. Uses of the phantom variable silently resolved to nothing, so
 // error text/borders rendered unstyled. Keep it out of the settings sources.
 {
   const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
-  for (const [name, src] of [["settings-shell", source], ["settings-profile", profile]]) {
+  for (const [name, src] of [["settings-shell", source], ["settings-profile", profile], ["settings-phone", phoneSource]]) {
     assert.doesNotMatch(src, /var\(--danger\)/, `${name} must use var(--color-danger), not the undefined var(--danger)`);
   }
 }
 
-// (cave-9yll, then user-revised) The Mobile-mode On/Off switch matches the
-// shared button shape — a --radius-control rectangle (.ui-btn), not a pill.
-// The News-headlines toggle was later slimmed to a minimal track/knob switch
-// (user-requested): no On/Off text, the row label carries the meaning.
-assert.ok(
-  (source.match(/settings-mobile-switch rounded-\[var\(--radius-control\)\]/g) ?? []).length === 1,
-  "the Mobile mode On/Off switch uses the shared control radius",
+// The Phone handoff uses the same minimal track/knob control as the rest of
+// Settings. Its label carries meaning and the shared pseudo-element preserves
+// the generous pointer target.
+assert.doesNotMatch(
+  phoneSource,
+  /settings-mobile-switch/,
+  "Phone should not reintroduce the old labeled On/Off rectangle",
 );
-assert.doesNotMatch(source, /settings-mobile-switch rounded-full/, "the pill shape stays gone from the labeled switch");
+assert.doesNotMatch(
+  dashboardCss,
+  /\.settings-mobile-switch/,
+  "the unused dedicated mobile switch chrome stays removed",
+);
 assert.match(
-  source,
-  /aria-label="News headlines"[\s\S]{0,200}settings-switch focus-ring/,
-  "News headlines renders the minimal track/knob switch",
+  phoneCss,
+  /@media \(hover: none\) and \(pointer: coarse\)[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Phone disclosures preserve native touch targets on coarse pointers",
 );
 assert.match(
   dashboardCss,
@@ -363,6 +483,243 @@ assert.match(
   dashboardCss,
   /\.settings-switch::after \{[\s\S]{0,120}?inset: -12px/,
   "the small switch keeps a generous hit area",
+);
+
+assert.match(
+  source,
+  /className="settings-general"/,
+  "General owns a dedicated control-sheet container",
+);
+assert.match(
+  source,
+  /<SettingsGroup label="Workspace" variant="ruled"/,
+  "General groups use the opt-in ruled heading",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-general\s*\{[\s\S]*container-type:\s*inline-size/,
+  "General responds to its content width",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-general\s*\{[\s\S]*?gap:\s*var\(--space-3\)/,
+  "General preserves the compact 12px group rhythm from the Claude Design source",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-group__rule\s*\{[\s\S]*?margin-bottom:\s*var\(--space-1\)/,
+  "ruled headings stay attached to their controls",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-group__rule-label\s*\{[\s\S]*?color:\s*var\(--text-secondary\)/,
+  "ruled labels use the source's secondary text tier",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-group__rule-line\s*\{[\s\S]*?background:\s*var\(--border-hairline\)/,
+  "ruled headings use a hairline rather than a strong divider",
+);
+const controlSheetOverviewCss =
+  dashboardCss.match(/\.settings-overview--control-sheet\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+assert.match(
+  controlSheetOverviewCss,
+  /padding:\s*var\(--space-2\) var\(--space-3\)/,
+  "General's overview uses the compact source padding",
+);
+assert.match(
+  controlSheetOverviewCss,
+  /background:\s*var\(--bg-panel\)/,
+  "General's overview uses the quiet panel surface",
+);
+assert.doesNotMatch(
+  controlSheetOverviewCss,
+  /min-height|linear-gradient/,
+  "General's overview does not reintroduce the oversized gradient hero",
+);
+assert.match(
+  source,
+  /<SettingsGroup label="Chat" variant="ruled" panel=\{false\}>/,
+  "Chat stays an unboxed ruled row like the source",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-stop-phrases\s*\{[\s\S]*?background:\s*var\(--bg-sunken\)/,
+  "the phrase chip editor uses the source's sunken input surface",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-progression-card\s*\{[\s\S]*?background:\s*var\(--bg-panel\)/,
+  "the progression card uses the quiet panel surface",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-startup-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*150px\),\s*1fr\)\)[\s\S]*?gap:\s*var\(--space-2\)/,
+  "startup cells preserve the source's responsive two-cell grid and compact gap",
+);
+assert.equal(
+  dashboardCss.match(/\.settings-startup-grid\s*\{/g)?.length,
+  1,
+  "startup auto-fit behavior is not replaced by a premature one-column breakpoint",
+);
+assert.match(
+  dashboardCss,
+  /@container settings-general \(max-width:/,
+  "narrow General layout uses a container query",
+);
+assert.match(
+  source,
+  /shell_open_path[\s\S]{0,220}Workspace folder opened/,
+  "Browse truthfully opens the current workspace directory",
+);
+assert.match(
+  source,
+  /useIsTauriDesktop/,
+  "workspace Browse is gated to desktop Tauri",
+);
+assert.match(
+  source,
+  /SettingsGroup label="Progression" variant="ruled"[\s\S]*settings-progression-card/,
+  "Progression uses the ruled full-width composition",
+);
+assert.match(
+  source,
+  /SettingsGroup label="Startup" variant="ruled"[\s\S]*settings-startup-grid/,
+  "Startup uses the ruled two-cell composition",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-startup-cell\s*\{[\s\S]*border:\s*1px dashed var\(--border-hairline\)/,
+  "Soon cells use the quiet dashed affordance language",
+);
+assert.match(
+  source,
+  /<SettingsGroup label="Backup" variant="ruled"[\s\S]*settings-backup-grid/,
+  "Backup uses the reference two-column composition",
+);
+assert.match(
+  source,
+  /settings-backup-manual[\s\S]*Backup passphrase[\s\S]*Export backup[\s\S]*Choose backup[\s\S]*Restore/,
+  "manual backup retains every action",
+);
+assert.match(
+  source,
+  /settings-backup-guidance[\s\S]*backupPassphraseGuidance\.label/,
+  "manual backup shows objective passphrase-length guidance",
+);
+assert.doesNotMatch(
+  source,
+  /Strong passphrase|Good passphrase|Weak passphrase/,
+  "length-only backup guidance makes no security-strength claim",
+);
+assert.match(
+  source,
+  /variant="primary"[\s\S]{0,260}Export backup/,
+  "manual export keeps the source's primary action hierarchy",
+);
+assert.match(
+  source,
+  /variant="ghost"[\s\S]{0,260}\{busy === "restore" \? "Restoring…" : "Restore"\}/,
+  "Restore remains the quiet tertiary action",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-backup-manual\s*\{[\s\S]*?padding:\s*0[\s\S]*?border:\s*0[\s\S]*?background:\s*transparent/,
+  "manual backup remains unboxed beside the scheduled-sync card",
+);
+assert.match(
+  source,
+  /syncLoadState === "error"[\s\S]*Couldn't load scheduled sync[\s\S]*Retry/,
+  "scheduled sync does not disguise request failures as an empty panel",
+);
+assert.match(
+  source,
+  /syncLoadState === "error"[\s\S]{0,240}<section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">/,
+  "scheduled sync retains an accessible section name when loading fails",
+);
+assert.match(
+  source,
+  /syncLoadState === "loading"[\s\S]{0,360}role="status"[\s\S]*aria-busy="true"[\s\S]*Loading scheduled sync…/,
+  "scheduled sync announces its loading state instead of exposing an empty region",
+);
+assert.match(
+  source,
+  /setOverview\(json as BackupSyncOverview\)[\s\S]{0,160}dispatchEvent\(new Event\("cave:backup-sync-refresh"\)\)/,
+  "successful scheduled-sync mutations refresh the General summary",
+);
+assert.match(
+  source,
+  /settings-backup-sync__state[\s\S]*\{enabled \? "On" : "Off"\}/,
+  "scheduled sync always names its state",
+);
+// Was a responsive two-column grid. Scheduled sync carries a destination, a
+// passphrase, a retention field and a freshness readout — several times the
+// height of the manual export beside it — so the pair left a dead half-column
+// the length of the taller card. Stacked full-width, each block gets the whole
+// measure and the section reads top to bottom.
+assert.match(
+  dashboardCss,
+  /\.settings-backup-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  "Backup stacks its two blocks full-width instead of pairing them",
+);
+assert.equal(
+  dashboardCss.match(/\.settings-backup-grid\s*\{/g)?.length,
+  1,
+  "Backup auto-fit behavior is not replaced by a premature one-column breakpoint",
+);
+for (const token of [
+  "--bg-base",
+  "--bg-panel",
+  "--bg-raised",
+  "--bg-sunken",
+  "--text-primary",
+  "--text-secondary",
+  "--text-muted",
+  "--border-hairline",
+  "--border-strong",
+  "--accent-presence",
+]) {
+  assert.match(
+    dashboardCss,
+    new RegExp(`var\\(${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)`),
+    `control-sheet CSS uses ${token}`,
+  );
+}
+assert.doesNotMatch(
+  dashboardCss.match(/\.settings-general[\s\S]*?(?=\/\* ── Unified dashboard)/)?.[0] ?? "",
+  /#[0-9a-f]{3,8}\b/i,
+  "General control-sheet CSS introduces no literal colors",
+);
+const coarsePointerRules =
+  dashboardCss.match(/@media \(hover: none\) and \(pointer: coarse\)\s*\{[\s\S]*?\n\}/g)?.join("\n") ?? "";
+for (const selector of [
+  ".settings-overview-anchor",
+  ".settings-overview__summary-retry",
+  ".settings-stop-phrase__remove",
+  ".settings-stop-phrases__clear",
+  ".settings-voice-catalog__toggle",
+]) {
+  assert.match(
+    coarsePointerRules,
+    new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]{0,240}(?:min-width|min-height):\\s*var\\(--touch-target\\)`),
+    `${selector} preserves the coarse-pointer touch floor`,
+  );
+}
+
+assert.match(
+  source,
+  /export function SettingsShell\(\{ embedded = false \}: \{ embedded\?: boolean \}\)/,
+  "SettingsShell accepts an embedded pane mode",
+);
+assert.match(
+  source,
+  /settings-shell--embedded/,
+  "embedded Settings has an explicit styling hook",
+);
+assert.match(
+  source,
+  /data-tauri-drag-region=\{embedded \? undefined : "deep"\}/,
+  "embedded Settings never claims the native titlebar drag region",
 );
 
 console.log("settings-shell-polish.test.ts OK");

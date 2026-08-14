@@ -1,8 +1,9 @@
 // @ts-nocheck
 // Canonical names in the command palette + shortcut help (issue #3283, bead
 // cave-m4ih.6): the ⌘K launcher and the shortcuts sheet must speak the same
-// vocabulary as the sidebar. "Go to …" rows already derive from FOLDER_MODES
-// at runtime, so this pins the derivation itself plus the two hand-written
+// vocabulary as the shared workspace navigation registry. "Go to …" rows
+// already derive from WORKSPACE_NAV_ITEMS at runtime, so this pins the
+// derivation itself plus the two hand-written
 // spots that CAN drift: the "Tasks: …" board-view rows and the ⌘1–⌘5 help
 // entry, both cross-checked against the sidebar's labels so a future rename
 // fails here instead of shipping a stale name.
@@ -10,28 +11,28 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const palette = readFileSync(new URL("./command-palette.tsx", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const sheet = readFileSync(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
 
-// Canonical id -> label (and id -> kbd) from the sidebar's FOLDER_MODES —
-// the same source of truth canonical-nav-names.test.ts pins mobile against.
-const folderModesBlock = sidebar.match(/const FOLDER_MODES[\s\S]*?\n\];/)?.[0];
-assert.ok(folderModesBlock, "FOLDER_MODES block should be extractable");
+// Canonical id -> label (and id -> kbd) from WORKSPACE_NAV_ITEMS — the same
+// source of truth canonical-nav-names.test.ts pins all navigation hosts against.
+const navigationBlock = registry.match(/export const WORKSPACE_NAV_ITEMS[\s\S]*?\n\];/)?.[0];
+assert.ok(navigationBlock, "WORKSPACE_NAV_ITEMS block should be extractable");
 const labels = new Map();
 const kbds = new Map();
-for (const m of folderModesBlock.matchAll(/\{ id: "([a-z-]+)", label: "([^"]+)"(?:[^\n]*?kbd: "([^"]+)")?/g)) {
+for (const m of navigationBlock.matchAll(/\{ id: "([a-z-]+)", label: "([^"]+)"(?:[^\n]*?kbd: "([^"]+)")?/g)) {
   labels.set(m[1], m[2]);
   if (m[3]) kbds.set(m[1], m[3]);
 }
-assert.ok(labels.size > 0, "FOLDER_MODES should declare id/label rows");
+assert.ok(labels.size > 0, "WORKSPACE_NAV_ITEMS should declare id/label rows");
 
-// ── "Go to <surface>" rows derive from FOLDER_MODES at runtime ───────────────
+// ── "Go to <surface>" rows derive from WORKSPACE_NAV_ITEMS at runtime ────────
 assert.match(
   palette,
-  /import \{ FOLDER_MODES, type FolderMode \} from "@\/components\/sidebar-minimal"/,
-  "the palette imports the sidebar's FOLDER_MODES rather than its own surface list",
+  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/workspace-navigation"/,
+  "the palette imports the shared workspace navigation registry rather than its own surface list",
 );
 assert.match(
   palette,

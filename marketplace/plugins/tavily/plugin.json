@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/tavily",
   "x-coven": {
     "displayName": "Tavily",

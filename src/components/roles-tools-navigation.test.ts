@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const palette = await readFile(new URL("./command-palette.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
@@ -10,21 +11,26 @@ const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.
 const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
 const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
 const marketplaceConfigure = await readFile(new URL("./marketplace/marketplace-configure.tsx", import.meta.url), "utf8");
-const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const skillsComingSoon = await readFile(new URL("./marketplace/skills-coming-soon.tsx", import.meta.url), "utf8");
+const css = [
+  await readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  await readFile(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8"),
+].join("\n");
 const rolesRoute = [
   await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8"),
   await readFile(new URL("../lib/server/role-entries.ts", import.meta.url), "utf8"),
 ].join("\n");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const workspacePageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
 const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
 // ── Roles + Marketplace are ONE merged hub surface ──────────────────────────
-// The store (Browse) and the familiars' setup (Skills / Build) live on a
+// Owned inventory (Yours), the curated Skills preview, and Build live on a
 // single Marketplace page with a section tablist. The old modes stay in the
 // WorkspaceMode union so deep links and navigate-mode events keep working —
-// roles/capabilities land on Browse while those sections are hidden.
+// roles/capabilities land on Yours while those sections are hidden.
 
 assert.match(workspaceMode, /\|\s*"marketplace"/, "Marketplace should be a first-class workspace mode");
 assert.match(workspaceMode, /\|\s*"roles"/, "roles mode survives as a deep link into the hub");
@@ -37,7 +43,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /initialSection=\{mode === "roles" \? "roles" : mode === "capabilities" \? "capabilities" : "browse"\}/,
+  /initialSection=\{\s*mode === "roles" \|\| variant === "roles"\s*\? "roles"\s*: mode === "capabilities" \|\| variant === "capabilities"\s*\? "capabilities"\s*: "browse"\s*\}/,
   "Deep-link modes should map onto the hub's sections",
 );
 assert.doesNotMatch(
@@ -52,16 +58,16 @@ assert.doesNotMatch(
   "Workspace should not expose a top-level Workflows page",
 );
 
-// ── Sidebar: one Tools entry for the merged hub ──────────────────────────────
+// ── Navigation: one Tools entry for the merged hub ───────────────────────────
 assert.match(
-  sidebar,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true \},/,
-  "Sidebar navigation should expose the merged Marketplace hub with a description covering both halves",
+  navigation,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Manage what you own and preview the curated Skills shelf", group: "explore", quiet: true \},/,
+  "The navigation registry should describe the owned inventory and curated Skills shelf truthfully",
 );
 assert.doesNotMatch(
-  sidebar,
+  navigation,
   /\{ id: "roles", label: "Roles"/,
-  "The separate Roles sidebar entry is retired — roles live inside the Marketplace hub",
+  "The separate Roles navigation entry is retired — roles live inside the Marketplace hub",
 );
 assert.doesNotMatch(sidebar, /addons\?\.roles/, "The roles add-on gate is retired from the sidebar");
 assert.doesNotMatch(palette, /addons\?\.roles/, "The roles add-on gate is retired from the command palette");
@@ -99,7 +105,7 @@ assert.doesNotMatch(settings, /key: "roles"/, "Settings must not offer a roles a
 // the CapabilitiesViewSurface, capabilities-normalize, and their CSS followed
 // (cave-4n7j — git history keeps them). /api/roles and /api/capabilities stay:
 // they serve live role definitions and the Brain tab / inspector capability
-// chips. "roles" and "capabilities" deep links land on Browse.
+// chips. "roles" and "capabilities" deep links land on Yours.
 {
   const { existsSync } = await import("node:fs");
   assert.equal(
@@ -131,11 +137,11 @@ assert.doesNotMatch(marketplaceView, /\{ id: "roles", label: "Roles"/, "no Roles
 assert.doesNotMatch(marketplaceView, /\{ id: "capabilities", label: "Capabilities"/, "no Capabilities tab — the section is retired from the hub");
 assert.match(
   marketplaceView,
-  /initialSection === "roles" \|\| initialSection === "capabilities" \? "browse" : initialSection/,
-  "'roles' and 'capabilities' deep links land on Browse",
+  /initialSection === "roles" \|\| initialSection === "capabilities"\s*\? "browse"/,
+  "'roles' and 'capabilities' deep links land on Yours",
 );
-assert.match(marketplaceView, /import \{ SkillBrowser, type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "hub renders the Skills browser");
-assert.match(marketplaceView, /SkillDetailDrawer,/, "hub mounts the skill detail drawer for role-card skill chips");
+assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/lib\/skill-directory"/, "hub consumes the canonical skill entry type for Yours");
+assert.match(marketplaceView, /SkillExploreDrawer/, "hub mounts the owned-skill detail drawer");
 assert.doesNotMatch(marketplaceView, /CapabilitiesViewSurface|capabilities-view/, "the hub no longer imports or renders the Capabilities surface");
 assert.match(
   marketplaceView,
@@ -154,46 +160,55 @@ assert.match(marketplaceView, /const sectionTabs = useMemo/, "the header derives
 assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subtitle survives as the tab tooltip");
 assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
 assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
-for (const id of ["browse", "crafts", "skills", "build"]) {
+// Yours and Build are always present; Crafts stays feature-gated. The Skills
+// component owns its tabpanel wrapper.
+for (const id of ["browse", "crafts", "build"]) {
   assert.match(
     marketplaceView,
     new RegExp(`role="tabpanel"\\s*\\n\\s*id="marketplace-panel-${id}"\\s*\\n\\s*aria-labelledby="marketplace-tab-${id}"`),
     `the ${id} panel is a tabpanel labelled by its tab`,
   );
 }
+assert.match(marketplaceView, /<SkillsComingSoon/, "the Skills panel renders the curated Coming Soon shelf");
+assert.match(
+  skillsComingSoon,
+  /role="tabpanel"\s*\n\s*id="marketplace-panel-skills"\s*\n\s*aria-labelledby="marketplace-tab-skills"/,
+  "the Skills preview is a tabpanel labelled by its tab",
+);
 assert.doesNotMatch(marketplaceView, /marketplace-panel-roles/, "no roles tabpanel while the section is hidden");
 assert.doesNotMatch(marketplaceView, /marketplace-panel-capabilities/, "no capabilities tabpanel — the section is retired");
 
-// One search field, scoped per section; the self-contained Build surface owns
-// its flow so the hub hides the shared search there ("capabilities" stays in
-// the guard only for type-safety — the section is unreachable).
-assert.match(marketplaceView, /aria-label=\{SEARCH_LABEL\[section\]\}/, "the search input names the active section");
+// Search only appears where there is owned inventory to filter. Skills is a
+// curated preview and Build owns its own form.
+assert.match(marketplaceView, /section === "browse" \? SEARCH_LABEL\.browse[\s\S]*?: section === "crafts" \? SEARCH_LABEL\.crafts[\s\S]*?: null/, "search labels are limited to owned inventory sections");
+assert.match(marketplaceView, /aria-label=\{searchLabel\}/, "the search input names the active owned section");
 assert.match(
   marketplaceView,
-  /\{section !== "capabilities" && section !== "build" \? \(\s*\n\s*<SearchInput/,
-  "the shared search hides on the Build section",
+  /\{searchLabel \? \(\s*\n\s*<SearchInput/,
+  "the shared search hides on Skills and Build",
 );
 
-// The store rail cross-links into the setup sections, so Browse stays aware of
-// what your familiars already have.
-assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setup group");
-assert.doesNotMatch(marketplaceView, /selectSection\("roles"\)/, "no rail jump to Roles while the section is hidden");
-assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("crafts"\)\}/, "the rail jumps to Crafts");
-assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
-assert.doesNotMatch(marketplaceView, /selectSection\("capabilities"\)/, "no rail jump to the retired Capabilities section");
-assert.match(marketplaceView, /groupPluginsByCategory/, "Browse derives standardized category groups from the visible plugin set");
-assert.match(marketplaceView, /className="marketplace-category-stack"/, "Browse renders a grouped category stack instead of one flat card grid");
+// Yours filters the owned pool by Type · Status · Category.
+assert.match(marketplaceView, /aria-label="Filter by type"/, "the Yours rail groups owned inventory by item type");
+assert.match(marketplaceView, /aria-label="Filter by install status"/, "the Yours rail filters owned inventory by setup status");
+assert.doesNotMatch(marketplaceView, /selectSection\("roles"\)/, "no jump to Roles while the section is hidden");
+assert.doesNotMatch(marketplaceView, /selectSection\("capabilities"\)/, "no jump to the retired Capabilities section");
+assert.match(marketplaceView, /Tools & connectors/, "Yours groups the pool into Tools & connectors and Your skills");
+assert.match(marketplaceView, /Your skills/, "locally authored skills are clearly identified as the user's own");
+assert.match(marketplaceView, /name: "Other items"[\s\S]*plugins: otherPlugins/, "Yours keeps installed prompts, packs, and unlisted records visible in the default grouping");
+assert.match(marketplaceView, /p\.kind === "skill" && !p\.unlisted/, "an unlisted install is not presented as an owned skill");
+assert.match(marketplaceView, /className="marketplace-category-stack"/, "Yours renders a grouped stack instead of one flat card grid");
 assert.match(marketplaceView, /className="marketplace-category-group"/, "each Marketplace category has a stable grouped section hook");
 assert.match(marketplaceView, /className="marketplace-category-grid"/, "each category group uses the same responsive card grid");
 assert.match(css, /\.marketplace-category-stack \{[\s\S]*?flex-direction: column/, "Marketplace category stack has stable vertical rhythm");
 assert.match(css, /\.marketplace-category-group__head \{[\s\S]*?border-bottom/, "Marketplace category groups use quiet structural dividers");
 assert.match(css, /\.marketplace-category-grid \{[\s\S]*?grid-template-columns/, "Marketplace category groups use a stable responsive grid");
-// The kind filter + sort moved out of the header into the Browse toolbar so
-// the header stays one row; the toolbar also carries the result context line.
-assert.match(marketplaceView, /className="marketplace-browse-summary mb-4"/, "Browse keeps a toolbar row above the grid");
-assert.match(marketplaceView, /ariaLabel="Filter plugins by type"/, "the kind filter lives in the Browse toolbar");
-assert.match(marketplaceView, /label="Sort plugins"/, "the sort select lives in the Browse toolbar");
-assert.match(css, /\.marketplace-browse-summary \{[\s\S]*?justify-content: space-between/, "the Browse toolbar keeps context and controls apart");
+// Type moved into the rail; the toolbar carries result context and a grid/list
+// toggle. Remote-catalog discovery sorting is absent from Yours.
+assert.match(marketplaceView, /className="marketplace-browse-summary mb-4"/, "Yours keeps a toolbar row above the grid");
+assert.match(marketplaceView, /aria-label="Card layout"/, "the grid/list view toggle lives in the Yours toolbar");
+assert.doesNotMatch(marketplaceView, /label="Sort listings"/, "Yours does not expose remote discovery sorting");
+assert.match(css, /\.marketplace-browse-summary \{[\s\S]*?justify-content: space-between/, "the Yours toolbar keeps context and controls apart");
 assert.match(css, /\.marketplace-card \{[\s\S]*?min-height:/, "Marketplace cards reserve stable height across categories");
 
 // Browse cards are decision cards: they expose setup effort, capability fit,
@@ -249,7 +264,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /e\.key === "\/"[\s\S]{0,200}setShortcutsOpen/,
+  /e\.key === "\/"[\s\S]{0,200}(openShortcuts|closeShortcuts)/,
   "⌘/ (Ctrl+/ off-Mac) should toggle the shortcuts sheet from anywhere",
 );
 
@@ -261,7 +276,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /case "\/shortcuts":[\s\S]{0,80}setShortcutsOpen\(true\)/,
+  /case "\/shortcuts":[\s\S]{0,80}openShortcuts\(\)/,
   "/shortcuts slash command should open the sheet via handleSlashIntent",
 );
 
@@ -298,13 +313,13 @@ const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 
 assert.match(
   workspace,
-  /<h1 className="sr-only">\s*\{\(isRoleSurfaceMode\(mode\)[\s\S]{0,220}?WORKSPACE_MODE_TITLES\[mode\]\) \?\? "CovenCave"\}\s*<\/h1>/,
+  /<h1 className="sr-only">\{primaryDefinition\?\.title \?\? "CovenCave"\}<\/h1>/,
   "Workspace detail must render a visually-hidden h1 naming the active surface (axe page-has-heading-one) — including Role Surface rooms",
 );
 assert.match(
-  workspace,
-  /const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = \{/,
-  "The h1 title map must cover every WorkspaceMode (Record enforces exhaustiveness)",
+  workspacePageRegistry,
+  /const WORKSPACE_MODE_PAGES = freezePageMap\(\{[\s\S]*\} satisfies Record<WorkspaceMode, WorkspacePageDefinition>\);/,
+  "The page registry title map must cover every WorkspaceMode (Record enforces exhaustiveness)",
 );
 
 assert.match(

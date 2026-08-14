@@ -24,8 +24,8 @@ assert.match(
 
 assert.match(
   attachmentsLib,
-  /if \(file\.size > MAX_ATTACHMENT_IMAGE_BYTES\) \{[\s\S]*?attachment\.truncated = true;/,
-  "Oversized image attachments should be capped at capture time and marked like truncated text",
+  /const cap = mediaMime \? MAX_ATTACHMENT_MEDIA_BYTES : MAX_ATTACHMENT_IMAGE_BYTES;[\s\S]*?if \(file\.size > cap\) \{[\s\S]*?attachment\.truncated = true;/,
+  "Oversized image and media attachments should be capped at capture time and marked like truncated text",
 );
 
 assert.match(
@@ -323,10 +323,10 @@ assert.match(
   "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the validated familiar workspace",
 );
 
-// The top suggested follow-up is flagged as the recommendation (green pulsing
-// border + leading dot), so the most useful next step stands out.
+// The top suggested follow-up is visibly marked as the recommendation by the
+// shared typed-card component, so the most useful next step stands out.
 assert.match(
   source,
-  /cave-next-path--recommended/,
-  "the first follow-up is marked as the recommended next step",
+  /<FollowUpCards paths=\{followUp\.suggestions\} onActivate=\{handleFollowUp\} \/>/,
+  "the latest follow-up row uses the shared recommended-card treatment",
 );

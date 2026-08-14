@@ -1,12 +1,33 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 @main
 struct CovenCaveApp: App {
-    @State private var app = AppModel()
-    @State private var notificationDelegate = CaveNotificationDelegate()
+    @State private var app: AppModel
+    @State private var notificationDelegate: CaveNotificationDelegate
+    /// Owns the biometric app-unlock + approval state. Created alongside
+    /// `AppModel` so its cold-start lock decision is settled before the first
+    /// view mounts (see `LockScreenView`, substituted in for the whole root).
+    @State private var appLock: AppLock
+    @State private var pairingApprovalFailed = false
+    @State private var pairingAuthenticationUnavailable = false
+    @State private var isProcessingPairingIntent = false
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @Environment(\.scenePhase) private var scenePhase
+
+    @MainActor
+    init() {
+        let app = AppModel()
+        let notificationDelegate = CaveNotificationDelegate()
+        notificationDelegate.onOpen = { app.handleDeepLink($0) }
+        // Register before SwiftUI mounts a view or starts a task. A cold-launch
+        // notification response can otherwise arrive before any delegate exists.
+        UNUserNotificationCenter.current().delegate = notificationDelegate
+        _app = State(initialValue: app)
+        _notificationDelegate = State(initialValue: notificationDelegate)
+        _appLock = State(initialValue: AppLock())
+    }
 
     var body: some Scene {
         // Mirror the desktop appearance by default; a fixed Light/Dark override
@@ -21,20 +42,37 @@ struct CovenCaveApp: App {
             // columns behaves as regular — the same call Apple makes for Max
             // phones — which engages the existing balanced splits everywhere.
             WideSplitEnabler {
-                RootView()
+                // Full replacement, never a translucent overlay: while locked,
+                // RootView (and everything under it) simply isn't mounted, so
+                // a cold launch can never flash app content before auth. The
+                // privacy shield is layered separately, above whichever of
+                // these is mounted, so a quick `.inactive`/`.background` blip
+                // shields snapshots without tearing down RootView's
+                // navigation state the way a full lock replacement would.
+                ZStack {
+                    if appLock.isLocked {
+                        LockScreenView(appLock: appLock)
+                    } else {
+                        RootView()
+                    }
+                    if appLock.isPrivacyShielded {
+                        PrivacyShieldView()
+                    }
+                }
+                .animation(nil, value: appLock.isPrivacyShielded)
             }
                 .environment(app)
+                .environment(appLock)
                 // Propagate the chrome palette to every view, tint app-wide
                 // controls with its accent, and apply the resolved light/dark mode.
                 .environment(\.chrome, resolved.chrome)
                 .tint(resolved.chrome.accent)
                 .preferredColorScheme(resolved.scheme)
                 .task {
+                    #if DEBUG
+                    guard !app.isConnectingPreview else { return }
+                    #endif
                     app.startConnectionSupervisor()
-                    // Route notification taps (reminders, chat replies) to the
-                    // deep-link handler, and show banners while foregrounded.
-                    notificationDelegate.onOpen = { app.handleDeepLink($0) }
-                    UNUserNotificationCenter.current().delegate = notificationDelegate
                     if app.connection != nil {
                         await app.connectWithRetry()
                     }
@@ -46,9 +84,32 @@ struct CovenCaveApp: App {
                 // so it gets one cheap validation probe instead of blind trust.
                 .onChange(of: scenePhase) { _, phase in
                     // Leaving the foreground: flush any debounced thread
-                    // persistence synchronously so an in-flight write isn't
-                    // lost if the app is suspended or terminated.
-                    if phase != .active { app.flushThreads() }
+                    // persistence and WAIT for it, holding a background-task
+                    // assertion so the system grants time to finish (cave-2cpo).
+                    // The previous call was fire-and-forget: it returned the
+                    // instant the write task was spawned, so suspension could
+                    // freeze the process before the bytes landed — the comment
+                    // here claimed a durability the code never provided.
+                    if phase != .active {
+                        Task { @MainActor in
+                            // The assertion MUST be released on every path. If
+                            // background time runs out first the system kills
+                            // the app for over-holding it, so an expiration
+                            // handler releases it early; `defer` covers the
+                            // normal and cancelled paths. `release()` is
+                            // idempotent because both can fire.
+                            var assertion: UIBackgroundTaskIdentifier = .invalid
+                            @MainActor func release() {
+                                guard assertion != .invalid else { return }
+                                UIApplication.shared.endBackgroundTask(assertion)
+                                assertion = .invalid
+                            }
+                            assertion = UIApplication.shared
+                                .beginBackgroundTask(withName: "cave.flushThreads") { release() }
+                            defer { release() }
+                            await app.flushThreadsAndWait()
+                        }
+                    }
                     guard phase == .active, app.connection != nil else { return }
                     if app.connectionState != .connected,
                        app.connectionState != .checking {
@@ -57,10 +118,102 @@ struct CovenCaveApp: App {
                         Task { await app.validateConnectionOnForeground() }
                     }
                 }
+                // `.inactive` immediately raises the privacy shield (see
+                // `AppLock.sceneDidBecomeInactive`) so app-switcher/control-
+                // center snapshots never expose content, but deliberately
+                // does NOT count toward the 60s re-lock window or the
+                // auto-prompt cycle — LocalAuthentication's own prompt (and
+                // the app switcher/control center) can bounce the scene
+                // through `.inactive` without a genuine background stint,
+                // which must never force re-authentication on a quick return.
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                    case .background: appLock.sceneDidEnterBackground()
+                    case .active:
+                        appLock.sceneDidBecomeActive()
+                        Task { await processPendingPairingIntent() }
+                    case .inactive: appLock.sceneDidBecomeInactive()
+                    @unknown default: break
+                    }
+                }
                 // Deep links from the home-screen widget (covencave://…) route to
-                // the matching tab/sheet. Handled even before connect — the tab is
+                // the matching destination/sheet. Handled even before connect — the destination is
                 // set so the right surface shows once the desktop is reached.
                 .onOpenURL { app.handleDeepLink($0) }
+                .task { await processPendingPairingIntent() }
+                .onChange(of: app.pendingPairingIntent) {
+                    Task { await processPendingPairingIntent() }
+                }
+                .onChange(of: appLock.isLocked) {
+                    Task { await processPendingPairingIntent() }
+                }
+                .onChange(of: appLock.isAuthenticating) { _, isAuthenticating in
+                    guard !isAuthenticating else { return }
+                    Task { await processPendingPairingIntent() }
+                }
+                .onChange(of: appLock.canUseDeviceAuthentication) { _, isAvailable in
+                    guard isAvailable else { return }
+                    Task { await processPendingPairingIntent() }
+                }
+                .alert("Couldn't confirm it's you", isPresented: $pairingApprovalFailed) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Authentication failed or was cancelled, so your desktop pairing was not changed.")
+                }
+                .alert("Device authentication unavailable", isPresented: $pairingAuthenticationUnavailable) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Your pairing remains queued. Turn on a device passcode to approve it.")
+                }
+        }
+    }
+
+    @MainActor
+    private func processPendingPairingIntent() async {
+        guard PendingPairingProcessorPolicy.mayBegin(
+            isLocked: appLock.isLocked,
+            isAuthenticating: appLock.isAuthenticating,
+            isProcessing: isProcessingPairingIntent,
+            isActive: scenePhase == .active
+        ), let intent = app.pendingPairingIntent else {
+            return
+        }
+        isProcessingPairingIntent = true
+        defer {
+            isProcessingPairingIntent = false
+            if let pending = app.pendingPairingIntent, pending.id != intent.id {
+                Task { await processPendingPairingIntent() }
+            }
+        }
+
+        let requiresApproval = PairingApprovalPolicy.requiresApproval(
+            hasExistingPairing: app.connection != nil
+        )
+        if !requiresApproval {
+            guard let reservedIntent = app.takePendingPairingIntent(matching: intent.id) else {
+                return
+            }
+            await app.configure(host: reservedIntent.host, token: reservedIntent.token)
+            return
+        }
+
+        let outcome = await appLock.requestApproval(
+            reason: "Confirm it's you to replace your desktop pairing"
+        )
+        switch outcome {
+        case .authorized:
+            guard let reservedIntent = app.takePendingPairingIntent(matching: intent.id) else {
+                return
+            }
+            await app.configure(host: reservedIntent.host, token: reservedIntent.token)
+        case .denied:
+            if app.consumePendingPairingIntent(matching: intent.id) {
+                pairingApprovalFailed = true
+            }
+        case .unavailable:
+            pairingAuthenticationUnavailable = true
+        case .busy:
+            break
         }
     }
 }

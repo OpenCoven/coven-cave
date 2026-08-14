@@ -1,11 +1,20 @@
 import type { CaveProject } from "./cave-projects.ts";
+import { projectErrorCode, type ProjectCreationError } from "./project-errors.ts";
 import { emitProjectRegistryMutation } from "./project-registry-events.ts";
 
 export type AddChatProjectResult =
   | { ok: true; projectId: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: string };
 
-export type CreateProjectOptions = { emitMutation?: boolean };
+export type CreateProjectOptions = {
+  emitMutation?: boolean;
+  /** Explicit identity tint persisted on the project (absent → auto root-hash tint). */
+  color?: string;
+  /** Canonical GitHub link — callers must pre-normalize via normalizeGitHubRepoUrl. */
+  repoUrl?: string;
+  /** Receives a typed creation failure when a nullable creator cannot return it. */
+  onError?: (error: ProjectCreationError) => void;
+};
 
 /** Derive a human project name from a working-directory path — its leaf folder.
  *  `/Users/me/code/coven-cave` → `coven-cave`. Falls back to the raw root. */
@@ -41,6 +50,12 @@ export async function addChatProject(args: {
     root: string,
     options?: CreateProjectOptions,
   ) => Promise<CaveProject | null>;
+  /** Prefer this when available so server error messages survive nullable callers. */
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
   existingProjectId?: string | null;
   projectJustCreated?: boolean;
   name?: string;
@@ -53,16 +68,36 @@ export async function addChatProject(args: {
   let projectId = args.existingProjectId ?? null;
   let createdProject = false;
   if (!projectId) {
+    const reportedFailure: { error: ProjectCreationError | null } = { error: null };
     try {
       const name = (args.name ?? "").trim() || projectNameForRoot(root);
-      const project = await args.createProject(name, root, { emitMutation: false });
-      if (!project) return { ok: false, error: "could not register project" };
+      const createOptions: CreateProjectOptions = {
+        emitMutation: false,
+        onError: (error) => {
+          reportedFailure.error = error;
+        },
+      };
+      const project = args.createProjectOrThrow
+        ? await args.createProjectOrThrow(name, root, createOptions)
+        : await args.createProject(name, root, createOptions);
+      if (!project) {
+        const error = reportedFailure.error;
+        const code = error ? projectErrorCode(error) : undefined;
+        return {
+          ok: false,
+          error: error?.message ?? "could not register project",
+          ...(code ? { code } : {}),
+        };
+      }
       projectId = project.id;
       createdProject = true;
     } catch (error) {
+      const message = error instanceof Error ? error.message : "could not register project";
+      const code = projectErrorCode(error);
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "could not register project",
+        error: message,
+        ...(code ? { code } : {}),
       };
     }
   }

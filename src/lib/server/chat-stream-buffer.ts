@@ -80,8 +80,10 @@ export function openRunBuffer(
   };
   for (const key of keys) {
     if (!key) continue;
-    const stale = buffers.get(key);
-    if (stale && stale.reapTimer) clearTimeout(stale.reapTimer);
+    // A finished predecessor can still be reachable through another key
+    // (normally its unique run id). Keep its reap timer armed: the callback
+    // already checks map identity, so it will remove only predecessor
+    // mappings and leave this replacement untouched.
     buffers.set(key, buffer);
     buffer.keys.push(key);
   }

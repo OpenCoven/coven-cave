@@ -6,27 +6,20 @@ import {
   type OpenCovenToolInstallStatus,
 } from "./opencoven-tools-install.ts";
 
-const cliOutdated: OpenCovenToolInstallStatus = {
-  id: "coven-cli",
-  label: "Coven CLI",
-  installed: true,
-  outdated: true,
-};
-
-const cliReady: OpenCovenToolInstallStatus = {
-  id: "coven-cli",
-  label: "Coven CLI",
-  installed: true,
-  outdated: false,
-  compatible: true,
-};
-
 const cliMissing: OpenCovenToolInstallStatus = {
   id: "coven-cli",
   label: "Coven CLI",
   installed: false,
   outdated: false,
   compatible: false,
+};
+
+const cliOutdated: OpenCovenToolInstallStatus = {
+  id: "coven-cli",
+  label: "Coven CLI",
+  installed: true,
+  outdated: true,
+  compatible: true,
 };
 
 const cliBelowFloor: OpenCovenToolInstallStatus = {
@@ -37,81 +30,110 @@ const cliBelowFloor: OpenCovenToolInstallStatus = {
   compatible: false,
 };
 
+const cliCompatibilityUnknown: OpenCovenToolInstallStatus = {
+  id: "coven-cli",
+  label: "Coven CLI",
+  installed: true,
+  outdated: false,
+};
 
-// The Coven CLI is the only required OpenCoven tool — a fresh setup (status
-// not loaded yet) must not claim Coven Code is needed.
+const cliReady: OpenCovenToolInstallStatus = {
+  id: "coven-cli",
+  label: "Coven CLI",
+  installed: true,
+  outdated: false,
+  compatible: true,
+};
+
+// `null` means the status route could not produce authoritative local tool
+// evidence. It must stay a checking state rather than inventing an install.
+assert.deepEqual(
+  openCovenToolActionTargets(null),
+  [],
+  "unknown local evidence yields no install target",
+);
+assert.equal(
+  openCovenToolsPrimaryActionLabel(null),
+  "Checking local installation…",
+  "unknown local evidence keeps the primary action in a checking state",
+);
+
+// An actual empty array is authoritative: no CLI was found, so setup falls
+// back to the one required OpenCoven tool.
 assert.deepEqual(
   openCovenToolActionTargets([]),
   ["coven-cli"],
-  "fresh setup falls back to installing the Coven CLI only",
+  "an authoritative empty result installs the required Coven CLI",
 );
-
 assert.equal(
   openCovenToolsInstallCommand([]),
   "npm i -g @opencoven/cli@latest",
-  "fresh setup manual command installs the Coven CLI only (scoped package)",
+  "the fresh-install command uses only the scoped Coven CLI package",
 );
-
 assert.equal(
   openCovenToolsPrimaryActionLabel([]),
   "Install the Coven CLI",
-  "fresh setup primary action names the single required tool",
+  "the fresh-install action names the single required tool",
 );
 
 assert.deepEqual(
   openCovenToolActionTargets([cliMissing]),
   ["coven-cli"],
-  "missing CLI is actionable",
+  "a confirmed missing CLI is actionable",
+);
+assert.equal(
+  openCovenToolsPrimaryActionLabel([cliMissing]),
+  "Install the Coven CLI",
+  "the required missing CLI keeps the reviewed install copy",
 );
 
 assert.deepEqual(
   openCovenToolActionTargets([cliOutdated]),
-  ["coven-cli"],
-  "outdated CLI is actionable",
+  [],
+  "a compatible CLI is not reinstalled merely because npm has a newer release",
+);
+assert.equal(
+  openCovenToolsPrimaryActionLabel([cliOutdated]),
+  "Coven CLI ready",
+  "an installed compatible CLI remains ready when npm has a newer release",
 );
 
 assert.deepEqual(
   openCovenToolActionTargets([cliBelowFloor]),
   ["coven-cli"],
-  "a tool below Cave's compatibility floor is actionable even when latest metadata is unavailable",
+  "an explicitly incompatible CLI is actionable without latest metadata",
+);
+assert.equal(
+  openCovenToolsPrimaryActionLabel([cliBelowFloor]),
+  "Update Coven CLI",
+  "an installed below-floor CLI gets an update action",
 );
 
 assert.deepEqual(
+  openCovenToolActionTargets([cliCompatibilityUnknown]),
+  [],
+  "missing compatibility metadata alone does not invent a failure",
+);
+assert.deepEqual(
   openCovenToolActionTargets([cliReady]),
   [],
-  "a current, verified CLI needs no action",
+  "a current compatible CLI needs no action",
 );
-
-assert.equal(
-  openCovenToolsInstallCommand([cliOutdated]),
-  "npm i -g @opencoven/cli@latest",
-  "manual command targets the CLI",
-);
-
-assert.equal(
-  openCovenToolsPrimaryActionLabel([cliOutdated]),
-  "Update Coven CLI",
-  "primary action label reflects a single CLI update",
-);
-
-assert.equal(
-  openCovenToolsPrimaryActionLabel([cliMissing]),
-  "Install Coven CLI",
-  "primary action label reflects a fresh CLI install",
-);
-
 assert.equal(
   openCovenToolsPrimaryActionLabel([cliReady]),
   "Coven CLI ready",
   "a satisfied CLI reads as ready",
 );
 
-// After unification, @opencoven/cli self-manages the engine. There is no
-// separate optional coven-code install target anymore.
 assert.equal(
   openCovenToolsInstallCommand([cliOutdated]),
   "npm i -g @opencoven/cli@latest",
-  "install command targets only the CLI after unification",
+  "updates target only the unified Coven CLI package",
+);
+assert.equal(
+  openCovenToolsInstallCommand([cliReady]),
+  "npm i -g @opencoven/cli@latest",
+  "the manual command remains useful even when no automatic action is pending",
 );
 
 console.log("opencoven-tools-install.test.ts: ok");

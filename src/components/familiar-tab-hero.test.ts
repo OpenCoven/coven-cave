@@ -64,11 +64,20 @@ test("hero selects edit the live binding through the canonical /api/config write
     /window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\)/,
     "successful saves catch the roster up immediately",
   );
-  // The three live selects, sourced from canonical catalogs — no second mapping.
+  // The three live selects, sourced from canonical live inventories — no second mapping.
   assert.match(src, /label="Runtime"[\s\S]{0,150}?options=\{runtimeOptions\}/, "Runtime select");
-  assert.match(src, /label="Model"[\s\S]{0,150}?options=\{modelOptions\}/, "Model select");
+  assert.match(
+    src,
+    /label="Runtime"[\s\S]{0,220}?bind\(\{ harness: v, model: modelForRuntimeSwitch\(v\) \}\)/,
+    "switching runtime clears the old provider model through the durable default sentinel",
+  );
+  assert.match(src, /label=\{`Model · \$\{inventoryProvenanceLabel[\s\S]{0,220}?options=\{modelOptions\}/, "Model select");
   assert.match(src, /label="Voice"[\s\S]{0,150}?options=\{voiceOptions\}/, "Voice select");
-  assert.match(src, /catalogForRuntime\(effectiveHarness\)/, "models come from the shared runtime→model catalog");
+  assert.match(
+    src,
+    /useRuntimeModelInventory\(effectiveHarness, familiar\.id\)[\s\S]*inventoryProvenanceLabel/,
+    "models come from the shared familiar-scoped runtime inventory",
+  );
   assert.match(src, /listVoiceProviders\(\)/, "voice providers come from the canonical voice registry");
   // Save failures surface honestly instead of silently reverting.
   assert.match(src, /\{saveError \? \(\s*<p role="status"/, "failed saves report inline");
@@ -80,7 +89,7 @@ test("the five-tab band hangs every section off one Tabs control", () => {
   }
   assert.match(src, /idPrefix="familiar-section"/, "stable tab ids");
   assert.match(src, /\{ id: "skills", label: "Skills", count: snapshot\.loading \? undefined : data\.skillCount \}/, "skills tab counts real unique skills");
-  assert.match(src, /useState<FamiliarSectionId>\("skills"\)/, "the handoff's namesake section opens first");
+  assert.match(src, /useSurfaceHistory<FamiliarSectionId>\(\{[\s\S]{0,120}initial:\s*"skills"/, "the handoff's namesake section opens first");
   // One derivation feeds every section — provenance math can't drift per tab.
   assert.match(src, /deriveFamiliarSectionData\(\{/, "sections share one derived model");
   for (const mount of [

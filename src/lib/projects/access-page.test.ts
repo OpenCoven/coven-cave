@@ -7,6 +7,7 @@ import {
   classifyProjectSection,
   filterProjectsByQuery,
   nextAccessState,
+  sectionModels,
   setAllOps,
   splitProjectsBySection,
 } from "./access-page.ts";
@@ -15,7 +16,7 @@ import type { ProjectAccessLevel } from "../project-access-levels.ts";
 describe("classifyProjectSection", () => {
   it("classifies familiar-workspace roots as workspaces", () => {
     assert.equal(
-      classifyProjectSection("/Users/buns/.coven/workspaces/familiars/nova"),
+      classifyProjectSection("/home/test/.coven/workspaces/familiars/nova"),
       "workspaces",
     );
     assert.equal(classifyProjectSection("/home/x/.coven/workspaces/team"), "workspaces");
@@ -23,7 +24,7 @@ describe("classifyProjectSection", () => {
 
   it("classifies everything else as repositories", () => {
     assert.equal(
-      classifyProjectSection("/Users/buns/Documents/GitHub/OpenCoven/coven-cave"),
+      classifyProjectSection("/home/test/Documents/GitHub/OpenCoven/coven-cave"),
       "repositories",
     );
     assert.equal(classifyProjectSection(""), "repositories");
@@ -59,6 +60,54 @@ describe("splitProjectsBySection", () => {
       split.repositories.map((p) => p.root),
       ["/repo/a", "/repo/b"],
     );
+  });
+});
+
+describe("sectionModels", () => {
+  const projects = [
+    { root: "/repo/a" },
+    { root: "/u/.coven/workspaces/familiars/nova" },
+    { root: "/repo/b" },
+  ];
+
+  it("grouped: yields the workspaces/repositories split in section order", () => {
+    const models = sectionModels(projects, true);
+    assert.deepEqual(
+      models.map((m) => m.key),
+      ["workspaces", "repositories"],
+    );
+    assert.deepEqual(
+      models.map((m) => m.label),
+      ["Workspaces", "Repositories"],
+    );
+    assert.deepEqual(
+      models[1].projects.map((p) => p.root),
+      ["/repo/a", "/repo/b"],
+    );
+  });
+
+  it("grouped: omits empty sections", () => {
+    const models = sectionModels([{ root: "/repo/only" }], true);
+    assert.deepEqual(
+      models.map((m) => m.key),
+      ["repositories"],
+    );
+  });
+
+  it("flat: yields a single All-projects section preserving input order", () => {
+    const models = sectionModels(projects, false);
+    assert.equal(models.length, 1);
+    assert.equal(models[0].key, "all");
+    assert.equal(models[0].label, "All projects");
+    assert.deepEqual(
+      models[0].projects.map((p) => p.root),
+      ["/repo/a", "/u/.coven/workspaces/familiars/nova", "/repo/b"],
+    );
+  });
+
+  it("returns no sections for an empty list in either mode", () => {
+    assert.deepEqual(sectionModels([], true), []);
+    assert.deepEqual(sectionModels([], false), []);
   });
 });
 

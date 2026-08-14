@@ -59,12 +59,47 @@ assert.doesNotMatch(
   "ChatView does not mount linked-work actions directly",
 );
 
-// The 2026-07-21 "both" reconciliation: the footer band came back (context
-// pill + linked-work chip strip) alongside the grouped composer menu.
+// Context controls are constructed once as chatContextControls and placed
+// adaptively — new-chat footer (inlineComposer) or active-chat header (!inlineComposer).
+// The linkedContextRow always rides the footer band regardless of placement.
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<div className="cave-composer-footer-band__cluster">\s*\n\s*<ComposerContextChips[\s\S]*?\{linkedContextRow\}/,
-  "the footer band carries the context chips and the linked-context strip",
+  /const chatContextControls = \([\s\S]{0,50}\n\s*<ComposerContextChips/,
+  "ComposerContextChips is constructed once as chatContextControls",
+);
+assert.doesNotMatch(
+  source,
+  /<MetaLine[\s>][\s\S]*?<ComposerContextChips/,
+  "the shared node should prevent duplicate picker state in the header",
+);
+assert.match(
+  source,
+  /inlineComposer[\s\S]{0,200}cave-composer-footer-band__cluster[\s\S]{0,200}\{chatContextControls\}/,
+  "the footer band cluster carries chatContextControls only when inlineComposer",
+);
+// The context section label flips with placement: "New chat context" when the
+// composer is inline (new-chat), "Session context" when docked to an active chat.
+assert.match(
+  source,
+  /ariaLabel=\{inlineComposer \? "New chat context" : "Session context"\}/,
+  'chatContextControls passes ariaLabel={inlineComposer ? "New chat context" : "Session context"}',
+);
+// The context div must be immediately after </MetaLine> — interactive controls
+// must not be nested inside MetaLine's live region.
+assert.match(
+  source,
+  /<\/MetaLine>\s*\{!inlineComposer \? \(\s*<div className="cave-chat-header-context">\{chatContextControls\}<\/div>/,
+  ".cave-chat-header-context appears immediately after </MetaLine>, outside the live region",
+);
+assert.match(
+  source,
+  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "the active-chat header carries chatContextControls after MetaLine",
+);
+assert.match(
+  source,
+  /className="cave-composer-footer-band"[\s\S]*?\{linkedContextRow\}/,
+  "the footer band always carries the linked-context strip",
 );
 
 assert.match(
@@ -129,8 +164,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onSessionsDeleted\(\[sessionId\]\);\s*\n\s*onBack\?\.\(\);/,
-  "Successful delete reaches the shared boundary and navigates back to the list",
+  /onSessionsDeleted\(\[sessionId\]\);\s*\n\s*onSessionRemoved\?\.\(sessionId, "deleted"\);\s*\n\s*onBack\?\.\(sessionId\);/,
+  "Successful delete reaches the shared boundary, reports the narrow removal signal, and navigates back to the list",
 );
 
 // The delete is a two-step guard: the trash button arms a confirm popover
@@ -400,7 +435,7 @@ assert.match(
 // line map must be dropped there or markers would be attached twice.
 assert.match(
   bubbleSource,
-  /highlighted = `<pre><code>\$\{escHtml\(code\)\}<\/code><\/pre>`;\s*\n\s*diffLines = null/,
+  /highlighted = plainCodeHtml\(code\);\s*\n\s*diffLines = null/,
   "highlight-failure fallback clears diffLines so markers are not doubled",
 );
 
@@ -432,8 +467,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onSessionsChanged\?\.\(\);\s*\/\/ Leaving mirrors delete only for archive; unarchive keeps you in place\.\s*if \(archived\) onBack\?\.\(\);/,
-  "archiving refreshes the rails and leaves the chat; unarchiving stays put",
+  /onSessionsChanged\?\.\(\);\s*\/\/ Leaving mirrors delete only for archive; unarchive keeps you in place\.\s*if \(archived\) \{\s*\n\s*onSessionRemoved\?\.\(sessionId, "archived"\);\s*\n\s*onBack\?\.\(sessionId\);\s*\n\s*\}/,
+  "archiving refreshes the rails, reports the narrow removal signal, and leaves the chat; unarchiving stays put",
 );
 assert.match(
   source,

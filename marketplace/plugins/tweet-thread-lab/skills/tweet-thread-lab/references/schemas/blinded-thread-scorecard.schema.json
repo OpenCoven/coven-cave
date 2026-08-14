@@ -1,0 +1,598 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "armToken": {
+      "maxLength": 68,
+      "minLength": 68,
+      "pattern": "^arm-[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "dimensions": {
+      "additionalProperties": false,
+      "properties": {
+        "accessibility": {
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "const": "accessibility",
+              "type": "string"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "claimId": {
+                    "maxLength": 128,
+                    "minLength": 7,
+                    "pattern": "^claim-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "code": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "findingId": {
+                    "maxLength": 128,
+                    "minLength": 9,
+                    "pattern": "^finding-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "postId": {
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "pattern": "^post-[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "anyOf": [
+                      {
+                        "const": "info",
+                        "type": "string"
+                      },
+                      {
+                        "const": "warn",
+                        "type": "string"
+                      },
+                      {
+                        "const": "fail",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "findingId",
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "maxItems": 128,
+              "type": "array"
+            },
+            "rationale": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "score": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "dimension",
+            "score",
+            "rationale",
+            "findings"
+          ],
+          "type": "object"
+        },
+        "coherence": {
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "const": "coherence",
+              "type": "string"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "claimId": {
+                    "maxLength": 128,
+                    "minLength": 7,
+                    "pattern": "^claim-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "code": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "findingId": {
+                    "maxLength": 128,
+                    "minLength": 9,
+                    "pattern": "^finding-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "postId": {
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "pattern": "^post-[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "anyOf": [
+                      {
+                        "const": "info",
+                        "type": "string"
+                      },
+                      {
+                        "const": "warn",
+                        "type": "string"
+                      },
+                      {
+                        "const": "fail",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "findingId",
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "maxItems": 128,
+              "type": "array"
+            },
+            "rationale": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "score": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "dimension",
+            "score",
+            "rationale",
+            "findings"
+          ],
+          "type": "object"
+        },
+        "engagement": {
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "const": "engagement",
+              "type": "string"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "claimId": {
+                    "maxLength": 128,
+                    "minLength": 7,
+                    "pattern": "^claim-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "code": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "findingId": {
+                    "maxLength": 128,
+                    "minLength": 9,
+                    "pattern": "^finding-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "postId": {
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "pattern": "^post-[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "anyOf": [
+                      {
+                        "const": "info",
+                        "type": "string"
+                      },
+                      {
+                        "const": "warn",
+                        "type": "string"
+                      },
+                      {
+                        "const": "fail",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "findingId",
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "maxItems": 128,
+              "type": "array"
+            },
+            "rationale": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "score": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "dimension",
+            "score",
+            "rationale",
+            "findings"
+          ],
+          "type": "object"
+        },
+        "factuality": {
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "const": "factuality",
+              "type": "string"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "claimId": {
+                    "maxLength": 128,
+                    "minLength": 7,
+                    "pattern": "^claim-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "code": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "findingId": {
+                    "maxLength": 128,
+                    "minLength": 9,
+                    "pattern": "^finding-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "postId": {
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "pattern": "^post-[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "anyOf": [
+                      {
+                        "const": "info",
+                        "type": "string"
+                      },
+                      {
+                        "const": "warn",
+                        "type": "string"
+                      },
+                      {
+                        "const": "fail",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "findingId",
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "maxItems": 128,
+              "type": "array"
+            },
+            "rationale": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "score": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "dimension",
+            "score",
+            "rationale",
+            "findings"
+          ],
+          "type": "object"
+        },
+        "provenance": {
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "const": "provenance",
+              "type": "string"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "claimId": {
+                    "maxLength": 128,
+                    "minLength": 7,
+                    "pattern": "^claim-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "code": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "findingId": {
+                    "maxLength": 128,
+                    "minLength": 9,
+                    "pattern": "^finding-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "postId": {
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "pattern": "^post-[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "anyOf": [
+                      {
+                        "const": "info",
+                        "type": "string"
+                      },
+                      {
+                        "const": "warn",
+                        "type": "string"
+                      },
+                      {
+                        "const": "fail",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "findingId",
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "maxItems": 128,
+              "type": "array"
+            },
+            "rationale": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "score": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "dimension",
+            "score",
+            "rationale",
+            "findings"
+          ],
+          "type": "object"
+        },
+        "voice": {
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "const": "voice",
+              "type": "string"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "claimId": {
+                    "maxLength": 128,
+                    "minLength": 7,
+                    "pattern": "^claim-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "code": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "findingId": {
+                    "maxLength": 128,
+                    "minLength": 9,
+                    "pattern": "^finding-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "postId": {
+                    "maxLength": 32,
+                    "minLength": 6,
+                    "pattern": "^post-[1-9][0-9]*$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "anyOf": [
+                      {
+                        "const": "info",
+                        "type": "string"
+                      },
+                      {
+                        "const": "warn",
+                        "type": "string"
+                      },
+                      {
+                        "const": "fail",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "findingId",
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "maxItems": 128,
+              "type": "array"
+            },
+            "rationale": {
+              "maxLength": 2000,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "score": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "dimension",
+            "score",
+            "rationale",
+            "findings"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "factuality",
+        "provenance",
+        "accessibility",
+        "voice",
+        "coherence",
+        "engagement"
+      ],
+      "type": "object"
+    },
+    "protocolVersion": {
+      "const": "opencoven.tweet-thread.blinding.v1",
+      "type": "string"
+    },
+    "publicTrialSha256": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "scorecardId": {
+      "maxLength": 128,
+      "minLength": 11,
+      "pattern": "^scorecard-[a-z0-9-]+$",
+      "type": "string"
+    },
+    "scoredAt": {
+      "format": "date-time",
+      "maxLength": 24,
+      "minLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "trialId": {
+      "maxLength": 128,
+      "minLength": 7,
+      "pattern": "^trial-[a-z0-9-]+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "trialId",
+    "publicTrialSha256",
+    "armToken",
+    "scorecardId",
+    "scoredAt",
+    "dimensions"
+  ],
+  "type": "object"
+}

@@ -84,10 +84,28 @@ assert.match(
 );
 
 // ───── Home composer reads the variables and centers on viewport ─────
-const css = await readFile(
+// Source contracts read the owning split modules, not the import facade
+// (cave-xd2kg). The module list is derived from the facade's own @import
+// lines so the negative pins below keep facade-wide scope even when a new
+// module joins the surface.
+const homeComposerFacade = await readFile(
   new URL("../styles/home-composer.css", import.meta.url),
   "utf8",
 );
+const homeComposerModules = [
+  ...homeComposerFacade.matchAll(/@import\s+"\.\/home-composer\/([^"]+)"/g),
+].map((match) => match[1]);
+assert.ok(
+  homeComposerModules.includes("landing-composer.css"),
+  "the home-composer facade imports the landing-composer owning module",
+);
+const css = (
+  await Promise.all(
+    homeComposerModules.map((name) =>
+      readFile(new URL(`../styles/home-composer/${name}`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
 
 // With the right companion panel removed, the detail fills to the viewport
 // edge — there is no asymmetric right panel to re-center Home around, so the
@@ -198,15 +216,16 @@ assert.doesNotMatch(
   "old 760px max-width on .home-composer-suggestions removed",
 );
 
-// ───── globals.css lets the detail panel overflow when it's home mode ─────
-const globals = await readFile(
-  new URL("../app/globals.css", import.meta.url),
+// ── shell-navigation.css lets the detail panel overflow in home mode ──
+// (the owning split module behind the globals.css facade)
+const shellNavigation = await readFile(
+  new URL("../styles/globals/shell-navigation.css", import.meta.url),
   "utf8",
 );
 assert.match(
-  globals,
+  shellNavigation,
   /\.shell-detail-panel:has\(> \.shell-detail > \.cave-mode-fade > \.workspace-detail-content > \.home-composer-root\)\s*\{\s*overflow:\s*visible\s*!important/,
-  "globals.css opens .shell-detail-panel overflow when it contains the home composer through the inertable detail wrapper",
+  "shell-navigation.css opens .shell-detail-panel overflow when it contains the home composer through the inertable detail wrapper",
 );
 
 console.log("home-composer-centering.test.ts: ok");

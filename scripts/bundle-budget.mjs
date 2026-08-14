@@ -25,6 +25,8 @@ import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { headroomOf } from "./budget-headroom.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextDir = path.join(root, ".next");
 const chunksDir = path.join(nextDir, "static", "chunks");
@@ -49,8 +51,119 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // current measurements are 665 KiB root / 904 KiB home. Budget raised 900→910
 // in the home-minimal PR (2026-07-22): new home Continue cards + context-chip
 // styles are home-startup surface CSS (not cross-route), +~18 KiB net.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 690) * 1024;
-const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 910) * 1024;
+// Raised 910→915 (2026-07-23, cave-c7hy): --accent-presence-hover token
+// definitions (foundations + 15 theme overrides) are cascade-wide a11y
+// tokens, +~1 KiB; the measured home set was already at 910.
+// Raised 915→920 (2026-07-24, cave-99s9): Blaze backdrop-style rules in
+// backdrop.css (fill + reduced-motion hide) are home-startup surface CSS,
+// +<1 KiB; the measured home set already sat exactly at the 915 boundary
+// after the 3a dashboard redesign (#3758/#3763).
+// Raised root 690→696 / home 920→936 (2026-07-24, cave-q8uc): the Familiar
+// Analytics modernization (Familiar Analytics.dc.html handoff) grows the
+// .fa-* analytics rules in surface-reporting.css — the new 3-column hero,
+// needs-attention banner, featured self-heal grid, collapsible panels,
+// contract detail panel, pager, and action-modal styling (+~13 KiB home /
+// +~3 KiB root). This surface's CSS has always lived in the global bundle;
+// follow-up cave-5rqi tracks extracting it to a component-imported sheet.
+// Raised home 936→940 (2026-07-25, cave-2l7h): the hearth-Home restore /
+// dashboard-to-new-chat swap returns the hearth sheets (landing-composer +
+// hearth-continuations) to the home graph while home-dashboard.css stays in
+// it (now imported via chat-view's ChatNewDashboard); the pruned dashboard
+// chrome/dock offsets most but not all of the restored hearth CSS (+2 KiB
+// measured, 938).
+// LOWERED root 696→660 / home 940→900 (2026-07-24, cave-5rqi): did that #3264
+// extraction — the whole .fa-* analytics surface (~46 KiB) moved from the
+// global surface-reporting.css into component-imported src/styles/
+// familiar-analytics.css (+ .trace-* → session-trace-overlay.css), so it now
+// code-splits out of the every-route/home first load entirely. Net after the
+// hearth restore above: ~646 KiB root / ~890 KiB home — still below even the
+// pre-modernization budgets (690/920). Banked with headroom.
+// Raised home 900->910 (2026-08-01, cave-iktbc): the home set had drifted to
+// 899.6 KiB as the chat surfaces landed through 2026-07-31 — the find band
+// (#4131), title-row participants (#4127), familiar drag-into-thread (#4132),
+// launch-readiness gating (#4141) and the Hermes API card (#4138) — leaving
+// ~0.04% of margin. A 378-byte spine-gutter fix was enough to fail the gate,
+// which means the NEXT css PR of any size would have failed it too. This bump
+// is restoring working headroom for what already merged, not paying for one
+// change; root is untouched and still 22 KiB under at 638 KiB.
+// LOWERED root 660→640 / home 910→900 (2026-08-01, cave-ii7xi): the second #3264
+// extraction — surface-marketplace.css (34 KiB) left the globals.css facade for a
+// component import in marketplace-view.tsx, so it code-splits with the
+// MarketplaceView next/dynamic chunk. Measured on the same commit (39164745f),
+// baseline vs branch: home 908.0 → 882.2 KiB, root 644.1 → 618.5 KiB, −26 KiB each.
+// The sheet did NOT move whole: 5 KiB of it was the shared project picker and
+// undo toast — components in the always-loaded shell, both labelled "Shared" in
+// comments written while they sat in a file named for one surface. Those stay
+// in the facade as
+// shared-pickers-and-toasts.css, in the exact slot surface-marketplace.css held,
+// because primitives.css defines their base rules and these override at equal
+// specificity. Moving the file wholesale would have unstyled the project picker
+// and the undo toast on the home route with every test still green.
+// Home goes back to 900 — reverting cave-iktbc's stopgap raise exactly, since this
+// extraction is the fix that raise was buying time for. That leaves 17.8 KiB
+// (1.98%), which the headroom reporter still calls THIN, and that is the honest
+// reading: one extraction is not enough to make this budget comfortable. Choosing
+// a laxer cap to silence the warning would be the exact move cave-7fd41 exists to
+// discourage. The remaining facade sheets are the work — see cave-ii7xi.
+// LOWERED root 640→600 / home 900→865 (2026-08-01, cave-ii7xi): the third #3264
+// extraction — surface-reporting.css. Measured on ad12a391b: home 882.2 → 844.9
+// KiB, root 618.5 → 581.2 KiB, −37 KiB each, the largest single reclaim in this
+// series and nearly 1.5x what the .fa-* extraction (cave-5rqi) bought.
+// The file was four tenants, not one surface: dr-* (daily report, 86 classes),
+// growth-* (55) and retro-* (40) are reached ONLY from /dashboard/... and
+// /daily-report/... routes, while ~14 KiB of chat and shell chrome — edit cards,
+// review modal, tool IO, the thread-signal card, quick-chat keyframes, the
+// GitHub reward flare, group-chat next-path and the tools-update fill button —
+// sat in the same file under a name that made it look route-scoped. The reporting
+// families are now component-imported by the dashboard and daily-report views;
+// the shell chrome stayed in the facade as shell-cards-and-controls.css, in the
+// slot surface-reporting.css held, so cascade order is unchanged.
+// Home lands at 2.32% and root at 3.14% — both above the THIN threshold for the
+// first time in this series, which is what two extractions bought that one could
+// not. 35 of the 37 reclaimed KiB are given back rather than banked.
+// RAISED home 865→880 (2026-08-03, cave-vkegj): the Thread Signal card became a
+// triage surface — six score tiles with a per-metric rationale strip and a ranked
+// signal queue whose row detail opens as an overlay — which is +6.8 KiB of source
+// CSS in shell-cards-and-controls.css. Home measured 862.2 KiB against the 865
+// ceiling: within budget but 0.3% headroom, i.e. the gate would have failed the
+// NEXT css PR of any size, which is the same stopgap situation cave-iktbc hit.
+// The obvious reclaim — a #3264 extraction — is the wrong tool here: cave-ii7xi
+// deliberately KEPT this file in the facade three days ago because every consumer
+// (chat-view, group-chat-view, github-card, thread-signal-card, quick-chat,
+// tools-update) is always-loaded shell, and extracting it would move CSS out of
+// the root layout only to have `/` pay for it again through the chat surface.
+// Root is untouched at 588 KiB (2.1% headroom) and every declaration in the new
+// block is tokenized — tokenize-css.mjs is a no-op over it and the drift ratchets
+// for font/space/radius all held. 880 is the smallest ceiling that clears the 2%
+// THIN threshold (17.8 KiB / 2.0% headroom) rather than landing still-thin and
+// handing the same warning to whoever ships next — which is the whole failure
+// this raise exists to end. It is a ceiling for this surface's growth, not a
+// licence for the next one.
+// RAISED home 880→940 (2026-08-05, cave-yizcb), and root deliberately LEFT at
+// 600. The convention above — "the smallest ceiling that clears the 2% THIN
+// threshold" — is what put us back here: 880 was chosen on 2026-08-03 as exactly
+// that, and home was under the threshold again two days later. Measured:
+//
+//   home: 862.2 KiB (2026-08-03) → 869 KiB = ~3.4 KiB/day. The 10.7 KiB left is
+//         ~3 days; even a fresh 2% (17.6 KiB) would be ~5. 940 leaves 71 KiB,
+//         about 21 days at the observed rate.
+//   root: 588 KiB (2026-08-03) → 589 KiB = ~0.5 KiB/day. Its 10.9 KiB is ALREADY
+//         ~21 days. It reads 1.8% and warns, but the warning is a proportion
+//         artifact: root is large, so a healthy absolute margin still looks thin.
+//         Raising it would buy growth that is not happening.
+//
+// That asymmetry is the point. A percentage says how much is left, never how
+// long — and it misleads in BOTH directions: root warns with three weeks of
+// room, while the standalone byte ceiling sat SILENT at 3.9% with about six days
+// (see scripts/standalone-budget.mjs, same bead). Derive the next raise from
+// measured growth and record the rate, not just the number.
+//
+// Reclaiming instead of raising (#3264) remains the better long-term answer for
+// home, and is deliberately not attempted here: the extraction candidates are in
+// files several concurrent sessions are editing right now, so it would conflict
+// badly. That is a scheduling constraint, not an argument that the raise is free.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 600) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
@@ -60,6 +173,29 @@ if (!existsSync(chunksDir)) {
 }
 
 const kb = (n) => (n / 1024).toFixed(0).padStart(6) + " KB";
+
+// Warn while there is still room to act. Every budget below used to print only
+// its total and its cap, so accretion was invisible until a PR crossed the line
+// and ate the failure — the home CSS set drifted to 0.04% of margin over a
+// single day of small merges before anyone noticed (cave-7fd41). Reporting the
+// remaining headroom on every build turns that into a visible slope.
+//
+// Deliberately does NOT fail: this is signal, not a new gate. A thin budget is
+// information for the next author, not a reason to block the current one.
+//
+// The threshold and line formatting now live in scripts/budget-headroom.mjs
+// (cave-yizcb) so standalone-budget.mjs shares them rather than going without.
+// It had no thin detection at all, which is how it reached 0.10% headroom while
+// printing a clean check - the gates with the MOST room were the only ones
+// warning. A duplicated constant would have drifted the same way.
+const thin = [];
+
+function headroom(label, bytes, budget) {
+  const report = headroomOf(bytes, budget);
+  if (!report) return; // the caller's failure branch reports the overage
+  if (report.thin) thin.push(label);
+  console.log(report.line);
+}
 const sizeOf = (relToNext) => {
   try {
     return statSync(path.join(nextDir, relToNext)).size;
@@ -114,10 +250,12 @@ const shellBytes = shellFiles.reduce((a, f) => a + sizeOf(f), 0);
 
 console.log(`\nbundle-budget — initial / route JavaScript:`);
 console.log(`  ${kb(homeBytes)}  TOTAL first-load JS across ${homeFiles.length} chunks  (budget: ${kb(MAX_HOME_BYTES)})`);
+headroom("first-load JS", homeBytes, MAX_HOME_BYTES);
 
 console.log(`\nbundle-budget — always-loaded shell (rootMainFiles):`);
 for (const f of shellFiles) console.log(`  ${kb(sizeOf(f))}  ${f.replace("static/chunks/", "")}`);
 console.log(`  ${kb(shellBytes)}  TOTAL shell  (budget: ${kb(MAX_SHELL_BYTES)})`);
+headroom("always-loaded shell", shellBytes, MAX_SHELL_BYTES);
 
 console.log(`\nbundle-budget — largest client chunks:`);
 for (const c of chunks.slice(0, 8)) console.log(`  ${kb(c.bytes)}  ${c.file}`);
@@ -230,10 +368,12 @@ try {
   console.log(`bundle-budget — root-layout CSS (every route pays this):`);
   for (const f of rootCss.files) console.log(`  ${kb(f.bytes)}  ${f.file}`);
   console.log(`  ${kb(rootCss.bytes)}  TOTAL root CSS  (budget: ${kb(MAX_ROOT_CSS_BYTES)})`);
+  headroom("root-layout CSS", rootCss.bytes, MAX_ROOT_CSS_BYTES);
   console.log(`\nbundle-budget — initial / route CSS:`);
   console.log(
     `  ${kb(homeCss.bytes)}  TOTAL first-load CSS across ${homeCss.files.length} stylesheets  (budget: ${kb(MAX_HOME_CSS_BYTES)})`,
   );
+  headroom("initial / route CSS", homeCss.bytes, MAX_HOME_CSS_BYTES);
 
   if (rootCss.bytes > MAX_ROOT_CSS_BYTES) {
     failed = true;
@@ -262,4 +402,11 @@ try {
 }
 
 if (failed) process.exit(1);
+if (thin.length > 0) {
+  console.log(
+    `\n\u26a0 bundle-budget: within budget, but thin on ${thin.join(", ")}.\n` +
+      `  Reclaim room (move surface CSS to component imports, #3264) or raise the\n` +
+      `  cap deliberately with a justification — before it lands on someone else.`,
+  );
+}
 console.log(`\n✓ bundle-budget: within budget.\n`);

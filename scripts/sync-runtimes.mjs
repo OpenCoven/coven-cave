@@ -38,6 +38,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = path.join(scriptDir, "..", "src", "lib", "runtime-registry.gen.ts");
 
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+const MODEL_ID_TRANSFORMS = new Set(["strip_provider", "preserve"]);
 
 /** Compare two `major.minor.patch[-pre]` strings; release > prerelease.
  *  Prerelease precedence follows semver §11.4: dot-separated identifiers
@@ -104,6 +105,29 @@ export function validateAdapter(id, adapter) {
   if (caps !== undefined && (typeof caps !== "object" || caps === null || Array.isArray(caps))) {
     problems.push(`${id}: adapter.capabilities must be an object`);
   }
+  const modelIdTransform = adapter.model_id_transform;
+  if (
+    modelIdTransform !== undefined &&
+    (
+      typeof modelIdTransform !== "string" ||
+      !MODEL_ID_TRANSFORMS.has(modelIdTransform)
+    )
+  ) {
+    problems.push(`${id}: adapter.model_id_transform must be "strip_provider" or "preserve"`);
+  }
+  if (modelIdTransform === "preserve") {
+    const hasModelMechanism =
+      (typeof adapter.model_flag === "string" && adapter.model_flag.trim().length > 0) ||
+      (
+        typeof adapter.model_arg_template === "string" &&
+        adapter.model_arg_template.trim().length > 0
+      );
+    if (!hasModelMechanism) {
+      problems.push(
+        `${id}: adapter.model_id_transform "preserve" requires model_flag or model_arg_template`,
+      );
+    }
+  }
   return problems;
 }
 
@@ -155,6 +179,7 @@ export function renderModule(picked, source) {
     homepage: typeof adapter.homepage === "string" ? adapter.homepage : undefined,
     description: typeof adapter.description === "string" ? adapter.description : undefined,
     modelFlag: typeof adapter.model_flag === "string" ? adapter.model_flag : null,
+    modelIdTransform: adapter.model_id_transform ?? "strip_provider",
     capabilities: {
       stream: adapter.capabilities?.stream === true,
       preassignedSessionId: adapter.capabilities?.preassigned_session_id === true,
@@ -184,6 +209,8 @@ export type RegistryRuntimeCapabilities = {
   speed: boolean;
 };
 
+export type RegistryModelIdTransform = "strip_provider" | "preserve";
+
 export type RegistryRuntime = {
   id: string;
   label: string;
@@ -194,6 +221,8 @@ export type RegistryRuntime = {
   description?: string;
   /** CLI flag that forwards a model id, when the runtime supports one. */
   modelFlag: string | null;
+  /** How provider-qualified model ids are forwarded to this runtime. */
+  modelIdTransform: RegistryModelIdTransform;
   capabilities: RegistryRuntimeCapabilities;
   /** The full \`$COVEN_HOME/adapters/<id>.json\` document for this runtime. */
   adapterManifest: unknown;

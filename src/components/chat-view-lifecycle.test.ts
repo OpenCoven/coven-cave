@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const routerSource = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
@@ -48,8 +49,19 @@ assert.match(
 
 assert.match(
   streamEvents,
-  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "error";\s*durationMs\?: number;\s*\}/,
+  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "notice" \| "error";\s*durationMs\?: number;\s*\}/,
   "Chat streams should expose non-token progress events for quiet phases",
+);
+
+assert.match(
+  source,
+  /event\.status === "notice"[\s\S]*?ph:info/,
+  "neutral progress notices use an informational icon instead of an error icon",
+);
+assert.match(
+  styles,
+  /\.cave-progress-row--notice\s*\{[\s\S]*?var\(--text-secondary\)/,
+  "neutral progress notices use secondary text styling rather than danger color",
 );
 
 assert.match(
@@ -66,8 +78,14 @@ assert.match(
 
 assert.match(
   source,
-  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(ev\.sessionId\)/,
-  "A transparent resume fallback should promote the live chat to the replacement session id",
+  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(\{\s*newSessionId: ev\.sessionId,\s*expectedSessionId: liveGeneration\.originSessionId,\s*composeInstance,\s*\}\)/,
+  "A transparent resume fallback should promote the live chat with origin and compose provenance",
+);
+
+assert.match(
+  source,
+  /case "session": \{[\s\S]*const isBrandNewSession = liveGeneration\.sessionId == null;[\s\S]*if \(!isBrandNewSession\) \{[\s\S]*emitAttentionClear\(ev\.sessionId, liveGeneration\.runId, liveGeneration\.clearWatermark\);[\s\S]*liveGeneration\.markAttentionCleared\(ev\.sessionId\);[\s\S]*\}\n\s*reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\);/,
+  "A brand-new chat's first session event must not emit an attention clear — no canonical row exists yet, so the assistant's first genuine request must surface instead of being masked by an unknown-baseline projection",
 );
 
 assert.match(
@@ -104,6 +122,22 @@ assert.match(
   source,
   /case "assistant_chunk": \{[\s\S]{0,400}?applyAssistantChunk\(ev\.text, assistantId, liveGeneration\)/,
   "The assistant_chunk event delegates to the shared streaming-lifecycle application",
+);
+
+assert.match(
+  source,
+  /import \{ rebaseToolTextOffsets \} from "@\/lib\/tool-offset-correction";/,
+  "ChatView should use the client-safe tool-offset correction helper",
+);
+assert.match(
+  source,
+  /const replaceAssistantText = \(\s*text: string,\s*correction: ToolOffsetCorrection \| undefined,[\s\S]*?const canonicalText = liveGeneration\.responseText\.replace\(text\);[\s\S]*?t\.id === assistantId\s*\? \{[\s\S]*?text: canonicalText,[\s\S]*?tools: rebaseToolTextOffsets\(t\.tools, correction\),[\s\S]*?pending: true,[\s\S]*?lifecycle: "streaming"/,
+  "authoritative text replacement should atomically rebase the same assistant turn's live tools",
+);
+assert.match(
+  source,
+  /case "assistant_replace": \{\s*replaceAssistantText\(ev\.text, ev\.toolOffsetCorrection, assistantId, liveGeneration\);/,
+  "assistant replacement events should pass correction metadata to the atomic turn update",
 );
 
 assert.match(
@@ -192,8 +226,8 @@ assert.match(
 
 assert.match(
   source,
-  /const projectRootForRequest = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?const modelOverrideForRequest =[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
-  "delayed dispatch must use queued metadata rather than the latest composer state",
+  /const requestedProjectRoot = opts\?\.projectRoot \?\? requestProjectRoot;[\s\S]*?const mentionedFilesRootForRequest = opts\?\.mentionedFilesRoot \?\? mentionRoot;[\s\S]*?if \(!projectLaunchReadyForRequest\)[\s\S]*?const projectRootForRequest = requestedProjectRoot;[\s\S]*?projectRoot: projectRootForRequest,[\s\S]*?permissionMode: controlsOverride\?\.permissionMode \?\? permissionMode,[\s\S]*?mentionedFilesRoot: mentionedFilesRootForRequest/,
+  "delayed dispatch must authorize and use queued metadata rather than the latest composer state",
 );
 
 assert.match(
@@ -233,8 +267,8 @@ assert.match(
 );
 assert.match(
   turnStateSource,
-  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;/,
-  "Live chat snapshots should persist run ownership and client stream health without widening unrelated registries",
+  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;[\s\S]*clearWatermark\?: string \| null;/,
+  "Live chat snapshots should persist run ownership, client stream health, and the stable attention-clear watermark without widening unrelated registries",
 );
 assert.match(
   turnStateSource,
@@ -254,8 +288,46 @@ assert.match(
 
 assert.match(
   source,
-  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth/,
-  "sendRaw should persist the active stream snapshot with its controller, run ID, and health",
+  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?clearWatermark: now,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth,[\s\S]*?clearWatermark: now/,
+  "sendRaw should persist the active stream snapshot with its controller, run ID, health, and stable clear watermark",
+);
+
+assert.match(
+  source,
+  /function attentionClearWatermarkForLiveGeneration\([\s\S]*?return live\.clearWatermark \?\? live\.turns\.find\(\(turn\) => turn\.id === live\.activeLeafId\)\?\.createdAt \?\? null;/,
+  "adopted live generations should reuse the snapshot's own clear watermark, falling back to its active pending turn timestamp instead of remount time",
+);
+
+assert.match(
+  source,
+  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?emitAttentionClear\(targetSessionId, live\.runId, attentionClearWatermarkForLiveGeneration\(live\)\);/,
+  "adopted pending generations should emit clears with the stable snapshot watermark",
+);
+
+// sessionAliases must be seeded with the origin id so the pre-migration
+// registry entry is covered even if the run re-records it after migration.
+// Without seeding, a resumed-replacement race could leave a zombie under the
+// original session id that no cleanup path would ever clear.
+assert.match(
+  source,
+  /sessionAliases: new Set\(initialLiveSessionId \? \[initialLiveSessionId\] : \[\]\)/,
+  "generation sessionAliases must seed the origin id so the initial registry entry is always in the cleanup set",
+);
+
+assert.match(
+  source,
+  /case "session": \{[\s\S]*?reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\)/,
+  "stable session replacement migrates the live snapshot and tracks the final alias",
+);
+assert.match(
+  source,
+  /clearLiveChatGenerationAliases\(liveGeneration\.sessionAliases, runId\)/,
+  "terminal cleanup retires every origin/final alias with the run-id guard",
+);
+assert.match(
+  source,
+  /case "done": \{[\s\S]*?if \(ev\.sessionId\) \{\s*reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\)/,
+  "done-only stable session replacements use the same migration and alias registration path",
 );
 
 assert.match(
@@ -340,10 +412,21 @@ assert.match(
   "Regenerate is hidden while busy and on pending turns (CHAT-D6-02)",
 );
 
+// The backwards walk for the preceding user turn moved into a named helper
+// when the reader's "You asked" card needed the same turn (cave-r8gfl). The
+// guarantee is unchanged and split across two assertions: the helper finds the
+// nearest USER turn, and regenerate still reuses that turn's controls plus the
+// assistant's authoritative retry model.
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
-  "Regenerate re-sends the preceding user turn (text + attachments) through the guarded sendRaw path, and hides when no user turn precedes (CHAT-D6-02)",
+  /function precedingUserTurn\(turn: Turn\): Turn \| undefined \{[\s\S]*?candidate\.role === "user"/,
+  "The preceding-user-turn walk is a single named helper, not copied per caller (CHAT-D6-02)",
+);
+
+assert.match(
+  source,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?const prevUser = precedingUserTurn\(turn\);[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?retryTurnModelRequest\(prevUser, turn\)[\s\S]*?modelControls: prevUser\.modelControls \?\? \{\}/,
+  "Regenerate reuses the preceding user turn's controls and the assistant's authoritative retry model (CHAT-D6-02)",
 );
 
 assert.match(
@@ -360,8 +443,8 @@ assert.match(
 
 assert.match(
   bubbleSource,
-  /aria-label="Regenerate response"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"/,
-  "Regenerate renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
+  /aria-label="Retry response"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-response-action focus-ring"/,
+  "Retry renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
 );
 
 // ── CHAT-D12-03: visible retry at failed turns on desktop ──
@@ -370,7 +453,7 @@ assert.match(
 // false, error: true) must keep passing it, or the pill below never renders.
 const regenerateForBody =
   source.match(
-    /function regenerateFor\(turn: Turn\)[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
+    /function regenerateFor\(turn: Turn\)[\s\S]*?\n  \}\n\n  \/\/ Branch navigator/,
   )?.[0] ?? "";
 assert.ok(regenerateForBody, "regenerateFor body should be extractable (CHAT-D12-03)");
 assert.doesNotMatch(
@@ -493,14 +576,14 @@ assert.match(
 
 // ── CHAT-D12-01: consolidate simultaneous streaming status signals ──
 
-// (a) While the turn's own live indicator shows (pending, no visible text),
-// the Queued/Connecting/Writing chip in the same meta row is redundant —
-// suppressed until text flows or the turn settles. One shared flag gates both
-// so the chip and the indicator can never double up.
+// (a) While the turn has neither visible text nor streamed reasoning, the
+// generic ThinkingIndicator owns the status. As soon as reasoning arrives,
+// its inline disclosure becomes the live surface instead, avoiding duplicate
+// thinking chrome. One shared flag gates both the chip and the fallback.
 assert.match(
   source,
-  /const indicatorVisible = Boolean\(turn\.pending\) && !visible;/,
-  "TurnRow derives a single indicator-visibility flag from pending + visible text (CHAT-D12-01)",
+  /const indicatorVisible = Boolean\(turn\.pending\) && !visible && !reasoning;/,
+  "TurnRow reserves the generic indicator for pending turns without visible text or streamed reasoning (CHAT-D12-01)",
 );
 assert.match(
   source,
@@ -598,13 +681,53 @@ assert.match(
 // these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(COMPOSER_DRAFT_KEY\)\)/,
-  "composer input initialises from the persisted draft",
+  /export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1"/,
+  "ChatView exports the existing draft key as its safe default",
 );
 assert.match(
   source,
-  /const \{ clearNow: clearDraft \} = useDraftPersistence\(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
-  "the draft persists through the shared debounced hook (no per-keystroke localStorage writes)",
+  /composerDraftKey\?: string/,
+  "ChatView accepts a caller-owned draft namespace",
+);
+assert.match(
+  source,
+  /composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY/,
+  "ChatView preserves the existing draft slot when no override is provided",
+);
+assert.match(
+  source,
+  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(composerDraftKey\)\)/,
+  "composer input initialises from the selected draft namespace",
+);
+assert.match(
+  source,
+  /const \{ clearNow: clearDraft \} = useDraftPersistence\(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
+  "the selected draft namespace persists through the shared debounced hook",
+);
+assert.match(
+  routerSource,
+  /import \{ ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY \} from "@\/components\/chat-view"/,
+  "ChatRouter shares ChatView's compatibility default",
+);
+assert.match(
+  routerSource,
+  /composerDraftKey\?: string/,
+  "ChatRouter accepts an independent draft namespace",
+);
+assert.match(
+  routerSource,
+  /composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY/,
+  "ChatRouter keeps the legacy draft namespace by default",
+);
+assert.match(
+  routerSource,
+  /<ChatView[\s\S]*?composerDraftKey=\{composerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+  "ChatRouter keys the primary ChatView by draft namespace and compose lineage so namespace changes restore the matching draft",
+);
+assert.match(
+  routerSource,
+  /<ChatView[\s\S]*?composerDraftKey=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?key=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?sessionId=\{paneId\}/,
+  "ChatRouter keys every split ChatView by its draft namespace so namespace changes safely remount persisted panes",
 );
 assert.match(
   draftHook,
@@ -678,37 +801,208 @@ assert.match(
 // New-chat background-generation isolation (cave-8zq): a generation started on
 // a brand-new chat carries an immutable originSessionId, and both the "session"
 // and "done" events only adopt the server-assigned id into the displayed
-// thread's currentSessionRef when the view is STILL on that origin thread.
-// Otherwise (user switched away during first-token latency) the late id would
-// splice the background stream into the wrong thread and mis-address the next
-// send — while onSessionStarted still fires so the router can register it.
+// thread's currentSessionRef when this run owns the displayed view.
+// For null-origin (sessionless) runs the ownership predicate also checks the
+// displayed compose slot so that an older background run (A) cannot splice into
+// a newer displayed compose (B) when both share originSessionId === null.
+// Background null-origin runs still bind creation-refresh state and refresh the
+// authoritative sidebar on done — only view adoption and router notification
+// (onSessionStarted) are gated; ChatRouter's promotion predicate (origin-match
+// guard) prevents promoting A's session into B's compose view.
 assert.match(
   source,
   /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,/,
   "each generation records the immutable thread it started on (originSessionId)",
 );
+// ownsDisplayedView is imported from the pure helper module and called in both events.
+assert.match(
+  source,
+  /import \{[\s\S]*?ownsDisplayedView[\s\S]*?\} from "@\/lib\/chat-session-ownership"/,
+  "ChatView imports the pure ownsDisplayedView predicate from chat-session-ownership",
+);
+// displayedCreationRunIdRef tracks which run owns the displayed view.
+assert.match(
+  source,
+  /const displayedCreationRunIdRef = useRef<string \| null>\(null\)/,
+  "displayedCreationRunIdRef is declared to track the run owning the displayed view",
+);
+assert.match(
+  source,
+  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;\s*\n\s*useLayoutEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;\s*\n\s*\};\s*\n\s*\}, \[\]\);/,
+  "the callback ref stays render-synchronized while layout cleanup synchronously releases compose ownership",
+);
+// Set to runId at the start of every send so resumed replacements also lose
+// promotion authority when unmount/thread-switch cleanup clears the slot.
+assert.match(
+  source,
+  /creationRefreshStateRef\.current = onSendStart\([\s\S]{0,400}?displayedCreationRunIdRef\.current = runId;/,
+  "every send sets displayedCreationRunIdRef to its runId so stale resumed and sessionless runs cannot adopt",
+);
 {
-  const guarded = source.match(
-    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);\s*\n\s*\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
+  // Both session and done events call ownsDisplayedView and gate adoption on it.
+  const ownedChecks = source.match(
+    /const owned = ownsDisplayedView\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(owned\) \{[\s\S]*?liveSessionIdRef\.current = ev\.sessionId;[\s\S]*?currentSessionRef\.current = ev\.sessionId;[\s\S]*?setHistoryState\("loaded"\);/g,
   );
   assert.ok(
-    guarded && guarded.length === 2,
-    "both the session and done events gate currentSessionRef adoption on still owning the displayed thread, yet always notify onSessionStarted",
+    ownedChecks && ownedChecks.length === 2,
+    "both session and done events call ownsDisplayedView and gate ref adoption on the owned result",
   );
 }
+{
+  // Both session and done events notify the router via the display-ownership
+  // predicate, passing originSessionId so the router can match the specific
+  // thread being replaced (null for sessionless creation, non-null for A→B).
+  const notifyChecks = source.match(
+    /const shouldPromote = canPromoteDisplayedSession\(\{[\s\S]*?currentSessionId: currentSessionRef\.current,[\s\S]*?originSessionId: liveGeneration\.originSessionId,[\s\S]*?runId: liveGeneration\.runId,[\s\S]*?displayedCreationRunId: displayedCreationRunIdRef\.current,[\s\S]*?\}\);[\s\S]*?if \(shouldPromote\) \{\s*onSessionStarted\?\.\(\{\s*newSessionId: ev\.sessionId,\s*expectedSessionId: liveGeneration\.originSessionId,\s*composeInstance,\s*\}\);\s*\}/g,
+  );
+  assert.ok(
+    notifyChecks && notifyChecks.length === 2,
+    "session and done events notify through the display-ownership predicate with session, origin, and compose provenance",
+  );
+}
+// onSessionStarted must never be called from an ad hoc owned check — both paths
+// use the promotion predicate so stale background promotions are correctly gated.
+assert.doesNotMatch(
+  source,
+  /if \(owned(?: && liveGeneration\.originSessionId === null)?\) \{\s*\n\s*onSessionStarted\?\.\(ev\.sessionId/,
+  "onSessionStarted is never called from an ad hoc ownership condition; both event paths use the promotion predicate",
+);
+
+assert.match(
+  source,
+  /const completedSessionId = ev\.sessionId \?\? liveGeneration\.sessionId;/,
+  "done resolves the stable session id from either the event or live generation",
+);
+assert.match(
+  source,
+  /onDoneCreationRefresh\([\s\S]*?creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?completedSessionId[\s\S]*?\)/,
+  "a successful first send refreshes the authoritative session list after persistence via the creation-refresh helper",
+);
+assert.match(
+  source,
+  /shouldCreationRefresh \|\| shouldReplacementRefresh[\s\S]{0,400}onSessionsChangedRef\.current\?\.\(\)/,
+  "creation, replacement, and Board refresh flags feed one consolidated refresh invocation",
+);
+assert.doesNotMatch(
+  source,
+  /if \(completedSessionId\) \{\s*onSessionsChanged\?\.\(\);\s*\}/,
+  "ordinary follow-ups do not refresh as though they created a sidebar row",
+);
+assert.match(
+  source,
+  /onCreationSessionIdentified\([\s\S]*?creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId/,
+  "ChatView passes liveGeneration.runId and liveGeneration.originSessionId to onCreationSessionIdentified for per-generation provenance",
+);
+
+// Session event binds OUTSIDE the ownership predicate: the generation owns its
+// session ID regardless of which thread the view is currently displaying.
+// The provenance gate is encoded in the helper (runId + originSessionId args).
+// ownsDisplayedView is called after the bind and gates both adoption and notify.
+assert.match(
+  source,
+  /case "session": \{[\s\S]*?creationRefreshStateRef\.current = onCreationSessionIdentified\([\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?ev\.sessionId[\s\S]*?\)[\s\S]*?const owned = ownsDisplayedView\(/,
+  "session event binds creation-refresh (with runId and provenance param) before calling ownsDisplayedView, so background sessionless generations still bind even when the user has switched threads",
+);
+
+// Done event binds with completedSessionId (covers the done-before-session race
+// and the background-generation path) before invoking onDoneCreationRefresh.
+// runId and provenance are passed to onCreationSessionIdentified; onDoneCreationRefresh
+// no longer takes originSessionId (removed as unused parameter).
+assert.match(
+  source,
+  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?completedSessionId[\s\S]*?\)[\s\S]*?onDoneCreationRefresh\(/,
+  "done event binds creation-refresh using runId, provenance param, and completedSessionId before invoking onDoneCreationRefresh",
+);
+
+// Provenance gate is encoded in the helpers, not the caller: ChatView always
+// calls both helpers and passes liveGeneration.originSessionId. The old
+// caller-side `if (originSessionId === null)` guard must not be present.
+assert.doesNotMatch(
+  source,
+  /liveGeneration\.originSessionId === null[\s\S]{0,120}?onCreationSessionIdentified/,
+  "provenance gate is encoded in the helper API; ChatView must not guard onCreationSessionIdentified calls with a caller-side originSessionId === null check",
+);
+// onCreationSessionIdentified receives liveGeneration.originSessionId; onDoneCreationRefresh does not
+assert.match(
+  source,
+  /onCreationSessionIdentified\(\s*creationRefreshStateRef\.current,[\s\S]*?liveGeneration\.runId,[\s\S]*?liveGeneration\.originSessionId,[\s\S]*?completedSessionId[\s\S]*?onDoneCreationRefresh\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId,\s*completedSessionId/,
+  "done event: onCreationSessionIdentified receives originSessionId; onDoneCreationRefresh takes only state/runId/completedSessionId (originSessionId removed)",
+);
+
+// The generation's finally unconditionally calls onCreationRunTerminated, covering every
+// terminal exit: HTTP rejection, missing body, exhausted recovery, abort, and stream
+// exceptions. The helper is safe to call unconditionally — it removes unbound
+// entries and retry aliases while preserving the original bound retry entry.
+assert.match(
+  source,
+  /} finally \{[\s\S]{0,800}?onCreationRunTerminated\(\s*creationRefreshStateRef\.current,\s*liveGeneration\.runId/,
+  "generation's finally unconditionally calls onCreationRunTerminated — covers every terminal exit",
+);
+// HTTP rejection and missing body return early without scattered cleanup; they rely on
+// the generation's finally instead.
+assert.doesNotMatch(
+  source,
+  /chatBridgeFailureMessage[\s\S]{0,1000}?onCreationRunTerminated/,
+  "HTTP rejection path has no scattered onCreationRunTerminated — relies on finally",
+);
+// The SSE error event handler no longer carries scattered cleanup (finally covers it).
+assert.doesNotMatch(
+  source,
+  /case "error": \{[\s\S]{0,500}?onCreationRunTerminated/,
+  "SSE case 'error' handler has no scattered onCreationRunTerminated — relies on finally",
+);
+// sendRaw passes runId to onSendStart for per-generation creation-refresh tracking
+assert.match(
+  source,
+  /onSendStart\(\s*creationRefreshStateRef\.current,\s*runId,\s*initialLiveSessionId\s*\)/,
+  "sendRaw passes runId and initialLiveSessionId to onSendStart for per-generation creation-refresh tracking",
+);
+
+// Issue 1: missing body return path has no scattered onCreationRunTerminated — relies on finally
+assert.doesNotMatch(
+  source,
+  /"Chat bridge response did not include a stream"[\s\S]{0,400}?onCreationRunTerminated/,
+  "missing body path has no scattered onCreationRunTerminated — relies on finally",
+);
+
+assert.match(
+  source,
+  /const onSessionsChangedRef = useRef\(onSessionsChanged\);\s*\n\s*onSessionsChangedRef\.current = onSessionsChanged;/,
+  "the retained refresh ref always points to the latest callback",
+);
+assert.doesNotMatch(
+  source,
+  /cave:sessions-refresh/,
+  "session refreshes stay on the ChatView → ChatRouter → Workspace callback chain",
+);
+assert.match(
+  source,
+  /useLayoutEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*displayedCreationRunIdRef\.current = null;/,
+  "keyed compose replacement synchronously revokes the old view's display ownership",
+);
+assert.match(
+  source,
+  /startNewConversation[\s\S]{0,400}onSessionsChangedRef\.current\?\.\(\)/,
+  "Board/startNewConversation reaches the same consolidated refresh path",
+);
 
 // cave-b63 (1): model-state / usage-plan refreshes gate their setState on a
 // caller predicate so a fetch resolving after a thread switch can't overwrite
 // the new thread's model/plan; the effects pass () => !cancelled.
 assert.match(
   source,
-  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) setModelState\(next\);/,
+  /refreshModelState = useCallback\(async \([\s\S]*?shouldApply: \(\) => boolean = \(\) => true[\s\S]*?if \(canApply\(\)\) \{\s*\n\s*modelStateRef\.current = next;\s*\n\s*setModelState\(next\);\s*\n\s*setModelCapabilities\(/,
   "refreshModelState only applies its result when the caller's shouldApply() allows it",
 );
 assert.match(
   source,
   /void refreshModelState\(\(\) => !cancelled\);/,
   "the model-state effect vetoes a stale apply via () => !cancelled",
+);
+assert.match(
+  source,
+  /modelStateRequestRef = useRef\(0\)[\s\S]*modelSelectionRevisionRef = useRef\(0\)[\s\S]*requestId === modelStateRequestRef\.current[\s\S]*expectedSelectionRevision === modelSelectionRevisionRef\.current/,
+  "rapid model/runtime mutations drop older model-state responses",
 );
 assert.match(
   source,
@@ -722,6 +1016,43 @@ assert.match(
   source,
   /if \(command === "\/clear"\) \{\s*\n\s*\/\/[\s\S]*?cancelSend\(\);\s*\n\s*liveSessionIdRef\.current = null;\s*\n\s*setTurns\(\[\]\);/,
   "/clear cancels an in-flight stream before clearing the transcript",
+);
+
+// ── Replacement refresh wiring (Task 1 P2) ────────────────────────────────
+// shouldReplacementRefreshOnDone is imported and called in the done handler
+// with the three required decision inputs.
+assert.match(
+  source,
+  /shouldReplacementRefreshOnDone/,
+  "chat-view.tsx uses shouldReplacementRefreshOnDone for the replacement refresh decision",
+);
+assert.match(
+  source,
+  /shouldReplacementRefreshOnDone\(\s*liveGeneration\.originSessionId,\s*completedSessionId,\s*ev\.isError,?\s*\)/,
+  "done handler invokes shouldReplacementRefreshOnDone with originSessionId, completedSessionId, and ev.isError",
+);
+// Consolidation: exactly one onSessionsChangedRef call gated on the combined boolean;
+// no separate pre-bind startNewConversation-only call remains.
+assert.doesNotMatch(
+  source,
+  /if \(startNewConversation && ev\.sessionId\) onSessionsChangedRef\.current\?\.\(\)/,
+  "startNewConversation is consolidated into shouldRefreshSessions — no standalone pre-bind call",
+);
+// The consolidated boolean carries all three sources: creation, replacement, board.
+assert.match(
+  source,
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\|[\s\S]{0,80}startNewConversation/,
+  "shouldRefreshSessions consolidates creation, replacement, and board conditions before the single ref call",
+);
+assert.match(
+  source,
+  /startNewConversation && !!ev\.sessionId && !ev\.isError/,
+  "Board condition in shouldRefreshSessions requires !ev.isError — successful completion refreshes, error does not",
+);
+assert.doesNotMatch(
+  source,
+  /startNewConversation && !!ev\.sessionId(?! && !ev\.isError)/,
+  "Board refresh must not fire on ev.isError — bare condition without the guard must not exist",
 );
 
 console.log("chat-view-lifecycle.test.ts: ok");

@@ -94,12 +94,13 @@ for (const legacy of ["mood-c", "sky", "orchid", "midnight", "openai"]) {
   assert.ok(bootScript.includes(`"${legacy}"`), `legacy theme migration contains ${legacy}`);
 }
 for (const id of [
-  "coven", "tide", "grove", "ember", "bloom", "dusk", "mist", "hex",
-  "bane", "slate", "ghosty", "claymorphism", "claude", "codex",
-  "pastel-dreams", "meatseeks", "trucker", "snow", "contrast", "beacon",
-  "solstice", "custom",
+  "coven", "tide", "ember", "slate", "ghosty", "claymorphism", "claude",
+  "codex", "pastel-dreams", "snow", "contrast", "solstice", "custom",
 ]) {
   assert.ok(bootScript.includes(`"${id}"`), `pre-paint theme allowlist contains ${id}`);
+}
+for (const removed of ["grove", "bloom", "dusk", "mist", "hex", "bane", "beacon", "trucker", "meatseeks"]) {
+  assert.doesNotMatch(bootScript, new RegExp(`"${removed}"`), `pre-paint theme allowlist omits ${removed}`);
 }
 
 function executeBootstrap(preferences) {

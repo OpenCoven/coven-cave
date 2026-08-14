@@ -1,12 +1,19 @@
 // @ts-nocheck
 // Canvas sketch editor (design-handoff redesign): the full-surface editor with
-// Select / Comment / Edit modes, persisted component comments, live inspector
-// style overrides, and the design chat that refines + persists the sketch.
+// Interact / Select / Comment / Edit modes, persisted component comments,
+// live inspector style overrides, and the design chat that refines + persists
+// the sketch.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import * as inspector from "../lib/canvas-inspector.ts";
 import { resolveEscapeAction } from "../lib/canvas-editor-escape.ts";
+import {
+  CANVAS_VIEWPORT_PRESETS,
+  canvasViewportPreset,
+  describeViewport,
+  resolveViewportScale,
+} from "../lib/canvas-viewport.ts";
 
 const {
   buildCanvasInspectorScript,
@@ -118,6 +125,7 @@ assert.match(
 
 // ── Editor source pins ──────────────────────────────────────────────────────
 const editor = readFileSync(new URL("./canvas-editor.tsx", import.meta.url), "utf8");
+const editorStyles = readFileSync(new URL("../styles/canvas-editor.css", import.meta.url), "utf8");
 
 // Contract the gallery agent wires against.
 assert.match(editor, /export function CanvasEditor\(props: \{/, "CanvasEditor is exported");
@@ -130,6 +138,11 @@ assert.match(
   "editor reports server-accepted artifact updates",
 );
 assert.match(editor, /import "@\/styles\/canvas-editor\.css";/, "editor imports its stylesheet");
+assert.doesNotMatch(
+  editorStyles,
+  /\.canvas-editor__play-(?:card|row)\b/,
+  "retired Play mode does not leave dead stylesheet selectors",
+);
 
 // Inspector wiring replicates the viewer's deliberate security boundary.
 assert.match(
@@ -164,17 +177,35 @@ assert.doesNotMatch(
   "the sketch frame never gains the app origin",
 );
 
-// Modes: one segmented control, selection enabled in every mode.
+// Modes: live interaction is the safe default; inspection is opt-in.
 assert.match(
   editor,
-  /modeButton\("select", "Select", "Select components"\)[\s\S]{0,200}?modeButton\("comment", "Comment", "Pin comments to components"\)[\s\S]{0,200}?modeButton\("edit", "Edit", "Edit fonts, borders, padding"\)/,
-  "the three modes render with the mock's tooltips",
+  /useState<EditorMode>\("interact"\)/,
+  "the editor opens with artifact controls available",
+);
+assert.match(
+  editor,
+  /modeButton\("interact", "Interact", "Use the sketch"\)[\s\S]{0,200}?modeButton\("select", "Select", "Select components"\)[\s\S]{0,200}?modeButton\("comment", "Comment", "Pin comments to components"\)[\s\S]{0,200}?modeButton\("edit", "Edit", "Edit fonts, borders, padding"\)/,
+  "the four modes render with clear tooltips",
 );
 assert.match(editor, /aria-pressed=\{mode === id\}/, "mode toggles expose pressed state");
+// The inspector's injected handler preventDefaults every trusted click, so
+// leaving it on is what made a generated sketch impossible to actually use.
+// Play mode turns it off; nothing else may.
 assert.match(
   editor,
-  /if \(!inspectorLoaded\) return;[\s\S]{0,120}?setEnabled\(true\)/,
-  "selection is enabled in every mode once the inspector authenticates",
+  /if \(!inspectorLoaded\) return;[\s\S]{0,160}?setEnabled\(mode !== "interact"\)/,
+  "the inspector yields pointer and keyboard events only in Interact mode",
+);
+assert.match(
+  editor,
+  /setEnabled\(mode !== "interact"\)[\s\S]{0,300}?\[inspectorLoaded, mode\]/,
+  "changing modes updates the authenticated inspector",
+);
+assert.match(
+  editor,
+  /mode === "interact"[\s\S]{0,300}?Use the sketch normally/,
+  "Interact mode explains that the artifact is live",
 );
 
 // Escape routes through the shared resolver: field → selection → expand.
@@ -262,6 +293,33 @@ assert.match(
   "edit mode explains that overrides are experiments",
 );
 assert.match(editor, /Apply via familiar/, "dirty style edits offer the familiar handoff");
+// Experiments need a way back out that doesn't cost the sketch's runtime state
+// (open menus, scroll, game state) — so revert clears the inline declarations
+// the overrides added instead of reloading the frame.
+assert.match(
+  editor,
+  /cleared\[property\] = "";[\s\S]{0,300}?applyStyleOverride\(selector, cleared\)/,
+  "revert removes each override with an empty value rather than reloading the sketch",
+);
+assert.match(editor, /Revert style edits/, "live style experiments expose an undo");
+
+// Attach is explicit and detachable: a live selection scopes the design-chat
+// ask only while it's attached, so a general question doesn't cost the pick.
+assert.match(
+  editor,
+  /const target = attachedRef\.current \? selectionRef\.current : null;/,
+  "only an attached selection scopes the design-chat ask",
+);
+assert.match(
+  editor,
+  /setSelection\(target\);[\s\S]{0,200}?setAttached\(true\)/,
+  "a freshly selected component arrives attached to the chat",
+);
+assert.match(
+  editor,
+  /aria-label="Detach the selected component from the design chat"/,
+  "the attach chip exposes a labelled detach control",
+);
 assert.match(
   editor,
   /follows the gallery thumbnail\s*\/\/ precedent|precedent of a fixed `#fff` sketch ground/,
@@ -335,6 +393,92 @@ assert.match(
   editorCss,
   /\.canvas-editor__frame-shell:fullscreen \{[^}]*border: 0;/,
   "native fullscreen strips the frame chrome",
+);
+
+// ── Viewport presets (cave-ztbo) ────────────────────────────────────────────
+// The design interface renders the sketch at preset device sizes: true CSS
+// pixels inside the iframe (media queries fire), scaled to fit the stage.
+assert.deepEqual(
+  CANVAS_VIEWPORT_PRESETS.map((p) => p.id),
+  ["fill", "desktop", "tablet", "phone"],
+  "the preset vocabulary: fill + three device classes",
+);
+{
+  const byId = Object.fromEntries(CANVAS_VIEWPORT_PRESETS.map((p) => [p.id, p]));
+  assert.equal(byId.fill.width, undefined, "fill has no fixed size — it tracks the stage");
+  assert.deepEqual([byId.desktop.width, byId.desktop.height], [1280, 800], "desktop preset is 1280×800");
+  assert.deepEqual([byId.tablet.width, byId.tablet.height], [768, 1024], "tablet preset is portrait 768×1024");
+  assert.deepEqual([byId.phone.width, byId.phone.height], [390, 844], "phone preset is 390×844");
+}
+assert.equal(canvasViewportPreset("tablet").id, "tablet", "presets resolve by id");
+assert.equal(canvasViewportPreset("nope").id, "fill", "unknown ids fall back to fill");
+assert.equal(resolveViewportScale(canvasViewportPreset("fill"), 500, 500), 1, "fill never scales");
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("desktop"), 640, 400),
+  0.5,
+  "a sized preset scales down to fit the tighter axis",
+);
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("phone"), 4000, 4000),
+  1,
+  "presets never upscale — small devices render 1:1 on big stages",
+);
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("desktop"), 0, 0),
+  1,
+  "an unmeasured stage (pre-ResizeObserver) resolves to 1, never 0/NaN",
+);
+assert.equal(
+  resolveViewportScale(canvasViewportPreset("desktop"), 1, 1),
+  0.05,
+  "scale floors at 0.05 so the frame can never collapse",
+);
+assert.equal(describeViewport(canvasViewportPreset("fill"), 1), null, "fill has no size caption");
+assert.equal(
+  describeViewport(canvasViewportPreset("desktop"), 0.5),
+  "1280×800 · 50%",
+  "scaled presets caption device size + zoom",
+);
+assert.equal(
+  describeViewport(canvasViewportPreset("phone"), 1),
+  "390×844",
+  "1:1 presets caption the size alone",
+);
+
+// Editor wiring: a labelled preset group in the header, and the frame box
+// stays mounted in BOTH modes so toggling presets never reloads the iframe.
+assert.match(editor, /role="group" aria-label="Viewport size"/, "header exposes the viewport preset group");
+assert.match(
+  editor,
+  /CANVAS_VIEWPORT_PRESETS\.map\(\(preset\) =>/,
+  "preset buttons render from the shared preset table",
+);
+assert.match(
+  editor,
+  /aria-pressed=\{viewportId === preset\.id\}/,
+  "the active preset is announced via aria-pressed",
+);
+assert.match(editor, /className="canvas-editor__frame-box"/, "the frame box wrapper is always mounted");
+assert.match(
+  editor,
+  /transform: `scale\(\$\{viewportScale\}\)`,\s*transformOrigin: "top left",/,
+  "the iframe renders at device pixels and scales to fit (devtools-style)",
+);
+assert.match(editor, /new ResizeObserver\(compute\)/, "scale tracks stage resizes");
+assert.match(
+  editor,
+  /nativeFullscreen\s*\? \{ width: window\.innerWidth, height: window\.innerHeight \}/,
+  "native fullscreen measures the screen — the UA forces the shell to 100%",
+);
+assert.match(
+  editorCss,
+  /\.canvas-editor__frame-shell--viewport \.canvas-editor__frame-box \{[^}]*transform: translate\(-50%, -50%\);/,
+  "the device box centers via absolute positioning — its explicit device size stays out of intrinsic sizing, so a stale scale can never stretch the pane",
+);
+assert.match(
+  editorCss,
+  /\.canvas-editor__frame-shell--viewport \.canvas-editor__frame-box \{[^}]*outline: 1px solid/,
+  "device chrome is an outline, not a border — no device pixels get clipped",
 );
 
 // ── Escape precedence: native fullscreen → field → selection → expand ───────

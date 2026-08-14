@@ -5,8 +5,16 @@ import {
   type ResearchMissionStatus,
 } from "@/lib/research-missions";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { makeProductionResearchMissionRunner } from "@/lib/server/research-mission-runner";
-import { isValidResearchMissionId } from "@/lib/server/research-mission-store";
+import {
+  makeProductionResearchMissionRunner,
+  RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT,
+  ResearchMissionLaunchInputError,
+  RESEARCH_SESSION_OWNER_REPAIR_REQUIRED,
+} from "@/lib/server/research-mission-runner";
+import {
+  isResearchFileIntegrityError,
+  isValidResearchMissionId,
+} from "@/lib/server/research-mission-store";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +31,7 @@ const MISSION_STATUSES: ResearchMissionStatus[] = [
 ];
 const ACTIONS = new Set<string>([
   ...MISSION_STATUSES.flatMap((status) => allowedResearchActions({ status })),
-  "attach-source", "update-source", "reject-artifact",
+  "attach-source", "update-source", "reject-artifact", "publish-artifact",
 ]);
 
 // Messages the runner throws when the CLIENT sent a bad request (invalid
@@ -38,14 +46,26 @@ const VALIDATION_ERRORS = new Set([
   "research artifact not found",
   "research source not found",
   "refined direction required",
+  "invalid refined direction",
+  "refined direction must be at most 2000 characters",
   "invalid project root override",
+  "research mission is not settled yet",
+  "rejected artifacts need a new working version before publishing",
+  "research artifact file missing",
+  "Research artifact is too large",
+  "Unsupported research artifact kind",
 ]);
 
 function actionErrorStatus(message: string): number {
   if (message === "research mission not found") return 404;
+  if (message === RESEARCH_SESSION_OWNER_REPAIR_REQUIRED) return 409;
+  if (message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT) return 409;
   // Manual runs are refused while the linked automation is ACTIVE — a state
   // conflict the user resolves by pausing the schedule, not a bad request.
   if (message === "pause the linked automation before running manually") return 409;
+  // Re-publishing an already-vaulted artifact is a state conflict, not a bad
+  // request — the UI resolves it by refreshing the mission.
+  if (message === "research artifact already published") return 409;
   if (
     VALIDATION_ERRORS.has(message) ||
     // Retry project-root rejections carry the offending path; source-patch
@@ -79,6 +99,18 @@ export async function POST(
     const mission = await runner.act(id, parsed.body);
     return NextResponse.json({ ok: true, mission });
   } catch (error) {
+    if (error instanceof ResearchMissionLaunchInputError) {
+      return NextResponse.json(
+        { ok: false, error: error.message, mission: error.mission },
+        { status: error.status },
+      );
+    }
+    // Workspace-containment failures (symlinked/oversized/escaping artifact
+    // reached during a manual publish/finish) are 4xx — the request was valid,
+    // the target file fails the sandbox — never a 500 (cave-v73d).
+    if (isResearchFileIntegrityError(error)) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 422 });
+    }
     const message = error instanceof Error ? error.message : "research action failed";
     return NextResponse.json(
       { ok: false, error: message },

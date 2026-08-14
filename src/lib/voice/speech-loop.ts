@@ -18,7 +18,7 @@
 // talking before the harness turn finishes) while recognition stays hushed
 // until the whole queue drains.
 
-import type { LiveSession, VoiceCallbacks, VoiceEarsEngine } from "./types.ts";
+import type { LiveSession, VoiceCallbacks, VoiceEarsEngine, VoiceMouthEngine } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
 
 /** One user turn in → the full final reply text out. Implementations may call
@@ -31,11 +31,16 @@ export type SpeechBrain = (
 ) => Promise<string>;
 
 /** The mouth half of the loop: voice one utterance, resolving when playback
- *  finishes. `cancel()` stops playback immediately (call ending). The default
- *  mouth is the system synthesizer; ElevenLabs plugs in a network mouth. */
+ *  finishes. `cancel()` stops playback immediately and retires the mouth (call
+ *  ending). `interrupt()` also stops playback but leaves the mouth usable —
+ *  barge-in, when a typed reply arrives mid-sentence — and must settle the
+ *  in-flight `speak()` promise so the loop's queue keeps draining. A mouth
+ *  without one simply finishes the current utterance. The default mouth is the
+ *  system synthesizer; ElevenLabs plugs in a network mouth. */
 export type SpeechMouth = {
   speak(text: string): Promise<void>;
   cancel(): void;
+  interrupt?(): void;
 };
 
 /** The system speechSynthesis mouth — AVSpeechSynthesizer voices on macOS
@@ -63,6 +68,11 @@ export function createSystemSynthMouth(voiceName?: string): SpeechMouth {
       });
     },
     cancel() {
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    },
+    // speechSynthesis.cancel() fires `onend` on the utterance in flight, so
+    // the pending speak() settles and the queue keeps draining.
+    interrupt() {
       if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     },
   };
@@ -155,7 +165,9 @@ export type SpeechEars = {
   close(): void;
 };
 
-export type SpeechEarsFactory = (handlers: SpeechEarsHandlers) => SpeechEars;
+/** The loop supplies its microphone stream so WebView ears can share the
+ *  same permission and mute policy. Existing ears deliberately ignore it. */
+export type SpeechEarsFactory = (handlers: SpeechEarsHandlers, mic?: MediaStream) => SpeechEars;
 
 /** WebSpeech ears — SpeechRecognition where the WebView has it (Chromium
  *  web builds). Returns null when this window has no engine. */
@@ -216,6 +228,10 @@ export type SpeechLoopOptions = {
   voiceName?: string;
   /** Custom mouth (e.g. ElevenLabs TTS). Defaults to the system synthesizer. */
   mouth?: SpeechMouth;
+  /** Engine label for the supplied `mouth`, surfaced on the LiveSession so
+   *  the call UI can say how it speaks (cave-vony). Ignored when `mouth` is
+   *  absent — the system-synth fallback labels itself. */
+  mouthEngine?: VoiceMouthEngine;
   /** Custom ears (e.g. the native macOS engine). Defaults to WebSpeech. */
   ears?: SpeechEarsFactory;
   /** Engine label for the supplied `ears`, surfaced on the LiveSession so
@@ -252,6 +268,9 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
   const utterances: string[] = [];
   let speaking = false;
   let onQueueDrained: (() => void) | null = null;
+  /** Bumped by every barge-in; a brain turn only feeds the queue while its
+   *  own epoch is still current. */
+  let speechEpoch = 0;
 
   const ears = earsFactory({
     onPartial: (text) => {
@@ -266,7 +285,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     onError: (code, hint) => {
       if (!closed) callbacks.onError(new VoiceConnectError(code, hint));
     },
-  });
+  }, mic);
 
   const listen = () => {
     if (closed || muted || speaking) return;
@@ -280,18 +299,24 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     if (closed) {
       utterances.length = 0;
       speaking = false;
+      callbacks.onSpeaking?.(null);
       onQueueDrained?.();
       return;
     }
     const text = utterances.shift();
     if (text === undefined) {
       speaking = false;
+      callbacks.onSpeaking?.(null);
       onQueueDrained?.();
       listen();
       return;
     }
     speaking = true;
     hush();
+    // The transcript highlight rides the queue, not the brain: this is the
+    // exact sentence the synthesizer is about to voice, so the overlay can
+    // mark those words as they are heard (cave-zr9dx).
+    callbacks.onSpeaking?.(text);
     mouth
       .speak(text)
       .catch((err) => {
@@ -315,6 +340,23 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     if (!speaking) speakNext();
   };
 
+  /** Barge-in: drop whatever is still queued and stop the utterance in
+   *  flight, without ending the call. The mouth's `interrupt()` settles the
+   *  pending speak() so `speakNext` runs, finds an empty queue, and hands the
+   *  floor back to the ears. A mouth without one finishes its current
+   *  sentence — the queue behind it is still dropped. */
+  const interrupt = () => {
+    if (closed) return;
+    // Muzzle the turn already in flight. A streaming brain goes on emitting
+    // sentences after the barge-in, and without this they refill the queue we
+    // just cleared — the familiar would talk over the reply that stopped it.
+    speechEpoch += 1;
+    utterances.length = 0;
+    mouth.interrupt?.();
+    callbacks.onSpeaking?.(null);
+    if (!speaking) listen();
+  };
+
   /** Resolves once every queued utterance has been voiced. */
   const queueDrained = () =>
     new Promise<void>((resolve) => {
@@ -330,8 +372,12 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
       return;
     }
     brainBusy = true;
+    const epoch = speechEpoch;
     try {
-      const finalText = await opts.brain(userText, enqueueSpeech);
+      const finalText = await opts.brain(userText, (chunk) => {
+        if (epoch !== speechEpoch) return;
+        enqueueSpeech(chunk);
+      });
       if (closed) return;
       callbacks.onAssistantTranscriptFinal(finalText);
       await queueDrained();
@@ -362,11 +408,26 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     // How this call hears (cave-vpe1): the supplied ears' label, or the
     // WebSpeech fallback labeling itself.
     earsEngine: opts.ears ? opts.earsEngine : "web-speech",
+    // How this call speaks (cave-vony): the supplied mouth's label, or the
+    // system-synth fallback labeling itself.
+    mouthEngine: opts.mouth ? opts.mouthEngine : "system-synth",
     setMuted(next: boolean) {
       muted = next;
       for (const track of mic.getAudioTracks()) track.enabled = !next;
       if (next) hush();
       else listen();
+    },
+    interrupt,
+    // A typed reply is a first-class turn: it barges in on whatever the
+    // familiar was still saying, lands in the transcript like a spoken one,
+    // and goes to the same brain. Muting the mic does not disable it — that
+    // is the point of being able to type instead of speak.
+    sendText(text: string) {
+      const trimmed = text.trim();
+      if (closed || !trimmed) return;
+      interrupt();
+      callbacks.onUserTranscriptFinal(trimmed);
+      void askBrain(trimmed);
     },
     async close() {
       closed = true;

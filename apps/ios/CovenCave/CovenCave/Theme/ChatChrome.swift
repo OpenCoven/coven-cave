@@ -68,6 +68,8 @@ struct CircularIconButton: View {
                 .glass(.control, in: Circle())
                 .accentGlow(active: active)
         }
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
         .buttonStyle(.glassPress)
         .accessibilityLabel(label)
     }
@@ -169,57 +171,16 @@ struct FloatingActionMenu: View {
     }
 }
 
-// MARK: - DrawerRow
-
-/// Icon + label row for the side drawer: quiet by default, accent-tinted only
-/// while it names the active destination.
-struct DrawerRow: View {
-    let systemImage: String
-    let label: String
-    var detail: String? = nil
-    var active: Bool = false
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-                    .frame(width: 24)
-                Text(label)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(active ? Color.accentColor.opacity(0.12) : .clear)
-            )
-        }
-        .buttonStyle(GlassPressStyle(scale: 0.98))
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(active ? [.isSelected] : [])
-    }
-}
-
 // MARK: - EmptyChatSuggestionRow
 
 /// A spacious icon + short-label row for the empty chat state; tapping fills
 /// the composer so the user can tweak before sending.
 struct EmptyChatSuggestionRow: View {
+    @Environment(\.chrome) private var chrome
     let systemImage: String
     let label: String
+    /// Optional muted second line (design's suggestion-card hint).
+    var hint: String? = nil
     var action: () -> Void
 
     var body: some View {
@@ -227,23 +188,44 @@ struct EmptyChatSuggestionRow: View {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 30, height: 30)
-                    .glassFill(.raised, in: Circle())
-                Text(label)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
+                    .foregroundStyle(chrome.accent)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        chrome.accent.opacity(0.14),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let hint {
+                        Text(hint)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .glass(.raised, in: RoundedRectangle(cornerRadius: ChatChrome.menuRadius, style: .continuous))
+            .padding(.vertical, 11)
+            .frame(minHeight: 64)
+            .background(
+                chrome.bgRaised,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(chrome.border, lineWidth: 1)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(GlassPressStyle(scale: 0.98))
-        .accessibilityLabel(label)
+        .accessibilityLabel(hint == nil ? label : "\(label). \(hint!)")
         .accessibilityHint("Fills the message field")
     }
 }

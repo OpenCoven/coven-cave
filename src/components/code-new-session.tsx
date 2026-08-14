@@ -25,11 +25,18 @@ export function CodeNewSession({
   open,
   onClose,
   onCreated,
+  initialPrompt,
 }: {
   open: boolean;
   onClose: () => void;
   /** Fired as soon as the bridge announces the new session id. */
   onCreated: (sessionId: string) => void;
+  /**
+   * Seeds the kickoff prompt when the flow is opened from somewhere that
+   * already knows what the session is for — the Code picker's
+   * "start a new session about <query>" path (cave-0rcku).
+   */
+  initialPrompt?: string;
 }) {
   const [projects, setProjects] = useState<CaveProject[]>([]);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
@@ -40,6 +47,16 @@ export function CodeNewSession({
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const busy = phase.kind === "provisioning" || phase.kind === "starting";
+
+  // Seed once per opening, not on every `initialPrompt` change: the caller
+  // holds the seed in state for as long as the modal is mounted, and re-running
+  // this would overwrite whatever the user has since typed.
+  useEffect(() => {
+    if (!open) return;
+    const seed = initialPrompt?.trim();
+    if (seed) setPrompt(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,6 +116,15 @@ export function CodeNewSession({
 
     setPhase({ kind: "starting" });
     let announced = false;
+    const announce = (sessionId: string) => {
+      if (announced) return;
+      announced = true;
+      // The component stays mounted after the parent closes the modal, so
+      // restore idle state here — Modal never fires onClose on a prop flip,
+      // and a phase stuck on "starting" bricks every later open.
+      reset();
+      onCreated(sessionId);
+    };
     // Fire-and-continue: the moment the session id arrives the rail can select
     // it; the stream keeps flowing server-side and Chat shows the transcript.
     void streamFamiliarText({
@@ -106,19 +132,22 @@ export function CodeNewSession({
       prompt: prompt.trim(),
       projectRoot: cwd,
       runId: `code-new-session-${Date.now().toString(36)}`,
-      onSession: (sessionId) => {
-        if (announced) return;
-        announced = true;
-        onCreated(sessionId);
-      },
-    }).then((result) => {
-      if (!announced && result.sessionId) {
-        announced = true;
-        onCreated(result.sessionId);
-      } else if (!announced && result.error) {
-        setPhase({ kind: "error", message: result.error });
-      }
-    });
+      onSession: announce,
+    })
+      .then((result) => {
+        if (!announced && result.sessionId) {
+          announce(result.sessionId);
+        } else if (!announced && result.error) {
+          setPhase({ kind: "error", message: result.error });
+        }
+      })
+      .catch((err) => {
+        // A dropped stream rejects the reader; only surface it if the session
+        // id never arrived (afterwards the run lives server-side regardless).
+        if (!announced) {
+          setPhase({ kind: "error", message: err instanceof Error ? err.message : "Couldn’t start the session." });
+        }
+      });
   }
 
   function reset() {

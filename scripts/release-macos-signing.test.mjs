@@ -20,10 +20,36 @@ const sidecarTargetModule = readFileSync(
   "utf8",
 );
 
-test("macOS release signing includes node-pty spawn-helper Mach-O files", () => {
+function getWorkflowJob(name) {
+  const lines = releaseWorkflow.split(/\r?\n/);
+  const marker = `  ${name}:`;
+  const start = lines.findIndex((line) => line === marker);
+  assert.notEqual(start, -1, `release workflow must define the ${name} job`);
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^  [A-Za-z0-9_-]+:\s*$/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+test("macOS release signing includes native files without executable mode", () => {
   assert.match(
     releaseScript,
-    /-name "\*\.node" -o -name "spawn-helper" -o -perm \+111/,
+    /-name "\*\.node" -o -name "spawn-helper" -o -name "espeak-ng" -o -perm \+111/,
+  );
+  const nativeSigning = releaseScript.slice(
+    releaseScript.indexOf('echo "==> Signing every native binary inside the bundle"'),
+    releaseScript.indexOf('echo "==> Sealing the .app envelope"'),
+  );
+  assert.match(nativeSigning, /! retry 3 10 codesign[\s\S]*exit 1/);
+  assert.doesNotMatch(
+    nativeSigning,
+    /failed to sign[\s\S]*\n\s*\}/,
+    "a nested signing failure must not be downgraded to a warning",
   );
 });
 
@@ -145,8 +171,13 @@ test("Linux release job forces AppImage extract-and-run mode", () => {
   );
 });
 
+// One spelling of the step name, used by every reference below. Three copies
+// drifted apart once already (#2987 renamed the step; one lookup kept the old
+// name and silently resolved to -1), so this is deliberately a single constant.
+const STRIP_STEP_NAME = "name: Strip bundled GLib/libmount from AppImage";
+
 test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-compatible", () => {
-  assert.match(releaseWorkflow, /name: Strip bundled GLib\/libmount from AppImage/);
+  assert.ok(releaseWorkflow.includes(STRIP_STEP_NAME), "strip step must exist under its exact name");
   assert.match(releaseWorkflow, /libglib-2\.0\*/);
   assert.match(releaseWorkflow, /APPIMAGETOOL_SHA256: \$\{\{ vars\.APPIMAGETOOL_SHA256 \}\}/);
   assert.match(releaseWorkflow, /sha256sum --check --status/);
@@ -159,7 +190,7 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
   assert.match(releaseWorkflow, /pnpm exec tauri signer sign/);
   assert(
     releaseWorkflow.indexOf("name: Sign Linux/Windows updater artifact") <
-      releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage"),
+      releaseWorkflow.indexOf(STRIP_STEP_NAME),
     "GLib strip must run after initial signing so the repacked artifact is the final signed version",
   );
   assert(
@@ -167,9 +198,19 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
       releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber'),
     "the repacked AppImage itself must be uploaded before its regenerated signature",
   );
-  const stripStepStart = releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage");
+  // Match the step by shape rather than by its exact title. What this guard is
+  // actually about is the SLICE — the lines below assert the strip step carries
+  // no GH_TOKEN and no signing key — and pinning the full name coupled that
+  // safety check to cosmetic wording. #2987 added libmount stripping, renamed
+  // the step to "Strip bundled GLib/libmount from AppImage", and turned main
+  // red on a required check (cave-ewnel).
+  const stripStepMatch = releaseWorkflow.match(/name: Strip bundled [^\n]*AppImage/);
+  const stripStepStart = stripStepMatch?.index ?? -1;
   const stripStepEnd = releaseWorkflow.indexOf("name: Upload and re-sign stripped AppImage");
-  assert.ok(stripStepStart !== -1, "strip step must exist under its exact name");
+  assert.ok(
+    stripStepStart !== -1,
+    "strip step must exist (a step named 'Strip bundled … AppImage')",
+  );
   assert.ok(stripStepEnd > stripStepStart, "upload/re-sign step must follow the strip step");
   const stripStep = releaseWorkflow.slice(stripStepStart, stripStepEnd);
   assert.ok(stripStep.length > 0, "strip-step slice must be non-empty for the secret-isolation guard to mean anything");
@@ -177,18 +218,116 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
   assert.doesNotMatch(stripStep, /TAURI_SIGNING_PRIVATE_KEY/);
 });
 
-test("manual release retries build from the release tag before publishing", () => {
+test("manual release verifies the tag once and pins publication to its commit", () => {
   assert.doesNotMatch(releaseWorkflow, /source_ref:/);
   assert.doesNotMatch(releaseWorkflow, /github\.event\.inputs\.source_ref/);
   assert.match(
     releaseWorkflow,
-    /ref: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref \}\}/,
-    "release checkouts must use the same tag/ref whose release receives assets",
+    /release-commit: \$\{\{ steps\.tag\.outputs\.commit \}\}/,
+    "the source gate must expose the commit peeled from the verified release tag",
   );
+  for (const jobName of ["build", "checksums", "updater-manifest"]) {
+    assert.match(
+      getWorkflowJob(jobName),
+      /ref: \$\{\{ needs\.source-version\.outputs\.release-commit \}\}/,
+      `${jobName} must use the immutable commit verified by the source-version gate`,
+    );
+  }
   assert.match(
     releaseWorkflow,
     /RAW_RELEASE_TAG: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref_name \}\}/,
     "release attachment metadata must continue to come from the tag input",
+  );
+  assert.match(
+    releaseWorkflow,
+    /use_current_release_tooling:[\s\S]*default: false[\s\S]*type: boolean/,
+    "recovery tooling overlay must require an explicit manual-dispatch input",
+  );
+  assert.match(
+    releaseWorkflow,
+    /name: Overlay audited recovery release tooling[\s\S]*github\.event_name == 'workflow_dispatch' && inputs\.use_current_release_tooling/,
+    "tag pushes must never overlay release tooling",
+  );
+  assert.match(
+    releaseWorkflow,
+    /RECOVERY_TOOLING_SHA: \$\{\{ github\.sha \}\}[\s\S]*git fetch --no-tags --depth=1 origin "\$RECOVERY_TOOLING_SHA"/,
+    "manual recovery tooling must be pinned to the reviewed workflow commit",
+  );
+  assert.match(
+    releaseWorkflow,
+    /scripts\/release\.sh[\s\S]*scripts\/sidecar-bundle\.sh[\s\S]*scripts\/windows-msi-budget\.ps1/,
+    "the allowlist must cover only the three packaging scripts needed by v0.2.0 recovery",
+  );
+});
+
+test("release packages and checksum manifest receive GitHub artifact attestations", () => {
+  const buildJob = getWorkflowJob("build");
+  const checksumsJob = getWorkflowJob("checksums");
+
+  for (const job of [buildJob, checksumsJob]) {
+    assert.match(job, /^\s{4}permissions:\n\s{6}contents: write\n\s{6}id-token: write\n\s{6}attestations: write$/m);
+  }
+
+  assert.match(
+    buildJob,
+    /name: Attest Linux AppImage[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: src-tauri\/target\/release\/bundle\/\*\*\/\*\.AppImage/,
+  );
+  assert.match(
+    buildJob,
+    /name: Attest Windows MSI[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: src-tauri\/target\/release\/bundle\/\*\*\/\*\.msi/,
+  );
+  assert.match(
+    buildJob,
+    /name: Attest macOS DMG[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: release\/CovenCave-v\$\{\{ env\.RELEASE_VERSION \}\}-\$\{\{ matrix\.arch_suffix \}\}\.dmg/,
+  );
+  assert.match(
+    checksumsJob,
+    /name: Attest SHA256SUMS[\s\S]*uses: actions\/attest@[0-9a-f]{40} # v4[\s\S]*subject-path: _release\/SHA256SUMS/,
+  );
+
+  assert(
+    buildJob.indexOf("name: Upload and re-sign stripped AppImage") <
+      buildJob.indexOf("name: Attest Linux AppImage"),
+    "the final repacked AppImage must be uploaded and re-signed before it is attested",
+  );
+  assert(
+    buildJob.indexOf("name: Publish validated Windows MSI") <
+      buildJob.indexOf("name: Attest Windows MSI"),
+    "the budget-approved MSI must be final before it is attested",
+  );
+  assert(
+    buildJob.indexOf("name: Verify macOS DMG is notarized") <
+      buildJob.indexOf("name: Attest macOS DMG"),
+    "the DMG must pass notarization verification before it is attested",
+  );
+  assert(
+    checksumsJob.indexOf("name: Compute SHA256SUMS") <
+      checksumsJob.indexOf("name: Attest SHA256SUMS"),
+    "the checksum manifest must be complete before it is attested",
+  );
+});
+
+test("Windows release publication treats an absent release as a recoverable probe result", () => {
+  const buildJob = getWorkflowJob("build");
+  const publishStep = buildJob.slice(
+    buildJob.indexOf("name: Publish validated Windows MSI"),
+    buildJob.indexOf("name: Sign Linux/Windows updater artifact"),
+  );
+
+  assert.match(
+    publishStep,
+    /function Test-GitHubRelease[\s\S]*ErrorActionPreference = "SilentlyContinue"[\s\S]*gh release view \$env:RELEASE_TAG \*> \$null[\s\S]*return \$LASTEXITCODE -eq 0/,
+    "the expected not-found probe must not terminate the PowerShell step",
+  );
+  assert.match(
+    publishStep,
+    /ErrorActionPreference = "Continue"[\s\S]*gh release create \$env:RELEASE_TAG[\s\S]*\$createExitCode = \$LASTEXITCODE/,
+    "a concurrent create race must be handled by exit code and a follow-up probe",
+  );
+  assert.match(
+    publishStep,
+    /if \(-not \(Test-GitHubRelease\)\)[\s\S]*if \(\$createExitCode -ne 0\)[\s\S]*if \(-not \(Test-GitHubRelease\)\)/,
+    "both initial absence and a losing create race must use the non-terminating probe",
   );
 });
 

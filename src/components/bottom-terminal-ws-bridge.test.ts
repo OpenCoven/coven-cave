@@ -10,7 +10,7 @@ assert.doesNotMatch(src, /platform === "ios" \|\| platform === "android"[\s\S]{0
 assert.match(src, /if \(platform !== "desktop"\) return;/, "Tauri IPC path remains desktop-only");
 assert.match(src, /if \(platform !== "browser" && platform !== "ios" && platform !== "android"\) return;/, "WS bridge path covers browser and Tauri-mobile");
 assert.match(src, /bridge\.connect\(threadId,\s*term\.cols,\s*term\.rows,\s*projectRootRef\.current\)/, "WS bridge connects with terminal dimensions and cwd");
-assert.match(src, /bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/, "terminal input flows to WS bridge");
+assert.match(src, /bridge\.write\(new TextEncoder\(\)\.encode\(out\)\)/, "terminal input flows to WS bridge");
 assert.match(src, /bridge\.resize\(cols,\s*rows\)/, "terminal resize flows to WS bridge (throttled via makeResizer)");
 assert.match(src, /bridge\.dispose\(\)/, "WS bridge is disposed on cleanup");
 
@@ -18,16 +18,35 @@ console.log("bottom-terminal-ws-bridge.test.ts OK");
 
 // ── Disconnect recovery (the "terminal stopped accepting input" class) ───────
 assert.match(src, /bridge\.onClose\(/, "terminal reacts to a dropped socket instead of freezing");
-assert.match(src, /terminal disconnected — reconnecting/, "drop is announced in the pane");
+assert.match(src, /srAnnounce\("Terminal disconnected, reconnecting", "assertive"\)/, "drop is announced without writing non-PTY bytes into xterm");
+assert.doesNotMatch(src, /terminal disconnected — reconnecting/, "reconnect status never corrupts byte-continuous terminal state");
 assert.match(src, /const RECONNECT_DELAYS_MS = \[0, 1000, 3000\]/, "reconnect retries with capped backoff");
 assert.match(
   src,
-  /if \(!bridge\.isOpen\) \{[\s\S]{0,260}attemptReconnect\(\);[\s\S]{0,80}return;[\s\S]{0,120}bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/,
+  /if \(!bridge\.isOpen\) \{[\s\S]{0,260}attemptReconnect\(\);[\s\S]{0,80}return;[\s\S]{0,120}bridge\.write\(new TextEncoder\(\)\.encode\(out\)\)/,
   "typing on a dead socket revives the terminal instead of vanishing into a no-op write",
 );
-assert.match(src, /term\.reset\(\);[\s\S]{0,400}await bridge\.reconnect\(\)/, "screen resets before reattach so the server replay paints clean");
-assert.match(src, /term\.reset\(\);[\s\S]{0,300}decoderRef\.current = new TextDecoder/, "the streaming decoder is reset on reconnect so replayed scrollback decodes cleanly");
-assert.match(src, /reason === "replaced"/, "a take-over by another window is announced, not fought with reconnects");
+// Broadcast input (cave-98o51) reuses this same transport rather than adding a
+// second PTY API, and a write made through the handle must NOT re-fire
+// onUserInput — otherwise a broadcast echoes back into the pane that sent it.
+assert.match(
+  src,
+  /sendToPtyRef\.current = writeToPty;/,
+  "each transport republishes its writer so the imperative handle always targets the live path",
+);
+assert.match(
+  src,
+  /useImperativeHandle\(\s*writerRef,\s*\(\) => \(\{ write: \(data: string\) => sendToPtyRef\.current\?\.\(data\) \}\)/,
+  "the writer handle is write-only and no-ops while disconnected",
+);
+assert.match(
+  src,
+  /sendToPtyRef\.current = null;/,
+  "teardown drops the writer so a broadcast can't write into an unmounted pane",
+);
+assert.match(src, /if \(!bridge\.hasReplayCursor\) \{[\s\S]{0,260}term\.reset\(\);[\s\S]{0,400}await bridge\.reconnect\(\)/, "older full-replay servers reset before reattach");
+assert.match(src, /bridge\.onReplayReset\(\(\) => \{[\s\S]{0,300}term\.reset\(\);[\s\S]{0,300}decoderRef\.current = new TextDecoder/, "expired cursor fallback resets the terminal and decoder before bounded full replay");
+assert.match(src, /reason === "replaced"[\s\S]{0,260}srAnnounce/, "a take-over by another window is announced, not fought with reconnects");
 
 // ── PTY lifetime is decoupled from view lifetime ──────────────────────────────
 // Unmount is usually a keepalive tab-switch remount; killing the PTY there
@@ -85,3 +104,24 @@ assert.match(
 );
 assert.match(src, /removeEventListener\("visibilitychange", onForeground\)/, "foreground listeners are torn down on cleanup");
 console.log("bottom-terminal iOS-resume assertions: ok");
+
+// ── Sticky Ctrl reaches the WS bridge (the mobile key bar's only transport) ──
+// The fold used to live inline in the Tauri desktop handler alone, so the key
+// bar — a touch affordance — did nothing on browser/iOS/Android, where the WS
+// bridge is the transport: Ctrl-C sent a literal "c". One shared helper now
+// serves both, so pin that neither path folds on its own again.
+assert.match(
+  src,
+  /const foldStickyCtrlRef = useRef<\(data: string\) => string>/,
+  "sticky-Ctrl folding is a single shared helper, not per-transport",
+);
+assert.equal(
+  (src.match(/foldStickyCtrlRef\.current\(data\)/g) ?? []).length,
+  2,
+  "BOTH transports fold sticky Ctrl — desktop IPC and the WS bridge",
+);
+assert.doesNotMatch(
+  src,
+  /if \(ctrlStickyRef\.current && data\.length === 1\)/,
+  "no transport re-implements the fold inline",
+);

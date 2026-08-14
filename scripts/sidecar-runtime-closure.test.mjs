@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import {
   assembleSidecarRuntime,
   collectTracedDependencies,
+  isInsideAllowedRoots,
   SIDECAR_FORBIDDEN_ROOTS,
+  SIDECAR_NEXT_RUNTIME_FILES,
+  SIDECAR_RUNTIME_BUDGET_FILE,
   SIDECAR_RUNTIME_BUDGETS,
   verifySidecarRuntime,
 } from "./sidecar-runtime-closure.mjs";
-import { publishSidecarArchive } from "./sidecar-archive-manifest.mjs";
+import { publishSidecarArchive, writeSidecarArchiveManifest } from "./sidecar-archive-manifest.mjs";
 
 async function write(root, relativePath, contents = "fixture\n") {
   const output = path.join(root, relativePath);
@@ -80,6 +83,9 @@ try {
     await packageFixture(projectRoot, packageName);
     await packageFixture(path.dirname(dependencyRoot), packageName);
   }
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+  }
   await write(projectRoot, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(dependencyRoot, "@img/sharp-win32-x64/lib/libvips-42.dll", "native dependency\n");
   await write(projectRoot, "node_modules/foo/node_modules/evil/index.js", "must not be copied\n");
@@ -97,18 +103,40 @@ try {
 
   await assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination);
   const metrics = await verifySidecarRuntime(destination);
-  assert.ok(metrics.fileCount <= 5_667);
+  // The fixture closure is tiny; this only asserts the verifier measures it
+  // against the real budget rather than a stub.
+  assert.ok(metrics.fileCount <= SIDECAR_RUNTIME_BUDGETS.fileCount);
   assert.ok(metrics.unpackedBytes < 200 * 1024 * 1024);
-  assert.deepEqual(SIDECAR_RUNTIME_BUDGETS, {
-    fileCount: 5_667,
-    unpackedBytes: 200 * 1024 * 1024 - 1,
-  });
+  // cave-0ia8h: the file count is no longer pinned to a literal here. It is
+  // read from scripts/sidecar-runtime-budget.json, so pinning the value in this
+  // file would just recreate one of the six hand-synced copies that motivated
+  // the change. What is worth asserting is that the wiring HOLDS: the budget
+  // actually comes from that file, and it is a usable positive integer rather
+  // than an undefined that would make every `<=` comparison false and leave the
+  // gate silently passing.
+  const declaredBudget = JSON.parse(await readFile(SIDECAR_RUNTIME_BUDGET_FILE, "utf8"));
+  assert.equal(
+    SIDECAR_RUNTIME_BUDGETS.fileCount,
+    declaredBudget.fileCount,
+    "the runtime budget must be the number declared in sidecar-runtime-budget.json",
+  );
+  assert.ok(
+    Number.isSafeInteger(SIDECAR_RUNTIME_BUDGETS.fileCount) && SIDECAR_RUNTIME_BUDGETS.fileCount > 0,
+    "a non-integer budget would disable the gate rather than fail it",
+  );
+  assert.equal(SIDECAR_RUNTIME_BUDGETS.unpackedBytes, 200 * 1024 * 1024 - 1);
 
   assert.equal(JSON.parse(await readFile(path.join(destination, "package.json"), "utf8")).version, "9.8.7");
   assert.equal(await readFile(path.join(destination, "marketplace/catalog.json"), "utf8"), "{}\n");
   assert.equal(await readFile(path.join(destination, "marketplace/plugins/example/plugin.json"), "utf8"), "{}\n");
   assert.equal(await readFile(path.join(destination, "workflows/example.yaml"), "utf8"), "id: example\n");
   assert.equal(await readFile(path.join(destination, "public/sandbox/tailwind.js"), "utf8"), "tailwind\n");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    assert.equal(
+      await readFile(path.join(destination, "node_modules", "next", relativePath), "utf8"),
+      "next runtime fixture\n",
+    );
+  }
   assert.equal(await readFile(path.join(destination, "node_modules/foo/index.js"), "utf8"), 'module.exports = "foo";\n');
   assert.equal(
     await readFile(path.join(destination, "node_modules/@img/sharp-win32-x64/lib/libvips-42.dll"), "utf8"),
@@ -119,6 +147,39 @@ try {
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {
     assert.ok(await missing(path.join(destination, forbiddenRoot)), `${forbiddenRoot} must be excluded`);
   }
+
+  const missingRuntimePath = SIDECAR_NEXT_RUNTIME_FILES[0];
+  await rm(path.join(dependencyRoot, "next", missingRuntimePath));
+  await assert.rejects(
+    assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+    new RegExp(`required Next sidecar runtime file is missing: ${missingRuntimePath.replace(/[.*+?^${}()|[\\]\\]/g, "\\\\$&")}`),
+    "assembly must fail clearly when a required Next runtime file is absent",
+  );
+  await write(dependencyRoot, path.join("next", missingRuntimePath), "next runtime fixture\n");
+
+  const directoryRuntimePath = SIDECAR_NEXT_RUNTIME_FILES[1];
+  await rm(path.join(dependencyRoot, "next", directoryRuntimePath));
+  await mkdir(path.join(dependencyRoot, "next", directoryRuntimePath), { recursive: true });
+  await assert.rejects(
+    assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+    /required Next sidecar runtime file is not a regular file/,
+    "assembly must reject a directory where a required Next runtime file belongs",
+  );
+  await rm(path.join(dependencyRoot, "next", directoryRuntimePath), { recursive: true });
+  await write(dependencyRoot, path.join("next", directoryRuntimePath), "next runtime fixture\n");
+  await assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination);
+
+  const verifiedDirectoryPath = SIDECAR_NEXT_RUNTIME_FILES[2];
+  const verifiedDirectory = path.join(destination, "node_modules", "next", verifiedDirectoryPath);
+  await rm(verifiedDirectory);
+  await mkdir(verifiedDirectory, { recursive: true });
+  await assert.rejects(
+    verifySidecarRuntime(destination),
+    /required sidecar runtime file is not a regular file: node_modules[\\/]next[\\/]dist[\\/]compiled[\\/]webpack[\\/]bundle5\.js/,
+    "final runtime verification must reject a non-file required entry",
+  );
+  await rm(verifiedDirectory, { recursive: true });
+  await write(destination, path.join("node_modules", "next", verifiedDirectoryPath), "next runtime fixture\n");
 
   const optionalPackage = "@next/swc-linux-x64-gnu";
   await packageFixture(projectRoot, optionalPackage);
@@ -171,12 +232,95 @@ try {
     await packageFixture(path.dirname(dependencyRoot), "sharp");
   }
 
+  // The explicit Next runtime files are nested below a package root, so the
+  // package directory itself must also be confined rather than only its final
+  // file entry.
+  const externalNextRoot = path.join(projectRoot, "outside-allowed-roots", "next");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(externalNextRoot, relativePath, "outside runtime\n");
+  }
+  await packageFixture(standaloneRoot, "next");
+  await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+  try {
+    await symlink(
+      externalNextRoot,
+      path.join(dependencyRoot, "next"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar dependency link escapes its allowed roots/,
+      "Next runtime files must not follow a package-root link outside the locked production root",
+    );
+  } catch (error) {
+    if (!["EPERM", "EACCES", "ENOSYS"].includes(error.code)) throw error;
+    console.warn(`sidecar-runtime-closure.test: Next package-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+    await packageFixture(path.dirname(dependencyRoot), "next");
+    for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+      await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+    }
+  }
+
+  // A package-root link that stays inside node_modules must still point to the
+  // actual Next package; otherwise the explicit paths could import an
+  // unrelated dependency tree that happens to contain matching filenames.
+  const unrelatedNextRoot = path.join(projectRoot, "node_modules", "unrelated-next");
+  await packageFixture(projectRoot, "unrelated-next");
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    await write(unrelatedNextRoot, relativePath, "unrelated runtime\n");
+  }
+  await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+  try {
+    await symlink(
+      unrelatedNextRoot,
+      path.join(dependencyRoot, "next"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar Next package root is not the Next package/,
+      "an allowed-root link must still resolve to the actual Next package",
+    );
+  } catch (error) {
+    if (!(["EPERM", "EACCES", "ENOSYS"].includes(error.code))) throw error;
+    console.warn(`sidecar-runtime-closure.test: internal Next package-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(path.join(dependencyRoot, "next"), { recursive: true, force: true });
+    await packageFixture(path.dirname(dependencyRoot), "next");
+    for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+      await write(dependencyRoot, path.join("next", relativePath), "next runtime fixture\n");
+    }
+  }
+
+  const externalNextFile = path.join(projectRoot, "node_modules", "unrelated-runtime.js");
+  await writeFile(externalNextFile, "outside runtime\n", "utf8");
+  const linkedRuntimePath = path.join(dependencyRoot, "next", SIDECAR_NEXT_RUNTIME_FILES[0]);
+  await rm(linkedRuntimePath);
+  try {
+    await symlink(
+      externalNextFile,
+      linkedRuntimePath,
+      process.platform === "win32" ? "file" : undefined,
+    );
+    await assert.rejects(
+      assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination),
+      /sidecar dependency link escapes its allowed roots/,
+      "Next runtime files must not follow a link into an unrelated dependency tree",
+    );
+  } catch (error) {
+    if (!(["EPERM", "EACCES", "ENOSYS"].includes(error.code))) throw error;
+    console.warn(`sidecar-runtime-closure.test: Next file-link confinement skipped (${error.code})`);
+  } finally {
+    await rm(linkedRuntimePath, { force: true });
+    await write(dependencyRoot, linkedRuntimePath.slice(dependencyRoot.length + 1), "next runtime fixture\n");
+  }
+
   const publishedArchive = path.join(fixture, "published", "server.tar.zst");
   const publishedManifest = path.join(fixture, "published", "manifest.json");
   const interruptedArchive = path.join(fixture, "published", ".server.tar.zst.interrupted.tmp");
   await mkdir(path.dirname(publishedArchive), { recursive: true });
-  await writeFile(publishedArchive, "previous archive\n");
-  await writeFile(publishedManifest, "previous manifest\n");
   await writeFile(interruptedArchive, "candidate archive\n");
   await assert.rejects(
     publishSidecarArchive(
@@ -188,8 +332,8 @@ try {
     /ENOENT/,
     "failed verification must interrupt publication",
   );
-  assert.equal(await readFile(publishedArchive, "utf8"), "previous archive\n");
-  assert.equal(await readFile(publishedManifest, "utf8"), "previous manifest\n");
+  assert.ok(await missing(publishedArchive), "failed first publication must not leave a public archive");
+  assert.ok(await missing(publishedManifest), "failed first publication must not leave a public manifest");
   assert.ok(await missing(interruptedArchive), "failed publication must remove its staged archive");
 
   const verifiedArchive = path.join(fixture, "published", ".server.tar.zst.verified.tmp");
@@ -201,9 +345,197 @@ try {
     publishedManifest,
   );
   const publishedArchiveBytes = await readFile(publishedArchive);
+  const publishedManifestBytes = await readFile(publishedManifest);
   assert.equal(createHash("sha256").update(publishedArchiveBytes).digest("hex"), published.archiveSha256);
   assert.deepEqual(JSON.parse(await readFile(publishedManifest, "utf8")), published);
   assert.ok(await missing(verifiedArchive), "successful publication must consume its staged archive");
+  assert.ok(await missing(`${publishedArchive}.previous`), "successful publication must remove its archive backup");
+  assert.ok(await missing(`${publishedManifest}.previous`), "successful publication must remove its manifest backup");
+
+  await write(projectRoot, "public/sandbox/tailwind.js", "changed runtime\n");
+  const candidateArchive = path.join(fixture, "published", ".server.tar.zst.candidate.tmp");
+  const candidateManifest = path.join(fixture, "published", ".manifest.json.candidate.tmp");
+  await writeSidecarArchiveManifest(path.join(projectRoot, "public"), candidateArchive, candidateManifest);
+  const candidateArchiveBytes = await readFile(candidateArchive);
+  const candidateManifestBytes = await readFile(candidateManifest);
+  assert.notDeepEqual(candidateArchiveBytes, publishedArchiveBytes, "rollback candidate must differ from the prior archive");
+
+  const failedManifestArchive = path.join(fixture, "published", ".server.tar.zst.failed-manifest.tmp");
+  const failedManifestTemp = path.join(fixture, "published", ".manifest.json.failed-manifest.tmp");
+  const failedManifestSentinel = path.join(publishedManifest, "unrelated.txt");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(projectRoot, "public"),
+      failedManifestArchive,
+      publishedArchive,
+      publishedManifest,
+      failedManifestTemp,
+      {
+        beforeManifestPublish: async () => {
+          await rm(publishedManifest, { force: true });
+          await mkdir(publishedManifest);
+          await writeFile(failedManifestSentinel, "must survive rollback\n");
+        },
+      },
+    ),
+    /EISDIR|EPERM|ENOTDIR|EACCES/,
+    "final manifest publication failure must reject",
+  );
+  assert.deepEqual(
+    await readFile(publishedArchive),
+    publishedArchiveBytes,
+    "final failure must restore the prior archive before manifest recovery is pending",
+  );
+  assert.equal(await readFile(failedManifestSentinel, "utf8"), "must survive rollback\n");
+  assert.ok(await missing(failedManifestArchive), "final failure must remove its staged archive");
+  assert.ok(await missing(failedManifestTemp), "final failure must remove its staged manifest");
+  assert.ok(await missing(`${publishedArchive}.previous`), "final failure must consume its restored archive backup");
+  assert.equal(await missing(`${publishedManifest}.previous`), false, "final failure must retain its manifest backup");
+
+  await rm(publishedManifest, { recursive: true });
+  const rollbackArchive = path.join(fixture, "published", ".server.tar.zst.rollback.tmp");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(fixture, "missing-runtime"),
+      rollbackArchive,
+      publishedArchive,
+      publishedManifest,
+    ),
+    /ENOENT/,
+    "the next publication must recover the preserved prior pair",
+  );
+  assert.deepEqual(await readFile(publishedArchive), publishedArchiveBytes, "recovery must restore the prior public archive");
+  assert.deepEqual(await readFile(publishedManifest), publishedManifestBytes, "recovery must restore the prior manifest");
+  assert.ok(await missing(rollbackArchive), "recovery failure must remove its staged archive");
+  assert.ok(await missing(`${publishedArchive}.previous`), "recovery must consume the prior archive backup");
+  assert.ok(await missing(`${publishedManifest}.previous`), "recovery must consume the prior manifest backup");
+
+  const previousArchive = `${publishedArchive}.previous`;
+  const previousManifest = `${publishedManifest}.previous`;
+  await rename(publishedArchive, previousArchive);
+  await writeFile(publishedArchive, candidateArchiveBytes);
+  await writeFile(previousManifest, publishedManifestBytes);
+  await rm(candidateArchive);
+  await rm(candidateManifest);
+
+  const interruptedRollbackArchive = path.join(fixture, "published", ".server.tar.zst.interrupted-rollback.tmp");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(fixture, "missing-runtime"),
+      interruptedRollbackArchive,
+      publishedArchive,
+      publishedManifest,
+    ),
+    /ENOENT/,
+    "recovery must preserve the original publication when the next build fails",
+  );
+  assert.deepEqual(
+    await readFile(publishedArchive),
+    publishedArchiveBytes,
+    "recovery must restore the prior public archive",
+  );
+  assert.deepEqual(await readFile(publishedManifest), publishedManifestBytes, "recovery must restore the prior manifest");
+  assert.ok(await missing(interruptedRollbackArchive), "failed publication must remove its staged archive");
+  assert.ok(await missing(previousArchive), "recovery must consume the prior archive backup");
+  assert.ok(await missing(previousManifest), "recovery must consume the prior manifest backup");
+
+  await writeFile(previousManifest, publishedManifestBytes);
+  await writeFile(publishedManifest, candidateManifestBytes);
+  const partialRestoreArchive = path.join(fixture, "published", ".server.tar.zst.partial-restore.tmp");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(fixture, "missing-runtime"),
+      partialRestoreArchive,
+      publishedArchive,
+      publishedManifest,
+    ),
+    /ENOENT/,
+    "recovery must resume after restoring an archive before its manifest",
+  );
+  assert.deepEqual(await readFile(publishedArchive), publishedArchiveBytes, "partial recovery must retain the restored archive");
+  assert.deepEqual(await readFile(publishedManifest), publishedManifestBytes, "partial recovery must restore its manifest");
+  assert.ok(await missing(previousManifest), "partial recovery must consume the prior manifest backup");
+
+  const noPriorArchive = path.join(fixture, "no-prior", "server.tar.zst");
+  const noPriorManifest = path.join(fixture, "no-prior", "manifest.json");
+  const noPriorTemporaryArchive = path.join(fixture, "no-prior", ".server.tar.zst.tmp");
+  const noPriorTemporaryManifest = path.join(fixture, "no-prior", ".manifest.json.tmp");
+  await mkdir(path.dirname(noPriorArchive), { recursive: true });
+  await writeFile(`${noPriorArchive}.publish.lock`, "999999999\n");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(projectRoot, "public"),
+      noPriorTemporaryArchive,
+      noPriorArchive,
+      noPriorManifest,
+      noPriorTemporaryManifest,
+      {
+        beforeManifestPublish: async () => {
+          await mkdir(noPriorManifest, { recursive: true });
+          await writeFile(path.join(noPriorManifest, "unrelated.txt"), "must survive first publish failure\n");
+        },
+      },
+    ),
+    /EISDIR|EPERM|ENOTDIR|EACCES/,
+    "a no-prior publication failure must reject",
+  );
+  assert.ok(await missing(noPriorArchive), "a no-prior failure must not leave a public archive");
+  assert.ok(await missing(noPriorTemporaryArchive), "a no-prior failure must remove its staged archive");
+  assert.ok(await missing(noPriorTemporaryManifest), "a no-prior failure must remove its staged manifest");
+  assert.equal(
+    await readFile(path.join(noPriorManifest, "unrelated.txt"), "utf8"),
+    "must survive first publish failure\n",
+  );
+  assert.ok(await missing(`${noPriorArchive}.publish.lock`), "a stale publication lock must be reclaimed");
+
+  const malformedLockArchive = path.join(fixture, "malformed-lock", "server.tar.zst");
+  const malformedLockManifest = path.join(fixture, "malformed-lock", "manifest.json");
+  const malformedLockTemporaryArchive = path.join(fixture, "malformed-lock", ".server.tar.zst.tmp");
+  const malformedLockPath = `${malformedLockArchive}.publish.lock`;
+  await mkdir(path.dirname(malformedLockArchive), { recursive: true });
+  await writeFile(malformedLockPath, "");
+  await utimes(malformedLockPath, 1, 1);
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(fixture, "missing-runtime"),
+      malformedLockTemporaryArchive,
+      malformedLockArchive,
+      malformedLockManifest,
+    ),
+    /ENOENT/,
+    "a malformed stale publication lock must not block recovery",
+  );
+  assert.ok(await missing(malformedLockPath), "a malformed stale publication lock must be reclaimed");
+
+  const orphanArchive = path.join(fixture, "orphan", "server.tar.zst");
+  const orphanManifest = path.join(fixture, "orphan", "manifest.json");
+  const orphanTemporaryArchive = path.join(fixture, "orphan", ".server.tar.zst.tmp");
+  const orphanTemporaryManifest = path.join(fixture, "orphan", ".manifest.json.tmp");
+  await mkdir(path.dirname(orphanArchive), { recursive: true });
+  await writeFile(orphanManifest, "stale manifest\n");
+  await assert.rejects(
+    publishSidecarArchive(
+      path.join(projectRoot, "public"),
+      orphanTemporaryArchive,
+      orphanArchive,
+      orphanManifest,
+      orphanTemporaryManifest,
+      {
+        beforeManifestPublish: async () => {
+          const error = new Error("EPERM: injected final manifest rename failure");
+          error.code = "EPERM";
+          throw error;
+        },
+      },
+    ),
+    /EPERM/,
+    "an orphaned manifest publication failure must reject",
+  );
+  assert.ok(await missing(orphanArchive), "an orphaned manifest must not retain the candidate archive");
+  assert.equal(await readFile(orphanManifest, "utf8"), "stale manifest\n");
+  assert.ok(await missing(`${orphanManifest}.previous`), "orphan recovery must remove its private manifest copy");
+  assert.ok(await missing(orphanTemporaryArchive), "orphan recovery must remove its staged archive");
+  assert.ok(await missing(orphanTemporaryManifest), "orphan recovery must remove its staged manifest");
 
   await writeFile(tracePath, `${JSON.stringify({ version: 1, files: ["../../../outside.txt"] })}\n`, "utf8");
   await assert.rejects(
@@ -216,3 +548,52 @@ try {
 }
 
 console.log("sidecar-runtime-closure.test.mjs: ok");
+
+// ── Allowed-root containment survives path aliases (cave-24dps) ─────────────
+// The roots are built with path.resolve, which normalizes but does not resolve
+// symlinks; a candidate that has been through realpath is fully canonical.
+// Comparing one spelling against the other rejected links that were plainly
+// inside an allowed root. On macOS this is the default state of every temp dir
+// (/var -> /private/var), which made the api suite unrunnable there. Built here
+// with an explicit symlink so it pins the behaviour on any platform.
+{
+  const aliasFixture = await mkdtemp(path.join(os.tmpdir(), "coven-sidecar-alias-"));
+  try {
+    const realRoot = path.join(aliasFixture, "real-root");
+    const inside = path.join(realRoot, "pkg");
+    const outside = path.join(aliasFixture, "outside");
+    await mkdir(inside, { recursive: true });
+    await mkdir(outside, { recursive: true });
+    const aliasRoot = path.join(aliasFixture, "alias-root");
+    let linked = true;
+    try {
+      await symlink(realRoot, aliasRoot, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (!["EPERM", "EACCES", "ENOSYS"].includes(error.code)) throw error;
+      linked = false;
+      console.warn(`sidecar-runtime-closure.test: alias containment skipped (${error.code})`);
+    }
+    if (linked) {
+      // The root is spelled through the symlink; the candidate is canonical.
+      assert.equal(
+        await isInsideAllowedRoots([aliasRoot], inside),
+        true,
+        "a canonical candidate is inside a root spelled through a symlink",
+      );
+      // The guard still refuses what is genuinely outside, under either spelling.
+      assert.equal(
+        await isInsideAllowedRoots([aliasRoot], outside),
+        false,
+        "canonicalizing roots must not admit paths outside them",
+      );
+    }
+    // A root that cannot be resolved contains nothing, and does not throw.
+    assert.equal(
+      await isInsideAllowedRoots([path.join(aliasFixture, "missing")], inside),
+      false,
+      "an unresolvable root contains nothing",
+    );
+  } finally {
+    await rm(aliasFixture, { recursive: true, force: true });
+  }
+}

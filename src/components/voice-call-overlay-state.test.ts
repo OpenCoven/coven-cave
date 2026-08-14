@@ -14,11 +14,18 @@ test("requesting-mic → minting-session on MIC_READY", () => {
   assert.equal(next.state, "minting-session");
 });
 
-test("requesting-mic → error on MIC_DENIED", () => {
+test("requesting-mic → actionable error on MIC_FAILED", () => {
   const s = reduce(initialState, { type: "START" });
-  const next = reduce(s, { type: "MIC_DENIED" });
+  const next = reduce(s, {
+    type: "MIC_FAILED",
+    errorCode: "microphone_denied",
+    hint: "Allow Coven Cave in System Settings.",
+    canOpenSettings: true,
+  });
   assert.equal(next.state, "error");
   assert.equal(next.errorCode, "microphone_denied");
+  assert.equal(next.hint, "Allow Coven Cave in System Settings.");
+  assert.equal(next.canOpenSettings, true);
 });
 
 test("minting-session → connecting on SESSION_GRANTED", () => {
@@ -60,15 +67,19 @@ test("CONNECTED carries the ears engine label for the live UI (cave-vpe1)", () =
     type: "CONNECTED",
     startedAt: Date.now(),
     earsEngine: "native-on-device",
+    mouthEngine: "sidecar-piper",
   });
   assert.equal(next.state, "live");
   assert.equal(next.earsEngine, "native-on-device");
+  // The mouth engine rides the same event for badge parity (cave-vony).
+  assert.equal(next.mouthEngine, "sidecar-piper");
   // Realtime providers report no ears mode — the field simply stays unset.
   const bare = reduce(
     { ...initialState, state: "connecting", callId: "c1" },
     { type: "CONNECTED", startedAt: 1 },
   );
   assert.equal(bare.earsEngine, undefined);
+  assert.equal(bare.mouthEngine, undefined);
 });
 
 test("connecting → closed on CLOSE_REQUEST (clean cancel, no error)", () => {
@@ -150,10 +161,14 @@ test("PROVIDER_ERROR clears a stale missingKey so unrelated errors don't offer a
 });
 
 test("error → requesting-mic on RETRY (clears errorCode)", () => {
-  const errored = reduce(reduce(initialState, { type: "START" }), { type: "MIC_DENIED" });
+  const errored = reduce(reduce(initialState, { type: "START" }), {
+    type: "MIC_FAILED",
+    errorCode: "microphone_denied",
+  });
   const next = reduce(errored, { type: "RETRY" });
   assert.equal(next.state, "requesting-mic");
   assert.equal(next.errorCode, undefined);
+  assert.equal(next.canOpenSettings, undefined);
 });
 
 test("muted is local-only state, toggled by MUTE_TOGGLE", () => {

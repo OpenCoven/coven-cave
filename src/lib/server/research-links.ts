@@ -15,6 +15,7 @@ import {
   categorizeLink,
   deriveLinkTitle,
   LINK_CATEGORY_ORDER,
+  MAX_LINKS_PER_SAVE,
   normalizeLinkUrl,
   type LinkCategory,
   type SavedLink,
@@ -23,8 +24,9 @@ import { caveHome } from "../coven-paths.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
+export { MAX_LINKS_PER_SAVE };
+
 export const MAX_SAVED_LINKS = 500;
-export const MAX_LINKS_PER_SAVE = 50;
 
 type ResearchLinksFile = {
   version: 1;

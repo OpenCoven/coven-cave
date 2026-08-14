@@ -1,12 +1,13 @@
 // @ts-nocheck
-// Source pins for the proposal approval wiring (threads-986.17.6). Behavior
-// lives in src/lib/proposal-flow.test.ts and the route E2E in
-// src/app/api/proposals-flow-e2e.test.ts; these pins hold the React layer to
-// the forward-only, fail-closed contract.
+// Source pins for the proposal approval wiring (threads-986.17.6, redesigned
+// in cave-f8rdi). Behavior lives in src/lib/proposal-flow.test.ts and the
+// route E2E in src/app/api/proposals-flow-e2e.test.ts; these pins hold the
+// React layer to the forward-only, fail-closed contract.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const flow = await readFile(new URL("./proposal-approval.tsx", import.meta.url), "utf8");
+const chrome = await readFile(new URL("./threads-chrome.tsx", import.meta.url), "utf8");
 const freshness = await readFile(new URL("../lib/response-envelope-freshness.ts", import.meta.url), "utf8").catch(
   () => "",
 );
@@ -26,6 +27,13 @@ assert.match(
   "decision-specific disabled state reaches each button",
 );
 assert.match(flow, /decisionOutcomeFromResponse\(/, "outcomes derive from the response mapper");
+assert.match(flow, /proposalPill\(proposal\)/, "queue status pills derive from the view-model");
+assert.match(model, /export function proposalPill\(/, "the queue pill vocabulary lives in the view-model");
+assert.match(
+  model,
+  /if \(!authority \|\| authority\.state === "blocked"\)/,
+  "a missing or blocked authority envelope reads blocked, never awaiting",
+);
 
 // forward-only: POST to the daemon-forwarder routes, no optimistic UI
 assert.match(flow, /fetch\(`\/api\/proposals\/\$\{encodeURIComponent\(payload\.id\)\}\/\$\{decision\}`/, "decisions POST to the forwarder routes");
@@ -37,6 +45,7 @@ assert.match(
 assert.match(flow, /note:\s*note\.trim\(\)/, "the route body uses the trimmed decision note");
 assert.match(flow, /re-validated before applying/, "applied outcome credits the daemon's re-validation");
 assert.match(flow, /if \(result\.kind === "applied"\) onDecided\(\)/, "list refreshes only on an applied decision");
+assert.match(flow, /Nothing here is applied optimistically/, "the decision block denies optimistic application");
 
 // daemon lifecycle data is rendered as trace, never reinterpreted locally
 assert.match(flow, /authority\.approvalPath\.label/, "daemon approval label renders verbatim");
@@ -45,6 +54,7 @@ assert.match(flow, /authority\.affectedRegions/, "daemon affected regions render
 assert.match(flow, /authority\.approvalPath\.vetoDeadline/, "daemon veto deadline renders");
 assert.match(flow, /authority\.earliestClose/, "daemon earliest close renders");
 assert.match(flow, /authority\.blockedReason/, "daemon blocked reason renders");
+assert.match(flow, /authority\.proposalRevision/, "daemon proposal revision renders");
 for (const source of [flow, model]) {
   assert.doesNotMatch(source, /Date\.now\s*\(/, "action eligibility never calls Date.now");
   assert.doesNotMatch(source, /Date\.parse\s*\(/, "action eligibility never parses daemon deadlines");
@@ -77,11 +87,13 @@ assert.doesNotMatch(
 
 // corrupt staged files: listed, inspectable, never actionable (R6)
 assert.match(flow, /Corrupt staged file/, "corrupt card labeled");
-assert.match(flow, /cannot be approved or\s+rejected from here/, "corrupt card denies both actions");
+assert.match(flow, /cannot be approved or rejected from here/, "corrupt card denies both actions");
+assert.match(flow, /listed so it cannot\s+be missed/, "corrupt files stay in the queue");
 
 // full desired contents, honestly framed (§2.6)
 assert.match(flow, /editPreviews\(proposal\)/, "edit previews derive from the view-model");
 assert.match(flow, /full desired contents \(\{edit\.encoding\}\)/, "contents labeled as full desired contents");
+assert.match(flow, /not a diff/, "the contents section denies being a diff");
 assert.match(flow, /fraySummary\(proposal\)/, "the degradation reason renders per proposal");
 
 // audit note travels with the decision; rationale paths expose conditional requirement semantics
@@ -104,8 +116,16 @@ assert.match(flow, /Optional note for the audit log\./, "legacy and non-rational
 // blocked + empty states are honest
 assert.match(flow, /Blocked — cannot verify staged proposals/, "blocked list state present");
 assert.match(flow, /Verified empty, not an error/, "empty pending list is calm");
+assert.match(flow, /Decisions stay disabled while the queue is unverifiable/, "a blocked queue disables decisions");
 assert.match(flow, /cache: "no-store"/, "reads are never cached");
 assert.match(flow, /meta\.sourceCursor/, "freshness footer present");
+
+// deep link from a frayed thread lands on the decision, not on a queue to search
+assert.match(flow, /searchParams.*proposal|get\("proposal"\)/, "a deep-linked proposal id selects its row");
+
+// chrome: breadcrumb back through Weaves to Memories
+assert.match(chrome, /href="\/weaves"/, "proposal decisions breadcrumb back to Weaves");
+assert.match(chrome, /MEMORIES_HREF = "\/\?mode=grimoire"/, "proposal decisions preserve the Memories parent path");
 
 // page: never applies edits itself, daemon re-validates
 assert.match(page, /data, not authority/, "page states the staged-write rule");

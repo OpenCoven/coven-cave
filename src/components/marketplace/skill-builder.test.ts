@@ -9,30 +9,28 @@ import { readFile } from "node:fs/promises";
 const view = await readFile(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
 const model = await readFile(new URL("./marketplace-view-model.ts", import.meta.url), "utf8");
 const builder = await readFile(new URL("./skill-builder.tsx", import.meta.url), "utf8");
-const browser = await readFile(new URL("../skill-browser.tsx", import.meta.url), "utf8");
 const format = await readFile(new URL("../../lib/skill-build-format.ts", import.meta.url), "utf8");
 
 // Section wiring in the hub.
-assert.match(model, /\{ id: "build", label: "Build", icon: "ph:hammer" \}/, "Build is a first-class Marketplace section");
+assert.match(model, /\{ id: "build", label: "Build", icon: "ph:flow-arrow" \}/, "Build is a first-class Marketplace section");
 assert.match(model, /"browse" \| "crafts" \| "roles" \| "skills" \| "build" \| "capabilities"/, "MarketplaceSection includes build");
 assert.match(view, /id="marketplace-panel-build"/, "Build section has a labelled tabpanel");
 assert.match(view, /aria-labelledby="marketplace-tab-build"/, "Build tabpanel is labelled by its tab");
 assert.match(model, /build: "Author a new skill/, "Build has a section hint (tab tooltip)");
-assert.match(view, /section !== "capabilities" && section !== "build"/, "the hub search hides on the Build section");
+assert.match(view, /\{searchLabel \? \(\s*\n\s*<SearchInput/, "the hub search hides when Build has no owned-inventory label");
 assert.match(view, /<SkillBuilder\s/, "the Build panel hosts the SkillBuilder surface");
 assert.match(
   view,
-  /onSaved=\{\(\) => \{\s*invalidateSurfaceResources\("marketplace:skills"\);\s*void loadSkills\(""\);\s*\}\}/,
-  "a saved skill invalidates the warm list before refreshing the Skills list and tab count",
+  /onSaved=\{\(\) => \{\s*invalidateSurfaceResources\("marketplace:skills"\);\s*void loadSkills\(true\);\s*\}\}/,
+  "a saved skill invalidates the warm list before force-refreshing owned skills",
 );
-assert.match(view, /onViewSkills=\{\(\) => selectSection\("skills"\)\}/, "the success panel can jump to the Skills tab");
-assert.match(view, /label="Build a skill"[\s\S]{0,80}selectSection\("build"\)/, "the Browse setup rail links to Build");
+// The Build success panel jumps to Yours, filtered to locally owned skills.
+assert.match(view, /onViewSkills=\{viewOwnedSkills\}/, "the success panel can jump back to owned skills");
+assert.match(view, /const viewOwnedSkills = useCallback\(\(\) => \{[\s\S]*?setStoredSection\("browse"\);[\s\S]*?setKind\("skill"\)/, "the owned-skills action lands on Yours filtered to Skills");
 
 // The old dead-end: creating a skill used to punt to the read-only
 // Capabilities inspector.
-assert.match(view, /onCreateSkill=\{\(\) => selectSection\("build"\)\}/, "the Skills tab create CTA opens Build");
-assert.doesNotMatch(view, /onCreateSkill=\{\(\) => selectSection\("capabilities"\)\}/, "create-skill no longer punts to Capabilities");
-assert.match(browser, /Build a skill/, "the Skills empty-state CTA is named for authoring");
+assert.doesNotMatch(view, /selectSection\("capabilities"\)/, "create-skill no longer punts to Capabilities");
 
 // The authoring form's contract.
 assert.match(builder, /fetch\("\/api\/skills\/build"/, "saving posts to the guarded build endpoint");

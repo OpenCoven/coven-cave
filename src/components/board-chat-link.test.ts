@@ -91,18 +91,18 @@ assert.match(
 );
 assert.match(
   route,
-  /normalizeProjectRoot\(rawProjectRoot\)|projectRoot = normalizeProjectRoot\(assignedProject\.root\)/,
+  /normalizeProjectRoot\(rawProjectRoot\)|assignedProjectRoot = normalizeProjectRoot\(assignedProject\.root\)/,
   "Board chat endpoint normalizes the resolved project root",
 );
 assert.match(
   route,
-  /projectById\(card\.projectId, await loadProjects\(\)\)[\s\S]{0,900}assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
-  "Board chat endpoint should resolve assigned project roots server-side and authorize the familiar",
+  /projectById\(card\.projectId, projects\)[\s\S]*await authorizeChatProjectLaunch/,
+  "Board chat endpoint should resolve assigned project roots server-side and use the shared launch gate",
 );
 assert.match(
   route,
-  /assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)[\s\S]{0,700}if \(card\.sessionId\) \{[\s\S]{0,300}reused: true/,
-  "a project-linked session is reused only after the current familiar passes project authorization",
+  /await authorizeChatProjectLaunch[\s\S]*if \(card\.sessionId\) \{[\s\S]{0,300}reused: true/,
+  "a project-linked session is reused only after its root, registration, and current familiar access pass authorization",
 );
 assert.match(
   route,
@@ -155,7 +155,7 @@ assert.match(
 );
 assert.match(
   taskWorkCockpit,
-  /initialPrompt && familiar[\s\S]{0,600}autoSendInitialPrompt/,
+  /initialPrompt\s*\?\s*\{[\s\S]{0,400}autoSend: true/,
   "Task cockpit sends a reserved bridge task through ChatView rather than waiting for a daemon row",
 );
 assert.match(
@@ -165,12 +165,27 @@ assert.match(
 );
 assert.match(
   chatView,
-  /case "done":[\s\S]{0,6000}startNewConversation && ev\.sessionId\) onSessionsChanged\?\.\(\)/,
-  "A completed Board bridge refreshes sessions so the cockpit leaves its one-shot handoff mode",
+  /const stagedInitialModelOverride = initialModelOverride !== undefined[\s\S]{0,900}?const initialSendOptions = stagedInitialModelOverride !== undefined[\s\S]{0,700}?sendRaw\([\s\S]{0,180}initialSendOptions,[\s\S]{0,220}runtimeHost: initialControls\?\.runtimeHost \}/,
+  "an auto-sent Board prompt passes its model through ChatSendOptions, not the typed controls payload",
+);
+assert.match(
+  chatView,
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\)/,
+  "Board condition requires !ev.isError so a successful first reply refreshes the sidebar but an errored one does not",
+);
+assert.doesNotMatch(
+  chatView,
+  /startNewConversation && !!ev\.sessionId(?! && !ev\.isError)/,
+  "Board condition must not fire on a failed first reply — !ev.isError guard is required",
+);
+assert.match(
+  chatView,
+  /if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\)/,
+  "The consolidated shouldRefreshSessions boolean causes exactly one onSessionsChangedRef.current() call at done completion",
 );
 assert.match(
   taskWorkCockpit,
-  /autoSendInitialPrompt\s+startNewConversation/,
+  /autoSendInitialPrompt=\{conversation\.autoSend\}\s*\n\s*startNewConversation=\{conversation\.autoSend\}/,
   "A reserved Board conversation marks its first ChatView send as a fresh native session",
 );
 assert.match(

@@ -1,8 +1,14 @@
 // Native Grok Build headless integration.
 //
-// This deliberately does not read the coven-runtimes registry: Grok's
-// proposed registry adapter is not merged, while Cave needs the CLI's real
-// streaming/session contract to drive a local chat safely.
+// Cave owns Grok's native streaming/session integration while the synced
+// registry supplies shared launch metadata such as model-id transformation.
+
+import {
+  BUILTIN_GROK_SCHEMA_BUNDLE,
+  parseGrokCompatibilityEvent,
+  type GrokEventSchema,
+} from "./grok-compatibility.ts";
+import { runtimeModelIdForLaunch } from "./runtime-models.ts";
 
 export type RuntimeModelOption = { id: string; label: string };
 export type GrokSandboxProfile = "full" | "read";
@@ -38,12 +44,6 @@ export function parseGrokModels(output: string): {
     models.set(defaultModel, { id: defaultModel, label: `${defaultModel} (default)` });
   }
   return { models: [...models.values()], defaultModel };
-}
-
-function bareModel(model: string | null): string | null {
-  if (!model) return null;
-  const slash = model.lastIndexOf("/");
-  return slash >= 0 ? model.slice(slash + 1) || null : model;
 }
 
 /**
@@ -106,11 +106,14 @@ export function buildGrokBuildArgs(input: {
   permissionMode: "full" | "read";
   grantDirs: string[];
   identityRules: string;
+  /** Omit structured output entirely when no local capability/schema proves it safe. */
+  outputFormat?: "streaming-json" | null;
 }): string[] {
-  const args = ["--no-auto-update", "--output-format", "streaming-json"];
+  const args = ["--no-auto-update"];
+  if (input.outputFormat === "streaming-json") args.push("--output-format", input.outputFormat);
   if (input.resumeSessionId) args.push("--resume", input.resumeSessionId);
   else if (input.newSessionId) args.push("--session-id", input.newSessionId);
-  const model = bareModel(input.model);
+  const model = runtimeModelIdForLaunch("grok", input.model);
   if (model) args.push("--model", model);
   // Headless runs cannot wait for an interactive approval prompt. Full access
   // is an explicit user selection; read uses Grok's native read-only sandbox
@@ -134,35 +137,12 @@ export function buildGrokBuildArgs(input: {
 }
 
 /** Map Grok Build's documented streaming-json JSONL frames to Cave events. */
-export function parseGrokStreamEvent(raw: unknown): GrokStreamEvent {
-  if (!raw || typeof raw !== "object") return { kind: "ignore" };
-  const event = raw as {
-    type?: unknown;
-    data?: unknown;
-    sessionId?: unknown;
-    message?: unknown;
-    usage?: unknown;
-    total_cost_usd?: unknown;
-  };
-  if (event.type === "text" && typeof event.data === "string") {
-    return { kind: "text", text: event.data };
+export function parseGrokStreamEvent(raw: unknown, schema: GrokEventSchema = BUILTIN_GROK_SCHEMA_BUNDLE.schemas[0]): GrokStreamEvent {
+  const event = parseGrokCompatibilityEvent(raw, schema);
+  switch (event.kind) {
+    case "text": return event;
+    case "end": return { ...event, isError: false };
+    case "error": return event;
+    default: return { kind: "ignore" };
   }
-  if (event.type === "end") {
-    return {
-      kind: "end",
-      sessionId: typeof event.sessionId === "string" ? event.sessionId : undefined,
-      isError: false,
-      usage: event.usage,
-      totalCostUsd: event.total_cost_usd,
-    };
-  }
-  if (event.type === "error") {
-    return {
-      kind: "error",
-      message: typeof event.message === "string" ? event.message : "Grok Build returned an error.",
-      usage: event.usage,
-      totalCostUsd: event.total_cost_usd,
-    };
-  }
-  return { kind: "ignore" };
 }

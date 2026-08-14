@@ -16,6 +16,12 @@ test("list requires a validated familiar id", () => {
   assert.match(route, /isValidResearchGenerationFamiliarId/);
 });
 
+test("media queue recovery starts once without delaying generation reads", () => {
+  assert.match(route, /void startResearchMediaJobs\(\)\.catch/);
+  assert.doesNotMatch(route, /recoverInterruptedResearchMediaJobs/);
+  assert.doesNotMatch(route, /await startResearchMediaJobs/);
+});
+
 test("create validates input and drafts synchronously via the server store", () => {
   assert.match(route, /validateCreateResearchGenerationInput/);
   assert.match(route, /createResearchGenerationFromMission/);
@@ -24,11 +30,48 @@ test("create validates input and drafts synchronously via the server store", () 
 test("a mission with nothing to draft from maps to 409, not a fake queued record", () => {
   assert.match(route, /"no-artifact" \? 409/);
   assert.match(route, /"mission-not-found" \? 404/);
-  assert.doesNotMatch(route, /queued|drafting|progress/i, "no synthetic progress states");
+  assert.match(route, /createResearchMediaGenerationFromMission/);
+  assert.doesNotMatch(route, /enqueueResearchMediaJob/, "creation leaves media in reviewable draft state");
 });
 
-test("delete is by id + familiar and reports misses as 404", () => {
-  assert.match(route, /removeResearchGeneration/);
+test("media readiness failures remain an explicit conflict until the runner is available", () => {
+  assert.match(route, /"media-not-ready" \? 409/);
+  assert.match(route, /"capacity" \? 409/);
+  assert.match(route, /getResearchMediaReadiness/);
+  assert.match(route, /validateResearchMediaSelection/);
+  assert.match(route, /validated\.value\.renderConfig/);
+});
+
+test("an unreadable (symlinked/oversized/escaping) artifact maps to 422, never 500 (cave-v73d)", () => {
+  assert.match(route, /"artifact-unreadable" \? 422/);
+});
+
+test("delete is atomic against active media and removes the record before its files", () => {
+  assert.match(route, /removeResearchGenerationIfInactive/);
+  assert.match(route, /cancel the render before deleting/i);
   assert.match(route, /generation not found/);
-  assert.match(route, /status: 404/);
+  assert.match(route, /\? 409 : 404/);
+  const storeFailureIndex = route.lastIndexOf(
+    "failed to write the research-generations store",
+  );
+  const mediaCleanupIndex = route.lastIndexOf(
+    "await removeResearchGenerationMedia(",
+  );
+  const successIndex = route.lastIndexOf(
+    "return NextResponse.json({ ok: true });",
+  );
+  assert.ok(
+    route.indexOf("removeResearchGenerationIfInactive(") <
+      route.indexOf("removeResearchGenerationMedia("),
+    "the durable record is removed before best-effort media cleanup",
+  );
+  assert.ok(
+    storeFailureIndex < mediaCleanupIndex && mediaCleanupIndex < successIndex,
+    "media cleanup runs after record-store errors are handled and before success",
+  );
+  assert.match(
+    route.slice(mediaCleanupIndex, successIndex),
+    /catch \(error\) \{\s*console\.warn\("\[research-generations\] failed to remove media files:", error\);\s*\}/,
+    "media cleanup failures are logged without converting a completed deletion into a 500",
+  );
 });

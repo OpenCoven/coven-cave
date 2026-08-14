@@ -33,6 +33,40 @@ assert.deepEqual(
   "sources + a resolved memory leaf + a normalized tag node, stable-sorted by id",
 );
 assert.equal(g.nodes.find((n) => n.id === "memory:/root/notes.md").title, "notes", "leaf label is the link display text");
+
+// ── `scanned` separates docs we READ from docs merely pointed at ─────────────
+// The resolution index spans the whole corpus while the memory scan is capped
+// (MEMORY_SCAN_CAP), so a [[link]] into an out-of-window file still resolves
+// and lands here as a leaf with no body. Without this flag a consumer counting
+// memory nodes cannot tell the two apart, and any "N files scanned" claim built
+// from that count overcounts — which is what it did in #4431 (cave-ed4s3).
+assert.equal(
+  g.nodes.find((n) => n.id === "knowledge:a").scanned,
+  true,
+  "a doc passed in `docs` had its content read",
+);
+assert.equal(
+  g.nodes.find((n) => n.id === "memory:/root/notes.md").scanned,
+  false,
+  "a resolved link target that was never in `docs` is a leaf — pointed at, not read",
+);
+assert.equal(
+  g.nodes.find((n) => n.id === "tag:research").scanned,
+  false,
+  "tag nodes are not docs, so they are never scanned",
+);
+// The distinction must survive scoping, or the consumer that needs it (the
+// graph view's shortfall notice) reads it off an already-scoped graph and gets
+// nothing. scopeDocGraph rebuilds each node to recompute degree.
+{
+  const { scopeDocGraph } = await import("./grimoire-graph-scope.ts");
+  const scoped = scopeDocGraph(g, new Set(["fam"]), new Map([["memory:/root/notes.md", "fam"]]));
+  assert.equal(
+    scoped.nodes.find((n) => n.id === "memory:/root/notes.md").scanned,
+    false,
+    "scopeDocGraph preserves `scanned` while recomputing degree",
+  );
+}
 assert.equal(g.nodes.find((n) => n.id === "knowledge:a").kind, "knowledge", "node carries its kind");
 assert.equal(g.nodes.find((n) => n.id === "tag:research").kind, "tag", "tag nodes carry the tag kind");
 assert.equal(g.nodes.find((n) => n.id === "tag:research").title, "#research", "tag nodes display as #tag");

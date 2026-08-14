@@ -7,6 +7,42 @@ import { appTokenTtlMs } from "./mobile-token-refresh.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 
+export function shouldAllowMagicDnsFallback({
+  serveOk,
+  statusOk,
+}: {
+  serveOk: boolean;
+  statusOk: boolean;
+}) {
+  // A successful `serve` mutation proves the requested backend was published,
+  // even when a follow-up status read is unavailable. A failed mutation,
+  // including macOS CLIError 3, needs a matching route in status before it can
+  // be used; a MagicDNS name only identifies the machine, not a Serve route.
+  return serveOk && !statusOk;
+}
+
+export function serveRouteFailure({
+  backendUrl,
+  serveError,
+  statusError,
+  routeReason,
+}: {
+  backendUrl: string;
+  serveError?: string | null;
+  statusError?: string | null;
+  routeReason?: string | null;
+}) {
+  const guidance =
+    `Tailscale Serve did not publish ${backendUrl}. ` +
+    "Enable HTTPS for this tailnet at https://login.tailscale.com/admin/dns, then retry.";
+  const stderr = serveError?.trim() || statusError?.trim() || undefined;
+  const reason = routeReason?.trim();
+  return {
+    error: [stderr, reason, guidance].filter(Boolean).join(" "),
+    stderr,
+  };
+}
+
 type TailscaleServeStatus = {
   Web?: Record<
     string,
@@ -72,6 +108,7 @@ function loginShellPath(): string | null {
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
     const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
+      windowsHide: true,
       encoding: "utf-8",
       timeout: 4000,
     });
@@ -206,10 +243,12 @@ export function tailnetDiscoveryProof({
   selfStatus,
   serveStatus,
   backendUrl,
+  allowMagicDnsFallback = true,
 }: {
   selfStatus: unknown;
   serveStatus: unknown;
   backendUrl: string;
+  allowMagicDnsFallback?: boolean;
 }): TailnetDiscoveryProof {
   const fromServe = findServeUrl(serveStatus, backendUrl);
   const host = magicDnsHost(selfStatus);
@@ -222,7 +261,7 @@ export function tailnetDiscoveryProof({
     };
   }
 
-  const fromMagicDns = magicDnsServeUrl(selfStatus);
+  const fromMagicDns = allowMagicDnsFallback ? magicDnsServeUrl(selfStatus) : null;
   if (fromMagicDns && host) {
     return {
       ok: true,
@@ -234,7 +273,9 @@ export function tailnetDiscoveryProof({
 
   return {
     ok: false,
-    reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName",
+    reason: allowMagicDnsFallback
+      ? "tailscale serve URL not found and status --self had no MagicDNS DNSName"
+      : `tailscale serve route not found for ${backendUrl}`,
   };
 }
 
@@ -254,12 +295,19 @@ export function nativeAppDiscoveryProof({
   selfStatus,
   serveStatus,
   backendUrl,
+  allowMagicDnsFallback = true,
 }: {
   selfStatus: unknown;
   serveStatus: unknown;
   backendUrl: string;
+  allowMagicDnsFallback?: boolean;
 }): NativeAppDiscoveryProof {
-  const tailnet = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl });
+  const tailnet = tailnetDiscoveryProof({
+    selfStatus,
+    serveStatus,
+    backendUrl,
+    allowMagicDnsFallback,
+  });
   if (tailnet.ok) return tailnet;
 
   const serveUrl = nativeHttpServeUrl(selfStatus, backendUrl);
@@ -515,4 +563,40 @@ export function buildPairingSteps(outcome: {
     );
   }
   return steps;
+}
+
+// ─── Install-the-app QR (cave-jr4r.3, #3802) ─────────────────────────────────
+//
+// The Phone card shows an install-the-app QR before the pairing QR matters —
+// a phone without the app can't act on the pairing code. No public TestFlight
+// link exists yet (O4, cave-f1wo, owns producing one), so the source is
+// config-gated rather than invented: fill in OFFICIAL_IOS_INSTALL_URL once the
+// lane publishes a link, or set COVEN_CAVE_IOS_INSTALL_URL to test a manual
+// build. Anything that isn't a real Apple install link resolves to null and
+// the card simply doesn't render.
+
+/** One-line fill-in once O4 publishes the TestFlight public link
+ *  (e.g. "https://testflight.apple.com/join/XXXXXXXX"). */
+export const OFFICIAL_IOS_INSTALL_URL: string | null = null;
+
+export const IOS_INSTALL_URL_ENV = "COVEN_CAVE_IOS_INSTALL_URL";
+
+/** Only real Apple install destinations qualify — a typo'd or placeholder
+ *  value must yield "not configured", never a QR pointing somewhere weird. */
+const IOS_INSTALL_HOSTS = new Set(["testflight.apple.com", "apps.apple.com"]);
+
+export function resolveIosInstallUrl(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const candidate = env[IOS_INSTALL_URL_ENV]?.trim() || OFFICIAL_IOS_INSTALL_URL;
+  if (!candidate) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  if (!IOS_INSTALL_HOSTS.has(parsed.hostname)) return null;
+  return parsed.toString();
 }

@@ -1,0 +1,858 @@
+/* "THE DAY" carousel — trigger strip + expanding overlay panel.
+ *
+ * Every color here resolves through a foundations token; the design mock's
+ * raw color literals would only be correct in one of the 12 themes.
+ * Semantic tones arrive as `--drd-tone` set inline by the component. */
+
+.drd-car {
+  --drd-tone: var(--accent-presence);
+  --drd-hairline: color-mix(in oklch, var(--border) 100%, transparent);
+  --drd-cell: var(--bg-panel);
+  min-width: 0;
+}
+
+/* ── trigger strip ───────────────────────────────────────────────────────── */
+
+.drd-car-trigger {
+  display: grid;
+  grid-template-columns: auto repeat(6, minmax(0, 1fr)) auto auto;
+  gap: 2px;
+  width: 100%;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg-base);
+  background-color: color-mix(in oklch, var(--fg-base) 4%, transparent);
+  background-image: repeating-conic-gradient(
+    from 0deg,
+    color-mix(in oklch, var(--fg-base) 5%, transparent) 0% 25%,
+    transparent 0% 50%
+  );
+  background-size: 8px 8px;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.drd-car-trigger:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  background-color: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.drd-car-trigger:focus-visible,
+.drd-car-seg:focus-visible,
+.drd-car-arrow:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 2px;
+}
+
+.drd-car-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 14px 7px var(--space-3);
+  background: var(--drd-cell);
+  color: var(--accent-presence);
+  font-size: var(--icon-md);
+}
+
+.drd-car-brand-text {
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--fg-base) 72%, transparent);
+}
+
+.drd-car-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px var(--space-3);
+  background: var(--drd-cell);
+}
+
+.drd-car-stat-label {
+  font: 400 9px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.drd-car-stat-value {
+  font: 500 12px var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-base);
+}
+
+.drd-car-stat-value[data-accent="true"] {
+  color: var(--accent-presence);
+}
+
+.drd-car-spark-cell {
+  display: flex;
+  align-items: center;
+  padding: 9px 14px;
+  background: var(--drd-cell);
+}
+
+.drd-car-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 22px;
+}
+
+.drd-car-spark-bar {
+  width: 3px;
+  height: var(--drd-bar, 14%);
+  border-radius: 1px;
+  background: color-mix(in oklch, var(--fg-base) 16%, transparent);
+}
+
+.drd-car-spark-bar[data-lit="true"] {
+  background: color-mix(in oklch, var(--accent-presence) var(--drd-mix, 50%), transparent);
+}
+
+.drd-car-affordance {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 7px var(--space-3);
+  background: var(--drd-cell);
+}
+
+.drd-car-affordance-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 10px var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  color: var(--accent-presence);
+}
+
+/* Narrow hosts: let the strip stack instead of overflowing its container. */
+@media (max-width: 1080px) {
+  .drd-car-trigger {
+    grid-template-columns: auto repeat(3, minmax(0, 1fr)) auto;
+  }
+
+  .drd-car-spark-cell {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .drd-car-trigger {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .drd-car-stat:nth-of-type(n + 3) {
+    display: none;
+  }
+}
+
+/* ── panel ───────────────────────────────────────────────────────────────── */
+
+.drd-car-panel {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: calc(100% - 6px);
+  z-index: 40;
+  max-width: 100%;
+  padding: 14px 18px var(--space-4);
+  border-radius: var(--radius-panel);
+  border: 1px solid color-mix(in oklch, var(--border) 100%, transparent);
+  background: var(--bg-elevated);
+  box-shadow:
+    0 30px 80px -26px color-mix(in oklch, var(--bg-panel) 90%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--fg-base) 4%, transparent);
+}
+
+@media (max-width: 720px) {
+  .drd-car-panel {
+    left: 8px;
+    right: 8px;
+    padding: var(--space-3);
+  }
+}
+
+.drd-car-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.drd-car-kicker {
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--fg-base) 72%, transparent);
+}
+
+.drd-car-segmented {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+}
+
+.drd-car-seg {
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  font: 500 11px var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-muted);
+  background: transparent;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.drd-car-seg:hover {
+  color: var(--fg-base);
+}
+
+.drd-car-seg[aria-pressed="true"] {
+  color: var(--fg-base);
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+}
+
+.drd-car-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.drd-car-arrow {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.drd-car-arrow:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+}
+
+.drd-car-dots {
+  display: flex;
+  gap: 5px;
+}
+
+.drd-car-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--fg-base) 22%, transparent);
+}
+
+.drd-car-dot[data-on="true"] {
+  background: var(--accent-presence);
+}
+
+.drd-car-view {
+  min-height: 236px;
+  max-height: 236px;
+  overflow: hidden auto;
+}
+
+/* ── view 0 · swimlanes ──────────────────────────────────────────────────── */
+
+.drd-car-lane-grid {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 0 14px;
+  align-items: center;
+}
+
+.drd-car-axis {
+  position: relative;
+  height: 14px;
+}
+
+.drd-car-axis-tick {
+  position: absolute;
+  top: 0;
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  color: color-mix(in oklch, var(--fg-base) 60%, transparent);
+}
+
+.drd-car-axis-tick[data-at="0"] {
+  left: 0;
+}
+
+.drd-car-axis-tick[data-at="25"] {
+  left: 25%;
+}
+
+.drd-car-axis-tick[data-at="50"] {
+  left: 50%;
+}
+
+.drd-car-axis-tick[data-at="75"] {
+  left: 75%;
+}
+
+.drd-car-axis-tick[data-at="100"] {
+  right: 0;
+}
+
+.drd-car-lane-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font: 500 11.5px var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-base);
+}
+
+.drd-car-lane-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drd-car-lane-badge {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  background: color-mix(in oklch, var(--drd-tone) 22%, var(--bg-panel));
+  color: var(--drd-tone);
+}
+
+.drd-car-lane-track {
+  position: relative;
+  height: 28px;
+  margin: 5px 0;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--fg-base) 4%, transparent);
+}
+
+/* The witching hours — midnight to 08:00 — sit behind everything else. */
+.drd-car-lane-night {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 33.3%;
+  background: color-mix(in oklch, var(--fg-base) 2%, transparent);
+  border-right: 1px dashed color-mix(in oklch, var(--border) 100%, transparent);
+}
+
+.drd-car-lane-span {
+  position: absolute;
+  left: var(--drd-left, 0%);
+  width: var(--drd-width, 0%);
+  top: 4px;
+  bottom: 4px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--drd-tone) 62%, transparent);
+}
+
+.drd-car-lane-track:hover .drd-car-lane-span {
+  background: var(--drd-tone);
+}
+
+.drd-car-lane-mark {
+  position: absolute;
+  left: var(--drd-left, 0%);
+  width: 5px;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 2px;
+  background: var(--drd-tone);
+}
+
+.drd-car-lane-empty {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: 400 9.5px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.drd-car-lane-counts {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  color: color-mix(in oklch, var(--fg-base) 50%, transparent);
+}
+
+.drd-car-lane-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in oklch, var(--border) 100%, transparent);
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  color: color-mix(in oklch, var(--fg-base) 60%, transparent);
+}
+
+.drd-car-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.drd-car-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--drd-tone);
+}
+
+.drd-car-lane-window {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.drd-car-lane-window b {
+  font-weight: 500;
+  color: var(--fg-base);
+}
+
+/* ── view 1 · cards ──────────────────────────────────────────────────────── */
+
+.drd-car-view-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.drd-car-card {
+  min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-panel);
+  border: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  background: color-mix(in oklch, var(--bg-raised) 45%, transparent);
+}
+
+.drd-car-card[data-feature="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.drd-car-card[data-quiet="true"] {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+  border-style: dashed;
+  background: transparent;
+}
+
+.drd-car-card-icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--icon-md);
+  color: var(--drd-tone);
+}
+
+.drd-car-card-figure {
+  margin-top: 10px;
+  font: 500 30px var(--font-mono, ui-monospace, monospace);
+  line-height: 1;
+  color: var(--fg-base);
+}
+
+.drd-car-card-figure[data-glow="true"] {
+  text-shadow: 0 0 12px color-mix(in oklch, currentcolor 38%, transparent);
+}
+
+.drd-car-card-add {
+  font: 500 24px var(--font-mono, ui-monospace, monospace);
+  line-height: 1;
+  color: var(--color-success);
+}
+
+.drd-car-card-sub {
+  margin-top: var(--space-1);
+  font: 500 16px var(--font-mono, ui-monospace, monospace);
+  line-height: 1;
+}
+
+.drd-car-card-del {
+  color: var(--color-danger);
+}
+
+.drd-car-card-label {
+  margin-top: 7px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.drd-car-card-note {
+  margin-top: 3px;
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--fg-base) 60%, transparent);
+}
+
+.drd-car-card-kicker {
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--fg-base) 72%, transparent);
+}
+
+.drd-car-card-quiet-list {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+
+.drd-car-card-spark {
+  display: block;
+  margin-top: var(--space-3);
+  width: 100%;
+  height: 30px;
+  color: var(--drd-tone);
+}
+
+.drd-car-spark-area {
+  fill: currentcolor;
+  opacity: 0.14;
+}
+
+.drd-car-spark-line {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.drd-car-card-bars {
+  margin-top: var(--space-3);
+  display: flex;
+  gap: var(--space-1);
+  height: 30px;
+  align-items: flex-end;
+}
+
+.drd-car-card-bar {
+  flex: 1;
+  height: var(--drd-bar, 8%);
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--drd-tone) 55%, transparent);
+}
+
+.drd-car-card-bar[data-lit="true"] {
+  background: var(--drd-tone);
+}
+
+/* ── view 2 · graphs ─────────────────────────────────────────────────────── */
+
+/* Graphs is the one view whose content genuinely exceeds the shared 236px
+   view height — hour heatmap, three charts and four tiles. Capping it clipped
+   the last project row and put a scrollbar inside a dropdown, so this view
+   sizes to its content and the panel grows with it. Swimlanes and cards fit
+   the shared height and keep it, so switching views doesn't jump. */
+.drd-car-view-graphs {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: var(--space-3);
+  max-height: none;
+  overflow: visible;
+}
+
+.drd-car-heat {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.drd-car-heat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.drd-car-heat-peak {
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--fg-base) 60%, transparent);
+}
+
+.drd-car-heat-peak b {
+  font-weight: 500;
+  color: var(--fg-base);
+}
+
+.drd-car-heat-scale {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: 400 10px var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--fg-base) 60%, transparent);
+}
+
+.drd-car-heat-key {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--accent-presence) var(--drd-mix, 40%), var(--bg-panel));
+}
+
+.drd-car-heat-grid {
+  height: 62px;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.drd-car-heat-cell {
+  height: 100%;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--accent-presence) var(--drd-mix, 24%), var(--bg-panel));
+}
+
+.drd-car-heat-cell[data-quiet="true"],
+.drd-car-heat-key[data-quiet="true"] {
+  background: color-mix(in oklch, var(--fg-base) 6%, var(--bg-panel));
+}
+
+.drd-car-heat-axis {
+  display: flex;
+  justify-content: space-between;
+  font: 400 9.5px var(--font-mono, ui-monospace, monospace);
+  color: color-mix(in oklch, var(--fg-base) 55%, transparent);
+}
+
+.drd-car-graph-row {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 900px) {
+  .drd-car-graph-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.drd-car-projects,
+.drd-car-streak {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.drd-car-project-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.drd-car-project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.drd-car-project-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
+  font: 400 10.5px var(--font-mono, ui-monospace, monospace);
+  color: var(--fg-base);
+}
+
+.drd-car-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drd-car-project-counts {
+  color: color-mix(in oklch, var(--fg-base) 72%, transparent);
+}
+
+.drd-car-project-bar {
+  display: flex;
+  gap: 3px;
+  height: 7px;
+}
+
+.drd-car-project-add,
+.drd-car-project-del {
+  width: var(--drd-width, 0%);
+  border-radius: var(--radius-pill);
+}
+
+.drd-car-project-add {
+  background: var(--color-success);
+}
+
+.drd-car-project-del {
+  background: var(--color-danger);
+}
+
+.drd-car-streak-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.drd-car-streak-chart {
+  display: block;
+  width: 100%;
+  height: 72px;
+  color: var(--drd-tone);
+}
+
+.drd-car-streak-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font: 400 9.5px var(--font-mono, ui-monospace, monospace);
+  color: color-mix(in oklch, var(--fg-base) 55%, transparent);
+}
+
+.drd-car-streak-best {
+  color: var(--accent-presence);
+}
+
+.drd-car-tiles {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.drd-car-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-2) 11px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border);
+}
+
+.drd-car-tile-label {
+  font: 400 9.5px var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: color-mix(in oklch, var(--fg-base) 60%, transparent);
+}
+
+.drd-car-tile-value {
+  margin-top: var(--space-1);
+  font: 500 15px var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  color: var(--fg-base);
+}
+
+.drd-car-tile-unit {
+  font-size: var(--text-2xs);
+  color: color-mix(in oklch, var(--fg-base) 60%, transparent);
+}
+
+.drd-car-empty-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+/* ── quiet day ───────────────────────────────────────────────────────────── */
+
+.drd-car-quiet {
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.drd-car-quiet-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-pill);
+  font-size: var(--icon-md);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.drd-car-quiet-title {
+  margin: 6px 0 0;
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: var(--text-lg);
+  color: var(--fg-base);
+}
+
+.drd-car-quiet-body {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drd-car-trigger,
+  .drd-car-seg {
+    transition: none;
+  }
+}
+
+/* The heatmap legend's four steps are fixed reference swatches, not data —
+   they belong in the sheet rather than as inline percentages. */
+.drd-car-heat-key[data-step="1"] { --drd-mix: 40%; }
+.drd-car-heat-key[data-step="2"] { --drd-mix: 62%; }
+.drd-car-heat-key[data-step="3"] { --drd-mix: 80%; }
+.drd-car-heat-key[data-step="4"] { --drd-mix: 100%; }

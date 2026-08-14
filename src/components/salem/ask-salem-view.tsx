@@ -16,7 +16,13 @@ import { Icon } from "@/lib/icon";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
+import {
+  inventoryProvenanceLabel,
+  useRuntimeModelInventory,
+  type RuntimeModelInventoryResult,
+} from "@/lib/use-runtime-model-options";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { SalemCat, type SalemMood } from "./salem-cat";
 import {
   clearThread,
@@ -31,12 +37,23 @@ import {
 const INTRO =
   "This is my study — ask away. I'm preloaded with the OpenCoven docs corpus and I'll pull in anything relevant from your own Cave: chats, tasks, and memories. Answers are written by the familiar you pick up top, so the model you already connected does the thinking.";
 
-/** The connected model an option advertises: the familiar's saved model, or
- *  its harness default when none is pinned yet. */
-function familiarModelLabel(familiar: Familiar): string {
-  if (familiar.model?.trim()) return familiar.model.trim();
-  const harness = familiar.harnessOverride ?? familiar.harness ?? familiar.defaultHarness;
-  return harness ? defaultModelForRuntime(harness) : "default model";
+/** The connected model an option advertises. An absent model is deliberately
+ *  shown as an ownership state, never as a static catalog entitlement. */
+function familiarModelLabel(
+  familiar: Familiar,
+  inventory?: RuntimeModelInventoryResult,
+): string {
+  const base = familiar.model === ""
+    ? "Runtime default"
+    : familiar.model?.trim() || (() => {
+    const harness = familiar.harnessOverride ?? familiar.harness ?? familiar.defaultHarness;
+    if (!harness || runtimeOwnsModelDefault(harness)) return "Runtime default";
+    return "Cave default";
+  })();
+  if (inventory) {
+    return `${base} · ${inventoryProvenanceLabel(inventory.provenance, inventory.loading)}`;
+  }
+  return base;
 }
 
 /** Fetch one local corpus, degrading to null so a single failed source never
@@ -53,10 +70,10 @@ async function fetchJson(url: string): Promise<unknown | null> {
 
 /** Gather the local Cave index corpora for a question (best-effort). */
 async function gatherLocalCorpora(query: string) {
-  const [search, board, coven, fs] = await Promise.all([
+  const [search, board, canonical, fs] = await Promise.all([
     fetchJson(`/api/chat/search?q=${encodeURIComponent(query)}`),
     fetchJson("/api/board"),
-    fetchJson("/api/coven-memory"),
+    loadCanonicalMemoryList(),
     fetchJson("/api/memory"),
   ]);
   const hits = (search as { ok?: boolean; hits?: unknown })?.ok
@@ -65,16 +82,19 @@ async function gatherLocalCorpora(query: string) {
   const cards = (board as { ok?: boolean; cards?: unknown })?.ok
     ? (board as { cards?: unknown }).cards
     : null;
-  const covenEntries = (coven as { ok?: boolean; entries?: unknown })?.ok
-    ? (coven as { entries?: unknown }).entries
-    : null;
   const fsEntries = (fs as { ok?: boolean; entries?: unknown })?.ok
     ? (fs as { entries?: unknown }).entries
     : null;
   return {
     conversationHits: Array.isArray(hits) ? hits : [],
     cards: Array.isArray(cards) ? cards : [],
-    covenMemory: Array.isArray(covenEntries) ? covenEntries : [],
+    covenMemory: canonical.state === "ready" ? canonical.entries.map((entry) => ({
+      title: entry.title,
+      familiarId: entry.familiarId,
+      excerpt: entry.excerpt,
+      sourceLabel: entry.source.label,
+      verificationState: entry.verification.state,
+    })) : [],
     fsMemory: Array.isArray(fsEntries) ? fsEntries : [],
   };
 }
@@ -104,6 +124,14 @@ export function AskSalemView({
     }
     return pickAskFamiliar(familiars, activeFamiliarId);
   }, [familiars, pickedFamiliarId, activeFamiliarId]);
+  const selectedHarness = selectedFamiliar?.harnessOverride
+    ?? selectedFamiliar?.harness
+    ?? selectedFamiliar?.defaultHarness
+    ?? "";
+  const selectedInventory = useRuntimeModelInventory(
+    selectedHarness,
+    selectedFamiliar?.id ?? null,
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: smoothScrollBehavior() });
@@ -187,7 +215,10 @@ export function AskSalemView({
                 >
                   {familiars.map((f) => (
                     <option key={f.id} value={f.id}>
-                      {f.display_name} — {familiarModelLabel(f)}
+                      {f.display_name} — {familiarModelLabel(
+                        f,
+                        f.id === selectedFamiliar.id ? selectedInventory : undefined,
+                      )}
                     </option>
                   ))}
                 </select>

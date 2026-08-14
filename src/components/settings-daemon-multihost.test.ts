@@ -1,9 +1,107 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
-const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const shellEntry = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const daemonUrl = new URL("./settings-daemon.tsx", import.meta.url);
+const daemon = existsSync(daemonUrl) ? readFileSync(daemonUrl, "utf8") : "";
+const shell = `${shellEntry}\n${daemon}`;
+const phone = readFileSync(new URL("./settings-phone.tsx", import.meta.url), "utf8");
 const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
+const daemonCssUrl = new URL("../styles/settings-daemon.css", import.meta.url);
+const daemonCss = existsSync(daemonCssUrl) ? readFileSync(daemonCssUrl, "utf8") : "";
+
+// ── Claude Design daemon control sheet ───────────────────────────────────────
+assert.match(
+  shellEntry,
+  /import \{ DaemonSection \} from "\.\/settings-daemon"/,
+  "SettingsShell should delegate the daemon control sheet to a focused component",
+);
+assert.match(
+  daemon,
+  /export function DaemonSection/,
+  "the focused daemon module should export the Settings section",
+);
+assert.match(daemon, /className="settings-daemon"/, "the daemon page should own a responsive control-sheet container");
+assert.match(daemon, /className="settings-daemon-hero"/, "the daemon page should open with the approved compact hero");
+assert.match(daemon, /Settings · Daemon/, "the hero should carry the approved settings kicker");
+assert.match(daemon, /className="settings-daemon-chip-list"/, "the hero should summarize target, API, queue, and uptime");
+assert.match(daemon, />\s*Refresh\s*</, "the hero should expose an explicit status refresh");
+assert.match(daemon, /Restart daemon/, "the hero should expose the daemon restart action");
+assert.match(daemon, /Start daemon/, "the hero should make an offline local daemon actionable");
+assert.match(
+  daemon,
+  /const canStartDaemon =[\s\S]*?status\?\.availability === undefined \|\| status\.availability === "offline"/,
+  "start should be offered only for explicit offline or legacy local status",
+);
+assert.match(
+  daemon,
+  /\{canStartDaemon && \([\s\S]*?>\s*Start daemon\s*</,
+  "incompatible and unhealthy states must not offer a guaranteed-failing start action",
+);
+
+assert.match(daemon, /className="settings-daemon-status-card"/, "daemon state should render as the approved status card");
+assert.match(daemon, /className="settings-daemon-status-strip"/, "the primary daemon state should lead the status card");
+assert.match(daemon, /className="settings-daemon-status-grid"/, "the six daemon metrics should share a dense grid");
+for (const label of [
+  "AUTHORITY",
+  "PENDING QUEUE",
+  "LOCAL BIND",
+  "STALE CACHE",
+  "WAKE LOCAL",
+  "HANDOFF",
+]) {
+  assert.match(daemon, new RegExp(`label: "${label}"`), `the status grid should include ${label}`);
+}
+assert.match(daemon, />HOME</, "travel state should expose the approved HOME segment");
+assert.match(daemon, />AWAY</, "travel state should expose the approved AWAY segment");
+assert.match(daemon, /Manual offline/, "travel state should preserve the real manual-offline action");
+assert.match(daemon, /Back online/, "manual-offline state should expose the matching recovery action");
+
+assert.match(daemon, /className="settings-daemon-target-grid"/, "runtime targets should render as selectable cards");
+assert.match(daemon, /aria-pressed=\{mode === target\.id\}/, "runtime target cards should expose selection programmatically");
+assert.match(daemon, /<TextInput[\s\S]*aria-label="Server hub URL"/, "the hub field should reuse the shared text-input primitive");
+assert.match(daemon, /<TextArea[\s\S]*aria-label="Executor addresses, one per line"/, "executor addresses should reuse the shared textarea primitive");
+assert.match(daemon, /aria-expanded=\{executorsOpen\}/, "executor addresses should use progressive disclosure");
+assert.match(daemon, /optional · multi-machine setups/, "executor disclosure should explain its advanced scope");
+assert.match(daemon, /const connectionDirty =/, "connection changes should remain drafts until explicitly saved");
+assert.match(
+  daemon,
+  /const normalizedHubUrl = \(override\?\.hubUrl \?\? hubUrl\)\.trim\(\)/,
+  "saving a connection should normalize the verified override or current hub URL",
+);
+assert.match(
+  daemon,
+  /body: JSON\.stringify\(\{ multiHost: \{ mode: nextMode, hubUrl: normalizedHubUrl, executorUrls: normalizedExecutorUrls \} \}\)/,
+  "the normalized hub URL and executor list should be the values persisted to config",
+);
+assert.match(daemon, />\s*Revert\s*</, "connection drafts should be reversible");
+assert.match(daemon, />\s*Save connection\s*</, "connection drafts should have one explicit save action");
+
+assert.match(daemon, /className="settings-daemon-info"/, "daemon metadata should use the compact approved info table");
+assert.match(daemon, /copyInfoValue/, "copyable daemon paths should share one announced copy path");
+assert.match(shell, /omnigentSettings=\{<OmnigentSettingsGroup \/>\}/, "the Vault-gated Omnigent settings must remain reachable from Daemon");
+
+assert.match(
+  daemonCss,
+  /@container settings-daemon \(max-width:/,
+  "the control sheet should adapt to its pane with a container query",
+);
+assert.match(
+  daemonCss,
+  /@media \(prefers-reduced-motion: reduce\)/,
+  "daemon-specific motion should have an explicit reduced-motion treatment",
+);
+assert.doesNotMatch(
+  daemonCss,
+  /(?:gap|padding|width|height):\s*(?:2|3|6|8|12)px|box-shadow:\s*inset\s+2px/,
+  "daemon micro-spacing should use the design-system spacing tokens",
+);
+assert.doesNotMatch(
+  shell,
+  /bg-red-400/,
+  "daemon error states should use the semantic danger token across every theme",
+);
 
 assert.match(
   shell,
@@ -19,26 +117,94 @@ assert.match(
 
 assert.match(
   shell,
-  /body: JSON\.stringify\(\{ multiHost: \{ mode: nextMode, hubUrl, executorUrls: parseExecutorUrls\(executorText\) \} \}\)/,
-  "Daemon settings should persist the selected connection mode through cave-config",
-);
-
-assert.match(
-  shell,
-  /placeholder="http:\/\/server\.tailnet:8787"/,
-  "Hub URL input should make the expected private-network HTTP target concrete",
+  /placeholder="https:\/\/server\.tailnet:8787"/,
+  "Hub URL input should make the secure remote target concrete",
 );
 
 assert.match(shell, /fetch\("\/api\/tailscale\/devices"/, "hub mode should discover tailnet devices");
 assert.match(shell, /devicesCtlRef\.current\?\.abort\(\)/, "device discovery refreshes should abort stale requests");
 assert.match(shell, /Tailnet devices/, "hub mode should label the discovery picker");
 assert.match(shell, /device\.isSelf \? " · This device"/, "the self device should be visibly identified");
-assert.match(shell, /http:\/\/\$\{host\}:8787/, "selecting a device should build the standard hub URL");
+assert.match(shell, /suggestedHubEndpoint\(host\)/, "selecting a device should apply the shared TLS-aware hub URL policy");
 assert.match(shell, /fetch\("\/api\/daemon\/probe"/, "hub URL saves should probe daemon health first");
+assert.match(
+  daemon,
+  /createDaemonStatusRequestGate/,
+  "hub probes should use the shared monotonic request gate so stale responses cannot publish",
+);
+assert.match(
+  daemon,
+  /probeCtlRef\.current\?\.abort\(\)/,
+  "a new hub probe should cancel the previous request",
+);
+assert.match(
+  daemon,
+  /fetch\("\/api\/daemon\/probe",[\s\S]*signal: ctl\.signal/,
+  "hub probe requests should carry the active abort signal",
+);
+assert.match(
+  daemon,
+  /if \(!probeRequestGateRef\.current\.isLatest\(requestId\)\) return;/,
+  "hub probe results should be discarded unless they are still the latest request",
+);
+assert.match(
+  daemon,
+  /persistConnection\("hub", \{ hubUrl: url, executorUrls \}\)/,
+  "a successful probe should persist the exact connection draft it verified instead of newer state",
+);
+assert.match(
+  daemon,
+  /const connectionBusy = probing \|\| savingConnection;/,
+  "connection controls should freeze while a probe or save owns the draft",
+);
+assert.match(
+  daemon,
+  /disabled=\{connectionBusy\}/,
+  "connection controls should not accept edits while the verified snapshot is being saved",
+);
+assert.match(
+  daemon,
+  /leadingIcon="ph:warning"[\s\S]*?disabled=\{connectionBusy\}[\s\S]*?onClick=\{\(\) => void persistConnection\("hub"\)\}/,
+  "save-anyway must not overlap a replacement probe or another persistence request",
+);
 assert.match(shell, /Save anyway/, "an unreachable hub should require an explicit override");
 assert.match(shell, /Configured but unreachable/, "hub status should distinguish configured from connected");
-assert.match(shell, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
-assert.match(shell, /classifyTailscaleFailure/, "discovery and pairing should share friendly Tailscale failure copy");
+assert.match(
+  daemon,
+  /describeDaemonAvailability/,
+  "daemon status copy should preserve the route's verified availability classification",
+);
+assert.match(
+  daemon,
+  /const daemonOnline = !manualOffline && availabilityPresentation\.tone === "success";/,
+  "every online indicator should use the same fail-closed availability proof as the state label",
+);
+assert.match(
+  daemon,
+  /const statusFailureReason =[\s\S]*?!loading && !starting && !restarting && !daemonOnline \? status\?\.reason : null/,
+  "contradictory running evidence should remain visible without announcing stale errors during recovery",
+);
+assert.match(
+  daemon,
+  /Enter a full URL, such as https:\/\/server\.tailnet:8787\./,
+  "invalid hub guidance should match the secure remote-target example",
+);
+assert.match(phone, /Use this device as hub/, "phone pairing should offer its known tailnet host to Server Hub");
+assert.match(
+  phone,
+  /onUseAsHub\(suggestedHubEndpoint\(handoff\.nativeHost \?\? ""\)\)/,
+  "phone pairing should apply the shared TLS-aware hub URL policy",
+);
+assert.match(
+  daemon,
+  /import \{ classifyTailscaleFailureKind \} from "@\/lib\/tailscale-failure"/,
+  "device discovery should use the shared Tailscale failure classifier",
+);
+assert.match(
+  phone,
+  /import \{ classifyTailscaleFailureKind \} from "@\/lib\/tailscale-failure"/,
+  "phone pairing should use the shared Tailscale failure classifier",
+);
 
 assert.match(
   shell,

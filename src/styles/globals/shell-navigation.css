@@ -9,6 +9,10 @@
   color: var(--text-primary);
 }
 
+.shell-body {
+  background: var(--bg-panel);
+}
+
 /* react-resizable-panels wrappers — make each Panel fill its allotted
    width and hand vertical layout to the inner aside/main. */
 .shell-nav-panel,
@@ -43,9 +47,9 @@
   overflow: visible !important;
 }
 
-/* Inner panel border — subtle dividing line on the right edge of side panels */
-.shell-nav-panel { border-right: 1px solid var(--border-hairline); position: relative; }
-.shell-list-panel { border-right: 1px solid var(--border-hairline); }
+/* The navigation stays on the shell floor; this wrapper establishes the
+   positioning context for the hover-peek overlay. */
+.shell-nav-panel { position: relative; }
 
 .shell-nav-panel > .shell-nav,
 .shell-list-panel > .shell-list,
@@ -107,14 +111,37 @@
   background: var(--ring-focus);
 }
 
+/* The rail's THREE geometry constants. Both sections read them; neither
+   declares its own, so the header cannot sit at a different inset per
+   section (it used to: 6px in Home, 10px in Chat).
+
+   They also make the collapsed 56px rail and the expanded panel share ONE icon
+   column, which is what issue 4351 is about: hovering the rail peeks the panel
+   open, and every control used to slide 8px right because the rail centres its
+   squares while the panel left-aligns its rows. The three values are not free —
+   they solve for the same icon centre in both states:
+
+     rail  icon centre = --space-2 + (56 - 2*--space-2 - --rail-control)/2
+                         + --rail-control/2          = 8 + 4 + 16 = 28px
+     panel icon centre = --space-2 + --rail-pad + --rail-lead + --icon-md/2
+                                                     = 8 + 4 + 8 + 8  = 28px
+
+   so --rail-pad === (56 - 2*--space-2 - --rail-control)/2. Change one and the
+   column splits again; sidebar-rail-header.test.ts pins the constants and
+   tests/sidebar-rail-peek-parity.spec.ts measures the rendered result.
+   Design note: docs/superpowers/specs/2026-08-14-siderail-rail-peek-parity-design.md */
 .shell-nav {
+  --rail-pad: 4px;
+  /* Leading padding inside an expanded control, before its icon. */
+  --rail-lead: 8px;
+  /* The collapsed rail's square control box — one size for every control. */
+  --rail-control: 32px;
   padding: var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
   backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
   overflow-y: auto;
 }
 
@@ -137,14 +164,80 @@
      @supports / reduced-transparency blocks below. */
   background: var(--glass-raised);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border-right: 1px solid var(--border-hairline);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
   animation: shellNavPeekIn 0.13s ease;
+}
+
+/* Inset-shell layout: navigation stays flush on the shell floor while the
+   content becomes the single elevated panel. Hover-peek remains a floating
+   overlay because it paints over the content rather than beside it. */
+@media (min-width: 1024px) {
+  .shell-nav-panel > .shell-nav:not(.shell-nav--rail) {
+    overflow-x: hidden;
+  }
+
+  .shell-nav-panel > .shell-nav:not(.shell-nav--rail, .shell-nav--peek) {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .shell-nav-panel > .shell-nav--peek {
+    /* No LEFT border/radius: the overlay is pinned to the window edge the rail
+       occupies, so a left hairline would both float in space and push every
+       control 1px right of its collapsed position (issue 4351). */
+    border: 1px solid var(--border-hairline);
+    border-left: 0;
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+    box-shadow: 0 14px 36px -24px var(--shadow-color);
+    overflow-x: hidden;
+  }
+
+  .shell-detail-panel {
+    padding: var(--space-2);
+    background: var(--bg-panel);
+  }
+
+  .shell-detail {
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 14px 36px -28px var(--shadow-color);
+    overflow-x: hidden;
+  }
 }
 @keyframes shellNavPeekIn {
   from { opacity: 0; transform: translateX(-8px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+/* Peel-reveal (cave-3vgd): progressive-enhancement page-curl around the
+   detail pane, revealing the sidebar when the collapsed rail is armed.
+   Plain mode (every browser without experimental HTML-in-canvas, and any
+   reduced-motion user) renders no wrapper elements at all, keeping the
+   `.shell-detail > .cave-mode-fade` direct-child contracts intact. Live mode
+   becomes the box the vendored Peel canvases fill; .shell-peel-scroll
+   reproduces .shell-detail's scroll contract because the vendor's content
+   wrapper is overflow: hidden. The under sheet is opaque (--bg-raised) and
+   232px wide to hand off seamlessly into the .shell-nav--peek overlay. */
+.shell-peel-reveal--live {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.shell-peel-reveal--live .shell-peel-fill {
+  height: 100%;
+}
+.shell-peel-reveal--live .shell-peel-scroll {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.shell-peel-under {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 232px;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border-hairline);
 }
 
 /* Code sidebar collapsed rail — when the nav panel collapses to the 56px rail,
@@ -189,13 +282,15 @@
    language (header · primary action · search · sticky groups · thread rows ·
    footer) so the two surfaces feel like one considered product. ═══════════════ */
 .cnav {
-  --cnav-pad: 10px;
+  --cnav-pad: var(--rail-pad);
   --cnav-indent: 24px;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+  /* The panel surface belongs to .shell-nav — one background for both
+     sections, so toggling Home <-> Chat cannot change the rail's shade. */
+  background: transparent;
   /* Rows respond to the panel, not the viewport — the sidebar is drag-resizable
      down to ~200px, where per-row ornaments crowd out the thread title. The
      matching @container rules live below the thread-row styles they override. */
@@ -216,9 +311,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  /* Extra right padding so the trailing options (⋯) button isn't jammed against
-     the panel edge; the left stays at --cnav-pad to align with the New-chat and
-     search fields below. */
+  /* The selector aligns with the New-chat and search fields below. */
   padding: var(--space-2) 15px var(--space-1) var(--cnav-pad);
 }
 .cnav__back {
@@ -236,67 +329,11 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-/* Familiar switcher IS the header — the labeled dropdown trigger stretches
-   across the row so the panel leads with whose chats these are. */
-.cnav__switcher {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-}
-.cnav__switcher .familiar-quickswitch,
-.cnav__switcher .familiar-switcher__trigger--labeled {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: none;
-}
-.cnav__switcher .familiar-switcher__trigger--labeled {
-  height: 32px;
-  justify-content: flex-start;
-}
+/* The familiar switcher and New chat live in .rail-header (see
+   styles/globals/rail-header.css) — ONE declaration shared with the Home
+   section. They used to be forked here as .cnav__switcher / .cnav__quick /
+   .cnav__new, which is how the two rails drifted apart. */
 
-/* One-row quick actions: New chat takes the slack; Scheduled/Plugins ride
-   along as icon chips. */
-.cnav__quick {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: var(--space-1) var(--cnav-pad) var(--space-2);
-}
-.cnav__new {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 34px;
-  padding: 0 var(--space-2);
-  border-radius: 10px;
-  /* Brand accent (--accent-presence); var(--accent) is the shadcn surface
-     token and rendered this button's chrome nearly invisible. */
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  font-weight: 560;
-  text-align: left;
-  transition: background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
-}
-.cnav__new:hover {
-  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
-  border-color: color-mix(in oklch, var(--accent-presence) 48%, transparent);
-}
-.cnav__new-icon {
-  flex-shrink: 0;
-  color: var(--accent-presence);
-}
-.cnav__new-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .cnav__kbd {
   flex-shrink: 0;
   font-size: var(--text-2xs);
@@ -307,48 +344,20 @@
   border: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
-.cnav__mini {
-  position: relative;
+/* Grouping is a first-class choice, not a setting hidden in the overflow menu.
+   The two visible tabs mirror the reference rail while retaining the existing
+   persisted Recent/Projects preference. The overflow menu rides at the end of
+   the same row — the separate utilities band it used to share with the
+   Scheduled/Plugins chips is retired. */
+.cnav__tabs-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  height: 34px;
-  min-width: 30px;
-  padding: 0 var(--space-1);
-  border-radius: 10px;
-  border: 1px solid var(--border-hairline);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  transition: background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
+  gap: var(--space-1);
+  margin: 0 var(--cnav-pad) var(--space-2);
 }
-.cnav__mini:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.cnav__mini-icon {
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-/* Count rides the chip's corner (overlay, not inline) so the icon chips stay
-   narrow enough for the one-row layout at the sidebar's minimum width. */
-.cnav__mini-count {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--bg-raised);
-  background: color-mix(in oklch, var(--foreground) 12%, var(--bg-raised));
-  font-size: var(--text-2xs);
-  font-weight: 650;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+.cnav__tabs {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Search */
@@ -413,6 +422,11 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* The rail's one inset (see rail-header.css). Thread rows, group heads and
+     section labels inherit it here rather than each carrying its own, so the
+     whole scroll region lines up with the header above it. Children that used
+     to supply their own horizontal inset were zeroed in the same change. */
+  padding-inline: var(--rail-pad);
   padding-bottom: var(--space-2);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--foreground) 13%, transparent) transparent;
@@ -431,14 +445,52 @@
   background-clip: padding-box;
 }
 
-/* Section label (Pinned) */
+/* Section label (Pinned / time buckets) — Chat.dc.html 2a rail: a mono
+   uppercase name, a count pill, then a hairline rule that runs out to the
+   panel edge, so groups read as structure rather than as more list rows. */
 .cnav__label {
-  padding: 10px var(--cnav-pad) 3px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 0 3px;
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-weight: 650;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-primary);
+}
+.cnav__label::before {
+  content: "";
+  width: 2px;
+  height: var(--space-3);
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 58%, transparent);
+}
+.cnav__label-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cnav__label-count {
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.cnav__label-rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border-hairline);
 }
 
 /* Project group header — sticky so context stays while scrolling long lists.
@@ -451,9 +503,8 @@
   align-items: center;
   width: 100%;
   min-height: 40px;
-  padding: var(--space-1) 6px var(--space-1) var(--space-2);
+  padding: var(--space-1) 6px var(--space-1) 0;
   background: color-mix(in oklch, var(--bg-raised) 96%, var(--foreground) 4%);
-  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   color: var(--text-secondary);
   transition: color var(--duration-fast) var(--ease-standard);
@@ -554,6 +605,8 @@
   align-items: center;
   min-height: 34px;
   padding: 0 6px 0 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
   color: var(--text-secondary);
   transition: background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
@@ -569,9 +622,41 @@
   color: inherit;
   text-align: left;
 }
+.cnav__thread-copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.cnav__thread-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.cnav__attention {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs);
+  line-height: 1.3;
+  color: var(--color-warning);
+}
+.cnav__attention-dot {
+  width: var(--space-1);
+  height: var(--space-1);
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-warning);
+}
 /* Recent/flat rows align with their section label instead of indenting under a folder. */
 .cnav__thread--flat .cnav__thread-main {
-  padding-left: 13px;
+  padding-left: var(--space-3);
 }
 /* Row actions overlay the right edge so they reserve NO layout width — the title
    and timestamp use the full row when not hovered, then the actions fade in over
@@ -602,19 +687,73 @@
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
   color: var(--text-primary);
 }
+.cnav__thread[data-attention="left-hanging"] {
+  background: color-mix(in oklch, var(--color-warning) 7%, transparent);
+}
+.cnav__thread[data-attention="awaiting-human"] {
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+}
+.cnav__thread[data-attention="overdue-human"] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.cnav__thread[data-attention="left-hanging"] .cnav__thread-main,
+.cnav__thread[data-attention="awaiting-human"] .cnav__thread-main,
+.cnav__thread[data-attention="overdue-human"] .cnav__thread-main {
+  align-items: flex-start;
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+.cnav__thread[data-attention="overdue-human"] .cnav__attention {
+  color: var(--danger-text);
+}
+.cnav__thread[data-attention="overdue-human"] .cnav__attention-dot {
+  background: var(--danger-text);
+}
 .cnav__thread.is-active {
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  --cnav-active-background: var(--bg-raised);
+  isolation: isolate;
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
   color: var(--text-primary);
+}
+.cnav__thread.is-active[data-attention="left-hanging"] {
+  --cnav-active-background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
+  background: color-mix(in oklch, var(--color-warning) 7%, var(--bg-raised));
+}
+.cnav__thread.is-active[data-attention="awaiting-human"] {
+  --cnav-active-background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--color-warning) 14%, var(--bg-raised));
+}
+.cnav__thread.is-active[data-attention="overdue-human"] {
+  --cnav-active-background: var(--danger-bg);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.cnav__thread.is-active::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: calc(var(--rail-pad) * -1);
+  background: var(--cnav-active-background);
+  pointer-events: none;
 }
 .cnav__thread.is-active::before {
   content: "";
   position: absolute;
-  left: 7px;
+  left: 0;
   top: 7px;
   bottom: 7px;
   width: 2.5px;
   border-radius: 2px;
   background: var(--accent-presence);
+  z-index: 0;
+}
+.cnav__thread.is-active.cnav__thread--pr::before {
+  left: 0;
 }
 /* Archived rows (visible via the sidebar's "Show archived" option) read muted
    so they can't pass for live threads; hover restores full contrast for the
@@ -625,6 +764,65 @@
 }
 .cnav__thread.is-archived:hover .cnav__thread-title {
   color: var(--text-primary);
+}
+/* Per-row state tick (Chat.dc.html 2a): a 2px bar on the row's left edge,
+   coloured by session state. It reuses the .cnav__dot--* state classes so a
+   new status only has to teach the dot its colour. Quiet at rest so the
+   active row's accent tick still leads. */
+.cnav__tick {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 1;
+}
+.cnav__thread:hover .cnav__tick {
+  opacity: 1;
+}
+/* The active row keeps its runtime tick; it simply shifts inboard so the
+   selection accent (::before) and any attention tick remain distinct cues. */
+.cnav__thread.is-active .cnav__tick {
+  left: var(--space-3);
+  opacity: 1;
+}
+.cnav__thread.is-active .cnav__tick {
+  opacity: 0;
+}
+.cnav__thread.is-active.cnav__thread--pr .cnav__tick {
+  left: var(--space-1);
+}
+.cnav__thread.is-active.cnav__thread--pr:not([data-attention="none"]) .cnav__tick {
+  left: var(--space-2);
+}
+/* Attention channel (cave-zs85n Task 6): a SEPARATE structural tick from the
+   runtime .cnav__tick above, so a row's session status (running/failed/
+   paused/queued) and its human-attention state can never fight over the same
+   colour. Sits inboard of the runtime tick and the active-selection accent
+   (::before) at left var(--space-2)) so all three cues stay simultaneously
+   readable rather than one silently overwriting another. Warning by default
+   (left-hanging/awaiting-human); overdue-human escalates to danger. Never
+   animated — only .cnav__dot--running pulses, and that pulse is intentionally
+   scoped to runtime status, not attention. Rendered only for non-none,
+   non-archived attention (see resolveThreadAttention), so there is nothing to
+   hide here for those states. */
+.cnav__attention-tick {
+  position: absolute;
+  left: var(--space-1);
+  top: var(--space-2);
+  bottom: var(--space-2);
+  width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--color-warning);
+  pointer-events: none;
+  z-index: 2;
+}
+.cnav__thread[data-attention="overdue-human"] .cnav__attention-tick {
+  background: var(--danger-text);
 }
 .cnav__dot {
   width: 6px;
@@ -643,6 +841,11 @@
 .cnav__dot--running {
   background: var(--color-success);
   animation: cnav-pulse 1.6s ease-in-out infinite;
+}
+.cnav__tick.cnav__dot--running {
+  /* The tick borrows the state colour but never the pulse — a rail full of
+     breathing bars is noise, and the dot already carries the animation. */
+  animation: none;
 }
 .cnav__dot--failed {
   background: var(--color-danger);
@@ -697,6 +900,9 @@
 .cnav__thread--flat .cnav__pr-badge {
   margin-left: var(--space-2);
 }
+.cnav__thread--flat.is-active.cnav__thread--pr:not([data-attention="none"]) .cnav__pr-badge {
+  margin-left: var(--space-3);
+}
 .cnav__pr-badge + .cnav__thread-main,
 .cnav__thread--flat .cnav__pr-badge + .cnav__thread-main {
   /* The badge owns the gutter; keep only the row's internal 8px gap. */
@@ -742,6 +948,9 @@
   }
   .cnav__thread-main {
     gap: 6px;
+  }
+  .cnav__attention {
+    white-space: nowrap;
   }
 }
 
@@ -790,6 +999,11 @@
 .cnav__more:hover {
   color: var(--text-secondary);
 }
+/* Flat sections (Awaiting you, time buckets) show their "Show N more" control
+   indented to match the flat rows above it, not the deeper folder indent. */
+.cnav__more--flat {
+  padding-left: var(--space-3);
+}
 .cnav__empty {
   padding: 22px 14px;
   text-align: center;
@@ -817,9 +1031,8 @@
 .cnav__error-text {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .shell-nav-header {
@@ -941,6 +1154,11 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+/* The detail wrapper provides the shell floor around the inset content. */
+.shell-detail-panel {
+  background: var(--bg-panel);
 }
 
 .shell-detail-header {

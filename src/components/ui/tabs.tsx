@@ -32,6 +32,8 @@ export type TabItem<T extends string = string> = {
   count?: number;
   /** Optional accessible title (tooltip). */
   title?: string;
+  /** Override the controlled panel id when multiple tabs update one shared panel. */
+  controlsId?: string;
   /** Disable selection of this tab. */
   disabled?: boolean;
   /** Override the underline/indicator colour for this tab (e.g. a surface accent). */
@@ -44,7 +46,7 @@ type TabsProps<T extends string> = {
   onChange: (id: T) => void;
   /** "horizontal" (underline, default) or "vertical" (left-border indicator). */
   orientation?: "horizontal" | "vertical";
-  /** Stretch tabs to fill the track (equal-width). Horizontal only. */
+  /** Stretch tabs to fill the track (equal-width). Horizontal and segment. */
   fill?: boolean;
   /** aria-label for the tablist. */
   ariaLabel?: string;
@@ -121,10 +123,10 @@ export function Tabs<T extends string>({
       {items.map((t) => {
         const isActive = t.id === value;
         const tabId = idPrefix ? `${idPrefix}-tab-${t.id}` : undefined;
-        const panelId = idPrefix ? `${idPrefix}-panel-${t.id}` : undefined;
+        const panelId = t.controlsId ?? (idPrefix ? `${idPrefix}-panel-${t.id}` : undefined);
 
         const className = segment
-          ? segmentTabClass(isActive, sm)
+          ? segmentTabClass(isActive, fill, sm)
           : vertical
             ? verticalTabClass(isActive, t.disabled, sm)
             : horizontalTabClass(isActive, fill, sm);
@@ -191,10 +193,11 @@ function verticalTabClass(isActive: boolean, disabled: boolean | undefined, sm: 
   ].join(" ");
 }
 
-function segmentTabClass(isActive: boolean, sm: boolean): string {
+function segmentTabClass(isActive: boolean, fill: boolean, sm: boolean): string {
   return [
     "relative inline-flex items-center gap-1.5 outline-none rounded-md",
     sm ? "px-2.5 py-1 text-[length:var(--text-xs)]" : "px-3 py-1.5 text-[length:var(--text-sm)]",
+    fill ? "flex-1 justify-center min-w-0" : "",
     // Every tab carries a transparent border so selecting one (which colours
     // the border) never shifts layout.
     "font-medium transition-colors border border-transparent",

@@ -83,16 +83,18 @@ async function openCrafts(page: Page, plugin = craftPlugin()) {
   await page.route(`**/api/marketplace/crafts/plan?id=${CRAFT_ID}`, (route) => route.fulfill({ json: { ok: true, plan } }));
   await page.addInitScript(() => window.localStorage.setItem("cave:onboarding:dismissed", "1"));
   await page.goto("/?mode=marketplace");
-  await expect(page.getByRole("heading", { name: "Marketplace" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
   await page.locator("#marketplace-tab-crafts").click();
   await expect(page.locator("#marketplace-panel-crafts")).toBeVisible();
 }
 
 test.describe("Craft Marketplace transactions", () => {
   test("preview → install → equip → inspect origins → detach → remove", async ({ page }) => {
+    const marketplacePlugin = craftPlugin();
     let equipped = false;
     const roleWrites: Array<{ attach: boolean }> = [];
     let installCalls = 0;
+    const installGate: { release: (() => void) | null } = { release: null };
     let uninstallCalls = 0;
 
     await page.route("**/api/roles/crafts", async (route) => {
@@ -115,7 +117,18 @@ test.describe("Craft Marketplace transactions", () => {
     }));
     await page.route("**/api/marketplace/crafts/install", async (route) => {
       installCalls += 1;
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      Object.assign(marketplacePlugin, {
+        installed: true,
+        installation: {
+          version: "0.1.0",
+          source: "catalog",
+          installedAt: "2026-07-10T01:00:00.000Z",
+          verifiedAt: "2026-07-10T01:00:00.000Z",
+          runtime: "codex",
+          craftVersion: "0.1.0",
+        },
+      });
+      await new Promise<void>((resolve) => { installGate.release = resolve; });
       await route.fulfill({
         json: {
           ok: true,
@@ -129,11 +142,12 @@ test.describe("Craft Marketplace transactions", () => {
     });
     await page.route("**/api/marketplace/crafts/uninstall", async (route) => {
       uninstallCalls += 1;
+      Object.assign(marketplacePlugin, { installed: false, installation: undefined });
       await route.fulfill({ json: { ok: true, installed: false, runtime: "codex", craftVersion: "0.1.0" } });
     });
 
-    await openCrafts(page);
-    const preview = page.getByRole("button", { name: "Preview" });
+    await openCrafts(page, marketplacePlugin);
+    const preview = page.getByTestId("detail").getByRole("button", { name: "Preview" });
     await preview.focus();
     await preview.click();
     const dialog = page.getByRole("dialog", { name: "Seeker's Lens Craft details" });
@@ -144,7 +158,10 @@ test.describe("Craft Marketplace transactions", () => {
 
     const install = dialog.getByRole("button", { name: "Install Craft" });
     await install.click();
+    await expect.poll(() => installCalls).toBe(1);
     await expect(install).toHaveAttribute("aria-busy", "true");
+    if (!installGate.release) throw new Error("install request did not reach its test gate");
+    installGate.release();
     await expect(dialog.getByText("Installed and verified")).toBeVisible();
     expect(installCalls).toBe(1);
 

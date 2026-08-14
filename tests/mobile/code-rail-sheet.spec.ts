@@ -40,6 +40,13 @@ async function base(page: Page) {
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
   );
+  // Dismissed onboarding still probes startup status on every boot. Left
+  // unmocked, the real handler's cold compile + probes race the lazy
+  // code-rail chunk on the slowest mobile project and the sheet renders
+  // empty past the expect window. Mock it like the queue specs do.
+  await page.route("**/api/onboarding/status**", (route) =>
+    route.fulfill({ json: { ok: true, complete: true, steps: {}, tools: [] } }),
+  );
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: [REPO_SESSION] } }),
   );
@@ -114,7 +121,9 @@ test.describe("mobile code-rail slide-over sheet", () => {
     await toggle.click();
     const sheet = page.getByRole("dialog", { name: "Code rail" });
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator(".workspace-rail")).toBeVisible();
+    // WorkspaceRail is code-split; wait for an in-rail control that appears
+    // only after the lazy chunk mounts inside the already-open dialog.
+    await expect(sheet.getByRole("button", { name: "Collapse code rail" })).toBeVisible({ timeout: 15_000 });
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     // The pin control is meaningless in a transient sheet → hidden.
     await expect(sheet.getByRole("button", { name: /Pin code rail/ })).toHaveCount(0);

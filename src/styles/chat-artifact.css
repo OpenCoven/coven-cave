@@ -74,7 +74,7 @@
 .chat-artifact__btn:disabled { opacity: 0.55; cursor: default; }
 .chat-artifact__btn--text { padding: 0 10px; color: var(--text-secondary); }
 .chat-artifact__body { position: relative; }
-.chat-artifact__preview-wrap { position: relative; height: 360px; background: #fff; }
+.chat-artifact__preview-wrap { position: relative; height: 360px; background: var(--surface-paper); }
 .chat-artifact__frame { width: 100%; height: 100%; border: 0; display: block; }
 .chat-artifact__code, .chat-artifact__code-edit {
   margin: 0; width: 100%; height: 360px; box-sizing: border-box;

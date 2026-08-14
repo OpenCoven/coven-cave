@@ -57,10 +57,7 @@
 
 .cave-composer-control-row {
   display: grid;
-  /* Utility cluster (attach · voice · Options) flexes on the left; submit
-     actions (enhance · send) hug the right. Response controls now live inside
-     the Options popover, so the footer stays a single minimal row. */
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: 34px;
   align-items: center;
   gap: var(--space-2);
@@ -77,6 +74,106 @@
 
 .cave-composer-submit-row {
   justify-content: flex-end;
+}
+
+.cave-composer-edge-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--space-6);
+  padding: var(--space-1) var(--space-3) 0;
+}
+
+.cave-composer-tools-tab,
+.cave-composer-task-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 42%, transparent);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-composer-tools-tab:hover:not(:disabled),
+.cave-composer-task-tab:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-strong));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-composer-tools-tab[aria-expanded="true"] {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
+
+.cave-composer-tools-tab:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.cave-composer-context-meter {
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.cave-composer-context-meter__track {
+  appearance: none;
+  width: var(--space-8);
+  height: 5px;
+  margin: 0;
+}
+
+.cave-composer-context-meter__track::-webkit-meter-bar {
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--text-muted) 28%, transparent);
+}
+
+.cave-composer-context-meter__track::-webkit-meter-optimum-value {
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+.cave-composer-context-meter[data-level="warn"] .cave-composer-context-meter__track::-webkit-meter-optimum-value {
+  background: var(--color-warning);
+}
+
+.cave-composer-context-meter[data-level="high"] .cave-composer-context-meter__track::-webkit-meter-optimum-value {
+  background: var(--color-danger);
+}
+
+.cave-composer-context-meter__track::-moz-meter-bar {
+  border-radius: var(--radius-pill);
+  background: var(--accent-presence);
+}
+
+.cave-composer-context-meter[data-level="warn"] .cave-composer-context-meter__track::-moz-meter-bar {
+  background: var(--color-warning);
+}
+
+.cave-composer-context-meter[data-level="high"] .cave-composer-context-meter__track::-moz-meter-bar {
+  background: var(--color-danger);
 }
 
 /* Follow-ups composed while a turn streams stay visible and actionable, but
@@ -141,9 +238,11 @@
  * runtime/model · git context on the left, linked tasks/GitHub on the right —
  * moved OUT of the input's control row so the write surface above stays
  * minimal. Last child of .cave-composer-panel, so the panel's overflow clips
- * it into the rounded bottom corners; it reads as the card, one tone deeper. */
+ * it into the rounded bottom corners; it reads as the card, one tone deeper.
+ * The latest assistant options span the row below this context when present. */
 .cave-composer-footer-band {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
@@ -466,7 +565,6 @@
   border-radius: var(--radius-control);
   background: var(--glass-elevated);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   padding: 9px;
   box-shadow: 0 14px 34px color-mix(in oklch, var(--bg-base) 64%, transparent);
   color: var(--text-secondary);
@@ -776,7 +874,6 @@
   .cave-chat-model-popover {
     background: var(--bg-elevated);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 
@@ -1016,9 +1113,9 @@
   .composer-actions__icon--live { animation: none; }
 }
 
-/* Footer context chips (cave-g21f) — project · model · branch ride as
-   separate quiet controls in the footer band; each opens its own picker
-   anchored to the chip. Shared by the chat and home composers. */
+/* Shared adaptive context controls (cave-g21f): project · worktree · branch · model
+   appear as independent picker chips in new-chat footer band and active-chat header;
+   each opens its own picker anchored to the chip. */
 .cave-composer-footer-band__cluster {
   display: flex;
   align-items: center;
@@ -1081,6 +1178,26 @@
   opacity: 0.7;
 }
 
+/* Shared adaptive context controls: a single horizontally scrollable row for
+   project · worktree · branch · model chips in both footer-band and header. */
+.cave-context-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: calc(var(--ring-offset) + var(--ring-width));
+  white-space: nowrap;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+
+.cave-context-controls > .cave-context-chip {
+  flex: 0 0 auto;
+}
+
 /* Circular 32px send: accent outline on transparent at rest; ~18% accent tint
    once the draft is non-empty; the busy variant keeps cancel's red ✕ in the
    same circle. */
@@ -1113,7 +1230,7 @@
 .cave-composer-send--busy {
   border-color: transparent;
   background: color-mix(in oklch, var(--color-danger) 90%, transparent);
-  color: white;
+  color: var(--color-danger-foreground);
 }
 
 .cave-composer-send--busy:hover {
@@ -1142,6 +1259,15 @@
     min-width: var(--touch-target);
     min-height: var(--touch-target);
     -webkit-tap-highlight-color: transparent;
+  }
+
+  .cave-composer-tools-tab,
+  .cave-composer-task-tab {
+    min-height: var(--touch-target);
+  }
+
+  .cave-composer-context-meter {
+    display: none;
   }
 
   .cave-context-chip {

@@ -6,7 +6,18 @@ const source = [
   readFileSync(new URL("./github-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./github-view-data.ts", import.meta.url), "utf8"),
 ].join("\n");
-const boardCss = readFileSync(new URL("../styles/board.css", import.meta.url), "utf8");
+// The sectioned triage list lives in its own module; its markup pins belong
+// here with the rest of the surface's contract.
+const stream = readFileSync(new URL("./github-stream.tsx", import.meta.url), "utf8");
+const stage = readFileSync(new URL("../lib/github-stage.ts", import.meta.url), "utf8");
+const boardCss = [
+  "chrome-table.css",
+  "kanban-inspector.css",
+  "github-list.css",
+  "github-detail.css",
+  "mobile-card-stack.css",
+  "gantt-fallbacks.css",
+].map((name) => readFileSync(new URL(`../styles/board/${name}`, import.meta.url), "utf8")).join("\n");
 
 // Inner GitHub <h2> and logo removed — the workspace breadcrumb already names the surface.
 assert.doesNotMatch(
@@ -86,6 +97,16 @@ assert.match(
   /\{patStatus\?\.hasPat \? \(\s*<>\s*<PopoverSeparator \/>\s*<PopoverItem icon="ph:key" onSelect=\{\(\) => setShowPatModal\(true\)\}>/,
   "connected state moves PAT management into the overflow menu",
 );
+assert.doesNotMatch(
+  source,
+  /activity\?\.authed === true|>\s*authenticated\s*</,
+  "authenticated state does not render a persistent status chip",
+);
+assert.doesNotMatch(
+  boardCss,
+  /\.gh-compact-auth--authed/,
+  "the retired authenticated status chip leaves no dead modifier styles",
+);
 
 assert.match(
   source,
@@ -98,44 +119,62 @@ assert.match(
   "detail panel summarizes PRs, Reviews, and Issues",
 );
 assert.match(
-  source,
-  /className=\{`gh-row reveal-scope\$\{selectedItem\?\.id === item\.id \? " is-selected" : ""\}`\}/,
-  "GitHub rows expose selected state (and act as the reveal scope for row actions)",
+  stream,
+  /gh-stream-row reveal-scope gh-tone--\$\{stage\.tone\}\$\{selected \? " is-selected" : ""\}/,
+  "stream rows expose selected state and act as the reveal scope for row verbs",
 );
 assert.match(
   source,
-  /onClick=\{\(\) => selectRow\(item\.id\)\}/,
-  "clicking a GitHub row selects it for inspection (and clears any deep link)",
+  /onSelect=\{selectRow\}/,
+  "clicking a stream row selects it for inspection (and clears any deep link)",
 );
 assert.match(
   source,
-  /className="gh-glass-panel"/,
-  "detail panel uses the glass panel styling hook",
+  /className=\{`gh-glass-panel gh-detail\$\{focused \? " is-focused" : ""\}`\}/,
+  "detail panel keeps the glass panel styling hook and adds the focused-read modifier",
+);
+// Three bands: the masthead and the body scroll independently and the
+// what-to-do-next drawer is pinned, so the shell itself is never the scrollport.
+assert.match(source, /<div className="gh-detail-mast">/, "detail masthead is its own band");
+assert.match(source, /<div className="gh-detail-body" ref=\{bodyRef\}>/, "detail body is its own scrollport");
+assert.match(
+  boardCss,
+  /\.gh-detail \{[\s\S]*?overflow:hidden;/,
+  "the detail shell clips rather than becoming the scrollport",
 );
 assert.match(
+  boardCss,
+  /\.gh-detail-body \{[\s\S]*?overflow-y:auto;/,
+  "detail scrolling happens in the body band",
+);
+// Labels: the coloured chip UI stays retired (dots, per-label tints, a Labels
+// section of its own). Plain label TEXT is back in two places, because the
+// triage stream made it load-bearing: `untriaged` is *defined* as "no labels",
+// so a row that carries that badge has to let you see what is missing, and the
+// row's muted meta line plus the collapsed Facts grid are where it says so.
+// If the owner wants labels gone again, delete metaFor()'s labels branch in
+// github-stream.tsx and the labels fact row in github-view.tsx.
+assert.doesNotMatch(
   source,
-  /<div className="gh-glass-panel-scroll">[\s\S]*?<\/div>\s*<\/aside>/,
-  "GitHub detail sidepanel keeps scrolling inside an inner body, not on the glass shell",
+  /gh-issue-labels|gh-issue-label-dot|No labels on this item\.|gh-badge--label/,
+  "GitHub view should not bring back the coloured label-chip UI",
+);
+assert.doesNotMatch(
+  boardCss,
+  /gh-issue-labels|gh-issue-label-dot|gh-badge--label|gh-glass-labels/,
+  "GitHub label chip styles stay removed",
 );
 assert.doesNotMatch(
   source,
-  /gh-issue-labels|gh-issue-label|gh-issue-label-dot|No labels on this item\.|gh-badge--label|item\.labels\?\.slice/,
-  "GitHub view should not render visible GitHub labels in rows or the detail panel",
+  /<div className="gh-glass-section-title">Labels<\/div>/,
+  "labels do not get a section of their own",
 );
+assert.match(stream, /const labels = entry\.row\.labels \?\? \[\];/, "the row's meta line can show label text");
+assert.match(source, /\{ key: "labels", value: labels\.map\(\(l\) => l\.name\)\.join\(", "\) \|\| "none" \}/, "the Facts grid carries labels as plain text");
 assert.doesNotMatch(
   boardCss,
-  /gh-issue-labels|gh-issue-label|gh-issue-label-dot|gh-badge--label|gh-glass-labels/,
-  "GitHub label chip styles should be removed with the visible label UI",
-);
-assert.match(
-  boardCss,
-  /\.gh-glass-panel-scroll \{[\s\S]*?overflow-y:auto;[\s\S]*?scrollbar-width:none;[\s\S]*?-ms-overflow-style:none;/,
-  "GitHub detail sidepanel scrolls inside an inner body without the hover-only scrollbar rail",
-);
-assert.match(
-  boardCss,
-  /\.gh-glass-panel-scroll::(?:-webkit-scrollbar) \{ width:0; height:0; \}/,
-  "GitHub detail sidepanel inner body hides WebKit scrollbar chrome on hover",
+  /\.gh-glass-panel-scroll/,
+  "the single-scrollport glass body is retired with the three-band detail panel",
 );
 assert.match(
   boardCss,
@@ -173,6 +212,148 @@ assert.doesNotMatch(
   "detail panel removes the Labels section entirely",
 );
 
+// ── Stage-sectioned triage stream ─────────────────────────────────────────────
+// The list groups by what a row is asking of you, and the facet chips ARE those
+// sections — same key, same count — so a chip can never advertise a total the
+// rows beneath the heading it names do not contain.
+assert.match(stage, /export function facetsFor<T>\(sections: GhStreamSection<T>\[\]\): GhFacet\[\]/, "facets are derived from the sections themselves");
+assert.match(source, /const facets = useMemo\(\(\) => facetsFor\(allSections\), \[allSections\]\)/, "the facet bar reads the same sections the stream renders");
+assert.match(source, /allSections\.filter\(\(s\) => pickedFacets\.includes\(s\.key\)\)/, "picking a facet narrows to exactly that section");
+assert.match(source, /const live = picked\.filter\(\(key\) => allSections\.some\(\(s\) => s\.key === key\)\)/, "a facet whose section disappeared is dropped rather than silently emptying the list");
+assert.match(stage, /return defs[\s\S]{0,200}?\.filter\(\(s\) => s\.entries\.length > 0\)/, "empty sections are dropped, not rendered as bare headings");
+assert.match(stream, /GH_NEXT_STEP\[stage\.key\]/, "peek names the next step for the row's stage");
+
+// ── The stream never names or defaults a familiar ────────────────────────────
+// Handing work off means choosing WHICH familiar, from the user's own roster.
+// The stream takes a slot; the host fills it with the picker. A callback here
+// would have invited a hardcoded default, and the earlier `onHandOff` prop was
+// never wired at all, so the row verb silently did not render.
+assert.doesNotMatch(stream, /onHandOff|handOffLabel/, "the dead hand-off callback is gone");
+assert.match(stream, /renderHandOff\?: \(item: GitHubItem\) => ReactNode;/, "hand-off is a host-rendered slot");
+assert.match(
+  source,
+  /renderHandOff=\{\(item\) => \(\s*<OpenChatAction/,
+  "the host fills the hand-off slot with the familiar picker",
+);
+for (const [name, src] of [["stream", stream], ["stage", stage]]) {
+  assert.doesNotMatch(src, /\bCody\b/i, `${name} names no specific familiar`);
+}
+
+// …and the HOST does not quietly pick one either (cave-26sg4). The guard above
+// covered the stream and the stage, which is where the slot was introduced —
+// but the violation it was written against lived in github-view.tsx, where
+// SafeMergeAction fell back to `familiars[0]`. Roster order is not a choice the
+// user made, and safe merge creates a worktree and drives a merge, so the
+// familiar it lands on has to be asked for.
+assert.doesNotMatch(
+  source,
+  /familiars\[0\]/,
+  "the host never falls back to whichever familiar sorts first",
+);
+// Safe merge asks when the work is not already attached to a familiar.
+assert.match(
+  source,
+  /const linkedFamiliarId = linkedCard\?\.familiarId \?\? null;/,
+  "safe merge derives its familiar from the linked card only",
+);
+assert.match(
+  source,
+  /if \(linkedFamiliarId\) \{\s*void startSafeMerge\(linkedFamiliarId\);[\s\S]{0,80}?setPickerOpen\(\(v\) => !v\);/,
+  "safe merge runs straight through when a linked card names a familiar, and opens the picker otherwise",
+);
+// An empty roster and a failed load are different claims — cave-59cv's rule,
+// applied here because safe merge now surfaces the roster itself.
+assert.match(
+  source,
+  /familiarsFailed \? "Could not load your familiars\." : "No familiars yet\."/,
+  "safe merge distinguishes a failed familiars load from an empty roster",
+);
+
+// The row keeps exactly ONE accented verb. Moving the hand-off to a slot took
+// the accent off it (the slot renders a plain secondary button), which left
+// .gh-stream-verb--accent as dead CSS and the row with no primary-action
+// signal at all. The accent now reaches the slot by selector, so this pins
+// both halves: the declarations stay live, and the slot is what wears them.
+// Whitespace-tolerant on purpose: these pin the SELECTOR PAIRING, not the
+// formatting. A regex that demands a literal newline fails on a reflow that
+// changed nothing, which trains people to edit the test instead of reading it.
+assert.match(
+  boardCss,
+  /\.gh-stream-verb--accent,\s*\.gh-stream-handoff \.ui-btn\s*\{/,
+  "the row's accent reaches the hand-off slot rather than becoming dead CSS",
+);
+// The slot's wrapper does not restate what .gh-action-wrap already sets.
+assert.doesNotMatch(
+  boardCss,
+  /\.gh-stream-handoff\s+\.gh-action-wrap\s*\{\s*display:\s*inline-flex/,
+  "the hand-off wrapper does not restate .gh-action-wrap's own display",
+);
+
+// The row is both a click and a double-click target, so every interactive
+// island nested inside it must swallow BOTH. Stopping only `click` leaves
+// `dblclick` bubbling, and an impatient double-click on the hand-off picker or
+// the Peek verb opens the focused read out from under the interaction.
+assert.match(stream, /const stopRowActivation = useCallback\(/, "one helper swallows row activation for nested islands");
+{
+  const islands = stream.match(/onDoubleClick=\{stopRowActivation\}/g) ?? [];
+  assert.ok(islands.length >= 5, `every nested island stops dblclick (found ${islands.length}, expected >= 5)`);
+}
+assert.match(
+  stream,
+  /className="gh-stream-handoff"\s*\n\s*onClick=\{stopRowActivation\}\s*\n\s*onDoubleClick=\{stopRowActivation\}/,
+  "the hand-off slot swallows both activations",
+);
+assert.match(boardCss, /\.gh-tone--ok\s+\{ --gh-tone:var\(--color-success\); \}/, "one custom property carries a row's tone to every part that paints it");
+
+// ── Landing gates ─────────────────────────────────────────────────────────────
+// Checks, review and mergeability, read before the title's ink is dry. A gate
+// whose data never arrived says so in the muted tone rather than borrowing a
+// sibling's green.
+assert.match(source, /function landingGates\(item: GitHubItem, detail: ItemDetail \| null, checks: ChecksState\)/, "the landing gates derive from the item, its detail and its checks");
+assert.match(source, /value: "not reported", tone: "mute"/, "an unreported gate reports mute, never green");
+assert.match(source, /&pull=1`/, "the detail fetch asks for mergeability and the review tally");
+assert.match(source, /width < 300/, "the gate strip collapses to rows on a narrow split");
+assert.match(source, /new ResizeObserver\(\(entries\) => \{\s*const width = Math\.round\(entries\[0\]\.contentRect\.width\)/, "the gate strip measures itself, not the viewport");
+
+// ── Focused read ──────────────────────────────────────────────────────────────
+// Portalled: an ancestor with backdrop-filter would otherwise become the
+// containing block for position:fixed and strand the modal inside the split.
+assert.match(source, /if \(!focused\) return panel;\s*\n\s*return createPortal\(/, "the focused read escapes the split through a portal");
+assert.match(source, /if \(e\.key === "Escape"\) \{ e\.preventDefault\(\); setFocused\(false\); \}/, "Esc leaves the focused read");
+assert.match(source, /const FILTER_BACK_LABEL: Record<Filter, string>/, "the way out of the focused read is named per tab");
+
+// ── Freshness + budget ────────────────────────────────────────────────────────
+assert.match(source, /function GhSyncPill/, "the header states how stale the list is");
+assert.match(source, /function GhBudgetMeter/, "the header states the hour's shared API budget");
+assert.match(source, /setLastSyncedAt\(Date\.now\(\)\)/, "freshness is stamped only on a successful fetch");
+assert.match(boardCss, /\.gh-budget-track \{/, "the budget meter draws a spend bar, not just a number");
+
+// ── Review-feedback guards (PR #4198, copilot-pull-request-reviewer) ─────────
+// Rows are role="button", where aria-selected is not a valid state and some
+// assistive tech drops it — aria-current is the codebase's marker, and the
+// roving-index logic has to read the same attribute it writes.
+assert.doesNotMatch(stream, /aria-selected/, "stream rows do not use aria-selected on a role=button");
+assert.match(stream, /aria-current=\{selected \? "true" : undefined\}/, "the inspected row is marked with aria-current");
+assert.match(stream, /r\.getAttribute\("aria-current"\) === "true"/, "roving-index recovery reads the same attribute the row writes");
+
+// Raised over the list behind a scrim, the detail panel IS a modal: it says so,
+// traps the tab ring, and returns focus on close.
+assert.match(source, /role=\{focused \? "dialog" : undefined\}/, "the focused read carries dialog semantics");
+assert.match(source, /aria-modal=\{focused \? true : undefined\}/, "the focused read is announced as modal");
+assert.match(source, /useFocusTrap\(focused, panelRef, \{ onEscape: onUnfocus \}\)/, "the focused read traps focus and returns it");
+
+// The freshness ticker only runs when there is a label on screen to age.
+assert.match(source, /const ticking = syncedAt !== null;/, "the sync pill gates its ticker on having something to age");
+assert.match(source, /if \(!ticking\) return;/, "no interval is created for a pill that renders nothing");
+
+// A notification has a url but no number — gating the copy control on the
+// number made its link uncopyable.
+assert.doesNotMatch(
+  source,
+  /\{item\.number != null \? \(\s*<CopyButton/,
+  "the copy-link control is not gated on a number the item may not have",
+);
+
 // Selecting a repo pins the org to that repo's org and locks the Org select.
 assert.match(
   source,
@@ -184,24 +365,13 @@ assert.match(
   /disabled=\{orgOptions\.length === 0 \|\| repoFilter !== "all"\}/,
   "the Org select is disabled (locked) while a repo is selected",
 );
-// Grouping is a none/org/repo segmented toggle, not a dropdown.
-assert.match(
-  source,
-  /\(\["none", "org", "repo"\] as GroupBy\[\]\)\.map/,
-  "grouping renders as a none/org/repo toggle",
-);
-// Grouping moved into the overflow menu (§8): PopoverItem's checked prop
-// renders menuitemradio semantics (aria-checked + trailing check glyph).
-assert.match(
-  source,
-  /<PopoverItem key=\{g\} checked=\{groupBy === g\} onSelect=\{\(\) => setGroupBy\(g\)\}>/,
-  "grouping options are exclusive menu radios in the overflow",
-);
-assert.doesNotMatch(
-  source,
-  /<option value="none">No grouping<\/option>/,
-  "the old grouping dropdown is gone",
-);
+// Org/repo grouping is retired: the stream groups by stage, and a second
+// grouping axis on top of that only competes with it. The overflow keeps the
+// bulk section controls instead.
+assert.doesNotMatch(source, /as GroupBy\[\]/, "the none/org/repo grouping toggle is gone");
+assert.doesNotMatch(source, /<option value="none">No grouping<\/option>/, "the old grouping dropdown is gone");
+assert.match(source, /Expand every section/, "the overflow can expand every section at once");
+assert.match(source, /Collapse every section/, "the overflow can collapse every section at once");
 
 // The side-panel toggle moved up into the top menu bar, so it no longer overlays
 // the header's right edge — the 44px (pr-11) gutter that used to clear it is
@@ -251,29 +421,27 @@ assert.doesNotMatch(
   "GitHub surface should not paint an extra decorative overlay behind the header",
 );
 
-// Sortable table headers are keyboard-operable (a real <button>) and expose
-// sort state to assistive tech via aria-sort.
+// Sort columns are retired with the table. Sections answer "what is asking
+// something of me"; the only ordering left inside one is recency, which needs
+// no control.
+assert.doesNotMatch(source, /handleSortClick/, "the column sort control is gone");
+assert.doesNotMatch(source, /role="grid" aria-label="GitHub activity/, "the row table is gone");
 assert.match(
   source,
-  /aria-sort=\{[\s\S]{0,400}?"ascending"[\s\S]{0,120}?"descending"[\s\S]{0,120}?"none"/,
-  "sortable column headers expose aria-sort (ascending/descending/none)",
-);
-assert.match(
-  source,
-  /<button[\s\S]{0,600}?onClick=\{\(\) => handleSortClick\(col\.key!\)\}/,
-  "the sort control is a real keyboard-operable button",
+  /\[\.\.\.scoped\]\.sort\(\(a, b\) => \(b\.updatedAt \?\? ""\)\.localeCompare\(a\.updatedAt \?\? ""\)\)/,
+  "rows inside a section are ordered most-recent-first",
 );
 
-// Rows are keyboard-navigable: ↑/↓ + Home/End rove a tab stop tied to the
-// selected row, selection follows focus, and Enter opens the item in Cave's Browser.
-assert.match(source, /case "ArrowDown": e\.preventDefault\(\); focusRow/, "ArrowDown roves to the next row");
-assert.match(source, /case "ArrowUp": e\.preventDefault\(\); focusRow/, "ArrowUp roves to the previous row");
-assert.match(source, /data-gh-row="true"[\s\S]{0,160}?data-item-id=\{item\.id\}/, "item rows carry the roving + id hooks");
-assert.match(source, /tabIndex=\{selectedItem\?\.id === item\.id \? 0 : -1\}/, "the selected row is the roving tab stop");
-assert.match(source, /role="grid" aria-label="GitHub activity/, "the table is a labelled grid");
-assert.match(source, /selectRow\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
-assert.match(source, /openExternalUrl\(url\)/, "Enter opens the focused row through the in-app Browser handoff");
-assert.match(source, /\}, \[sorted\.length\]\);/, "row-nav listeners rebind when the table mounts after the async fetch");
+// Rows stay keyboard-navigable: ↑/↓ + Home/End rove a tab stop tied to the
+// selected row, selection follows focus, and Enter raises the focused read.
+assert.match(stream, /case "ArrowDown": e\.preventDefault\(\); focusAt/, "ArrowDown roves to the next row");
+assert.match(stream, /case "ArrowUp": e\.preventDefault\(\); focusAt/, "ArrowUp roves to the previous row");
+assert.match(stream, /case "Home": e\.preventDefault\(\); focusAt\(0\)/, "Home roves to the first row");
+assert.match(stream, /data-gh-stream-row="true"[\s\S]{0,120}?data-item-id=\{row\.id\}/, "rows carry the roving + id hooks");
+assert.match(stream, /tabIndex=\{selected \? 0 : -1\}/, "the selected row is the roving tab stop");
+assert.match(stream, /if \(row\.dataset\.itemId\) onSelect\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
+assert.match(stream, /onOpen\(row\.id\)/, "Enter raises the focused read for the selected row");
+assert.match(stream, /\}, \[visibleCount, onSelect\]\);/, "row-nav listeners rebind when the visible row set changes");
 
 // Polling pauses while the tab is hidden (saves the visible rate limit) and
 // the manual/⌘R refresh keeps the linked-task chips in sync.
@@ -339,15 +507,10 @@ assert.match(
   /detail: \{ familiarId, projectRoot: safeMergeRoot \?\? undefined, initialPrompt \}/,
   "safe merge opens chat with the initial prompt and worktree root",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /<SafeMergeAction[\s\S]{0,500}?onJumpToSession=\{onJumpToSession\}/,
-  "safe merge action should be wired into each GitHub row",
-);
-assert.match(
-  source,
-  /<div className="gh-glass-actions">[\s\S]{0,900}<SafeMergeAction[\s\S]{0,500}?onJumpToSession=\{onJumpToSession\}/,
-  "safe merge action should be wired into the selected-item panel actions",
+  /function SafeMergeAction\(\{[\s\S]{0,160}?onJumpToSession/,
+  "safe merge should not retain an unused session-jump callback",
 );
 
 // Copy buttons must use the context-safe copyText (via useCopy), not raw
@@ -393,7 +556,7 @@ assert.match(
 // ── 2026-07-03 GitHub audit fixes ─────────────────────────────────────────────
 // The activity poll is content-guarded — an unchanged response keeps the prior
 // reference so the whole table + detail panel don't re-render every 90s.
-assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.items, nextActivity\.items\)[\s\S]*?\? prev/, "the activity poll guards setActivity with arrayContentEqual");
+assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.items, mergedActivity\.items\)[\s\S]*?\? prev/, "the activity poll guards setActivity with arrayContentEqual");
 // A manual refresh with data already on screen keeps the list mounted (so an
 // open composer draft isn't destroyed) — skeleton is initial-load only.
 assert.match(source, /if \(!silent && !activity\) setLoading\(true\)/, "non-silent refresh only skeletons the initial load, preserving the composer");
@@ -402,9 +565,9 @@ assert.match(source, /if \(!silent && !activity\) setLoading\(true\)/, "non-sile
 assert.match(source, /function refreshActivity\(\) \{[\s\S]*?clearTimeout\(timerRef\.current\)[\s\S]*?void fetchActivity\(false, true\)/, "refreshActivity cancels the scheduled poll before forcing a refetch");
 assert.doesNotMatch(source, /onClick=\{\(\) => void fetchActivity\(\)\}/, "no manual site refetches without cancelling the pending poll (Retry leak fixed)");
 // CI status shows passing/pending, not only failing (a green PR was invisible).
-assert.match(source, /item\.checkStatus === "passing"/, "CI passing state renders a badge");
-assert.match(source, /item\.checkStatus === "pending"/, "CI pending state renders a badge");
-assert.match(boardCss, /\.gh-badge--success \{/, "the success badge has a style");
+assert.match(stream, /item\.checkStatus === "passing"/, "CI passing state renders a row chip");
+assert.match(stream, /item\.checkStatus === "pending"/, "CI pending state renders a row chip");
+assert.match(boardCss, /\.gh-stream-chip \{/, "the row chips have a style");
 // ── 2026-07-03 GitHub a11y batch ──────────────────────────────────────────────
 assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "the GitHub surface consumes the shared announcer");
 assert.match(source, /announce\("Comment posted\."\)/, "posting a comment announces");

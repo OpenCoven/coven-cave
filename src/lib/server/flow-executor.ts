@@ -6,7 +6,15 @@ import {
   setSessionTitle,
   type CaveTravelQueueItem,
 } from "@/lib/cave-config";
-import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import {
+  callDaemon,
+  callDaemonTarget,
+  extractDaemonError,
+  localDaemonTarget,
+  type DaemonRequest,
+  type DaemonResponse,
+  type DaemonTarget,
+} from "@/lib/coven-daemon";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import {
   flowRunRedactsData,
@@ -27,23 +35,100 @@ import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
-import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import {
+  startCopilotFlowRunWithTransportBoundary,
+} from "@/lib/server/flow-copilot-session";
+import {
+  copilotCapabilityFailureMessage,
+  probeCopilotCapability,
+} from "@/lib/server/copilot-capability-probe";
+import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { copilotStreamSpec } from "@/lib/copilot-stream";
 import { isSshRuntime } from "@/lib/familiar-runtime";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
+import { daemonHealthRequest } from "@/lib/server/daemon-health-request";
+import {
+  INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC,
+  isOwnerLocalResearchDaemonTarget,
+  OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC,
+  researchSessionLaunchPolicy,
+  SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC,
+  shouldRequestResearchSessionLaunchPolicy,
+  supportsSessionLaunchPolicy,
+  dispatchResearchDaemonRequest,
+  validatedResearchLaunchAddDirs,
+} from "@/lib/server/research-launch-policy";
+import { daemonSessionAlreadyGone } from "@/lib/server/daemon-session-error";
+import type {
+  ResearchSessionAuthority,
+  ResearchSessionOwnerKind,
+} from "@/lib/server/research-session-authority";
+import {
+  RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
+  assertResearchSessionOwnerOutsideWriteRoots,
+} from "@/lib/server/research-mission-store";
 
 export type StartFlowSessionResult = {
   ok: boolean;
   status?: number;
   executor?: "session" | "travel-queue";
   sessionId?: string;
+  /** Durable exact daemon authority for later reconciliation/cancellation. */
+  sessionAuthority?: ResearchSessionAuthority;
+  /** Private process-owner class; never serialized into Flow or mission data. */
+  sessionOwnerKind?: ResearchSessionOwnerKind;
   run?: FlowRunRecord;
   queued?: boolean;
   queueItem?: CaveTravelQueueItem;
   unavailable?: boolean;
+  cleanupUnconfirmed?: boolean;
+  /** Exact in-process owner cleanup; functions are intentionally not persisted. */
+  cleanupSession?: () => Promise<void>;
   error?: string;
 };
+
+const FLOW_BOOKKEEPING_FAILURE =
+  "The agent session started, but Cave could not record its Flow run. The session was stopped before the start returned.";
+const FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED =
+  "The agent session started, but Cave could not record its Flow run or confirm process cleanup. The session remains owned and must be cancelled before retrying.";
+
+type DaemonCleanupDependencies = {
+  callDaemon: <T>(request: DaemonRequest) => Promise<DaemonResponse<T>>;
+  callDaemonTarget: <T>(
+    target: DaemonTarget,
+    request: DaemonRequest,
+  ) => Promise<DaemonResponse<T>>;
+};
+
+export async function researchSessionOwnerWriteRootsArePrivate(
+  writeRoots: string[],
+  assertPrivate: (roots: string[]) => Promise<void> = assertResearchSessionOwnerOutsideWriteRoots,
+): Promise<boolean> {
+  try {
+    await assertPrivate(writeRoots);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function stopDaemonSessionAfterBookkeepingFailure(
+  sessionId: string,
+  pinnedTarget?: DaemonTarget,
+  dependencies: DaemonCleanupDependencies = { callDaemon, callDaemonTarget },
+): Promise<boolean> {
+  const request = {
+    method: "POST",
+    path: `/api/v1/sessions/${encodeURIComponent(sessionId)}/kill`,
+    timeoutMs: 4_000,
+  } as const;
+  const response = pinnedTarget
+    ? await dependencies.callDaemonTarget<unknown>(pinnedTarget, request)
+    : await dependencies.callDaemon<unknown>(request);
+  return response.ok || daemonSessionAlreadyGone(response);
+}
 
 /** First familiar referenced anywhere in the flow, to attribute the session. */
 function flowFamiliar(flow: FlowDoc): string | null {
@@ -113,6 +198,33 @@ export async function startFlowSession(
      * prompt, so an untrusted workspace write hard-fails.
      */
     addDirs?: string[];
+    /**
+     * Private owner publication supplied only by the Research mission runner.
+     * It is invoked immediately after process/session creation, before ordinary
+     * Flow bookkeeping can yield or fail, and returns the exact retirement
+     * callback for confirmed cleanup.
+     */
+    publishSessionOwner?: (
+      sessionId: string,
+      ownerKind: ResearchSessionOwnerKind,
+      authority?: ResearchSessionAuthority,
+    ) => Promise<() => Promise<void>>;
+    /**
+     * Internal trust marker set only by the Research mission runner. It is not
+     * accepted from flow API request bodies. Local daemon sessions must prove
+     * the explicit launch-policy capability before receiving the policy.
+     */
+    trustedLocalResearch?: true;
+    /** Research must start now; replaying it later races durable cancellation. */
+    offlinePolicy?: "queue" | "reject";
+    /**
+     * Runtime chosen by the caller (a Research mission), overriding the
+     * familiar's Coven binding for THIS run only. Nothing is written back to
+     * the familiar, so a mission's runtime choice cannot leak into chat or
+     * other flows.
+     */
+    harness?: string;
+    model?: string;
   } = {},
 ): Promise<StartFlowSessionResult> {
   const blocked = flowRunBlockReason(flow, options.targetNodeId);
@@ -133,15 +245,30 @@ export async function startFlowSession(
   const config = await loadConfig();
   const familiarId = flowFamiliar(flow);
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
-  if (!isAllowedHarness(binding.harness)) {
+  // The caller's runtime overrides the familiar's Coven binding for THIS run
+  // only; nothing is written back, so a mission's choice cannot leak into chat
+  // or other flows. Resolved as a separate value rather than by spreading over
+  // `binding`, which would widen the binding union and lose its other fields.
+  const harness = options.harness ?? binding.harness;
+  if (!isAllowedHarness(harness)) {
     return {
       ok: false,
-      error: `harness '${binding.harness}' can't run as an agent session`,
+      error: `harness '${harness}' can't run as an agent session`,
       status: 409,
     };
   }
+  const hermesProfileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (hermesProfileBlock) return { ok: false, status: 409, error: hermesProfileBlock };
   const travelStatus = await travelLocalQueueStatus(config);
   if (travelStatus) {
+    if (options.offlinePolicy === "reject") {
+      return {
+        ok: false,
+        status: 409,
+        unavailable: true,
+        error: "Research requires an active execution connection and was not queued for later replay.",
+      };
+    }
     const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);
     const byId = new Map(flow.nodes.map((node) => [node.id, node]));
     // Record the queued placeholder run BEFORE enqueueing so its id can ride
@@ -173,7 +300,7 @@ export async function startFlowSession(
           flow,
           options,
           familiarId,
-          harness: binding.harness,
+          harness,
           placeholderRunId: run.id,
         },
       });
@@ -255,10 +382,40 @@ export async function startFlowSession(
   // research-mission reconcile already look first.
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
   const hubAuthority = config.multiHost?.mode === "hub";
-  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
-    const spec = copilotStreamSpec();
+  if (harness === "copilot" && !sshBound && !hubAuthority) {
+    const [capability, compatibility] = await Promise.all([
+      probeCopilotCapability(),
+      resolveRuntimeCompatibility("copilot"),
+    ]);
+    const capabilityFailure = copilotCapabilityFailureMessage(capability);
+    if (capabilityFailure) {
+      return {
+        ok: false,
+        status: 409,
+        error: capabilityFailure,
+      };
+    }
+    const spec = copilotStreamSpec(
+      capability.version,
+      compatibility?.eventProtocols,
+      capability.launchCommand,
+    );
     if (spec) {
-      const { sessionId } = startCopilotFlowRun({
+      const familiarAddDirs = await flowFamiliarAddDirs(familiarId, projectRoot);
+      if (options.publishSessionOwner && !await researchSessionOwnerWriteRootsArePrivate([
+        projectRoot,
+        ...(options.addDirs ?? []),
+        ...familiarAddDirs,
+      ])) {
+        return {
+          ok: false,
+          status: 409,
+          error: RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
+        };
+      }
+      let publishedSessionId: string | undefined;
+      let releaseSessionOwner: (() => Promise<void>) | undefined;
+      const result = await startCopilotFlowRunWithTransportBoundary({
         spec,
         prompt,
         projectRoot,
@@ -267,14 +424,105 @@ export async function startFlowSession(
         familiarRole: "role" in binding ? binding.role : undefined,
         addDirs: [
           ...(options.addDirs ?? []),
-          ...await flowFamiliarAddDirs(familiarId, projectRoot),
+          ...familiarAddDirs,
         ],
+        ...(options.model ? { model: options.model } : {}),
+        permissionMode: options.triggerInput?.source === "webhook" ? "read" : "unattended",
+      }, async (sessionId) => {
+        publishedSessionId = sessionId;
+        releaseSessionOwner = await options.publishSessionOwner?.(
+          sessionId,
+          "direct-copilot",
+        );
+        return finishStart(sessionId);
       });
-      return finishStart(sessionId);
+      if (!result.ok && !result.cleanupUnconfirmed && releaseSessionOwner) {
+        try {
+          await releaseSessionOwner();
+        } catch {
+          return {
+            ...result,
+            sessionId: publishedSessionId,
+            sessionOwnerKind: "direct-copilot",
+            cleanupUnconfirmed: true,
+            error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+          };
+        }
+      }
+      return options.publishSessionOwner && result.sessionId
+        ? { ...result, sessionOwnerKind: "direct-copilot" }
+        : result;
     }
+    return {
+      ok: false,
+      status: 409,
+      error: "This Copilot CLI version is not compatible with Cave flow execution. Update the Copilot runtime schema or CLI.",
+    };
   }
 
-  const res = await callDaemon<{ id: string; status: string }>({
+  if (options.publishSessionOwner && !await researchSessionOwnerWriteRootsArePrivate([
+    projectRoot,
+    ...(options.addDirs ?? []),
+  ])) {
+    return {
+      ok: false,
+      status: 409,
+      error: RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,
+    };
+  }
+
+  let launchPolicy: ReturnType<typeof researchSessionLaunchPolicy> | undefined;
+  let pinnedResearchDaemonTarget: ReturnType<typeof localDaemonTarget> | undefined;
+  if (shouldRequestResearchSessionLaunchPolicy({
+    trustedLocalResearch: options.trustedLocalResearch === true,
+    harness,
+    sshBound,
+    hubAuthority,
+  })) {
+    const addDirs = await validatedResearchLaunchAddDirs(options.addDirs ?? [], projectRoot);
+    if (!addDirs) {
+      return {
+        ok: false,
+        status: 409,
+        error: INVALID_RESEARCH_WRITE_GRANT_DIAGNOSTIC,
+      };
+    }
+    // Pin one authority before the capability probe. `callDaemon()` reloads
+    // config for every request; a concurrent local -> hub config change must
+    // never move the later policy-bearing POST across that trust boundary.
+    pinnedResearchDaemonTarget = localDaemonTarget();
+    if (!isOwnerLocalResearchDaemonTarget(pinnedResearchDaemonTarget)) {
+      return {
+        ok: false,
+        status: 409,
+        error: OWNER_LOCAL_RESEARCH_DAEMON_REQUIRED_DIAGNOSTIC,
+      };
+    }
+    const health = await callDaemonTarget<Record<string, unknown>>(
+      pinnedResearchDaemonTarget,
+      daemonHealthRequest(),
+    );
+    if (!health.ok) {
+      if (health.status === 0) {
+        return { ok: false, unavailable: true, error: "daemon offline" };
+      }
+      return {
+        ok: false,
+        error: extractDaemonError(health) ?? health.error ?? `daemon http ${health.status}`,
+        status: health.status || 502,
+      };
+    }
+    if (!supportsSessionLaunchPolicy(health.data)) {
+      return {
+        ok: false,
+        status: 409,
+        error: SESSION_LAUNCH_POLICY_REQUIRED_DIAGNOSTIC,
+      };
+    }
+    launchPolicy = researchSessionLaunchPolicy(addDirs);
+  }
+
+  const sessionRequest = {
     method: "POST",
     path: "/api/v1/sessions",
     // Spawn a plain harness session (no native `familiarId`), the same way task
@@ -286,9 +534,22 @@ export async function startFlowSession(
     // harness TUI. The familiar is already described in the compiled prompt and
     // is mirrored into cave-state below via recordSessionFamiliar, so attribution
     // and the run→familiar link survive.
-    body: { projectRoot, harness: binding.harness, prompt, launchMode: "nonInteractive" },
+    body: {
+      projectRoot,
+      harness,
+      prompt,
+      launchMode: "nonInteractive",
+      ...(launchPolicy ? { launchPolicy } : {}),
+    },
     timeoutMs: 8000,
-  });
+  } as const;
+  const res = await dispatchResearchDaemonRequest<{ id: string; status: string }>(
+    sessionRequest,
+    launchPolicy
+      ? { launchPolicy, pinnedTarget: pinnedResearchDaemonTarget! }
+      : undefined,
+    { callDaemon, callDaemonTarget },
+  );
 
   if (!res.ok || !res.data?.id) {
     if (res.status === 0) {
@@ -302,5 +563,92 @@ export async function startFlowSession(
   }
 
   const sessionId = res.data.id;
-  return finishStart(sessionId);
+  const cleanupTarget = launchPolicy ? pinnedResearchDaemonTarget! : undefined;
+  const sessionAuthority: ResearchSessionAuthority | undefined = cleanupTarget
+    ? { kind: "owner-local-daemon", socketPath: cleanupTarget.socketPath }
+    : undefined;
+  let releaseSessionOwner: (() => Promise<void>) | undefined;
+  if (sessionAuthority && options.publishSessionOwner) {
+    try {
+      releaseSessionOwner = await options.publishSessionOwner(
+        sessionId,
+        "owner-local-daemon",
+        sessionAuthority,
+      );
+    } catch {
+      let stopped = false;
+      try {
+        stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId, cleanupTarget);
+      } catch {
+        // The runner receives the exact identity below and retries publication
+        // before persisting any attacker-writable mission state.
+      }
+      return stopped
+        ? { ok: false, status: 500, error: FLOW_BOOKKEEPING_FAILURE }
+        : {
+            ok: false,
+            status: 500,
+            error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+            sessionId,
+            sessionAuthority,
+            sessionOwnerKind: "owner-local-daemon",
+            cleanupUnconfirmed: true,
+          };
+    }
+  }
+  const retireSessionOwner = async (): Promise<void> => {
+    if (!releaseSessionOwner) return;
+    const release = releaseSessionOwner;
+    await release();
+    releaseSessionOwner = undefined;
+  };
+  const cleanupSession = async (): Promise<void> => {
+    const stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId, cleanupTarget);
+    if (!stopped) {
+      throw new Error("Research session cleanup could not be confirmed through its launch authority");
+    }
+    await retireSessionOwner();
+  };
+  try {
+    return {
+      ...await finishStart(sessionId),
+      ...(sessionAuthority ? { sessionAuthority } : {}),
+      ...(sessionAuthority ? { sessionOwnerKind: "owner-local-daemon" as const } : {}),
+      cleanupSession,
+    };
+  } catch {
+    let stopped = false;
+    try {
+      stopped = await stopDaemonSessionAfterBookkeepingFailure(sessionId, cleanupTarget);
+    } catch {
+      // Transport and malformed-response failures retain the session id below.
+    }
+    if (stopped) {
+      try {
+        await retireSessionOwner();
+      } catch {
+        return {
+          ok: false,
+          status: 500,
+          error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+          sessionId,
+          ...(sessionAuthority ? { sessionAuthority } : {}),
+          ...(sessionAuthority ? { sessionOwnerKind: "owner-local-daemon" as const } : {}),
+          cleanupUnconfirmed: true,
+          cleanupSession,
+        };
+      }
+      return { ok: false, status: 500, error: FLOW_BOOKKEEPING_FAILURE };
+    }
+    return {
+      ok: false,
+      status: 500,
+      error: FLOW_BOOKKEEPING_CLEANUP_UNCONFIRMED,
+      sessionId,
+      ...(sessionAuthority ? { sessionAuthority } : {}),
+      ...(sessionAuthority ? { sessionOwnerKind: "owner-local-daemon" as const } : {}),
+      cleanupUnconfirmed: true,
+      cleanupSession,
+    };
+  }
 }

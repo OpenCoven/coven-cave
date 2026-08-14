@@ -32,8 +32,36 @@ assert.match(
 
 assert.match(
   eventsSource,
+  /loadConversation/,
+  "events route must resolve an owned Cave conversation before proxying to the daemon",
+);
+
+assert.match(
+  eventsSource,
+  /const daemonSessionId = \(await loadConversation\(id\)\)\?\.harnessSessionId \?\? id/,
+  "replayed conversations proxy events through their persisted harness session id",
+);
+
+assert.match(
+  eventsSource,
+  /encodeURIComponent\(daemonSessionId\)/,
+  "the daemon event request uses the resolved harness session id rather than the display id",
+);
+
+assert.match(
+  eventsSource,
   /status.*400|400.*status/,
   "events route must return 400 on invalid session ID, not 500 or silent proxy",
+);
+
+// cave-pfu8: the daemon 404s sessions it has no event log for (Cave-local
+// chats, rows lost on restart). The route must surface that as a
+// machine-readable 404 — not flatten it into a 502 — so the trace overlay can
+// render its calm empty state.
+assert.match(
+  eventsSource,
+  /if \(!res\.ok && res\.status === 404\) \{\s*\n\s*return NextResponse\.json\(\{ ok: false, error: "no_event_timeline" \}, \{ status: 404 \}\);/,
+  "a daemon 404 maps to a machine-readable no_event_timeline 404",
 );
 
 // ── input route ───────────────────────────────────────────────────────────────

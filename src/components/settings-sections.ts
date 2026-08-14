@@ -3,72 +3,67 @@
 // "what's in here" highlight strip). Kept in its own module so the shell nav and
 // the SettingsOverview header share one source of truth.
 //
-import type { FamiliarStudioTab } from "@/lib/familiar-studio-context";
-
 export type Section =
   | "profile"
   | "general"
+  | "voice"
   | "daemon"
-  | "familiars"
   | "mobile"
   | "appearance"
   | "about";
 
 export type SectionMeta = { id: Section; label: string; icon: string; description: string; accent: string };
 
-// `familiarTab` marks an entry that lives inside the Familiars studio panel —
-// picking it activates that studio tab instead of scrolling to a SettingsGroup.
 export type SettingsIndexEntry = {
   section: Section;
   group?: string;
   keywords: string;
-  familiarTab?: FamiliarStudioTab;
 };
 
 export const SECTIONS: SectionMeta[] = [
   { id: "profile", label: "Profile", icon: "ph:user-circle", description: "Your name, image, and details familiars know you by.", accent: "#f0c987" },
   { id: "general", label: "General", icon: "ph:sliders-horizontal", description: "Workspace, startup, and app-wide defaults.", accent: "#9386d0" },
+  { id: "voice", label: "Voice", icon: "ph:waveform", description: "Providers, voices, local speech, and defaults for new familiars.", accent: "var(--accent-presence)" },
   { id: "daemon", label: "Daemon", icon: "ph:terminal-window", description: "Local runtime status and process controls.", accent: "#69d6a6" },
-  { id: "familiars", label: "Familiars", icon: "ph:users-three", description: "Roster, identity, permissions, and pin order.", accent: "#d8a9ff" },
   { id: "mobile", label: "Phone", icon: "ph:device-mobile", description: "Native iOS handoff over your Tailscale network.", accent: "#73d9d0" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush", description: "Theme, typography, and reading controls.", accent: "#ff9fb5" },
   { id: "about", label: "About", icon: "ph:info", description: "Version, updates, and project links.", accent: "#b8d8ff" },
 ];
 
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
-  profile: ["Display name & pronouns", "Profile image", "Bio, timezone & links"],
+  profile: ["Identity & pronouns", "Context & personality", "Portrait & links"],
   general: ["Workspace path", "Encrypted backup", "Launch behavior"],
+  voice: ["Provider readiness", "Voices & models", "New familiar defaults"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
-  familiars: ["Roster & identity", "Per-familiar permissions", "Pinned strip order"],
   mobile: ["Mobile mode", "Tailscale handoff", "Native iOS guide"],
   appearance: ["Theme & colors", "Typography", "Reading comfort"],
   about: ["App version", "Tool updates", "Project links"],
 };
 
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
-  { section: "profile", group: "Identity", keywords: "profile name display pronouns identity operator user you" },
-  { section: "profile", group: "Image", keywords: "avatar image photo picture upload face profile" },
-  { section: "profile", group: "Details", keywords: "bio about timezone time zone" },
+  // One entry per destination, never one per control: `section` + `group` is the
+  // full address `open-setting` can navigate to, and both the palette and the
+  // settings search key their rows off exactly that pair. Identity was split
+  // across two entries (name/pronouns, avatar) so a query matching both rendered
+  // duplicate React keys and two rows opening the same panel (cave-x7v6b).
+  { section: "profile", group: "Identity", keywords: "profile name display pronouns identity operator user you avatar image photo picture upload face" },
+  { section: "profile", group: "Context", keywords: "bio about timezone time zone familiar draft" },
+  { section: "profile", group: "Personality", keywords: "personality mbti type axes tone familiar" },
   { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
   { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
   { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
+  { section: "voice", group: "Default for new familiars", keywords: "voice provider model default new familiar tts speech" },
+  { section: "voice", group: "ElevenLabs", keywords: "elevenlabs key vault saved voices tts models cloud" },
+  { section: "voice", group: "OpenAI Realtime", keywords: "openai realtime key vault voices preview cloud" },
+  { section: "voice", group: "Local speech", keywords: "local speech piper kokoro offline download model remove" },
+  { section: "voice", group: "Familiar brain", keywords: "familiar brain true voice runtime keyless" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
   { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
-  { section: "familiars", keywords: "familiars agents personas roster" },
-  { section: "familiars", group: "Identity", familiarTab: "identity", keywords: "identity name role pronouns description rename" },
-  { section: "familiars", group: "Look", familiarTab: "look", keywords: "look avatar image photo upload icon glyph color accent swatch palette" },
-  { section: "familiars", group: "Brain", familiarTab: "brain", keywords: "brain runtime harness model voice system prompt note capabilities" },
-  { section: "familiars", group: "Lifecycle", familiarTab: "lifecycle", keywords: "lifecycle archive unarchive reorder roster order reset overrides" },
-  { section: "familiars", group: "Memory", familiarTab: "memory", keywords: "memory memories daily notes recall" },
-  { section: "familiars", group: "Journal", familiarTab: "journal", keywords: "journal daily reflection reflections diary entries generate" },
-  { section: "familiars", group: "Projects", familiarTab: "projects", keywords: "projects access grants allow deny tool policy guard security audit requests permissions read write level" },
-  { section: "familiars", group: "Access groups", keywords: "access groups group grants base projects read write level team role shared membership permissions" },
-  { section: "familiars", group: "Vault", familiarTab: "vault", keywords: "vault secrets env environment keys tokens credentials 1password" },
-  { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
+  { section: "mobile", group: "Pair", keywords: "phone mobile connect qr pair tailscale" },
   { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
   { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
   { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },

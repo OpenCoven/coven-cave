@@ -5,6 +5,7 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   listAndReconcileResearchMissions,
   makeProductionResearchMissionRunner,
+  ResearchMissionLaunchInputError,
 } from "@/lib/server/research-mission-runner";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
@@ -47,6 +48,16 @@ export async function POST(req: Request) {
     }
     validated.value.projectRoot = resolved;
   }
-  const mission = await makeProductionResearchMissionRunner().createAndStart(validated.value);
-  return NextResponse.json({ ok: true, mission });
+  try {
+    const mission = await makeProductionResearchMissionRunner().createAndStart(validated.value);
+    return NextResponse.json({ ok: true, mission });
+  } catch (error) {
+    if (error instanceof ResearchMissionLaunchInputError) {
+      return NextResponse.json(
+        { ok: false, error: error.message, mission: error.mission },
+        { status: error.status },
+      );
+    }
+    throw error;
+  }
 }

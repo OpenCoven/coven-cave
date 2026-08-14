@@ -51,6 +51,23 @@ const withAtt = await board.updateCard(card.id, {
 assert.equal(withAtt.attachments.length, 2, "attachment ops add");
 assert.equal(withAtt.attachments[1].dataUrl, undefined, "op-added images stored lean (dataUrl stripped)");
 
+const linkOps = await board.updateCard(card.id, {
+  ops: {
+    linkOps: [
+      { op: "add", value: "https://example.com/docs" },
+      { op: "add", value: "https://example.com/docs" },
+      { op: "add", value: "https://example.com/new" },
+    ],
+  },
+});
+assert.deepEqual(
+  linkOps.links,
+  ["https://example.com/docs", "https://example.com/new"],
+  "duplicate link adds collapse while a new link appends under the board lock",
+);
+assert.equal(linkOps.attachments[0].text, "# s", "unrelated attachment content survives the link edit");
+assert.equal(linkOps.attachments[1].dataUrl, undefined, "unrelated image bytes stay lean after the link edit");
+
 const removed = await board.updateCard(card.id, {
   ops: { attachmentOps: [{ op: "remove", name: "shot.png" }] },
 });

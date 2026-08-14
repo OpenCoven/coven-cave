@@ -18,8 +18,14 @@ type ModalProps = {
   wide?: boolean;
   /** Click-outside dismiss (default true). */
   dismissOnBackdrop?: boolean;
+  /** Escape-key dismiss (default true). Pass `{!busy}` while a submit is in
+   *  flight so Esc can't close the dialog mid-mutation — the focus trap
+   *  itself stays active either way; only dismissal is gated. */
+  dismissOnEscape?: boolean;
   /** Accessible label when there is no breadcrumb. */
   ariaLabel?: string;
+  /** Description element inside the modal body. */
+  ariaDescribedBy?: string;
 };
 
 export function Modal({
@@ -31,12 +37,16 @@ export function Modal({
   children,
   wide,
   dismissOnBackdrop = true,
+  dismissOnEscape = true,
   ariaLabel,
+  ariaDescribedBy,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
 
-  useFocusTrap(open, dialogRef, { onEscape: onClose });
+  // Keep the trap active regardless of dismissability — an undefined onEscape
+  // makes Esc a no-op without releasing Tab cycling or focus return.
+  useFocusTrap(open, dialogRef, { onEscape: dismissOnEscape ? onClose : undefined });
 
   if (!open || typeof document === "undefined") return null;
 
@@ -58,6 +68,7 @@ export function Modal({
         // when there's no breadcrumb to point at.
         aria-labelledby={breadcrumb ? headingId : undefined}
         aria-label={breadcrumb ? undefined : ariaLabel}
+        aria-describedby={ariaDescribedBy}
         tabIndex={-1}
       >
         {breadcrumb ? (

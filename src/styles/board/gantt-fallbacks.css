@@ -248,13 +248,11 @@
   .board-drawer {
     background: var(--bg-raised);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
   .gh-pat-dialog,
   .gh-action-popover:not(.gh-action-popover--wide),
   .gh-profile-card {
     background: var(--bg-elevated);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }

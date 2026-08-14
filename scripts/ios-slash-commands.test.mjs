@@ -13,7 +13,7 @@ const desktopCommands = [...desktopSlash.matchAll(/name: "(\/[^"]+)"/g)]
   .map((match) => match[1])
   // /canvas is retired on iOS; /save stays off the native catalog while the
   // Library feature lives on feature/library (ios-library-isolation guard).
-  .filter((name) => name !== "/canvas" && name !== "/save");
+  .filter((name) => !["/canvas", "/save", "/rituals", "/projects"].includes(name));
 
 for (const command of desktopCommands) {
   assert.match(
@@ -54,18 +54,13 @@ assert.doesNotMatch(
 
 assert.match(
   iosSlash,
-  /name: "\/terminal"[\s\S]{0,240}availability: \.native[\s\S]{0,120}action: \.openDeveloper\("terminal"\)/,
-  "/terminal should open the native Developer terminal section",
-);
-assert.match(
-  iosSlash,
-  /name: "\/projects"[\s\S]{0,240}availability: \.native[\s\S]{0,120}action: \.openDeveloper\("code"\)/,
-  "/projects should open the native Developer code section",
+  /name: "\/terminal"[\s\S]{0,240}availability: \.native[\s\S]{0,120}action: \.openTerminal/,
+  "/terminal should open the native Terminal tab",
 );
 assert.match(
   chatView,
-  /case \.openDeveloper\(let section\):[\s\S]{0,240}devSectionRaw = section[\s\S]{0,120}app\.selectedTab = \.dev/,
-  "Chat slash dispatch should route Developer commands to the iOS Developer tab",
+  /case \.openTerminal:[\s\S]{0,120}app\.selectedTab = \.terminal/,
+  "/terminal routes directly to the Terminal tab",
 );
 
 // /model is native on iOS: it switches the chat model via the model-state API.
@@ -81,11 +76,16 @@ assert.match(
 );
 assert.match(
   chatView,
-  /client\.setChatModel\(\s*familiarId:[\s\S]{0,160}scope: scope\)/,
-  "switchModel should PATCH the chosen model through setChatModel",
+  /private func selectModel\([\s\S]{0,420}let stagedModel = model \?\? ""[\s\S]{0,240}thread\.pendingModelOverride = stagedModel[\s\S]{0,240}guard sessionId != nil \|\| model == nil else/,
+  "switchModel should synchronously retain a model selection or runtime-default clear before any session write",
+);
+assert.match(
+  chatView,
+  /client\.setChatModel\(\s*familiarId:[\s\S]{0,220}scope: sessionId == nil \? "familiar-default" : "session"\)/,
+  "switchModel should PATCH an existing session, or clear the familiar default before the first session",
 );
 
-for (const command of ["/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
+for (const command of ["/auto", "/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
   const escaped = command.replace("/", "\\/");
   assert.match(
     iosSlash,

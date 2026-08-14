@@ -23,15 +23,15 @@ test("input normalizes before save and rejects non-GitHub links client-side", ()
     /import \{ gitHubRepoSlug, normalizeGitHubRepoUrl \} from "@\/lib\/github-repo-link"/,
     "validation goes through the shared normalizer — the same one the API enforces",
   );
-  assert.match(modal, /const normalized = trimmed \? normalizeGitHubRepoUrl\(trimmed\) : null;/, "normalizes the draft");
+  assert.match(modal, /const normalizedRepo = trimmedRepo \? normalizeGitHubRepoUrl\(trimmedRepo\) : null;/, "normalizes the draft");
   assert.match(
     modal,
-    /if \(trimmed && !normalized\) \{[\s\S]{0,200}doesn’t look like a GitHub repository/,
+    /if \(trimmedRepo && !normalizedRepo\) \{[\s\S]{0,200}doesn’t look like a GitHub repository/,
     "invalid input errors locally instead of round-tripping a doomed PUT",
   );
   assert.match(
     modal,
-    /await onSaveRepoUrl\(project\.id, trimmed \? normalized : null\)/,
+    /await onSaveRepoUrl\(project\.id, trimmedRepo \? normalizedRepo : null\)/,
     "saves the canonical link — an emptied field unlinks with null",
   );
   assert.match(modal, /placeholder="owner\/repo or https:\/\/github\.com\/owner\/repo"/, "placeholder teaches both spellings");
@@ -45,10 +45,23 @@ test("the linked repository is visible and opens safely", () => {
 });
 
 test("edit state re-seeds per project and failures announce themselves", () => {
-  assert.match(modal, /useEffect\(\(\) => \{[\s\S]{0,120}setDraft\(projectRepoUrl\);/, "reopening a different project reseeds the field");
+  assert.match(modal, /useEffect\(\(\) => \{[\s\S]{0,160}setRepoDraft\(projectRepoUrl\);/, "reopening a different project reseeds the field");
   assert.match(modal, /Couldn’t save the repository link\./, "server failures surface in the sheet");
   assert.match(modal, /role="alert"/, "errors are announced");
   assert.match(modal, /loading=\{saving\}/, "the save button reflects the in-flight PUT");
+});
+
+test("registry management: rename and remove (with confirm) when handlers are given", () => {
+  // Rename field — only shown when onRename is wired.
+  assert.match(modal, /onRename\?: \(id: string, name: string\) => Promise<boolean>;/, "optional rename handler");
+  assert.match(modal, /if \(onRename && trimmedName !== project\.name\) \{[\s\S]{0,120}await onRename\(project\.id, trimmedName\)/, "save renames only when the name changed");
+  assert.match(modal, /if \(onRename && !trimmedName\) \{[\s\S]{0,80}Give the project a name/, "blocks an empty rename");
+  // Remove — danger action behind a two-step confirm.
+  assert.match(modal, /onDelete\?: \(id: string\) => Promise<boolean>;/, "optional delete handler");
+  assert.match(modal, /if \(!confirmingDelete\) \{[\s\S]{0,80}setConfirmingDelete\(true\)/, "first click arms the confirm");
+  assert.match(modal, /await onDelete\(project\.id\)/, "second click removes the project");
+  assert.match(modal, /Unregisters the project and revokes its access grants\./, "copy is honest about the grant cascade + that the folder is untouched");
+  assert.match(modal, /variant="danger"/, "the confirmed remove is a danger action");
 });
 
 console.log("project-settings-modal.test.ts: ok");

@@ -43,7 +43,13 @@ for (const source of [chat, task]) {
 }
 
 assert.match(chat, /sessionId=\{snapshot\.sessionId \?\? null\}/);
-assert.match(task, /sessionId=\{target\.session\.id\}/);
+// Both cockpit entry paths now share one Group, so the rail takes its session
+// from the conversation descriptor. A resumed task still resolves to the
+// target session; a bridge-start task falls back to the reserved card id,
+// which is what made the rail reachable during the first work session.
+assert.match(task, /railSessionId: target\.session\.id/);
+assert.match(task, /railSessionId: railSession\?\.id \?\? card\.sessionId \?\? null/);
+assert.match(task, /sessionId=\{conversation\.railSessionId\}/);
 assert.match(chat, /onCollapse=\{collapseCodeRail\}/);
 assert.match(task, /onCollapse=\{railController\.collapse\}/);
 assert.match(chat, /rail\.available && !rail\.open/);

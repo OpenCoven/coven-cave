@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteProject, patchProject } from "@/lib/cave-projects";
+import { revokeAllGrantsForProject } from "@/lib/project-permissions";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -93,7 +94,20 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const denied = rejectNonLocalRequest(req);
   if (denied) return denied;
   const { id } = await params;
+  // Cascade grants even when the registry row is already gone (cave-eonxy).
+  // Returning 404 before revoke left residue unreachable through the product:
+  // deleteProject false short-circuited and revokeAllGrantsForProject never ran.
+  // Run both unconditionally; 404 only when neither the row nor any grant/proposal
+  // residue existed — so a repeat delete is idempotent and residue is cleanable.
   const deleted = await deleteProject(id);
-  if (!deleted) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  return NextResponse.json({ ok: true });
+  const cleaned = await revokeAllGrantsForProject(id);
+  if (
+    !deleted &&
+    cleaned.grants === 0 &&
+    cleaned.groupGrants === 0 &&
+    cleaned.proposals === 0
+  ) {
+    return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, cleaned });
 }

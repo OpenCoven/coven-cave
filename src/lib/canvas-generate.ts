@@ -4,6 +4,8 @@
 // The SSE frame parser is exported pure so it can be unit-tested.
 
 import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 
 export type SketchStreamEvent = {
   kind?: string;
@@ -11,6 +13,7 @@ export type SketchStreamEvent = {
   sessionId?: string;
   isError?: boolean;
   message?: string;
+  responseMetadata?: ChatResponseMetadata;
 };
 
 /**
@@ -105,7 +108,7 @@ export async function generateArtifactCode(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let text = "";
+  const attentionText = createAttentionSafeTextAccumulator();
   let sessionId: string | null = opts.sessionId ?? null;
   let error: string | null = null;
 
@@ -126,8 +129,16 @@ export async function generateArtifactCode(opts: {
         if (!ev) continue;
         switch (ev.kind) {
           case "assistant_chunk":
-            text += ev.text ?? "";
-            opts.onText?.(text);
+            {
+              const visible = attentionText.append(ev.text ?? "");
+              opts.onText?.(visible);
+            }
+            break;
+          case "assistant_replace":
+            {
+              const visible = attentionText.replace(ev.text ?? "");
+              opts.onText?.(visible);
+            }
             break;
           case "session":
             sessionId = ev.sessionId ?? sessionId;
@@ -148,12 +159,14 @@ export async function generateArtifactCode(opts: {
       : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
-  const extracted = extractArtifact(text);
-  const failure = error ? "transport" : extracted ? null : "format";
+  const failed = error !== null;
+  const visible = failed ? attentionText.terminal() : attentionText.settled();
+  const extracted = extractArtifact(visible);
+  const failure = failed ? "transport" : extracted ? null : "format";
   return {
     code: extracted?.code ?? null,
     kind: extracted?.kind ?? null,
-    text,
+    text: visible,
     sessionId,
     error: error ?? (failure === "format" ? "response format could not be previewed" : null),
     failure,

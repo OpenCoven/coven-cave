@@ -21,7 +21,19 @@ import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
 
+export type OpenClawLaunchCommand = CovenLaunchCommand & {
+  requiredFiles?: string[];
+};
+
 const FORBIDDEN_SPAWN_ENV_KEYS = new Set(["GITHUB_PAT"]);
+// The Gateway dispatcher reads these only in Cave's server process. They must
+// never cross the fallback boundary, even if a broad harness allow-list was
+// configured for a different OpenClaw integration.
+// Keep the entire direct-Gateway namespace in Cave's server process. An
+// explicit generic harness allow-list must not turn a future Gateway token,
+// device identity, private key, or signing value into a CLI child credential.
+// The CLI compatibility path has no supported need for these settings.
+const GATEWAY_ENV_PREFIX = "OPENCLAW_GATEWAY_";
 const FORBIDDEN_SPAWN_ENV_RE =
   /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?|COOKIE|SESSION)(?:_|$)/i;
 
@@ -114,13 +126,17 @@ export function openClawSupportsUntrustedArgs(bin = openClawBin()): boolean {
  * shims are batch files, but their final target is a JavaScript entry point;
  * resolve that target and execute it with the running Node binary instead.
  */
-export function openClawLaunchCommandForBinary(binary: string): CovenLaunchCommand {
+export function openClawLaunchCommandForBinary(binary: string): OpenClawLaunchCommand {
   const shimPlatform = /\.(cmd|bat)$/i.test(binary) ? "win32" : process.platform;
-  return covenLaunchCommandForBinary(binary, shimPlatform);
+  const launch = covenLaunchCommandForBinary(binary, shimPlatform);
+  return {
+    ...launch,
+    ...(launch.fixedArgs.length > 0 ? { requiredFiles: [launch.fixedArgs.at(-1)!] } : {}),
+  };
 }
 
 /** A spawn-safe OpenClaw command for either a native executable or npm shim. */
-export function openClawLaunchCommand(): CovenLaunchCommand {
+export function openClawLaunchCommand(): OpenClawLaunchCommand {
   return openClawLaunchCommandForBinary(openClawBin());
 }
 
@@ -177,10 +193,12 @@ export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
 
   for (const key of Object.keys(env)) {
+    const mustNotReachFallback = key.startsWith(GATEWAY_ENV_PREFIX);
+    const genericSecret =
+      FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key);
     if (
-      (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&
-      !allowed.has(key) &&
-      !grantedVaultTokenKeys.has(key)
+      mustNotReachFallback ||
+      (genericSecret && !allowed.has(key) && !grantedVaultTokenKeys.has(key))
     ) {
       delete env[key];
     }

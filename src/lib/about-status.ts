@@ -1,3 +1,5 @@
+import { exactSemver } from "./exact-semver.ts";
+
 /** Small, client-safe state classifiers shared by Settings ▸ About. */
 
 export type AboutDaemonState =
@@ -41,9 +43,7 @@ export function classifyAboutDaemonStatus(input: {
   if (payload.running) {
     return {
       kind: "running",
-      version: typeof payload.covenVersion === "string" && payload.covenVersion.trim()
-        ? payload.covenVersion
-        : null,
+      version: exactSemver(payload.covenVersion),
       checkedAt,
     };
   }

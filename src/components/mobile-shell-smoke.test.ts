@@ -11,7 +11,6 @@ const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.me
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const automationsView = [
   await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8"),
-  await readFile(new URL("./automations/automation-lists.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./automations/inbox-feed-list.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./automations/schedule-list.tsx", import.meta.url), "utf8"),
 ].join("\n");
@@ -29,9 +28,9 @@ const globals = (
       "../styles/globals/shell-responsive.css",
       "../styles/globals/calendar-agenda.css",
       "../styles/globals/surface-compact-calendar.css",
-      "../styles/globals/surface-reporting.css",
+      "../styles/globals/shell-cards-and-controls.css",
       "../styles/globals/surface-chat-overlays.css",
-      "../styles/globals/surface-marketplace.css",
+      "../styles/globals/shared-pickers-and-toasts.css",
       "../styles/globals/surface-role-workspaces.css",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
   )
@@ -54,11 +53,36 @@ assert.match(
   /Those tabs live in normal shell flow[\s\S]{0,220}\.shell-detail\s*\{[\s\S]{0,80}padding-bottom:\s*0;/,
   "Mobile shell detail should not reserve extra space above bottom tabs",
 );
+assert.match(
+  shell,
+  /const navToggle = \(/,
+  "desktop nav toggle should stay in hydration-stable markup and defer viewport visibility to CSS",
+);
+assert.match(
+  shell,
+  /const historyNav = historyNavigation \? \(/,
+  "desktop history controls should stay in hydration-stable markup and defer viewport visibility to CSS",
+);
+assert.match(
+  shell,
+  /\{mobileTabs \?\? null\}/,
+  "mobile bottom tabs should stay in hydration-stable markup on the first render",
+);
+assert.match(
+  globals,
+  /\.mobile-bottom-tabs\s*\{[\s\S]{0,220}?display:\s*none;/,
+  "mobile bottom tabs should be hidden by default on desktop",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 1023px\)\s*\{[\s\S]{0,420}?\.shell-top > \.shell-top-toggle--nav,[\s\S]{0,120}?\.shell-top > \.shell-top-history\s*\{[\s\S]{0,80}?display:\s*none;[\s\S]{0,420}?\.mobile-bottom-tabs\s*\{[\s\S]{0,80}?display:\s*flex;/,
+  "mobile media queries should swap desktop title-bar controls for bottom tabs before hydration",
+);
 
 assert.match(
   mobileTabs,
-  /FOLDER_MODES\.filter\(\(fm\) => !fm\.quiet && !fm\.navHidden\)/,
-  "Mobile bottom tabs should derive from the desktop sidebar's primary cluster, inheriting canonical names (Rituals included) by construction",
+  /PRIMARY_WORKSPACE_NAV_ITEMS\.map/,
+  "Mobile bottom tabs should derive from the shared primary navigation cluster, inheriting canonical names (Rituals included) by construction",
 );
 
 assert.match(

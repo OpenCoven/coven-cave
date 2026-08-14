@@ -1,20 +1,43 @@
 // @ts-nocheck
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   VOICE_VAULT_KEY_BY_PROVIDER,
   isVoiceKeyErrorMessage,
   voiceRecoveryVaultKey,
 } from "./vault-key-recovery.ts";
 
+const source = readFileSync(new URL("./vault-key-recovery.ts", import.meta.url), "utf8");
+
 // ── Provider → vault key map ─────────────────────────────────────────────────
 
-test("every keyed provider maps to its vault key; keyless providers do not", () => {
-  assert.equal(VOICE_VAULT_KEY_BY_PROVIDER.openai, "OPENAI_API_KEY");
-  assert.equal(VOICE_VAULT_KEY_BY_PROVIDER.gemini, "GOOGLE_API_KEY");
-  assert.equal(VOICE_VAULT_KEY_BY_PROVIDER.elevenlabs, "ELEVENLABS_API_KEY");
+test("cataloged keyed providers map to their existing vault keys", () => {
+  assert.deepEqual(VOICE_VAULT_KEY_BY_PROVIDER, {
+    elevenlabs: "ELEVENLABS_API_KEY",
+    openai: "OPENAI_API_KEY",
+    gemini: "GOOGLE_API_KEY",
+  });
   assert.equal(VOICE_VAULT_KEY_BY_PROVIDER.local, undefined);
   assert.equal(VOICE_VAULT_KEY_BY_PROVIDER.familiar, undefined);
+});
+
+test("provider vault-key identity derives from the shared catalog", () => {
+  assert.match(source, /VOICE_PROVIDER_CATALOG/);
+  assert.doesNotMatch(source, /openai:\s*["']OPENAI_API_KEY["']/);
+  assert.doesNotMatch(source, /gemini:\s*["']GOOGLE_API_KEY["']/);
+  assert.doesNotMatch(source, /elevenlabs:\s*["']ELEVENLABS_API_KEY["']/);
+});
+
+test("provider vault-key lookup is immutable", () => {
+  assert.equal(Object.isFrozen(VOICE_VAULT_KEY_BY_PROVIDER), true);
+  assert.throws(
+    () => {
+      VOICE_VAULT_KEY_BY_PROVIDER.openai = "GOOGLE_API_KEY";
+    },
+    TypeError,
+  );
+  assert.equal(VOICE_VAULT_KEY_BY_PROVIDER.openai, "OPENAI_API_KEY");
 });
 
 // ── voiceRecoveryVaultKey ────────────────────────────────────────────────────

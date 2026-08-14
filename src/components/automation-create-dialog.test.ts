@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./automation-create-dialog.tsx", import.meta.url), "utf8");
-const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const styles = await readFile(
+  new URL("../styles/globals/surface-compact-calendar.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(source, /import \{ Button \}/, "dialog actions should use the shared Button primitive");
 assert.match(source, /StandardSelect/, "dialog dropdowns should use the shared StandardSelect primitive");
@@ -17,6 +20,7 @@ assert.match(source, /automation-create-dialog__prompt-grid/, "goals and deliver
 assert.match(source, /automation-create-dialog__runtime-grid/, "runtime settings should be grouped in a responsive grid");
 assert.match(source, /automation-create-dialog__scope-grid/, "working directories, tags, and skill should be grouped in the scope section");
 assert.match(source, /automation-create-dialog__footer/, "new automation editor should have a stable action footer");
+assert.doesNotMatch(source, /\bAutomationCreateInitialValues\b|\binitialValues\b/, "the dialog has no unreachable template-prefill interface");
 assert.match(styles, /\.workflow-dialog[\s\S]*height: 100dvh;[\s\S]*overflow: hidden;/, "drawer should own the viewport height without scrolling");
 assert.match(styles, /\.automation-create-dialog__body[\s\S]*min-height: 0;[\s\S]*overflow-y: auto;/, "dialog body should be the scroll container");
 

@@ -1,11 +1,12 @@
 "use client";
 
 // Full-surface sketch editor for the Canvas tab (design-handoff redesign).
-// Three modes over the sandboxed sketch iframe: Select (inspect a component),
-// Comment (pin persisted annotations to components), and Edit (live inline
-// style experiments driven through the inspector channel). A design-chat rail
-// runs refine requests through the same familiar generation path as the
-// inline artifact viewer and persists accepted revisions to /api/canvas.
+// Four modes over the sandboxed sketch iframe: Interact (use the sketch),
+// Select (inspect a component), Comment (pin persisted annotations to
+// components), and Edit (live inline style experiments driven through the
+// inspector channel). A design-chat rail runs refine requests through the same
+// familiar generation path as the inline artifact viewer and persists accepted
+// revisions to /api/canvas.
 
 import "@/styles/canvas-editor.css";
 
@@ -30,8 +31,15 @@ import {
   createCanvasInspectorChannel,
   isCanvasComponentSelectedMessage,
 } from "@/lib/canvas-inspector";
+import {
+  CANVAS_VIEWPORT_PRESETS,
+  canvasViewportPreset,
+  describeViewport,
+  resolveViewportScale,
+  type CanvasViewportPresetId,
+} from "@/lib/canvas-viewport";
 
-type EditorMode = "select" | "comment" | "edit";
+type EditorMode = "interact" | "select" | "comment" | "edit";
 
 type ChatMessage = {
   id: string;
@@ -161,7 +169,7 @@ export function CanvasEditor(props: {
 
   const [code, setCode] = useState(artifact.code);
   const [kind, setKind] = useState<ArtifactKind>(artifact.kind ?? "html");
-  const [mode, setMode] = useState<EditorMode>("select");
+  const [mode, setMode] = useState<EditorMode>("interact");
   const [selection, setSelection] = useState<CanvasComponentTarget | null>(null);
   const [inspectorLoaded, setInspectorLoaded] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -178,9 +186,16 @@ export function CanvasEditor(props: {
   const [expanded, setExpanded] = useState(false);
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
+  const [viewportId, setViewportId] = useState<CanvasViewportPresetId>("fill");
+  const [viewportScale, setViewportScale] = useState(1);
+  // Whether the current selection rides along with the next design-chat
+  // message. Picking a component attaches it (that's why you picked it); the
+  // chip's detach lets you ask a general question without losing the pick.
+  const [attached, setAttached] = useState(true);
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const frameShellRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const artifactRef = useRef(artifact);
   const codeRef = useRef(code);
@@ -189,6 +204,7 @@ export function CanvasEditor(props: {
   const selectionRef = useRef(selection);
   const annotationsRef = useRef(annotations);
   const styleDraftsRef = useRef(styleDrafts);
+  const attachedRef = useRef(attached);
   const styleLabelsRef = useRef<Record<string, string>>({});
   const generatingRef = useRef(false);
   const commentBusyRef = useRef(false);
@@ -204,6 +220,7 @@ export function CanvasEditor(props: {
   selectionRef.current = selection;
   annotationsRef.current = annotations;
   styleDraftsRef.current = styleDrafts;
+  attachedRef.current = attached;
   onArtifactUpdatedRef.current = onArtifactUpdated;
 
   const inspectorGeneration = useMemo(() => crypto.randomUUID(), [kind, code]);
@@ -256,6 +273,8 @@ export function CanvasEditor(props: {
     selectionRef.current = target;
     styleLabelsRef.current[target.selector] = target.label || target.selector;
     setSelection(target);
+    // A fresh pick is the thing you want to talk about, so it arrives attached.
+    setAttached(true);
     setAnnouncement(`Selected ${target.label || target.selector}.`);
   }, []);
 
@@ -321,16 +340,17 @@ export function CanvasEditor(props: {
     }, 250);
   }, []);
 
-  // Selection stays enabled in every mode — the modes change what the aside
-  // does with the selected component, not whether one can be picked.
+  // The inspector consumes trusted pointer and keyboard activation while it is
+  // enabled. Yield those events to the sketch in Interact mode; inspection
+  // remains available in every editing mode.
   useEffect(() => {
     if (!inspectorLoaded) return;
     try {
-      inspectorChannelRef.current?.setEnabled(true);
+      inspectorChannelRef.current?.setEnabled(mode !== "interact");
     } catch {
       // A srcdoc navigation may close the previous port between render and load.
     }
-  }, [inspectorLoaded]);
+  }, [inspectorLoaded, mode]);
 
   // Sandbox runtime failures surface as an overlay alert; the same
   // e.source-identity check as the bootstrap listener (see cave-mnz1 above).
@@ -407,6 +427,57 @@ export function CanvasEditor(props: {
     setAnnouncement(!expanded ? "Sketch expanded." : "Sketch restored.");
   }, [expanded]);
 
+  // ── Viewport presets (cave-ztbo) ──────────────────────────────────────────
+  // Devtools-style device sizing: the sketch iframe renders at the preset's
+  // true CSS pixels (so the sketch's media queries fire for real) and the
+  // whole frame scales down to fit the stage. Scale tracks stage resizes via
+  // ResizeObserver; in native fullscreen the shell IS the screen (UA-forced
+  // 100%), so the window is the available box instead.
+  const viewport = canvasViewportPreset(viewportId);
+
+  useLayoutEffect(() => {
+    if (!viewport.width || !viewport.height) {
+      setViewportScale(1);
+      return;
+    }
+    const stage = stageRef.current;
+    const compute = () => {
+      const avail = nativeFullscreen
+        ? { width: window.innerWidth, height: window.innerHeight }
+        : (() => {
+            if (!stage) return { width: 0, height: 0 };
+            const style = getComputedStyle(stage);
+            const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+            const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+            return { width: stage.clientWidth - padX, height: stage.clientHeight - padY };
+          })();
+      setViewportScale(resolveViewportScale(viewport, avail.width, avail.height));
+    };
+    compute();
+    if (nativeFullscreen || !stage || typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", compute);
+      return () => window.removeEventListener("resize", compute);
+    }
+    const observer = new ResizeObserver(compute);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [viewport, nativeFullscreen]);
+
+  const selectViewport = useCallback((id: CanvasViewportPresetId) => {
+    setViewportId(id);
+    const preset = canvasViewportPreset(id);
+    setAnnouncement(
+      preset.width && preset.height
+        ? `Viewport: ${preset.label}, ${preset.width} by ${preset.height}.`
+        : "Viewport: fill the stage.",
+    );
+  }, []);
+
+  const viewportCaption = describeViewport(viewport, viewportScale);
+  const sizedViewport = viewport.width && viewport.height
+    ? { width: viewport.width, height: viewport.height }
+    : null;
+
   const toggleNativeFullscreen = useCallback(() => {
     const doc = document as FullscreenDocument;
     if (doc.fullscreenElement ?? doc.webkitFullscreenElement) {
@@ -454,6 +525,29 @@ export function CanvasEditor(props: {
     () => describeStyleEdits(styleDrafts, styleLabelsRef.current),
     [styleDrafts],
   );
+
+  /**
+   * Undo every live override without reloading the sketch. An empty value
+   * removes the inline declaration the override added, so each element falls
+   * back to the sketch's own CSS — a reload would also drop them, but it would
+   * take the sketch's runtime state (open menus, scroll, game state) with it.
+   */
+  const revertStyleEdits = useCallback(() => {
+    for (const [selector, draft] of Object.entries(styleDraftsRef.current)) {
+      if (draft.dirty.length === 0) continue;
+      const cleared: Record<string, string> = {};
+      for (const property of Object.keys(styleOverrideCss(draft, draft.dirty))) cleared[property] = "";
+      try {
+        inspectorChannelRef.current?.applyStyleOverride(selector, cleared);
+      } catch {
+        // Port may be mid-teardown across a srcdoc swap; dropping the drafts is
+        // still right, since that swap drops the inline styles anyway.
+      }
+    }
+    styleDraftsRef.current = {};
+    setStyleDrafts({});
+    setAnnouncement("Style edits reverted.");
+  }, []);
 
   // ── Persistence helpers ───────────────────────────────────────────────────
 
@@ -555,21 +649,23 @@ export function CanvasEditor(props: {
   const sendChat = useCallback(() => {
     const ask = chatDraft.trim();
     if (!ask || generatingRef.current) return;
-    const attached = selectionRef.current;
-    pushMessage("user", `${attached ? `[${attached.label || attached.selector}] ` : ""}${ask}`);
+    // Only an attached selection scopes the ask — a detached chip means the
+    // question is about the sketch as a whole even though a pick is live.
+    const target = attachedRef.current ? selectionRef.current : null;
+    pushMessage("user", `${target ? `[${target.label || target.selector}] ` : ""}${ask}`);
     setChatDraft("");
     if (!familiarId) {
       pushMessage("agent", "Pick a familiar to run design changes.");
       return;
     }
-    const contextualAsk = attached
+    const contextualAsk = target
       ? [
           ask,
           "",
           "Apply this to the selected component:",
-          `Label: ${attached.label || "(unlabelled)"}`,
-          `Selector: ${attached.selector}`,
-          ...(attached.excerpt ? [`Excerpt: ${attached.excerpt}`] : []),
+          `Label: ${target.label || "(unlabelled)"}`,
+          `Selector: ${target.selector}`,
+          ...(target.excerpt ? [`Excerpt: ${target.excerpt}`] : []),
         ].join("\n")
       : ask;
     void runRefine(contextualAsk, { successText: "Applied — the sketch is updated." });
@@ -687,7 +783,14 @@ export function CanvasEditor(props: {
   // ── Render ────────────────────────────────────────────────────────────────
 
   const selectionLabel = selection ? selection.label || selection.selector : "Nothing selected";
-  const panelTitle = mode === "edit" ? "Inspector" : mode === "comment" ? "Comments" : "Selection";
+  const panelTitle = mode === "interact"
+    ? "Interact"
+    : mode === "edit"
+      ? "Inspector"
+      : mode === "comment"
+        ? "Comments"
+        : "Selection";
+  const panelTarget = mode === "interact" ? "Live sketch" : selectionLabel;
 
   const modeButton = (id: EditorMode, label: string, title: string) => (
     <button
@@ -730,9 +833,27 @@ export function CanvasEditor(props: {
 
       <div className="canvas-editor__head">
         <button type="button" className="canvas-editor__back focus-ring" onClick={onClose}>
-          ← Gallery
+          <Icon name="ph:caret-left" width={11} aria-hidden /> Gallery
         </button>
         <span className="canvas-editor__title" title={artifact.title}>{artifact.title}</span>
+        <span className="canvas-editor__view-controls" role="group" aria-label="Viewport size">
+          {CANVAS_VIEWPORT_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`canvas-editor__view focus-ring-inset${viewportId === preset.id ? " is-active" : ""}`}
+              title={preset.width && preset.height ? `${preset.label} — ${preset.width}×${preset.height}` : `${preset.label} the stage`}
+              aria-label={preset.width && preset.height ? `${preset.label} viewport — ${preset.width}×${preset.height}` : "Fill the stage"}
+              aria-pressed={viewportId === preset.id}
+              onClick={() => selectViewport(preset.id)}
+            >
+              <Icon name={preset.icon} width={15} aria-hidden />
+            </button>
+          ))}
+        </span>
+        {viewportCaption ? (
+          <span className="canvas-editor__viewport-size" aria-hidden>{viewportCaption}</span>
+        ) : null}
         <span className="canvas-editor__view-controls" role="group" aria-label="Sketch view">
           <button
             type="button"
@@ -757,6 +878,7 @@ export function CanvasEditor(props: {
           ) : null}
         </span>
         <span className="canvas-editor__modes" role="group" aria-label="Editor mode">
+          {modeButton("interact", "Interact", "Use the sketch")}
           {modeButton("select", "Select", "Select components")}
           {modeButton("comment", "Comment", "Pin comments to components")}
           {modeButton("edit", "Edit", "Edit fonts, borders, padding")}
@@ -767,16 +889,37 @@ export function CanvasEditor(props: {
       </div>
 
       <div className="canvas-editor__body">
-        <div className="canvas-editor__stage">
-          <div className="canvas-editor__frame-shell" ref={frameShellRef}>
-            <iframe
-              ref={frameRef}
-              className="canvas-editor__frame"
-              title={artifact.title || "sketch"}
-              sandbox="allow-scripts allow-popups allow-modals"
-              srcDoc={srcDoc}
-              onLoad={handlePreviewLoad}
-            />
+        <div className="canvas-editor__stage" ref={stageRef}>
+          <div
+            className={`canvas-editor__frame-shell${sizedViewport ? " canvas-editor__frame-shell--viewport" : ""}`}
+            ref={frameShellRef}
+          >
+            {/* The frame box is ALWAYS mounted so preset toggles never reparent
+                (and so never reload) the sketch iframe. Fill: it tracks the
+                shell. Preset: it is the scaled device footprint, and the
+                iframe inside renders at true device pixels scaled to fit. */}
+            <div
+              className="canvas-editor__frame-box"
+              style={sizedViewport ? {
+                width: sizedViewport.width * viewportScale,
+                height: sizedViewport.height * viewportScale,
+              } : undefined}
+            >
+              <iframe
+                ref={frameRef}
+                className="canvas-editor__frame"
+                title={artifact.title || "sketch"}
+                sandbox="allow-scripts allow-popups allow-modals"
+                srcDoc={srcDoc}
+                onLoad={handlePreviewLoad}
+                style={sizedViewport ? {
+                  width: sizedViewport.width,
+                  height: sizedViewport.height,
+                  transform: `scale(${viewportScale})`,
+                  transformOrigin: "top left",
+                } : undefined}
+              />
+            </div>
             {runtimeError ? (
               <div className="canvas-editor__error" role="alert">
                 <Icon name="ph:warning-circle-fill" width={15} aria-hidden />
@@ -790,11 +933,17 @@ export function CanvasEditor(props: {
           <div className="canvas-editor__panel-head">
             <span className="canvas-editor__panel-title">{panelTitle}</span>
             <span className={`canvas-editor__panel-target${selection ? " has-selection" : ""}`}>
-              {selectionLabel}
+              {panelTarget}
             </span>
           </div>
 
           <div className="canvas-editor__panel-body">
+            {mode === "interact" ? (
+              <p className="canvas-editor__hint">
+                Use the sketch normally. Switch to Select, Comment, or Edit to inspect components.
+              </p>
+            ) : null}
+
             {mode === "select" ? (
               <>
                 <p className="canvas-editor__hint">
@@ -808,6 +957,27 @@ export function CanvasEditor(props: {
                     {selection.excerpt ? (
                       <span className="canvas-editor__sel-excerpt">{selection.excerpt}</span>
                     ) : null}
+                    <span className="canvas-editor__sel-actions">
+                      <button
+                        type="button"
+                        className="canvas-editor__sel-action focus-ring"
+                        aria-pressed={attached}
+                        title={attached ? "Detach from the design chat" : "Send this component with the next message"}
+                        onClick={() => setAttached((current) => !current)}
+                      >
+                        <Icon name="ph:arrow-bend-up-left" width={11} aria-hidden />
+                        {attached ? "Attached to chat" : "Attach to chat"}
+                      </button>
+                      <button
+                        type="button"
+                        className="canvas-editor__sel-action focus-ring"
+                        title="Open the inspector for this component"
+                        onClick={() => setMode("edit")}
+                      >
+                        <Icon name="ph:sliders-horizontal" width={11} aria-hidden />
+                        Edit styles
+                      </button>
+                    </span>
                   </div>
                 ) : null}
               </>
@@ -815,7 +985,7 @@ export function CanvasEditor(props: {
 
             {mode === "edit" && !selection ? (
               <p className="canvas-editor__hint">
-                Select a component on the canvas to edit its font, color, border, and padding.
+                Select a component first — the inspector edits one element at a time.
               </p>
             ) : null}
 
@@ -861,34 +1031,53 @@ export function CanvasEditor(props: {
                   Style edits preview live — ask the design chat to make them permanent.
                 </p>
                 {dirtyStyleDescription ? (
-                  <button
-                    type="button"
-                    className="canvas-editor__apply focus-ring"
-                    disabled={generating || !familiarId}
-                    title={familiarId ? "Rewrite the sketch with these style edits" : "Pick a familiar to run design changes"}
-                    onClick={applyStyleEdits}
-                  >
-                    <Icon name="ph:sparkle" width={13} aria-hidden />
-                    {generating ? "Applying…" : "Apply via familiar"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="canvas-editor__apply focus-ring"
+                      disabled={generating || !familiarId}
+                      title={familiarId ? "Rewrite the sketch with these style edits" : "Pick a familiar to run design changes"}
+                      onClick={applyStyleEdits}
+                    >
+                      <Icon name="ph:sparkle" width={13} aria-hidden />
+                      {generating ? "Applying…" : "Apply via familiar"}
+                    </button>
+                    <button
+                      type="button"
+                      className="canvas-editor__revert focus-ring"
+                      disabled={generating}
+                      title="Drop every live override and return to the sketch's own styles"
+                      onClick={revertStyleEdits}
+                    >
+                      <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
+                      Revert style edits
+                    </button>
+                  </>
                 ) : null}
               </>
             ) : null}
 
             {mode === "comment" ? (
               <>
+                <p className="canvas-editor__hint">
+                  Select a component, then pin a comment to it. Pins hold a selector,
+                  not a position, so they survive a re-render.
+                </p>
                 <div className="canvas-editor__comments">
                   {annotations.length === 0 ? (
-                    <p className="canvas-editor__hint">
-                      No comments yet — select a component and pin the first one.
+                    <p className="canvas-editor__comments-empty">
+                      No pins yet — select a component and pin the first one.
                     </p>
                   ) : (
-                    annotations.map((annotation) => (
+                    annotations.map((annotation, index) => (
                       <div key={annotation.id} className="canvas-editor__comment">
-                        <span className="canvas-editor__comment-target">
-                          {annotation.target.label || annotation.target.selector}
+                        <span className="canvas-editor__comment-index" aria-hidden>{index + 1}</span>
+                        <span className="canvas-editor__comment-body">
+                          <span className="canvas-editor__comment-target">
+                            {annotation.target.label || annotation.target.selector}
+                          </span>
+                          <span className="canvas-editor__comment-note">{annotation.note}</span>
                         </span>
-                        <span className="canvas-editor__comment-note">{annotation.note}</span>
                         <button
                           type="button"
                           className="canvas-editor__comment-remove focus-ring"
@@ -964,9 +1153,20 @@ export function CanvasEditor(props: {
                 </div>
               ) : null}
             </div>
-            {selection ? (
+            {selection && attached ? (
               <span className="canvas-editor__attach">
-                Attached: {selection.label || selection.selector}
+                <span className="canvas-editor__attach-name">
+                  Attached: {selection.label || selection.selector}
+                </span>
+                <button
+                  type="button"
+                  className="canvas-editor__detach focus-ring"
+                  aria-label="Detach the selected component from the design chat"
+                  title="Detach"
+                  onClick={() => setAttached(false)}
+                >
+                  <Icon name="ph:x" width={9} aria-hidden />
+                </button>
               </span>
             ) : null}
             <div className="canvas-editor__chat-row">

@@ -8,6 +8,20 @@ export function shouldRefresh(lastMs: number, nowMs: number, minIntervalMs: numb
   return nowMs - lastMs >= minIntervalMs;
 }
 
+/** Run a best-effort background refresh without leaking sync or async failures. */
+export function runRefreshSafely(refresh: () => void | Promise<void>): void {
+  try {
+    const result = refresh();
+    if (result && typeof result.catch === "function") {
+      void result.catch(() => {
+        /* A later poll or focus event will retry the background refresh. */
+      });
+    }
+  } catch {
+    /* A later poll or focus event will retry the background refresh. */
+  }
+}
+
 /**
  * Call a Tauri unlisten fn without letting it throw — exported for testing.
  * Tauri's internal `unregisterListener` reads `listeners[eventId].handlerId`
@@ -71,7 +85,7 @@ export function useRefreshOnFocus(
       const now = Date.now();
       if (!shouldRefresh(lastRef.current, now, minIntervalMs)) return;
       lastRef.current = now;
-      void refreshRef.current();
+      runRefreshSafely(refreshRef.current);
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") run();

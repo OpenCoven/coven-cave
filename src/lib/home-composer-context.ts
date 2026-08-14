@@ -2,6 +2,65 @@ import type { CaveProject } from "./cave-projects-types";
 import type { Familiar } from "./types";
 import { projectForRoot } from "./chat-projects.ts";
 
+/**
+ * The home composer uses the operator registry before familiar setup, then
+ * switches to the server-authorized familiar view once a familiar exists.
+ */
+export function projectsForHomeComposerScope(
+  projects: readonly CaveProject[],
+  familiarId: string | null | undefined,
+): CaveProject[] {
+  return familiarId
+    ? projects.filter((project) => project.access !== undefined)
+    : [...projects];
+}
+
+/**
+ * Do not clear an explicit pick while a new familiar scope is still loading.
+ * The hook intentionally masks the previous scope during that request, so an
+ * empty list at that point is not evidence that the selected project vanished.
+ */
+export function shouldClearHomeComposerProjectSelection(
+  projects: readonly CaveProject[],
+  selectedProjectId: string,
+  projectsLoadedSuccessfully: boolean,
+): boolean {
+  return projectsLoadedSuccessfully
+    && Boolean(selectedProjectId)
+    && !projects.some((project) => project.id === selectedProjectId);
+}
+
+/** Chat launch needs both an actual familiar and server-derived project access. */
+export function isHomeComposerProjectLaunchReady(args: {
+  familiarId: string | null | undefined;
+  projectsLoadedSuccessfully: boolean;
+  projectsLoading: boolean;
+  projectsError: string | null;
+  selectedProject: Pick<CaveProject, "access" | "root"> | null;
+}): boolean {
+  return Boolean(args.familiarId)
+    && args.projectsLoadedSuccessfully
+    && !args.projectsLoading
+    && !args.projectsError
+    && args.selectedProject?.access !== undefined
+    && Boolean(args.selectedProject?.root);
+}
+
+/** Keep the independent familiar prerequisite actionable while project data loads. */
+export function homeComposerProjectLaunchMessage(args: {
+  familiarId: string | null | undefined;
+  projectsLoading: boolean;
+  projectsError: string | null;
+  projectsLoadedSuccessfully: boolean;
+  projectCount: number;
+}): string {
+  if (!args.familiarId) return "Summon a familiar before starting chat.";
+  if (args.projectsError) return "Projects are unavailable. Retry before starting chat.";
+  if (args.projectsLoading || !args.projectsLoadedSuccessfully) return "Checking project access…";
+  if (args.projectCount === 0) return "Add a project this familiar can access before starting chat.";
+  return "Choose a project this familiar can access before starting chat.";
+}
+
 export function resolveHomeComposerFamiliar(
   familiars: readonly Familiar[],
   activeFamiliarId: string | null,
@@ -28,8 +87,10 @@ export function resolveHomeComposerProject(
   recentProjectRoot?: string | null,
 ): CaveProject | null {
   if (selectedProjectId === noProjectId) return null;
+  if (selectedProjectId) {
+    return projects.find((project) => project.id === selectedProjectId) ?? null;
+  }
   return (
-    projects.find((project) => project.id === selectedProjectId) ??
     projectForRoot(recentProjectRoot, projects.slice()) ??
     projects[0] ??
     null

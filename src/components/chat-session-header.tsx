@@ -1,14 +1,19 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { CaveProject } from "@/lib/cave-projects";
-import { NO_PROJECT_ID, chatProjectById } from "@/lib/chat-projects";
+import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
+import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { FamiliarIcon } from "@/components/familiar-icon";
 import { ProjectPickerPopover } from "@/components/project-picker";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+
+const ENABLED_MENU_ITEM_SELECTOR =
+  '[role="menuitem"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemradio"]:not(:disabled):not([aria-disabled="true"]), [role="menuitemcheckbox"]:not(:disabled):not([aria-disabled="true"])';
 
 /** Slim overflow kebab (cave-zolo): only genuinely secondary tools live here.
  *  Lifecycle verbs (archive, delete) and the voice call are direct header
@@ -20,9 +25,13 @@ export function SessionOverflowMenu({
   projectId,
   onProjectChange,
   onAddProject,
+  registerCurrentRoot,
+  onRegisterCurrentRoot,
   sessionId,
   hasTurns,
   onOpenDebug,
+  promotableFamiliars,
+  onPromoteToCoven,
   reflecting,
   onReflect,
 }: {
@@ -31,11 +40,17 @@ export function SessionOverflowMenu({
   onProjectChange: (value: string) => void;
   /** Opens the shared add-project flow (register + grant) — proactive, not 403-recovery-only. */
   onAddProject?: () => void;
+  /** Ad-hoc root the chat runs in — enables the picker's in-place
+   *  "Register this folder" row (spec 2026-07-24). */
+  registerCurrentRoot?: string;
+  onRegisterCurrentRoot?: () => void;
   /** Active conversation id — powers "Continue on phone" (cave-i74f). */
   sessionId?: string | null;
   /** Gates the Show-thinking toggle — pointless on an empty transcript. */
   hasTurns: boolean;
   onOpenDebug: () => void;
+  promotableFamiliars: Familiar[];
+  onPromoteToCoven: (familiarId: string) => void;
   /** Reflect-on-thread (absent when the familiar has no id). */
   reflecting: boolean;
   onReflect?: () => void;
@@ -43,11 +58,12 @@ export function SessionOverflowMenu({
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showThinking, setShowThinking] = useShowThinking();
+  const [instrumentsVisible, setInstrumentsVisible] = useThreadInstrumentsVisible();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const keyboardOpenRequested = useRef(false);
   const activeProject =
-    projectId === NO_PROJECT_ID
-      ? null
-      : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
+    (projectId ? chatProjectById(projectId, projects) : projects[0]) ?? null;
 
   const sections = sessionMenuSections({
     sessionId: sessionId ?? null,
@@ -56,11 +72,72 @@ export function SessionOverflowMenu({
     projectRoot: activeProject?.root ?? null,
     hasTurns,
     showThinking,
+    instrumentsVisible,
     reflectAvailable: Boolean(onReflect),
     reflecting,
   });
 
   const close = () => setOpen(false);
+  const setSessionMenuOpen = useCallback((next: boolean) => {
+    if (next) setProjectPickerOpen(false);
+    setOpen(next);
+  }, []);
+
+  const getEnabledItems = useCallback(
+    () =>
+      Array.from(
+        menuRef.current?.querySelectorAll<HTMLElement>(ENABLED_MENU_ITEM_SELECTOR) ?? [],
+      ),
+    [],
+  );
+
+  const focusFirstEnabledItem = useCallback(() => {
+    keyboardOpenRequested.current = false;
+    getEnabledItems()[0]?.focus();
+  }, [getEnabledItems]);
+
+  useEffect(() => {
+    if (!open || !keyboardOpenRequested.current) return;
+    const focusFrame = requestAnimationFrame(focusFirstEnabledItem);
+    return () => cancelAnimationFrame(focusFrame);
+  }, [focusFirstEnabledItem, open]);
+
+  const onTriggerKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        keyboardOpenRequested.current = true;
+        e.stopPropagation();
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (open) {
+          requestAnimationFrame(focusFirstEnabledItem);
+        } else {
+          setSessionMenuOpen(true);
+        }
+      }
+    },
+    [focusFirstEnabledItem, open, setSessionMenuOpen],
+  );
+
+  const onBodyKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+      const items = getEnabledItems();
+      if (items.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      let nextIndex: number;
+      if (e.key === "Home") nextIndex = 0;
+      else if (e.key === "End") nextIndex = items.length - 1;
+      else if (e.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+      else nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+      items[nextIndex]?.focus();
+    },
+    [getEnabledItems],
+  );
 
   const handlers: Record<SessionMenuItemId, () => void> = {
     "continue-on-phone": () => {
@@ -80,6 +157,10 @@ export function SessionOverflowMenu({
     },
     thinking: () => {
       setShowThinking(!showThinking);
+      close();
+    },
+    instruments: () => {
+      setInstrumentsVisible(!instrumentsVisible);
       close();
     },
     reflect: () => {
@@ -102,42 +183,64 @@ export function SessionOverflowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Session options"
+        onPointerDown={() => {
+          keyboardOpenRequested.current = false;
+        }}
+        onKeyDown={onTriggerKeyDown}
         onClick={() => {
-          // The picker shares this anchor, so its outside-click handler skips
-          // clicks here — close it explicitly or both popovers stack open.
-          setProjectPickerOpen(false);
-          setOpen(!open);
+          setSessionMenuOpen(!open);
         }}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>
       <Popover
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={setSessionMenuOpen}
         anchorRef={triggerRef}
         placement="bottom-end"
         minWidth={216}
         ariaLabel="Chat options"
       >
-        <PopoverBody>
-          {sections.map((section, si) => (
-            <Fragment key={si}>
-              {si > 0 ? <PopoverSeparator /> : null}
-              {section.map((item) => (
-                <PopoverItem
-                  key={item.id}
-                  icon={item.icon}
-                  checked={item.checked}
-                  disabled={item.disabled}
-                  title={item.title}
-                  onSelect={handlers[item.id]}
-                >
-                  {item.label}
-                </PopoverItem>
-              ))}
-            </Fragment>
-          ))}
-        </PopoverBody>
+        <div ref={menuRef} onKeyDown={onBodyKeyDown}>
+          <PopoverBody role="menu" ariaLabel="Chat options">
+            {sections.map((section, si) => (
+              <Fragment key={si}>
+                {si > 0 ? <PopoverSeparator /> : null}
+                {section.map((item) => (
+                  <PopoverItem
+                    key={item.id}
+                    icon={item.icon}
+                    checked={item.checked}
+                    disabled={item.disabled}
+                    title={item.title}
+                    onSelect={handlers[item.id]}
+                  >
+                    {item.label}
+                  </PopoverItem>
+                ))}
+              </Fragment>
+            ))}
+            {promotableFamiliars.length > 0 ? (
+              <>
+                <PopoverSeparator />
+                <PopoverLabel>Start a coven with</PopoverLabel>
+                {promotableFamiliars.map((candidate) => (
+                  <PopoverItem
+                    key={candidate.id}
+                    leading={<span aria-hidden><FamiliarIcon familiar={candidate} size="sm" /></span>}
+                    title={`Continue this chat in a coven with ${candidate.display_name}`}
+                    onSelect={() => {
+                      close();
+                      onPromoteToCoven(candidate.id);
+                    }}
+                  >
+                    {candidate.display_name}
+                  </PopoverItem>
+                ))}
+              </>
+            ) : null}
+          </PopoverBody>
+        </div>
       </Popover>
       <ProjectPickerPopover
         open={projectPickerOpen}
@@ -146,8 +249,9 @@ export function SessionOverflowMenu({
         projects={projects}
         value={projectId}
         onChange={onProjectChange}
-        allowNoProject
         onAddProject={onAddProject}
+        registerCurrentRoot={registerCurrentRoot}
+        onRegisterCurrentRoot={onRegisterCurrentRoot}
         placement="bottom-end"
         ariaLabel="Project for this chat"
       />
@@ -273,6 +377,7 @@ export function ChatTitleEditable({
   displayTitleOverride,
   onSessionsChanged,
   headline = false,
+  generateTitle,
 }: {
   session: SessionRow;
   /** When set, displayed in place of session.title (e.g. to hide a raw
@@ -280,16 +385,32 @@ export function ChatTitleEditable({
    *  edit input still pre-fills with the override so accepting it patches
    *  the canonical title in the daemon/state. */
   displayTitleOverride?: string | null;
-  onSessionsChanged?: () => void;
+  onSessionsChanged?: () => void | Promise<void>;
   /** Render as a full-width all-caps headline row above the context chips
    *  instead of an inline title inside the session chip. */
   headline?: boolean;
+  /** Derives a fresh title from the live transcript (cave-quiva). Supplied by
+   *  the surface that actually holds the turns; when omitted the sparkle is
+   *  not rendered, so title rows without a transcript in scope degrade to the
+   *  manual pencil rather than shipping a control that can only no-op. */
+  generateTitle?: () => string | null;
 }) {
   const [editing, setEditing] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const baseTitle = displayTitleOverride ?? session.title ?? "";
   const [value, setValue] = useState(baseTitle);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const submittedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const onSessionsChangedRef = useRef(onSessionsChanged);
+  onSessionsChangedRef.current = onSessionsChanged;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!editing) setValue(baseTitle);
@@ -302,6 +423,10 @@ export function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
+  const refreshSessions = () => {
+    if (mountedRef.current) void onSessionsChangedRef.current?.();
+  };
+
   // Rename has two entry points into the same edit mode: the pencil button
   // beside the title and clicking the title text. (The overflow menu's Rename
   // item and its window-event bridge died in cave-zolo — the pencil is the
@@ -309,21 +434,71 @@ export function ChatTitleEditable({
 
   const display = baseTitle || session.id;
 
+  // A resolved fetch is not necessarily successful. Only a genuine success or
+  // the title CAS conflict contract has authoritative state worth refreshing.
+  const patchTitle = async (title: string, ownership: "manual" | "auto" = "manual", replaceManual = false) => {
+    try {
+      const body = ownership === "auto"
+        ? {
+            title,
+            titleOwnership: "auto" as const,
+            autoDefaults: session.title ? [session.title] : [],
+            ...(replaceManual && {
+              replaceManualTitle: true,
+              observedTitle: session.title,
+              observedTitleRevision: session.titleRevision ?? 0,
+            }),
+          }
+        : { title };
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({ ok: res.ok }));
+      const titleOwnershipConflict =
+        ownership === "auto" &&
+        replaceManual &&
+        res.status === 409 &&
+        json?.ok === false &&
+        json?.conflict === true &&
+        (json?.title === null || typeof json?.title === "string") &&
+        Number.isSafeInteger(json?.titleRevision) &&
+        json.titleRevision >= 0;
+      if (titleOwnershipConflict) {
+        refreshSessions();
+        return;
+      }
+      if (!res.ok || json?.ok === false) return;
+      refreshSessions();
+    } catch {
+      /* transient — next sessions poll will reconcile */
+    }
+  };
+
   const submit = async () => {
     if (submittedRef.current) return;
     submittedRef.current = true;
     const trimmed = value.trim();
     setEditing(false);
     if (trimmed === (session.title ?? "").trim()) return;
+    await patchTitle(trimmed);
+  };
+
+  // Regenerate the name from the transcript. The derivation is pure and
+  // synchronous (chat-title-generation.ts) — the visible "generating" state
+  // covers the PATCH, not the naming. A null derivation means the thread has
+  // nothing to name itself after yet, so the current title is left alone
+  // rather than blanked.
+  const generate = async () => {
+    if (generating) return;
+    const next = generateTitle?.()?.trim();
+    if (!next) return;
+    setGenerating(true);
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: trimmed }),
-      });
-      onSessionsChanged?.();
-    } catch {
-      /* transient — next sessions poll will reconcile */
+      if (next !== (session.title ?? "").trim()) await patchTitle(next, "auto", true);
+    } finally {
+      if (mountedRef.current) setGenerating(false);
     }
   };
 
@@ -373,9 +548,34 @@ export function ChatTitleEditable({
 
   return (
     <span className={headline ? "cave-chat-title flex w-full min-w-0 items-center gap-1.5" : "cave-chat-title flex min-w-0 flex-1 items-center gap-1"}>
+      {/* cave-quiva: name-this-chat leads the title row. The glyph stays hidden
+          until hover/focus so a settled header reads title-first; the control
+          is only rendered when a transcript is actually in scope.
+          aria-disabled rather than disabled: a disabled button loses focus the
+          instant it flips, dropping a keyboard user who pressed Enter back to
+          the body. Re-entry is already blocked in the handler, so the native
+          disable buys nothing and costs the focus ring. */}
+      {generateTitle ? (
+        <button
+          type="button"
+          className="cave-chat-title-spark focus-ring"
+          data-generating={generating ? "true" : undefined}
+          title={generating ? "Generating name" : "Generate name"}
+          aria-label={generating ? "Generating name" : "Generate name"}
+          aria-busy={generating || undefined}
+          aria-disabled={generating || undefined}
+          onClick={(e) => {
+            e.stopPropagation();
+            void generate();
+          }}
+        >
+          <Icon name="ph:sparkle" width={11} aria-hidden />
+        </button>
+      ) : null}
       <button
         type="button"
         className={buttonClassName}
+        data-generating={generating ? "true" : undefined}
         title={`${display} — click to rename`}
         onClick={(e) => {
           e.stopPropagation();

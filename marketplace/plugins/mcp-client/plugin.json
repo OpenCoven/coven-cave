@@ -21,6 +21,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/mcp-client",
   "x-coven": {
     "displayName": "Universal MCP Client",

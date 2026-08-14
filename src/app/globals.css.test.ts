@@ -2,7 +2,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const css = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
+// globals.css is an import facade; include the modules that own the contracts
+// asserted below so this guard tests the shipped CSS rather than import lines.
+const css = [
+  "./globals.css",
+  "../styles/globals/foundations.css",
+  "../styles/globals/themes.css",
+  "../styles/globals/shell-navigation.css",
+  "../styles/globals/surface-compact-calendar.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 
 // 1. :root[data-mode="light"] block exists with foreground/background.
 const lightBlock = css.match(/:root\[data-mode="light"\]\s*\{([\s\S]*?)\}/)?.[1] ?? "";
@@ -45,13 +53,10 @@ assert.match(
 
 console.log("globals.css.test.ts (task 3) OK");
 
-// Task 4 assertions: every non-default theme has dark + light blocks —
-// including the tweakcn ports and the a11y additions (contrast/beacon/
-// solstice), which the original loop of 9 never covered.
+// Task 4 assertions: every non-default theme has dark + light blocks.
 const otherThemes = [
-  "tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate",
-  "ghosty", "claymorphism", "claude", "codex", "pastel-dreams", "meatseeks",
-  "trucker", "snow", "contrast", "beacon", "solstice",
+  "tide", "ember", "slate", "ghosty", "claymorphism", "claude", "codex",
+  "pastel-dreams", "snow", "contrast", "solstice",
 ];
 for (const id of otherThemes) {
   const darkRe = new RegExp(`\\[data-theme="${id}"\\]\\s*\\{`);
@@ -64,6 +69,9 @@ for (const id of otherThemes) {
 for (const old of ["midnight", "orchid", "sky", "openai"]) {
   const re = new RegExp(`\\[data-theme="${old}"\\]`);
   assert.doesNotMatch(css, re, `old preset ${old} removed`);
+}
+for (const removed of ["grove", "bloom", "dusk", "mist", "hex", "bane", "beacon", "trucker", "meatseeks"]) {
+  assert.doesNotMatch(css, new RegExp(`\\[data-theme="${removed}"\\]`), `${removed} theme blocks are removed`);
 }
 
 console.log("globals.css.test.ts (task 4) OK");
@@ -120,22 +128,14 @@ assert.doesNotMatch(salemBlock, /#(?:d1c4e9|e8e0f0|c9a7ff|d26bff|a855f7|a89ac0)\
 
 console.log("globals.css.test.ts (salem tokens) OK");
 
-// The mode-transition wrapper must never RETAIN a transform after its
-// entrance animation: fill-mode `both` kept the final keyframe's transform
-// (even identity), turning every .cave-mode-fade into the containing block
-// for position:fixed descendants — fixed overlays inside surfaces resolved
-// against the mode area instead of the viewport and forced portal-to-body
-// workarounds (#537, #1984, github-view card, cave-nv3). Bead cave-cco.
-const modeFadeRule = css.match(/\.cave-mode-fade\s*\{([\s\S]*?)\}/)?.[1] ?? "";
-assert.match(
-  modeFadeRule,
-  /animation:\s*cave-mode-in\s+120ms\s+ease-out\s+backwards/,
-  ".cave-mode-fade must use fill-mode backwards (nothing retained after the entrance)",
-);
+// The mode wrapper stays continuously visible. Animating the full pane from
+// opacity 0 caused every mode change to flash blank, while an animated
+// transform also turned the wrapper into a containing block for fixed
+// descendants (#537, #1984, github-view card, cave-nv3). Bead cave-cco.
 assert.doesNotMatch(
-  modeFadeRule,
-  /\bboth\b|\bforwards\b/,
-  ".cave-mode-fade must not retain end-state animation styles (containing-block trap, cave-cco)",
+  css,
+  /@keyframes\s+cave-mode-in|\.cave-mode-fade\s*\{[\s\S]*?(?:animation|opacity|transform)\s*:/,
+  ".cave-mode-fade must stay continuously visible and must not become a containing block",
 );
 
 // The chat/code sidebar responds to its own panel width, not the viewport —

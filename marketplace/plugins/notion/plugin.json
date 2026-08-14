@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/notion",
   "x-coven": {
     "displayName": "Notion",

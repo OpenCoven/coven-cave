@@ -22,6 +22,7 @@ final class ThreadSnapshotStoreTests: XCTestCase {
             title: title,
             familiarIds: ["nova"],
             sessionIds: ["nova": "session-1"],
+            projectRoot: "/repos/cave",
             messages: [
                 DisplayMessage(role: .user, familiarId: nil, text: "hello"),
                 DisplayMessage(role: .assistant, familiarId: "nova", text: "hi there")
@@ -59,6 +60,37 @@ final class ThreadSnapshotStoreTests: XCTestCase {
         // The on-disk shape must stay readable by the legacy decoder too.
         let data = try Data(contentsOf: fileURL)
         XCTAssertEqual(try JSONDecoder().decode([ThreadSnapshot].self, from: data), snapshots)
+    }
+
+    @MainActor
+    func testProjectRootRoundTripsWithSnapshot() async throws {
+        let store = ThreadSnapshotStore(url: fileURL)
+        try await store.save([makeSnapshot()])
+
+        let loaded = try await store.load()
+        let snapshot = try XCTUnwrap(loaded.first)
+
+        XCTAssertEqual(snapshot.projectRoot, "/repos/cave")
+        XCTAssertEqual(ChatThread(snapshot: snapshot).projectRoot, "/repos/cave")
+    }
+
+    func testLegacySnapshotWithoutProjectRootStillDecodes() throws {
+        let data = Data(
+            """
+            {
+              "id": "legacy",
+              "title": "Legacy chat",
+              "familiarIds": ["nova"],
+              "sessionIds": {},
+              "messages": [],
+              "updatedAt": 700000000
+            }
+            """.utf8
+        )
+
+        let snapshot = try JSONDecoder().decode(ThreadSnapshot.self, from: data)
+
+        XCTAssertNil(snapshot.projectRoot)
     }
 
     // MARK: - Atomic overwrite

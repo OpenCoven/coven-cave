@@ -2,40 +2,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Settings → Familiars section (cave-i7y): the daemon-offline 503 must never
-// masquerade as "no familiars", and familiars are creatable from Settings.
+// Familiar management migrated to Chat → Familiar → Settings. Keep the
+// retired Settings route out of both the shell and the section catalog.
 const shell = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
-const section = shell.slice(shell.indexOf("function FamiliarsSection"));
+const sections = await readFile(new URL("./settings-sections.ts", import.meta.url), "utf8");
 
-assert.match(
-  section,
-  /res\.status === 503[\s\S]{0,80}setDaemonDown\(true\)/,
-  "a 503 roster response must flip the daemon-down state, not render an empty roster",
-);
-assert.match(
-  section,
-  /if \(daemonDown\)[\s\S]{0,1500}Start daemon/,
-  "the daemon-down state must offer a Start-daemon action",
-);
-assert.match(
-  section,
-  /familiars\.length === 0[\s\S]{0,1500}Summon familiar/,
-  "the genuinely-empty state must offer a Summon-familiar action",
-);
-assert.match(
-  section,
-  /FamiliarSummoningCircle/,
-  "Settings should reuse the shared FamiliarSummoningCircle",
-);
-assert.match(
-  section,
-  /onCreated=\{[\s\S]{0,300}openFamiliarStudio\(id\)/,
-  "a created familiar must be selected in the studio, not left on the first roster entry",
-);
-assert.match(
-  section,
-  /onCreated=\{[\s\S]{0,300}void load\(\)/,
-  "creation must refresh the roster via the extracted load()",
-);
+assert.doesNotMatch(shell, /FamiliarsSection|section === "familiars"/, "Settings no longer renders the retired Familiars section");
+assert.doesNotMatch(sections, /id: "familiars"|section: "familiars"/, "Settings no longer catalogs the retired Familiars section");
+assert.doesNotMatch(shell, /FamiliarStudioProvider/, "Settings no longer mounts the retired Familiar Studio provider");
 
 console.log("settings-familiars-section.test.ts: ok");

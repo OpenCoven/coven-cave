@@ -2,10 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 // On iPad the Chats tab should be a two-column NavigationSplitView: the home list
-// (familiars + groups + search results) in the sidebar, and the selected
-// familiar's threads / a conversation in the detail column. NavigationSplitView
-// collapses to a single stack on iPhone, so the familiars→threads→chat drill is
-// unchanged there. This locks the conversion.
+// of familiars in the sidebar, and the selected familiar's conversation in the
+// detail column. NavigationSplitView collapses to a single stack on iPhone, so
+// the familiar→chat drill is unchanged there. This locks the conversion.
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const src = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift");
@@ -24,11 +23,19 @@ assert.doesNotMatch(
 assert.match(src, /@State private var selection: ChatRoute\?/, "should track a sidebar selection");
 assert.match(src, /@State private var detailPath: \[ChatRoute\] = \[\]/, "should track detail-column navigation");
 assert.match(src, /List\(selection: \$selection\)/, "the home list should be selection-driven");
+// A tapped familiar row drives selection through its List tag; programmatic
+// opens (deep links, the new-chat sheet, the launch intent) go through open(_:),
+// which clears the detail navigation before selecting.
+assert.match(
+  src,
+  /private func open\(_ route: ChatRoute\) \{\s*\n\s*detailPath = \[\]\s*\n\s*selection = route/,
+  "programmatic opens should drive the selection",
+);
 assert.match(src, /\.tag\(ChatRoute\.familiar\(familiar\)\)/, "familiar rows should be tagged for selection");
-assert.match(src, /\.tag\(ChatRoute\.thread\(thread\)\)/, "thread/group rows should be tagged for selection");
 
-// Detail column: familiar → its thread list (pushing onto detailPath), a thread →
-// the chat, nothing → a placeholder.
+// Detail column: familiar → its chat (its other sessions are reachable from
+// ChatView's config card, which pushes onto detailPath), a thread → the chat,
+// nothing → a placeholder.
 assert.match(
   src,
   /private var detailColumn: some View \{[\s\S]*NavigationStack\(path: \$detailPath\)/,
@@ -36,8 +43,8 @@ assert.match(
 );
 assert.match(
   src,
-  /case \.familiar\(let familiar\):\s*\n\s*FamiliarThreadsView\(familiar: familiar, path: \$detailPath[,)]/,
-  "selecting a familiar should show its threads in the detail column",
+  /case \.familiar\(let familiar\):\s*\n\s*familiarChat\(familiar\)/,
+  "selecting a familiar should show its chat in the detail column",
 );
 assert.match(
   src,
@@ -59,6 +66,10 @@ assert.match(src, /\.navigationSplitViewStyle\(\.balanced\)/, "should use the ba
 const appRoot = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 assert.match(appRoot, /struct WideSplitEnabler<Content: View>: View/, "the app root defines the wide-window size-class promoter");
 assert.match(appRoot, /geo\.size\.width >= 700 \? \.regular : inherited/, "≥700pt promotes to regular; narrower keeps the inherited class");
-assert.match(appRoot, /WideSplitEnabler \{\s*\n\s*RootView\(\)/, "RootView rides inside the promoter so every tab's split engages");
+assert.match(
+  appRoot,
+  /WideSplitEnabler \{[\s\S]*ZStack \{[\s\S]*RootView\(\)/,
+  "the lock/privacy root still keeps RootView inside the promoter so every tab's split engages",
+);
 
 console.log("ios-ipad-split-chats: OK");

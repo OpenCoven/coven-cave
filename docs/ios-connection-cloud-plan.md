@@ -7,7 +7,6 @@
 > §5 (Take Cave with you) and the mobile docs
 > ([`mobile-readiness.md`](mobile-readiness.md),
 > [`mobile-tailscale.md`](mobile-tailscale.md),
-> [`mobile-tailscale-native.md`](mobile-tailscale-native.md),
 > [`ios-native-rebuild.md`](ios-native-rebuild.md)).
 
 ## Where we already are (shipped lineage)
@@ -77,9 +76,9 @@ packaged users**:
 
 **Stale artifacts found:** `cave-gwyw` specs an in-app QR scanner that
 already shipped (#2320, VisionKit `DataScannerViewController`);
-`golden-paths.md` §5 item 3 asserts "no in-app scan" — stale;
-`mobile-tailscale-native.md:18` claims ATS arbitrary loads are disabled —
-contradicts `Info.plist:64` (see cave-vcyh.1).
+`golden-paths.md` §5 item 3 asserts "no in-app scan" — stale. (A prior
+`mobile-tailscale-native.md` note on ATS arbitrary loads was resolved when the
+Tauri iOS shell was retired in favor of the native Swift app; see cave-vcyh.1.)
 
 ### Overhaul phases
 
@@ -189,10 +188,12 @@ appears only once the turn *ends*). Buffer stream events per run server-side
 the LIVE run. Re-attach cancels the detach kill (PTY `adoptSession` pattern).
 
 **Phase C3 — keep the desktop reachable.** Prevent-sleep power assertion
-while phones are paired (toggle; wake-on-LAN is NOT feasible over Tailscale —
-document it); optional LaunchAgent daemon mode so the server outlives the app
-(`uninstall-app.sh` already defensively removes the plist path); serve/port
-self-repair on port fallback.
+while phones are paired (opt-in, default off; AC-only by default); optional,
+default-off LaunchAgent daemon mode so the server outlives the app
+(`uninstall-app.sh` unloads the agent before removing its paths); serve/port
+self-repair on port fallback. Wake-on-LAN is NOT feasible over Tailscale:
+the userspace WireGuard daemon sleeps with the Mac, while Bonjour sleep proxy
+is limited to local-network mDNS.
 
 **Phase C4 — background reachability (product call first).** Real background
 push requires APNs — a vendor-cloud departure. Everything through C3 is
@@ -285,6 +286,15 @@ alphabetical list); `scripts/cave-backup.mjs` for cron/headless; a Settings
 the chosen destination (iCloud folder first — no credentials; S3/R2 behind
 user keys stored in the existing vault); retention of N snapshots;
 freshness surfaced in Settings.
+**Shipped (#3812 / cave-clyh):** `backup-sync.ts` scheduler (15-min tick,
+daily cadence with startup catch-up, production-only bounded on-quit push
+inside the desktop shell's 5 s stop window); destination defaults to the
+iCloud Drive `Coven Cave Backups` folder when present, else `~/Documents`,
+with destinations inside a Coven home rejected; passphrase kept in the local
+encrypted vault for unattended runs (restore stays manual); retention prune;
+`/api/backup/sync` (+`/run`) and a Settings → Backup "Scheduled sync" card
+with freshness + Back up now. S3/R2 user-keyed destinations remain follow-up
+pending open question 2.
 
 **Phase P3 — availability:** harden/document hub mode as the durable home;
 iOS read-only cache seeded from last-known data (separate, larger effort).

@@ -286,4 +286,19 @@ function build(nodes: Array<[string, string]>, edges: Array<[string, string]>): 
   assert.match(prompt, /narrate/i, "asks the agent to narrate each step's work");
 }
 
+// Familiar instructions are executable input, so compilation cannot silently
+// cut them at the old 32k preview boundary. Platform transport rejects an
+// unsupported argv before spawn with an actionable error instead.
+{
+  const instruction = `begin-${"x".repeat(32_500)}-required-tail`;
+  const doc = build([["t", "trigger.manual"], ["writer", "familiar"]], [["t", "writer"]]);
+  doc.nodes = doc.nodes.map((node) => node.id === "writer"
+    ? { ...node, params: { prompt: instruction } }
+    : node);
+  const prompt = compileFlowPrompt(doc);
+  assert.match(prompt, /begin-/);
+  assert.match(prompt, /-required-tail/, "the complete instruction survives compilation");
+  assert.ok(prompt.includes(instruction));
+}
+
 console.log("flow-compile.test.ts OK");

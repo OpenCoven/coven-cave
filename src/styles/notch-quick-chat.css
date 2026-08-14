@@ -45,7 +45,6 @@ html[data-glass] .notch-quick-chat__pill {
   border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
   background: color-mix(in oklch, var(--bg-panel) 58%, transparent);
   backdrop-filter: blur(14px) saturate(1.25);
-  -webkit-backdrop-filter: blur(14px) saturate(1.25);
 }
 
 .notch-quick-chat__pill-label {
@@ -107,7 +106,6 @@ html[data-glass] .notch-quick-chat__panel {
 html[data-glass] .notch-quick-chat__toolbar {
   background: color-mix(in oklch, var(--bg-panel) 35%, transparent);
   backdrop-filter: blur(14px) saturate(1.25);
-  -webkit-backdrop-filter: blur(14px) saturate(1.25);
 }
 
 /* The pane borrows the tray window's layout: thread fills, composer pins. */
@@ -135,7 +133,6 @@ html[data-glass] .notch-quick-chat__toolbar {
   html[data-glass] .notch-quick-chat__toolbar {
     background: var(--bg-panel);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 

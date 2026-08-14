@@ -21,6 +21,7 @@
     "write_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/remotion",
   "x-coven": {
     "displayName": "Remotion Video",

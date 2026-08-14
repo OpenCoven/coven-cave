@@ -229,9 +229,12 @@ covers sessions, tasks, familiars, memory, settings, and commands.
 with honest progress, so shipping doesn't consume an evening of babysitting
 flaky CI.
 
-**The path today:** manual six-location version stamp + CHANGELOG → PR →
-merge → signed `v*` tag → `release.yml` builds four platforms + notarization
-+ updater manifest → `scripts/verify-release-updater.mjs` verifies the chain.
+**The path today:** managed release worktree → `pnpm release:preview` →
+`pnpm release:prepare` stamps five manifests, both iOS release values, and
+CHANGELOG → `pnpm release:verify` → signed stamp PR → merge → signed `v*` tag → `release.yml`
+verifies the tag is signed and on `main`, checks every stamped source and the
+finalized changelog, then builds four platforms + notarization + updater
+manifest → `scripts/verify-release-updater.mjs` verifies the chain.
 Observed on 2026-07-08 (four cuts): the macOS Intel leg flaked on three of
 four runs (Google Fonts fetch, Apple timestamp service, notarization), each
 time publishing an incomplete "latest" release whose missing `latest.json`
@@ -239,9 +242,7 @@ time publishing an incomplete "latest" release whose missing `latest.json`
 `gh run rerun --failed`. Three stamp-PR collisions between concurrent
 sessions the same day.
 
-**Where it breaks:** no retries around the Intel leg's network dependencies;
-the manifest job skips entirely on any platform failure; the stamp is
-hand-rolled and race-prone.
+**Where it breaks:** no retries around the Intel leg's network dependencies.
 
 **Enablement plan** (beads `cave-1hha` + `cave-ef6f`):
 1. (`cave-1hha`) Retry wrappers in `release.yml` around the font fetch (or
@@ -250,12 +251,15 @@ hand-rolled and race-prone.
    `!cancelled()` and publishes entries for the platforms that built, with a
    warning in the release body; `verify-release-updater.mjs` gains
    `--allow-partial` for CI use only.
-3. (`cave-ef6f`) `scripts/stamp-release.mjs`: bumps the six version
-   locations, drafts the changelog section from `git log <last-tag>..`,
-   opens the PR — and refuses when another stamp PR is already open.
+3. (`cave-ef6f`) `scripts/stamp-release.mjs`: bumps all five version
+   locations (including both iOS release values), drafts the changelog section
+   from `git log <last-tag>..`, and refuses when another stamp PR is open.
+   Its preparation mode leaves commit, push, tag, publication, and PR creation
+   to explicit reviewed steps.
 
-**Done means:** a cut is one script + one merge + one tag; a single-platform
-flake never breaks the updater; stamps stop colliding.
+**Done means:** a cut is one preparation command + one merge + one tag; a
+single-platform flake never breaks the updater; stamps stop colliding; a tag
+cannot label binaries whose embedded source version is older.
 
 ---
 

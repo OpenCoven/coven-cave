@@ -4,6 +4,7 @@ type ToolStatus = {
   outdated?: boolean;
   compatible?: boolean;
   current?: string | null;
+  latest?: string | null;
 };
 
 type InstallJob = {
@@ -89,48 +90,47 @@ export function compareCaveDaemonVersions(left: string, right: string): number |
   return 0;
 }
 
+export type CovenCliUpdateResult =
+  | "current"
+  | "updated"
+  | "confirmation-required"
+  | "status-unavailable";
+
 /**
- * Before Cave replaces and relaunches itself, bring the separately installed
- * Coven CLI up to date. The existing install route owns the safety-sensitive
- * daemon lifecycle: graceful stop, npm update, executable verification, and
- * restart only when the daemon was running before the update.
+ * Reconcile the separately installed Coven CLI on its own release channel.
+ * Cave, the CLI, and the daemon have independent version lifecycles: an app
+ * version must never be used as a required CLI version. The install route owns
+ * the safety-sensitive daemon lifecycle (graceful stop, npm update, verified
+ * executable, and conditional restart).
  */
-async function runDaemonUpdateForCaveUpdate(
-  caveVersion: string,
+async function runCovenCliUpdate(
   dependencies: Dependencies = {},
-): Promise<"current" | "updated" | "confirmation-required"> {
+): Promise<CovenCliUpdateResult> {
   const request = dependencies.fetch ?? fetch;
   const wait = dependencies.wait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const pollIntervalMs = dependencies.pollIntervalMs ?? 1_000;
   const maxPollAttempts = dependencies.maxPollAttempts ?? 300;
-  if (!releaseSemver(caveVersion)) {
-    throw new Error("Cave could not verify the release version before updating the daemon.");
-  }
-
   const checkResponse = await request(UPDATE_ROUTE, {
     method: "POST",
     cache: "no-store",
   });
   const checkBody = await responseBody(checkResponse);
-  if (!checkResponse.ok || checkBody.ok === false) {
-    throw new Error(safeFailure(checkBody, "Cave could not check the Coven daemon version."));
-  }
+  if (!checkResponse.ok || checkBody.ok === false) return "status-unavailable";
   if (checkBody.freshness !== "fresh") {
-    throw new Error("Cave could not verify a fresh Coven CLI version before continuing.");
+    return "status-unavailable";
   }
 
   const tools = Array.isArray(checkBody.tools) ? (checkBody.tools as ToolStatus[]) : [];
   const cli = tools.find((tool) => tool.id === "coven-cli");
-  if (!cli) throw new Error("Cave could not find the Coven CLI update status.");
-  const currentComparison =
-    typeof cli.current === "string"
-      ? compareCaveDaemonVersions(cli.current, caveVersion)
-      : null;
+  if (!cli || typeof cli.latest !== "string" || !releaseSemver(cli.latest)) {
+    return "status-unavailable";
+  }
   if (
     cli.installed &&
     cli.compatible !== false &&
-    currentComparison !== null &&
-    currentComparison >= 0
+    cli.outdated === false &&
+    typeof cli.current === "string" &&
+    releaseSemver(cli.current)
   ) {
     return "current";
   }
@@ -161,11 +161,11 @@ async function runDaemonUpdateForCaveUpdate(
       if (job.ok) {
         const installedVersion = job.verification?.current;
         const comparison = typeof installedVersion === "string"
-          ? compareCaveDaemonVersions(installedVersion, caveVersion)
+          ? compareCaveDaemonVersions(installedVersion, cli.latest)
           : null;
         if (comparison !== null && comparison >= 0) return "updated";
         throw new Error(
-          `Cave updated the Coven CLI, but could not verify version ${caveVersion} or newer on PATH.`,
+          `Cave updated the Coven CLI, but could not verify version ${cli.latest} or newer on PATH.`,
         );
       }
       throw new Error(safeFailure(job as Record<string, unknown>, "The Coven daemon update failed."));
@@ -176,11 +176,10 @@ async function runDaemonUpdateForCaveUpdate(
   throw new Error("The Coven daemon update did not finish before the Cave update timed out.");
 }
 
-export function updateDaemonForCaveUpdate(
-  caveVersion: string,
+export function updateCovenCli(
   dependencies: Dependencies = {},
-): Promise<"current" | "updated" | "confirmation-required"> {
-  const operation = runDaemonUpdateForCaveUpdate(caveVersion, dependencies);
+): Promise<CovenCliUpdateResult> {
+  const operation = runCovenCliUpdate(dependencies);
   activeDaemonUpdates.add(operation);
   void operation.finally(() => activeDaemonUpdates.delete(operation)).catch(() => {});
   return operation;

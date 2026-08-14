@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   clearRoleSurfacesForTest,
   familiarRoleIds,
@@ -42,6 +43,8 @@ function makeContext(overrides: Partial<RoleSurfaceContext> = {}): RoleSurfaceCo
     plugins: { listPlugins: async () => [] },
     openUrl: () => {},
     openSession: () => {},
+    focusCard: () => {},
+    refreshTasks: () => {},
     ...overrides,
   };
 }
@@ -102,6 +105,56 @@ test("surfaceMatchesRoles honors alias roles with the same normalization", () =>
   assert.ok(surfaceMatchesRoles({ role: "navigator", aliases: ["Planner"] }, planner));
   assert.ok(!surfaceMatchesRoles({ role: "navigator" }, planner));
   assert.ok(!surfaceMatchesRoles({ role: "navigator", aliases: ["editor"] }, planner));
+});
+
+test("room aliases cover the live navigation and memory role labels", () => {
+  const navigator = familiarRoleIds({
+    id: "astra",
+    role: "Strategy / Navigation",
+    familiarType: "planning",
+  });
+  assert.ok(
+    surfaceMatchesRoles(
+      { role: "navigator", aliases: ["planner", "planning", "navigation"] },
+      navigator,
+    ),
+  );
+
+  const indexer = familiarRoleIds({
+    id: "echo",
+    role: "Memory / Reflection",
+    familiarType: "indexing",
+  });
+  assert.ok(
+    surfaceMatchesRoles(
+      { role: "indexer", aliases: ["archivist", "indexing", "memory", "reflection"] },
+      indexer,
+    ),
+  );
+});
+
+test("familiarRoleIds grants the explicit familiar Type's tokens (cave-cc5r)", () => {
+  const ids = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "coding" });
+  assert.ok(ids.has("coding"));
+  assert.ok(ids.has("coder"));
+  assert.ok(surfaceMatchesRoles({ role: "coder" }, ids));
+  // types add, never subtract: the role label's tokens still ride along
+  assert.ok(ids.has("orchestrator"));
+});
+
+test("a General or absent familiar Type grants no extra tokens", () => {
+  const general = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "general" });
+  assert.ok(!surfaceMatchesRoles({ role: "coder" }, general));
+  const unknown = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "not-a-type" });
+  assert.ok(!surfaceMatchesRoles({ role: "coder" }, unknown));
+});
+
+test("a multi-value familiarType unions grants from all types (cave-gud8)", () => {
+  const ids = familiarRoleIds({ id: "f", role: "Orchestrator", familiarType: "coding,research" });
+  assert.ok(ids.has("coding"));
+  assert.ok(ids.has("coder"));
+  assert.ok(ids.has("research"));
+  assert.ok(ids.has("researcher"));
 });
 
 test("resolveVisibleRoleSurfaces shows alias-matched rooms", () => {
@@ -201,4 +254,22 @@ test("matchesShortcutCombo honors mod aliasing and rejects extra modifiers", () 
   assert.ok(!matchesShortcutCombo({ ...base, metaKey: true, shiftKey: true }, "mod+e")); // extra shift
   assert.ok(matchesShortcutCombo({ ...base, metaKey: true, shiftKey: true }, "mod+shift+e"));
   assert.ok(!matchesShortcutCombo({ ...base, key: "f", metaKey: true }, "mod+e")); // wrong key
+});
+
+test("registry keeps retired types and their live role labels reachable (cave-lgcb)", () => {
+  // The vocabulary reduction removed watch/planning/writing/indexing from the
+  // Type picker. Their rooms stay reachable through free-text Role labels only
+  // because register.tsx carries both retired vocabulary and the labels used by
+  // the production familiars. Pin both so continuity cannot silently drift.
+  const source = readFileSync(
+    new URL("../components/role-surfaces/register.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /aliases:\s*\["watch",\s*"guardian"\]/);
+  assert.match(source, /aliases:\s*\["planner",\s*"planning",\s*"navigation"\]/);
+  assert.match(source, /aliases:\s*\["editor",\s*"writer",\s*"writing"\]/);
+  assert.match(
+    source,
+    /aliases:\s*\["archivist",\s*"indexing",\s*"memory",\s*"reflection"\]/,
+  );
 });

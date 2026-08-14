@@ -1,0 +1,172 @@
+import type { RuntimeCompatibilityProfile } from "./runtime-compatibility.ts";
+
+export type ClaudeMessageEvent =
+  | { kind: "text"; text: string }
+  | { kind: "tool-use"; id: string; name: string; input: unknown }
+  | { kind: "tool-result"; toolUseId: string; content: unknown; isError: boolean };
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/** True for every syntactically valid JSON value, including primitive roots.
+ * Claude stream-json requires an object envelope, but the route must first
+ * recognize primitives as protocol frames so they are redacted rather than
+ * falling through to the plain-text stdout path. */
+export function isClaudeStreamJsonFrame(line: string): boolean {
+  try {
+    JSON.parse(line);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Decode only assistant text for the compatibility fallback. In particular,
+ * malformed sibling blocks must not make a valid later text block disappear,
+ * and this path must never manufacture a tool activity event. */
+export function parseClaudeTextOnlyEnvelope(value: unknown): string[] {
+  const envelope = record(value);
+  const message = record(envelope?.message);
+  const content = message?.content;
+  if (envelope?.type !== "assistant" || !Array.isArray(content)) return [];
+  const text: string[] = [];
+  for (const value of content) {
+    const block = record(value);
+    if (block?.type === "text" && typeof block.text === "string" && block.text) {
+      text.push(block.text);
+    }
+  }
+  return text;
+}
+
+/**
+ * Decode only the message envelope explicitly described by the selected
+ * compatibility profile. This is intentionally a data parser, not a plugin:
+ * profile changes can select known envelope labels, but cannot execute code or
+ * introduce arbitrary fields into the chat stream.
+ */
+export function parseClaudeMessageEnvelope(
+  value: unknown,
+  profile: RuntimeCompatibilityProfile,
+): ClaudeMessageEvent[] {
+  const envelope = record(value);
+  const message = record(envelope?.message);
+  const content = message?.content;
+  if (!envelope || !Array.isArray(content)) return [];
+
+  const events: ClaudeMessageEvent[] = [];
+  if (envelope.type === profile.eventTypes.assistant) {
+    for (const value of content) {
+      const block = record(value);
+      if (!block) continue;
+      if (block.type === "text" && typeof block.text === "string" && block.text) {
+        events.push({ kind: "text", text: block.text });
+      } else if (
+        block.type === profile.eventTypes.toolUse &&
+        typeof block.id === "string" &&
+        typeof block.name === "string" &&
+        block.id &&
+        block.name &&
+        // Claude tool-use input is a JSON object. Accepting a scalar or array
+        // here would make an incomplete/foreign stream block create a trusted
+        // tool bubble under the selected profile.
+        record(block.input) !== null
+      ) {
+        events.push({ kind: "tool-use", id: block.id, name: block.name, input: block.input });
+      }
+    }
+  } else if (envelope.type === profile.eventTypes.user) {
+    for (const value of content) {
+      const block = record(value);
+      if (
+        block?.type === profile.eventTypes.toolResult &&
+        typeof block.tool_use_id === "string" &&
+        block.tool_use_id &&
+        hasOwn(block, "content") &&
+        block.content !== null
+      ) {
+        events.push({
+          kind: "tool-result",
+          toolUseId: block.tool_use_id,
+          content: block.content,
+          isError: block.is_error === true,
+        });
+      }
+    }
+  }
+  return events;
+}
+
+/**
+ * Detect a malformed or newly-shaped tool block without inspecting any payload
+ * values. The route uses this only to show one compatibility diagnostic; it
+ * must not turn an unknown block into a tool activity record.
+ */
+export function hasUnsupportedClaudeToolFrame(
+  value: unknown,
+  profile: RuntimeCompatibilityProfile,
+): boolean {
+  const envelope = record(value);
+  const message = record(envelope?.message);
+  const content = message?.content;
+  // `JSON.parse` accepts primitive and array roots too. Neither is a valid
+  // Claude stream envelope, so do not silently drop it without the one
+  // redacted compatibility diagnostic required for unknown frames.
+  if (!envelope) return true;
+  const isAssistant = envelope.type === profile.eventTypes.assistant;
+  const isUser = envelope.type === profile.eventTypes.user;
+  // System/result envelopes have their own route handling, and
+  // `rate_limit_event` is an out-of-band usage notice Claude Code interleaves
+  // with the message stream once utilization crosses its warning threshold:
+  // its payload is a `rate_limit_info` record with no `message`, so it cannot
+  // hide a tool block. Treating it as unknown latched tool decoding off
+  // mid-turn, which left the already-open tool bubble unsettled because the
+  // notice can arrive between a `tool_use` and its `tool_result`.
+  // In particular, Claude must not inherit Coven's `output` envelope handling:
+  // that path is for the Windows Codex bridge and would render an unknown
+  // Claude payload as assistant text before the profile boundary can redact
+  // it. Everything else is an unrecognised protocol frame, even when it has no
+  // `message` field: silently dropping one would hide a newly introduced tool
+  // event.
+  if (!isAssistant && !isUser) {
+    // The allowlist entry is a claim about shape, not just a name: a usage
+    // notice that ever grows a `message` payload is an unknown frame again and
+    // must surface the diagnostic rather than be dropped.
+    if (envelope.type === "rate_limit_event") return hasOwn(envelope, "message");
+    return !["system", "result"].includes(String(envelope.type));
+  }
+  if (!Array.isArray(content)) return true;
+  if (isAssistant) {
+    return content.some((value) => {
+      const block = record(value);
+      if (!block) return true;
+      if (block.type === "text") return typeof block.text !== "string";
+      if (block.type !== profile.eventTypes.toolUse) return true;
+      return typeof block.id !== "string" ||
+        !block.id ||
+        typeof block.name !== "string" ||
+        !block.name ||
+        record(block.input) === null;
+    });
+  }
+  if (isUser) {
+    return content.some((value) => {
+      const block = record(value);
+      if (!block) return true;
+      if (block.type !== profile.eventTypes.toolResult) return true;
+      return typeof block.tool_use_id !== "string" ||
+        !block.tool_use_id ||
+        !hasOwn(block, "content") ||
+        block.content === null ||
+        (block.is_error !== undefined && typeof block.is_error !== "boolean");
+    });
+  }
+  return false;
+}

@@ -14,8 +14,8 @@ assert.match(
 
 assert.match(
   source,
-  /\[cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending\]/,
-  "BoardView filtered memo deps include activeFamiliarId + scopeFamiliarIds (and deletePending for the undo-window hide) so re-filter triggers on familiar switch / multiselect change",
+  /\[cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject, projectLabelOf\]/,
+  "BoardView filtered memo deps include activeFamiliarId + scopeFamiliarIds (and deletePending for the undo-window hide, plus the redesign's excludedStatus/excludedProject/projectLabelOf filter deps) so re-filter triggers on familiar switch / multiselect change / filter toggle",
 );
 
 // Multiselect: when a scope set is supplied, the board filters to the union via
@@ -24,6 +24,18 @@ assert.match(
   source,
   /scopeFamiliarIds\s*\?\s*familiarInScope\(scopeFamiliarIds, c\.familiarId\)/,
   "BoardView filters by the multiselect scope set when provided",
+);
+
+assert.match(
+  source,
+  /const showFamiliarGrouping = \(scopeFamiliarIds\?\.size \?\? 0\) > 1;/,
+  "BoardView exposes familiar grouping only for a true multi-familiar scope",
+);
+
+assert.equal(
+  (source.match(/\{showFamiliarGrouping \? \(/g) ?? []).length,
+  2,
+  "Kanban/Table and Gantt both gate their Familiar grouping control on multi-selection",
 );
 
 // The header stats object these pins guarded was dead code (computed every
@@ -37,8 +49,14 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" \? "status" : groupBy;/,
-  "Scoping to one familiar should drop the redundant familiar grouping back to status (project grouping stays usable)",
+  /const effectiveGroupBy: GroupBy = !showFamiliarGrouping && groupBy === "familiar" \? "status" : groupBy;/,
+  "Tasks falls back to status when a saved Familiar grouping is unavailable",
+);
+
+assert.match(
+  source,
+  /const effectiveGanttGroup = ganttGroup === "familiar" && !showFamiliarGrouping \? "project" : ganttGroup;/,
+  "Gantt falls back to project when a saved Familiar grouping is unavailable",
 );
 
 assert.match(

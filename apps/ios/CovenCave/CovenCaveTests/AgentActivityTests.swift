@@ -35,6 +35,14 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertEqual(steps?[0].status, .running)
     }
 
+    func testToolDetailSummarisesThePrettyPrintedJsonTheServerSends() {
+        // The wire payload is JSON.stringify(input, null, 2) — reading its
+        // first line labelled every tool call in the app "{".
+        let input = "{\n  \"command\": \"pnpm test\",\n  \"description\": \"Run tests\"\n}"
+        let steps = ActivityFold.fold([], event: toolEvent(input: input))
+        XCTAssertEqual(steps?[0].detail, "pnpm test")
+    }
+
     func testToolSettleUpdatesItsStepInPlace() {
         let started = ActivityFold.fold([], event: toolEvent(input: "ls"))!
         let settled = ActivityFold.fold(started, event: toolEvent(status: "ok", durationMs: 420))
@@ -48,6 +56,69 @@ final class AgentActivityTests: XCTestCase {
         let started = ActivityFold.fold([], event: toolEvent())!
         let settled = ActivityFold.fold(started, event: toolEvent(status: "error"))
         XCTAssertEqual(settled?[0].status, .error)
+    }
+
+    // MARK: - Failure reasons
+
+    func testAFailedToolCarriesItsReason() {
+        let started = ActivityFold.fold([], event: toolEvent(input: "cat missing.txt"))!
+        let failed = ActivityFold.fold(started, event: toolEvent(
+            output: "cat: missing.txt: No such file or directory", status: "error"))
+        XCTAssertEqual(failed?[0].errorOutput, "cat: missing.txt: No such file or directory")
+    }
+
+    func testASuccessfulToolDoesNotStoreItsOutput() {
+        // Only a failure has to explain itself; a successful call's payload
+        // belongs on the desktop, not in every persisted snapshot.
+        let steps = ActivityFold.fold([], event: toolEvent(output: "a\nb\nc", status: "ok"))
+        XCTAssertNil(steps?[0].errorOutput)
+    }
+
+    func testAnIntermediateRunningFrameDoesNotStoreOutput() {
+        let steps = ActivityFold.fold([], event: toolEvent(output: "partial…", status: "running"))
+        XCTAssertNil(steps?[0].errorOutput)
+    }
+
+    func testTheReasonKeepsTheTailWhereTheErrorIs() throws {
+        let log = (1...40).map { "build step \($0)" }.joined(separator: "\n")
+            + "\nerror: cannot find module 'foo'"
+        let steps = ActivityFold.fold([], event: toolEvent(output: log, status: "error"))!
+        let reason = try XCTUnwrap(steps[0].errorOutput)
+        XCTAssertTrue(reason.hasSuffix("error: cannot find module 'foo'"))
+        XCTAssertFalse(reason.contains("build step 1\n"), "the head of the log is not the reason")
+        XCTAssertLessThanOrEqual(reason.split(separator: "\n").count, ActivityFold.errorOutputLines)
+    }
+
+    func testTheLiveTruncationMarkerIsNotReportedAsTheReason() {
+        // capLiveToolPayload head-caps and glues a marker on the end, so the
+        // literal tail of a long live payload is the marker, not the failure.
+        let output = "error: the build failed\n[tool payload truncated]"
+        let steps = ActivityFold.fold([], event: toolEvent(output: output, status: "error"))!
+        XCTAssertEqual(steps[0].errorOutput, "error: the build failed")
+    }
+
+    func testALongReasonIsCappedFromTheEnd() throws {
+        let steps = ActivityFold.fold([], event: toolEvent(
+            output: String(repeating: "x", count: 900), status: "error"))!
+        let reason = try XCTUnwrap(steps[0].errorOutput)
+        XCTAssertEqual(reason.count, ActivityFold.errorOutputCap)
+        XCTAssertTrue(reason.hasPrefix("…"), "the cut end is marked")
+    }
+
+    func testPersistedFailuresKeepTheirReason() {
+        let tools = [
+            ToolCall(id: "1", name: "Bash", input: "pwd", output: "boom", status: "error"),
+            ToolCall(id: "2", name: "Read", input: nil, output: "file contents", status: "ok"),
+        ]
+        let steps = ActivityFold.steps(fromTools: tools)
+        XCTAssertEqual(steps?[0].errorOutput, "boom")
+        XCTAssertNil(steps?[1].errorOutput, "a successful call keeps its output off the trail")
+    }
+
+    func testStepsPersistedBeforeErrorOutputStillDecode() throws {
+        let legacy = #"{"id":"s1","kind":"tool","title":"Bash","status":"error"}"#
+        let step = try JSONDecoder().decode(ActivityStep.self, from: Data(legacy.utf8))
+        XCTAssertNil(step.errorOutput)
     }
 
     func testReplayingAnAlreadyAppliedSettleIsANoOp() {
@@ -95,6 +166,25 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertEqual(second.map(\.title), ["Thinking", "Writing"])
     }
 
+    func testProgressNoticeIsTerminalNotRunning() {
+        // /api/chat/send emits "notice" for harness diagnostics (runtime
+        // compatibility, rate-limit warnings). Decoding those as .running left
+        // an informational line spinning for the rest of the turn.
+        let steps = ActivityFold.fold([], event: progressEvent(label: "Runtime mismatch",
+                                                               status: "notice"))
+        XCTAssertEqual(steps?[0].status, .notice)
+        XCTAssertNil(ActivityFold.settle(steps!, success: true),
+                     "a notice is already settled — nothing left to coerce")
+    }
+
+    func testANoticeDoesNotHijackTheRunningStep() {
+        var steps = ActivityFold.fold([], event: toolEvent(id: "t1", name: "Bash"))!
+        steps = ActivityFold.fold(steps, event: progressEvent(label: "Rate limited",
+                                                              status: "notice"))!
+        XCTAssertEqual(steps.currentStep?.title, "Bash",
+                       "the chip narrates the running tool, not the notice beside it")
+    }
+
     func testProgressDoneStatusMapsToOk() {
         let first = ActivityFold.fold([], event: progressEvent(label: "Indexing"))!
         let done = ActivityFold.fold(first, event: progressEvent(label: "Indexing",
@@ -121,7 +211,23 @@ final class AgentActivityTests: XCTestCase {
     func testNonActivityEventsReportNoChange() {
         XCTAssertNil(ActivityFold.fold([], event: .assistantChunk(text: "hi")))
         XCTAssertNil(ActivityFold.fold([], event: .session(sessionId: "s")))
-        XCTAssertNil(ActivityFold.fold([], event: .done(isError: false, sessionId: nil)))
+        XCTAssertNil(ActivityFold.fold([], event: .done(
+            isError: false,
+            sessionId: nil,
+            requestedModel: nil,
+            desiredModel: nil,
+            forwardedModel: nil,
+            confirmedModel: nil,
+            modelSource: nil,
+            modelApplicationState: nil,
+            modelApplicationReason: nil,
+            retryModel: nil,
+            requestedControls: nil,
+            forwardedControls: nil,
+            promptGuidanceControls: nil,
+            appliedControls: nil,
+            rejectedControlFamilies: nil
+        )))
     }
 
     // MARK: - Caps
@@ -173,6 +279,27 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertEqual(steps?[0].detail, "pwd")
     }
 
+    func testPersistedToolsKeepTheirSummaryAndDuration() {
+        // History replays the same payload shape the stream sent, so a reloaded
+        // transcript must read identically to the live turn — argument summary
+        // included, and the duration the server recorded alongside it.
+        let tools = [ToolCall(id: "1", name: "Read",
+                              input: "{\n  \"file_path\": \"src/lib/foo.ts\"\n}",
+                              output: nil, status: "ok", durationMs: 42)]
+        let steps = ActivityFold.steps(fromTools: tools)
+        XCTAssertEqual(steps?[0].detail, "src/lib/foo.ts")
+        XCTAssertEqual(steps?[0].durationMs, 42)
+    }
+
+    func testPersistedToolsDecodeDurationFromTheServerPayload() throws {
+        let json = #"{"id":"t1","name":"Bash","input":"pwd","status":"ok","durationMs":900}"#
+        let tool = try JSONDecoder().decode(ToolCall.self, from: Data(json.utf8))
+        XCTAssertEqual(tool.durationMs, 900)
+        // Turns persisted before the field still decode.
+        let legacy = #"{"id":"t2","name":"Bash","status":"ok"}"#
+        XCTAssertNil(try JSONDecoder().decode(ToolCall.self, from: Data(legacy.utf8)).durationMs)
+    }
+
     func testStepsFromNilOrEmptyToolsIsNil() {
         XCTAssertNil(ActivityFold.steps(fromTools: nil))
         XCTAssertNil(ActivityFold.steps(fromTools: []))
@@ -215,6 +342,19 @@ final class AgentActivityTests: XCTestCase {
         XCTAssertEqual(input, "ls")
         XCTAssertEqual(status, "ok")
         XCTAssertEqual(durationMs, 123)
+    }
+
+    func testAToolFrameOffTheWireReadsAsItsArgument() throws {
+        // End to end over the real frame shape: the server JSON-encodes an
+        // already-pretty-printed input, so the escaped newlines survive decode
+        // and land in the fold. This is the label the chip shows.
+        let frame = #"{"kind":"tool_use","id":"t1","name":"Read","input":"{\n  \"file_path\": \"src/lib/foo.ts\"\n}","status":"running"}"#
+        guard let event = StreamEvent.decode(frame) else {
+            return XCTFail("expected a toolUse event")
+        }
+        let steps = ActivityFold.fold([], event: event)
+        XCTAssertEqual(steps?.currentStep?.title, "Read")
+        XCTAssertEqual(steps?.currentStep?.detail, "src/lib/foo.ts")
     }
 
     func testDecodeProgressCarriesIdAndStatus() throws {

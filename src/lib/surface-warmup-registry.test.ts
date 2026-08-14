@@ -10,27 +10,52 @@ async function source(name: string): Promise<string> {
 
 test("warmup registry covers canonical sidebar landings with bounded serial resources", async () => {
   const registry = await source("surface-warmup-registry.ts");
-  for (const surface of ["github", "marketplace", "board", "schedules", "grimoire", "agents"]) {
+  for (const surface of ["marketplace", "board", "schedules", "grimoire", "agents"]) {
     assert.match(registry, new RegExp(`${surface}: \\[`, "m"), `${surface} has a registry entry`);
   }
   assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)/);
   assert.match(registry, /await warm<\{ rateLimit/);
   assert.match(registry, /for \(const resource of surfaceWarmupResources\[surface\]\)[\s\S]{0,900}catch(?: \(error\))? \{[\s\S]{0,360}must not leave the rest of this surface cold/);
-  assert.match(registry, /GITHUB_WARMUP_REMAINING_FLOOR/);
   assert.match(registry, /response\.status === 429/);
   assert.match(registry, /response\.headers\.has\("retry-after"\)/);
   assert.match(registry, /error instanceof SurfaceWarmupBackpressureError[\s\S]{0,100}backpressured: true/);
+  assert.match(
+    registry,
+    /export function surfaceWarmupRetryAfterSeconds/,
+    "surface consumers can honor the retry delay carried by a backpressure error",
+  );
   assert.match(registry, /preloadSidebarSurface\(surface\)/);
   assert.match(registry, /await preloadSidebarSurface\(surface\);[\s\S]{0,180}if \(!canContinue\(\)\) return/);
   assert.match(registry, /if \(!result\.cache\.stale\) return result;[\s\S]{0,600}return read<T>\(key, \{ force: true \}\);/, "surface reads join a stale revalidation before returning landing data");
   assert.doesNotMatch(registry, /catch\s*\{\s*return result;\s*\}/, "a failed revalidation must not present stale landing data as current");
+  assert.match(
+    registry,
+    /agents: \["memory:list"\]/,
+    "the ordinary sidebar warmup keeps only the existing file-memory landing",
+  );
+  assert.doesNotMatch(
+    registry,
+    /agents:coven-memory/,
+    "canonical local memory is gated by accepted local-daemon readiness instead",
+  );
 });
 
-test("sidebar preloads call the dynamic import loaders rather than an unavailable dynamic preload hook", async () => {
+test("GitHub cache resources stay demand-loaded without a standalone sidebar warmup", async () => {
   const surfaces = await readFile(new URL("../components/lazy-surfaces.tsx", import.meta.url), "utf8");
-  assert.match(surfaces, /const loadGitHubView = \(\) => import\("@\/components\/github-view"\)/);
-  assert.match(surfaces, /return loadGitHubView\(\)\.then\(\(\) => undefined\)/);
-  assert.doesNotMatch(surfaces, /function preloadSurface/);
+  const registry = await source("surface-warmup-registry.ts");
+  const coordinator = await source("use-surface-warmup.ts");
+
+  assert.doesNotMatch(surfaces, /loadGitHubView|case "github"/);
+  assert.doesNotMatch(registry, /^\s*github:\s*\[/m);
+  assert.doesNotMatch(coordinator, /ORDER:[^=]*=\s*\[[^\]]*"github"/);
+  assert.match(registry, /defineResource\("github:pat"/);
+  assert.match(registry, /"github:activity"[\s\S]*\/api\/github\/activity/);
+  assert.match(registry, /defineResource\("github:familiars"/);
+  assert.match(
+    coordinator,
+    /invalidateIfDefined\("github:familiars"\)/,
+    "roster writes still invalidate an on-demand GitHub cache",
+  );
 });
 
 test("warmup starts after paint and pauses work without mounting inactive surfaces", async () => {
@@ -53,7 +78,7 @@ test("warmup starts after paint and pauses work without mounting inactive surfac
 test("roster membership changes publish the workspace familiar-refresh event", async () => {
   for (const sourcePath of [
     "../components/familiar-summoning-circle.tsx",
-    "../components/familiar-studio-lifecycle-tab.tsx",
+    "../components/familiar-lifecycle-section.tsx",
   ]) {
     const code = await readFile(new URL(sourcePath, here), "utf8");
     assert.match(code, /window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\)/, `${sourcePath} invalidates warmed familiar consumers`);
@@ -65,7 +90,6 @@ test("external board writers invalidate a warmed board landing before navigation
     "../components/chat-view.tsx",
     "../components/task-link-picker.tsx",
     "../components/thread-signals-section.tsx",
-    "../components/journal/journal-entries.tsx",
     "../lib/chat-task-handoff.ts",
     "../lib/chat-task-autofill.ts",
     "../lib/github-tasks.ts",
@@ -75,6 +99,12 @@ test("external board writers invalidate a warmed board landing before navigation
     const code = await readFile(new URL(writer, here), "utf8");
     assert.match(code, /publishBoardChanged\(\)/, `${writer} publishes its successful board write`);
   }
+});
+
+test("Journal strips chat controls without becoming a board writer", async () => {
+  const journal = await readFile(new URL("../components/journal/journal-entries.tsx", here), "utf8");
+  assert.match(journal, /const \{ visible \} = useMemo\(\(\) => extractNextPaths\(text\), \[text\]\);/);
+  assert.doesNotMatch(journal, /publishBoardChanged\(\)/, "journal reflection rendering never invalidates board data");
 });
 
 test("publishing from the Scribe surface invalidates a warmed Grimoire landing", async () => {
@@ -111,7 +141,7 @@ test("external journal and memory writers invalidate warmed Grimoire resources",
   const memoryList = await readFile(new URL("../components/familiars-memory-view.tsx", here), "utf8");
   assert.match(
     memoryList,
-    /const response = await fetch\("\/api\/memory\/delete"[\s\S]{0,400}if \(response\.ok\) invalidateIfDefined\("agents:coven-memory", "memory:list"\)/,
-    "memory deletes invalidate both warmed memory landings",
+    /const response = await fetch\("\/api\/memory\/delete"[\s\S]{0,400}if \(response\.ok\) invalidateIfDefined\([^)]*"memory:list"\)/,
+    "memory deletes still invalidate the existing warmed file-memory landing",
   );
 });

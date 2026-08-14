@@ -24,6 +24,7 @@ function daysAgo(days: number): string {
 function stats(overrides: Partial<FamiliarCardStats> = {}): FamiliarCardStats {
   return {
     memoryCount: 3,
+    memoryAvailability: "ready",
     latestMemory: { title: "Recent memory", updatedAt: daysAgo(1) },
     lastSessionAt: daysAgo(1),
     sessionsTotal: 4,

@@ -22,7 +22,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*recentProjectRoot,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
+  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*recentProjectRoot,\s*defaultProjectId: savedDefaults\.projectId,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
   "ChatView resolves the selected project through resolveChatProjectSelection, feeding the linked task's project and the most recent chat's project (sessions in unregistered cwds are No project — behaviorally pinned in chat-projects.test.ts)",
 );
 // A brand-new chat keeps a NULL draft so the default (opener root → linked
@@ -35,23 +35,22 @@ assert.match(
   /if \(!session\) return sessionId === null && viewChanged \? null : prev;/,
   "Brand-new chats keep a null project draft so the recency default stays live",
 );
-// REGRESSION (2026-07-02): a session in an unregistered cwd must NOT default
-// the picker to the first project — sending that root re-roots the next
-// turn's cwd and forks the harness session (`--continue` misses).
+// A session in an unregistered cwd stays readable, but its next turn must
+// remain blocked until the user explicitly chooses an accessible project.
 assert.doesNotMatch(
   chatView,
   /const selectedProject = resolvedProjectId\s*\?\s*chatProjectById\(resolvedProjectId, projects\) \?\? firstProject\s*:\s*firstProject/,
   "The unconditional first-project fallback for existing sessions must stay gone",
 );
-assert.match(
+assert.doesNotMatch(
   sessionHeader,
   /function SessionOverflowMenu[\s\S]*?<ProjectPickerPopover[\s\S]*?allowNoProject/,
-  "The overflow menu's picker offers an explicit No-project choice so a workspace session can stay (or become) project-less",
+  "The overflow menu must not offer a project-free next turn",
 );
 assert.match(
   chatView,
-  /const activeProjectRoot =\s*resolvedProjectId === NO_PROJECT_ID\s*\?\s*\(projectSelection\.unregisteredRoot \?\? ""\)\s*:\s*\(selectedProject\?\.root \?\? session\?\.project_root \?\? projectRoot \?\? ""\)/,
-  "ChatView keeps an explicit No-project selection rootless — except an opener-provided unregistered root (worktree hand-off), which stays active",
+  /const activeProjectRoot =\s*projectSelection\.unregisteredRoot \?\?\s*selectedProject\?\.root \?\?\s*session\?\.project_root \?\?\s*projectRoot \?\?\s*""/,
+  "ChatView keeps an authorized worktree runtime root ahead of its registered parent root",
 );
 assert.match(
   chatView,
@@ -81,10 +80,10 @@ assert.match(
 // The empty state (the familiar's starting page) lives in chat-empty-state.tsx
 // since the task-aware extraction; its picker pins follow it there.
 const chatEmptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
-assert.match(
+assert.doesNotMatch(
   chatEmptyState,
   /<ProjectPicker[\s\S]*?value=\{projectId \?\? null\}[\s\S]*?onChange=\{onProjectChange\}[\s\S]*?allowNoProject/,
-  "Empty state renders the shared picker with an explicit No-project choice (a no-project chat is no longer a picker-less dead end)",
+  "Empty state must not offer a project-free chat launch",
 );
 assert.match(
   chatEmptyState,
@@ -114,13 +113,13 @@ assert.doesNotMatch(
 );
 assert.match(
   taskChatRoute,
-  /projectById\(card\.projectId, await loadProjects\(\)\)/,
+  /projectById\(card\.projectId, projects\)/,
   "A card's stable projectId resolves server-side when the UI didn't send a root",
 );
 assert.match(
   taskChatRoute,
-  /assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
-  "Task chat must authorize the familiar for the assigned project before launching",
+  /await authorizeChatProjectLaunch[\s\S]*surface:\s*"session-launch"/,
+  "Task chat must validate the root, registration, and familiar access before launching",
 );
 assert.match(
   taskChatRoute,
@@ -139,18 +138,18 @@ assert.match(
 );
 assert.match(
   boardInspector,
-  /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>[\s\S]{0,1700}onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
-  "The task Project field should set the runtime root and clear the prior familiar",
+  /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>[\s\S]{0,1700}onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}sessionId: null,[\s\S]{0,180}\}\)/,
+  "The task Project field should set the runtime root and clear the prior session",
 );
-assert.match(
+assert.doesNotMatch(
   boardInspector,
   /onPatch\(card\.id, \{[\s\S]{0,180}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,180}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,180}familiarId: null,[\s\S]{0,180}\}\)/,
-  "Changing the task project should persist projectId and cwd, then clear the familiar",
+  "A familiar-scoped project choice must preserve its authorized familiar",
 );
 assert.match(
   boardInspector,
-  /<StandardSelect[\s\S]{0,120}label="Project"[\s\S]{0,260}value=\{card\.projectId \?\? ""\}[\s\S]{0,1000}\{ value: "", label: "No project" \}[\s\S]{0,160}\.\.\.projects\.map\(\(project\) => \(\{ value: project\.id, label: project\.name \}\)\)/,
-  "The task project picker should render the persisted project registry through the shared select",
+  /<StandardSelect[\s\S]{0,120}label="Project"[\s\S]{0,260}value=\{projectPickerReady \? card\.projectId \?\? "" : ""\}[\s\S]{0,1000}options=\{projectOptions\}[\s\S]{0,180}disabled=\{!projectPickerReady\}/,
+  "The task project picker should use the guarded scoped-project options through the shared select",
 );
 assert.doesNotMatch(
   boardInspector,

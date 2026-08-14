@@ -7,15 +7,15 @@ const src = readFileSync(new URL("./use-pausable-poll.ts", import.meta.url), "ut
 // ── Signature ────────────────────────────────────────────────────────────────
 assert.match(
   src,
-  /export function usePausablePoll\(\s*callback: \(\) => void,\s*intervalMs: number,\s*opts\?: \{ enabled\?: boolean; pauseWhileInputActive\?: boolean \},\s*\): void/,
+  /export function usePausablePoll\(\s*callback: \(\) => void \| Promise<void>,\s*intervalMs: number,\s*opts\?: \{ enabled\?: boolean; pauseWhileInputActive\?: boolean \},\s*\): void/,
   "usePausablePoll(callback, intervalMs, { enabled, pauseWhileInputActive }) returns void",
 );
 
 // ── Recurring poll pauses while the tab is hidden ────────────────────────────
 assert.match(
   src,
-  /const id = setInterval\(\(\) => \{[\s\S]*?if \(typeof document !== "undefined" && document\.hidden\) return;[\s\S]*?cbRef\.current\(\);[\s\S]*?\}, intervalMs\)/,
-  "the interval skips the callback while the tab is hidden",
+  /const id = setInterval\(\(\) => \{[\s\S]*?if \(typeof document !== "undefined" && document\.hidden\) return;[\s\S]*?runRefreshSafely\(cbRef\.current\);[\s\S]*?\}, intervalMs\)/,
+  "the interval skips the callback while the tab is hidden and contains rejected promises",
 );
 assert.match(
   src,
@@ -48,10 +48,10 @@ assert.match(src, /return \(\) => clearInterval\(id\)/, "the interval is cleared
 assert.match(src, /if \(!enabled\) return;/, "passing { enabled: false } suspends the poll");
 
 // ── Resume reuses the existing foreground hook (no re-rolled visibilitychange) ─
-assert.match(src, /import \{ useRefreshOnFocus \} from "@\/lib\/use-refresh-on-focus"/, "composes the existing useRefreshOnFocus");
+assert.match(src, /import \{ runRefreshSafely, useRefreshOnFocus \} from "@\/lib\/use-refresh-on-focus"/, "composes the existing focus hook and its async rejection guard");
 assert.match(
   src,
-  /useRefreshOnFocus\(\(\) => \{[\s\S]*?if \(pollPausedForActiveInput\(pauseWhileInputActive\)\) return;[\s\S]*?cbRef\.current\(\);[\s\S]*?\}, \{ enabled \}\)/,
+  /useRefreshOnFocus\(\(\) => \{[\s\S]*?if \(pollPausedForActiveInput\(pauseWhileInputActive\)\) return;[\s\S]*?return cbRef\.current\(\);[\s\S]*?\}, \{ enabled \}\)/,
   "foreground refresh also respects active input composition",
 );
 assert.doesNotMatch(src, /addEventListener\("visibilitychange"/, "no hand-rolled visibilitychange listener — that lives in useRefreshOnFocus");

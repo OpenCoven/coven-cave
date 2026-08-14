@@ -40,6 +40,12 @@ assert.match(
 
 assert.match(
   source,
+  /const rawHarness = url\.searchParams\.get\("harness"\);[\s\S]*const harness = rawHarness \? canonicalHarnessId\(rawHarness\) : null;/,
+  "Per-harness capability requests should canonicalize legacy CLI aliases before daemon lookup",
+);
+
+assert.match(
+  source,
   /bridge_capabilities: openClawBridgeCapabilities\(\)/,
   "The synthetic OpenClaw manifest should include structured bridge capability flags",
 );

@@ -60,4 +60,47 @@ assert.match(
   "workspace imports the manifest for its side effect only",
 );
 
+const roleSurfaceHost = stripComments(read("src/components/role-surface-host.tsx"));
+assert.doesNotMatch(
+  roleSurfaceHost,
+  /role-surface-header-role/,
+  "role-surface-host no longer renders the role chip",
+);
+assert.match(
+  roleSurfaceHost,
+  /<SurfaceErrorBoundary\s+key=\{`\$\{surface\.id\}:\$\{context\.activeFamiliar\.id\}`\}/,
+  "the generic room subtree resets synchronously when the active familiar changes",
+);
+const roleSurfaceCss = stripComments(read("src/styles/globals/surface-role-workspaces.css"));
+assert.ok(
+  /\.role-surface-host\s*\{[\s\S]*?container:\s*role-surface-host\s*\/\s*inline-size/.test(roleSurfaceCss) &&
+    /@container\s+role-surface-host\s*\(max-width:[^)]+\)/.test(roleSurfaceCss) &&
+    /\.role-surface-header-title h2\s*\{[\s\S]*?overflow:\s*hidden[\s\S]*?text-overflow:\s*ellipsis/.test(
+      roleSurfaceCss,
+    ) &&
+    /@container\s+role-surface-host[\s\S]*?\.role-surface-header\s*\{[\s\S]*?flex-wrap:\s*wrap/.test(
+      roleSurfaceCss,
+    ) &&
+    /@container\s+role-surface-host[\s\S]*?\.role-surface-header-title h2\s*\{[\s\S]*?white-space:\s*normal[\s\S]*?overflow-wrap:\s*anywhere/.test(
+      roleSurfaceCss,
+    ) &&
+    /@container\s+role-surface-host[\s\S]*?\.role-surface-header-status\s*\{[\s\S]*?margin-left:\s*0[\s\S]*?flex-wrap:\s*wrap/.test(
+      roleSurfaceCss,
+    ) &&
+    /@container\s+role-surface-host[\s\S]*?\.role-surface-status\s*\{[\s\S]*?white-space:\s*normal[\s\S]*?overflow-wrap:\s*anywhere/.test(
+      roleSurfaceCss,
+    ) &&
+    /@container\s+role-surface-host[\s\S]*?\.role-surface-header-actions\s*\{[\s\S]*?flex-wrap:\s*wrap/.test(
+      roleSurfaceCss,
+    ) &&
+    /toolbarActions\.slice\(0,\s*2\)/.test(roleSurfaceHost) &&
+    /toolbarActions\.slice\(2\)/.test(roleSurfaceHost),
+  "generic room header wraps title, meaningful status, and budgeted actions by container width",
+);
+assert.doesNotMatch(
+  roleSurfaceCss,
+  /@media\s*\(\s*(?:min|max)-width/,
+  "generic room layout avoids viewport-width media queries",
+);
+
 console.log("role-surface shell purity: ok");

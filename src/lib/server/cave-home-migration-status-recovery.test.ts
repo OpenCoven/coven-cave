@@ -41,6 +41,27 @@ async function denySymlink() {
   throw error;
 }
 
+// Native Windows requires Developer Mode or elevated privilege for file
+// symlinks. Keep the real-link recovery cases when the host permits them;
+// the explicit `denySymlink` cases below still cover the normal fallback.
+const nativeFileSymlinkAvailable = await (async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-home-symlink-probe-"));
+  const target = path.join(root, "target");
+  const link = path.join(root, "link");
+  try {
+    await writeFile(target, "probe", "utf8");
+    await symlink("target", link, "file");
+    return true;
+  } catch (error) {
+    if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") {
+      return false;
+    }
+    throw error;
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+})();
+
 const baseState = () => ({
   sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {},
   sessionKeep: {}, sessionArchiveExtendedUntil: {}, sessionOwned: {}, mergedPrAutoArchived: {},
@@ -229,7 +250,7 @@ try {
   // The status surface offers Recover legacy when canonical storage is an
   // invalid symlink. Retire that exact link safely instead of advertising an
   // action that can never replace it; the link target itself remains intact.
-  {
+  if (nativeFileSymlinkAvailable) {
     const { coven, cave } = await home("canonical-symlink-recovery");
     const legacyPath = path.join(coven, "cave-config.json");
     const canonicalPath = path.join(cave, "config.json");
@@ -252,6 +273,8 @@ try {
     assert.deepEqual(await json(canonicalPath), { source: "legacy" });
     assert.deepEqual(await json(foreignPath), { source: "foreign" });
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  } else {
+    console.log("cave-home-migration-status: skipped native symlink cases (Windows symlink privilege unavailable)");
   }
   {
     const { coven, cave } = await home("malformed-identical");
@@ -345,7 +368,7 @@ try {
 
   // An unrelated legacy-path problem must not take every gated Cave store
   // offline or force a full reconciliation pass on every state read.
-  {
+  if (nativeFileSymlinkAvailable) {
     const { coven, cave } = await home("reader-gate-scoped");
     globalThis.__caveHomeMigration = undefined;
     await mkdir(cave, { recursive: true });

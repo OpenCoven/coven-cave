@@ -6,6 +6,10 @@ const settings = await readFile(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
+const about = await readFile(
+  new URL("./settings-about.tsx", import.meta.url),
+  "utf8",
+);
 const themeBootScript = await readFile(
   new URL("../../public/scripts/theme-init.js", import.meta.url),
   "utf8",
@@ -144,20 +148,20 @@ assert.match(
 );
 
 assert.match(
-  settings,
-  /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
+  about,
+  /import\s*\{[\s\S]*?\bAPP_VERSION\b[\s\S]*?\}\s*from "@\/lib\/app-version"/,
   "About settings must import the shared app version source",
 );
 
 assert.match(
-  settings,
-  /<SettingsKV label="App version" value=\{APP_VERSION\} \/>/,
+  about,
+  /settings-about-row__label">App version<[\s\S]*v\{APP_VERSION\}/,
   "About settings must render the shared app version instead of a literal",
 );
 
 assert.doesNotMatch(
-  settings,
-  /<SettingsKV label="App version" value="[\d.]+"/,
+  about,
+  /settings-about-row__label">App version<[\s\S]{0,180}>\s*v?[\d.]+\s*</,
   "About settings must not hardcode an app version literal",
 );
 
@@ -432,6 +436,23 @@ assert.match(
   /onClick=\{\(\) => void handleResync\(\)\}/,
   "the Resync button triggers a manual theme push",
 );
+// ── Single token publisher (cave-gvtw) ───────────────────────────────────────
+// RemoteThemeController owns change-driven token publishing: every selection,
+// mode flip, and token commit in this section goes through updateAppPreferences,
+// and the controller's reconcile publishes on the resulting signature change.
+// The section's own on-change effect doubled every PUT /api/theme (identical
+// payloads, 409 window when a second device wrote between them). Settings may
+// only PUT via the user-invoked Resync button.
+assert.doesNotMatch(
+  settings,
+  /void persistThemeTokens\(\)/,
+  "no automatic persistThemeTokens call may remain — RemoteThemeController is the sole on-change publisher (cave-gvtw double PUT)",
+);
+assert.match(
+  settings,
+  /Manual Resync only\. Change-driven publishing belongs to RemoteThemeController/,
+  "persistThemeTokens documents its manual-only contract so the on-change effect doesn't get reintroduced",
+);
 assert.match(settings, /function ThemeTokenOverrides\(/, "a per-token override panel exists");
 assert.match(
   settings,
@@ -591,7 +612,7 @@ assert.match(
 assert.match(
   settings,
   /setCustomData\(\(prev\) => \{[\s\S]{0,400}JSON\.stringify\(prev\) === JSON\.stringify\(next\)[\s\S]{0,100}return prev;/,
-  "custom-theme state keeps its object identity when content is unchanged — store notifies must not retrigger the persist effect (echo PUTs)",
+  "custom-theme state keeps its object identity when content is unchanged — unrelated store notifies must not churn renders or the content-keyed reloadKey",
 );
 assert.match(
   settings,

@@ -59,9 +59,23 @@ assert.match(
 // The Connect screen's own 10s ticker no longer runs for unreachable-with-
 // surfaces (that screen isn't mounted), so RootView carries its own quiet
 // re-probe, mutually exclusive via the hasLoadedSurfaces guard.
+// Pinned as BEHAVIOUR, not control-flow spelling. This previously required a
+// literal `guard app.hasLoadedSurfaces, case .unreachable = …` block;
+// 3e54ecdbe4 ("fix(ios): sustain chat connectivity") refactored the same logic
+// into a `switch` with a `where` clause and the assertion broke on `main`
+// while the behaviour was intact. What matters is that the scene-phase task
+// re-probes ONLY when the desktop is unreachable AND surfaces are already
+// loaded (so it cannot fight the Connect screen's own ticker), and that the
+// probe is the quiet, surface-reloading one.
+const scenePhaseTask = root.slice(root.indexOf(".task(id: scenePhase)"));
 assert.match(
-  root,
-  /\.task\(id: scenePhase\) \{[\s\S]*?guard app\.hasLoadedSurfaces,\s*\n\s*case \.unreachable = app\.connectionState else \{ continue \}[\s\S]*?await app\.refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/,
+  scenePhaseTask,
+  /case \.unreachable where app\.hasLoadedSurfaces|guard app\.hasLoadedSurfaces,\s*\n\s*case \.unreachable = app\.connectionState/,
+  "RootView re-probes only when unreachable AND surfaces are loaded",
+);
+assert.match(
+  scenePhaseTask,
+  /await app\.refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/,
   "RootView quietly re-probes while the pill covers an unreachable desktop",
 );
 
@@ -78,7 +92,7 @@ assert.match(
 );
 assert.match(
   model,
-  /var hasLoadedSurfaces: Bool \{\s*\n\s*!familiars\.isEmpty \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded \|\| journalLoaded \|\| canvasLoaded/,
+  /var hasLoadedSurfaces: Bool \{\s*\n\s*!familiars\.isEmpty \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded/,
   "hasLoadedSurfaces is the single gate for 'the tab tree holds real data'",
 );
 

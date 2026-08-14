@@ -40,8 +40,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const reasoningSplit = splitReasoning\(extractAgentAttachmentMarkers\(turn\.text\)\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(skillSplit\.visible\)/,
-  "Assistant turns should split visible content from collapsible reasoning before extracting next-path suggestions",
+  /inlineReasoning,[\s\S]*\} = extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "Assistant turns should use the shared visible-text projection for reasoning and control-marker stripping",
 );
 
 assert.match(
@@ -54,8 +54,19 @@ assert.match(
 // reasoning block at once via a controlled `open` (default-collapsed in markup).
 assert.match(
   source,
-  /function ReasoningBlock[\s\S]*const \[showThinking\] = useShowThinking\(\)[\s\S]*open=\{showThinking \|\| undefined\}/,
-  "ReasoningBlock open state is driven by the global Show-thinking preference",
+  /function ReasoningBlock[\s\S]*const \[showThinking\] = useShowThinking\(\)[\s\S]*open=\{pending \|\| showThinking \|\| undefined\}/,
+  "ReasoningBlock settles to the global Show-thinking preference after live streaming",
+);
+
+assert.match(
+  source,
+  /function ReasoningBlock\(\{ reasoning, durationMs, pending \}[\s\S]*open=\{pending \|\| showThinking \|\| undefined\}/,
+  "live reasoning stays open while a turn is pending, then returns to the Show-thinking preference",
+);
+assert.match(
+  turnRow,
+  /<ReasoningBlock reasoning=\{reasoning\} durationMs=\{turn\.durationMs\} pending=\{!!turn\.pending\} \/>[\s\S]*?<MessageBubble/,
+  "assistant reasoning renders before the streamed answer instead of trailing it",
 );
 assert.match(
   sessionHeader,
@@ -71,8 +82,24 @@ assert.match(
 
 assert.match(
   source,
-  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*Tool activity[\s\S]*tools\.map[\s\S]*<ToolBlock/,
-  "ToolGroup should render tool calls in a collapsed disclosure",
+  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*Tool activity[\s\S]*<ToolRuns tools=\{tools\}/,
+  "ToolGroup should render tool calls through the shared grouped disclosure path",
+);
+
+assert.match(
+  source,
+  /function ToolRuns[\s\S]*groupConsecutiveTools\(tools\)[\s\S]*<ToolRunGroup[\s\S]*<ToolBlock/,
+  "adjacent repeated tool calls roll into an expandable run while one-off calls retain their existing block",
+);
+assert.match(
+  source,
+  /function ToolRunGroup[\s\S]*<details[\s\S]*\{tools\.length\} \{tools\.length === 1 \? "call" : "calls"\}[\s\S]*tools\.map\(\(tool\) => <ToolBlock/,
+  "a tool run advertises its call count and expands to every underlying tool block",
+);
+assert.match(
+  source,
+  /function ToolRunGroup[\s\S]*onToggle=\{\(event\) => setOpen\(event\.currentTarget\.open\)\}/,
+  "a tool run derives disclosure state from its own details element, not a nested toggle target",
 );
 
 assert.match(

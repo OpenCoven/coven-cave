@@ -1,9 +1,12 @@
 // @ts-nocheck
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getVoiceProviderDefinition } from "../../../../lib/voice/provider-catalog.ts";
+
+const routeSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 const TMP = mkdtempSync(join(tmpdir(), "voice-session-route-"));
 process.env.HOME = TMP;
@@ -53,6 +56,12 @@ let lastFetchCall: { url: string; init: RequestInit } | null = null;
 };
 
 const { POST } = await import("./route.ts");
+
+test("route uses the shared provider definition without local metadata tables", () => {
+  assert.match(routeSource, /getVoiceProviderDefinition/);
+  assert.doesNotMatch(routeSource, /\bconst\s+DEFAULTS\b/);
+  assert.doesNotMatch(routeSource, /\bconst\s+KEYLESS_PROVIDERS\b/);
+});
 
 beforeEach(() => {
   delete process.env.OPENAI_API_KEY;
@@ -230,9 +239,10 @@ test("200 elevenlabs provider mints with defaults and binds the session id", asy
   assert.equal(json.grant.provider, "elevenlabs");
   assert.equal(json.grant.connection.kind, "elevenlabs-familiar");
   assert.equal(json.grant.connection.sessionId, SESSION_ID);
-  // Route DEFAULTS applied: Rachel + turbo, overridable per-familiar.
-  assert.equal(json.grant.connection.voiceId, "21m00Tcm4TlvDq8ikWAM");
-  assert.equal(json.grant.connection.modelId, "eleven_turbo_v2_5");
+  const defaults = getVoiceProviderDefinition("elevenlabs")?.defaults;
+  assert.ok(defaults);
+  assert.equal(json.grant.connection.voiceId, defaults.voice);
+  assert.equal(json.grant.connection.modelId, defaults.model);
   // The vault key must never reach the client.
   assert.equal(JSON.stringify(json).includes("xi-good"), false);
 });

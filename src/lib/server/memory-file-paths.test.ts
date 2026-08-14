@@ -23,8 +23,15 @@ assert.equal(
 );
 assert.equal(
   isAllowedMemoryFilePath(path.join(homedir(), ".coven", "memory", "note.md")),
+  false,
+  "canonical Coven memory is not readable by the mutable file API",
+);
+assert.equal(
+  isAllowedMemoryFilePath(
+    path.join(homedir(), ".coven", "workspaces", "familiars", "sage", "memory", "note.md"),
+  ),
   true,
-  "shared coven memory files stay readable",
+  "Coven familiar workspace memory stays readable",
 );
 assert.equal(
   isAllowedMemoryFilePath(path.join(workspaceRoot, "echo", "roles", "ROLE.md")),

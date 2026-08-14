@@ -9,18 +9,35 @@ const view = [
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
 
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
 
 assert.match(modeType, /\| "grimoire"/, "grimoire is a WorkspaceMode");
-assert.match(workspace, /grimoire: "Memories"/, "grimoire has a page title (sr-only h1) reading Memories");
-assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grimoireView\}/, "grimoire mode renders GrimoireView with the controlled view");
+assert.match(
+  pageRegistry,
+  /grimoire: \{\s*id: "grimoire",\s*title: "Memories",/,
+  "grimoire has a page-registry title reading Memories",
+);
+assert.match(
+  workspace,
+  /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{variant === "journal" \? "journal" : grimoireView\}/,
+  "grimoire mode renders the controlled view while preserving Journal page variants",
+);
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
-assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\);/, "the journal mode routes into the Grimoire Journal tab");
-assert.match(sidebar, /export type FolderMode = WorkspaceMode/, "the sidebar's FolderMode is the WorkspaceMode union (no drifting copy), so grimoire is a FolderMode");
-assert.match(sidebar, /id: "grimoire", label: "Memories"/, "grimoire has a sidebar row labeled Memories (and ⌘K palette entry via FOLDER_MODES)");
+assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire", "journal"\);/, "the journal mode routes into the Grimoire Journal tab and preserves that destination in history");
+assert.match(navigation, /export type WorkspaceNavMode = WorkspaceMode/, "the shared registry uses the WorkspaceMode union (no drifting copy)");
+assert.match(navigation, /id: "grimoire", label: "Memories"/, "grimoire has a navigation row labeled Memories (and a ⌘K palette entry)");
+assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar renders rows from the section-filtered visible registry");
+assert.match(
+  view,
+  /href="\/weaves"/,
+  "Memories exposes its nested protected-memory Weaves destination",
+);
+assert.match(view, />\s*Weaves\s*<\/Link>/, "the protected-memory destination has a visible label");
 
 // ── Navigator: three sources, searchable, new-entry affordance ───────────────
 
@@ -66,6 +83,114 @@ assert.match(
 assert.match(view, /ariaLabel="Stitches"\s+icon="ph:book-open"/, "stitches carry their kind icon");
 assert.match(view, /ariaLabel="Memory files"\s+icon="ph:brain"/, "memory carries its kind icon");
 assert.match(view, /ariaLabel="Journal"\s+icon="ph:calendar-blank"/, "journal carries its kind icon");
+
+// ── Whole navigator collapse (persisted compact rail) ───────────────────────
+assert.match(
+  view,
+  /NAVIGATOR_COLLAPSED_STORAGE_KEY = "cave:grimoire:navigator-collapsed:v1"/,
+  "whole navigator collapse persists locally",
+);
+assert.match(
+  view,
+  /aria-label=\{navigatorCollapsed \? "Expand Memories sidebar" : "Collapse Memories sidebar"\}/,
+  "navigator toggle exposes its resulting action",
+);
+assert.match(
+  view,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  "collapsed navigator becomes a compact rail instead of disappearing",
+);
+assert.match(view, /aria-label="Open Stitches navigator"/, "compact rail keeps Stitches reachable");
+assert.match(view, /aria-label="Open Memory files navigator"/, "compact rail keeps memory files reachable");
+assert.match(view, /aria-label="Open Journal navigator"/, "compact rail keeps Journal reachable");
+assert.match(
+  view,
+  /const navigatorCollapsedForDisplay = navigatorCollapsed && !q;/,
+  "an active document search forces the whole navigator open without changing its persisted preference",
+);
+assert.match(
+  view,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  "the rail width uses the search-aware display state",
+);
+assert.match(
+  view,
+  /\{navigatorCollapsedForDisplay \? \(/,
+  "the compact navigator branch is suppressed while searching",
+);
+// Span widened from 240 to 800: the toggle row now carries a Navigator title
+// before the button, so onClick sits further from the opening <div>.
+assert.match(
+  view,
+  /\{!q \? \(\s*<div[\s\S]{0,800}onClick=\{toggleNavigator\}/,
+  "the collapse toggle is hidden while search forces the navigator open",
+);
+
+// The expanded rail's toggle row is titled — a bare right-aligned button gave
+// the sidebar no visible name of its own.
+assert.match(
+  view,
+  /navigatorCollapsed \? null : \(\s*<h2[\s\S]{0,240}>\s*Navigator\s*<\/h2>\s*\)\}\s*<button[\s\S]{0,200}onClick=\{toggleNavigator\}/,
+  "the expanded navigator's toggle row shows a Navigator title to the left of the collapse toggle",
+);
+assert.match(
+  view,
+  /navigatorCollapsed \? "justify-center p-1" : "justify-between gap-2 p-1\.5"/,
+  "the toggle row splits title-left / toggle-right when expanded and centers the toggle when collapsed",
+);
+
+// ── Memory is scoped to the shell's familiar multiselect ────────────────────
+// The Memories surface used to list every familiar's memory files regardless
+// of the sidebar selection. Empty selection is still "All" (familiarInScope).
+assert.match(view, /scopeFamiliarIds\?: ReadonlySet<string>/, "GrimoireView accepts the familiar scope");
+assert.match(
+  view,
+  /const memoryScope = scopeFamiliarIds \?\? EMPTY_FAMILIAR_SCOPE/,
+  "an absent scope falls back to the canonical empty (All) selection",
+);
+assert.match(
+  view,
+  /const scopedMemory = useMemo\(\s*\(\) => \(memory \?\? \[\]\)\.filter\(\(e\) => familiarInScope\(memoryScope, e\.familiarId\)\)/,
+  "memory files are filtered by the selected familiars before search",
+);
+assert.match(view, /memory=\{scopedMemory\}/, "the launcher's memory stats/jumps use the same scoped list as the rail");
+assert.match(
+  view,
+  /No memory for \$\{memoryScopeLabel\} yet/,
+  "a scoped-but-empty Memory section says which familiars it is narrowed to",
+);
+assert.match(
+  workspace,
+  /<GrimoireView[\s\S]{0,240}scopeFamiliarIds=\{scopeIds\}/,
+  "the Workspace hands Memories the same familiar scope as Tasks and Schedules",
+);
+
+// ── …and so is the Relations graph ──────────────────────────────────────────
+// The graph reads the SAME multiselect as the rail, so Relations can never
+// show a familiar's memory that the navigator beside it is hiding.
+assert.match(
+  view,
+  /const memoryOwnerByNodeId = useMemo\(\(\) => buildMemoryOwnerIndex\(memory \?\? \[\]\), \[memory\]\)/,
+  "ownership is indexed from the UNSCOPED inventory — the graph itself carries only paths",
+);
+assert.match(
+  view,
+  /const scopedGraph = useMemo\(\s*\(\) => scopeDocGraph\(graph, memoryScope, memoryOwnerByNodeId\)/,
+  "the graph is narrowed by the same memoryScope the Memory rail uses",
+);
+assert.match(view, /graph=\{scopedGraph\}/, "the launcher's graph stats reflect the scope, like its memory stats");
+assert.match(
+  view,
+  /<GrimoireGraphView\s*\n\s*graph=\{scopedGraph\}[\s\S]{0,160}scopeLabel=\{memoryScopeLabel\}/,
+  "the Relations canvas renders the scoped graph and is told who it is scoped to",
+);
+// Backlinks and [[wiki-link]] resolution stay on the UNSCOPED graph: a
+// document's own connections are an integrity signal, not a corpus browse.
+assert.match(
+  view,
+  /const backlinks = useMemo<GrimoireBacklink\[\]>\(\(\) => \{[\s\S]{0,400}new Map\(graph\.nodes\.map/,
+  "backlinks keep reading the unscoped graph so link integrity survives a UI filter",
+);
 
 // ── Detail: the right transport per source ───────────────────────────────────
 
@@ -298,5 +423,30 @@ assert.match(view, /\{dirtyTabs\[key\] \? \(\s*<span\s*\n?\s*title="Unsaved chan
 assert.match(view, /aria-label=\{`Close \$\{tabTitle\(tab\)\}\$\{dirtyTabs\[key\] \? " \(unsaved changes\)" : ""\}`\}/, "the close button's label says when edits are unsaved");
 assert.match(view, /if \(dirtyTabs\[key\]\) \{\s*\n\s*const ok = await confirm\(/, "closing a dirty tab confirms first");
 assert.match(view, /onClick=\{\(\) => void requestCloseTab\(key, tabTitle\(tab\)\)\}/, "the tab strip close goes through the confirm path");
+
+// ── Legibility floor (cave-zhk6) ─────────────────────────────────────────────
+// 10px (--text-2xs) is reserved for uppercase eyebrow labels and count chips.
+// Prose hints, alerts, and rail-row meta were bumped and must not creep back
+// down: sentences read at 12px (--text-sm), secondary UI text at 11px.
+assert.match(
+  view,
+  /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*Tip: type/,
+  "the links-strip tip sentence reads at --text-sm, not 10px",
+);
+assert.match(
+  view,
+  /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*“\{unresolvedHint\}”/,
+  "the unresolved-link hint sentence reads at --text-sm",
+);
+assert.match(
+  view,
+  /role="alert" className="min-w-0 truncate text-\[length:var\(--text-sm\)\]/,
+  "the footer delete-error alert reads at --text-sm",
+);
+assert.match(
+  view,
+  /mt-0\.5 flex items-center gap-1\.5 text-\[length:var\(--text-xs\)\]/,
+  "rail-row meta (subtitle · date) reads at --text-xs, not 10px",
+);
 
 console.log("grimoire-view.test: ok");

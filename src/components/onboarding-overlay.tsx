@@ -13,14 +13,11 @@ import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
-import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
-import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   hasVerifiedLatestVersion,
   latestCheckText,
   toolStatusText,
-  type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
@@ -30,14 +27,20 @@ import {
 } from "@/lib/onboarding-setup-failure";
 import {
   openCovenToolActionTargets,
-  openCovenToolsInstallCommand,
   openCovenToolsPrimaryActionLabel,
 } from "@/lib/opencoven-tools-install";
 import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
+import { advanceOnboardingAutoFinishGate } from "@/lib/onboarding-gate";
 import {
-  advanceOnboardingAutoFinishGate,
-  isLatestOnboardingStatusRequest,
-} from "@/lib/onboarding-gate";
+  onboardingContinuationDecision,
+  onboardingStepState,
+} from "@/lib/onboarding-readiness";
+import {
+  createOnboardingStatusRequestCoordinator,
+  onboardingStatusWarningMessage,
+  onboardingStepTransitionAnnouncement,
+  type OnboardingStatusRequestCoordinator,
+} from "@/lib/onboarding-status-ui";
 import {
   ALL_INSTALL_TARGETS,
   HARNESS_ONE_CLICK,
@@ -57,11 +60,11 @@ import {
   type MultiHostMode,
   type NpmLaneState,
   type OnboardingStatus,
+  type OnboardingPrerequisite,
   type OnboardingUpdatePayload,
   type PlatformId,
   type PortPreflightResult,
   type PruneState,
-  type Step,
   type OpenCovenToolStatus,
 } from "./onboarding-model";
 
@@ -79,6 +82,8 @@ type Props = {
   onDismiss: () => void;
   autoFinishWhenComplete?: boolean;
 };
+
+const ONBOARDING_STATUS_TIMEOUT_MS = 5_000;
 
 function detectPlatform(): PlatformId {
   if (typeof navigator === "undefined") return "unknown";
@@ -99,6 +104,7 @@ export function OnboardingOverlay({
   autoFinishWhenComplete = false,
 }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [prerequisites, setPrerequisites] = useState<OnboardingPrerequisite[]>([]);
   const [updateTools, setUpdateTools] = useState<OpenCovenToolStatus[]>([]);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateStale, setUpdateStale] = useState(false);
@@ -118,7 +124,7 @@ export function OnboardingOverlay({
   const [prune, setPrune] = useState<PruneState>({ idle: true });
   const [statusFailures, setStatusFailures] = useState(0);
   // Guided-step navigation: which step the user manually expanded. `null`
-  // follows the first incomplete required step automatically.
+  // follows the first confirmed required blocker automatically.
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   // One-click installs (/api/onboarding/install)
   const [installJobs, setInstallJobs] = useState<
@@ -169,8 +175,13 @@ export function OnboardingOverlay({
   // harmless second net). Skip/Escape stay non-pushy: no circle for them.
   const statusRef = useRef<OnboardingStatus | null>(null);
   statusRef.current = status;
-  const statusGenerationRef = useRef(0);
-  const statusRefreshInFlightRef = useRef(false);
+  const statusRequestCoordinatorRef =
+    useRef<OnboardingStatusRequestCoordinator | null>(null);
+  if (statusRequestCoordinatorRef.current === null) {
+    statusRequestCoordinatorRef.current =
+      createOnboardingStatusRequestCoordinator();
+  }
+  const statusRequestCoordinator = statusRequestCoordinatorRef.current;
   // The open-time load and the heartbeat's immediate tick can overlap before
   // the first render settles. Keep that from issuing two identical lane
   // probes (unlike status, this request was not previously coalesced).
@@ -187,30 +198,52 @@ export function OnboardingOverlay({
     onDismiss();
   }, [onDismiss]);
 
-  const refresh = useCallback(async () => {
-    if (statusRefreshInFlightRef.current) return;
-    statusRefreshInFlightRef.current = true;
-    const requestId = ++statusGenerationRef.current;
+  const continueToCave = useCallback(() => {
     try {
-      const res = await fetch("/api/onboarding/status", { cache: "no-store" });
+      localStorage.setItem("cave:onboarding:dismissed", "1");
+    } catch {
+      /* private mode */
+    }
+    onDismiss();
+  }, [onDismiss]);
+
+  const refresh = useCallback(async () => {
+    const request = statusRequestCoordinator.begin();
+    if (!request) return;
+    const { controller } = request;
+    const timeout = setTimeout(
+      () => controller.abort(),
+      ONBOARDING_STATUS_TIMEOUT_MS,
+    );
+    try {
+      const res = await fetch("/api/onboarding/status", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       if (!res.ok) {
-        if (!isLatestOnboardingStatusRequest({ requestId, currentRequestId: statusGenerationRef.current })) return;
+        if (!statusRequestCoordinator.isLatest(request)) return;
         setStatusFailures((n) => n + 1);
         return;
       }
       const json = (await res.json()) as OnboardingStatus & { ok: boolean };
-      if (!isLatestOnboardingStatusRequest({ requestId, currentRequestId: statusGenerationRef.current })) return;
+      if (!statusRequestCoordinator.isLatest(request)) return;
       setStatus(json);
       setStatusFailures(0);
     } catch {
-      // Track consecutive failures so the UI can move past "checking…" once
-      // we're sure the poll isn't just slow. One blip stays silent.
-      if (!isLatestOnboardingStatusRequest({ requestId, currentRequestId: statusGenerationRef.current })) return;
+      if (!statusRequestCoordinator.isLatest(request)) return;
       setStatusFailures((n) => n + 1);
     } finally {
-      statusRefreshInFlightRef.current = false;
+      clearTimeout(timeout);
+      statusRequestCoordinator.finish(request);
     }
-  }, []);
+  }, [statusRequestCoordinator]);
+
+  useEffect(() => {
+    if (!open) return;
+    return () => {
+      statusRequestCoordinator.cancel();
+    };
+  }, [open, statusRequestCoordinator]);
 
   const loadUpdates = useCallback(async (force = false) => {
     setUpdateChecking(true);
@@ -300,6 +333,18 @@ export function OnboardingOverlay({
     }
   }, []);
 
+  const loadPrerequisites = useCallback(async () => {
+    try {
+      const res = await fetch("/api/onboarding/prerequisites?capabilities=local-familiar,runtime", { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; prerequisites?: OnboardingPrerequisite[] };
+      if (res.ok && json.ok) setPrerequisites(json.prerequisites ?? []);
+    } catch {
+      // Status remains useful even if the advisory preflight endpoint is not
+      // reachable during sidecar startup. The normal status heartbeat retries
+      // actionable onboarding state separately.
+    }
+  }, []);
+
   // One-shot loads when the wizard opens; the recurring heartbeat below owns
   // the 2s cadence.
   useEffect(() => {
@@ -307,8 +352,9 @@ export function OnboardingOverlay({
     void refresh();
     void loadUpdates();
     void loadHarnesses();
+    void loadPrerequisites();
     void refreshNpmLane();
-  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
+  }, [open, refresh, loadUpdates, loadHarnesses, loadPrerequisites, refreshNpmLane]);
 
   // The 2s status/npm-lane heartbeat runs only while something can still
   // change underneath the wizard: an incomplete required step, a running or
@@ -339,9 +385,15 @@ export function OnboardingOverlay({
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
-      statusGenerationRef.current += 1;
+      statusRequestCoordinator.cancel();
     };
-  }, [open, heartbeatIdle, refresh, refreshNpmLane]);
+  }, [
+    open,
+    heartbeatIdle,
+    refresh,
+    refreshNpmLane,
+    statusRequestCoordinator,
+  ]);
 
   // The harness probe races first paint: it loads once at open, so a slow or
   // failed first fetch left the runtime step's grid empty until a manual
@@ -465,7 +517,7 @@ export function OnboardingOverlay({
         status?: string;
         elapsedMs?: number;
         tail?: string;
-        npmMissing?: boolean;
+        managedNodeMissing?: boolean;
         hint?: string;
         error?: string;
         npmBusy?: boolean;
@@ -482,16 +534,16 @@ export function OnboardingOverlay({
           label: json.npmBusyLabel ?? json.npmBusyTarget,
         });
       }
-      if (json.npmMissing) {
+      if (json.managedNodeMissing) {
         setNodeHint(
           json.hint ??
-            "Install Node.js LTS from https://nodejs.org, then try again.",
+            "Install Cave-managed Node.js and npm first, then try again.",
         );
         setInstallResults((prev) => ({
           ...prev,
           [target]: {
             ok: false,
-            detail: "npm not found — Node.js setup needed first.",
+            detail: "Cave-managed Node.js/npm setup is needed first.",
           },
         }));
         return;
@@ -868,12 +920,16 @@ export function OnboardingOverlay({
   };
 
 
-  // Server `complete` is the single source of truth for setup — the Coven CLI
-  // is the only required OpenCoven tool. Coven Code is an ordinary optional
-  // runtime adapter offered in the runtime step (cave-219 history: it used to
-  // be "required + skippable" via a client-side AND that could diverge from
-  // the workspace auto-open gate).
-  const setupComplete = status?.complete ?? false;
+  // Newer status payloads provide the decision directly. The shared decision
+  // keeps legacy payloads truthful without treating checking or unavailable
+  // required steps as confirmed blockers.
+  const continuation = onboardingContinuationDecision(status?.steps);
+  const setupComplete = status?.complete ?? continuation.complete;
+  const mayContinue = status?.mayContinue ?? continuation.mayContinue;
+  const statusWarningMessage = onboardingStatusWarningMessage({
+    statusFailures,
+    mayContinue,
+  });
   useEffect(() => {
     const autoFinishGate = advanceOnboardingAutoFinishGate({
       open,
@@ -892,49 +948,66 @@ export function OnboardingOverlay({
         key: "covenCli",
         title: "Install the Coven CLI",
         ok: !!s?.covenCli.ok,
-        detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…",
+        state: onboardingStepState(s?.covenCli),
+        detail:
+          s?.covenCli.detail ??
+          s?.covenCli.hint ??
+          "Checking local Coven CLI…",
         icon: "ph:gear-six",
       },
       {
         key: "covenHome",
         title: "Create your Coven home",
         ok: !!s?.covenHome.ok,
-        detail: s?.covenHome.detail ?? s?.covenHome.hint ?? "checking…",
+        state: onboardingStepState(s?.covenHome),
+        detail:
+          s?.covenHome.detail ??
+          s?.covenHome.hint ??
+          "Checking Coven home…",
         icon: "ph:folder",
       },
       {
         key: "adapters",
         title: "Install a runtime",
         ok: !!s?.adapters.ok,
-        detail: s?.adapters.detail ?? s?.adapters.hint ?? "checking…",
+        state: onboardingStepState(s?.adapters),
+        detail:
+          s?.adapters.detail ??
+          s?.adapters.hint ??
+          "Checking available runtimes…",
         icon: "ph:terminal-window",
       },
       {
         key: "daemon",
         title: "Start the daemon",
         ok: !!s?.daemon.ok,
-        detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking…",
+        state: onboardingStepState(s?.daemon),
+        detail:
+          s?.daemon.detail ??
+          s?.daemon.hint ??
+          "Checking local daemon…",
         icon: "ph:plug",
       },
       {
         key: "git",
-        title: "Find Git (recommended)",
-        optional: true,
-        // Advisory: absence never blocks setup; treat "not reported" as fine.
-        ok: s?.git ? s.git.ok : true,
+        title: "Find Git",
+        ok: !!s?.git?.ok,
+        optional: s?.git?.optional ?? true,
+        state: onboardingStepState(s?.git),
         detail:
           s?.git?.detail ??
           s?.git?.hint ??
-          "Powers the changes panel, project files, and checkpoints.",
+          "Checking Git for Queue features…",
         icon: "ph:git-branch-bold",
       },
     ];
   }, [status]);
 
-  // The step the guide spotlights: the first required step that isn't done.
+  // Pending and unavailable checks remain quiet. Only a confirmed required
+  // failure opens its remediation automatically.
   const activeStepKey = useMemo(() => {
-    const firstIncomplete = steps.find((s) => !s.optional && !s.ok);
-    return firstIncomplete?.key ?? null;
+    const firstActionRequired = steps.find((step) => !step.optional && step.state === "action-required");
+    return firstActionRequired?.key ?? null;
   }, [steps]);
 
   // Steps tick themselves via the 2s status poll — visually obvious, silent
@@ -951,35 +1024,23 @@ export function OnboardingOverlay({
     }
     const prev = prevActiveStepRef.current;
     prevActiveStepRef.current = activeStepKey;
-    if (prev === undefined || prev === activeStepKey) return;
-    if (activeStepKey === null) {
-      announce("Setup complete — every required step is done.");
-      return;
-    }
-    const stepIndex = steps.findIndex((s) => s.key === activeStepKey);
-    const step = steps[stepIndex];
-    if (!step) return;
-    const prevStep = steps.find((s) => s.key === prev);
-    announce(
-      prevStep?.ok
-        ? `${prevStep.title} — done. Next: step ${stepIndex + 1}, ${step.title}.`
-        : `Now on step ${stepIndex + 1}: ${step.title}.`,
-    );
-  }, [open, status, activeStepKey, steps, announce]);
+    const transitionAnnouncement = onboardingStepTransitionAnnouncement({
+      previousActiveStepKey: prev,
+      activeStepKey,
+      setupComplete,
+      steps,
+    });
+    if (transitionAnnouncement) announce(transitionAnnouncement);
+  }, [
+    open,
+    status,
+    activeStepKey,
+    setupComplete,
+    steps,
+    announce,
+  ]);
 
-  // Safe machine-state context for Setup Salem — platform + detected runtime
-  // health only; never secrets, tokens, or logs (design §"Privacy").
-  const salemMachineState = useMemo<SalemPathfinderRequest["machineState"]>(() => ({
-    platform:
-      platform === "mac" ? "macos" : platform === "windows" ? "windows" : platform === "linux" ? "linux" : "unknown",
-    covenCli: status ? (status.steps.covenCli.ok ? "healthy" : "missing") : "unknown",
-    daemon: status ? (status.steps.daemon.ok ? "running" : "stopped") : "unknown",
-    familiarCount: status?.steps.familiars.ok ? 1 : 0,
-  }), [platform, status]);
-
-  // With every required step done, rest on the daemon step (the last one) —
-  // familiar creation itself lives in the app's summoning circle now.
-  const openStepKey = expandedStep ?? activeStepKey ?? "daemon";
+  const openStepKey = expandedStep ?? activeStepKey;
 
   if (!open) return null;
 
@@ -1014,12 +1075,12 @@ export function OnboardingOverlay({
               re-checks every 2 seconds until everything is ready.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto lg:w-auto lg:shrink-0">
             <button
               onClick={() => void recheckNow()}
               disabled={rechecking}
               aria-busy={rechecking}
-              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
+              className="focus-ring-inset inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
             >
               <Icon
                 name="ph:arrows-clockwise-bold"
@@ -1030,7 +1091,7 @@ export function OnboardingOverlay({
             <button
               onClick={() => void copyDiagnostics()}
               aria-live="polite"
-              className={`focus-ring inline-flex items-center gap-2 rounded-md border px-3 py-2 text-[length:var(--text-sm)] hover:border-[var(--border-strong)] ${
+              className={`focus-ring-inset inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-md border px-3 py-2 text-[length:var(--text-sm)] hover:border-[var(--border-strong)] ${
                 diagCopy === "copied"
                   ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_12%,transparent)] text-[var(--color-success)]"
                   : diagCopy === "failed"
@@ -1053,7 +1114,7 @@ export function OnboardingOverlay({
                   ? "Copy failed"
                   : "Copy diagnostics"}
             </button>
-            <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
+            <div className="shrink-0 whitespace-nowrap rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
               {ready}/{total} ready
             </div>
           </div>
@@ -1156,24 +1217,25 @@ export function OnboardingOverlay({
           </section>
         ) : null}
 
-        {statusFailures >= 3 ? (
+        {statusWarningMessage ? (
           <section
-            role="alert"
+            role="status"
             className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] p-4 text-[length:var(--text-base)] text-[var(--color-warning)]"
           >
             <div>
-              <div className="font-semibold">Setup status is unreachable.</div>
+              <div className="font-semibold">Setup check unavailable</div>
               <p className="mt-1 leading-6 text-[var(--text-secondary)]">
-                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The Coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
+                {statusWarningMessage}
               </p>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => void refresh()}
-              className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
+              className="shrink-0"
             >
-              Retry now
-            </button>
+              Retry setup check
+            </Button>
           </section>
         ) : null}
 
@@ -1219,21 +1281,8 @@ export function OnboardingOverlay({
           </section>
         ) : null}
 
-        {!status?.complete ? (
-          <section className="mt-5" aria-label="Ask Salem for setup help">
-            <SalemPathfinderEntry
-              mode="setup"
-              density="slim"
-              defaultMessage="Help me get my first familiar running in Cave"
-              machineState={salemMachineState}
-              currentSurface="setup"
-              onRunDoctor={() => void recheckNow()}
-              onRoute={() => onDismiss()}
-            />
-          </section>
-        ) : null}
-
         <main className="flex flex-1 flex-col gap-3 py-5">
+          <PrerequisiteSummary prerequisites={prerequisites} />
           <ol className="flex flex-col gap-3" aria-label="Setup steps">
             {steps.map((step, index) => {
               const expanded = openStepKey === step.key;
@@ -1301,9 +1350,15 @@ export function OnboardingOverlay({
                             platformCopy={platformCopy}
                             installJobs={installJobs}
                             installResults={installResults}
-                            tools={(status?.tools ?? [])
-                              .filter((tool) => tool.id === "coven-cli")
-                              .map((tool) => onboardingToolWithUpdate(tool, updateTools))}
+                            tools={
+                              Array.isArray(status?.tools)
+                                ? status.tools
+                                    .filter((tool) => tool.id === "coven-cli")
+                                    .map((tool) =>
+                                      onboardingToolWithUpdate(tool, updateTools),
+                                    )
+                                : null
+                            }
                             updateChecking={updateChecking}
                             updateStale={updateStale}
                             updateError={updateError}
@@ -1315,7 +1370,6 @@ export function OnboardingOverlay({
                             npmBusyLabel={npmLane?.label ?? "another npm update"}
                             onInstall={(target) => void runInstall(target)}
                             onCheckUpdates={() => void loadUpdates(true)}
-                            onCopy={copyText}
                           />
                         ) : step.key === "covenHome" ? (
                           <div className="flex flex-col gap-3">
@@ -1341,7 +1395,6 @@ export function OnboardingOverlay({
                         ) : step.key === "adapters" ? (
                           <StepRuntimes
                             chatHarnesses={chatHarnesses}
-                            platform={platform}
                             installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
@@ -1460,8 +1513,10 @@ export function OnboardingOverlay({
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
-                              Chat works without Git, but the changes panel,
-                              project file tree, and checkpoints all use it.
+                              Git is required before choosing a Queue project on
+                              the Tasks page. Chat can work without Git, but the
+                              Queue, the changes panel, project file tree, and
+                              checkpoints all use it.
                             </p>
                             <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-muted)]">
                               {status?.steps.git?.hint ??
@@ -1477,15 +1532,6 @@ export function OnboardingOverlay({
               );
             })}
           </ol>
-
-          <details className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
-            <summary className="cursor-pointer text-[length:var(--text-sm)] font-semibold text-[var(--text-secondary)]">
-              Installing the CovenCave app itself ({platformCopy.label})
-            </summary>
-            <div className="mt-3">
-              <InstructionList title="" items={platformCopy.caveInstall} />
-            </div>
-          </details>
 
           <MaintenancePanel prune={prune} setPrune={setPrune} />
         </main>
@@ -1505,16 +1551,23 @@ export function OnboardingOverlay({
             Skip for now
           </button>
           {setupComplete ? (
-            <button
+            <Button
+              variant="primary"
+              leadingIcon="ph:rocket-launch-bold"
               onClick={finishOnboarding}
-              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,var(--color-mix-dark))] px-5 py-2.5 text-[length:var(--text-md)] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,var(--color-mix-dark))]"
             >
-              <Icon name="ph:rocket-launch-bold" />
               {hasFamiliars ? "Open Cave" : "Open Cave — summon your familiar"}
-            </button>
+            </Button>
+          ) : mayContinue ? (
+            <Button variant="primary" onClick={continueToCave}>
+              Continue to Cave
+            </Button>
           ) : (
-            <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              Status refreshes automatically every 2 seconds.
+            <span
+              role="status"
+              className="text-[length:var(--text-xs)] text-[var(--text-muted)]"
+            >
+              Finish required setup
             </span>
           )}
         </footer>
@@ -1665,6 +1718,54 @@ function CommandRow({
   );
 }
 
+function PrerequisiteSummary({ prerequisites }: { prerequisites: OnboardingPrerequisite[] }) {
+  if (prerequisites.length === 0) return null;
+  const tiers: Array<[OnboardingPrerequisite["tier"], string]> = [
+    ["native-launch", "Native launch"],
+    ["local-runtime", "Local runtime"],
+    ["feature", "Optional capabilities"],
+  ];
+  return (
+    <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3" aria-label="Prerequisite preflight">
+      <h2 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">Prerequisite preflight</h2>
+      <p className="mt-1 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+        Native launch, local runtime, and optional capabilities are checked separately. Optional tools never block basic onboarding.
+      </p>
+      <div className="mt-3 grid gap-3">
+        {tiers.map(([tier, title]) => {
+          const entries = prerequisites.filter((entry) => entry.tier === tier);
+          if (entries.length === 0) return null;
+          return (
+            <div key={tier}>
+              <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{title}</h3>
+              <ul className="mt-1 grid gap-1.5">
+                {entries.map((entry) => {
+                  const passed = entry.state === "pass";
+                  const unknown = entry.state === "unknown";
+                  return (
+                    <li key={entry.id} className="flex items-start gap-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+                      <Icon
+                        name={passed ? "ph:check-circle-fill" : unknown ? "ph:question" : "ph:warning-fill"}
+                        className={passed ? "mt-0.5 shrink-0 text-[var(--color-success)]" : "mt-0.5 shrink-0 text-[var(--color-warning)]"}
+                        aria-hidden={true}
+                      />
+                      <span>
+                        <strong className="font-medium text-[var(--text-primary)]">{entry.label}:</strong>{" "}
+                        {entry.detail}
+                        {!passed ? ` Recovery: ${entry.manualRecovery}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function NodeSetupNotice({
   hint,
   nodeSetup,
@@ -1755,12 +1856,11 @@ function StepCovenCli({
   npmBusyLabel,
   onInstall,
   onCheckUpdates,
-  onCopy,
 }: {
   platformCopy: (typeof PLATFORM_COPY)[PlatformId];
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
-  tools: OpenCovenToolStatus[];
+  tools: OpenCovenToolStatus[] | null;
   updateChecking: boolean;
   updateStale: boolean;
   updateError: string | null;
@@ -1768,25 +1868,59 @@ function StepCovenCli({
   nodeHint: string | null;
   npmBusy: boolean;
   npmBusyLabel: string;
-  onInstall: (target: "coven-cli") => void;
+  onInstall: (target: InstallTarget) => void;
   onCheckUpdates: () => void;
-  onCopy: (text: string) => Promise<boolean>;
 }) {
   const job = installJobs["coven-cli"];
+  const managedNodeJob = installJobs["managed-node"];
   const busy = job?.status === "running";
+  const managedNodeBusy = managedNodeJob?.status === "running";
+  if (tools === null) {
+    return (
+      <p
+        role="status"
+        className="text-[length:var(--text-xs)] text-[var(--text-muted)]"
+      >
+        Checking local installation…
+      </p>
+    );
+  }
   const actionTargets = openCovenToolActionTargets(tools);
-  const manualInstallCommand = openCovenToolsInstallCommand(tools);
   const primaryActionLabel = openCovenToolsPrimaryActionLabel(tools);
-  const ownInstallBusy = busy;
+  const ownInstallBusy = busy || managedNodeBusy;
   const installBusy = ownInstallBusy || npmBusy;
+  const managedNodeResult = installResults["managed-node"];
+  const showManagedNode = !!nodeHint || !!managedNodeJob || !!managedNodeResult;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[length:var(--text-sm)] leading-5 text-[var(--text-secondary)]">
         Cave needs one tool — the <strong>Coven CLI</strong> powers everything.
         Use the main action to install or update it — Cave runs npm installs
-        one after another so they never collide — or copy the matching command
-        to run it yourself.
+        one after another so they never collide.
       </p>
+      {showManagedNode ? (
+        <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]">Cave-managed Node.js and npm</p>
+              <p className="mt-1 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+                Source: nodejs.org · Node 24.18.0 LTS · SHA-256 verified · user-scoped · no elevation · no restart.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={managedNodeBusy}
+              onClick={() => onInstall("managed-node")}
+              disabled={installBusy}
+            >
+              {managedNodeBusy ? "Installing…" : "Install Node/npm"}
+            </Button>
+          </div>
+          {managedNodeBusy && managedNodeJob ? <InstallLiveTail tail={managedNodeJob.tail} /> : null}
+          <InstallResultNote result={managedNodeResult} />
+        </div>
+      ) : null}
       {npmBusy && !ownInstallBusy ? (
         <p role="status" className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
           {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
@@ -1816,15 +1950,7 @@ function StepCovenCli({
         >
           {updateChecking ? "Checking…" : "Check for updates"}
         </Button>
-        {actionTargets.length > 0 ? (
-          <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-            or run it yourself:
-          </span>
-        ) : null}
       </div>
-      {actionTargets.length > 0 ? (
-        <CommandRow command={manualInstallCommand} onCopy={onCopy} />
-      ) : null}
       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
       <InstallResultNote result={installResults["coven-cli"]} />
       {tools.length > 0 ? (
@@ -1837,7 +1963,7 @@ function StepCovenCli({
               const toolJob = installJobs[tool.id];
               const toolBusy = toolJob?.status === "running";
               const toolBlockedByNpm = npmBusy && !toolBusy;
-              const needsAction = !tool.installed || tool.outdated || !tool.compatible;
+              const needsAction = actionTargets.includes(tool.id);
               const currentVerified =
                 tool.installed &&
                 hasVerifiedLatestVersion(tool) &&
@@ -1900,9 +2026,11 @@ function StepCovenCli({
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
                             : toolBlockedByNpm
                               ? `Waiting for ${npmBusyLabel}`
-                            : tool.outdated || !tool.compatible
-                              ? "Update"
-                              : "Install"}
+: !tool.installed
+  ? "Install"
+  : !tool.compatible
+    ? "Update"
+    : "Install"}
                         </button>
                       ) : null}
                     </div>
@@ -1917,7 +2045,7 @@ function StepCovenCli({
       ) : null}
       <p role="status" className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
         {updateChecking
-          ? "Checking npm now…"
+          ? "Checking latest version…"
           : updateError
             ? `${updateStale ? "Showing stale update data" : "Update check unavailable"}: ${updateError}`
             : updateCheckedAt
@@ -1941,7 +2069,6 @@ function StepCovenCli({
 
 function StepRuntimes({
   chatHarnesses,
-  platform,
   installJobs,
   installResults,
   nodeHint,
@@ -1956,7 +2083,6 @@ function StepRuntimes({
   onCodexPortPreflight,
 }: {
   chatHarnesses: HarnessReport[];
-  platform: PlatformId;
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
@@ -2033,6 +2159,15 @@ function StepRuntimes({
           const job = oneClick ? installJobs[oneClick.target] : undefined;
           const busy = job?.status === "running";
           const openClaw = adapter.id === "openclaw";
+          const availabilityIssue = adapter.availability?.state && adapter.availability.state !== "ready"
+            ? adapter.availability
+            : null;
+          const availabilityMessage =
+            adapter.availability && adapter.availability.state !== "ready"
+              ? adapter.availability.message
+              : null;
+          const availabilityProblem = !openClaw && availabilityMessage !== null;
+          const launchable = adapter.installed && !availabilityProblem;
           return (
             <div
               key={adapter.id}
@@ -2041,7 +2176,7 @@ function StepRuntimes({
                   ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]"
                   : openClaw
                     ? "border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]"
-                    : adapter.installed
+                    : launchable
                   ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_8%,transparent)]"
                   : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45"
               }`}
@@ -2068,6 +2203,13 @@ function StepRuntimes({
                       <Icon name="ph:git-fork" /> bridge
                     </span>
                   </div>
+                ) : availabilityProblem ? (
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-warning)]"
+                    title={availabilityMessage}
+                  >
+                    <Icon name="ph:warning-circle" /> unavailable
+                  </span>
                 ) : adapter.installed ? (
                   <span className="inline-flex items-center gap-1 text-[length:var(--text-xs)] text-[var(--color-success)]">
                     <Icon name="ph:check-bold" /> installed
@@ -2075,10 +2217,15 @@ function StepRuntimes({
                 ) : null}
               </div>
               <div className="mt-1 truncate font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                {adapter.installed
+                {launchable
                   ? (adapter.path ?? adapter.binary)
                   : adapter.binary}
               </div>
+              {availabilityMessage ? (
+                <p role="status" className="mt-2 text-[length:var(--text-xs)] leading-4 text-[var(--color-warning)]">
+                  {availabilityMessage}
+                </p>
+              ) : null}
               {openClaw ? (
                 <div className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 px-3 py-2 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
                   Agents are discovered from{" "}
@@ -2099,7 +2246,14 @@ function StepRuntimes({
                   <HermesSetupNext onCopy={onCopy} />
                 </div>
               ) : null}
-              {!adapter.installed ? (
+              {availabilityIssue?.message ? (
+                <p
+                  role="alert"
+                  className="mt-2 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[length:var(--text-xs)] leading-4 text-[var(--color-warning)]"
+                >
+                  {availabilityIssue.message}
+                </p>
+              ) : !adapter.installed ? (
                 <div className="mt-2 flex flex-col gap-2">
                   {oneClick ? (
                     <>
@@ -2117,11 +2271,7 @@ function StepRuntimes({
                           : `Install ${adapter.label}`}
                       </Button>
                       <CommandRow
-                        command={
-                          platform === "windows" && oneClick.windowsCommand
-                            ? oneClick.windowsCommand
-                            : oneClick.command
-                        }
+                        command={oneClick.command}
                         onCopy={onCopy}
                       />
                       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
@@ -2199,7 +2349,7 @@ function StepRuntimes({
       </div>
       {nodeHint ? (
         <p className="text-[length:var(--text-xs)] leading-4 text-[var(--color-warning)]">
-          npm-based one-click installs need Node.js — see step 1 for the setup notice. (Hermes brings its own toolchain.)
+          Runtime installs use Cave-managed Node.js and npm. Install that user-scoped toolchain in step 1, then retry.
         </p>
       ) : null}
     </div>

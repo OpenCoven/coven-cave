@@ -136,15 +136,29 @@ export function isAllowedNewProjectRoot(value: string): boolean {
   if (uniqueRoots(builtInProjectRoots()).some((root) => isWithinRoot(candidate, root))) {
     return true;
   }
-  // The "New project" folder picker (fs-browse) lets the user navigate
-  // anywhere under $HOME, so registration must accept the same boundary or
-  // the picker offers folders creation then rejects with a 403. This widening
-  // is safe only because the projects POST route is loopback-only (see
+  // The "New project" folder picker (fs-browse) can navigate anywhere on the
+  // machine — up to volume roots and across drives — matching the desktop
+  // build's native OS dialog, so registration accepts the same boundary or
+  // the picker offers folders it then rejects with a 403. This widening is
+  // safe only because the projects POST route is loopback-only (see
   // rejectNonLocalRequest there): a phone on the tailnet cannot register
-  // arbitrary home paths. Containment is realpath-based, so symlink escapes
-  // out of $HOME are still rejected. $HOME itself is excluded — registering
-  // the entire home directory as one project is never intended and would be
-  // an unbounded root — so only strict descendants qualify.
+  // arbitrary host paths. Containment is realpath-based, so a symlink is
+  // judged by its target. Two unbounded roots stay excluded: $HOME itself and
+  // bare volume roots (`/`, `C:\`) — registering an entire home directory or
+  // drive as one project is never intended.
   const home = realpathOrResolve(homedir());
-  return candidate !== home && isWithinRoot(candidate, home);
+  if (sameCanonicalName(candidate, home)) return false;
+  return candidate !== path.parse(candidate).root;
+}
+
+// realpath is case-preserving, so on case-insensitive filesystems
+// (APFS/NTFS) a typed `/USERS/BUNS` — or an NFD/NFC Unicode variant —
+// survives canonicalization while still naming $HOME. Compare normalized,
+// case-folded names instead: every alias of the home directory is rejected
+// on every platform, with no fs probe on the untrusted candidate (CodeQL
+// js/path-injection). On a case-sensitive filesystem this can also reject a
+// hypothetical distinct `/USERS/…` twin of $HOME — the safe direction for a
+// guard whose only job is refusing unbounded roots.
+function sameCanonicalName(a: string, b: string): boolean {
+  return a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
@@ -9,16 +9,22 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { Icon } from "@/lib/icon";
 import {
   TRACE_PAGE_SIZE,
+  findNearestTraceEvent,
   formatTracePayload,
   mergeTraceEvents,
   summarizeTracePayload,
   traceEventTone,
   type SessionTraceEvent,
 } from "@/lib/session-trace";
+// Trace-overlay CSS rides this component (its 3 consumers: familiar analytics
+// + the familiars roster), keeping it out of the global bundle (cave-5rqi).
+import "@/styles/session-trace-overlay.css";
 
 type EventsResponse =
   | { ok: true; events: SessionTraceEvent[] }
   | { ok: false; events?: SessionTraceEvent[]; error?: string };
+
+const FOCUS_PAGE_LIMIT = 50;
 
 /** The overlay only needs an id + display title, so any surface that knows a
  *  session id (session rows, confidence events, thread reports) can open it. */
@@ -30,32 +36,97 @@ export type TraceTarget = { id: string; title?: string | null };
  * First UI consumer of `GET /api/sessions/[id]/events`; until now that data
  * was only reachable by curling the daemon.
  */
-export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; onClose: () => void }) {
+export function SessionTraceOverlay({
+  target,
+  focusSeq = null,
+  onClose,
+}: {
+  target: TraceTarget;
+  focusSeq?: number | null;
+  onClose: () => void;
+}) {
   const [events, setEvents] = useState<SessionTraceEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The daemon has no event log for this session — expected for Cave-local
+  // chats that never ran through the daemon and rows lost on daemon restart.
+  const [noEventLog, setNoEventLog] = useState(false);
   // True while the newest fetched page came back full — more events may exist.
   const [maybeMore, setMaybeMore] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const focusedRef = useRef<HTMLLIElement | null>(null);
 
-  const load = useCallback(async ({ afterSeq = 0, append = false } = {}) => {
+  const load = useCallback(async ({
+    afterSeq = 0,
+    append = false,
+    throughSeq = null,
+  }: {
+    afterSeq?: number;
+    append?: boolean;
+    throughSeq?: number | null;
+  } = {}) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError(null);
+    setNoEventLog(false);
     try {
-      const res = await fetch(
-        `/api/sessions/${encodeURIComponent(target.id)}/events?afterSeq=${afterSeq}&limit=${TRACE_PAGE_SIZE}`,
-        { cache: "no-store", signal: controller.signal },
+      let cursor = afterSeq;
+      let merged: SessionTraceEvent[] = [];
+      let hasMore = false;
+      let pageCount = 0;
+
+      do {
+        const res = await fetch(
+          `/api/sessions/${encodeURIComponent(target.id)}/events?afterSeq=${cursor}&limit=${TRACE_PAGE_SIZE}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const json = (await res.json().catch(() => null)) as EventsResponse | null;
+        if (controller.signal.aborted) return;
+        // The route answers 404 no_event_timeline when the daemon has no event
+        // log for the session (cave-pfu8) — an expected no-data state, not a
+        // failure. Older builds flattened it into a 502 whose message carried
+        // "daemon http 404", so keep that as a legacy fallback.
+        if (!res.ok || !json?.ok) {
+          const message = (json && "error" in json && json.error) || `HTTP ${res.status}`;
+          if (res.status === 404 || message === "no_event_timeline" || /\b404\b/.test(message)) {
+            if (!append && afterSeq === 0 && merged.length === 0) setNoEventLog(true);
+            return;
+          }
+          throw new Error(message);
+        }
+
+        const incoming = json.events ?? [];
+        merged = mergeTraceEvents(merged, incoming);
+        pageCount += 1;
+        hasMore = incoming.length >= TRACE_PAGE_SIZE;
+        if (throughSeq !== null && !controller.signal.aborted) setEvents(merged);
+        const nextCursor = incoming.at(-1)?.seq ?? cursor;
+        if (nextCursor <= cursor) {
+          hasMore = false;
+          break;
+        }
+        cursor = nextCursor;
+      } while (
+        throughSeq !== null
+        && hasMore
+        && cursor < throughSeq
+        && pageCount < FOCUS_PAGE_LIMIT
       );
-      const json = (await res.json().catch(() => null)) as EventsResponse | null;
-      if (!res.ok || !json?.ok) throw new Error((json && "error" in json && json.error) || `HTTP ${res.status}`);
-      const incoming = json.events ?? [];
-      setEvents((prev) => mergeTraceEvents(append ? prev : [], incoming));
-      setMaybeMore(incoming.length >= TRACE_PAGE_SIZE);
+
+      if (throughSeq === null) {
+        const incoming = merged;
+        if (controller.signal.aborted) return;
+        setEvents((prev) => mergeTraceEvents(append ? prev : [], incoming));
+        setMaybeMore(incoming.length >= TRACE_PAGE_SIZE);
+      } else {
+        if (controller.signal.aborted) return;
+        setEvents(merged);
+        setMaybeMore(hasMore);
+      }
     } catch (err) {
       if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : "trace unavailable");
@@ -68,15 +139,21 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
   }, [target.id]);
 
   useEffect(() => {
-    void load();
+    void load({ throughSeq: focusSeq });
     return () => abortRef.current?.abort();
-  }, [load]);
+  }, [focusSeq, load]);
 
   const lastSeq = events.length > 0 ? events[events.length - 1].seq : 0;
-  // The daemon 404s sessions it has no event log for (chat-only sessions, or
-  // logs pruned by `coven sacrifice`). That's an expected no-data state, not a
-  // failure — render it as a calm empty state instead of a raw error callout.
-  const noEventLog = error !== null && /\b404\b/.test(error);
+  const focusedEvent = useMemo(
+    () => (focusSeq === null ? null : findNearestTraceEvent(events, focusSeq)),
+    [events, focusSeq],
+  );
+
+  useEffect(() => {
+    if (loading || !focusedEvent || !focusedRef.current) return;
+    focusedRef.current.focus({ preventScroll: true });
+    focusedRef.current.scrollIntoView({ block: "center", behavior: "auto" });
+  }, [focusedEvent, loading]);
 
   return (
     <Modal
@@ -121,7 +198,7 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
             compact
             icon="ph:tree-structure"
             headline="No event log for this session."
-            subtitle="The daemon isn't tracking events for it — it may predate event logging or its log was pruned."
+            subtitle="Expected for Cave-local chats that never ran through the daemon — and for sessions the daemon lost on a restart or pruned."
           />
         ) : events.length === 0 ? (
           <EmptyState
@@ -137,7 +214,15 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
               const summary = summarizeTracePayload(event.payload_json);
               const raw = formatTracePayload(event.payload_json);
               return (
-                <li key={event.seq} className={`trace-item trace-item--${tone}`}>
+                <li
+                  key={event.seq}
+                  ref={focusedEvent?.seq === event.seq ? focusedRef : undefined}
+                  tabIndex={focusedEvent?.seq === event.seq ? -1 : undefined}
+                  aria-current={focusedEvent?.seq === event.seq ? "true" : undefined}
+                  className={`trace-item trace-item--${tone}${
+                    focusedEvent?.seq === event.seq ? " trace-item--focused" : ""
+                  }`}
+                >
                   <span className="trace-item__marker" aria-hidden />
                   <div className="trace-item__body">
                     <div className="trace-item__top">

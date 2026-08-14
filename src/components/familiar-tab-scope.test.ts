@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 const view = readFileSync(new URL("./chat-familiar-capabilities.tsx", import.meta.url), "utf8");
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 
 test("Workspace threads the explicit scope and canonical mutation path to the Familiar tab", () => {
   assert.match(workspace, /selectedFamiliarIds=\{scopeIds\}/, "full scope reaches ChatSurface");
@@ -28,35 +28,22 @@ test("the view renders explicit lifecycle, scope, and unavailable states", () =>
   assert.match(view, /state\.kind === "all" \|\| state\.kind === "subset"/, "all and subset share the overview");
   assert.match(
     view,
-    /const detailFamiliar =\s*\(detailId \? selectableFamiliars\.find\(\(item\) => item\.id === detailId\) : null\) \?\? state\.familiar;/,
-    "the detail defaults to the app-wide active familiar",
+    /const detailFamiliar = state\.familiar;/,
+    "the detail IS the app-wide active familiar — nothing local to diverge",
   );
   assert.match(view, /<FamiliarCapabilityPanel[\s\S]*?familiar=\{detailFamiliar\}/, "single state retains the capability panel");
   assert.doesNotMatch(view, /No familiar selected/, "nullable single-familiar copy is gone");
 });
 
-test("the roster rail browses locally — it never mutates the app-wide scope", () => {
-  assert.match(view, /<FamiliarRosterRail/, "single state hosts the roster rail");
-  assert.match(view, /storageKey="cave:familiar-tab:rail"/, "rail persists under its own key");
-  assert.match(view, /placeholder="Search familiars…"/, "rail search follows placeholder grammar");
-  assert.match(
-    view,
-    /item\.display_name\.toLowerCase\(\)\.includes\(needle\) \|\|\s*\(item\.role \?\? ""\)\.toLowerCase\(\)\.includes\(needle\)/,
-    "search filters by name and role",
-  );
-  assert.match(view, /aria-current=\{item\.id === selectedId \? "true" : undefined\}/, "selected row announced with aria-current");
-  assert.match(view, /onSelect=\{setDetailId\}/, "row activation only moves the local detail selection");
-  const rail = view.slice(view.indexOf("function FamiliarRosterRail"), view.indexOf("// ── Surface"));
-  assert.ok(rail.length > 0, "rail component located");
-  assert.doesNotMatch(rail, /onFamiliarScopeChange/, "the rail cannot reach the scope mutation path");
-  // A new app-wide selection re-anchors the local detail.
-  assert.match(
-    view,
-    /useEffect\(\(\) => \{\s*setDetailId\(null\);\s*\}, \[activeFamiliarId\]\)/,
-    "active familiar changes reset the local browse selection",
-  );
-  // Collapsed rail rows fall back to avatar-only buttons with tooltip names.
-  assert.match(view, /title=\{open \? undefined : item\.display_name\}/, "collapsed rows keep tooltip names");
+test("the tab hosts NO familiar switching — the sidebar scope dropdown is the only one (cave-k8b0a)", () => {
+  // Val's directive (2026-07-29): the Familiar tab shows only the selected
+  // familiar; switching lives solely in the global dropdown at the top-left
+  // of the sidebar. The old roster rail and its local detail selection are
+  // gone — reintroducing either needs the directive revisited first.
+  assert.doesNotMatch(view, /FamiliarRosterRail/, "the roster rail does not return");
+  assert.doesNotMatch(view, /cave:familiar-tab:rail/, "no rail persistence key lingers");
+  assert.doesNotMatch(view, /setDetailId|detailId/, "no rail-local detail selection exists");
+  assert.doesNotMatch(view, /SurfaceRail/, "the tab mounts no roster rail primitive");
 });
 
 test("overview activation is the only action that narrows scope", () => {

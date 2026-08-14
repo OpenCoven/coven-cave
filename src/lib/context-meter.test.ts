@@ -25,6 +25,14 @@ test("contextWindowForModel tolerates a bare model id (no provider prefix)", () 
     tokens: 1_000_000,
     known: true,
   });
+  assert.deepEqual(contextWindowForModel("github/claude-opus-5"), {
+    tokens: 1_000_000,
+    known: true,
+  });
+  assert.deepEqual(contextWindowForModel("anthropic/opus"), {
+    tokens: 1_000_000,
+    known: true,
+  });
 });
 
 test("contextWindowForModel falls back for unknown / non-string ids", () => {

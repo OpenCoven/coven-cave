@@ -3,17 +3,36 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
+const shellLayout = await readFile(new URL("./shell-layout.ts", import.meta.url), "utf8");
 const foundations = await readFile(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 
 // The left panels are PIXEL-sized so they stop scaling with monitor width —
 // a 24%-wide nav is 826px on a 3440px ultrawide for a ~240px rail of labels.
 // The detail panel has no size props and absorbs everything the left releases.
-// Normal navigation keeps its 240px default, while Chat's contextual sidebar
-// gets the wider list-like sizing it needs for workspace/session content.
+// Normal navigation hydrates at its 56px rail, then restores the shared 240px
+// expanded size before paint. Chat's contextual sidebar uses the same width.
 assert.match(
   shell,
-  /id="nav"[\s\S]{0,700}?defaultSize=\{chatContextual \? "260px" : "240px"\}[\s\S]{0,120}?minSize=\{chatContextual \? "220px" : "200px"\}[\s\S]{0,60}?maxSize="420px"/,
-  "Chat's contextual nav defaults to 260px within a 220–420px band while normal nav keeps 240/200 sizing",
+  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_RAIL_PX\}px`/,
+  "normal nav hydrates at the icon rail before restoring its expanded size",
+);
+assert.match(
+  shell,
+  /id="nav"[\s\S]{0,700}?defaultSize=\{defaultNavSize\}[\s\S]{0,120}?minSize=\{`\$\{SHELL_NAV_MIN_PX\}px`\}[\s\S]{0,60}?maxSize=\{`\$\{SHELL_NAV_MAX_PX\}px`\}/,
+  "Home and Chat share the 220–420px nav width band",
+);
+assert.match(
+  shell,
+  /SHELL_NAV_DEFAULT_PX,[\s\S]*?SHELL_NAV_MAX_PX,[\s\S]*?SHELL_NAV_MIN_PX,/,
+  "the shell imports the shared 240px default and 220–420px bounds",
+);
+assert.match(shellLayout, /export const SHELL_NAV_MIN_PX = 220;/, "shared nav minimum stays 220px");
+assert.match(shellLayout, /export const SHELL_NAV_MAX_PX = 420;/, "shared nav maximum stays 420px");
+assert.match(shellLayout, /export const SHELL_NAV_DEFAULT_PX = 240;/, "shared nav default stays 240px");
+assert.match(
+  shell,
+  /const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;/,
+  "the shell uses the shared 240px default as its nav expansion target",
 );
 // Minimized by default via the group's setLayout (sets ALL panels at once) —
 // NOT a single-panel collapse(). Applied ONCE per group per browser via a
@@ -25,7 +44,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const railPct = nav \* \(NAV_RAIL_PX \/ NAV_OPEN_PX\);[\s\S]{0,240}?group\.setLayout\(\{ \.\.\.cur, nav: railPct, detail: cur\.detail \+ \(nav - railPct\) \}\)/,
+  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const railPct = nav \* \(NAV_RAIL_PX \/ preferredNavWidth\);[\s\S]{0,240}?group\.setLayout\(\{ \.\.\.cur, nav: railPct, detail: cur\.detail \+ \(nav - railPct\) \}\)/,
   "on settle, a fresh group is minimized by setting the whole layout (nav→rail, freed width→detail)",
 );
 assert.match(
@@ -40,8 +59,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /\}, \[settled, isMobile, groupId, chatContextual\]\);/,
-  "startup minimization reacts to the contextual policy",
+  /\}, \[settled, isMobile, groupId, chatContextual, preferredNavWidth\]\);/,
+  "startup minimization reacts to the contextual policy and active nav width",
 );
 assert.match(
   shell,
@@ -81,8 +100,8 @@ assert.match(
 // Collapse-to-rail must survive the px conversion.
 assert.match(
   shell,
-  /collapsedSize=\{isMobile \|\| chatContextual \? 0 : NAV_RAIL_PX\}/,
-  "Chat and mobile nav collapse fully while normal desktop nav keeps the icon rail",
+  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
+  "only mobile nav collapses fully; every desktop surface keeps the icon rail",
 );
 assert.match(
   shell,

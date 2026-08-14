@@ -7,7 +7,6 @@
  * workbench; the rail never mutates sessions itself.
  */
 
-import React from "react";
 import { Icon } from "@/lib/icon";
 import {
   codeSessionActivity,
@@ -52,11 +51,22 @@ export type CodeSessionRailProps = {
   selectedId: string | null;
   onSelect: (sessionId: string) => void;
   onNewSession?: () => void;
+  open?: boolean;
+  onExpand?: () => void;
 };
 
-export function CodeSessionRail({ sessions, selectedId, onSelect, onNewSession }: CodeSessionRailProps) {
+export function CodeSessionRail({
+  sessions,
+  selectedId,
+  onSelect,
+  onNewSession,
+  open = true,
+  onExpand,
+}: CodeSessionRailProps) {
   const groups = groupCodeRailSessions(sessions);
-  const newButton = onNewSession ? (
+  const openRailClassName = onExpand ? "py-2" : "overflow-y-auto py-2";
+
+  const newButton = open && onNewSession ? (
     <div className="px-2 pb-1">
       <button
         type="button"
@@ -69,6 +79,9 @@ export function CodeSessionRail({ sessions, selectedId, onSelect, onNewSession }
     </div>
   ) : null;
   if (groups.length === 0) {
+    if (!open) {
+      return <nav aria-label="Coding sessions" className="flex h-full min-h-0 flex-col" />;
+    }
     return (
       <div className="flex h-full flex-col py-2">
         {newButton}
@@ -79,53 +92,91 @@ export function CodeSessionRail({ sessions, selectedId, onSelect, onNewSession }
       </div>
     );
   }
+  // onExpand is only supplied when this rail is hosted inside SurfaceRail
+  // (cave-iixug): that wrapper's own .surface-rail__content already scrolls,
+  // so owning overflow here too would nest a second scroll container. The
+  // non-hosted narrow/list-first path (no onExpand, no SurfaceRail around it)
+  // keeps its own scroll.
   return (
-    <nav aria-label="Coding sessions" className="flex h-full min-h-0 flex-col overflow-y-auto py-2">
-      {newButton}      {groups.map((group) => (
+    <nav
+      aria-label="Coding sessions"
+      className={`flex h-full min-h-0 flex-col ${
+        open ? openRailClassName : "items-center gap-1"
+      }`}
+
+    >
+      {newButton}
+      {groups.map((group) => (
         <section key={group.root || "(unknown)"} className="mb-2">
-          <div
-            className="truncate px-3 py-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
-            title={group.root || undefined}
-          >
-            {group.label}
-          </div>
-          <ul className="flex flex-col">
+          {open ? (
+            <div
+              className="truncate px-3 py-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
+              title={group.root || undefined}
+            >
+              {group.label}
+            </div>
+          ) : null}
+          <ul className={`flex flex-col ${open ? "" : "items-center gap-1"}`}>
             {group.sessions.map((row) => {
               const branch = codeSessionBranch(row);
               const diffstat = codeSessionDiffstat(row);
               const selected = row.id === selectedId;
+              const title = row.title || row.id;
+              const activity = codeSessionActivity(row);
               return (
                 <li key={row.id}>
                   <button
                     type="button"
-                    onClick={() => onSelect(row.id)}
+                    onClick={() => {
+                      onExpand?.();
+                      onSelect(row.id);
+                    }}
                     aria-current={selected ? "true" : undefined}
-                    className={`focus-ring-inset flex w-full flex-col gap-0.5 px-3 py-1.5 text-left ${
-                      selected ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]"
-                    }`}
+                    aria-label={open ? undefined : `Open ${title} in ${group.label}, ${activity}`}
+                    title={open ? undefined : title}
+                    className={
+                      open
+                        ? `focus-ring-inset flex w-full flex-col gap-0.5 px-3 py-1.5 text-left ${
+                            selected ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]"
+                          }`
+                        : `focus-ring relative flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] ${
+                            selected ? "bg-[var(--bg-hover)] text-[var(--text-primary)]" : ""
+                          }`
+                    }
                   >
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <ActivityDot row={row} />
-                      <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]">
-                        {row.title || row.id}
-                      </span>
-                    </span>
-                    {(branch || diffstat || row.pullRequest || row.git?.isWorktree) ? (
-                      <span className="flex min-w-0 items-center gap-1.5 pl-3">
-                        {row.git?.isWorktree ? (
-                          <Icon name="ph:git-fork" width={10} height={10} className="shrink-0 text-[var(--text-muted)]" />
-                        ) : null}
-                        {branch ? (
-                          <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={branch}>
-                            {branch}
+                    {open ? (
+                      <>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <ActivityDot row={row} />
+                          <span className="min-w-0 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]">
+                            {title}
+                          </span>
+                        </span>
+                        {(branch || diffstat || row.pullRequest || row.git?.isWorktree) ? (
+                          <span className="flex min-w-0 items-center gap-1.5 pl-3">
+                            {row.git?.isWorktree ? (
+                              <Icon name="ph:git-fork" width={10} height={10} className="shrink-0 text-[var(--text-muted)]" />
+                            ) : null}
+                            {branch ? (
+                              <span className="min-w-0 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]" title={branch}>
+                                {branch}
+                              </span>
+                            ) : null}
+                            {diffstat ? (
+                              <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-secondary)]">{diffstat}</span>
+                            ) : null}
+                            {row.pullRequest ? <PrChip pr={row.pullRequest} /> : null}
                           </span>
                         ) : null}
-                        {diffstat ? (
-                          <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-secondary)]">{diffstat}</span>
-                        ) : null}
-                        {row.pullRequest ? <PrChip pr={row.pullRequest} /> : null}
-                      </span>
-                    ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="ph:terminal-window" width={16} height={16} aria-hidden />
+                        <span className="absolute right-1 top-1">
+                          <ActivityDot row={row} />
+                        </span>
+                      </>
+                    )}
                   </button>
                 </li>
               );

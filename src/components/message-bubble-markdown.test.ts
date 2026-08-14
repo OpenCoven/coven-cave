@@ -6,6 +6,8 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const markdownStream = readFileSync(new URL("../lib/message-markdown-stream.ts", import.meta.url), "utf8");
+const markdownPreview = readFileSync(new URL("../lib/markdown-preview.ts", import.meta.url), "utf8");
+const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
 // StrictMode regression guard: a ref-based "same text" check poisons itself
@@ -45,6 +47,46 @@ assert.match(
   source,
   /renderAsync\(blocks,\s*\{[\s\S]*customRenderers:/,
   "Chat markdown should use @create-markdown/preview renderAsync with scoped custom renderers",
+);
+assert.match(
+  markdownPreview,
+  /let previewPromise: Promise<MarkdownPreviewModule> \| null = null;/,
+  "the browser-only Markdown preview chunk is memoized behind one shared promise",
+);
+assert.match(
+  markdownPreview,
+  /Load the browser-only serializer once per app runtime/,
+  "the loader comment documents its module-level lifetime accurately",
+);
+assert.doesNotMatch(
+  markdownPreview,
+  /once for every Chat message/,
+  "the loader comment must not imply a separate chunk load for each message",
+);
+assert.match(
+  markdownPreview,
+  /previewPromise = import\("@create-markdown\/preview"\)\.catch\(\(error\) => \{[\s\S]*?previewPromise = null;[\s\S]*?throw error;/,
+  "a failed preview chunk clears the memoized promise so a later render can retry",
+);
+assert.match(
+  markdownPreview,
+  /void loadMarkdownPreview\(\)\.catch\(\(\) => \{\}\);/,
+  "preloading handles a chunk failure instead of emitting an unhandled rejection",
+);
+assert.match(
+  source,
+  /const \{ renderAsync \} = await loadMarkdownPreview\(\);/,
+  "message rendering uses the shared preview loader",
+);
+assert.doesNotMatch(
+  source,
+  /import\("@create-markdown\/preview"\)/,
+  "individual message renders must not start their own preview dynamic import",
+);
+assert.match(
+  chatView,
+  /preloadMarkdownPreview\(\);/,
+  "Chat starts loading the lightweight Markdown renderer before history messages mount",
 );
 assert.match(
   source,
@@ -109,15 +151,26 @@ assert.match(
 );
 assert.match(
   source,
-  /\{!pending && content \? \(\s*<div className="cave-bubble-actions">/,
-  "Assistant bubble actions render whenever there is settled content",
+  /\{!pending && \(content \|\| isError\) \? \(\s*<div className="cave-bubble-actions" role="group" aria-label="Response actions">/,
+  "Assistant bubble actions render for settled content and interrupted empty responses",
+);
+assert.match(
+  source,
+  /<CopyBubble text=\{content\} response \/>[\s\S]*?aria-label="Retry response"[\s\S]*?aria-expanded=\{!collapsed\}[\s\S]*?<OverflowMenu ariaLabel="More response actions"/,
+  "assistant response controls prioritize Copy, Retry, Collapse, and More",
+);
+assert.match(
+  source,
+  /<PopoverItem icon="ph:arrow-bend-up-left" onSelect=\{onReply\}>[\s\S]*?Open reader[\s\S]*?Read aloud[\s\S]*?checked=\{vote === "up"\}[\s\S]*?checked=\{vote === "down"\}/,
+  "secondary response actions remain available in More with accessible vote state",
 );
 
 // ── CHAT-D3-01: markdown must render progressively while streaming ────────
 // The pending branch used to bail (`setHtml(null); return;`), leaving the
 // user staring at raw ``` fences and **markers** until `done`, then
 // re-typesetting the whole bubble at once (live-measured CLS 0.53).
-const markdownContent = /function MarkdownContent\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const markdownContent =
+  /function MarkdownContent\([\s\S]*?\n\}\n\nexport function ProgressiveMarkdownBlock/.exec(source)?.[0] ?? "";
 assert.ok(markdownContent, "MarkdownContent component exists");
 assert.doesNotMatch(
   markdownContent,
@@ -126,8 +179,8 @@ assert.doesNotMatch(
 );
 assert.match(
   markdownContent,
-  /if \(pending\) \{[\s\S]*?mdToHtml\(/,
-  "While pending, the accumulated text re-renders through mdToHtml",
+  /if \(pending\) \{[\s\S]*?mdToHtml\(stabilizeStreamingMarkdown\(text\), \{[\s\S]*?transient: true,[\s\S]*?highlightCode: false,[\s\S]*?decorateResponse,[\s\S]*?\}\)/,
+  "While pending, accumulated text renders as structured Markdown without launching transient Shiki work",
 );
 assert.match(
   source,
@@ -150,27 +203,72 @@ assert.match(
 // commits if newer than the last applied stamp.
 assert.match(
   markdownContent,
-  /\+\+renderStampRef\.current/,
+  /const stamp = renderGate\.issue\(\)/,
   "Each render takes a monotonically increasing stamp",
 );
 assert.match(
   markdownContent,
-  /if \(stamp <= appliedStampRef\.current\) return;/,
+  /if \(!renderGate\.apply\(stamp\)\) return;/,
   "A render result only commits if its stamp is newer than the last applied one",
 );
-
-// Streaming cursor: with rendered HTML during pending, the ▌ affordance must
-// render as a SIBLING after the markdown container — never injected into the
-// sanitized HTML string.
 assert.match(
   markdownContent,
-  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>\s*\{\/\*[\s\S]*?\*\/\}\s*\{pending \? \(\s*<span[^>]*>▌<\/span>/,
-  "While pending, the streaming cursor renders as a sibling element after the markdown container",
+  /if \(wasPendingRef\.current && !pending\) \{\s*renderGate\.settle\(\);\s*\}[\s\S]*?useEffect\(\(\) =>/,
+  "the pending-to-settled render boundary invalidates transient work before the passive effect runs",
 );
 assert.match(
   markdownContent,
-  /\{pending && text \? \(\s*<span[^>]*>▌<\/span>/,
-  "The plain-text fallback keeps its cursor for the window before the first render lands",
+  /useLayoutEffect\(\(\) => \{\s*wasPendingRef\.current = Boolean\(pending\);\s*\}, \[pending\]\);/,
+  "the previous pending marker updates only after React commits the render",
+);
+assert.doesNotMatch(
+  markdownContent,
+  /\}\s*wasPendingRef\.current = Boolean\(pending\);\s*\/\/ Throttle bookkeeping/,
+  "render must not mutate the commit-owned previous pending marker",
+);
+assert.match(
+  markdownContent,
+  /mdToHtml\(stabilizeStreamingMarkdown\(text\), \{[\s\S]*?transient: true,[\s\S]*?highlightCode: false,[\s\S]*?decorateResponse,[\s\S]*?\}\)[\s\S]*?if \(!renderGate\.apply\(stamp\)\) return;/,
+  "transient promises consult the shared render gate before committing HTML",
+);
+assert.match(
+  markdownContent,
+  /const stamp = renderGate\.issue\(\);\s*const run = \(\) => \{[\s\S]*?setTimeout\(run, wait\)/,
+  "a trailing render takes its stamp when scheduled, before its timer can cross settlement",
+);
+assert.doesNotMatch(
+  markdownContent,
+  /const run = \(\) => \{[\s\S]{0,160}?const stamp = renderGate\.issue\(\)/,
+  "a delayed render must not issue a fresh post-settlement stamp when its timer fires",
+);
+
+// Non-response fallbacks stay literal text with the trailing cursor.
+assert.match(
+  markdownContent,
+  /if \(!html\) \{[\s\S]*?if \(!decorateResponse\) \{[\s\S]*?\{text\}[\s\S]*?\{pending \? "▌" : ""\}/u,
+  "non-response markdown fallback renders literal text plus the trailing cursor",
+);
+// Streaming indicator: with rendered HTML during pending, the typing affordance
+// renders as a sibling after the markdown container.
+assert.match(
+  markdownContent,
+  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>[\s\S]{0,350}?\{pending \? \(\s*<span className="cave-response-typing"/,
+  "While pending, the typing indicator renders as a sibling element after the markdown container",
+);
+assert.match(
+  markdownContent,
+  /if \(!html\) \{[\s\S]*?if \(!decorateResponse\) \{[\s\S]*?\{text\}[\s\S]*?className=\{`cave-response-rendering/,
+  "Generic Markdown preserves authored text while response Markdown uses the token-free rendering indicator",
+);
+assert.match(
+  markdownContent,
+  /if \(!decorateResponse\) \{[\s\S]{0,300}?\{text\}/,
+  "Non-response Markdown keeps user-authored text accessible while its async render settles",
+);
+assert.match(
+  source,
+  /sanitizedHtml = decorateResponseHtml\(sanitizedHtml\);/,
+  "Sanitized Markdown receives app-owned lead and status semantics before mounting",
 );
 
 // ── CHAT-D3-03: renderCache must not grow unboundedly ─────────────────────
@@ -189,13 +287,50 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!opts\?\.transient\) renderCacheSet\(markdown, sanitizedHtml\);/,
-  "Transient mid-stream renders never write to the cache",
+  /if \(canUseCache\) renderCacheSet\(cacheKey, sanitizedHtml\);/,
+  "Transient and plain-first renders never write to the final cache",
+);
+assert.match(
+  source,
+  /const canUseCache = !opts\?\.transient && opts\?\.highlightCode !== false;/,
+  "Only settled, highlighted Markdown reads or writes the final-render cache",
+);
+assert.match(
+  source,
+  /const cacheKey = `\$\{opts\?\.decorateResponse \? "response" : "document"\}:\$\{markdown\}`;/,
+  "response decoration has a distinct final-render cache namespace",
+);
+
+// ── Stable first paint: structure before syntax color ───────────────────────
+assert.match(
+  source,
+  /function renderCodeBlockFrame\(/,
+  "plain and highlighted code share one geometry-producing frame function",
+);
+assert.match(
+  source,
+  /class="shiki mood-c-dark cave-code-plain" tabindex="0"/,
+  "the pre-highlight code pass paints a keyboard-scrollable fixed-dark code body",
+);
+assert.match(
+  source,
+  /const focusableOpen = open\.includes\("tabindex="\)[\s\S]*?open\.replace\("<pre", '<pre tabindex="0"'\)/,
+  "the shared frame keeps highlighted and plain code bodies keyboard-scrollable",
+);
+assert.match(
+  source,
+  /renderCodeBlock\(code, info, \{\s*highlightCode: opts\?\.highlightCode !== false,\s*\}\)/,
+  "mdToHtml explicitly selects plain or highlighted code while preserving the same frame",
 );
 assert.match(
   markdownContent,
-  /mdToHtml\(closeTrailingFence\(text\), \{ transient: true \}\)/,
-  "Streaming renders are marked transient (and auto-close a trailing unterminated fence)",
+  /useState<string \| null>\(\s*\(\) => pending \? null : renderCacheGet\(cacheKey\) \?\? null,\s*\)/,
+  "settled messages synchronously reuse final HTML on remount instead of flashing raw Markdown",
+);
+assert.match(
+  markdownContent,
+  /mdToHtml\(text, \{ highlightCode: false, decorateResponse \}\)[\s\S]*?mdToHtml\(text, \{ decorateResponse \}\)/,
+  "a cold settled message applies stable structure before its highlighted enhancement",
 );
 
 assert.match(
@@ -210,11 +345,25 @@ assert.match(
 );
 assert.match(
   domWiring,
+  /link\.classList\.contains\("cave-citation-chip"\)/,
+  "The generic markdown linker should never claim an enhanced citation chip",
+);
+assert.match(
+  domWiring,
   /event\.preventDefault\(\)[\s\S]*onOpenUrl\(href\)/,
   "Markdown link clicks should prevent normal navigation and open in the provided browser target",
 );
 
-const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+const css = [
+  "cave-md/prose",
+  "cave-md/tables-mermaid",
+  "cave-md/code",
+  "cave-md/interactions",
+  "cave-composer",
+  "chat-list",
+  "calendar",
+  "cave-chat/bubbles",
+]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 assert.match(
@@ -288,8 +437,8 @@ assert.match(
 // Only on settled snapshots — mid-stream the fence is usually incomplete.
 assert.match(
   source,
-  /!opts\?\.transient && codeBlocks\.some\(isMermaidCodeBlock\)/,
-  "diagrams render only on non-transient (settled) snapshots",
+  /canUseCache && codeBlocks\.some\(isMermaidCodeBlock\)/,
+  "diagrams render only on settled, final-highlight snapshots",
 );
 assert.match(
   css,

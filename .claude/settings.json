@@ -19,6 +19,25 @@
             "statusMessage": "Checking worktree/branch safety…",
             "timeout": 15,
             "type": "command"
+          },
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-autolock.mjs\"",
+            "statusMessage": "Protecting at-risk worktrees…",
+            "timeout": 15,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-retention-push.mjs\"",
+            "statusMessage": "Retaining commits on origin…",
+            "timeout": 60,
+            "type": "command"
           }
         ],
         "matcher": "Bash"
@@ -34,12 +53,36 @@
         ],
         "matcher": ""
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-session-exit-retirement.mjs\"",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
     ]
   },
   "permissions": {
     "allow": [
       "WebSearch",
-      "WebFetch"
+      "WebFetch",
+      "Bash(git fetch *)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint:design)",
+      "Bash(pnpm codemod:design:check)",
+      "Bash(pnpm check:tests-wired)",
+      "Bash(pnpm exec tsc --noEmit *)",
+      "Bash(bd show *)",
+      "Bash(bd ready*)",
+      "Bash(bd list *)",
+      "mcp__claude-design__read_file",
+      "mcp__claude-design__list_files",
+      "mcp__claude-design__list_projects"
     ]
   }
 }

@@ -2,7 +2,16 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+import {
+  isCanonicalPreferencesPayload,
+  mergePreferencesPatches,
+  queueAppPreferencesPatch,
+  readBootstrap,
+} from "./app-preferences-core.ts";
+import { applyPreferencesPatch, createDefaultPreferences } from "./preferences-schema.ts";
+
 const clientStore = await readFile(new URL("./app-preferences.ts", import.meta.url), "utf8");
+const clientCore = await readFile(new URL("./app-preferences-core.ts", import.meta.url), "utf8");
 const controller = await readFile(
   new URL("../components/preferences-bootstrap-controller.tsx", import.meta.url),
   "utf8",
@@ -18,13 +27,13 @@ const backdropRoute = await readFile(
 );
 
 assert.match(
-  clientStore,
+  clientCore,
   /__COVEN_CAVE_PREFERENCES_AUTHORITATIVE__[\s\S]*getAttribute\("data-authoritative"\)/,
   "the client store should reject paint-only bootstrap data as canonical",
 );
 assert.match(
   clientStore,
-  /let authoritativeBootstrap = readBootstrap\(\)[\s\S]*let snapshot = authoritativeBootstrap \?\? createDefaultPreferences\(false\)/,
+  /let authoritativeBootstrap = readBootstrap\(\{[\s\S]*let snapshot = authoritativeBootstrap \?\? createDefaultPreferences\(false\)/,
   "canonical bootstrap state should be the synchronous client snapshot",
 );
 assert.match(
@@ -36,6 +45,87 @@ assert.match(
   clientStore,
   /let canonicalInitialized = authoritativeBootstrap\?\.initialized === true/,
   "optimistic legacy overlays must not be mistaken for a canonical server acknowledgement",
+);
+assert.match(
+  clientStore,
+  /isCanonicalPreferencesPayload[\s\S]*readBootstrap/,
+  "bootstrap and network commits share the dependency-light canonical payload guard",
+);
+const currentAuthoritativePayload = createDefaultPreferences(true);
+assert.equal(
+  isCanonicalPreferencesPayload(currentAuthoritativePayload),
+  true,
+  "a current authoritative payload with voice passes the canonical gate",
+);
+const { voice: _missingVoice, ...incompleteAuthoritativePayload } = currentAuthoritativePayload;
+assert.equal(
+  isCanonicalPreferencesPayload(incompleteAuthoritativePayload),
+  false,
+  "an incomplete network payload missing voice is not canonical",
+);
+for (const voice of [
+  [],
+  {},
+  { defaultProvider: "gemini", defaultModel: "gemini-live", defaultVoice: "Aoede" },
+  { defaultProvider: "openai", defaultModel: 42, defaultVoice: "marin" },
+  { defaultProvider: "openai", defaultModel: "gpt-realtime", defaultVoice: "x".repeat(129) },
+  { defaultProvider: "openai", defaultModel: " gpt-realtime ", defaultVoice: "marin" },
+  { ...currentAuthoritativePayload.voice, apiKey: "secret" },
+  { defaultProvider: "", defaultModel: "stale-model", defaultVoice: "stale-voice" },
+]) {
+  assert.equal(
+    isCanonicalPreferencesPayload({ ...currentAuthoritativePayload, voice }),
+    false,
+    `malformed canonical voice payload is rejected: ${JSON.stringify(voice)}`,
+  );
+}
+assert.equal(
+  readBootstrap({
+    window: {
+      __COVEN_CAVE_PREFERENCES__: incompleteAuthoritativePayload,
+      __COVEN_CAVE_PREFERENCES_AUTHORITATIVE__: true,
+    },
+  }),
+  null,
+  "a direct-window authoritative bootstrap missing voice is rejected before normalization",
+);
+assert.equal(
+  readBootstrap({
+    window: {},
+    document: {
+      getElementById: () => ({
+        textContent: JSON.stringify(incompleteAuthoritativePayload),
+        getAttribute: () => null,
+      }),
+    },
+  }),
+  null,
+  "a DOM authoritative bootstrap missing voice is rejected before normalization",
+);
+assert.deepEqual(
+  readBootstrap({
+    window: {
+      __COVEN_CAVE_PREFERENCES__: currentAuthoritativePayload,
+      __COVEN_CAVE_PREFERENCES_AUTHORITATIVE__: true,
+    },
+  })?.voice,
+  currentAuthoritativePayload.voice,
+  "a complete direct-window canonical bootstrap is accepted",
+);
+assert.match(
+  clientStore,
+  /if \(!authoritativeBootstrap\) await refreshAppPreferences\(\)/,
+  "a rejected bootstrap triggers a canonical GET during initialization",
+);
+assert.match(
+  clientStore,
+  /if \(!isCanonicalPreferencesPayload\(preferences\)\) return false;[\s\S]*snapshot = [\s\S]*canonical/,
+  "a current authoritative payload with voice is accepted and committed to the client snapshot",
+);
+assert.match(
+  clientStore,
+  /data\?\.ok && isCanonicalPreferencesPayload\(data\.preferences\)[\s\S]*commitCanonical/,
+  "malformed network payloads, including incomplete payloads missing voice, are not committed",
 );
 assert.doesNotMatch(
   clientStore,
@@ -58,16 +148,90 @@ for (const representative of [
   "cave:datetime-clock",
   "cave:corner-radius",
   "cave:backdrop:v1",
-  "cave:home-news-enabled",
   "cave:mobile-mode-enabled",
 ]) {
   assert.ok(legacyBlock.includes(`"${representative}"`), `migration allowlist includes ${representative}`);
 }
 
+const elevenLabsCanonical = applyPreferencesPatch(createDefaultPreferences(true), {
+  voice: {
+    defaultProvider: "elevenlabs",
+    defaultModel: "eleven_turbo_v2_5",
+    defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+  },
+});
+const rapidModelWrite = queueAppPreferencesPatch(
+  elevenLabsCanonical,
+  {},
+  { voice: { defaultModel: "eleven_multilingual_v2" } },
+);
+const rapidModelSnapshot = applyPreferencesPatch(elevenLabsCanonical, rapidModelWrite.patch);
+const rapidProviderWrite = queueAppPreferencesPatch(
+  rapidModelSnapshot,
+  rapidModelWrite.pendingPatch,
+  { voice: { defaultProvider: "openai" } },
+);
+assert.deepEqual(
+  rapidProviderWrite.pendingPatch.voice,
+  { defaultProvider: "openai", defaultModel: "", defaultVoice: "" },
+  "rapid model then provider writes persist explicit clears instead of a stale ElevenLabs model",
+);
+assert.deepEqual(
+  applyPreferencesPatch(elevenLabsCanonical, rapidProviderWrite.pendingPatch).voice,
+  { defaultProvider: "openai", defaultModel: "", defaultVoice: "" },
+  "the coalesced PATCH produces the same canonical voice state as the optimistic writes",
+);
+
+const sameProvider = queueAppPreferencesPatch(
+  elevenLabsCanonical,
+  {},
+  { voice: { defaultProvider: "elevenlabs" } },
+);
+const sameProviderSnapshot = applyPreferencesPatch(elevenLabsCanonical, sameProvider.patch);
+assert.deepEqual(sameProviderSnapshot.voice, elevenLabsCanonical.voice);
+assert.equal(
+  sameProviderSnapshot.revision,
+  elevenLabsCanonical.revision,
+  "same-provider reassertion preserves ids and remains a revision no-op",
+);
+
+const newerOpenAiModel = { voice: { defaultModel: "gpt-realtime" } };
+const reinsertedAfterFailure = mergePreferencesPatches(
+  rapidProviderWrite.pendingPatch,
+  newerOpenAiModel,
+);
+assert.deepEqual(
+  reinsertedAfterFailure.voice,
+  { defaultProvider: "openai", defaultModel: "gpt-realtime", defaultVoice: "" },
+  "failed-patch reinsertion preserves materialized clears while newer writes win",
+);
+const providerWriteWhileModelPatchIsInFlight = queueAppPreferencesPatch(
+  rapidModelSnapshot,
+  {},
+  { voice: { defaultProvider: "openai" } },
+);
+assert.deepEqual(
+  mergePreferencesPatches(
+    rapidModelWrite.pendingPatch,
+    providerWriteWhileModelPatchIsInFlight.pendingPatch,
+  ).voice,
+  { defaultProvider: "openai", defaultModel: "", defaultVoice: "" },
+  "reinserting a failed older model patch cannot overwrite a newer provider transition",
+);
+const initializationPatch = mergePreferencesPatches(
+  { phone: { mobileMode: false } },
+  rapidProviderWrite.pendingPatch,
+);
+assert.deepEqual(
+  initializationPatch.voice,
+  { defaultProvider: "openai", defaultModel: "", defaultVoice: "" },
+  "initialization migration composition preserves provider-transition clears",
+);
+
 assert.match(
   clientStore,
-  /pendingPatch = mergePatch\(pendingPatch, patch\)[\s\S]*snapshot = applyPreferencesPatch\(snapshot, patch\)/,
-  "preference setters should optimistically merge typed patches",
+  /queueAppPreferencesPatch\(snapshot, pendingPatch, patch\)/,
+  "preference setters should preserve provider-transition clears while coalescing rapid writes",
 );
 assert.match(
   clientStore,
@@ -76,7 +240,7 @@ assert.match(
 );
 assert.match(
   clientStore,
-  /pendingPatch = mergePatch\(patch, pendingPatch\)[\s\S]*ok = false/,
+  /pendingPatch = mergePreferencesPatches\(patch, pendingPatch\)[\s\S]*ok = false/,
   "a transient write failure should preserve its patch for retry",
 );
 assert.match(

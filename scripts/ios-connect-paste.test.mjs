@@ -61,11 +61,17 @@ assert.match(
   "the stray-space nudge lives on as a classifier case, copy intact",
 );
 // The hint must NOT disable Connect — validation stays advisory (the connect flow
-// does the real probing); the button stays gated only on empty/busy.
+// does the real probing); the button stays gated only on empty/busy or an
+// in-flight device-authentication prompt, never on the advisory hint.
 assert.match(
   src,
-  /\.disabled\(host\.trimmingCharacters\(in: \.whitespaces\)\.isEmpty \|\| busy\)/,
-  "Connect should stay enabled regardless of the advisory hint",
+  /\.disabled\(!hostPresent \|\| busy \|\| appLock\.isAuthenticating\)/,
+  "Connect should stay enabled regardless of the advisory hint, except while device authentication is in flight",
+);
+assert.match(
+  src,
+  /private var hostPresent: Bool \{\s*!host\.trimmingCharacters\(in: \.whitespaces\)\.isEmpty\s*\}/,
+  "the presence gate is exactly the trimmed-empty check",
 );
 
 console.log("ios-connect-paste: OK");

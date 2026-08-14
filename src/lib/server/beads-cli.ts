@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
+import { caveToolSpawnEnv } from "../coven-bin.ts";
 
 const execFileAsync = promisify(execFile);
 const BD_TIMEOUT_MS = 30_000;
@@ -10,7 +10,13 @@ type ExecResult = { stdout: string; stderr: string };
 type Exec = (
   file: string,
   args: string[],
-  options: { cwd?: string; env: NodeJS.ProcessEnv; timeout: number; maxBuffer: number },
+  options: {
+    cwd?: string;
+    env: NodeJS.ProcessEnv;
+    timeout: number;
+    maxBuffer: number;
+    windowsHide: true;
+  },
 ) => Promise<ExecResult>;
 
 export type BdResult =
@@ -25,6 +31,7 @@ class BdUnavailableError extends Error {}
 
 async function wslPath(exec: Exec, value: string, env: NodeJS.ProcessEnv): Promise<string> {
   const { stdout } = await exec("wsl.exe", ["-e", "wslpath", "-a", "-u", value], {
+    windowsHide: true,
     env,
     timeout: BD_TIMEOUT_MS,
     maxBuffer: MAX_BD_BUFFER,
@@ -45,6 +52,7 @@ async function runBdViaWsl(
     wslPath(exec, repoRoot, env),
     wslPath(exec, beadsDir, env),
     exec("wsl.exe", ["-e", "sh", "-lc", "command -v bd"], {
+      windowsHide: true,
       env,
       timeout: BD_TIMEOUT_MS,
       maxBuffer: MAX_BD_BUFFER,
@@ -69,7 +77,7 @@ async function runBdViaWsl(
       bd,
       ...args,
     ],
-    { env, timeout: BD_TIMEOUT_MS, maxBuffer: MAX_BD_BUFFER },
+    { windowsHide: true, env, timeout: BD_TIMEOUT_MS, maxBuffer: MAX_BD_BUFFER },
   );
 }
 
@@ -81,14 +89,15 @@ export async function runBdCommand(
 ): Promise<BdResult> {
   const platform = options?.platform ?? process.platform;
   const exec = options?.exec ?? (execFileAsync as unknown as Exec);
-  const env = scrubSidecarInternalEnv({
-    ...process.env,
+  const env = {
+    ...caveToolSpawnEnv(),
     BEADS_DIR: beadsDir,
     BD_NON_INTERACTIVE: "1",
-  });
+  };
 
   try {
     const { stdout, stderr } = await exec("bd", args, {
+      windowsHide: true,
       cwd: repoRoot,
       env,
       timeout: BD_TIMEOUT_MS,

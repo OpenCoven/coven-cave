@@ -1,0 +1,268 @@
+// @ts-nocheck
+// New-chat dashboard — the work-led dashboard (launcher 3a) relocated from
+// Home into the brand-new-chat view, then simplified (cave-gxap): the context
+// rail is retired and the board is a capped, no-scroll column.
+// Pins:
+//   (1) chat-view splits its empty state: a null sessionId (brand-new chat)
+//       renders <ChatNewDashboard>; existing zero-turn sessions keep the
+//       task-aware <ChatEmptyState>;
+//   (2) body-only shell: the board alone (ChatView owns the chrome above and
+//       the composer below) — no chrome header, no docked composer, and no
+//       context rail (the composer owns project picking + prompt snippets);
+//   (3) no scrolling: the board clips instead of scrolling, and its content
+//       is capped — open work at 5 rows, recent threads at 3;
+//   (4) the board reads the live Tasks board + the inbox "needs you" tier
+//       and offers the trimmed All/Needs-you filter tabs;
+//   (5) self-contained navigation: the component reaches other surfaces
+//       through the established window-event bridges, not prop drilling;
+//   (6) Home is the hearth again — home-composer neither renders the
+//       dashboard nor imports its sheet.
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const dash = await readFile(new URL("./chat-new-dashboard.tsx", import.meta.url), "utf8");
+const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const homeComposer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const boardHook = await readFile(new URL("./home/use-dashboard-board.ts", import.meta.url), "utf8");
+const bands = await readFile(new URL("./chat-start-from-bands.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../styles/home-dashboard.css", import.meta.url), "utf8");
+
+// ── (1) chat-view's empty-state split ────────────────────────────────────
+assert.match(
+  chatView,
+  /sessionId === null \? \([\s\S]{0,700}?<ChatNewDashboard/,
+  "a brand-new chat (null sessionId) renders the relocated dashboard",
+);
+assert.match(
+  chatView,
+  /<ChatNewDashboard[\s\S]*?\) : \(\s*<ChatEmptyState/,
+  "existing zero-turn sessions keep the task-aware ChatEmptyState",
+);
+
+// ── (2) Body-only shell: the board alone — no rail ───────────────────────
+assert.match(
+  dash,
+  /home-dash__body home-dash--embed[\s\S]*?home-dash__board/,
+  "the embed carries the work board",
+);
+assert.match(
+  dash,
+  /<ChatStartFromBands bands=\{bands\} \/>/,
+  "the board's body IS the shared Start-from band launcher (Chat.dc.html 2b)",
+);
+assert.doesNotMatch(
+  dash,
+  /home-dash__filters/,
+  "the All/Needs-you filter tabs are retired — 2b splits by SOURCE, in bands",
+);
+assert.doesNotMatch(
+  css,
+  /\.home-dash__filter\b/,
+  "the retired filter-tab styles are gone with the markup",
+);
+assert.doesNotMatch(
+  css,
+  /\.home-dash__work-row\b/,
+  "the retired full-width work rows are gone — tiles live in the band sheet",
+);
+assert.doesNotMatch(dash, /home-dash__chrome/, "no identity chrome — ChatView's header covers it");
+assert.doesNotMatch(dash, /home-dash__dock/, "no docked composer — ChatView's composer is the intent surface");
+assert.doesNotMatch(dash, /home-dash__rail/, "the context rail is retired");
+assert.doesNotMatch(dash, /ProjectPicker/, "no project picker — the composer owns project selection");
+assert.doesNotMatch(dash, /home-dash__quick/, "no quick-start rows — prompt snippets live in the composer");
+assert.doesNotMatch(dash, /home-dash__pick/, "no Pick up cards — Recent threads covers resumption");
+assert.doesNotMatch(dash, /cave-chat-empty-task/, "no task arming — ChatEmptyState keeps that affordance");
+assert.match(
+  css,
+  /\.home-dash--embed \{[\s\S]{0,300}?flex: 1/,
+  "the embed stretches to fill the empty transcript",
+);
+assert.match(
+  css,
+  /\.cave-chat-transcript:has\(\.home-dash--embed\) \.cave-chat-thread \{[\s\S]{0,200}?max-width: none/,
+  "the thread releases its centered reading measure for the board",
+);
+assert.doesNotMatch(css, /home-dash__chrome/, "the retired chrome styles are gone");
+assert.doesNotMatch(css, /home-dash__dock/, "the retired dock styles are gone");
+assert.doesNotMatch(css, /home-dash__rail/, "the retired rail styles are gone");
+
+// ── (3) No scrolling — the board clips, and its content is capped ────────
+assert.match(
+  css,
+  /\.home-dash__board \{[\s\S]{0,200}?overflow: hidden/,
+  "the board clips instead of scrolling",
+);
+assert.doesNotMatch(
+  css,
+  /overflow-y: auto/,
+  "no internal scroll region survives in the dashboard sheet",
+);
+assert.match(dash, /const OPEN_WORK_ROWS_CAP = 5/, "open work is capped at 5 rows");
+assert.match(dash, /const RECENT_THREADS_CAP = 3/, "recent threads are capped at 3 rows");
+assert.match(
+  dash,
+  /filterOpenWork\(openWork, workFilter\)\.slice\(0, OPEN_WORK_ROWS_CAP\)/,
+  "the visible open work applies the cap after filtering",
+);
+assert.match(dash, /\.slice\(0, RECENT_THREADS_CAP\)/, "recent threads apply their cap");
+assert.match(
+  css,
+  /container-type: size/,
+  "the board is a size container so fit tiers can query its height",
+);
+assert.match(
+  css,
+  /@container \(max-height: 650px\) \{[\s\S]{0,140}?\.cave-sf__band\[data-kind="queue"\] \{[\s\S]{0,40}?display: none/,
+  "short panes shed the Queue band instead of clipping",
+);
+assert.match(
+  css,
+  /@container \(max-height: 560px\) \{[\s\S]{0,140}?\.cave-sf__band\[data-kind="chats"\] \{[\s\S]{0,40}?display: none/,
+  "the resumable Chats band is the last one standing, not the first to go",
+);
+assert.match(
+  css,
+  /@container \(max-height: 480px\) \{[\s\S]{0,600}?\.cave-sf__tile:nth-child\(n \+ 3\) \{[\s\S]{0,40}?display: none/,
+  "very short panes trim each strip to two tiles",
+);
+// An element can never match its own @container query — a `.home-dash__board`
+// rule inside a tier is silently dead (shipped once: the 430px tier's padding
+// shrink never applied). Tiers may restyle descendants only.
+for (const [, tier] of css.matchAll(/@container[^{]*\{([\s\S]*?)\n\}/g)) {
+  assert.doesNotMatch(
+    tier,
+    /\.home-dash__board\s*[{,]/,
+    "fit tiers must not target .home-dash__board itself — it is the query container",
+  );
+}
+assert.match(
+  css,
+  /\.home-dash__board-inner \{[\s\S]{0,200}?padding: var\(--space-6\) 0/,
+  "vertical board padding lives on the inner wrapper so tiers can shrink it",
+);
+
+// ── (4) Open-work board — live data + trimmed filter tabs ────────────────
+assert.match(dash, /const boardCards = useDashboardBoard\(\)/, "the board reads the live Tasks board");
+assert.match(dash, /fetch\("\/api\/inbox", \{ cache: "no-store"/, "the needs-you tier reads the live inbox");
+assert.match(dash, /groupInboxFeed\(items\)\.needsYou/, "needs-you uses the same attention tier as the bell");
+assert.match(
+  boardHook,
+  /familiarId: string \| null/,
+  "the lean dashboard-card projection must retain familiar ownership",
+);
+assert.match(
+  boardHook,
+  /familiarId: c\.familiarId \?\? null/,
+  "the Board response must carry familiar ownership into the dashboard model",
+);
+assert.match(
+  dash,
+  /filterFamiliarOwned\(boardCards,\s*familiar\.id\)/,
+  "Board open work must scope to the selected familiar before row derivation",
+);
+assert.match(
+  dash,
+  /filterFamiliarOwned\(needsYou,\s*familiar\.id\)/,
+  "Needs-you inbox work must scope to the selected familiar before row derivation",
+);
+assert.match(
+  dash,
+  /openWorkRows\(scopedBoardCards\)/,
+  "open-work counts, caps, and empty states must derive from scoped Board cards",
+);
+assert.match(
+  dash,
+  /scopedNeedsYou\.map/,
+  "open-work counts, caps, and empty states must derive from scoped Needs-you items",
+);
+assert.match(
+  dash,
+  /scopedNeedsYou\.length > 0 \? "All in Rituals" : "All in Tasks"/,
+  "the Tasks band's overflow tile must use the familiar-scoped needs-you count",
+);
+assert.match(
+  dash,
+  /filterVisibleChatSessions\(sessions,\s*familiar\.id\)[\s\S]{0,300}?\.slice\(0,\s*RECENT_THREADS_CAP\)/,
+  "Recent threads must apply shared familiar visibility before the three-row cap",
+);
+assert.doesNotMatch(
+  dash.slice(
+    dash.indexOf("const recentThreads = useMemo"),
+    dash.indexOf("return (", dash.indexOf("const recentThreads = useMemo")),
+  ),
+  /\.sort\(/,
+  "Recent threads preserve the shared helper's canonical newest-first ordering",
+);
+// 2b's hero states what the page is FOR; the bands below do the counting, so
+// the headline no longer duplicates a number that is on screen four times.
+assert.match(
+  dash,
+  /bands\.length > 0 \? "What should we begin\?" : "A clean slate/,
+  "the hero asks the design's question, and falls back to the clean-slate line",
+);
+assert.match(dash, /badge: "resume"/, "resumable threads keep a Resume affordance, now as a tile badge");
+// Chat.dc.html 2b turned the board into a "Start from" launcher: the sections
+// are now named after the SOURCE of the work (Tasks / Chats) and each states
+// how much of that source is on screen, from the shared pure model.
+assert.match(
+  bands,
+  /className="cave-sf__head-label">\{label\}/,
+  "the launcher leads with the Start-from band label",
+);
+assert.match(
+  bands,
+  /START_FROM_NOTE = "one tap fills the brief and the whole setup"/,
+  "the band states the design's promise for the tiles",
+);
+assert.match(
+  dash,
+  /const tasksGroup = startFromGroup\("tasks", visibleWork\.length, openWork\.length\)/,
+  "the Tasks group counts the capped rows against every open item",
+);
+assert.match(dash, /meta: tasksGroup/, "the Tasks band carries the shared group meta");
+assert.match(dash, /meta: chatsGroup/, "the Chats band carries the shared group meta");
+assert.match(
+  bands,
+  /className="cave-sf__band-count">\{meta\.count\}/,
+  "every band head shows its group's count from the shared model",
+);
+// Design order (Chat.dc.html 2b): the threads you were just in, then the
+// board, then what you parked, then what waits on your review.
+const order = ["chatsGroup", "tasksGroup", "queueGroup", "reviewsGroup"].map((g) =>
+  dash.indexOf(`meta: ${g}`),
+);
+assert.ok(
+  order.every((at) => at > 0) && order.every((at, i) => i === 0 || at > order[i - 1]),
+  "bands are pushed in the design's source order: Chats, Tasks, Queue, Reviews",
+);
+assert.match(
+  dash,
+  /home-dash__meta">[\s\S]*?\{familiar\.harness\}[\s\S]*?\{modelId \? <span>\{modelId\}<\/span> : null\}/,
+  "the board head carries the harness · model identity meta (runtime-chip probe)",
+);
+
+// ── (5) Self-contained navigation — window-event bridges ─────────────────
+assert.match(
+  dash,
+  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode \} \}\)/,
+  "surface jumps (Tasks, Rituals) go through the navigate-mode bridge",
+);
+assert.match(
+  dash,
+  /new CustomEvent\("cave:agents-open-session"/,
+  "session opens go through the agents-open-session bridge",
+);
+assert.match(
+  dash,
+  /action: "read", ids: \[id\]/,
+  "opening a needs-you item read-stamps it like the workspace bell",
+);
+
+// ── (6) Home is the hearth again ─────────────────────────────────────────
+assert.match(homeComposer, /home-hearth-card/, "Home renders the centered hearth card");
+assert.doesNotMatch(homeComposer, /home-dash/, "Home no longer renders the dashboard shell");
+assert.doesNotMatch(
+  homeComposer,
+  /home-dashboard\.css/,
+  "Home no longer imports the dashboard sheet (it ships with the new-chat view)",
+);

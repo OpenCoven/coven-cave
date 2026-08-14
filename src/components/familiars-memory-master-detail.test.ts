@@ -1,4 +1,3 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 const source = [
@@ -14,14 +13,42 @@ assert.ok(!/memory-suggestions/.test(source), "the standalone Suggested-for-clea
 assert.match(source, /Stale \(\{suggestions\.length\}\)/, "a Stale (N) filter pill is present");
 assert.match(source, /Delete \{bulkDeletable\.length\} cleanable/, "bulk-delete action retained");
 assert.ok(!/memory-list-drawer/.test(source), "old grid drawer removed");
-assert.match(source, /MemoryReaderModal path=\{expandRow\.contentPath \?\? expandRow\.path\}/, "fullscreen expand uses the resolved content path");
+assert.match(
+  source,
+  /expandRow\?\.kind === "file"[\s\S]*?<MemoryReaderModal[\s\S]*?path=\{expandRow\.contentPath\}/,
+  "file fullscreen expand uses the resolved content path",
+);
+assert.match(
+  source,
+  /export function MemoryReaderModal[\s\S]*?<DocumentReader[\s\S]*?navigation="rail"/,
+  "file fullscreen expand uses the persistent shared contents rail",
+);
+assert.match(
+  source,
+  /expandRow\?\.kind === "canonical"[\s\S]*?<CanonicalMemoryReader[\s\S]*?memoryId=\{expandRow\.memoryId\}/,
+  "canonical fullscreen expand dispatches by opaque memory ID",
+);
 
 // Responsive: panes gate on selection below the container breakpoint; reader has a Back button.
 // Layout keys off the view's own container width (@container/memview), not the viewport,
 // so the master-detail collapses to one pane inside narrow surfaces like the Studio drawer.
-assert.match(source, /selectedRowId \? "hidden @min-\[1024px\]\/memview:flex" : "flex"/, "list pane hides below the container breakpoint when a row is selected");
-assert.match(source, /selectedRowId \? "flex" : "hidden @min-\[1024px\]\/memview:flex"/, "reader wrapper hides below the container breakpoint when nothing is selected");
-assert.match(source, /onBack=\{\(\) => setSelectedRowId\(null\)\}/, "reader receives a back-to-list handler");
+assert.match(source, /selectedRowId\s*\?\s*"hidden @min-\[1024px\]\/memview:flex"\s*:\s*"flex"/, "list pane hides below the container breakpoint when a row is selected");
+assert.match(source, /selectedRowId\s*\?\s*"flex"\s*:\s*"hidden @min-\[1024px\]\/memview:flex"/, "reader wrapper hides below the container breakpoint when nothing is selected");
+assert.match(
+  source,
+  /onBack=\{clearMemorySelection\}/,
+  "reader receives the shared back-to-list handler that also releases any pinned canonical landing",
+);
+assert.match(
+  source,
+  /selectedRow\?\.kind === "canonical"[\s\S]*?<CanonicalMemoryReader/,
+  "selected canonical rows dispatch to the canonical reader",
+);
+assert.match(
+  source,
+  /row=\{selectedRow\?\.kind === "file" \? selectedRow : null\}/,
+  "the path-bearing file reader receives file rows only",
+);
 
 const reader = await readFile(new URL("./familiars-memory-reader.tsx", import.meta.url), "utf8");
 assert.match(reader, /aria-label="Back to list"/, "reader renders a Back button");

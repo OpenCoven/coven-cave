@@ -44,8 +44,10 @@ assert.match(
   /export function usePopoverInitialFocus\([\s\S]*?requestAnimationFrame[\s\S]*?querySelector<HTMLElement>\(panelSelector\)[\s\S]*?button:not\(:disabled\)[\s\S]*?\.focus\(\)[\s\S]*?cancelAnimationFrame/,
   "the shared focus helper scopes lookup to the panel, focuses an enabled control, and cancels stale work",
 );
-assert.match(actions, /ariaLabel\s*=\s*"Chat options"|aria-label="Chat options"/);
-assert.match(actions, /title=\{\`Chat options · \$\{context\.summary\}\`\}/);
+assert.match(actions, /triggerVariant\?: "icon" \| "tools"/);
+assert.match(actions, /aria-label=\{isToolsTrigger \? "Tools" : "Chat options"\}/);
+assert.match(actions, /ariaLabel=\{isToolsTrigger \? "Tools" : "Chat options"\}/);
+assert.match(actions, /title=\{\`\$\{isToolsTrigger \? "Tools" : "Chat options"\} · \$\{context\.summary\}\`\}/);
 assert.match(
   actions,
   /showIndicator\s*\?\s*<span className="composer-actions__indicator"/,
@@ -62,8 +64,8 @@ assert.match(
 );
 assert.match(
   actions,
-  /projects: context\.sortedProjects\.map\(\(p\) => \(\{ id: p\.id, name: p\.name \}\)\)/,
-  "Add to project › lists the sorted project options",
+  /projects: context\.sortedProjects\.map\(\(p\) => \(\{[\s\S]*?id: p\.id,[\s\S]*?name: p\.name,[\s\S]*?access: p\.access,[\s\S]*?\}\)\)/,
+  "Add to project › lists sorted project options with effective access metadata",
 );
 assert.match(
   actions,
@@ -134,7 +136,7 @@ assert.match(styles, /\.composer-actions__panel[\s\S]*overscroll-behavior: conta
 
 assert.match(
   context,
-  /export\s+type\s+ComposerContextView\s*=\s*null\s*\|\s*"project"\s*\|\s*"model"\s*\|\s*"branch"/,
+  /export\s+type\s+ComposerContextView\s*=\s*null\s*\|\s*"project"\s*\|\s*"model"\s*\|\s*"branch"\s*\|\s*"worktree"/,
 );
 assert.match(context, /export\s+type\s+ComposerContextProps\s*=\s*\{/);
 assert.match(context, /export\s+function\s+useComposerContextActions/);

@@ -29,9 +29,20 @@ export async function main(argv = process.argv.slice(2)) {
   const repo = process.env.RELEASE_REPO || "OpenCoven/coven-cave";
   const version = (versionArg || tag).replace(/^v/, "");
 
-  const assets = JSON.parse(
-    gh(["release", "view", tag, "--repo", repo, "--json", "assets"]),
-  ).assets.map((a) => a.name);
+  let assetsJson;
+  try {
+    assetsJson = gh(["release", "view", tag, "--repo", repo, "--json", "assets"]);
+  } catch (e) {
+    const msg = (e.stderr || e.message || "").trim();
+    if (msg.includes("release not found") || msg.includes("Could not resolve to a Release")) {
+      console.error(`ERROR: GitHub release '${tag}' does not exist on ${repo}.`);
+      console.error("Ensure the release is created (by a successful build job) before running this script.");
+    } else {
+      console.error(`ERROR: Failed to fetch release assets for '${tag}': ${msg}`);
+    }
+    process.exit(1);
+  }
+  const assets = JSON.parse(assetsJson).assets.map((a) => a.name);
 
   // Pull every signature file so we can read its contents locally.
   const dir = mkdtempSync(join(tmpdir(), "latestjson-"));

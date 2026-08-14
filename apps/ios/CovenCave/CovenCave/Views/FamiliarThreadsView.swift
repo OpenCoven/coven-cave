@@ -7,16 +7,33 @@ import SwiftUI
 /// fresh, separate thread.
 struct FamiliarThreadsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
     let familiar: Familiar
     @Binding var path: [ChatRoute]
     /// Namespace owned by `ChatsHomeView`; local thread rows register as
     /// zoom-transition sources so the pushed conversation grows out of them.
     var zoomNamespace: Namespace.ID
+    /// Picker mode. When set, choosing a row hands the thread back to the
+    /// presenter instead of pushing it onto `path`.
+    ///
+    /// This exists because pushing does not work when the view is presented as
+    /// a sheet: ChatView's session switcher wraps it in its own
+    /// `NavigationStack` that is *not* bound to `path`, so every
+    /// `path.append` wrote into state nothing rendered and the tap did
+    /// nothing at all. Handing the thread back lets the presenter close the
+    /// sheet and switch the conversation for real.
+    var onSelect: ((ChatThread) -> Void)? = nil
+    /// The conversation already on screen behind the picker, marked as current
+    /// so switching is a visible move rather than a guess.
+    var currentThreadId: String? = nil
     @State private var renamingThread: ChatThread?
     /// An on-device thread awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: ChatThread?
     /// Reveal archived on-device threads.
     @State private var showArchived = false
+    /// Filters the picker by thread title, a member's name, or message text —
+    /// the search the Chats home used to own before it became a familiar list.
+    @State private var query = ""
     /// Multi-select bulk-delete mode.
     @State private var selectMode = false
     @State private var selectedIds: Set<String> = []
@@ -24,10 +41,7 @@ struct FamiliarThreadsView: View {
     @State private var exportArchive: ExportArchive?
     /// Per-familiar permissions sheet (project access scoped to this familiar).
     @State private var showPermissions = false
-    /// Threads vs the OpenCoven content feed (mirrors the desktop Feed tab).
-    @State private var section: ThreadSection = .threads
-    private enum ThreadSection { case threads, feed }
-
+    @State private var showNewChat = false
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
         case local(ChatThread)
@@ -48,13 +62,30 @@ struct FamiliarThreadsView: View {
     }
 
     /// On-device threads + server-only sessions, newest activity first.
-    /// Archived on-device threads stay hidden until the user opts in.
+    /// Archived on-device threads stay hidden until the user opts in, and the
+    /// search query narrows both kinds of row. An empty query returns everything.
     private var entries: [Entry] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let local = app.directThreads(for: familiar.id)
             .filter { showArchived || !$0.archived }
+            .filter { matches($0, query: q) }
             .map(Entry.local)
-        let server = app.serverOnlySessions(for: familiar.id).map(Entry.server)
+        // A server-only session has no transcript on this device yet, so its
+        // title is the only thing there is to match.
+        let server = app.serverOnlySessions(for: familiar.id)
+            .filter { q.isEmpty || $0.title.lowercased().contains(q) }
+            .map(Entry.server)
         return (local + server).sorted { $0.date > $1.date }
+    }
+
+    /// A thread matches the search when its title, one of its members' names,
+    /// or anything said in it contains the (already lowercased) query.
+    private func matches(_ thread: ChatThread, query q: String) -> Bool {
+        if q.isEmpty { return true }
+        if thread.title.lowercased().contains(q) { return true }
+        if thread.familiarIds.compactMap(app.familiar)
+            .contains(where: { $0.displayName.lowercased().contains(q) }) { return true }
+        return thread.messages.contains { $0.text.lowercased().contains(q) }
     }
 
     /// Number of archived on-device threads (drives the show/hide toggle).
@@ -64,25 +95,12 @@ struct FamiliarThreadsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Section", selection: $section) {
-                Text("Threads").tag(ThreadSection.threads)
-                Text("Feed").tag(ThreadSection.feed)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
-            switch section {
-            case .threads:
-                if entries.isEmpty && archivedLocalCount == 0 {
-                    emptyState
-                } else {
-                    // Align the thread column with ChatView's 740pt transcript
-                    // so drilling into a conversation doesn't shift the content.
-                    threadList.readableListWidth(740)
-                }
-            case .feed:
-                FamiliarFeedView()
+            // A query that matches nothing must keep the list (and its search
+            // field) on screen, or there is no way to clear the query.
+            if entries.isEmpty && archivedLocalCount == 0 && query.isEmpty {
+                emptyState
+            } else {
+                threadList.readableListWidth(740)
             }
         }
         .navigationTitle(familiar.displayName)
@@ -94,6 +112,13 @@ struct FamiliarThreadsView: View {
                     if let role = familiar.role, !role.isEmpty {
                         Text(role).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
+                }
+            }
+            // Presented as a sheet there is no back button, so picker mode
+            // needs an explicit way out that isn't "pick something".
+            ToolbarItem(placement: .topBarLeading) {
+                if isPicking && !selectMode {
+                    Button("Done") { dismiss() }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -115,16 +140,18 @@ struct FamiliarThreadsView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                if !selectMode && hasLocalThreads && section == .threads {
+                if !selectMode && hasLocalThreads {
                     Button("Select") { withAnimation { selectMode = true } }
                 }
             }
         }
+        // Pull-to-refresh is explicit user intent — always hit the server.
         .refreshable { await app.loadSessions() }
-        .task { await app.loadSessions() }
+        // Re-appearance is not: reuse a list fetched moments ago (cave-ioswipe.5).
+        .task { await app.loadSessionsIfStale() }
         .onAppear { app.markFamiliarViewed([familiar.id]) }
         .safeAreaInset(edge: .bottom) {
-            if selectMode && section == .threads {
+            if selectMode {
                 HStack {
                     Button(allLocalSelected ? "Deselect All" : "Select All") { toggleSelectAll() }
                     Spacer()
@@ -156,6 +183,16 @@ struct FamiliarThreadsView: View {
         .sheet(isPresented: $showPermissions) {
             FamiliarPermissionsSheet(familiar: familiar)
         }
+        .sheet(isPresented: $showNewChat) {
+            NewChatView(fixedFamiliarId: familiar.id) { thread in
+                showNewChat = false
+                Haptics.tap()
+                // Same routing as a tapped row: in picker mode a brand-new
+                // chat must reach the presenter too, or "New chat" from the
+                // session switcher silently does nothing.
+                choose(thread)
+            }
+        }
     }
 
     private var bulkDeleteTitle: String {
@@ -172,7 +209,10 @@ struct FamiliarThreadsView: View {
                     }
                 }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(selectMode && isSelected(entry) ? .isSelected : [])
+                    .accessibilityIdentifier("Thread row \(entry.id)")
+                    .accessibilityAddTraits(
+                        (selectMode && isSelected(entry)) || (isPicking && !selectMode && isCurrent(entry))
+                            ? .isSelected : [])
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     // Only on-device threads can be renamed/deleted from here; a
                     // server-only session lives on the desktop, so its rows offer
@@ -243,6 +283,10 @@ struct FamiliarThreadsView: View {
         }
         .listStyle(.plain)
         .themedListBackground()
+        .searchable(text: $query, prompt: "Search chats")
+        .overlay {
+            if entries.isEmpty && !query.isEmpty { ContentUnavailableView.search(text: query) }
+        }
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
         .confirmationDialog("Delete this chat?",
                             isPresented: deleteDialogBinding,
@@ -262,9 +306,23 @@ struct FamiliarThreadsView: View {
     private var localThreads: [ChatThread] {
         app.directThreads(for: familiar.id).filter { showArchived || !$0.archived }
     }
+    /// The local threads actually on screen. `entries` is narrowed by the
+    /// archive toggle AND the search query, so this is derived from it rather
+    /// than re-deriving the filters — it cannot drift from what renders.
+    ///
+    /// Select All uses this, not `localThreads`: selecting rows the user
+    /// cannot see and then deleting them is unrecoverable (cave-2qyqu). The
+    /// bulk actions still operate on `selectedIds`, so a selection made before
+    /// searching survives the search rather than being silently dropped.
+    private var visibleLocalThreads: [ChatThread] {
+        entries.compactMap { entry in
+            if case .local(let thread) = entry { return thread }
+            return nil
+        }
+    }
     private var hasLocalThreads: Bool { !app.directThreads(for: familiar.id).isEmpty }
     private var allLocalSelected: Bool {
-        !localThreads.isEmpty && Set(localThreads.map(\.id)).isSubset(of: selectedIds)
+        !visibleLocalThreads.isEmpty && Set(visibleLocalThreads.map(\.id)).isSubset(of: selectedIds)
     }
 
     private func tapEntry(_ entry: Entry) {
@@ -278,7 +336,7 @@ struct FamiliarThreadsView: View {
         if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
     }
     private func toggleSelectAll() {
-        if allLocalSelected { selectedIds.removeAll() } else { selectedIds = Set(localThreads.map(\.id)) }
+        if allLocalSelected { selectedIds.removeAll() } else { selectedIds = Set(visibleLocalThreads.map(\.id)) }
     }
     private func exitSelect() {
         withAnimation { selectMode = false; selectedIds.removeAll() }
@@ -308,33 +366,71 @@ struct FamiliarThreadsView: View {
         return false
     }
 
+    /// Whether a row is the conversation already open behind the picker.
+    private func isCurrent(_ entry: Entry) -> Bool {
+        guard let currentThreadId else { return false }
+        if case .local(let thread) = entry { return thread.id == currentThreadId }
+        return false
+    }
+
+    /// Picker mode — presented as a sheet to choose a session, rather than
+    /// pushed as a browsable list.
+    private var isPicking: Bool { onSelect != nil }
+
     @ViewBuilder
     private func row(_ entry: Entry) -> some View {
         switch entry {
         case .local(let thread):
-            ThreadRow(thread: thread)
-                .matchedTransitionSource(id: thread.id, in: zoomNamespace)
+            // Laid out beside the row rather than overlaid on it: ThreadRow's
+            // preview runs two lines to the trailing edge, so an overlay mark
+            // would print on top of the text. The zoom stays anchored on the
+            // row itself, not this wrapper, so the transition geometry is
+            // unchanged by the mark.
+            HStack(spacing: 8) {
+                ThreadRow(thread: thread)
+                    .matchedTransitionSource(id: thread.id, in: zoomNamespace)
+                currentMark(for: thread.id)
+            }
         case .server(let session):
             ServerSessionRow(session: session)
+        }
+    }
+
+    /// Marks the conversation already open behind the picker. Colour is not the
+    /// only channel — the row also carries the `.isSelected` trait for
+    /// VoiceOver, and the glyph itself is a distinct shape.
+    @ViewBuilder
+    private func currentMark(for threadId: String) -> some View {
+        if isPicking && !selectMode && threadId == currentThreadId {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.footnote)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Hand a chosen conversation to the presenter (picker mode) or push it.
+    private func choose(_ thread: ChatThread) {
+        if let onSelect {
+            onSelect(thread)
+        } else {
+            path.append(.thread(thread))
         }
     }
 
     private func open(_ entry: Entry) {
         switch entry {
         case .local(let thread):
-            path.append(.thread(thread))
+            choose(thread)
         case .server(let session):
             // Bind the server session to a local thread (and pull its history),
             // then open it like any other.
-            let thread = app.openServerSession(session, familiarId: familiar.id)
-            path.append(.thread(thread))
+            choose(app.openServerSession(session, familiarId: familiar.id))
         }
     }
 
     private func startNewChat() {
-        let thread = app.startFreshThread(familiarIds: [familiar.id], title: familiar.displayName)
-        Haptics.tap()
-        path.append(.thread(thread))
+        showNewChat = true
     }
 
     private var emptyState: some View {

@@ -2,9 +2,9 @@
  * /api/github/runs
  *
  * Recent GitHub Actions workflow runs for a repo (optionally filtered to a
- * branch) so chat run cards and the stage layer can hydrate (design:
- * docs/chat-github-integration.md §2-3). Read-only; workflow_dispatch lands
- * separately with the tier-2 confirm layer (W2b).
+ * branch), or one exact run by id, so chat run cards and the stage layer can
+ * hydrate (design: docs/chat-github-integration.md §2-3). Read-only;
+ * workflow_dispatch lands separately with the tier-2 confirm layer (W2b).
  *
  * Auth mirrors /api/github/item: PAT when present, else the public API.
  */
@@ -25,6 +25,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const repo = (url.searchParams.get("repo") ?? "").trim();
   const branch = (url.searchParams.get("branch") ?? "").trim();
+  const idParam = (url.searchParams.get("id") ?? "").trim();
 
   if (!REPO_RE.test(repo)) {
     return NextResponse.json({ ok: false, error: "invalid repo" }, { status: 400 });
@@ -32,13 +33,20 @@ export async function GET(req: Request) {
   if (branch && !BRANCH_RE.test(branch)) {
     return NextResponse.json({ ok: false, error: "invalid branch" }, { status: 400 });
   }
+  const runId = idParam ? Number(idParam) : null;
+  if (idParam && (!/^\d{1,16}$/.test(idParam) || runId === null || !Number.isSafeInteger(runId) || runId <= 0)) {
+    return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
+  }
 
   const token = resolveGitHubToken();
 
   try {
-    // repo passed REPO_RE; branch passed BRANCH_RE and is URL-encoded.
+    // repo passed REPO_RE; branch passed BRANCH_RE and is URL-encoded; id is a
+    // validated positive integer. An id fetches that exact run (chat run cards
+    // hydrate one run, not a page of twenty).
     const qs = branch ? `?per_page=20&branch=${encodeURIComponent(branch)}` : "?per_page=20";
-    const res = await fetch(`${GH}/repos/${repo}/actions/runs${qs}`, {
+    const endpoint = runId ? `${GH}/repos/${repo}/actions/runs/${runId}` : `${GH}/repos/${repo}/actions/runs${qs}`;
+    const res = await fetch(endpoint, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -49,7 +57,9 @@ export async function GET(req: Request) {
     if (res.status === 404) {
       return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
     }
-    const data = (await res.json().catch(() => null)) as { workflow_runs?: unknown[] } | null;
+    const data = (await res.json().catch(() => null)) as
+      | (Record<string, unknown> & { workflow_runs?: unknown[] })
+      | null;
     if (!res.ok || !data || typeof data !== "object") {
       return NextResponse.json(
         { ok: false, error: `github error (${res.status})` },
@@ -57,7 +67,13 @@ export async function GET(req: Request) {
       );
     }
 
-    const raw = Array.isArray(data.workflow_runs) ? (data.workflow_runs as Array<Record<string, unknown>>) : [];
+    // A by-id fetch returns the run object itself; the list wraps runs in
+    // workflow_runs. Both shapes flow through the same normalizer.
+    const raw = runId
+      ? [data as Record<string, unknown>]
+      : Array.isArray(data.workflow_runs)
+        ? (data.workflow_runs as Array<Record<string, unknown>>)
+        : [];
     return NextResponse.json({
       ok: true,
       authed: Boolean(token),

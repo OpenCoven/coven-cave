@@ -4,6 +4,7 @@ import { extractNextPaths } from "@/lib/next-paths";
 import {
   buildJournalMemoryContext,
   buildJournalMemoryStats,
+  journalDaySources,
 } from "@/lib/journal-memory-stats";
 import {
   deleteJournalEntry,
@@ -46,7 +47,10 @@ export async function GET(req: Request) {
       const memoryEntries = await listMemoryFileEntries();
       const stats = buildJournalMemoryStats(memoryEntries, familiarId);
       const context = buildJournalMemoryContext(date, familiarId, stats);
-      return NextResponse.json({ ok: true, date, stats, context });
+      // The day's sources — memory files touched on this local day, familiar-
+      // scoped like the stats ("Memories Prototype" entry pane's Sources row).
+      const sources = journalDaySources(memoryEntries, date, familiarId);
+      return NextResponse.json({ ok: true, date, stats, context, sources });
     }
     const rawRecord = await readJournalEntry(date);
     const record = familiarId && rawRecord.exists && rawRecord.entry.reflectedBy !== familiarId

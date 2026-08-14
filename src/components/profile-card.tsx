@@ -137,7 +137,7 @@ export function ProfileCardView({ kind, familiarId }: { kind: ProfileKind; famil
           headline="Familiar not found"
           subtitle={`No familiar with id “${familiarId}”. It may have been retired, or the daemon is offline.`}
           actions={
-            <Link className="focus-ring pfc-retry" href="/?mode=familiars">
+            <Link className="focus-ring pfc-retry" href="/?mode=agents">
               Back to familiars
             </Link>
           }
@@ -165,7 +165,7 @@ export function ProfileCard({
   const profile = isHuman ? vm.userProfile ?? snapshot?.profile ?? null : null;
 
   const name = isHuman ? userDisplayName(profile) : vm.familiar?.display_name ?? "familiar";
-  const handle = isHuman ? humanHandle(profile?.name) : vm.familiar?.id ?? "";
+  const handle = isHuman ? humanHandle(name === "You" ? null : name) : vm.familiar?.id ?? "";
   const bio = isHuman
     ? [profile?.pronouns, profile?.bio].filter(Boolean).join(" · ") || "operator of this coven"
     : [vm.familiar?.role, vm.familiar?.description].filter(Boolean).join(" · ");
@@ -173,9 +173,15 @@ export function ProfileCard({
   return (
     <main className="pfc-page" aria-busy={refreshing ? "true" : undefined}>
       <nav className="pfc-topnav" aria-label="Profile">
-        <Link className="focus-ring pfc-topnav-link" href="/?mode=familiars">
-          ← Familiars
-        </Link>
+        {vm.kind === "familiar" ? (
+          <Link className="focus-ring pfc-topnav-link" href="/?mode=agents">
+            ← Familiars
+          </Link>
+        ) : (
+          <Link className="focus-ring pfc-topnav-link" href="/settings">
+            ← Settings
+          </Link>
+        )}
         {vm.kind === "familiar" && vm.familiar ? (
           <Link
             className="focus-ring pfc-topnav-link"
@@ -183,11 +189,7 @@ export function ProfileCard({
           >
             Analytics →
           </Link>
-        ) : (
-          <Link className="focus-ring pfc-topnav-link" href="/?mode=settings">
-            Settings →
-          </Link>
-        )}
+        ) : null}
       </nav>
 
       {error || vm.errors.length > 0 ? (
