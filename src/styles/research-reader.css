@@ -135,9 +135,6 @@
   margin: 0 auto;
   padding: 0 var(--document-reader-column-gutter);
 }
-.research-reader:not([data-expanded="true"]) .rr-doc__column {
-  max-width: var(--document-reader-column-width);
-}
 .rr-doc__kicker { font: 600 10px var(--font-mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--research-accent); margin-bottom: 10px; }
 
 .rr-doc h1 {
