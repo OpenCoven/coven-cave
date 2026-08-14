@@ -179,4 +179,46 @@ assert.doesNotMatch(
   "button-semantics toggles keep native button semantics",
 );
 
+// The render assertions above prove the COMPONENT honors checkedRole. They say
+// nothing about whether the five independent toggles actually pass it, and that
+// is the bug: drop `checkedRole="checkbox"` from workspace-sidebar and every
+// assertion above still passes while "Show archived" silently announces as one
+// choice among mutually exclusive alternatives again. So the call sites are
+// pinned too — component behavior and adoption are different claims.
+for (const [file, label] of [
+  ["../workspace-sidebar.tsx", "Show archived"],
+  ["../chat-list.tsx", "Keep chat"],
+  ["../chat-session-header.tsx", "session menu (thinking / instruments)"],
+]) {
+  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
+  assert.match(
+    caller,
+    /checkedRole="checkbox"/,
+    `${label} is an independent toggle, not one of a mutually exclusive set`,
+  );
+}
+
+// Both "Keep chat" rows — the list row menu and the hover-kebab menu — carry it.
+// Their indentation differs, so a single edit silently covers only one of them;
+// that happened while writing this change, which is why the count is asserted
+// rather than a bare match.
+const chatList = readFileSync(new URL("../chat-list.tsx", import.meta.url), "utf8");
+assert.equal(
+  chatList.match(/checkedRole="checkbox"/g)?.length,
+  2,
+  "both Keep-chat toggles opt into the checkbox role",
+);
+
+// Guard the other direction: mutually exclusive pickers must NOT be converted.
+// e2e specs pin these as menuitemradio (chat-response-output, chat-sessions-
+// surface, composer-runtime-chip), so a stray conversion breaks them far from
+// here.
+for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "../ui/select.tsx"]) {
+  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
+  assert.ok(
+    !/checkedRole="checkbox"/.test(caller),
+    `${file} is a one-of-a-set picker and must stay menuitemradio`,
+  );
+}
+
 console.log("popover.test.ts: ok");
