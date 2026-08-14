@@ -231,6 +231,35 @@ test("unpushedCountIgnoring still counts every OTHER remote ref", () => {
   }
 });
 
+// The empty-refs edge, pinned because it is the one that would fail SILENTLY in
+// the unsafe direction: if `rev-list HEAD --not` (nothing after `--not`) threw,
+// the catch would return 0 and an at-risk head would read as fully retained —
+// the exact misclassification this whole change exists to remove. It does not
+// throw: `--not` only flips the sense of the args that FOLLOW it, and with none
+// following it is a no-op, so every commit reachable from HEAD is counted.
+test("unpushedCountIgnoring counts everything when the ignored ref was the only one", () => {
+  const { root, work } = scaffold();
+  try {
+    git(["checkout", "-q", "-b", "feat/topic"], work);
+    commit(work, "one");
+    git(["push", "-q", "-u", "origin", "feat/topic"], work);
+    // Leave exactly one remote-tracking ref — the one we are about to ignore.
+    git(["update-ref", "-d", "refs/remotes/origin/main"], work);
+    assert.deepEqual(
+      git(["for-each-ref", "--format=%(refname)", "refs/remotes/"], work).split("\n").filter(Boolean),
+      ["refs/remotes/origin/feat/topic"],
+    );
+
+    assert.equal(unpushedCount(work), 0, "the sole tracking ref still covers HEAD");
+    assert.ok(
+      unpushedCountIgnoring(work, "refs/remotes/origin/feat/topic") > 0,
+      "ignoring it leaves no refs at all, and the head must read as retained by nothing",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("retain pushes the branch, and the commit really lands on the remote", () => {
   const { root, remote, work } = scaffold();
   try {
