@@ -78,6 +78,21 @@ assert.match(
   /id="list"[\s\S]{0,200}?defaultSize="260px"[\s\S]{0,60}?minSize="220px"[\s\S]{0,60}?maxSize="420px"/,
   "Shell list panel should default to 260px, drag-resizable within a 220–420px band",
 );
+assert.match(
+  shell,
+  /id="right-chat"[\s\S]{0,260}?defaultSize=\{`\$\{preferredRightChatWidth\}px`\}[\s\S]{0,100}?minSize=\{`\$\{RIGHT_CHAT_MIN_PX\}px`\}[\s\S]{0,100}?maxSize=\{`\$\{RIGHT_CHAT_MAX_PX\}px`\}[\s\S]{0,100}?collapsedSize=\{0\}/,
+  "Right Chat is a 320–640px fully collapsible fourth shell panel",
+);
+assert.match(
+  shell,
+  /<Panel id="detail" className="shell-detail-panel" minSize=\{`\$\{SHELL_DETAIL_MIN_PX\}px`\}>/,
+  "the primary detail keeps a usable pixel minimum",
+);
+assert.match(
+  shell,
+  /meta\.isUserInteraction[\s\S]{0,500}?writeRightChatWidthPref/,
+  "only completed user interactions persist the right-panel width",
+);
 
 // The key bump resets everyone to the new defaults exactly once. v3 retires v2
 // widths so the minimized-by-default nav takes effect; v2 retired v1 percents.
@@ -93,8 +108,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /const chatContextual = navPolicy === "chat-contextual";\s*const groupId = chatContextual\s*\? `\$\{SHELL_GROUP_ID\}\.chat-contextual`\s*: twoPane\s*\? `\$\{SHELL_GROUP_ID\}\.two-pane`\s*: listPolicy === "persistent"\s*\? `\$\{SHELL_GROUP_ID\}\.persistent-list`\s*: SHELL_GROUP_ID;/,
-  "Chat contextual layouts have a separate group while existing two-pane and list policies retain their groups",
+  /const chatContextual = navPolicy === "chat-contextual";\s*const baseGroupId = chatContextual\s*\? `\$\{SHELL_GROUP_ID\}\.chat-contextual`\s*: twoPane\s*\? `\$\{SHELL_GROUP_ID\}\.two-pane`\s*: listPolicy === "persistent"\s*\? `\$\{SHELL_GROUP_ID\}\.persistent-list`\s*: SHELL_GROUP_ID;\s*const groupId = desktopRightChat \? `\$\{baseGroupId\}\.right-chat` : baseGroupId;/,
+  "Chat contextual layouts keep their base groups and add a dedicated desktop right-chat suffix only when that fourth panel is mounted",
 );
 
 // Collapse-to-rail must survive the px conversion.
