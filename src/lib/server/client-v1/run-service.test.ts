@@ -12,7 +12,7 @@ import {
 } from "@/lib/server/chat-stream-buffer";
 import type { ClientPrincipal } from "./auth.ts";
 import { ClientAttachmentError } from "./attachment-service.ts";
-import { hashNormalizedRequest } from "./idempotency-store.ts";
+import { hashNormalizedRequest, PENDING_CLAIM_RETRY_MS } from "./idempotency-store.ts";
 import {
   readClientRunOperation,
   setClientRunOperationBeforeLaunchHookForTest,
@@ -486,13 +486,102 @@ test("attaching a duplicate resume subscriber never launches a second send", asy
   resetRunBuffersForTest();
 });
 
-test("a persisted launching state blocks exact retries and returns manual recovery before any dispatch", async () => {
+test("a fresh durable launching record without a buffer remains retryable for run inspection, retry, and stop", async () => {
+  const now = 1_000_000;
+  const { service, runOps } = createService({
+    now: () => now,
+    authorizeConversation: async () => {
+      throw new Error("fresh launching state must respond before conversation work");
+    },
+  });
+  runOps.records.set(`${credentialId.toLowerCase()}:${operationId.toLowerCase()}`, {
+    version: 1,
+    operationId,
+    credentialId,
+    requestHash: hashNormalizedRequest(input),
+    conversationId: input.conversationId,
+    internalRunId,
+    state: "launching",
+    createdAt: now - 1,
+    updatedAt: now,
+    expiresAt: now + 24 * 60 * 60_000,
+  });
+
+  const inspected = await service.inspectRun(operationId, credentialId);
+  assert.deepEqual(inspected, {
+    kind: "launching",
+    metadata: {
+      runId: operationId,
+      conversationId: input.conversationId,
+      resumePath: `/api/client/v1/runs/${operationId}/stream`,
+      internalRunId,
+    },
+    retryAfterMs: PENDING_CLAIM_RETRY_MS,
+  });
+
+  const retry = await service.retry(
+    operationId,
+    { operationId: "a20ad30e-1913-49a4-a48e-0e3c260cd3cb", retryOfTurnId: "turn" },
+    principal,
+  );
+  const stop = await service.stop(operationId, principal);
+  for (const response of [retry, stop]) {
+    assert.equal(response.status, 409);
+    assert.equal(response.headers.get("Retry-After"), String(PENDING_CLAIM_RETRY_MS / 1000));
+    const body = await response.json();
+    assert.equal(body.error.code, "operation_already_started");
+    assert.equal(body.error.retryable, true);
+    assert.equal(body.error.details.status, "launching");
+    assert.equal(body.error.details.runState, "launching");
+  }
+});
+
+test("a stale launching record retains crash-recovery behavior instead of the fresh in-progress state", async () => {
+  const now = 1_000_000;
+  const { service, runOps } = createService({
+    now: () => now,
+    authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
+    claimOperation: async () => ({ kind: "pending", retryAfterMs: 1 }),
+  });
+  runOps.records.set(`${credentialId.toLowerCase()}:${operationId.toLowerCase()}`, {
+    version: 1,
+    operationId,
+    credentialId,
+    requestHash: hashNormalizedRequest(input),
+    conversationId: input.conversationId,
+    internalRunId,
+    state: "launching",
+    createdAt: now - PENDING_CLAIM_RETRY_MS - 1,
+    updatedAt: now - PENDING_CLAIM_RETRY_MS,
+    expiresAt: now + 24 * 60 * 60_000,
+  });
+
+  assert.deepEqual(await service.inspectRun(operationId, credentialId), { kind: "not_found" });
+  assert.equal(
+    (await service.retry(
+      operationId,
+      { operationId: "b20ad30e-1913-49a4-a48e-0e3c260cd3cb", retryOfTurnId: "turn" },
+      principal,
+    )).status,
+    404,
+  );
+  assert.equal((await service.stop(operationId, principal)).status, 404);
+
+  const duplicateSend = await service.send(input, principal);
+  assert.equal(duplicateSend.status, 409);
+  const duplicateBody = await duplicateSend.json();
+  assert.equal(duplicateBody.error.retryable, false);
+  assert.equal(duplicateBody.error.details.status, "manual_recovery_required");
+});
+
+test("a stale persisted launching state blocks exact retries and returns manual recovery before any dispatch", async () => {
   let executions = 0;
   let claims = 0;
   setClientRunOperationBeforeLaunchHookForTest(() => {
     throw new Error("crash before executeChatSend");
   });
   const service = createDurableService({
+    now: () => Date.now() + PENDING_CLAIM_RETRY_MS,
     authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
     claimOperation: async () => {
       claims += 1;
