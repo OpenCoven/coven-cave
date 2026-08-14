@@ -1503,6 +1503,7 @@ export const SUITES = {
     "src/lib/context-meter.test.ts",
     "src/lib/chat-usage-plan.test.ts",
     "src/lib/cave-conversations.test.ts",
+    "src/lib/cave-conversation-cross-process-lock.test.ts",
     "src/lib/openclaw-conversation.test.ts",
     "src/lib/session-initiator.test.ts",
     "src/lib/chat-runtime-scope.test.ts",
