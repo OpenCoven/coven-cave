@@ -6,6 +6,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { StandardSelect } from "@/components/ui/select";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { FocusTrapOwnerHiddenContext } from "@/lib/use-focus-trap";
@@ -606,12 +607,11 @@ export function RightChatPanel(props: Props) {
           <strong>{activeFamiliar.display_name}</strong>
           <span title={title}>{title}</span>
         </span>
-        <select
-          className="focus-ring right-chat__thread-switcher"
-          aria-label="Switch Chat panel thread"
+        <StandardSelect
+          className="right-chat__thread-switcher"
+          label="Switch Chat panel thread"
           value={selectedSessionId ?? "__new__"}
-          onChange={(event) => {
-            const nextId = event.currentTarget.value;
+          onChange={(nextId) => {
             if (nextId === "__new__") {
               routerRef.current?.newChat(undefined, undefined, activeFamiliar.id);
               setSelectedSessionId(null);
@@ -623,14 +623,14 @@ export function RightChatPanel(props: Props) {
             const nextSession = eligibleSessions.find((session) => session.id === nextId);
             announce(`${nextSession ? sessionRailTitle(nextSession) : "Chat"} opened`);
           }}
-        >
-          <option value="__new__">New chat</option>
-          {eligibleSessions.map((session) => (
-            <option key={session.id} value={session.id}>
-              {sessionRailTitle(session)}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "__new__", label: "New chat" },
+            ...eligibleSessions.map((session) => ({
+              value: session.id,
+              label: sessionRailTitle(session),
+            })),
+          ]}
+        />
         <button
           type="button"
           className="focus-ring right-chat__icon-button"

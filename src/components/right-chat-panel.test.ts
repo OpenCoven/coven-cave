@@ -30,7 +30,15 @@ assert.match(
   /routerRef\.current\?\.newChat\(undefined, undefined, activeFamiliar\.id\)/,
   "no eligible chat opens a familiar-bound blank compose",
 );
-assert.match(source, /aria-label="Switch Chat panel thread"/, "the compact header exposes a labelled thread switcher");
+// The switcher is the design system's StandardSelect, whose `label` prop
+// becomes the trigger button's aria-label — a native <select> here would trip
+// the `components/no-native-select` drift ratchet.
+assert.match(
+  source,
+  /<StandardSelect\b[\s\S]*?label="Switch Chat panel thread"/,
+  "the compact header exposes a labelled thread switcher",
+);
+assert.doesNotMatch(source, /<select\b/, "the thread switcher never regresses to a native select");
 assert.match(source, /aria-label="New Chat panel chat"/, "the compact header exposes New chat");
 assert.match(source, /aria-label="Close Chat panel"/, "the compact header exposes Close");
 assert.doesNotMatch(

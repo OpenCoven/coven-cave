@@ -118,6 +118,7 @@ vi.mock("@/lib/familiar-resolve", () => ({
 }));
 
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { ChatRouter as MockChatRouter } from "@/components/chat-router";
 import { RightChatPanel } from "./right-chat-panel";
 
@@ -195,8 +196,12 @@ function findByAria(renderer: ReactTestRenderer, label: string) {
   return renderer.root.find((node) => node.type === "button" && node.props["aria-label"] === label);
 }
 
+/** The header's thread switcher. It is the design system's StandardSelect,
+ *  not a native `<select>` (`components/no-native-select`), so it is located
+ *  by component type and driven through the primitive's `onChange(value)`
+ *  contract rather than a DOM change event. */
 function threadSwitcher(renderer: ReactTestRenderer) {
-  return renderer.root.findByType("select" as never);
+  return renderer.root.findByType(StandardSelect);
 }
 
 /** The single `<aside>` root every render path shares (RightChatPanelFrame's
@@ -602,7 +607,7 @@ describe("async removal race: a stale archive/delete/discard completion after sw
     // bypasses handleSessionRemoved entirely, exactly like a real manual
     // pick (see the "explicit New chat" test above for the same bypass).
     await act(async () => {
-      threadSwitcher(renderer).props.onChange({ currentTarget: { value: "cody-t" } });
+      threadSwitcher(renderer).props.onChange("cody-t");
     });
     expect(sessionIdAttr(renderer)).toBe("cody-t");
     expect(headerTitle(renderer)).toBe("cody-t");
