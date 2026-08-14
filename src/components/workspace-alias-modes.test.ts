@@ -89,10 +89,19 @@ assert.doesNotMatch(
 // ── Every mode-string entry point validates/routes through the shared
 //    vocabulary instead of ad-hoc special cases ──────────────────────────────
 
+// cave-x6rw moved this validation into a shared helper both ?mode= and ?split=
+// read through. The vocabulary is unchanged — WorkspacePageId is
+// `BuiltInWorkspacePageId | RoleSurfaceMode` — so this is the same contract,
+// asserted where it now lives (cave-ktvy0).
 assert.match(
   urlState,
-  /function readModeParam\(\): WorkspaceMode \| RoleSurfaceMode \| null \{[\s\S]{0,350}?isWorkspaceMode\(raw\) \|\| isRoleSurfaceMode\(raw\)/,
-  "?mode= deep links validate built-in modes and generic role-surface modes",
+  /function readWorkspacePageParam\(name: string\): WorkspacePageId \| null \{[\s\S]{0,350}?isWorkspacePageId\(raw\) \? raw : null/,
+  "?mode= / ?split= deep links validate against the shared page-id vocabulary",
+);
+assert.match(
+  urlState,
+  /export function readModeParam\(\): WorkspacePageId \| null \{\s*return readWorkspacePageParam\("mode"\);/,
+  "?mode= routes through that shared validator rather than an ad-hoc check",
 );
 assert.match(
   workspace,

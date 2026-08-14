@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 
 // Extract `id -> label` pairs from `{ id: "...", label: "..." }` object rows.
 function extractLabels(source, blockName, blockRe) {
@@ -77,14 +78,18 @@ assert.deepEqual(
 );
 
 // ── The sr-only h1 / split-tile title map agrees for sidebar destinations ────
-const titlesBlock = workspace.match(
-  /const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = \{[\s\S]*?\n\};/,
+// cave-x6rw replaced the inline WORKSPACE_MODE_TITLES map with the workspace
+// page registry, and its own test asserts the map is gone. The canonical-label
+// contract is unchanged — it just lives in the registry now (cave-ktvy0).
+const titlesBlock = pageRegistry.match(
+  /const WORKSPACE_MODE_PAGES = freezePageMap\(\{[\s\S]*?\n\} satisfies Record<WorkspaceMode, WorkspacePageDefinition>\);/,
 )?.[0];
-assert.ok(titlesBlock, "WORKSPACE_MODE_TITLES should be extractable");
+assert.ok(titlesBlock, "the WORKSPACE_MODE_PAGES registry should be extractable");
 const modeTitles = new Map();
-for (const m of titlesBlock.matchAll(/"?([a-z-]+)"?: "([^"]+)"/g)) {
+for (const m of titlesBlock.matchAll(/\n  "?([a-z-]+)"?: \{[\s\S]*?title: "([^"]+)"/g)) {
   modeTitles.set(m[1], m[2]);
 }
+assert.ok(modeTitles.size > 0, "the registry should yield mode titles");
 for (const [id, canonical] of registryLabels) {
   const title = modeTitles.get(id);
   if (title === undefined) continue;

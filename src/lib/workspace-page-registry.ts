@@ -91,7 +91,7 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
   },
   calendar: {
     id: "calendar",
-    title: "Calendar",
+    title: "Rituals",
     canonicalId: "inbox",
     variant: "calendar",
     nav: "hidden",
@@ -181,7 +181,7 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
   },
   "familiar-work-queue": {
     id: "familiar-work-queue",
-    title: "Work queue",
+    title: "Tasks",
     canonicalId: "board",
     variant: "queue",
     nav: "hidden",

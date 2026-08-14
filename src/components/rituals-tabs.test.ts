@@ -11,6 +11,7 @@ const automations = [
 ].join("\n");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -24,10 +25,13 @@ assert.match(
   /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check"/,
   "The navigation registry should label the slim surface Rituals",
 );
+// cave-x6rw replaced the inline WORKSPACE_MODE_TITLES map with the workspace
+// page registry, and its own test asserts the map is gone. The canonical-label
+// contract is unchanged — it just lives in the registry now (cave-ktvy0).
 assert.match(
-  workspace,
-  /inbox: "Rituals"/,
-  "Workspace title map should call the surface Rituals",
+  pageRegistry,
+  /inbox: \{[\s\S]*?title: "Rituals"/,
+  "The workspace page registry should call the surface Rituals",
 );
 assert.match(
   mobileTabs,
