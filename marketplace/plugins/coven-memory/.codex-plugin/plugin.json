@@ -5,7 +5,9 @@
   "author": {
     "name": "OpenCoven"
   },
-  "skills": "./skills/",
+  "skills": [
+    "skills/"
+  ],
   "interface": {
     "displayName": "Coven Memory & Knowledge",
     "shortDescription": "Persist and recall cross-session memory and curated knowledge-vault references for your familiars.",

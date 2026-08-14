@@ -57,7 +57,16 @@ Both surfaces now share one builder, so the two cannot drift apart again.
   `skills/<id>/SKILL.md` files contained by the familiar workspace and states
   that a familiar-local same-name skill outranks a generic copy. This lets the
   harness load the declared procedure from an already-granted root without
-  flooding every turn with every skill body. Symlink escapes are omitted.
+  flooding every turn with every skill body. Because not every harness indexes
+  arbitrary workspace-local skill names, the block explicitly requires a
+  direct read of the listed `SKILL.md` when named dispatch is unavailable;
+  dispatcher absence alone is not a blocker. Symlink escapes are omitted.
+
+- **Core Coven recall is dispatcher-registered for direct Copilot chats.** Cave
+  loads the app-bundled, skill-only `coven-memory` plugin with `--plugin-dir`.
+  The bundle is validated to contain no agents, hooks, or MCP configuration
+  before launch, so registration cannot turn a writable familiar workspace into
+  a plugin-capability escalation path.
 
 ### Placement in the prompt
 
