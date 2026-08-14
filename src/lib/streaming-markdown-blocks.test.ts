@@ -202,7 +202,7 @@ test("spaced thematic breaks outrank list parsing and commit through their newli
 });
 
 test("top-level lists may start with one to three spaces and keep stable ids", () => {
-  const unorderedSource = "Intro\n\n - one\n  - two\n   - thre";
+  const unorderedSource = "Intro\n\n - one\n - two\n - thre";
   const unordered = partitionStreamingMarkdown(unorderedSource, { turnId: "t", settled: false });
   assert.deepEqual(unordered.committedBlocks, [{
     id: "t:0-7",
@@ -216,13 +216,13 @@ test("top-level lists may start with one to three spaces and keep stable ids", (
     ordered: false,
     committedItems: [
       { id: "t:7-item-0", source: " - one\n" },
-      { id: "t:7-item-1", source: "  - two\n" },
+      { id: "t:7-item-1", source: " - two\n" },
     ],
-    activeItem: { id: "t:7-item-2", source: "   - thre" },
-    source: " - one\n  - two\n   - thre",
+    activeItem: { id: "t:7-item-2", source: " - thre" },
+    source: " - one\n - two\n - thre",
   });
 
-  const orderedSource = "Lead\n\n 1. one\n  2. two\n   3. thre";
+  const orderedSource = "Lead\n\n 1. one\n 2. two\n 3. thre";
   const ordered = partitionStreamingMarkdown(orderedSource, { turnId: "t", settled: false });
   assert.deepEqual(ordered.committedBlocks, [{
     id: "t:0-6",
@@ -236,10 +236,10 @@ test("top-level lists may start with one to three spaces and keep stable ids", (
     ordered: true,
     committedItems: [
       { id: "t:6-item-0", source: " 1. one\n" },
-      { id: "t:6-item-1", source: "  2. two\n" },
+      { id: "t:6-item-1", source: " 2. two\n" },
     ],
-    activeItem: { id: "t:6-item-2", source: "   3. thre" },
-    source: " 1. one\n  2. two\n   3. thre",
+    activeItem: { id: "t:6-item-2", source: " 3. thre" },
+    source: " 1. one\n 2. two\n 3. thre",
   });
 
   for (const source of ["    - item", "    1. item"] as const) {
@@ -267,18 +267,48 @@ test("nested or ambiguous containers remain one active markdown block", () => {
   assert.equal(partition.committedText, "");
 });
 
-test("settled output is exact, fully committed, and markdown-only", () => {
+test("settled output is exact and preserves stable list identity", () => {
   const source = "# Heading\n\nParagraph\n\n- one\n- two\n\n```ts\nconst x = 1\n```";
   const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: true });
   assert.equal(partition.activeBlock, null);
   assert.equal(partition.committedText, source);
   assert.equal(partition.committedBlocks.map((block) => block.source).join(""), source);
-  assert.ok(partition.committedBlocks.every((block) => block.kind === "markdown"));
-  assert.ok(
-    partition.committedBlocks.every(
-      (block) => block.kind !== "markdown" || block.renderMode === "markdown",
-    ),
-  );
+  assert.deepEqual(partition.committedBlocks, [
+    {
+      id: "t:0-10",
+      kind: "markdown",
+      source: "# Heading\n",
+      renderMode: "markdown",
+    },
+    {
+      id: "t:10-11",
+      kind: "markdown",
+      source: "\n",
+      renderMode: "markdown",
+    },
+    {
+      id: "t:11-22",
+      kind: "markdown",
+      source: "Paragraph\n\n",
+      renderMode: "markdown",
+    },
+    {
+      id: "t:22-list",
+      kind: "list",
+      ordered: false,
+      committedItems: [
+        { id: "t:22-item-0", source: "- one\n" },
+        { id: "t:22-item-1", source: "- two\n" },
+      ],
+      source: "- one\n- two\n\n",
+    },
+    {
+      id: "t:35-56",
+      kind: "markdown",
+      source: "```ts\nconst x = 1\n```",
+      renderMode: "markdown",
+    },
+  ]);
 });
 
 test("committed block history never rewrites an earlier id/source pair", () => {
@@ -434,5 +464,140 @@ test("fence closing markers must match the opening marker character", () => {
     kind: "markdown",
     source: tildeSource,
     renderMode: "plain",
+  });
+});
+
+test("settlement preserves stable list container and item ids", () => {
+  for (const [source, ordered] of [
+    ["- one\n- tw", false],
+    ["1. one\n2. tw", true],
+  ] as const) {
+    const pending = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+    assert.equal(pending.activeBlock?.kind, "list");
+
+    const settled = partitionStreamingMarkdown(source, { turnId: "t", settled: true });
+    assert.equal(settled.activeBlock, null);
+    assert.equal(settled.committedText, source);
+    assert.equal(settled.committedBlocks.map((block) => block.source).join(""), source);
+    assert.deepEqual(settled.committedBlocks, [{
+      id: "t:0-list",
+      kind: "list",
+      ordered,
+      committedItems: [
+        { id: "t:0-item-0", source: ordered ? "1. one\n" : "- one\n" },
+        { id: "t:0-item-1", source: ordered ? "2. tw" : "- tw" },
+      ],
+      source,
+    }]);
+  }
+});
+
+test("nested list markers stay ambiguous instead of committing sibling items", () => {
+  for (const source of [
+    "- parent\n  - child",
+    " - parent\n   - child",
+    "1. parent\n   1. child",
+  ] as const) {
+    const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+    assert.deepEqual(partition.committedBlocks, []);
+    assert.deepEqual(partition.activeBlock, {
+      id: `t:0-${source.length}`,
+      kind: "markdown",
+      source,
+      renderMode: "plain",
+    });
+  }
+
+  const siblingSource = "- one\n- two\n- thre";
+  const sibling = partitionStreamingMarkdown(siblingSource, { turnId: "t", settled: false });
+  assert.deepEqual(sibling.activeBlock, {
+    id: "t:0-list",
+    kind: "list",
+    ordered: false,
+    committedItems: [
+      { id: "t:0-item-0", source: "- one\n" },
+      { id: "t:0-item-1", source: "- two\n" },
+    ],
+    activeItem: { id: "t:0-item-2", source: "- thre" },
+    source: siblingSource,
+  });
+});
+
+test("committed pairs stay stable when a later list tail becomes nested ambiguity", () => {
+  const before = partitionStreamingMarkdown("Intro\n\n- one\n- two\n\n- parent", { turnId: "t", settled: false });
+  const afterSource = "Intro\n\n- one\n- two\n\n- parent\n  - child";
+  const after = partitionStreamingMarkdown(afterSource, { turnId: "t", settled: false });
+
+  assert.deepEqual(flattenPairs(before.committedBlocks), [
+    ["t:0-7", "Intro\n\n"],
+    ["t:7-list", "- one\n- two\n\n"],
+    ["t:7-item-0", "- one\n"],
+    ["t:7-item-1", "- two\n"],
+  ]);
+  assert.deepEqual(flattenPairs(after.committedBlocks), flattenPairs(before.committedBlocks));
+  assert.deepEqual(after.activeBlock, {
+    id: `t:${"Intro\n\n- one\n- two\n\n".length}-${afterSource.length}`,
+    kind: "markdown",
+    source: "- parent\n  - child",
+    renderMode: "plain",
+  });
+});
+
+test("backtick fences reject info strings containing backticks", () => {
+  const invalidBacktick = "```bad`\ntext\n```\nTail";
+  const invalid = partitionStreamingMarkdown(invalidBacktick, { turnId: "t", settled: false });
+  assert.deepEqual(invalid.committedBlocks, []);
+  assert.deepEqual(invalid.activeBlock, {
+    id: `t:0-${invalidBacktick.length}`,
+    kind: "markdown",
+    source: invalidBacktick,
+    renderMode: "plain",
+  });
+
+  const validTildeSource = "~~~bad`\ntext\n~~~\nTail";
+  const validTilde = partitionStreamingMarkdown(validTildeSource, { turnId: "t", settled: false });
+  assert.deepEqual(validTilde.committedBlocks, [{
+    id: `t:0-${"~~~bad`\ntext\n~~~\n".length}`,
+    kind: "markdown",
+    source: "~~~bad`\ntext\n~~~\n",
+    renderMode: "markdown",
+  }]);
+  assert.deepEqual(validTilde.activeBlock, {
+    id: `t:${"~~~bad`\ntext\n~~~\n".length}-${validTildeSource.length}`,
+    kind: "markdown",
+    source: "Tail",
+    renderMode: "markdown",
+  });
+});
+
+test("table parsing honors escaped terminal pipe parity", () => {
+  const oddParitySource = "| A | B \\|\n| --- | --- |\n| 1 | 2 \\|\n\nAfter";
+  const oddParity = partitionStreamingMarkdown(oddParitySource, { turnId: "t", settled: false });
+  assert.deepEqual(oddParity.committedBlocks, [{
+    id: `t:0-${"| A | B \\|\n| --- | --- |\n| 1 | 2 \\|\n\n".length}`,
+    kind: "markdown",
+    source: "| A | B \\|\n| --- | --- |\n| 1 | 2 \\|\n\n",
+    renderMode: "markdown",
+  }]);
+  assert.deepEqual(oddParity.activeBlock, {
+    id: `t:${"| A | B \\|\n| --- | --- |\n| 1 | 2 \\|\n\n".length}-${oddParitySource.length}`,
+    kind: "markdown",
+    source: "After",
+    renderMode: "markdown",
+  });
+
+  const evenParitySource = "| A | B \\\\|\n| --- | --- |\n| 1 | 2 \\\\|\n\nAfter";
+  const evenParity = partitionStreamingMarkdown(evenParitySource, { turnId: "t", settled: false });
+  assert.deepEqual(evenParity.committedBlocks, [{
+    id: `t:0-${"| A | B \\\\|\n| --- | --- |\n| 1 | 2 \\\\|\n\n".length}`,
+    kind: "markdown",
+    source: "| A | B \\\\|\n| --- | --- |\n| 1 | 2 \\\\|\n\n",
+    renderMode: "markdown",
+  }]);
+  assert.deepEqual(evenParity.activeBlock, {
+    id: `t:${"| A | B \\\\|\n| --- | --- |\n| 1 | 2 \\\\|\n\n".length}-${evenParitySource.length}`,
+    kind: "markdown",
+    source: "After",
+    renderMode: "markdown",
   });
 });

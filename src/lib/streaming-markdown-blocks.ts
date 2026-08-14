@@ -62,6 +62,7 @@ type ParseResult =
   | { complete: false; block: InternalBlock };
 
 type FenceState = { marker: "`" | "~"; width: number; start: number };
+type FenceOpening = FenceState | { invalid: true; start: number };
 
 function scanLines(source: string): Line[] {
   const lines: Line[] = [];
@@ -100,10 +101,11 @@ function isThematicBreakLine(line: Line): boolean {
   return /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(lineBody(line).replace(/\r$/, ""));
 }
 
-function parseFenceOpening(line: Line): FenceState | null {
+function parseFenceOpening(line: Line): FenceOpening | null {
   const match = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(lineBody(line).replace(/\r$/, ""));
   if (!match) return null;
   const marker = match[2][0] as "`" | "~";
+  if (marker === "`" && match[3].includes("`")) return { invalid: true, start: line.start };
   return { marker, width: match[2].length, start: line.start };
 }
 
@@ -113,10 +115,26 @@ function isFenceClosingLine(line: Line, fence: FenceState): boolean {
   return !!match && match[2][0] === fence.marker && match[2].length >= fence.width;
 }
 
-function parseListMarker(line: Line): { ordered: boolean } | null {
+function parseListMarker(line: Line): { ordered: boolean; markerIndent: number; contentIndent: number } | null {
   const body = lineBody(line).replace(/\r$/, "");
-  if (/^ {0,3}[-+*]\s+/.test(body)) return { ordered: false };
-  if (/^ {0,3}\d+[.)]\s+/.test(body)) return { ordered: true };
+  const unordered = /^( {0,3})([-+*])(\s+).*$/.exec(body);
+  if (unordered) {
+    return {
+      ordered: false,
+      markerIndent: unordered[1].length,
+      contentIndent: unordered[1].length + unordered[2].length + unordered[3].length,
+    };
+  }
+
+  const ordered = /^( {0,3})(\d+[.)])(\s+).*$/.exec(body);
+  if (ordered) {
+    return {
+      ordered: true,
+      markerIndent: ordered[1].length,
+      contentIndent: ordered[1].length + ordered[2].length + ordered[3].length,
+    };
+  }
+
   return null;
 }
 
@@ -154,9 +172,18 @@ function splitTableCells(body: string): string[] {
   cells.push(current);
 
   if (body.startsWith("|")) cells.shift();
-  if (body.endsWith("|")) cells.pop();
+  if (hasUnescapedTerminalPipe(body)) cells.pop();
 
   return cells.map((cell) => cell.trim());
+}
+
+function hasUnescapedTerminalPipe(body: string): boolean {
+  if (!body.endsWith("|")) return false;
+  let backslashes = 0;
+  for (let index = body.length - 2; index >= 0 && body[index] === "\\"; index -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 0;
 }
 
 function getTableHeaderCellCount(line: Line): number | null {
@@ -208,6 +235,9 @@ function consumeStructuralBlankLine(line: Line, startIndex: number): { nextLineI
 function parseFence(source: string, lines: Line[], startIndex: number): ParseResult | null {
   const fence = parseFenceOpening(lines[startIndex]);
   if (!fence) return null;
+  if ("invalid" in fence) {
+    return { complete: false, block: makeMarkdownBlock(source, fence.start, source.length, "plain") };
+  }
   for (let index = startIndex + 1; index < lines.length; index += 1) {
     if (!isFenceClosingLine(lines[index], fence)) continue;
     if (!lines[index].hasNewline) {
@@ -288,6 +318,12 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
 
     const nextMarker = parseListMarker(lines[index]);
     if (nextMarker && nextMarker.ordered === marker.ordered) {
+      if (nextMarker.markerIndent >= marker.contentIndent) {
+        return {
+          complete: false,
+          block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain"),
+        };
+      }
       committedItems.push({
         start: itemStart,
         end: lines[index].start,
@@ -417,14 +453,32 @@ function toPublicBlock(turnId: string, block: InternalBlock): StreamingContentBl
       id: `${turnId}:${block.start}-item-${index}`,
       source: item.source,
     })),
-    activeItem: block.activeItem
+    ...(block.activeItem
       ? {
-        id: `${turnId}:${block.start}-item-${block.committedItems.length}`,
-        source: block.activeItem.source,
+        activeItem: {
+          id: `${turnId}:${block.start}-item-${block.committedItems.length}`,
+          source: block.activeItem.source,
+        },
       }
-      : undefined,
+      : {}),
     source: block.source,
   };
+}
+
+function finalizeSettledBlock(block: InternalBlock): InternalBlock {
+  if (block.kind !== "list" || !block.activeItem) return block;
+  return {
+    ...block,
+    committedItems: [...block.committedItems, block.activeItem],
+    activeItem: undefined,
+  };
+}
+
+function toSettledPublicBlock(turnId: string, block: InternalBlock): StreamingContentBlock {
+  const finalized = finalizeSettledBlock(block);
+  return finalized.kind === "markdown"
+    ? toPublicMarkdownBlock(turnId, finalized)
+    : toPublicBlock(turnId, finalized);
 }
 
 export function partitionStreamingMarkdown(
@@ -447,7 +501,7 @@ export function partitionStreamingMarkdown(
     if (!result.complete) {
       if (options.settled) {
         return {
-          committedBlocks: [...committedInternal, result.block].map((block) => toPublicMarkdownBlock(options.turnId, block)),
+          committedBlocks: [...committedInternal, result.block].map((block) => toSettledPublicBlock(options.turnId, block)),
           activeBlock: null,
           committedText: source,
         };
@@ -465,7 +519,7 @@ export function partitionStreamingMarkdown(
 
   return {
     committedBlocks: options.settled
-      ? committedInternal.map((block) => toPublicMarkdownBlock(options.turnId, block))
+      ? committedInternal.map((block) => toSettledPublicBlock(options.turnId, block))
       : committedInternal.map((block) => toPublicBlock(options.turnId, block)),
     activeBlock: null,
     committedText: options.settled ? source : committedInternal.map((block) => block.source).join(""),
