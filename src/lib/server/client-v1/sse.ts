@@ -5,6 +5,7 @@ import {
   subscribeRunStream,
 } from "@/lib/server/chat-stream-buffer";
 import type { StreamEvent } from "@/lib/stream-events";
+import type { ClientV1ErrorCode } from "./contract.ts";
 import type { JsonValue } from "./idempotency-store.ts";
 
 export type ClientStreamEvent =
@@ -187,7 +188,7 @@ function canonicalFailureTranslation(
 
 type SafeFailure = {
   status: number;
-  code: string;
+  code: ClientV1ErrorCode;
   message: string;
   retryable: boolean;
 };
