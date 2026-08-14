@@ -71,6 +71,8 @@ test("checkpoint direction can be drafted agentically without auto-continuing", 
   assert.match(detail, /Apply direction/);
   assert.match(detail, /Keep mine/);
   assert.match(detail, /maxLength=\{RESEARCH_DIRECTION_MAX_LENGTH\}/);
+  assert.match(detail, /research-refine-direction-count/);
+  assert.match(detail, /direction\.length\.toLocaleString\(\)\} \/ \{RESEARCH_DIRECTION_MAX_LENGTH\.toLocaleString\(\)/);
   assert.match(
     detail,
     /onClick=\{\(\) => void runAction\(\{ action: "refine", direction \}\)\}/,
@@ -80,6 +82,7 @@ test("checkpoint direction can be drafted agentically without auto-continuing", 
     /generateResearchRefineDirection\([\s\S]{0,800}?runAction\(\{ action: "refine"/,
   );
   assert.match(css, /\.research-desk-refine__actions \{/);
+  assert.match(css, /\.research-desk-refine__count \{/);
   assert.match(css, /\.research-desk-refine__suggestion \{/);
 });
 

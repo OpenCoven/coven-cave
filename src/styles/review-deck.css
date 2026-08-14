@@ -542,6 +542,13 @@
   outline: none;
 }
 .rd-note:focus-visible { border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong)); }
+.rd-character-count {
+  align-self: flex-end;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
 
 /* ── Checkpoints footer ── */
 .rd-checkpoints {
