@@ -27,45 +27,40 @@ assert.match(
   /forbidden peer: missing trusted local peer or verified remote ingress/,
   "tokenless peer failures should identify the missing authorization proof",
 );
-// cave-client-v1-admin (Task 3, tokenless half): the `!sidecarToken`
-// development branch's general `isTokenlessApiPeerAllowed` allowance admits
-// ANY verified remote ingress (mobile invite or allowlisted tailnet device),
-// but /api/client/v1/admin/* must never be reachable tokenlessly except from
-// a direct, unforwarded loopback peer — same admin boundary as the
-// configured-token remote-ingress exemption above. This must 403, not fall
-// through to nextWithMobileAccessMarker.
+// Client-v1 admin has no tokenless-development allowance. It needs an
+// explicit sidecar credential even from a direct loopback peer, because only
+// the sidecar credential may earn the trusted admin marker.
 assert.match(
   source,
-  /if \(remoteIngress && isClientV1AdminPath\(req\.nextUrl\.pathname\)\) \{\s*return jsonError\(403, "forbidden peer: client v1 admin requires a direct loopback peer"\);\s*\}/,
-  "the tokenless dev branch must 403 verified remote ingress reaching /api/client/v1/admin/* with a stable, gate-consistent peer-denial response",
+  /if \(isClientV1AdminPath\(req\.nextUrl\.pathname\)\) \{\s*return jsonError\(401, "unauthorized"\);\s*\}/,
+  "the tokenless development branch must deny every client-v1 admin request before granting the general peer allowance",
 );
 {
-  // Ordering guard: the admin+remoteIngress denial must run BEFORE the
-  // general tokenless peer allowance is granted (isTokenlessApiPeerAllowed),
-  // so a verified-remote-ingress admin request is denied by the specific
-  // admin check rather than ever reaching the general allow path.
+  // Ordering guard: tokenless admin denial must run before the general peer
+  // allowance, so neither a trusted direct loopback peer nor a verified
+  // mobile/tailnet ingress can inherit development access.
   const noTokenBranchIdx = source.indexOf("if (!sidecarToken) {");
   const adminDenialIdx = source.indexOf(
-    'return jsonError(403, "forbidden peer: client v1 admin requires a direct loopback peer");',
+    'return jsonError(401, "unauthorized");',
+    noTokenBranchIdx,
   );
   const generalAllowanceIdx = source.indexOf(
     "if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {",
   );
   assert.ok(noTokenBranchIdx > 0, "the tokenless dev branch should be present");
-  assert.ok(adminDenialIdx > noTokenBranchIdx, "the admin denial must live inside the tokenless dev branch");
+  assert.ok(
+    adminDenialIdx > noTokenBranchIdx,
+    "the admin denial must live inside the tokenless development branch",
+  );
   assert.ok(
     adminDenialIdx < generalAllowanceIdx,
-    "tokenless admin + remote ingress must be denied BEFORE the general tokenless peer allowance runs",
+    "tokenless admin must be denied BEFORE the general tokenless peer allowance runs",
   );
 }
-// Preserve tokenless trusted direct-loopback development access to
-// client-v1 admin: the admin denial must be gated on remoteIngress, never on
-// trustedLocalPeer alone, so a genuinely local dev caller (remoteIngress ===
-// false) still falls through to the general allowance and succeeds.
 assert.doesNotMatch(
   source,
-  /if \(\(remoteIngress \|\| trustedLocalPeer\) && isClientV1AdminPath/,
-  "the tokenless admin denial must not also reject a trusted local (non-remote) peer",
+  /if \(remoteIngress && isClientV1AdminPath/,
+  "the tokenless admin denial must not leave a remote-only loophole for trusted loopback peers",
 );
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
@@ -144,19 +139,13 @@ assert.match(
   /\(!sidecarToken \|\| mobileAccessVerified\) &&\s*isProductionWebhookGet/,
   "the webhook-GET missing-source guard must cover tokenless servers and mobile-cookie-authenticated requests",
 );
-// cave-client-v1-admin: the final sidecar gate's remote-ingress exemption
-// must explicitly exclude isClientV1AdminPath — a verified mobile invite or
-// allowlisted tailnet device (remoteIngress === true) must still 401 an
-// unauthenticated /api/client/v1/admin/* request. This is a DIFFERENT carve-out
-// than the earlier non-admin client-v1 marker/bearer bypass above (which
-// already excludes admin paths via its own `!isClientV1AdminPath` guard):
-// admin routes get no bypass at all and fall through to this exact
-// sidecar-token-or-401 condition, same as every pre-existing non-client-v1
-// route.
-assert.doesNotMatch(
+// Client-v1 admin must have its own explicit sidecar guard before the generic
+// mobile-access final gate. A valid mobile credential must not reach the
+// trusted admin-marker forwarding branch.
+assert.match(
   source,
-  /if \(!sidecarAuthenticated && !remoteIngress\) \{/,
-  "the final sidecar gate must not use the bare pre-admin-carve-out condition — it must also 401 verified remote ingress for /api/client/v1/admin/*",
+  /if \(isClientV1AdminPath\(req\.nextUrl\.pathname\) && !sidecarAuthenticated\) \{\s*return jsonError\(401, "unauthorized"\);\s*\}/,
+  "client-v1 admin must explicitly require sidecarAuthenticated before mobile access can take the generic final gate",
 );
 
 // Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the

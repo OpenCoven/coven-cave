@@ -484,25 +484,24 @@ export async function proxy(req: NextRequest) {
     if (process.env.COVEN_CAVE_BUNDLE === "1") {
       return jsonError(500, "missing sidecar auth token");
     }
-    // `/api/client/v1/admin/*` is carved out of the tokenless remote-ingress
-    // allowance below, same as it is carved out of the configured-token
-    // remote-ingress exemption further down (via `isClientV1AdminPath`). A
-    // verified mobile invite or allowlisted tailnet device is still not
-    // loopback, and admin must stay reachable tokenlessly ONLY from a direct,
-    // unforwarded loopback peer during local development — never over
-    // verified remote ingress. This check runs BEFORE the general
-    // `isTokenlessApiPeerAllowed` allowance so admin+remoteIngress is denied
-    // even though that general check alone would let it through.
-    if (remoteIngress && isClientV1AdminPath(req.nextUrl.pathname)) {
-      return jsonError(403, "forbidden peer: client v1 admin requires a direct loopback peer");
+    // Admin never uses the tokenless-development allowance. Unlike the
+    // non-admin native facade, it has no route-level bearer alternative: a
+    // configured sidecar token and an explicit matching credential are always
+    // required before the proxy can stamp its trusted admin marker.
+    if (isClientV1AdminPath(req.nextUrl.pathname)) {
+      return jsonError(401, "unauthorized");
     }
     if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {
       return jsonError(403, "forbidden peer: missing trusted local peer or verified remote ingress");
     }
-    if (isClientV1AdminPath(req.nextUrl.pathname)) {
-      return nextWithClientV1AdminMarker(req);
-    }
     return nextWithMobileAccessMarker(req, remoteIngress);
+  }
+
+  // A mobile invite authenticates remote mobile access, not the desktop
+  // sidecar's administrative authority. Keep client-v1 admin behind the
+  // explicit sidecar credential even when a valid mobile bearer is present.
+  if (isClientV1AdminPath(req.nextUrl.pathname) && !sidecarAuthenticated) {
+    return jsonError(401, "unauthorized");
   }
 
   if (!sidecarAuthenticated && !mobileAccessVerified) {
@@ -514,13 +513,8 @@ export async function proxy(req: NextRequest) {
     // "packaged app cannot pair" failure (cave-gzje). CSRF stays covered: the
     // Origin/Referer gates above ran for every non-header-trusted request.
     //
-    // `/api/client/v1/admin/*` is deliberately carved OUT of that remote-ingress
-    // exemption: it is not one of the earlier client-v1 non-admin
-    // marker/bearer-bypass routes (that branch above already excludes admin
-    // paths via `isClientV1AdminPath`), and it must never be reachable by a
-    // verified mobile invite or tailnet peer alone. Admin stays behind the
-    // private sidecar token, full stop — the same as every route did before
-    // remote ingress existed.
+    // Client-v1 admin was rejected above unless sidecarAuthenticated, so this
+    // mobile credential exemption remains limited to non-admin routes.
     return jsonError(401, "unauthorized");
   }
 
