@@ -138,7 +138,11 @@ assert.match(
 // The create payload links the bead back to the PR twice over: externalRef
 // gh-<n> for the visibility layer, and the PR URL in the description for the
 // ready-output ref join (external_ref is absent from `bd ready --json`).
-assert.match(view, /action: "create",\s*title: pr\.title/, "bead titled after the PR");
+assert.match(
+  view,
+  /action: "create",\s*surface: "shared",\s*title: pr\.title/,
+  "PR filing sets shared platform ownership and titles the bead after the PR",
+);
 assert.match(view, /description: `Filed from unlinked PR #\$\{pr\.number\} — \$\{pr\.url\}`/);
 assert.match(view, /externalRef: `gh-\$\{pr\.number\}`/, "externalRef uses the gh-<n> form");
 assert.match(view, /labels: \["from-pr"\]/);
@@ -217,12 +221,16 @@ assert.match(view, /action: "claim", id, assignee: familiar\.id, projectRoot/, "
 // `--claim`; an assignee becomes explicit --assignee/--status flags (both
 // verified against `bd update -h`).
 const beadsRoute = readFileSync(new URL("../app/api/beads/route.ts", import.meta.url), "utf8");
-assert.match(beadsRoute, /assignee\?: string/, "BeadsPostBody grew the optional assignee");
 assert.match(
   beadsRoute,
-  /\["update", id, "--assignee", assignee, "--status", "in_progress", "--json"\]/,
+  /const assignee = readOptionalString\(parsed\.body\.assignee, "assignee"\);/,
+  "Beads claim reads the optional assignee through the validator",
+);
+assert.match(
+  beadsRoute,
+  /\["update", id\.value, "--assignee", assignee\.value, "--status", "in_progress", "--json"\]/,
   "assignee claim builds explicit update flags",
 );
-assert.match(beadsRoute, /\["update", id, "--claim", "--json"\]/, "bare claim is unchanged");
+assert.match(beadsRoute, /\["update", id\.value, "--claim", "--json"\]/, "bare claim is unchanged");
 
 console.log("familiar-work-queue-view.test.ts: ok");

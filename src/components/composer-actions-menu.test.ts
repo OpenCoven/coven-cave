@@ -44,8 +44,10 @@ assert.match(
   /export function usePopoverInitialFocus\([\s\S]*?requestAnimationFrame[\s\S]*?querySelector<HTMLElement>\(panelSelector\)[\s\S]*?button:not\(:disabled\)[\s\S]*?\.focus\(\)[\s\S]*?cancelAnimationFrame/,
   "the shared focus helper scopes lookup to the panel, focuses an enabled control, and cancels stale work",
 );
-assert.match(actions, /ariaLabel\s*=\s*"Chat options"|aria-label="Chat options"/);
-assert.match(actions, /title=\{\`Chat options · \$\{context\.summary\}\`\}/);
+assert.match(actions, /triggerVariant\?: "icon" \| "tools"/);
+assert.match(actions, /aria-label=\{isToolsTrigger \? "Tools" : "Chat options"\}/);
+assert.match(actions, /ariaLabel=\{isToolsTrigger \? "Tools" : "Chat options"\}/);
+assert.match(actions, /title=\{\`\$\{isToolsTrigger \? "Tools" : "Chat options"\} · \$\{context\.summary\}\`\}/);
 assert.match(
   actions,
   /showIndicator\s*\?\s*<span className="composer-actions__indicator"/,

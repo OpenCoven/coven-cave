@@ -49,6 +49,24 @@ export type AfsDiff = {
   truncated: boolean;
 };
 
+export type AfsFileDiff = {
+  path: string;
+  patch: string;
+  truncated: boolean;
+  binary: boolean;
+};
+
+export type AfsTimelineToolCall = {
+  id: number;
+  name: string;
+  parameters: unknown;
+  result: unknown;
+  error: unknown;
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+};
+
 export type AfsTimelineEntry = {
   seq: number;
   op: string;
@@ -61,6 +79,7 @@ export type AfsTimelineEntry = {
   beadId?: string | null;
   turn?: number | null;
   toolCallId?: number | null;
+  toolCall?: AfsTimelineToolCall | null;
 };
 
 export type AfsTimeline = {
@@ -80,6 +99,18 @@ export type AfsSession = {
     beadId?: string | null;
   };
   changes: AfsChangeCounts;
+};
+
+/** Daemon-owned result from `afs.session.commit` with `dryRun: true`. */
+export type AfsCommitPreview = {
+  id: string;
+  branch: string;
+  worktreePath: string;
+  provenanceHighWater: number;
+  counts: AfsChangeCounts;
+  files: number;
+  dryRun: true;
+  wouldCommit: true;
 };
 
 /**
@@ -180,41 +211,6 @@ export function defaultCommitBranch(session: Pick<AfsSession, "id" | "name">): s
   return `afs/${session.name && session.name.length > 0 ? session.name : session.id}`;
 }
 
-/**
- * The commit preview.
- *
- * This is derived from the diff change set, NOT from a daemon dry run — the
- * commit route has no dryRun mode yet (upstream bead coven-y7a). The
- * distinction matters and is surfaced rather than hidden: counts describe the
- * change set, but they do not exercise base verification, path-escape
- * rejection, the copy-up cap, or branch conflicts, so a clean-looking preview
- * can still be refused. `exact: false` is what the UI uses to say so.
- */
-export type CommitPreview = {
-  branch: string;
-  counts: AfsChangeCounts;
-  exact: boolean;
-  caveat: string;
-};
-
-export function commitPreview(
-  session: Pick<AfsSession, "id" | "name">,
-  diff: Pick<AfsDiff, "counts">,
-  branchOverride?: string,
-): CommitPreview {
-  const branch =
-    branchOverride && branchOverride.trim().length > 0
-      ? branchOverride.trim()
-      : defaultCommitBranch(session);
-  return {
-    branch,
-    counts: diff.counts,
-    exact: false,
-    caveat:
-      "Preview is derived from the change set. It does not check whether the base has moved, whether a path would escape the repository, or whether the branch already exists — commit can still be refused.",
-  };
-}
-
 /** Unattributed changes are marked, never hidden (DESIGN.md §4.4). */
 export function unattributedPaths(diff: Pick<AfsDiff, "changes">): string[] {
   return diff.changes.filter((change) => change.attribution === "unknown").map((change) => change.path);
@@ -244,6 +240,7 @@ export function groupTimelineByTurn(entries: readonly AfsTimelineEntry[]): Timel
       index.set(turn, group);
       groups.push(group);
     }
+
     group.entries.push(entry);
   }
   // Unbound entries sort last; bound turns keep first-seen order.
@@ -253,6 +250,18 @@ export function groupTimelineByTurn(entries: readonly AfsTimelineEntry[]): Timel
     if (right.turn === null) return -1;
     return left.turn - right.turn;
   });
+}
+
+/** Merge cursor pages by the daemon's stable sequence, keeping the newest row. */
+export function mergeTimelinePages(current: AfsTimeline, incoming: AfsTimeline): AfsTimeline {
+  const entries = new Map<number, AfsTimelineEntry>();
+  for (const entry of current.entries) entries.set(entry.seq, entry);
+  for (const entry of incoming.entries) entries.set(entry.seq, entry);
+  return {
+    entries: [...entries.values()].sort((left, right) => left.seq - right.seq),
+    nextCursor: incoming.nextCursor,
+    hasMore: incoming.hasMore,
+  };
 }
 
 /** A tree node for the Changes pane. */

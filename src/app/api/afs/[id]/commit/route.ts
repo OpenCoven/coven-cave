@@ -10,15 +10,15 @@ type CommitBody = {
   branch?: string | null;
   message?: string | null;
   coAuthors?: string[] | null;
+  dryRun?: boolean | null;
 };
 
 /**
  * Materialize a delta into a signed git branch.
  *
  * Commit is an explicit operator action: Cave never materializes
- * automatically, so this route exists only behind a deliberate click. There
- * is no dryRun mode on the daemon yet (bead coven-y7a), which is why the pane
- * previews from diff counts and says so.
+ * automatically, so both preview and commit exist only behind deliberate
+ * operator actions.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const forbidden = rejectNonLocalRequest(req);
@@ -44,6 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       ...(branch ? { branch } : {}),
       ...(message ? { message } : {}),
       ...(coAuthors.length > 0 ? { coAuthors } : {}),
+      ...(typeof body.dryRun === "boolean" ? { dryRun: body.dryRun } : {}),
     },
     // Materialization walks the change set and shells out to git; the default
     // 4s budget is too tight for a real repository.

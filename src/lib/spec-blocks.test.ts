@@ -26,6 +26,32 @@ const nested = sliceSpecBlocks(
 assert.equal(nested[0].kind, "spec");
 assert.match(nested[0].kind === "spec" ? nested[0].spec.markdown : "", /```ts/);
 
+const literalExample = [
+  "````markdown",
+  '```spec title="Example only"',
+  "# This must stay literal",
+  "```",
+  "````",
+].join("\n");
+assert.deepEqual(
+  sliceSpecBlocks(literalExample),
+  [{ kind: "text", text: literalExample }],
+  "a spec fence inside another Markdown fence stays literal example text",
+);
+
+const tildeExample = [
+  "~~~markdown",
+  '```spec title="Example only"',
+  "# This must also stay literal",
+  "```",
+  "~~~",
+].join("\n");
+assert.deepEqual(
+  sliceSpecBlocks(tildeExample),
+  [{ kind: "text", text: tildeExample }],
+  "a spec fence inside a tilde fence stays literal example text",
+);
+
 assert.deepEqual(sliceSpecBlocks("```spec\n\n```"), [
   { kind: "text", text: "```spec\n\n```" },
 ]);
