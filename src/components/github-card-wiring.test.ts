@@ -18,9 +18,14 @@ assert.match(
 assert.match(chatView, /import \{ GitHubCard \} from "@\/components\/github-card"/, "chat-view imports GitHubCard");
 assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→github splitter");
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
+// Pin the NESTING ORDER, not each call's arity — same correction the sibling
+// splitter pins already took (28166ad01). splitSegmentsForSpecs gained an
+// onOpenUrl argument, so requiring the call to close right after the seed array
+// broke a pin whose subject (github after artifacts, images intact across both
+// boundaries) never changed (cave-ktvy0).
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]/,
   "settled path keeps GitHub splitting after artifacts while image groups remain intact across both boundaries",
 );
 assert.match(
