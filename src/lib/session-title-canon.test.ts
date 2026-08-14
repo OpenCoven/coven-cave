@@ -203,7 +203,7 @@ assert.equal(
 
 // ── chat/send route titles sessions from the user prompt, early ──
 const route = await readFile(
-  new URL("../app/api/chat/send/route.ts", import.meta.url),
+  new URL("./server/chat-send-service.ts", import.meta.url),
   "utf8",
 );
 assert.match(

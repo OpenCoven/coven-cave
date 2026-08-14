@@ -32,6 +32,7 @@ export const CAVE_PORTS = Object.freeze({
 /** @typedef {keyof typeof CAVE_PORTS} CaveChannel */
 
 export const CAVE_PORT_ENV = "COVEN_CAVE_PORT";
+export const CAVE_E2E_PORT_ENV = "COVEN_CAVE_E2E_PORT";
 
 /**
  * A port is only usable if it is a whole number in the TCP range. Port 0 is
@@ -55,18 +56,23 @@ export function parsePort(raw) {
 /**
  * The port for a channel, honouring an explicit override.
  *
- * COVEN_CAVE_PORT wins over PORT so an operator can pin Cave specifically
- * without disturbing a PORT that some parent process set for its own reasons —
- * pnpm exports its whole config to children as env vars, and inheriting one of
- * those by accident is exactly how an "undedicated" port comes back. An
- * unparseable override is ignored rather than fatal: a typo in a shell profile
- * should not stop the app from starting, and the resolved port is logged by
- * every caller.
+ * Dev/production keep honoring COVEN_CAVE_PORT over PORT so an operator can pin
+ * Cave specifically without disturbing a PORT that some parent process set for
+ * its own reasons — pnpm exports its whole config to children as env vars, and
+ * inheriting one of those by accident is exactly how an "undedicated" port comes
+ * back. E2E is stricter: it ignores both generic env vars and honors only
+ * COVEN_CAVE_E2E_PORT, so `pnpm test:e2e` never latches onto a maintainer's
+ * inherited PORT that points at an already-running Cave. Any unparseable
+ * override is ignored rather than fatal: a typo in a shell profile should not
+ * stop the app from starting, and the resolved port is logged by every caller.
  */
 export function resolvePort(channel, env = process.env) {
   const fallback = CAVE_PORTS[channel];
   if (!isUsablePort(fallback)) {
     throw new Error(`unknown Cave channel: ${String(channel)}`);
+  }
+  if (channel === "e2e") {
+    return parsePort(env?.[CAVE_E2E_PORT_ENV]) ?? fallback;
   }
   return parsePort(env?.[CAVE_PORT_ENV]) ?? parsePort(env?.PORT) ?? fallback;
 }

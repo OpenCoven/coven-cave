@@ -503,23 +503,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   // Client writers cannot forge harness telemetry onto assistant/system turns.
   const safeTurns = sanitizeClientTurns(turns);
-  const existingRaw = await loadConversation(id);
-  const existing = existingRaw ? sanitizeConversationMetadata(existingRaw) : null;
-  const merged = [...(existing?.turns ?? []), ...safeTurns];
-  const bounds = checkTurnBounds(merged);
-  if (bounds) return jsonError(bounds.error, bounds.status);
-  const conversation = buildConversation({
-    id,
-    body,
-    existing,
-    turns: merged,
+  // Append is a read-modify-write (load → merge onto existing turns → save):
+  // it must run under the SAME per-conversation lock as PUT/PATCH/DELETE, or
+  // an append racing a client PATCH (or a concurrent append) can read a
+  // snapshot that's stale by the time it saves and silently drop the other
+  // write's turns/metadata. Existence is (re)checked with a fresh load taken
+  // *inside* the lock, never from a value read before it was acquired.
+  return withConversationLock(id, async () => {
+    const existingRaw = await loadConversation(id);
+    const existing = existingRaw ? sanitizeConversationMetadata(existingRaw) : null;
+    const merged = [...(existing?.turns ?? []), ...safeTurns];
+    const bounds = checkTurnBounds(merged);
+    if (bounds) return jsonError(bounds.error, bounds.status);
+    const conversation = buildConversation({
+      id,
+      body,
+      existing,
+      turns: merged,
+    });
+    if (!conversation) {
+      return jsonError("familiarId and harness are required for new history", 400);
+    }
+    await saveConversation(conversation);
+    await recordSessionFamiliar(id, conversation.familiarId);
+    return NextResponse.json({ ok: true, conversation });
   });
-  if (!conversation) {
-    return jsonError("familiarId and harness are required for new history", 400);
-  }
-  await saveConversation(conversation);
-  await recordSessionFamiliar(id, conversation.familiarId);
-  return NextResponse.json({ ok: true, conversation });
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -538,15 +546,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const safeTurns = sanitizeClientTurns(turns);
   const bounds = checkTurnBounds(safeTurns);
   if (bounds) return jsonError(bounds.error, bounds.status);
-  const existingRaw = await loadConversation(id);
-  const existing = existingRaw ? sanitizeConversationMetadata(existingRaw) : null;
-  const conversation = buildConversation({ id, body, existing, turns: safeTurns });
-  if (!conversation) {
-    return jsonError("familiarId and harness are required", 400);
-  }
-  await saveConversation(conversation);
-  await recordSessionFamiliar(id, conversation.familiarId);
-  return NextResponse.json({ ok: true, conversation });
+  // Replace-history is also a read-modify-write (load existing metadata →
+  // rebuild → save): same per-conversation lock as append/PATCH/DELETE so a
+  // PUT can't observe metadata that a concurrent writer is mid-way through
+  // replacing, and vice versa.
+  return withConversationLock(id, async () => {
+    const existingRaw = await loadConversation(id);
+    const existing = existingRaw ? sanitizeConversationMetadata(existingRaw) : null;
+    const conversation = buildConversation({ id, body, existing, turns: safeTurns });
+    if (!conversation) {
+      return jsonError("familiarId and harness are required", 400);
+    }
+    await saveConversation(conversation);
+    await recordSessionFamiliar(id, conversation.familiarId);
+    return NextResponse.json({ ok: true, conversation });
+  });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -639,20 +653,35 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   // resurfaces in the rail (correct — the data is real), and a truly-empty
   // delete leaves nothing to hide since local session rows derive from the
   // conversation files themselves.
+  //
+  // The empty-check and the delete are a read-then-act pair — they must run
+  // under the SAME per-conversation lock as append/POST/PUT/PATCH, with
+  // existence rechecked via a fresh load taken *inside* the lock. Without
+  // that, a concurrent append could land between the read and the delete
+  // (this handler would then delete turns it never saw) or between the
+  // delete and this handler observing "missing" (a stale read could still
+  // fire the delete against a file an append just resurrected as non-empty).
   if (new URL(req.url).searchParams.get("ifEmpty") === "1") {
-    const existing = await loadConversation(id);
-    if (!existing || existing.turns.length > 0) {
-      return NextResponse.json({ ok: true, deleted: false });
-    }
-    const deleted = await deleteConversation(id);
-    return NextResponse.json({ ok: true, deleted });
+    return withConversationLock(id, async () => {
+      const existing = await loadConversation(id);
+      if (!existing || existing.turns.length > 0) {
+        return NextResponse.json({ ok: true, deleted: false });
+      }
+      const deleted = await deleteConversation(id);
+      return NextResponse.json({ ok: true, deleted });
+    });
   }
 
   // Default: an explicit user-initiated delete. Sacrifice keeps a
   // recreated-later file (e.g. a stale client retrying) from resurrecting a
   // session the user deliberately removed — other callers depend on this.
-  const deleted = await deleteConversation(id);
-  const sacrificedAt = await sacrificeSessionLocal(id);
-  const unlinkedCards = await unlinkSessionFromCards(id);
-  return NextResponse.json({ ok: true, deleted, sacrificedAt, unlinkedCards });
+  // Locked for the same reason as ?ifEmpty=1: this must serialize against a
+  // concurrent append/POST/PUT so neither write is lost and no append can
+  // race the delete and resurrect the file mid-request.
+  return withConversationLock(id, async () => {
+    const deleted = await deleteConversation(id);
+    const sacrificedAt = await sacrificeSessionLocal(id);
+    const unlinkedCards = await unlinkSessionFromCards(id);
+    return NextResponse.json({ ok: true, deleted, sacrificedAt, unlinkedCards });
+  });
 }

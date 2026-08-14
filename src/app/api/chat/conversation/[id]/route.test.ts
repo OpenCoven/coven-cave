@@ -65,10 +65,19 @@ function paramsFor(id: string) {
 
 const { DELETE, GET, PATCH } = await import("./route.ts");
 const { PUT, POST } = await import("./route.ts");
+const { withConversationLock, loadConversation, saveConversation } = await import("@/lib/cave-conversations");
 
 function writeReq(bodyObj: unknown) {
   return new Request("http://test/api/chat/conversation/x", {
     method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(bodyObj),
+  });
+}
+
+function postReq(bodyObj: unknown) {
+  return new Request("http://test/api/chat/conversation/x", {
+    method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(bodyObj),
   });
@@ -80,6 +89,29 @@ function patchReq(bodyObj: unknown) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(bodyObj),
   });
+}
+
+/**
+ * Deterministic (no-sleep) barrier: hold `withConversationLock(id, ...)`
+ * open until every handler call under test has been *enqueued* (each
+ * `withConversationLock` call synchronously chains onto the shared
+ * per-conversation tail before its first `await`), then release. Execution
+ * order after release is exactly enqueue order — proven by construction,
+ * never by timing.
+ */
+function openLockBarrier(id: string) {
+  let release: () => void;
+  let markEntered: () => void;
+  const entered = new Promise<void>((resolve) => {
+    markEntered = resolve;
+  });
+  const hold = withConversationLock(id, async () => {
+    markEntered();
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  });
+  return { entered, hold, release: () => release() };
 }
 
 test("DELETE ?ifEmpty=1 on an empty conversation deletes it and does NOT sacrifice", async () => {
@@ -666,3 +698,153 @@ test("GET redacts legacy secret-bearing response metadata and model intent", asy
   assert.equal(json.conversation.turns[0].responseMetadata.model, "anthropic/claude-sonnet-4-6");
   assert.equal(json.conversation.modelIntent.reason, undefined);
 });
+
+// ── Deterministic per-conversation-lock race coverage (cave-cl4k9 fix) ──────
+// POST (append) / PUT (replace history) / DELETE now run their
+// load-modify-save (or read-then-delete) span inside the SAME
+// `withConversationLock(id, ...)` the internal PATCH handler already used —
+// so none of them can lose a concurrent write or resurrect a conversation a
+// racing DELETE just removed. Every scenario below uses `openLockBarrier` to
+// fix execution order by enqueue order, never by timing.
+
+test("POST append racing a queued PATCH modelIntent write cannot lose either write", async () => {
+  const id = "sess-race-post-patch";
+  writeConversation(id, [{ id: "t0", role: "user", text: "seed", createdAt: "2026-06-01T00:00:00Z" }]);
+
+  const barrier = openLockBarrier(id);
+  await barrier.entered;
+
+  const postPromise = POST(
+    postReq({ turn: { role: "user", text: "appended while locked" } }),
+    paramsFor(id),
+  );
+  const patchPromise = PATCH(
+    patchReq({ modelIntent: { model: "anthropic/claude-haiku-4-5", source: "session" } }),
+    paramsFor(id),
+  );
+
+  barrier.release();
+  await barrier.hold;
+  const postRes = await postPromise;
+  const patchRes = await patchPromise;
+  assert.equal(postRes.status, 200, "the append must not fail because of the racing PATCH");
+  assert.equal(patchRes.status, 200, "the PATCH must not fail because of the racing append");
+
+  const final = JSON.parse(readFileSync(conversationPath(id), "utf8"));
+  assert.equal(final.turns.length, 2, "the appended turn must not be lost to the racing PATCH");
+  assert.equal(final.turns[1].text, "appended while locked");
+  assert.equal(
+    final.modelIntent?.model,
+    "anthropic/claude-haiku-4-5",
+    "the PATCH's modelIntent must not be lost to the racing append",
+  );
+});
+
+test("PUT replace-history racing a queued PATCH modelIntent write cannot lose either write", async () => {
+  const id = "sess-race-put-patch";
+  writeConversation(id, [{ id: "t0", role: "user", text: "seed", createdAt: "2026-06-01T00:00:00Z" }]);
+
+  const barrier = openLockBarrier(id);
+  await barrier.entered;
+
+  const putPromise = PUT(
+    writeReq({ turns: [{ role: "user", text: "replaced while locked" }] }),
+    paramsFor(id),
+  );
+  const patchPromise = PATCH(
+    patchReq({ modelIntent: { model: "anthropic/claude-haiku-4-5", source: "session" } }),
+    paramsFor(id),
+  );
+
+  barrier.release();
+  await barrier.hold;
+  const putRes = await putPromise;
+  const patchRes = await patchPromise;
+  assert.equal(putRes.status, 200);
+  assert.equal(patchRes.status, 200);
+
+  const final = JSON.parse(readFileSync(conversationPath(id), "utf8"));
+  assert.equal(final.turns.length, 1, "PUT replaces the turn history");
+  assert.equal(final.turns[0].text, "replaced while locked");
+  assert.equal(
+    final.modelIntent?.model,
+    "anthropic/claude-haiku-4-5",
+    "the PATCH's modelIntent must survive a racing PUT (buildConversation preserves existing.modelIntent)",
+  );
+});
+
+test("DELETE ?ifEmpty=1 rechecks emptiness under the lock and refuses to delete a conversation an in-flight append just filled", async () => {
+  const id = "sess-race-ifempty-recheck";
+  writeConversation(id, []);
+
+  const barrier = openLockBarrier(id);
+  await barrier.entered;
+
+  // Registered first (direct `withConversationLock` call, zero preceding
+  // awaits, so its chain position is fixed at the moment it's called here)
+  // to deterministically represent "an append lands first" — e.g. the
+  // shared appendTurn/voice path, or another client's POST — without
+  // depending on the real POST handler's own internal `await params`
+  // resolving before this call, which would make relative ordering
+  // timing-dependent instead of proven.
+  const conflictingAppendPromise = withConversationLock(id, async () => {
+    const conv = await loadConversation(id);
+    assert.ok(conv, "the conversation must still exist for the conflicting append to land on");
+    conv.turns.push({
+      id: "t-race",
+      role: "user",
+      text: "landed just before the ifEmpty check",
+      createdAt: "2026-06-09T12:00:00Z",
+    });
+    await saveConversation(conv);
+  });
+  // Registered second: the real ifEmpty DELETE handler, queued behind the
+  // conflicting append above. If its emptiness check were read BEFORE
+  // acquiring the lock (the pre-fix bug), it would act on a stale "empty"
+  // snapshot and delete turns it never saw.
+  const deletePromise = DELETE(deleteReq("?ifEmpty=1"), paramsFor(id));
+
+  barrier.release();
+  await barrier.hold;
+  await conflictingAppendPromise;
+  const deleteRes = await deletePromise;
+  const deleteJson = await deleteRes.json();
+
+  assert.deepEqual(
+    deleteJson,
+    { ok: true, deleted: false },
+    "the recheck-under-lock must see the freshly appended turn and refuse to delete",
+  );
+  assert.equal(existsSync(conversationPath(id)), true, "the conversation and its new turn must survive");
+  const final = JSON.parse(readFileSync(conversationPath(id), "utf8"));
+  assert.equal(final.turns.length, 1);
+  assert.equal(final.turns[0].text, "landed just before the ifEmpty check");
+});
+
+// --- Source contract: append/replace/delete are read-modify-write and must
+// never bypass the per-conversation lock (cave-cl4k9 fix regression guard).
+{
+  const routeSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const matches = [...routeSource.matchAll(/export async function (\w+)\(/g)];
+  const bodies: Record<string, string> = {};
+  for (let i = 0; i < matches.length; i++) {
+    const name = matches[i][1];
+    const start = matches[i].index ?? 0;
+    const end = i + 1 < matches.length ? matches[i + 1].index ?? routeSource.length : routeSource.length;
+    bodies[name] = routeSource.slice(start, end);
+  }
+  for (const name of ["POST", "PUT", "PATCH", "DELETE"]) {
+    const body = bodies[name];
+    assert.ok(body, `route.ts must still export ${name}`);
+    if (/\b(saveConversation|deleteConversation)\(/.test(body)) {
+      assert.match(
+        body,
+        /withConversationLock\(/,
+        `${name} performs a read-modify-write (save/delete) and must run it inside withConversationLock — ` +
+          `an unlocked save/delete here can lose a concurrent write or resurrect a conversation a racing ` +
+          `DELETE just removed`,
+      );
+    }
+  }
+}
+console.log("conversation/[id]/route.test.ts: lock race + source contract OK");

@@ -4,6 +4,7 @@ import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
+import { withFamiliarLifecycleLock } from "./server/familiar-lifecycle-lock.ts";
 import {
   reconcileHubAccessTokenForOrigin,
   rememberHubAccessToken,
@@ -594,21 +595,118 @@ function mergeFamiliarConfigs(
 // Settings surface fires overlapping config PATCHes (palette-by-familiar loops,
 // daemon + add-on toggles), so every config writer serializes its
 // read-modify-write here — same pattern as stateMutex for cave-state.json.
+//
+// OUTER of that in-process serialization sits the DEDICATED cross-process
+// familiar-lifecycle mutex (`@/lib/server/familiar-lifecycle-lock.ts`,
+// cave-client-v1 plan Task 7 followup): every config write goes through
+// `withConfigLock`, and familiar config is a config write, so wrapping THIS
+// one choke point covers every familiar add/edit/remove without touching
+// each call site individually. It is deliberately not scoped to
+// familiar-only writes — see that module's doc comment for why serializing
+// ordinary (non-familiar) config writes through the same lock is an accepted
+// tradeoff, not a bug: correctness (no familiar-lifecycle race) comes first,
+// and config writes are already fully serialized with each other via
+// `configMutex` regardless.
+//
+// `withFamiliarLifecycleGuard` (below) acquires this SAME dedicated lock as
+// its own outermost step and hands a preloaded `CaveConfig` snapshot to ITS
+// callback — the reconciliation lock this function also touches
+// (`withCaveHomeReconciledStore`) is always acquired-and-released for just
+// one load or one save, never held across a guard's callback, so a
+// `withFamiliarLifecycleGuard` callback (a client conversation create/PATCH/
+// DELETE effect) can freely call `loadConfig`/`loadProjects`/`loadState`
+// without deadlocking on this lock — those only ever touch the separate
+// reconciliation lock, never this dedicated one.
 let configMutex: Promise<unknown> = Promise.resolve();
 async function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
-  const previous = configMutex;
-  let release!: () => void;
-  configMutex = new Promise<void>((resolve) => { release = resolve; });
-  try {
-    await previous.catch(() => {});
-    return await withCaveHomeReconciledStore("cave-config.json", fn);
-  } finally {
-    release();
-  }
+  return withFamiliarLifecycleLock({ storePath: CONFIG_PATH, label: "cave-config" }, async () => {
+    const previous = configMutex;
+    let release!: () => void;
+    configMutex = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      await previous.catch(() => {});
+      return await withCaveHomeReconciledStore("cave-config.json", fn);
+    } finally {
+      release();
+    }
+  });
 }
 
-export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
-  return withConfigLock(async () => {
+/**
+ * The read-only snapshot shape `withFamiliarLifecycleGuard`'s callback
+ * receives — the full config, since a familiar binding lookup
+ * (`bindingFor`, `@/lib/server/voice-chat-create.ts`) needs the whole
+ * `familiars` map plus `defaults`/`multiHost` to resolve one familiar's
+ * effective runtime.
+ */
+export type FamiliarLifecycleSnapshot = CaveConfig;
+
+/**
+ * Serializes a familiar's LIFECYCLE (create/edit/remove — every write through
+ * `withConfigLock`) together with the EFFECT it gates (a client conversation
+ * create/PATCH/DELETE that has resolved, or is about to resolve, a binding
+ * for that familiar — cave-client-v1 plan Task 7 followup) against
+ * concurrent familiar REMOVAL, closing the race where a familiar is removed
+ * between a binding lookup and the mutation it was meant to gate.
+ *
+ * Holds the DEDICATED cross-process `withFamiliarLifecycleLock`
+ * (`@/lib/server/familiar-lifecycle-lock.ts`) for `callback`'s ENTIRE
+ * duration, and `withConfigLock` (used by every familiar/config write —
+ * `saveConfig`, plugin install/uninstall, role upserts, ...) acquires the
+ * exact SAME dedicated lock as its own outermost step. Concretely:
+ *
+ *   - A familiar removal requested while `callback` is still running queues
+ *     behind it on the SAME dedicated lock, and only takes effect once
+ *     `callback` has fully returned.
+ *   - A conversation create/PATCH/DELETE that starts its OWN
+ *     `withFamiliarLifecycleGuard` call after a removal has resolved is
+ *     guaranteed to load config AFTER that removal, because both go through
+ *     the same dedicated lock.
+ *
+ * This mirrors `@/lib/project-permissions.ts`'s `withProjectAccessGuard`
+ * exactly, and for the same reason: this guard acquires the dedicated lock
+ * OUTER, then reconciles+loads a config snapshot (`loadConfig`, which
+ * acquires and releases the reconciliation lock for JUST that load), and only
+ * THEN runs `callback` — by the time `callback` starts, the reconciliation
+ * lock has already been released, so `callback` is free to load
+ * config/projects/state (each of which briefly acquires and releases that
+ * same global reconciliation lock on its own) without ever contending with
+ * anything this guard holds open.
+ *
+ * `callback` is handed the loaded snapshot directly (`FamiliarLifecycleSnapshot`,
+ * i.e. `CaveConfig`) so it can resolve a familiar binding synchronously
+ * (`bindingFor`) — NEVER by calling `loadConfig`/`saveConfig`/`withConfigLock`
+ * again, and never any function that itself acquires this SAME dedicated
+ * lock. It is a promise chain, not a reentrant lock: a nested call from
+ * inside an already-running `callback` would chain onto a link of that SAME
+ * chain that cannot resolve until `callback` itself returns — a deadlock this
+ * guard's own construction cannot protect against. A guarded caller that must
+ * also WRITE config while holding this lock (e.g. the familiar-removal route)
+ * uses `saveConfigUnlocked` instead of `saveConfig`.
+ *
+ * Global lock order: familiar lifecycle (this guard) is OUTER, project
+ * authorization (`@/lib/project-permissions.ts`'s `withProjectAccessGuard`,
+ * when the effect is project-rooted) is acquired INSIDE it, and any
+ * conversation/state lock is acquired INSIDE that — never any of these
+ * reversed. The `cave-state.json` state lock (`stateMutex` /
+ * `withStateTransaction`) is a fully separate lock untouched by this guard,
+ * so ordinary state reads/writes never contend with it.
+ */
+export async function withFamiliarLifecycleGuard<T>(
+  callback: (config: FamiliarLifecycleSnapshot) => Promise<T>,
+): Promise<T> {
+  return withFamiliarLifecycleLock({ storePath: CONFIG_PATH, label: "cave-config" }, async () => {
+    // Reconciles + loads INSIDE the dedicated lock, but only holds the
+    // (separate, global) reconciliation lock for the duration of THIS load —
+    // it is fully released before `callback` runs. See this function's doc
+    // comment for why that ordering avoids deadlocking on config/project/
+    // state loads made from within `callback`.
+    const config = await loadConfig();
+    return callback(config);
+  });
+}
+
+async function saveConfigPatched(patch: CaveConfigPatch): Promise<CaveConfig> {
   const current = await loadConfigUnlocked();
   const defaults = { ...current.defaults, ...(patch.defaults ?? {}) };
   // Profiles are always familiar-scoped. Drop legacy/manually supplied global
@@ -672,7 +770,31 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);
   return updated;
-  });
+}
+
+export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
+  return withConfigLock(() => saveConfigPatched(patch));
+}
+
+/**
+ * Save a config patch WITHOUT acquiring `withConfigLock`'s dedicated
+ * cross-process familiar-lifecycle lock or its in-process `configMutex`
+ * chain — for callers that ALREADY hold that dedicated lock via
+ * `withFamiliarLifecycleGuard` (e.g. the familiar-removal route). Calling
+ * `saveConfig` from inside such a callback would deadlock: `withConfigLock`
+ * acquires the SAME dedicated lock as its own outermost step, and that
+ * lock's queue is not reentrant — a nested acquisition attempt chains behind
+ * the very call that is waiting on it.
+ *
+ * Still goes through the cross-process reconciliation lock for the
+ * read-modify-write itself (`withCaveHomeReconciledStore`) — that is a
+ * DIFFERENT lock, never held across a guard's callback (see
+ * `withFamiliarLifecycleGuard`'s doc comment), so acquiring it here is safe
+ * and keeps this write torn-read-safe against any other reconciled-store
+ * reader/writer exactly like every other config write.
+ */
+export async function saveConfigUnlocked(patch: CaveConfigPatch): Promise<CaveConfig> {
+  return withCaveHomeReconciledStore("cave-config.json", () => saveConfigPatched(patch));
 }
 
 export async function installMarketplacePlugin(
@@ -827,8 +949,21 @@ async function saveStateUnlocked(state: CaveState): Promise<void> {
 // a different key, and the second saveState silently clobbers the first.
 let stateMutex: Promise<unknown> = Promise.resolve();
 
-async function updateState<T>(
-  mutator: (state: CaveState) => T | Promise<T>,
+/**
+ * The single load→mutate→save transaction every cave-state.json writer runs
+ * through — `updateState` (below) is just this with a synchronous-shaped
+ * mutator; `applySessionMetadataWithCheckpoint` (below) is this same
+ * transaction with an async CHECKPOINT run between the in-memory mutation
+ * and the save, so a checkpoint failure can discard the mutation before it
+ * is ever written (see that function's own doc comment). Both hold the
+ * SAME in-process `stateMutex` chain and the SAME cross-process
+ * `cave-state.json` reconciliation lock for their entire duration — never
+ * two independent lock acquisitions — so a caller composing several
+ * metadata fields with a checkpoint gets exactly one atomic transaction,
+ * not several back-to-back ones a failure could interrupt midway.
+ */
+async function withStateTransaction<T>(
+  fn: (state: CaveState) => T | Promise<T>,
 ): Promise<T> {
   const previous = stateMutex;
   let release!: () => void;
@@ -837,13 +972,19 @@ async function updateState<T>(
     await previous.catch(() => {});
     return await withCaveHomeReconciledStore("cave-state.json", async () => {
       const state = await loadStateUnlocked();
-      const result = await mutator(state);
+      const result = await fn(state);
       await saveStateUnlocked(state);
       return result;
     });
   } finally {
     release();
   }
+}
+
+async function updateState<T>(
+  mutator: (state: CaveState) => T | Promise<T>,
+): Promise<T> {
+  return withStateTransaction(mutator);
 }
 
 // Session-list mutators below call invalidateSessionsListCache() after their
@@ -1018,24 +1159,36 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
 }
 
 /**
+ * Pure in-memory application of a manual title override — no lock, no I/O.
+ * Shared by `setSessionTitle` and `applySessionMetadataWithCheckpoint` so the
+ * exact same sanitize/ownership/provenance/revision rules apply on both
+ * paths; neither ever reimplements the other's logic.
+ */
+function applyManualSessionTitle(
+  state: CaveState,
+  sessionId: string,
+  title: string,
+): string | null {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    delete state.sessionTitles[sessionId];
+    delete state.sessionTitleManual[sessionId];
+  } else {
+    state.sessionTitles[sessionId] = trimmed;
+    state.sessionTitleManual[sessionId] = true;
+  }
+  delete state.sessionTitleAuto[sessionId];
+  incrementSessionTitleRevision(state, sessionId);
+  return trimmed || null;
+}
+
+/**
  * Set or clear a Cave-side title override for a session.
  * Non-empty titles are explicitly marked as manually owned.
  * Pass an empty/whitespace-only title to clear the override.
  */
 export async function setSessionTitle(sessionId: string, title: string): Promise<string | null> {
-  const next = await updateState((state) => {
-    const trimmed = title.trim();
-    if (!trimmed) {
-      delete state.sessionTitles[sessionId];
-      delete state.sessionTitleManual[sessionId];
-    } else {
-      state.sessionTitles[sessionId] = trimmed;
-      state.sessionTitleManual[sessionId] = true;
-    }
-    delete state.sessionTitleAuto[sessionId];
-    incrementSessionTitleRevision(state, sessionId);
-    return trimmed || null;
-  });
+  const next = await updateState((state) => applyManualSessionTitle(state, sessionId, title));
   invalidateSessionsListCache();
   return next;
 }
@@ -1134,14 +1287,37 @@ export async function initializeSessionTitleOwnership(
   return setSessionTitleAutoIfOwned(sessionId, title, new Set());
 }
 
+/**
+ * Pure in-memory application of archive/summon — no lock, no I/O. `now` is
+ * threaded in (rather than read internally) so a caller applying several
+ * metadata fields in one transaction (`applySessionMetadataWithCheckpoint`)
+ * stamps them all with the SAME instant, exactly as `archiveSessionLocal`
+ * itself already did. Returns the archive timestamp when archiving, else
+ * null (summon has no single timestamp to report).
+ */
+function applySessionArchivedMutation(
+  state: CaveState,
+  sessionId: string,
+  archived: boolean,
+  now: Date,
+): string | null {
+  if (archived) {
+    const iso = now.toISOString();
+    state.sessionArchived[sessionId] = iso;
+    return iso;
+  }
+  delete state.sessionArchived[sessionId];
+  state.sessionArchiveExtendedUntil[sessionId] = extendUntilIso(now, SUMMON_GRACE_DAYS);
+  return null;
+}
+
 /** Mark a session as archived in the Cave (does not touch the daemon row). */
 export async function archiveSessionLocal(sessionId: string): Promise<string> {
-  const now = new Date().toISOString();
-  await updateState((state) => {
-    state.sessionArchived[sessionId] = now;
-  });
+  const archivedAt = await updateState(
+    (state) => applySessionArchivedMutation(state, sessionId, true, new Date()) as string,
+  );
   invalidateSessionsListCache();
-  return now;
+  return archivedAt;
 }
 
 /** Restore a previously archived session in the Cave. Applies a short
@@ -1149,11 +1325,7 @@ export async function archiveSessionLocal(sessionId: string): Promise<string> {
  *  re-archive the freshly summoned chat. */
 export async function summonSessionLocal(sessionId: string): Promise<void> {
   await updateState((state) => {
-    delete state.sessionArchived[sessionId];
-    state.sessionArchiveExtendedUntil[sessionId] = extendUntilIso(
-      new Date(),
-      SUMMON_GRACE_DAYS,
-    );
+    applySessionArchivedMutation(state, sessionId, false, new Date());
   });
   invalidateSessionsListCache();
 }
@@ -1171,18 +1343,105 @@ export async function setSessionKeepLocal(sessionId: string, keep: boolean): Pro
   return keep;
 }
 
+/**
+ * Pure in-memory application of pin/unpin — no lock, no I/O. `now` is
+ * threaded in for the same reason as `applySessionArchivedMutation`.
+ */
+function applySessionPinnedMutation(
+  state: CaveState,
+  sessionId: string,
+  pinned: boolean,
+  now: Date,
+): boolean {
+  if (pinned) {
+    state.sessionPinned[sessionId] = now.toISOString();
+  } else {
+    delete state.sessionPinned[sessionId];
+  }
+  return pinned;
+}
+
 /** Pin or unpin a session so chat lists sort it to the top. Stored like
  *  `sessionKeep`: an ISO stamp when set, key absent when cleared. */
 export async function setSessionPinnedLocal(sessionId: string, pinned: boolean): Promise<boolean> {
-  await updateState((state) => {
-    if (pinned) {
-      state.sessionPinned[sessionId] = new Date().toISOString();
-    } else {
-      delete state.sessionPinned[sessionId];
-    }
-  });
+  await updateState((state) => applySessionPinnedMutation(state, sessionId, pinned, new Date()));
   invalidateSessionsListCache();
   return pinned;
+}
+
+/**
+ * Bounded metadata patch for `applySessionMetadataWithCheckpoint` — the same
+ * three fields the `/api/client/v1` conversation PATCH facade (cave-client-v1
+ * plan, Task 7) accepts. `undefined` means "leave this field untouched";
+ * only `title`/`pinned`/`archived` explicitly present in the patch are
+ * applied.
+ */
+export type SessionMetadataPatch = {
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
+};
+
+/**
+ * Applies a bounded `{ title?, pinned?, archived? }` patch to ONE session's
+ * cave-state.json metadata, together with a caller-supplied `checkpoint`
+ * (typically the conversation file's own `saveConversation` persistence
+ * step), as a SINGLE atomic transaction under the same state lock every
+ * other mutator in this module (`updateState`) already serializes through:
+ *
+ *   1. Load state once (`withStateTransaction`, under the in-process
+ *      `stateMutex` and the cross-process cave-state.json reconciliation
+ *      lock — the exact same pair `updateState` holds).
+ *   2. Apply every field present in `patch`, in memory, using the SAME pure
+ *      mutators `setSessionTitle`/`setSessionPinnedLocal`/
+ *      `archiveSessionLocal`/`summonSessionLocal` themselves call
+ *      (`applyManualSessionTitle`/`applySessionPinnedMutation`/
+ *      `applySessionArchivedMutation`) — title ownership/revision, pin, and
+ *      archive/summon-grace semantics are never duplicated or
+ *      reimplemented here.
+ *   3. Run `checkpoint(state)` — still inside the SAME transaction, BEFORE
+ *      the mutated state is written to disk. `checkpoint` is handed that
+ *      SAME just-mutated, not-yet-persisted `state` object directly (never
+ *      re-read from disk, which would still show the pre-patch values) so a
+ *      caller building a response from this transaction (e.g. this facade's
+ *      `ConversationMutationReceipt`) can read the patch's own effect
+ *      without a second state load racing this one. If `checkpoint` throws,
+ *      this function propagates the throw and `withStateTransaction` never
+ *      calls `saveStateUnlocked`: the in-memory state object (and every
+ *      field mutation applied in step 2) is simply discarded — nothing from
+ *      this patch is ever durably written. A caller whose checkpoint failed
+ *      can safely retry; no field was partially applied.
+ *   4. Only once `checkpoint` resolves is the mutated state persisted. If
+ *      THAT save itself throws, the checkpoint's own effect (e.g. the
+ *      conversation file's `updatedAt`) may already be durable, but no
+ *      metadata field from step 2 is — a retry re-applies the same fields
+ *      against a state none of them landed on, so at most the
+ *      conversation's `updatedAt` may advance again; it never observes a
+ *      half-applied title/pin/archive.
+ *   5. The sessions-list cache is invalidated ONLY after that state save
+ *      resolves successfully — never when the checkpoint or the state write
+ *      failed.
+ *
+ * Lock order: this holds cave-config's own state lock for its entire
+ * duration, including while `checkpoint` runs. `saveConversation`
+ * (@/lib/cave-conversations.ts) never acquires that lock (or any lock this
+ * module holds) itself, so running it as `checkpoint` cannot invert lock
+ * order or deadlock against it.
+ */
+export async function applySessionMetadataWithCheckpoint<T>(
+  sessionId: string,
+  patch: SessionMetadataPatch,
+  checkpoint: (state: CaveState) => Promise<T>,
+): Promise<T> {
+  const result = await withStateTransaction(async (state) => {
+    const now = new Date();
+    if (patch.title !== undefined) applyManualSessionTitle(state, sessionId, patch.title);
+    if (patch.pinned !== undefined) applySessionPinnedMutation(state, sessionId, patch.pinned, now);
+    if (patch.archived !== undefined) applySessionArchivedMutation(state, sessionId, patch.archived, now);
+    return checkpoint(state);
+  });
+  invalidateSessionsListCache();
+  return result;
 }
 
 /** Push a session's auto-archive deadline out to `untilIso`. */

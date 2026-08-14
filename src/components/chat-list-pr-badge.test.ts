@@ -15,6 +15,17 @@ const listRoute = readFileSync(
   new URL("../app/api/sessions/list/route.ts", import.meta.url),
   "utf8",
 );
+// The canonical merge/grant-scoping projection (mergeSessionRows, the
+// familiar/project grant filter, the merged-PR sweep call, etc.) was
+// extracted into `computeCanonicalSessionList` in
+// @/lib/server/client-v1/read-model.ts (cave-client-v1 plan, Task 5) so the
+// new `/api/client/v1` read routes share the exact same canonical
+// computation. Pins on that now-shared implementation read read-model.ts's
+// source instead of the (now-thin) route file's.
+const readModel = readFileSync(
+  new URL("../lib/server/client-v1/read-model.ts", import.meta.url),
+  "utf8",
+);
 // #3576 decomposed globals.css into @imported sheets under src/styles —
 // pin against the whole global cascade, wherever a rule now lives.
 const stylesDir = new URL("../styles/", import.meta.url);
@@ -99,6 +110,11 @@ assert.match(
 );
 assert.match(
   listRoute,
+  /import \{ getCanonicalSessionList \} from "@\/lib\/server\/client-v1\/read-model"/,
+  "the sessions/list route delegates to the shared cached canonical accessor",
+);
+assert.match(
+  readModel,
   /applyMergedPrAutoArchive\(\s*await enrichSessionsWithGitContext\(visible\),/,
   "the merged-PR sweep runs over the (async) enriched rows before the payload returns",
 );
