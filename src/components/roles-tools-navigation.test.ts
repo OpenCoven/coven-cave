@@ -42,7 +42,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /initialSection=\{mode === "roles" \? "roles" : mode === "capabilities" \? "capabilities" : "browse"\}/,
+  /initialSection=\{\s*mode === "roles"[^?]*\?\s*"roles"\s*:\s*mode === "capabilities"[^?]*\?\s*"capabilities"\s*:\s*"browse"\s*\}/,
   "Deep-link modes should map onto the hub's sections",
 );
 assert.doesNotMatch(
