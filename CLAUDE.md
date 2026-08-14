@@ -679,14 +679,30 @@ only covers heads that already carry an archive tag. So the hook archives the
 head as its `retention/…` tag instead, and the log entry carries
 `reason: "branch-deleted-upstream"`.
 
-Deleted is distinguished from never-pushed by the local remote-tracking ref:
-`refs/remotes/origin/<branch>` is written by a push and survives the remote
-dropping the branch, so tracking-ref-present + absent-from-`ls-remote` means
-deleted. A branch that never left the machine has no such ref and is still
-retained as a readable branch. Note `git push --delete` is **not** equivalent to
-a server-side deletion — it removes the local tracking ref too — and if a
-`fetch --prune` has already run the signal is gone, in which case the hook falls
-back to its previous behaviour: a resurrected branch, never a lost commit.
+Deleted is distinguished from never-pushed by **three** signals, any one of
+which proves the branch was once on the remote — because each survives
+something the others do not (`cave-xjuup`):
+
+- `refs/remotes/origin/<branch>`, written by a push. Survives the remote
+  dropping the branch, but **not** a `fetch --prune`.
+- `branch.<name>.remote`, written only by `push -u`. Lives in `.git/config`, so
+  a prune cannot touch it — but plenty of branches never get one.
+- **the hook's own log**, which records that *it* pushed the branch. Survives
+  everything short of deleting the file.
+
+Absence of all three still means branch-first, so a branch that never left the
+machine is still retained as a readable branch. Note `git push --delete` is
+**not** equivalent to a server-side deletion — it removes the local tracking ref
+too.
+
+⚠️ **One signal was not enough, and the shortfall was measurable.** GitHub
+Desktop prunes routinely here, so by the time the hook looked the tracking ref
+was gone, the branch read as "never pushed", and the hook re-created a head
+GitHub had deliberately deleted at merge. Measured 2026-08-14: **9 of 36 remote
+branches were resurrected merged heads**, 29 pushes across them, one branch
+re-created three separate times — a quarter of the 40-branch cap consumed by
+branches that should not exist, and hand-deleting them would not have stayed
+bought.
 
 ⚠️ **That same surviving tracking ref is what made this path unreachable for a
 day.** The at-risk test was `rev-list HEAD --not --remotes`, and `--remotes`
