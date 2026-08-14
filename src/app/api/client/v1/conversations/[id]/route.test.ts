@@ -175,7 +175,12 @@ async function seedBoundAttachment(conversationId: string) {
   const form = new FormData();
   form.append("files", new File([attachmentBytes], "notes.txt", { type: "text/plain" }));
   const parsed = await parseClientAttachmentForm(form);
-  const [uploaded] = await saveUploadedClientAttachments(parsed, attachmentOwner, crypto.randomUUID(), 10);
+  const [uploaded] = await saveUploadedClientAttachments(
+    parsed,
+    attachmentOwner,
+    crypto.randomUUID(),
+    Date.now(),
+  );
   await resolveAndBindClientAttachments([uploaded.id], attachmentOwner, conversationId);
   return uploaded;
 }
