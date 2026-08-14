@@ -37,7 +37,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "mcpServers": {
     "firecrawl": {
       "command": "npx",

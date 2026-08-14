@@ -38,7 +38,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "mcpServers": {
     "activepieces": {
       "url": "${ACTIVEPIECES_MCP_URL}",

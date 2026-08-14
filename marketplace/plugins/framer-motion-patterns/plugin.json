@@ -52,6 +52,5 @@
       "mcp": false,
       "rolePatch": false
     }
-  },
-  "skills": "./skills/"
+  }
 }

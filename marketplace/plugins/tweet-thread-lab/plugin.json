@@ -21,6 +21,7 @@
     "write_files",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/tweet-thread-lab",
   "x-coven": {
     "displayName": "Tweet Thread Lab",
@@ -37,6 +38,5 @@
       "mcp": false,
       "rolePatch": false
     }
-  },
-  "skills": "./skills/"
+  }
 }

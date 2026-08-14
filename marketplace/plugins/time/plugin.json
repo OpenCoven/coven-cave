@@ -35,7 +35,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "mcpServers": {
     "time": {
       "command": "uvx",

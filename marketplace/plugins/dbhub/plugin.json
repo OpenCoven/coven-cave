@@ -37,7 +37,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "mcpServers": {
     "dbhub": {
       "command": "npx",

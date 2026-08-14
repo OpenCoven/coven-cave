@@ -37,7 +37,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "mcpServers": {
     "nuxt-dev": {
       "url": "${NUXT_MCP_URL}",

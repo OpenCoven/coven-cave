@@ -40,7 +40,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "mcpServers": {
     "serena": {
       "command": "uvx",

@@ -39,7 +39,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "mcpServers": {
     "apify": {
       "url": "https://mcp.apify.com",

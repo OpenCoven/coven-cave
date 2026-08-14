@@ -38,7 +38,6 @@
       "rolePatch": false
     }
   },
-  "skills": "./skills/",
   "prompts": [
     "update-world-encyclopedia",
     "thread-world-graph",
