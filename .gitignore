@@ -145,3 +145,5 @@ ds-bundle/
 __verify-chat-detail.mjs
 /.worktree-lifecycle-fixture-*
 .psyche*
+/.demo
+/.xcode-source-packages
