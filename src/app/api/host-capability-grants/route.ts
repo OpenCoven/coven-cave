@@ -11,7 +11,7 @@ function rejectRelayedApproval(payload: Record<string, unknown>) {
     ? NextResponse.json({ ok: false, error: "host capability changes must be confirmed directly by the human" }, { status: 403 })
     : null;
 }
-async function input(payload: Record<string, unknown>) {
+async function grantInput(payload: Record<string, unknown>) {
   const familiarId = typeof payload.targetFamiliarId === "string" ? payload.targetFamiliarId.trim() : "";
   const sessionId = typeof payload.sessionId === "string" ? payload.sessionId.trim() : "";
   const capability = hostCapabilityById(payload.capability)?.id ?? null;
@@ -20,6 +20,18 @@ async function input(payload: Record<string, unknown>) {
   // A capability is never attachable by a copied or invented session id. The
   // conversation file is Cave-owned evidence of the familiar/session pairing.
   if (!conversation || conversation.familiarId !== familiarId) return null;
+  return { familiarId, sessionId, capability };
+}
+async function revokeInput(payload: Record<string, unknown>) {
+  const familiarId = typeof payload.targetFamiliarId === "string" ? payload.targetFamiliarId.trim() : "";
+  const sessionId = typeof payload.sessionId === "string" ? payload.sessionId.trim() : "";
+  const capability = hostCapabilityById(payload.capability)?.id ?? null;
+  if (!familiarId || !isValidFamiliarId(familiarId) || !sessionId || !capability) return null;
+  const conversation = await loadConversation(sessionId);
+  // A live conversation remains ownership-checked. A missing conversation is
+  // intentionally revocable: otherwise its expired grant record could never
+  // be removed after the human deletes or archives that chat.
+  if (conversation && conversation.familiarId !== familiarId) return null;
   return { familiarId, sessionId, capability };
 }
 export async function GET(req: Request) {
@@ -34,7 +46,7 @@ export async function POST(req: Request) {
   const blocked = await requireTrustedHumanGrantMutation(req); if (blocked) return blocked;
   let payload: Record<string, unknown>; try { payload = await req.json(); } catch { return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 }); }
   const rejected = rejectRelayedApproval(payload); if (rejected) return rejected;
-  const parsed = await input(payload); if (!parsed) return NextResponse.json({ ok: false, error: "choose a Cave session that belongs to this familiar" }, { status: 400 });
+  const parsed = await grantInput(payload); if (!parsed) return NextResponse.json({ ok: false, error: "choose a Cave session that belongs to this familiar" }, { status: 400 });
   try { const grant = await grantHostCapability({ ...parsed, expiresAt: typeof payload.expiresAt === "string" ? payload.expiresAt : undefined, actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback" }); return NextResponse.json({ ok: true, grant }); }
   catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "invalid host capability grant" }, { status: 400 }); }
 }
@@ -42,6 +54,6 @@ export async function DELETE(req: Request) {
   const blocked = await requireTrustedHumanGrantMutation(req); if (blocked) return blocked;
   let payload: Record<string, unknown>; try { payload = await req.json(); } catch { return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 }); }
   const rejected = rejectRelayedApproval(payload); if (rejected) return rejected;
-  const parsed = await input(payload); if (!parsed) return NextResponse.json({ ok: false, error: "choose a Cave session that belongs to this familiar" }, { status: 400 });
+  const parsed = await revokeInput(payload); if (!parsed) return NextResponse.json({ ok: false, error: "choose a Cave session that belongs to this familiar" }, { status: 400 });
   return NextResponse.json({ ok: true, revoked: await revokeHostCapability({ ...parsed, actor: isVerifiedMobileRequest(req) ? "mobile" : "loopback" }) });
 }

@@ -8,6 +8,8 @@ assert.match(route, /requireTrustedHumanGrantMutation\(req\)/, "host grants requ
 assert.match(route, /rejectRelayedApproval\(payload\)/, "chat-provided approval claims are rejected");
 assert.match(route, /import \{ listConversations, loadConversation \} from "@\/lib\/cave-conversations"/, "server ownership checks use Cave-owned conversation metadata");
 assert.match(route, /const conversation = await loadConversation\(sessionId\);[\s\S]*if \(!conversation \|\| conversation\.familiarId !== familiarId\) return null/, "absent or mismatched session ownership is rejected before mutation");
+assert.match(route, /async function revokeInput[\s\S]*if \(conversation && conversation\.familiarId !== familiarId\) return null/, "a deleted session can be revoked while a live mismatched session remains protected");
+assert.match(route, /const parsed = await revokeInput\(payload\);[\s\S]*revokeHostCapability/, "DELETE uses the cleanup-specific ownership rule");
 assert.match(route, /conversation\.familiarId === familiarId/, "the selector exposes only sessions owned by the requested familiar");
 assert.match(route, /choose a Cave session that belongs to this familiar/, "an unowned session is rejected with a direct operator error");
 assert.match(route, /isVerifiedMobileRequest\(req\) \? "mobile" : "loopback"/, "the actor is derived from the trusted transport, never the payload");
