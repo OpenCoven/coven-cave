@@ -27,39 +27,64 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
 import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 import { Icon } from "@/lib/icon";
-import { renderCitedBody } from "@/lib/citations";
-import { CitationSources } from "@/components/ui/citation";
+import {
+  parseCitations,
+  renderCitedBody,
+  renderCitationReferences,
+  type Citation,
+} from "@/lib/citations";
+import { InlineCitationPreviews } from "@/components/ui/citation";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
+import {
+  deriveReadingBlock,
+  provenanceLabel,
+  provenanceTitle,
+  canCompare,
+  type ReadingBlock,
+} from "@/lib/code-reading";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
-import { SpeakBubble } from "@/components/speak-bubble";
+import { SpeakBubble, type SpeakBubbleController } from "@/components/speak-bubble";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
+// Lazy: the reader is a modal opened by an explicit click, and it carries its
+// own stylesheet. Loading it eagerly puts both on the / route's first paint for
+// every session, including the ones that never expand a message.
+const MessageReader = dynamic(
+  () => import("@/components/message-reader").then((m) => m.MessageReader),
+  { ssr: false },
+);
+import type { BatchTool } from "@/lib/chat-tool-batches";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { decorateResponseHtml } from "@/lib/response-status-tokens";
 import { resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import { loadMarkdownPreview } from "@/lib/markdown-preview";
 import {
   cacheRenderedMarkdown as renderCacheSet,
-  closeTrailingFence,
   createMarkdownRenderGate,
   getRenderedMarkdown as renderCacheGet,
+  normalizePseudoLists,
   scanFenceFilenames,
+  stabilizeStreamingMarkdown,
   type MarkdownRenderGate,
 } from "@/lib/message-markdown-stream";
-import { FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
-export { FileLinkResolverContext } from "./message-dom-wiring";
+import { CodeReadingContext, FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
+export { CodeReadingContext, FileLinkResolverContext } from "./message-dom-wiring";
+export type { CodeReading, CodeReadingRequest } from "./message-dom-wiring";
 export type { FileLinkResolver } from "./message-dom-wiring";
 
 // ---------------------------------------------------------------------------
@@ -120,6 +145,7 @@ function renderCodeBlockFrame({
   highlighted,
   isDiff,
   diffLines,
+  block,
 }: {
   code: string;
   lang: string;
@@ -127,6 +153,8 @@ function renderCodeBlockFrame({
   highlighted: string;
   isDiff: boolean;
   diffLines: DiffLine[] | null;
+  /** Provenance-classified view of the fence (cave-f6mu9). */
+  block: ReadingBlock;
 }): string {
   const lines = code.split("\n");
   const showLineNums = lines.length > 5;
@@ -190,8 +218,28 @@ function renderCodeBlockFrame({
   );
 
   const labelHtml = `<span class="cave-code-lang">${escHtml(lang)}</span>`;
+  // The path reads dir-then-name with the directory muted, so the eye lands on
+  // the file the block claims to be without losing where it lives.
   const filenameHtml = filename
-    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${escHtml(filename)}</span>`
+    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${
+        block.dir ? `<span class="cave-code-dir">${escHtml(block.dir)}/</span>` : ""
+      }${escHtml(block.name ?? filename)}</span>`
+    : "";
+
+  // ── Reading chrome (cave-f6mu9) ───────────────────────────────────────────
+  // The provenance pill is the load-bearing part: it tells the reader whether
+  // this block is backed by a file (openable, comparable), a patch (appliable)
+  // or merely quoted (neither). Every action below is gated on it, so a
+  // control never offers something the block cannot deliver.
+  const provHtml = `<span class="cave-code-prov cave-code-prov--${block.provenance}" title="${escHtml(
+    provenanceTitle(block.provenance),
+  )}">${escHtml(provenanceLabel(block.provenance))}</span>`;
+  // Filled in by the working-tree check after render (wireCodeReading); hidden
+  // until then so a block never claims freshness it has not verified.
+  const staleHtml = `<span class="cave-code-stale" hidden></span>`;
+  const readHtml = `<button type="button" class="cave-code-read-btn" aria-label="Read this code block">Read</button>`;
+  const compareHtml = canCompare(block.provenance)
+    ? `<button type="button" class="cave-code-compare-btn" aria-label="Compare with the working tree">Compare</button>`
     : "";
   // Collapse toggle (chevron) folds the block down to just this header so a
   // long code dump can be tucked away; blocks render expanded by default. The
@@ -202,12 +250,24 @@ function renderCodeBlockFrame({
   // No data-code attribute (CHAT-D7-04): wireCopyButtons reads the code text
   // back out of the rendered DOM at click time instead of carrying a second
   // copy of every block's source in an attribute.
-  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${filenameHtml}${linesHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
+  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${provHtml}${filenameHtml}${staleHtml}${linesHtml}${readHtml}${compareHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
   const expandHtml = lines.length >= CODE_EXPAND_MIN_LINES
     ? `<div class="cave-code-expand"><button type="button" class="cave-code-expand-btn">Show more</button></div>`
     : "";
 
-  return `<div class="cave-code-wrap">${headerHtml}${lineWrapped}${expandHtml}</div>`;
+  // Provenance/path/lang ride on the wrap rather than on each button: the
+  // wiring layer reads the code text back out of the DOM at click time
+  // (CHAT-D7-04), and the same rule applies here — one carrier, no second copy
+  // of the block's identity to drift out of sync.
+  const dataAttrs = [
+    `data-code-provenance="${escHtml(block.provenance)}"`,
+    `data-code-lang="${escHtml(block.lang)}"`,
+    block.path ? `data-code-path="${escHtml(block.path)}"` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return `<div class="cave-code-wrap" ${dataAttrs}>${headerHtml}${lineWrapped}${expandHtml}</div>`;
 }
 
 async function renderCodeBlock(
@@ -216,7 +276,11 @@ async function renderCodeBlock(
   { highlightCode = true }: { highlightCode?: boolean } = {},
 ): Promise<string> {
   const { lang, filename } = parseFenceInfo(info);
-  const isDiff = lang === "diff";
+  const block = deriveReadingBlock(info);
+  // One classifier decides "is this a patch", so the rendering and the
+  // provenance pill can never disagree — `patch` and `DIFF` are diffs too, and
+  // before this they got the "patch" pill with none of the diff parsing.
+  const isDiff = block.isDiff;
   const diffLang = isDiff ? diffContentLang(code) : "text";
   let diffLines = isDiff && diffLang !== "text" ? classifyDiffLines(code) : null;
   const doc = diffLines ? diffLines.map((line) => line.content).join("\n") : code;
@@ -253,6 +317,7 @@ async function renderCodeBlock(
     highlighted,
     isDiff,
     diffLines,
+    block,
   });
 }
 
@@ -357,9 +422,17 @@ export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBloc
 // Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
 // ---------------------------------------------------------------------------
 
-export function MarkdownBlock({ text, className }: { text: string; className?: string }) {
+export function MarkdownBlock({
+  text,
+  className,
+  onOpenUrl,
+}: {
+  text: string;
+  className?: string;
+  onOpenUrl?: (url: string) => void;
+}) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html);
+  const containerRef = useWireCopyButtons(html, onOpenUrl);
 
   useEffect(() => {
     if (!text) return;
@@ -592,11 +665,12 @@ function isMermaidCodeBlock(block: Block): boolean {
 
 async function mdToHtml(
   markdown: string,
-  opts?: { transient?: boolean; highlightCode?: boolean },
+  opts?: { transient?: boolean; highlightCode?: boolean; decorateResponse?: boolean },
 ): Promise<string> {
   const canUseCache = !opts?.transient && opts?.highlightCode !== false;
+  const cacheKey = `${opts?.decorateResponse ? "response" : "document"}:${markdown}`;
   if (canUseCache) {
-    const cached = renderCacheGet(markdown);
+    const cached = renderCacheGet(cacheKey);
     if (cached !== undefined) return cached;
   }
 
@@ -608,8 +682,13 @@ async function mdToHtml(
   // cascades and swallows the rest of the message as a fake code block.
   // Pre-scan filenames (positional, one per fence opener) so we can re-attach
   // them after stripping the suffix for the parser.
-  const fenceFilenames = scanFenceFilenames(markdown);
-  const normalized = markdown.replace(/^(\s*```\s*[\w+.-]+):\S+/gm, "$1");
+  // Pseudo-list normalization runs first: @create-markdown/core lacks lazy
+  // continuation, so wrapped list items (and `1)` / `**1. Title**` markers)
+  // otherwise render as dense paragraph fragments. Fence lines pass through
+  // untouched, so the positional filename scan stays aligned.
+  const listNormalized = normalizePseudoLists(markdown);
+  const fenceFilenames = scanFenceFilenames(listNormalized);
+  const normalized = listNormalized.replace(/^(\s*```\s*[\w+.-]+):\S+/gm, "$1");
 
   const blocks: Block[] = coalesceAdjacentNumberedLists(parse(normalized));
 
@@ -674,6 +753,7 @@ async function mdToHtml(
   if (mermaidPlugin?.postProcess) {
     sanitizedHtml = await mermaidPlugin.postProcess(sanitizedHtml);
   }
+  if (opts?.decorateResponse) sanitizedHtml = decorateResponseHtml(sanitizedHtml);
   // Strip the renderer's cm-preview shell so blocks land as DIRECT children
   // of .cave-md — its `> * + *` owl selector is the only block-rhythm rule,
   // and with the shell in place a list rendered flush against the paragraph
@@ -682,7 +762,7 @@ async function mdToHtml(
   // Transient (mid-stream) snapshots are never requested again once the
   // stream advances past them — caching one per throttle tick would churn
   // settled entries out of the LRU for no hit-rate gain.
-  if (canUseCache) renderCacheSet(markdown, sanitizedHtml);
+  if (canUseCache) renderCacheSet(cacheKey, sanitizedHtml);
   return sanitizedHtml;
 }
 
@@ -691,15 +771,38 @@ async function mdToHtml(
 // plain fallback only until the first render lands
 // ---------------------------------------------------------------------------
 
-function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
+type MarkdownContentProps = {
+  text: string;
+  pending?: boolean;
+  onOpenUrl?: (url: string) => void;
+  citations?: readonly Citation[];
+  decorateResponse?: boolean;
+  /** Extra classes on the markdown container — the Expand reader uses this to
+   *  set its own reading scale (.cave-md--reader). Omitted in the transcript,
+   *  which reads at the stream's density. */
+  className?: string;
+};
+
+function MarkdownContent({
+  text,
+  pending,
+  onOpenUrl,
+  citations = [],
+  decorateResponse = false,
+  className,
+}: MarkdownContentProps) {
+  const cacheKey = `${decorateResponse ? "response" : "document"}:${text}`;
   const [html, setHtml] = useState<string | null>(
-    () => pending ? null : renderCacheGet(text) ?? null,
+    () => pending ? null : renderCacheGet(cacheKey) ?? null,
   );
   // Chat prose file references (`src/foo.ts:42`) open in Code — but only when
   // the surface's resolver (FileLinkResolverContext) confirms the file exists
   // under the session's project root. No resolver ⇒ refs stay plain text.
   const fileLinkResolver = useContext(FileLinkResolverContext);
-  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver);
+  // Same posture for code blocks (cave-f6mu9): Read/Compare stay hidden until a
+  // surface supplies an inspector to receive them.
+  const reading = useContext(CodeReadingContext);
+  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver, reading);
   // mdToHtml is async and several streaming renders can be in flight at once.
   // The gate orders their commits and invalidates pre-settle work synchronously
   // during render, before React runs passive-effect cleanup or the final pass.
@@ -743,7 +846,11 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       const stamp = renderGate.issue();
       const run = () => {
         lastStreamRenderRef.current = Date.now();
-        mdToHtml(closeTrailingFence(text), { transient: true, highlightCode: false })
+        mdToHtml(stabilizeStreamingMarkdown(text), {
+          transient: true,
+          highlightCode: false,
+          decorateResponse,
+        })
           .then((h) => {
             if (!renderGate.apply(stamp)) return;
             setHtml(h);
@@ -763,7 +870,7 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
     // then enhance that stable frame with Shiki token colors. A cached final
     // render resolves immediately and never regresses to the plain stage.
     let cancelled = false;
-    const cached = renderCacheGet(text);
+    const cached = renderCacheGet(cacheKey);
     if (cached !== undefined) {
       const stamp = renderGate.issue();
       if (renderGate.apply(stamp)) setHtml(cached);
@@ -771,14 +878,14 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
     }
 
     const plainStamp = renderGate.issue();
-    mdToHtml(text, { highlightCode: false })
+    mdToHtml(text, { highlightCode: false, decorateResponse })
       .then((plainHtml) => {
         if (cancelled) return;
         if (!renderGate.apply(plainStamp)) return;
         setHtml(plainHtml);
 
         const highlightedStamp = renderGate.issue();
-        return mdToHtml(text).then((highlightedHtml) => {
+        return mdToHtml(text, { decorateResponse }).then((highlightedHtml) => {
           if (cancelled) return;
           if (!renderGate.apply(highlightedStamp)) return;
           setHtml(highlightedHtml);
@@ -786,15 +893,29 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       })
       .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
     return () => { cancelled = true; };
-  }, [text, pending]);
+  }, [cacheKey, decorateResponse, pending, renderGate, text]);
 
   if (!html) {
+    if (!decorateResponse) {
+      return (
+        <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
+          {text}
+          {pending ? "▌" : ""}
+        </span>
+      );
+    }
     return (
-      <span className="whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed">
-        {text}
-        {pending && text ? (
-          <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
-        ) : null}
+      <span
+        className={`cave-response-rendering${className ? ` ${className}` : ""}`}
+        role="status"
+        aria-label={pending ? "Familiar is writing" : "Rendering response"}
+      >
+        <span className="cave-response-typing-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span>{pending ? "Writing" : "Rendering response"}</span>
       </span>
     );
   }
@@ -803,16 +924,30 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
     <>
       <div
         ref={containerRef}
-        className="cave-md"
+        className={`cave-md${className ? ` ${className}` : ""}`}
         // Markdown output is sanitized in mdToHtml before DOM insertion.
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {/* Streaming cursor as a SIBLING of the markdown container — never
-          injected into the sanitized HTML string. */}
+      {/* This is a separate response status, not a cursor intended to trail the
+          final rendered line. Keeping it outside sanitized HTML avoids malformed
+          Markdown while making its standalone placement deliberate. */}
       {pending ? (
-        <span aria-hidden="true" className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
+        <span className="cave-response-typing" role="status" aria-label="Familiar is writing">
+          <span className="cave-response-typing-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span>Writing</span>
+        </span>
       ) : null}
+      <InlineCitationPreviews
+        citations={citations}
+        containerRef={containerRef}
+        onOpenUrl={onOpenUrl}
+        renderedHtml={html}
+      />
     </>
   );
 }
@@ -831,7 +966,7 @@ export function ProgressiveMarkdownBlock({
 // CopyButton — hover "Copy message" (raw markdown source)
 // ---------------------------------------------------------------------------
 
-function CopyBubble({ text }: { text: string }) {
+function CopyBubble({ text, response = false }: { text: string; response?: boolean }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -849,8 +984,9 @@ function CopyBubble({ text }: { text: string }) {
       type="button"
       aria-label={copied ? "Copied" : "Copy message"}
       onClick={copy}
-      className={`cave-copy-btn cave-copy-btn-bubble${copied ? " cave-copy-btn--confirmed" : ""}`}
+      className={`cave-copy-btn cave-copy-btn-bubble focus-ring${response ? " cave-response-action" : ""}${copied ? " cave-copy-btn--confirmed" : ""}`}
     >
+      {response ? <Icon name="ph:copy" width={12} aria-hidden /> : null}
       {copied ? "Copied" : "Copy"}
     </button>
   );
@@ -898,9 +1034,26 @@ export type MessageBubbleProps = {
    *  at their chronological position. Assistant role only; when present they
    *  replace the single MarkdownContent render. `content` must still carry
    *  the FULL text so the Copy/Expand actions are unchanged. Only the LAST
-   *  text span streams (progressive markdown + ▌ cursor); earlier spans
-   *  render settled. */
+   *  text span streams (progressive markdown); earlier spans render settled. */
   segments?: MessageBubbleSegment[];
+  /** The turn's tool events, forwarded to the reader's "How this was made"
+   *  footer (batches, skills, error count). Assistant role only; absent turns
+   *  simply have no footer — see message-reader.tsx. */
+  readerTools?: readonly BatchTool[];
+  /** Wall time for the whole turn, shown in the reader's footer receipt. */
+  readerDurationMs?: number;
+  /** Ask a follow-up about a passage selected inside the reader. Without it
+   *  the reader's selection ask-bar is not rendered. */
+  onAskAbout?: (quote: string) => void;
+  /** The prompt that produced this answer, echoed above it in the reader. */
+  readerPrompt?: { text: string; createdAt?: string };
+  /** Rerun this turn from an edited prompt. Absent while busy or off the tip. */
+  onRerunWith?: (prompt: string) => void;
+  /** Which familiar produced the answer — the reader's Rewrite control asks it
+   *  for the rewrite. Absent hides the control. */
+  readerFamiliarId?: string;
+  /** The owning surface already supplies a collapse control (Coven sections). */
+  collapsible?: boolean;
   /** Branching: when a turn has siblings, render a compact ‹ index/total ›
    *  switcher. Omitted (or total <= 1) hides it. */
   branchNav?: {
@@ -911,8 +1064,13 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [readerOpen, setReaderOpen] = useState(false);
+  const [speakState, setSpeakState] = useState<"idle" | "loading" | "playing">("idle");
+  const speechRef = useRef<SpeakBubbleController | null>(null);
+  const responseBodyId = useId();
   const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
   const applyVote = (v: Feedback) => {
     if (!messageId) return;
@@ -933,6 +1091,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   };
   useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
+  useEffect(() => {
+    if (pending) setCollapsed(false);
+  }, [pending]);
 
   const shouldShowTs = showTimestamp || tsVisible;
 
@@ -941,6 +1102,10 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   // pipeline). Bodies without footnotes pass through unchanged. Mid-stream the
   // definition block hasn't arrived, so this is a no-op until the turn settles.
   const cited = useMemo(() => renderCitedBody(content), [content]);
+  const segmentedCitations = useMemo(
+    () => (segments?.length ? parseCitations(content) : null),
+    [content, segments],
+  );
 
   if (role === "system") {
     return (
@@ -1014,55 +1179,97 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   // Assistant
   // CHAT-D4-01: with segments, only the LAST text span is the live streaming
   // edge — earlier spans are settled slices that never change retroactively,
-  // so they take MarkdownContent's settled path (cached render, no throttle,
-  // no cursor) and the ▌ cursor shows on at most one span.
+  // so they take MarkdownContent's settled path (cached render, no throttle).
   const lastTextIdx = segments
     ? segments.reduce((acc, seg, i) => (seg.kind === "text" ? i : acc), -1)
     : -1;
+  const responseState = pending ? "streaming" : isError ? "error" : "complete";
+  const canCollapse = collapsible && Boolean(content.trim());
+  const hasMoreActions = Boolean(onReply || content || messageId);
+
   return (
     <div
       className="group relative cave-bubble-assistant"
+      data-state={responseState}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <div className={isError ? "text-[var(--color-warning)]" : ""}>
-        {segments?.length ? (
-          segments.map((seg, i) =>
-            seg.kind === "text" ? (
-              <MarkdownContent key={`span-${i}`} text={seg.text} pending={pending && i === lastTextIdx} onOpenUrl={onOpenUrl} />
-            ) : (
-              <div key={seg.key} className="my-2">{seg.node}</div>
-            ),
-          )
+      <div id={responseBodyId} className="cave-response-frame" data-state={responseState}>
+        {collapsed ? (
+          <div className="cave-response-collapsed" role="status">
+            Response collapsed
+          </div>
         ) : (
-          <MarkdownContent text={cited.body} pending={pending} onOpenUrl={onOpenUrl} />
+          <div className="cave-response-body">
+            <div className={isError ? "text-[var(--danger-text)]" : ""}>
+              {segments?.length ? (
+                segments.map((seg, i) => {
+                  if (seg.kind === "block") {
+                    return <div key={seg.key} className="my-2">{seg.node}</div>;
+                  }
+                  const text = segmentedCitations
+                    ? renderCitationReferences(seg.text, segmentedCitations)
+                    : seg.text;
+                  return (
+                    <MarkdownContent
+                      key={`span-${i}`}
+                      text={text}
+                      pending={pending && i === lastTextIdx}
+                      onOpenUrl={onOpenUrl}
+                      citations={cited.citations}
+                      decorateResponse
+                    />
+                  );
+                })
+              ) : (
+                <MarkdownContent
+                  text={cited.body}
+                  pending={pending}
+                  onOpenUrl={onOpenUrl}
+                  citations={cited.citations}
+                  decorateResponse
+                />
+              )}
+            </div>
+          </div>
         )}
-        {cited.citations.length > 0 ? <CitationSources citations={cited.citations} showHoverPreview /> : null}
+        {isError && !pending ? (
+          <div className="cave-response-error" role="alert">
+            Response interrupted
+          </div>
+        ) : null}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
           actions are reachable by keyboard (Tab), screen readers, and touch. */}
-      {!pending && content ? (
-        <div className="cave-bubble-actions">
-          {onReply ? (
-            <button
-              type="button"
-              aria-label="Reply to message"
-              title="Reply"
-              onClick={onReply}
-              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-            >
-              <Icon name="ph:arrow-bend-up-left" width={11} aria-hidden />
-            </button>
-          ) : null}
+      {!pending && (content || isError) ? (
+        <div className="cave-bubble-actions" role="group" aria-label="Response actions">
+          {content ? <CopyBubble text={content} response /> : null}
           {onRegenerate ? (
             <button
               type="button"
-              aria-label="Regenerate response"
-              title="Regenerate"
+              aria-label="Retry response"
+              title="Retry"
               onClick={onRegenerate}
-              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              className="cave-copy-btn cave-copy-btn-bubble cave-response-action focus-ring"
             >
-              <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+              <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+              Retry
+            </button>
+          ) : null}
+          {canCollapse ? (
+            <button
+              type="button"
+              aria-controls={responseBodyId}
+              aria-expanded={!collapsed}
+              onClick={() => setCollapsed((value) => !value)}
+              className="cave-copy-btn cave-copy-btn-bubble cave-response-action focus-ring"
+            >
+              <Icon
+                name={collapsed ? "ph:arrows-out-simple" : "ph:arrows-in-simple"}
+                width={12}
+                aria-hidden
+              />
+              {collapsed ? "Expand" : "Collapse"}
             </button>
           ) : null}
           {branchNav && branchNav.total > 1 ? (
@@ -1090,34 +1297,73 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
               </button>
             </span>
           ) : null}
-          <ExpandBubble text={content} label={label ?? "Familiar response"} />
-          <CopyBubble text={content} />
-          {role === "assistant" ? (
-            <SpeakBubble text={content} familiarId={feedbackContext?.familiarId} />
+          {hasMoreActions ? (
+            <OverflowMenu ariaLabel="More response actions" size="xs" className="cave-response-more">
+              {onReply ? (
+                <PopoverItem icon="ph:arrow-bend-up-left" onSelect={onReply}>
+                  Reply
+                </PopoverItem>
+              ) : null}
+              {content ? (
+                <PopoverItem icon="ph:arrows-out-simple" onSelect={() => setReaderOpen(true)}>
+                  Open reader
+                </PopoverItem>
+              ) : null}
+              {content ? (
+                <PopoverItem
+                  icon={speakState === "playing" ? "ph:stop-fill" : "ph:speaker-high-fill"}
+                  onSelect={() => speechRef.current?.toggle()}
+                >
+                  {speakState === "loading"
+                    ? "Preparing audio"
+                    : speakState === "playing"
+                      ? "Stop reading"
+                      : "Read aloud"}
+                </PopoverItem>
+              ) : null}
+              {messageId && (onReply || content) ? <PopoverSeparator /> : null}
+              {messageId ? (
+                <PopoverItem
+                  icon="ph:thumbs-up"
+                  checked={vote === "up"}
+                  onSelect={() => applyVote("up")}
+                >
+                  Good response
+                </PopoverItem>
+              ) : null}
+              {messageId ? (
+                <PopoverItem
+                  icon="ph:thumbs-down"
+                  checked={vote === "down"}
+                  onSelect={() => applyVote("down")}
+                >
+                  Bad response
+                </PopoverItem>
+              ) : null}
+            </OverflowMenu>
           ) : null}
-          {messageId ? (
-            <>
-              <button
-                type="button"
-                aria-label="Good response"
-                aria-pressed={vote === "up"}
-                onClick={() => applyVote("up")}
-                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-              >
-                <Icon name="ph:thumbs-up" width={13} aria-hidden />
-              </button>
-              <button
-                type="button"
-                aria-label="Bad response"
-                aria-pressed={vote === "down"}
-                onClick={() => applyVote("down")}
-                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-              >
-                <Icon name="ph:thumbs-down" width={13} aria-hidden />
-              </button>
-            </>
-          ) : null}
+          <SpeakBubble
+            text={content}
+            familiarId={feedbackContext?.familiarId}
+            hidden
+            controllerRef={speechRef}
+            onStateChange={setSpeakState}
+          />
         </div>
+      ) : null}
+      {readerOpen ? (
+        <ExpandBubble
+          open
+          onClose={() => setReaderOpen(false)}
+          text={content}
+          label={label ?? "Familiar response"}
+          tools={readerTools}
+          durationMs={readerDurationMs}
+          onAskAbout={onAskAbout}
+          prompt={readerPrompt}
+          onRerunWith={onRerunWith}
+          familiarId={readerFamiliarId}
+        />
       ) : null}
       <div className={`cave-bubble-timestamp${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
         {fmtBubbleTime(timestamp)}
@@ -1127,104 +1373,70 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
 }
 
 // ---------------------------------------------------------------------------
-// ExpandBubble — opens the message in a full-width markdown reading view
+// ExpandBubble — opens the message in the reader (message-reader.tsx)
 // ---------------------------------------------------------------------------
 
-function ExpandBubble({ text, label }: { text: string; label: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Expand message"
-        title="Expand"
-        onClick={() => setOpen(true)}
-        className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-      >
-        <Icon name="ph:arrows-out-simple" width={11} aria-hidden />
-      </button>
-      {open ? <MarkdownExpandModal text={text} label={label} onClose={() => setOpen(false)} /> : null}
-    </>
-  );
-}
-
-function MarkdownExpandModal({
+function ExpandBubble({
+  open,
+  onClose,
   text,
   label,
-  onClose,
+  tools,
+  durationMs,
+  onAskAbout,
+  prompt,
+  onRerunWith,
+  familiarId,
 }: {
+  open: boolean;
+  onClose: () => void;
   text: string;
   label: string;
-  onClose: () => void;
+  tools?: readonly BatchTool[];
+  durationMs?: number;
+  onAskAbout?: (quote: string) => void;
+  prompt?: { text: string; createdAt?: string };
+  onRerunWith?: (prompt: string) => void;
+  familiarId?: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const readerCited = useMemo(() => renderCitedBody(text), [text]);
+  return (
+    <>
+      {open ? (
+        <MessageReader
+          text={text}
+          label={label}
+          tools={tools}
+          durationMs={durationMs}
+          onAsk={onAskAbout}
+          prompt={prompt}
+          onRerunWith={onRerunWith}
+          familiarId={familiarId}
+          onClose={onClose}
+        >
+          {/* MarkdownContent, not MarkdownBlock: it is the renderer that wires
+              InlineCitationPreviews, so a cited answer gets the same interactive
+              source chips the transcript shows instead of bare links. It also
+              carries the file-link and code-reading wiring — the portal keeps
+              those contexts, so they behave as they do in the stream.
 
-  // CHAT-D11-02: shared focus trap — focuses the first control on open,
-  // cycles Tab/Shift+Tab inside the dialog, closes on Escape, and restores
-  // focus to the Expand trigger on close. Always active: this component only
-  // mounts while the modal is open.
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
+              Renders the CITED body: raw `text` still carries the footnote
+              definitions, so the reader would otherwise show `[^label]` markers
+              inline and dump the definition block into the prose. `text` stays
+              raw on the reader itself — Copy/Export hand back portable
+              markdown, and the Sources tab needs those definitions to parse.
 
-  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
-
-  const copy = useCallback(async () => {
-    if (!(await copyText(text))) return;
-    setCopied(true);
-    if (copyTimer.current) clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopied(false), 2000);
-  }, [text]);
-
-  // Portal to <body>: transcript rows use `content-visibility: auto`, which
-  // establishes layout containment around the message. Rendered inline, the
-  // overlay can be clamped to that turn instead of the viewport. Portaling
-  // keeps `inset-0` anchored to the real viewport. See ui/modal.tsx.
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        ref={dialogRef}
-        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Expanded ${label}`}
-        tabIndex={-1}
-      >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
-          <Icon name="ph:book-open" width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[length:var(--text-base)] font-medium text-[var(--text-secondary)]">{label}</span>
-          <button
-            type="button"
-            onClick={() => void copy()}
-            className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
-            {copied ? "Copied" : "Copy"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-            aria-label="Close expanded view"
-          >
-            <Icon name="ph:x-bold" width={11} aria-hidden />
-          </button>
-        </div>
-        {/* Reader body: a centered book measure with its own reading scale
-            (.cave-md--reader in cave-chat.css) — the transcript's dense 14px
-            is right in the stream, wrong for a full-screen reading surface. */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-12">
-          <div className="mx-auto w-full max-w-[72ch]">
-            <MarkdownBlock text={text} className="cave-md--expanded cave-md--reader" />
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
+              The reader's own reading scale (.cave-md--reader in
+              cave-md/prose.css): the transcript's dense 14px is right in the
+              stream, wrong for a full-screen reading surface. */}
+          <MarkdownContent
+            text={readerCited.body}
+            citations={readerCited.citations}
+            className="cave-md--expanded cave-md--reader"
+            decorateResponse
+          />
+        </MessageReader>
+      ) : null}
+    </>
   );
 }

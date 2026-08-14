@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 
 type SubmissionType = "runtime" | "harness";
 type ValidationStatus = "pass" | "warning" | "fail" | "review-required";
@@ -158,7 +159,10 @@ function entryRouteReadiness(entry: CatalogEntry): string {
 }
 
 export function OpenCovenSubmissionPanel() {
-  const [submissionType, setSubmissionType] = useState<SubmissionType>("runtime");
+  const { value: submissionType, select: selectSubmissionType } = useSurfaceHistory<SubmissionType>({
+    id: "submissions:type",
+    initial: "runtime",
+  });
   const [packageText, setPackageText] = useState(() => JSON.stringify(SAMPLE_PACKAGE, null, 2));
   const [fileName, setFileName] = useState<string | null>(null);
   const [result, setResult] = useState<SubmissionResponse | null>(null);
@@ -327,7 +331,7 @@ export function OpenCovenSubmissionPanel() {
               key={type}
               size="sm"
               variant={submissionType === type ? "primary" : "ghost"}
-              onClick={() => setSubmissionType(type)}
+              onClick={() => selectSubmissionType(type)}
               aria-pressed={submissionType === type}
               className="capitalize"
             >

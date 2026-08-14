@@ -9,6 +9,12 @@ const source = readFileSync(
 
 assert.match(
   source,
+  /const harnessId = canonicalHarnessId\(familiar\.harness \?\? "codex"\);[\s\S]*canonicalHarnessId\(item\.harness_id\) === harnessId[\s\S]*canonicalHarnessId\(item\.id\) === harnessId/,
+  "Familiar capability summaries should match legacy harness aliases to canonical manifests and reports",
+);
+
+assert.match(
+  source,
   /const availability = h\.availability;[\s\S]{0,100}if \(availability && availability\.state !== "ready"\)[\s\S]{0,240}label: `\$\{h\.label\}\$\{availability\.state === "missing" \? " \(not installed\)" : " \(unavailable\)"\}`,[\s\S]{0,100}detail: availability\.message/,
   "the Familiar capability runtime picker must distinguish an unlaunchable runtime and show the shared remediation",
 );

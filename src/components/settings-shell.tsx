@@ -5,11 +5,13 @@ import "@/styles/dashboard.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { IconButton } from "@/components/ui/icon-button";
+import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
@@ -60,6 +62,7 @@ import { openExternalUrl } from "@/lib/open-external";
 import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
 import { BackdropSettings } from "@/components/backdrop-settings";
 import { VoiceEngineSettings } from "@/components/voice-engine-settings";
+import { VoiceProviderSettings } from "@/components/voice-provider-settings";
 import {
   flushAppPreferences,
   readAppPreferences,
@@ -80,11 +83,18 @@ import {
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
-export function SettingsShell() {
+export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const isMobile = useIsMobile();
 
-  const [section, setSection] = useState<Section>("general");
+  // Sections are navigation, not view state: Back from Appearance should land
+  // on the section you came from rather than popping the whole route.
+  const {
+    value: section,
+    select: selectSection,
+    show: showSection,
+  } = useSurfaceHistory<Section>({ id: "settings:section", initial: "general" });
+  const setSection = showSection;
   const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
@@ -94,7 +104,11 @@ export function SettingsShell() {
   const showPicker = isMobile && pickerView;
 
   // ── Search across settings ────────────────────────────────────────────────
-  const [query, setQuery] = useState("");
+  const { value: query, select: selectQuery, show: setQuery } = useSurfaceHistory<string>({
+    id: "settings:search",
+    initial: "",
+    coalesceMs: 1200,
+  });
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -132,23 +146,39 @@ export function SettingsShell() {
     return () => cancelAnimationFrame(raf);
   }, [scrollTarget, section]);
 
+  /** A user picking a section — from the rail, the search results, or ⌘↓. */
   function openSection(id: Section) {
-    setSection(id);
+    selectSection(id);
     setPickerView(false);
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#${id}`);
-    }
   }
   function backToPicker() {
     setPickerView(true);
-    if (typeof window !== "undefined") {
+    if (!embedded && typeof window !== "undefined") {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }
 
+  // Keep the deep-link hash on whatever section is showing, including one the
+  // history controls restored — openSection is no longer the only way to move.
+  //
+  // It must not run before the incoming hash has been read. On mount `section`
+  // is still the "general" default while the URL already says `#about`, so an
+  // ungated write rewrites the deep link to `#general` and the reader below
+  // then honours the value this effect just clobbered.
+  const hashHydratedRef = useRef(false);
+  useEffect(() => {
+    if (embedded || typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
+    if (window.location.hash === `#${section}`) return;
+    window.history.replaceState(null, "", `#${section}`);
+  }, [section, pickerView]);
+
   // Support hash-based deep-linking. Read it after hydration so SSR and the
   // first client render both start on General.
   useEffect(() => {
+    if (embedded) {
+      hashHydratedRef.current = true;
+      return;
+    }
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
@@ -162,9 +192,10 @@ export function SettingsShell() {
       setPickerView(true);
     };
     applyHashSection();
+    hashHydratedRef.current = true;
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -174,7 +205,11 @@ export function SettingsShell() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.key === "Escape") {
         e.preventDefault();
-        router.back();
+        if (embedded) {
+          if (isMobile && !pickerView) backToPicker();
+        } else {
+          router.back();
+        }
         return;
       }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -187,10 +222,12 @@ export function SettingsShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, section]);
+  }, [embedded, isMobile, pickerView, router, section]);
 
   return (
-    <div className="settings-shell flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <div
+      className={`settings-shell${embedded ? " settings-shell--embedded h-full" : " h-[100dvh]"} w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
+    >
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
           route. Desktop always pops the route. */}
@@ -204,7 +241,7 @@ export function SettingsShell() {
         // Real window drag on the loopback webview (the CSS app-region hint is
         // inert on external URLs — see the titlebar notes in shell.tsx). The
         // Back button and other controls opt out automatically as clickables.
-        data-tauri-drag-region="deep"
+        data-tauri-drag-region={embedded ? undefined : "deep"}
       >
         <Button
           variant="ghost"
@@ -241,7 +278,7 @@ export function SettingsShell() {
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
             <SearchInput
               value={query}
-              onValueChange={setQuery}
+              onValueChange={selectQuery}
               onClear={() => setQuery("")}
               placeholder="Search settings…"
               aria-label="Search settings"
@@ -304,6 +341,7 @@ export function SettingsShell() {
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
+          {section === "voice" && <VoiceSection />}
           {section === "daemon" && (
             <DaemonSection
               suggestedHubUrl={suggestedHubUrl}
@@ -340,7 +378,6 @@ function GeneralSection() {
       <SettingsGroup label="Chat" variant="ruled" panel={false}>
         <StopPhraseField />
       </SettingsGroup>
-      <VoiceEngineSettings />
       <SettingsGroup label="Progression" variant="ruled" panel={false}>
         <div className="settings-progression-card">
           <CelebrationsToggle />
@@ -360,6 +397,22 @@ function GeneralSection() {
         </div>
       </SettingsGroup>
     </SettingsPage>
+  );
+}
+
+// ─── Section: Voice ───────────────────────────────────────────────────────────
+
+function VoiceSection() {
+  return (
+    <div className="settings-voice">
+      <SettingsPage
+        section="voice"
+        title="Voice"
+        description="Providers, models, voices, and creation defaults."
+      >
+        <VoiceProviderSettings localSpeechSettings={<VoiceEngineSettings />} />
+      </SettingsPage>
+    </div>
   );
 }
 
@@ -919,32 +972,81 @@ function ScheduledSyncSettings() {
   );
 }
 
+/**
+ * Workspace path — read the current root, and let Browse *change* it.
+ *
+ * Browse used to hand the path to the OS file manager (`shell_open_path`),
+ * which meant it did nothing at all on the web build and, on desktop, could
+ * only ever show you the folder you already had. Choosing a different one had
+ * no UI at all. It now opens the in-app folder browser — the same modal the
+ * new-project flow uses, so this works identically on web and desktop with no
+ * native dialog — and persists the pick through /api/config/workspace-path.
+ *
+ * Revealing the folder in the OS file manager is still available on desktop,
+ * as its own control rather than as the meaning of "Browse".
+ */
 function WorkspacePathField() {
   const [path, setPath] = useState("");
+  const [envPin, setEnvPin] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const desktop = useIsTauriDesktop();
   const { announce } = useAnnouncer();
-  const [openError, setOpenError] = useState("");
+  // One slot for both failures the row can surface (saving a pick, revealing
+  // the folder natively) — they are mutually exclusive in practice and share
+  // the same alert line.
+  const [fieldError, setFieldError] = useState("");
 
   useEffect(() => {
     const ctl = new AbortController();
-    fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
+    fetch("/api/config/workspace-path", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
-      .then((j: { workspacePath?: string }) => {
-        if (!ctl.signal.aborted && j.workspacePath) setPath(j.workspacePath);
+      .then((j: { workspacePath?: string; envPin?: string | null }) => {
+        if (ctl.signal.aborted) return;
+        if (j.workspacePath) setPath(j.workspacePath);
+        setEnvPin(j.envPin ?? null);
       })
       .catch(() => {});
     return () => ctl.abort();
   }, []);
 
-  const browse = async () => {
+  const choose = async (dir: string) => {
+    setPickerOpen(false);
+    setSaving(true);
+    setFieldError("");
+    try {
+      const res = await fetch("/api/config/workspace-path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ dir }),
+      });
+      const body = (await res.json()) as { ok?: boolean; workspacePath?: string; error?: string };
+      if (!res.ok || !body.ok || !body.workspacePath) {
+        const message = body.error ?? "Couldn't save the workspace path.";
+        setFieldError(message);
+        announce(message, "assertive");
+        return;
+      }
+      setPath(body.workspacePath);
+      announce("Workspace path saved.");
+    } catch {
+      setFieldError("Couldn't save the workspace path.");
+      announce("Couldn't save the workspace path.", "assertive");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reveal = async () => {
     if (!desktop || !path) return;
-    setOpenError("");
+    setFieldError("");
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("shell_open_path", { path });
       announce("Workspace folder opened.");
     } catch {
-      setOpenError("Couldn't open the workspace folder.");
+      setFieldError("Couldn't open the workspace folder.");
       announce("Couldn't open the workspace folder.", "assertive");
     }
   };
@@ -957,17 +1059,47 @@ function WorkspacePathField() {
         aria-label="Workspace path"
         className="settings-workspace-path focus-ring"
       />
-      <Button
-        variant="secondary"
-        size="sm"
-        leadingIcon="ph:folder-open"
-        disabled={!desktop || !path}
-        title={desktop ? "Open workspace folder" : "Available in the desktop app"}
-        onClick={() => void browse()}
-      >
-        Browse
-      </Button>
-      {openError ? <p role="alert" className="settings-workspace-error">{openError}</p> : null}
+      <div className="settings-workspace-actions">
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon="ph:folder-open"
+          disabled={Boolean(envPin) || saving}
+          title={
+            envPin
+              ? `Pinned by ${envPin}`
+              : "Choose where Coven stores familiar workspaces"
+          }
+          onClick={() => {
+            // Don't carry a previous failure into a fresh attempt.
+            setFieldError("");
+            setPickerOpen(true);
+          }}
+        >
+          {saving ? "Saving…" : "Browse"}
+        </Button>
+        {desktop ? (
+          <IconButton
+            icon="ph:arrow-square-out"
+            aria-label="Open workspace folder in file manager"
+            title="Open workspace folder in file manager"
+            size="sm"
+            disabled={!path}
+            onClick={() => void reveal()}
+          />
+        ) : null}
+      </div>
+      {envPin ? (
+        <p className="settings-workspace-hint">
+          Pinned by the {envPin} environment variable.
+        </p>
+      ) : null}
+      {fieldError ? <p role="alert" className="settings-workspace-error">{fieldError}</p> : null}
+      <DirectoryPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(dir) => void choose(dir)}
+      />
     </div>
   );
 }

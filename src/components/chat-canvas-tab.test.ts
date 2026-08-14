@@ -130,7 +130,7 @@ assert.match(
 );
 
 // ── Preview modal → editor hand-off ─────────────────────────────────────────
-// Clicking a card opens a non-interactive preview dialog, not the editor.
+// Clicking a card opens a live, interactive preview dialog, not the editor.
 assert.match(view, /onClick=\{\(\) => setPreviewId\(artifact\.id\)\}/, "card click opens the preview modal");
 assert.match(
   view,
@@ -156,6 +156,11 @@ assert.match(
   view,
   /chat-canvas-preview__frame"[\s\S]{0,200}?sandbox="allow-scripts"/,
   "the live preview keeps the opaque-origin sandbox",
+);
+assert.match(
+  view,
+  /chat-canvas-preview__frame"[\s\S]{0,300}?tabIndex=\{0\}/,
+  "keyboard users can enter the live artifact preview",
 );
 assert.match(
   view,
@@ -430,10 +435,10 @@ assert.match(
   /\.chat-canvas-card__frame[\s\S]{0,300}?pointer-events: none/,
   "thumbnail iframe never captures pointer input",
 );
-assert.match(
+assert.doesNotMatch(
   css,
   /\.chat-canvas-preview__frame[\s\S]{0,200}?pointer-events: none/,
-  "the preview-modal sketch renders live but never captures pointer input",
+  "the preview-modal sketch receives pointer input",
 );
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
@@ -553,7 +558,16 @@ assert.match(
 assert.match(addTile, /startCanvasGeneration\(\{/, "describe starts the navigation-safe Canvas generation owner");
 assert.match(addTile, /What would you like to create\?/, "default path asks for intent, not an implementation mode");
 assert.match(addTile, /Create preview/, "primary action creates a preview");
-assert.match(addTile, /buildSketchPrompt\(state\.prompt\)/, "prompts are wrapped with the shared sketch contract");
+assert.match(
+  addTile,
+  /buildSketchPrompt\(state\.prompt, \{ playable \}\)/,
+  "prompts are wrapped with the shared sketch contract, carrying the playable flag",
+);
+assert.match(
+  addTile,
+  /aria-pressed=\{playable\}/,
+  "the playable toggle reports its pressed state to assistive tech",
+);
 assert.match(addTile, /buildRefinePrompt\(state\.result\.code, ask, state\.result\.kind\)/, "refine reuses the shared refine contract");
 assert.match(generationRegistry, /buildArtifactRepairPrompt/, "format recovery uses the bounded repair prompt");
 assert.match(generationRegistry, /sessionId: result\.sessionId/, "repair resumes the same hidden Canvas session");

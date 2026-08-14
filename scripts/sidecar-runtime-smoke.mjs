@@ -7,6 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+// The file-count ceiling is read from sidecar-runtime-budget.json through this
+// module rather than repeated here — see cave-0ia8h.
+import { SIDECAR_RUNTIME_BUDGETS } from "./sidecar-runtime-closure.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stagedSidecarRoot = path.join(root, "src-tauri", "resources", "server");
@@ -31,6 +34,13 @@ const bundledPiper = path.join(
   "resources",
   "piper",
   process.platform === "win32" ? "piper.exe" : "piper",
+);
+const bundledKokoro = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "kokoro",
+  process.platform === "win32" ? "sherpa-onnx-offline-tts.exe" : "sherpa-onnx-offline-tts",
 );
 const token = "sidecar-runtime-smoke-token";
 
@@ -120,6 +130,7 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port, environmen
       COVEN_CAVE_BUNDLE: "1",
       COVEN_WHISPER_CPP_BIN: bundledWhisper,
       COVEN_PIPER_BIN: bundledPiper,
+      COVEN_KOKORO_BIN: bundledKokoro,
       COVEN_CAVE_AUTH_TOKEN: token,
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
@@ -214,7 +225,13 @@ async function writeHangingDaemonFixture(rootDir, marker) {
   if (process.platform === "win32") {
     await writeFile(
       fixture,
-      `@echo off\r\n"${bundledNode}" "${daemonScript}"\r\n`,
+      [
+        "@ECHO off",
+        "SETLOCAL",
+        "CALL :find_dp0",
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\hanging-daemon-child.cjs" %*',
+        "",
+      ].join("\r\n"),
       "utf8",
     );
   } else {
@@ -248,7 +265,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_814);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= SIDECAR_RUNTIME_BUDGETS.fileCount);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -270,6 +287,9 @@ async function main() {
     "marketplace/plugins/prompt-pack-essentials/plugin.json",
     "public/sandbox/react-runtime.js",
     "public/sandbox/tailwind.js",
+    "node_modules/next/dist/compiled/webpack/webpack-lib.js",
+    "node_modules/next/dist/compiled/webpack/webpack.js",
+    "node_modules/next/dist/compiled/webpack/bundle5.js",
     "vault.yaml",
     "workflows/release-review.yaml",
   ]) {
@@ -318,6 +338,18 @@ async function main() {
     0,
     `packaged Piper runtime must launch from resources: ${piperHelp.stderr || piperHelp.error}`,
   );
+
+  const kokoroHelp = spawnSync(bundledKokoro, ["--help"], {
+    encoding: "utf8",
+  });
+  assert.equal(
+    kokoroHelp.status,
+    0,
+    `packaged Kokoro (sherpa-onnx) runtime must launch from resources: ${kokoroHelp.stderr || kokoroHelp.error}`,
+  );
+  // espeak-ng-data must ride beside the Kokoro executable: the Node runner
+  // passes --kokoro-data-dir=<dir-of-executable>/espeak-ng-data.
+  await access(path.join(path.dirname(bundledKokoro), "espeak-ng-data", "phontab"));
 
   const nativeModules = spawnSync(
     bundledNode,
@@ -455,6 +487,11 @@ async function main() {
       true,
       "the sidecar must execute the managed Piper resource, not fall back to PATH",
     );
+    assert.equal(
+      engines.runtimes?.kokoro?.available,
+      true,
+      "the sidecar must execute the managed Kokoro (sherpa-onnx) resource, not fall back to PATH",
+    );
 
     const marketplaceResponse = await fetch(`${baseUrl}/api/marketplace`, {
       headers: { "x-coven-cave-token": token },
@@ -535,6 +572,11 @@ async function main() {
       },
       general: { stopPhrase: "halt", celebrations: false },
       phone: { mobileMode: false },
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "eleven_turbo_v2_5",
+        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+      },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
       method: "PATCH",
@@ -598,6 +640,7 @@ async function main() {
     assert.equal(restored.appearance.backdrop.image.mime, "image/png");
     assert.deepEqual(restored.general, preferencePatch.general);
     assert.deepEqual(restored.phone, preferencePatch.phone);
+    assert.deepEqual(restored.voice, preferencePatch.voice);
 
     const documentResponse = await fetch(baseUrl, {
       headers: authenticatedHeaders(baseUrl),

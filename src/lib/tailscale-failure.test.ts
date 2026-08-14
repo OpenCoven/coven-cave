@@ -19,6 +19,15 @@ test("classifies actionable Tailscale installation and session states", () => {
   }
 });
 
+test("classifies Serve permission failures separately from generic Serve failures", () => {
+  assert.equal(
+    classifyTailscaleFailureKind(
+      "sending serve config: Access denied: serve config denied. Use 'sudo tailscale set --operator=$USER' once.",
+    ),
+    "serve-permission",
+  );
+});
+
 test("classifies Serve failures without treating similar words as Serve", () => {
   assert.equal(classifyTailscaleFailureKind("tailscale serve failed"), "serve-failed");
   assert.equal(classifyTailscaleFailureKind("pairing service unavailable"), "unknown");

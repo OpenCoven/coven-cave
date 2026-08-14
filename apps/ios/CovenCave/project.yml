@@ -7,8 +7,15 @@ options:
   groupSortPosition: top
 settings:
   base:
-    MARKETING_VERSION: "0.2.1"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.3.3"
+    # Build number, YYYYMMDDHH in UTC. App Store Connect requires this to be
+    # unique and increasing for the app, and a hand-kept "1" collides on every
+    # upload after the first (it rejected the v0.2.3 upload on 2026-08-03).
+    # A date stamp is monotonic without anyone tracking the last value.
+    # `scripts/stamp-release.mjs` refreshes this alongside MARKETING_VERSION on
+    # every cut — a release stamp that moved only the marketing version is how
+    # v0.2.3 shipped a build number App Store Connect had already seen.
+    CURRENT_PROJECT_VERSION: "2026081213"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "9LR8Z8UQ9X"
     CODE_SIGN_STYLE: Automatic

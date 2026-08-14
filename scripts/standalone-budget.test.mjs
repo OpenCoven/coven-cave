@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -40,7 +40,31 @@ try {
     assert.equal(forbiddenStandaloneRoot(root), root);
     assert.equal(forbiddenStandaloneRoot(`${root}/nested/file`), root);
   }
+  assert.equal(forbiddenStandaloneRoot(".tmp/repo-snapshot/package.json"), ".tmp");
+  // Synthetic sample name — not a real checkout path. Patrol fixtures now live
+  // under tmpdir as worktree-lifecycle-fixture-* (no leading dot); this string
+  // only exercises the forbiddenStandaloneRoot prefix match (cave-ad63l).
+  assert.equal(
+    forbiddenStandaloneRoot(".worktree-lifecycle-fixture-sample"),
+    ".worktree-lifecycle-fixture-sample",
+  );
+  assert.equal(
+    forbiddenStandaloneRoot(".worktree-lifecycle-fixture-sample/repo/README.md"),
+    ".worktree-lifecycle-fixture-sample",
+  );
   assert.equal(forbiddenStandaloneRoot("node_modules/target/index.js"), undefined);
+
+  const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
+  assert.match(
+    nextConfig,
+    /"\.\/\.worktree-lifecycle-fixture-\*\/\*\*\/\*"/,
+    "Next tracing excludes every generated lifecycle fixture root",
+  );
+  assert.match(
+    nextConfig,
+    /"\.\/\.tmp\/\*\*\/\*"/,
+    "Next tracing excludes checkout-local temporary artifacts",
+  );
 
   const leaked = path.join(fixture, "target-windows");
   await write(leaked, "debug/build.exe", "binary\n");

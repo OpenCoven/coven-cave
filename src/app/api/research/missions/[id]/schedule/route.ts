@@ -3,6 +3,7 @@ import { parseCodexRrule } from "@/lib/codex-automation-form";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   makeProductionResearchMissionRunner,
+  RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT,
   type ResearchAutomationScheduleInput,
 } from "@/lib/server/research-mission-runner";
 import { isValidResearchMissionId } from "@/lib/server/research-mission-store";
@@ -66,6 +67,7 @@ const VALIDATION_ERRORS = new Set([
 
 function scheduleErrorStatus(message: string): number {
   if (message === "research mission not found") return 404;
+  if (message === RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT) return 409;
   // Terminal-status rejections carry the status ("cannot schedule a
   // completed research mission").
   if (VALIDATION_ERRORS.has(message) || message.startsWith("cannot schedule a ")) return 400;

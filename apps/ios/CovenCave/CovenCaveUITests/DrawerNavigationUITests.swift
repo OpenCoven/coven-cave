@@ -5,12 +5,13 @@ final class DrawerNavigationUITests: XCTestCase {
     @MainActor
     func testLaunchThreadIntentDoesNotReopenAfterChatsRemounts() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-empty-chat"]
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-preview-second-thread"]
         app.launchEnvironment["CAVE_OPEN_THREAD"] = "ui-preview-empty-chat"
         app.launch()
 
-        let threadTitle = "Chat with Nyx on Jul 26"
-        XCTAssertTrue(app.navigationBars[threadTitle].waitForExistence(timeout: 10),
+        let launchThreadTitle = "Chat with Nyx on Jul 26"
+        let newestThreadTitle = "Chat with Nyx on Jul 27"
+        XCTAssertTrue(app.navigationBars[launchThreadTitle].waitForExistence(timeout: 10),
                       "the launch thread opens on the first Chats mount")
 
         let back = app.navigationBars.buttons["BackButton"].firstMatch
@@ -24,28 +25,28 @@ final class DrawerNavigationUITests: XCTestCase {
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
                       "leaving the launch thread returns to Chats home")
         openNavigation.tap()
-        app.buttons["Terminal"].tap()
+        app.buttons["Settings"].tap()
 
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
-                      "Terminal exposes the navigation drawer")
+                      "Settings exposes the navigation drawer")
         openNavigation.tap()
         app.buttons["Chats"].tap()
 
-        XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
-                      "remounted Chats stays at its home destination")
-        XCTAssertFalse(app.navigationBars[threadTitle].exists,
-                       "the consumed launch thread is not reopened after remounting Chats")
+        XCTAssertTrue(app.navigationBars[newestThreadTitle].waitForExistence(timeout: 10),
+                      "remounted Chats selects the current default conversation")
+        XCTAssertFalse(app.navigationBars[launchThreadTitle].exists,
+                       "the consumed launch thread does not override the newer default")
     }
 
     @MainActor
     func testDrawerRecentThreadOpensAfterChatsIsMounted() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "terminal"]
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "tasks"]
         app.launch()
 
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
-                      "Terminal exposes the navigation drawer")
+                      "Tasks exposes the navigation drawer")
         openNavigation.tap()
 
         let recentThread = app.buttons["Chat with Nyx on Jul 26"]
@@ -60,14 +61,14 @@ final class DrawerNavigationUITests: XCTestCase {
     @MainActor
     func testDrawerRoutesBetweenPrimaryDestinationsWithoutATabBar() {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview-empty-chat"]
+        app.launchArguments = ["--ui-preview-empty-chat", "--ui-tab", "settings"]
         app.launch()
 
         XCTAssertFalse(app.tabBars.firstMatch.exists, "the app has no native tab bar")
 
         let openNavigation = app.buttons["Open navigation"]
         XCTAssertTrue(openNavigation.waitForExistence(timeout: 10),
-                      "Chats home exposes the navigation drawer")
+                      "a primary destination exposes the navigation drawer")
         openNavigation.tap()
 
         for destination in ["Chats", "Projects", "Familiars", "Tasks", "Terminal", "Settings"] {

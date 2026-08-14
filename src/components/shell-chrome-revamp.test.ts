@@ -1,8 +1,9 @@
 // @ts-nocheck
 // Chat-revamp phase D — app chrome contracts:
-//   1. 56px icon rail: brand mark on top, primary-surface icon buttons,
-//      Dashboard + Settings + account avatar at the bottom; quiet surfaces
-//      remain reachable as icons.
+//   1. 56px icon rail: primary-surface icon buttons, Dashboard + Settings at
+//      the bottom; quiet surfaces remain reachable as icons. (The rail-only
+//      brand mark and account avatar that phase D put at either end are gone —
+//      see the rail/panel parity assertions below and #4351.)
 //   2. 52px-band command bar: "Search or ask <familiar>…" + ⌘K keycap,
 //      right cluster = compact running status + notification bell.
 //   3. Bottom status bar: session context chips (project/model/branch/cwd) +
@@ -25,31 +26,27 @@ assert.match(
   /<nav className="sidebar-minimal" aria-label="Primary">/,
   "the rail/nav is a labelled navigation landmark",
 );
-assert.match(
-  sidebar,
-  /<div className="sidebar-brand-mark" aria-hidden="true">\s*<Icon name="ph:sparkle"/,
-  "the rail leads with the decorative brand mark (star glyph, hidden from AT)",
-);
-assert.match(
-  sidebarCss,
-  /\.sidebar-brand-mark,\s*\n\.sidebar-user-avatar \{\s*\n\s*display: none;/,
-  "brand mark + account avatar are rail-only (hidden in the expanded panel)",
-);
-assert.match(
-  sidebarCss,
-  /\.shell-nav--rail \.sidebar-brand-mark \{[\s\S]{0,400}?background: color-mix\(in oklch, var\(--accent-presence\) 18%, transparent\);[\s\S]{0,80}?color: var\(--accent-presence\);/,
-  "the brand mark is a 28px accent-tinted square built from semantic tokens (no raw hex)",
-);
+// The rail carries no control the expanded panel lacks (#4351): the decorative
+// brand mark and the account avatar — whose only action duplicated Settings —
+// were rail-only, and between them they displaced the whole rail column against
+// its own hover-peek position.
+assert.doesNotMatch(sidebar, /sidebar-brand-mark/, "no rail-only brand mark");
+assert.doesNotMatch(sidebar, /sidebar-user-avatar/, "no rail-only account avatar");
+assert.doesNotMatch(sidebarCss, /^\.shell-nav--rail \.sidebar-brand-mark/m, "no brand-mark rail styling");
+assert.doesNotMatch(sidebarCss, /^\.shell-nav--rail \.sidebar-user-avatar/m, "no account-avatar rail styling");
+// Control geometry comes from the shared --rail-control constant, so the rail
+// square and the panel row are the same box (see shell-navigation.css).
 assert.match(
   sidebarCss,
-  /\.shell-nav--rail \.sidebar-user-avatar \{[\s\S]{0,400}?border-radius: var\(--radius-pill\);/,
-  "the account avatar is a circular (pill-radius) rail control",
+  /\.shell-nav--rail \.sidebar-folder-row,\n\.shell-nav--rail \.sidebar-action-row,\n\.shell-nav--rail \.sidebar-foot-btn,\n\.shell-nav--rail \.sidebar-foot-icon-btn \{[\s\S]{0,400}?width: var\(--rail-control\);\s*\n\s*height: var\(--rail-control\);/,
+  "rail controls are --rail-control squares",
 );
-// 36px control geometry per the phase-D rail spec.
+// margin-inline, NOT the margin shorthand: the shorthand also zeroed
+// margin-top and silently ate the quiet cluster's leading gap in the rail.
 assert.match(
   sidebarCss,
-  /\.shell-nav--rail \.sidebar-folder-row,\n\.shell-nav--rail \.sidebar-action-row,\n\.shell-nav--rail \.sidebar-foot-btn,\n\.shell-nav--rail \.sidebar-foot-icon-btn \{[\s\S]{0,220}?width: 36px;\s*\n\s*height: 36px;/,
-  "rail controls are 36px squares",
+  /\.shell-nav--rail \.sidebar-folder-row,\n[\s\S]{0,400}?margin-inline: auto;/,
+  "rail controls centre with margin-inline so the quiet-lead gap survives",
 );
 // Dashboard stays reachable in the rail and follows the footer's DOM order, so
 // its icon sits directly above Settings in the rail's vertical footer stack.
@@ -63,11 +60,12 @@ assert.doesNotMatch(
   /\.shell-nav--rail \.sidebar-folder-row--quiet[\s\S]{0,100}display: none;/,
   "quiet sidebar destinations retain rail icons, including Memories, Marketplace, and GitHub",
 );
-// The avatar keeps a real action (Settings) and an accessible name.
+// Settings stays reachable from the rail through the shared footer, which is
+// the last thing in the nav in both states.
 assert.match(
   sidebar,
-  /className="sidebar-user-avatar focus-ring"\s*\n\s*onClick=\{onOpenSettings\}\s*\n\s*aria-label="Account and settings"/,
-  "the account avatar opens Settings and is named for AT",
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
+  "the shared footer closes the sidebar in both the rail and the panel",
 );
 
 // ── 2. Top command bar ───────────────────────────────────────────────────────
@@ -119,6 +117,11 @@ assert.match(
   desktopChrome,
   /\.shell-top \{[^}]*overflow: visible;/,
   "shell-top no longer clips (the bell popover hangs below the band)",
+);
+assert.match(
+  desktopChrome,
+  /\.shell-top:has\(\.notification-bell__popover\) \{[^}]*z-index: 140;/,
+  "an open notification dropdown lifts its title-bar stacking context above shell content",
 );
 
 // ── 3. Bottom status bar ─────────────────────────────────────────────────────

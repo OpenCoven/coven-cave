@@ -88,6 +88,66 @@ assert.equal(await readFile(victim, "utf8"), "do not delete me", "victim survive
 // also reject absolute and dot-dot ids
 assert.equal((await purgeMemoryTrash("/etc/hosts", home)).ok, false, "absolute trashId rejected");
 
+// ── Symlinked-parent escapes (cave-c51ij): the lexical classification is not
+// enough — the canonical location must stay inside the classified root. ────
+{
+  const { symlink, unlink } = await import("node:fs/promises");
+
+  // Archive escape: a familiar memory dir aliasing a location OUTSIDE the root.
+  const outside = path.join(home, "outside-storage");
+  await mkdir(outside, { recursive: true });
+  const escapee = path.join(outside, "loot.md");
+  await writeFile(escapee, "outside bytes", "utf8");
+  const aliasDir = path.join(home, ".coven", "workspaces", "familiars", "alias", "memory");
+  await mkdir(path.dirname(aliasDir), { recursive: true });
+  await symlink(outside, aliasDir);
+  const escapeArchive = await archiveMemoryFile(path.join(aliasDir, "loot.md"), home);
+  assert.deepEqual(
+    escapeArchive,
+    { ok: false, error: "path not allowed" },
+    "a symlinked memory parent aliasing outside storage cannot feed archive",
+  );
+  assert.equal(await readFile(escapee, "utf8"), "outside bytes", "aliased outside file was not moved");
+
+  // Archive alias: a familiar memory dir aliasing CANONICAL Coven storage.
+  await unlink(aliasDir);
+  await symlink(canonicalDir, aliasDir);
+  await writeFile(canonicalFile, "canonical", "utf8");
+  const aliasArchive = await archiveMemoryFile(path.join(aliasDir, "canonical.md"), home);
+  assert.deepEqual(
+    aliasArchive,
+    { ok: false, error: "path not allowed" },
+    "a symlinked memory parent aliasing canonical storage cannot feed archive",
+  );
+  assert.equal(await readFile(canonicalFile, "utf8"), "canonical", "canonical file survived the alias");
+  await unlink(aliasDir);
+
+  // Restore escape: archive legitimately, then swap the destination parent
+  // for a symlink pointing outside before restoring.
+  const swapDir = path.join(home, ".coven", "workspaces", "familiars", "swap", "memory");
+  await mkdir(swapDir, { recursive: true });
+  const swapFile = path.join(swapDir, "swapped.md");
+  await writeFile(swapFile, "legit", "utf8");
+  const swapArchive = await archiveMemoryFile(swapFile, home);
+  assert.equal(swapArchive.ok, true, "legitimate archive before the parent swap succeeds");
+  await rm(swapDir, { recursive: true, force: true });
+  await symlink(outside, swapDir);
+  const swapRestore = await restoreMemoryFile((swapArchive as { trashId: string }).trashId, home);
+  assert.deepEqual(
+    swapRestore,
+    { ok: false, error: "restore target not allowed" },
+    "a destination parent swapped for an outside symlink cannot receive a restore",
+  );
+  await assert.rejects(stat(path.join(outside, "swapped.md")), "nothing was written through the swapped parent");
+  await unlink(swapDir);
+
+  // The same trash entry restores cleanly once the real directory is back.
+  await mkdir(swapDir, { recursive: true });
+  const recovered = await restoreMemoryFile((swapArchive as { trashId: string }).trashId, home);
+  assert.equal(recovered.ok, true, "restore succeeds after the real parent returns");
+  assert.equal(await readFile(swapFile, "utf8"), "legit", "restored through the real parent");
+}
+
 await rm(home, { recursive: true, force: true });
 
 console.log("memory-trash.test: ok");

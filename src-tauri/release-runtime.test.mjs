@@ -56,6 +56,24 @@ function getWorkflowJob(workflow, name) {
   return lines.slice(start, end).join("\n");
 }
 
+// A job holding Windows-only native tests must actually run on Windows. When
+// those steps carried their own `if: matrix.os == 'windows-latest'` this was
+// implicit; now that they live in a single-OS job it has to be checked here, or
+// a future edit to `runs-on` would silently move them onto a Linux runner where
+// every cfg(windows) filter reports zero tests.
+function assertWindowsOnlyJob(job, name) {
+  assert.match(
+    job,
+    /^\s+runs-on: windows-latest$/m,
+    `${name} must run on Windows for its native filters to execute`,
+  );
+  assert.doesNotMatch(
+    job,
+    /^\s+matrix:$/m,
+    `${name} must stay single-OS so no leg silently skips the native filters`,
+  );
+}
+
 function getNamedWorkflowStep(job, name) {
   const lines = job.split(/\r?\n/);
   const marker = `- name: ${name}`;
@@ -75,9 +93,13 @@ function getNamedWorkflowStep(job, name) {
   return lines.slice(start, end).join("\n");
 }
 
+// These steps used to live on the sidecar-runtime matrix and carried a per-step
+// `if: matrix.os == 'windows-latest'`. They now sit in the dedicated
+// windows-native job (cave-b3d), which is windows-only by `runs-on`, so the
+// Windows guarantee is asserted once on the job itself — see
+// assertWindowsOnlyJob — rather than repeated on every step.
 function assertWindowsNativeRustStep(job, expected) {
   const step = getNamedWorkflowStep(job, expected.name);
-  assert.match(step, /^\s+if: matrix\.os == 'windows-latest'$/m);
   assert.match(step, /^\s+shell: pwsh$/m);
   assert.equal(
     step.match(/\bcargo test\b/g)?.length,
@@ -173,7 +195,11 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
     /command -v node/,
     "sidecar bundle script must copy the release runner's Node binary",
   );
-  assert.match(bundleScript, /whisper-runtime-bundle\.sh/, "sidecar bundle script must stage Whisper before packaging");
+  assert.match(
+    bundleScript,
+    /COVEN_CAVE_REFRESH_WHISPER=1 bash "\$ROOT\/scripts\/whisper-runtime-bundle\.sh"/,
+    "release packaging must refresh Whisper instead of trusting a local development cache",
+  );
   assert.match(whisperBundleScript, /whisper-bin-x64\.zip/, "Windows must stage a pinned Whisper CLI archive");
   assert.match(whisperBundleScript, /MSVCP140\.dll.*VCRUNTIME140\.dll.*VCRUNTIME140_1\.dll.*VCOMP140\.dll/, "Windows must ship Whisper's app-local MSVC runtime");
   assert.match(whisperBundleScript, /whisper-bin-ubuntu-x64\.tar\.gz/, "Linux must stage a pinned Whisper CLI archive");
@@ -192,6 +218,51 @@ test("release bundle includes and prefers bundled Node and Whisper runtimes", as
   assert.doesNotMatch(whisperBundleScript, /install_name_tool -add_rpath/, "macOS Whisper must not add a duplicate CMake-provided rpath");
   assert.match(whisperBundleScript, /cp -P/, "Linux Whisper staging must preserve SONAME links");
   assert.match(whisperBundleScript, /checksum mismatch/, "Whisper artifact downloads must be hash-verified");
+  assert.match(
+    whisperBundleScript,
+    /COVEN_CAVE_REFRESH_WHISPER[\s\S]*?runtime_is_current[\s\S]*?exit 0/,
+    "a validated current Whisper runtime must skip network staging unless explicitly refreshed",
+  );
+  assert.match(
+    whisperBundleScript,
+    /MINGW\*\|MSYS\*\|CYGWIN\*\) WHISPER_CLI_NAME="whisper-cli\.exe"/,
+    "Windows cache validation must use the staged whisper-cli.exe name",
+  );
+  assert.match(
+    whisperBundleScript,
+    /\[ -x "\$LIVE_DEST\/\$WHISPER_CLI_NAME" \][\s\S]*?"\$LIVE_DEST\/\$WHISPER_CLI_NAME" --version/,
+    "cache validation must probe the platform-specific Whisper executable",
+  );
+  assert.match(
+    whisperBundleScript,
+    /STAGE_ROOT=.*\.whisper-staging[\s\S]*?mv "\$STAGE_DEST" "\$LIVE_DEST"/,
+    "Whisper must stage in a sibling directory before replacing the live runtime",
+  );
+  assert.match(
+    whisperBundleScript,
+    /PREVIOUS_DEST=""[\s\S]*?cleanup\(\)[\s\S]*?\[ -n "\$PREVIOUS_DEST" \][\s\S]*?\[ ! -e "\$LIVE_DEST" \][\s\S]*?mv "\$PREVIOUS_DEST" "\$LIVE_DEST"/,
+    "cleanup must restore the previous runtime when an interrupted swap leaves the live path absent",
+  );
+  assert.match(
+    whisperBundleScript,
+    /trap 'exit 130' INT[\s\S]*?trap 'exit 143' TERM[\s\S]*?trap 'exit 129' HUP/,
+    "signals must flow through EXIT rollback cleanup with their conventional statuses",
+  );
+  assert.match(
+    whisperBundleScript,
+    /local status=\$\?[\s\S]*?if ! rm -rf "\$PREVIOUS_DEST"[\s\S]*?if ! rm -rf "\$WORK" "\$STAGE_ROOT"[\s\S]*?exit "\$status"/,
+    "non-restoration cleanup failures must be reported without replacing the original exit status",
+  );
+  assert.match(
+    whisperBundleScript,
+    /could not restore the previous bundled Whisper runtime[\s\S]*?if \[ "\$status" -eq 0 \]; then[\s\S]*?status=1/,
+    "rollback failure must preserve an existing failure or signal status while making a successful exit fail",
+  );
+  assert.doesNotMatch(
+    whisperBundleScript,
+    /rm -rf "\$DEST"/,
+    "a failed fetch must never erase the last known-good Whisper runtime",
+  );
   assert.match(
     launcher,
     /fn find_node\(resource_dir: &Path\)/,
@@ -246,6 +317,11 @@ test("macOS reachability daemon uses the managed Piper runtime", async () => {
     /\.env\("COVEN_PIPER_BIN", &piper\)/,
     "the background sidecar must pass its managed Piper path to local TTS",
   );
+  assert.match(
+    daemon,
+    /\.env\("COVEN_KOKORO_BIN", &kokoro\)/,
+    "the background sidecar must pass its managed Kokoro path to local TTS",
+  );
 });
 
 test("clean release runners have resource glob placeholders", async () => {
@@ -257,6 +333,7 @@ test("clean release runners have resource glob placeholders", async () => {
     access(new URL("./resources/node/placeholder.txt", import.meta.url)),
     access(new URL("./resources/whisper/placeholder.txt", import.meta.url)),
     access(new URL("./resources/piper/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/kokoro/placeholder.txt", import.meta.url)),
   ]);
 
   assert.match(
@@ -287,6 +364,13 @@ test("clean release runners have resource glob placeholders", async () => {
     /!src-tauri\/resources\/piper\/placeholder\.txt/,
     "Piper placeholder must be tracked so resources/piper/**/* matches in clean CI",
   );
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/kokoro\/placeholder\.txt/,
+    "Kokoro placeholder must be tracked so resources/kokoro/**/* matches in clean CI",
+  );
+  assert.match(releaseScript, /KOKORO_CLI=.*resources\/kokoro\/sherpa-onnx-offline-tts/, "macOS release must resolve the bundled Kokoro runtime before signing");
+  assert.match(releaseScript, /"\$KOKORO_CLI" --help/, "macOS release must smoke-test the copied Kokoro runtime");
 });
 
 test("native updater cleanup stops the sidecar before Windows exits", async () => {
@@ -439,18 +523,42 @@ test("Windows owned process trees use bounded kernel Job Object cleanup", async 
 
 test("Windows native Rust regression filters are isolated and cannot pass with zero tests", async () => {
   const workflow = await readFile(
-    new URL("../.github/workflows/ci.yml", import.meta.url),
+    new URL("../.github/workflows/release.yml", import.meta.url),
     "utf8",
   );
-  const sidecarRuntimeJob = getWorkflowJob(workflow, "sidecar-runtime");
+  const windowsNativeJob = getWorkflowJob(workflow, "release-windows-native");
+  assertWindowsOnlyJob(windowsNativeJob, "release-windows-native");
 
   for (const expected of WINDOWS_NATIVE_RUST_STEPS) {
-    assertWindowsNativeRustStep(sidecarRuntimeJob, expected);
+    assertWindowsNativeRustStep(windowsNativeJob, expected);
   }
-  assert.doesNotMatch(
+  // Checked against BOTH jobs: the filter is cfg-disabled on Windows wherever it
+  // is invoked from, so the guard must not lapse just because the steps moved.
+  const sidecarRuntimeJob = getWorkflowJob(workflow, "release-platform-validation");
+  for (const [name, job] of [
+    ["release-windows-native", windowsNativeJob],
+    ["release-platform-validation", sidecarRuntimeJob],
+  ]) {
+    assert.doesNotMatch(
+      job,
+      /dropping_application_cleanup_guard_stops_and_reaps_sidecar/,
+      `Windows CI must not silently pass a cleanup filter that is cfg-disabled on Windows (${name})`,
+    );
+  }
+
+  // The archive extraction test deliberately stays behind the bundle build:
+  // extracts_the_built_windows_archive_when_available returns early when
+  // resources/server-archive is absent, so running it in the bundle-less job
+  // would pass while testing nothing.
+  assert.match(
     sidecarRuntimeJob,
-    /dropping_application_cleanup_guard_stops_and_reaps_sidecar/,
-    "Windows CI must not silently pass a cleanup filter that is cfg-disabled on Windows",
+    /^\s+- name: Test Windows sidecar cache extraction$/m,
+    "sidecar archive extraction must stay in the job that builds the archive",
+  );
+  assert.doesNotMatch(
+    windowsNativeJob,
+    /sidecar_archive/,
+    "sidecar archive extraction must not move to the bundle-less job, where it would silently test nothing",
   );
 });
 
@@ -459,12 +567,12 @@ test("Rust mobile access-token coverage follows extracted lifecycle tests", asyn
     new URL("../.github/workflows/ci.yml", import.meta.url),
     "utf8",
   );
-  const cargoCheckJob = getWorkflowJob(workflow, "cargo-check");
+  const cargoCheckJob = getWorkflowJob(workflow, "build");
 
   assert.match(
     cargoCheckJob,
-    /cargo test --locked --lib app_lifecycle_tests::mobile_access_token -- --nocapture/,
-    "the Rust check must retain the persisted mobile-token lifecycle coverage after extraction",
+    /cargo test --locked --lib/,
+    "path-aware Rust validation must run the full library suite, including persisted mobile-token lifecycle coverage",
   );
 });
 
@@ -491,11 +599,11 @@ test("Windows close watchdog helper follows extracted lifecycle tests", async ()
 
 test("Windows conformance runs the native harness parser and DryRun fixture", async () => {
   const workflow = await readFile(
-    new URL("../.github/workflows/ci.yml", import.meta.url),
+    new URL("../.github/workflows/release.yml", import.meta.url),
     "utf8",
   );
   const { SUITES } = await import(new URL("../scripts/run-tests.mjs", import.meta.url));
-  const conformanceJob = getWorkflowJob(workflow, "conformance");
+  const conformanceJob = getWorkflowJob(workflow, "release-platform-validation");
   const conformanceStep = getNamedWorkflowStep(
     conformanceJob,
     "Run cross-environment conformance",
@@ -504,15 +612,8 @@ test("Windows conformance runs the native harness parser and DryRun fixture", as
 
   assert.match(
     conformanceJob,
-    /^\s+os: \[ubuntu-latest, windows-latest\]$/m,
-    "the conformance matrix must retain a real Windows runner",
-  );
-  // Apple hosted runners were intentionally removed from PR CI (their minutes
-  // were exhausting the org Actions budget); they must not silently return.
-  assert.doesNotMatch(
-    conformanceJob,
-    /^\s+os: \[[^\]]*macos[^\]]*\]$/m,
-    "Apple runners must stay out of PR CI conformance matrix (release.yml covers them)",
+    /^\s+os: \[ubuntu-24\.04, windows-latest, macos-15\]$/m,
+    "release conformance must retain Linux, Windows, and macOS runners",
   );
   assert.match(conformanceStep, /^\s+run: pnpm test:conformance$/m);
   assert.deepEqual(
@@ -536,15 +637,15 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
     assert.match(budget, new RegExp("FROM `" + table + "`"), `budget must inspect MSI ${table} rows`);
   }
   for (const [metric, limit] of Object.entries({
-    fileRows: 382,
-    componentRows: 387,
-    createFolderRows: 382,
-    directoryRows: 50,
+    fileRows: 741,
+    componentRows: 746,
+    createFolderRows: 741,
+    directoryRows: 88,
   })) {
     assert.match(
       budget,
       new RegExp(`${metric} = ${limit}`),
-      `${metric} must stay pinned to the independently measured post-placeholder baseline`,
+      `${metric} must stay pinned to the independently measured v0.2.2 Kokoro baseline`,
     );
   }
   assert.doesNotMatch(
@@ -641,11 +742,36 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   );
 });
 
+test("release builds require the configured OpenCoven X app before platform builds", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+  const buildJob = getWorkflowJob(workflow, "build");
+  const xAppConfiguration = getNamedWorkflowStep(buildJob, "Require OpenCoven X app configuration");
+
+  assert.match(
+    buildJob,
+    /^    env:\n      COVEN_CAVE_X_PRODUCTION_CLIENT_ID: \$\{\{ vars\.COVEN_CAVE_X_PRODUCTION_CLIENT_ID \}\}$/m,
+    "every release platform leg must receive the repository X app client ID",
+  );
+  assert.match(xAppConfiguration, /^\s+run: node scripts\/check-x-app-release\.mjs$/m);
+  const guardIndex = buildJob.indexOf("- name: Require OpenCoven X app configuration");
+  for (const platformBuildStep of [
+    "Build with tauri-action",
+    "Build Windows MSI without publishing",
+    "Build macOS DMG with custom release script",
+  ]) {
+    const platformBuildIndex = buildJob.indexOf(`- name: ${platformBuildStep}`);
+    assert.ok(
+      guardIndex >= 0 && platformBuildIndex > guardIndex,
+      `the X app guard must run before ${platformBuildStep}`,
+    );
+  }
+});
+
 test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async () => {
   const [harness, fixtureTest, workflow, changelog, guide] = await Promise.all([
     readFile(new URL("../scripts/windows-upgrade-diagnostics.ps1", import.meta.url), "utf8"),
     readFile(new URL("../scripts/windows-upgrade-diagnostics.test.ps1", import.meta.url), "utf8"),
-    readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"),
+    readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
     readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8"),
     readFile(new URL("../docs/windows-upgrade-benchmark.md", import.meta.url), "utf8"),
   ]);
@@ -669,12 +795,12 @@ test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async ()
   );
   assert.match(fixtureTest, /legacy-expanded-msi-bridge/);
   assert.match(fixtureTest, /msiLog\.actions/);
-  const sidecarRuntimeJob = getWorkflowJob(workflow, "sidecar-runtime");
+  const windowsNativeJob = getWorkflowJob(workflow, "release-windows-native");
+  assertWindowsOnlyJob(windowsNativeJob, "release-windows-native");
   const diagnosticsStep = getNamedWorkflowStep(
-    sidecarRuntimeJob,
+    windowsNativeJob,
     "Test Windows upgrade diagnostics fixture",
   );
-  assert.match(diagnosticsStep, /^\s+if: matrix\.os == 'windows-latest'$/m);
   assert.match(diagnosticsStep, /^\s+shell: powershell$/m);
   assert.match(
     diagnosticsStep,
@@ -776,9 +902,53 @@ test("Windows packaged sidecar starts without a console window", async () => {
   );
 });
 
+test("Windows app-owned console children share the native no-window launcher", async () => {
+  const [helper, discovery, shellCommands] = await Promise.all([
+    readNativeHost("windows_command.rs"),
+    readNativeHost("sidecar_discovery.rs"),
+    readNativeHost("shell_open_commands.rs"),
+  ]);
+
+  assert.match(
+    helper,
+    /fn hidden_command[\s\S]*command\.creation_flags\(CREATE_NO_WINDOW\)/,
+    "the shared helper must apply CREATE_NO_WINDOW to noninteractive native children",
+  );
+  assert.match(
+    helper,
+    /fn hidden_system32_command[\s\S]*windows_system32_binary\(program\)[\s\S]*current_dir\(system32\)/,
+    "system children must use absolute System32 programs and a trusted cwd",
+  );
+  assert.equal(
+    discovery.match(/windows_command::hidden_system32_command\("where\.exe"\)/g)?.length,
+    2,
+    "Node and Coven where.exe discovery must use the hidden launcher and an absolute System32 path",
+  );
+  assert.match(
+    shellCommands,
+    /CovenFolderPicker[\s\S]*windows_command::hidden_system32_command\(\s*r"WindowsPowerShell\\v1\.0\\powershell\.exe",?\s*\)[\s\S]*"-Sta"/,
+    "the visible folder picker must suppress only PowerShell's console host and resolve it from System32",
+  );
+  assert.equal(
+    shellCommands.match(/windows_command::hidden_system32_command\("rundll32\.exe"\)/g)?.length,
+    2,
+    "both URL launchers resolve rundll32 from System32 instead of the working directory",
+  );
+  assert.doesNotMatch(
+    `${discovery}\n${shellCommands}`,
+    /(?:Command::new|hidden_command)\("(?:where|powershell|rundll32)\.exe"\)/,
+    "console-subsystem discovery, dialog, and protocol hosts cannot use cwd-searchable bare names",
+  );
+});
+
 test("Windows first launch paints progress and supports recovery while the sidecar starts", async () => {
   const [launcher, startupPage] = await Promise.all([
-    readNativeHost("tauri_setup.rs", "sidecar_startup.rs"),
+    readNativeHost(
+      "tauri_setup.rs",
+      "sidecar_startup.rs",
+      "sidecar_supervisor.rs",
+      "sidecar_lifecycle.rs",
+    ),
     readFile(new URL("./frontend-stub/startup.html", import.meta.url), "utf8"),
     access(new URL("./frontend-stub/cave-icon.png", import.meta.url)),
   ]);
@@ -802,6 +972,46 @@ test("Windows first launch paints progress and supports recovery while the sidec
     launcher,
     /window\.location\.replace\(/,
     "readiness must replace startup.html in session history so history.back() cannot return to the splash screen",
+  );
+  assert.match(
+    launcher,
+    /spawn_sidecar_startup\(\s*app\.handle\(\)\.clone\(\),\s*startup_control,\s*NativeStartupTerminalPolicy::RecordAtLifecycleTerminal,\s*"sidecar-startup",\s*1,\s*\)\?;\s*spawn_sidecar_supervisor\(app\.handle\(\)\.clone\(\)\)/,
+    "Windows must start post-ready supervision beside the startup owner",
+  );
+  assert.match(
+    launcher,
+    /spawn_sidecar_startup\(\s*app\.clone\(\),\s*Arc::clone\(control\.inner\(\)\),\s*sidecar_startup::NativeStartupTerminalPolicy::DeferredToSupervisor,\s*"sidecar-recovery",\s*attempt,\s*\)/,
+    "automatic Windows recovery must reuse SidecarStartupControl and carry its attempt identity",
+  );
+  assert.match(
+    launcher,
+    /recovery_observation\(\s*recovery_pending,\s*sidecar_liveness\(&app\),\s*startup_in_progress\(&app\)/,
+    "the supervisor must wait for an owned startup and observe the resulting child",
+  );
+  assert.match(
+    launcher,
+    /stop_after_startup_attempt\(\)/,
+    "failed Windows startup workers must wait for the liveness probe and release their process job",
+  );
+  assert.match(
+    launcher,
+    /refreshed_sidecar_window_url[\s\S]*QUICK_CHAT_WINDOW_LABEL,\s*NOTCH_WINDOW_LABEL/,
+    "sidecar recovery must rotate auth for already-open auxiliary windows",
+  );
+  assert.match(
+    launcher,
+    /supervisor\.request_stop\(\)[\s\S]*control\.request_shutdown\(\)/,
+    "Windows shutdown must stop supervision before cancelling startup and the process job",
+  );
+  assert.match(
+    launcher,
+    /GET \/api\/app\/native-readiness HTTP\/1\.1[\s\S]*x-coven-cave-token: \{auth_token\}/,
+    "native readiness must authenticate an end-to-end API handshake before navigation",
+  );
+  assert.match(
+    launcher,
+    /readiness\.protocol\.name != "coven-cave-native-readiness"[\s\S]*readiness\.version != env!\("CARGO_PKG_VERSION"\)/,
+    "native readiness must verify protocol and packaged runtime compatibility",
   );
   assert.match(
     startupPage,

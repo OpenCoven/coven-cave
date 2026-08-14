@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import {
   activityFeed,
   boardBuckets,
@@ -41,6 +42,7 @@ function session(over: Partial<SessionRow> = {}): SessionRow {
     updated_at: "2026-07-18T09:30:00.000Z",
     familiarId: "wisp",
     ...over,
+    attention: over.attention ?? NO_CHAT_ATTENTION,
   };
 }
 

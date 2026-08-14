@@ -1,8 +1,10 @@
 /* ── Session list card polish ──────────────────────────────────────────────
-   Each row reads as a tappable card: a faint leading-edge accent on hover, a
-   refined model pill, and running sessions feel LIVE (pulsing status dot +
-   accent-tinted "Active now…" preview). Purely additive over the row's inline
-   Tailwind background/active states. */
+   Each row reads as a tappable card: a faint leading-edge accent on hover and
+   a refined model pill. Purely additive over the row's inline Tailwind
+   background/active states. (The "live" half of this block — a pulsing status
+   dot and an accent-tinted "Active now…" preview — retired in cave-n3jg2 when
+   the dot became the familiar's avatar with a breathing ring and the preview
+   stopped restating the status.) */
 .chat-list-row {
   transition:
     background var(--duration-fast, 120ms) var(--ease-standard, ease),
@@ -23,23 +25,11 @@
   background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
 }
 
-/* Running sessions: gentle pulsing halo on the status dot + live-tinted preview. */
-.chat-list-row[data-status="running"] .chat-list-status-dot > span {
-  animation: chat-list-dot-pulse 2s var(--ease-standard, ease-out) infinite;
-}
-.chat-list-row[data-status="running"] .chat-list-row-preview {
-  color: color-mix(in oklch, var(--color-success) 78%, var(--text-secondary));
-}
-@keyframes chat-list-dot-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 55%, transparent); }
-  70% { box-shadow: 0 0 0 5px color-mix(in oklch, var(--color-success) 0%, transparent); }
-  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 0%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chat-list-row[data-status="running"] .chat-list-status-dot > span {
-    animation: none;
-  }
-}
+/* The running row's live signal moved onto the familiar avatar as a breathing
+   ring (cave-n3jg2, chat-list.css). The halo that used to pulse the status dot
+   would now pulse the avatar behind that ring — two animations saying the same
+   thing — and the preview line no longer restates the status, so its live tint
+   had nothing left to tint. */
 
 /* PR-status badge — replaces the status dot when a thread's work reached a
    pull request. GitHub's own state colors: open green, merged the presence

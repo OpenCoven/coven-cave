@@ -73,7 +73,7 @@
 }
 .research-studio__chips {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -148,26 +148,72 @@
 }
 
 /* ── Generation type grid (design 320–329) ── */
+/* Media mosaic: a 6-column bed so the headline kinds can take a wider tile
+   than the rest. Every card still fills whole columns, so the row never leaves
+   an orphan gap. */
 .research-studio__grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--space-3);
 }
 .research-studio-card {
+  position: relative;
+  overflow: hidden;
+  grid-column: span 2;
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-3) 14px;
+  padding: var(--space-4);
   border: 1px solid var(--border-hairline, var(--border));
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
+  border-radius: var(--radius-card);
+  /* The kind's own hue washes in from the top-left and fades to the raised
+     surface — a tint, not a fill, so the label keeps its contrast. */
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--studio-kind, var(--research-accent)) 9%, transparent),
+    color-mix(in oklch, var(--bg-raised) 70%, transparent) 62%
+  );
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+/* Every kind takes the same 2-of-6 span (three per row). The frame gives its
+   two long-form kinds a wider hero tile, which is lovely at its fixed set of
+   seven cards and brittle here: RESEARCH_GENERATION_CREATABLE_KINDS is a live
+   list, and any hand-tuned span plan leaves a half-empty row the moment a kind
+   is added or removed. Equal tiles also make no claim about which kind matters
+   more — a claim nothing in the model backs.
+
+   A soft corner bloom carries the kind's hue instead. It is a radial gradient
+   with no hard edge: a filled shape at this size reads as a stray panel rather
+   than as depth. */
+.research-studio-card::before {
+  content: "";
+  position: absolute;
+  right: -20px;
+  bottom: -28px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in oklch, var(--studio-kind, var(--research-accent)) 14%, transparent),
+    transparent 68%
+  );
+  pointer-events: none;
+  transition: transform 300ms cubic-bezier(0.2, 0.8, 0.3, 1.2);
 }
 .research-studio-card:hover:not(:disabled):not([aria-disabled="true"]) {
-  border-color: color-mix(in oklch, var(--studio-kind, var(--research-accent)) 45%, transparent);
+  border-color: color-mix(in oklch, var(--studio-kind, var(--research-accent)) 50%, transparent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg, 0 12px 30px oklch(0 0 0 / 0.32));
 }
+.research-studio-card:hover:not(:disabled):not([aria-disabled="true"])::before {
+  transform: rotate(-8deg) scale(1.14) translateY(-4px);
+}
+/* A card that cannot be used does not animate — the lift would promise a
+   click that does nothing. */
+.research-studio-card:disabled::before,
+.research-studio-card[aria-disabled="true"]::before { display: none; }
 .research-studio-card:disabled {
   cursor: default;
 }
@@ -272,7 +318,7 @@
   flex-wrap: wrap;
 }
 .research-studio__chip--filter {
-  padding: 3px 10px;
+  padding: 3px var(--space-3);
   font-size: var(--text-2xs);
 }
 
@@ -352,7 +398,7 @@
 .research-studio-row__acts {
   flex: none;
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: 280px;
@@ -360,14 +406,14 @@
 .research-studio-row__confirm {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
 /* ── Action buttons (design genAct; flash = label swap + tint) ── */
 .research-studio-act {
-  padding: 3px 10px;
+  padding: 3px var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: transparent;
@@ -586,11 +632,17 @@
   gap: var(--space-2);
   position: relative;
 }
+.research-studio-config__media {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
 .research-studio-config__label {
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
-.research-studio-config__textarea {
+.research-studio-config__textarea,
+.research-studio-config__input {
   min-height: 88px;
   padding: 10px var(--space-3);
   border: 1px solid var(--border);
@@ -601,7 +653,12 @@
   color: var(--text-primary);
   resize: vertical;
 }
-.research-studio-config__textarea:focus {
+.research-studio-config__input {
+  min-height: var(--space-10);
+  resize: none;
+}
+.research-studio-config__textarea:focus,
+.research-studio-config__input:focus {
   outline: none;
   border-color: var(--accent-presence, var(--research-accent));
 }
@@ -624,6 +681,34 @@
   margin: 0;
   font-size: var(--text-sm);
   color: var(--danger-text, var(--color-danger));
+}
+.research-studio-config__media > .research-studio-config__error {
+  grid-column: 1 / -1;
+}
+.research-studio-review__config {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+.research-studio-review__config div {
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+}
+.research-studio-review__config dt {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.research-studio-review__config dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
 }
 
 /* Viewer: slides */
@@ -689,7 +774,7 @@
 .research-studio-viewer__thumbs {
   flex: 1;
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   overflow-x: auto;
   padding: 2px 0;
   cursor: grab;
@@ -759,7 +844,7 @@
 .research-studio-viewer__diagram {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 /* Collapsible mermaid source under the rendered diagram. */
 .research-studio-viewer__code-details summary {
@@ -834,6 +919,53 @@
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
+.research-studio-viewer__media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+}
+.research-studio-viewer__audio,
+.research-studio-viewer__video {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-control);
+}
+.research-studio-viewer__infographic {
+  display: block;
+  width: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+.research-studio-review__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 40vh;
+  margin: 0;
+  padding: 0 0 0 var(--space-5);
+  overflow: auto;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.research-studio-review__list li {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.research-studio-review__list li > span {
+  display: block;
+  margin-top: var(--space-1);
+}
+.research-studio-viewer__video {
+  max-height: 52vh;
+  background: var(--bg-sunken);
+}
 
 /* Editor */
 .research-studio-editor__seg {
@@ -882,7 +1014,9 @@
 
 /* ── Responsive: follow the desk's container breakpoints ── */
 @container research-desk (max-width: 900px) {
-  .research-studio__grid { grid-template-columns: repeat(2, 1fr); }
+  .research-studio__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .research-studio-card { grid-column: auto; }
+  .research-studio-config__media { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-studio { padding: var(--space-4) 18px 24px; }
   .research-studio-row { flex-wrap: wrap; }
   .research-studio-row__acts {
@@ -893,7 +1027,10 @@
   }
 }
 @container research-desk (max-width: 560px) {
-  .research-studio__grid { grid-template-columns: 1fr; }
+  .research-studio__grid { grid-template-columns: minmax(0, 1fr); }
+  .research-studio-card { grid-column: auto; }
+  .research-studio-config__media,
+  .research-studio-review__config { grid-template-columns: 1fr; }
   .research-studio { padding: var(--space-4) 12px 20px; }
   .research-studio-row__acts { padding-left: 0; }
 }
@@ -908,4 +1045,172 @@
   .research-studio-act {
     transition: none;
   }
+}
+
+/* ── Podcast transcript (Coven Podcast.dc.html — "Transcript · screenplay") ──
+   A dialogue reads by attribution: one voice down the page, not a column of
+   undifferentiated paragraphs. Speakers take a gutter, consecutive lines from
+   one voice share a single attribution, and the cast states which voice each
+   speaker was rendered in. */
+.podcast-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+.podcast-transcript__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.podcast-transcript__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.podcast-transcript__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.podcast-transcript__cast {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.podcast-transcript__voice {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  --pt-voice: var(--text-muted);
+}
+.podcast-transcript__voice--host { --pt-voice: var(--accent-presence); }
+.podcast-transcript__voice--guest { --pt-voice: var(--color-success); }
+.podcast-transcript__voice b {
+  color: var(--pt-voice);
+  font-weight: 650;
+}
+.podcast-transcript__voice span {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.podcast-transcript__count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.podcast-transcript__script {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 46vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.podcast-transcript__run {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  --pt-voice: var(--text-muted);
+}
+.podcast-transcript__run--host { --pt-voice: var(--accent-presence); }
+.podcast-transcript__run--guest { --pt-voice: var(--color-success); }
+/* A narrator script has no speaker to attribute, so it keeps the full width
+   instead of an empty gutter pretending one exists. */
+.podcast-transcript__run:not([class*="--host"]):not([class*="--guest"]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.podcast-transcript__attribution {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--pt-voice);
+  text-align: right;
+}
+.podcast-transcript__lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  border-left: 2px solid color-mix(in oklch, var(--pt-voice) 40%, transparent);
+  padding-left: var(--space-3);
+}
+.podcast-transcript__cue {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-warning);
+}
+.podcast-transcript__line {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  text-wrap: pretty;
+}
+.podcast-transcript--compact .podcast-transcript__script { gap: var(--space-2); }
+.podcast-transcript--compact .podcast-transcript__line { line-height: var(--leading-normal); }
+
+/* ── Provider strip: readiness, stated. Colour rides on a dot, the state name
+   rides in the tooltip and an sr-only tail, so it never reads by hue alone. ── */
+.research-studio__providers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.research-studio__provider {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-3);
+  font-size: var(--text-2xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+  color: var(--text-secondary);
+}
+.research-studio__provider i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+.research-studio__provider[data-state="ready"] i { background: var(--color-success); }
+.research-studio__provider[data-state="blocked"] i { background: var(--color-warning); }
+.research-studio__provider[data-state="blocked"] {
+  border-color: color-mix(in oklch, var(--color-warning) 35%, transparent);
+  color: var(--color-warning);
+}
+/* Unknown is deliberately quiet: "still checking" must not read as a fault. */
+.research-studio__provider[data-state="unknown"] { opacity: 0.7; }
+
+@media (prefers-reduced-motion: reduce) {
+  .research-studio-card,
+  .research-studio-card::before { transition: none; }
+  .research-studio-card:hover:not(:disabled):not([aria-disabled="true"]) { transform: none; }
+  .research-studio-card:hover:not(:disabled):not([aria-disabled="true"])::before { transform: none; }
 }

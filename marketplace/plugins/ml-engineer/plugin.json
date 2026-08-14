@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/ml-engineer",
   "x-coven": {
     "displayName": "ML Engineer",

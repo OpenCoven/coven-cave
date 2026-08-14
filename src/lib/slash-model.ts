@@ -1,18 +1,23 @@
 // Helpers for the `/model` slash command — resolving a typed model argument to
 // a concrete id, and the inline autocomplete options shown while typing it.
-// Pure + client-safe (only depends on the runtime-models catalog); the model-id
-// shape is validated inline so this never pulls server code into the bundle.
+// Pure + client-safe: both dependencies are data/string helpers with no server
+// imports, so every composer surface shares the same model-id contract.
 
-import { catalogForRuntime, type RuntimeModelOption } from "@/lib/runtime-models";
+import {
+  catalogForRuntime,
+  isSafeRuntimeModelId,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 
 // Composer text while in the argument position of /model (or /m): the user has
 // typed "/model " (with a space) and is now typing the model id/name. Group 1 is
 // the partial argument (possibly empty right after the space).
 const MODEL_ARG_RE = /^\/(?:model|m)\s+(.*)$/i;
 
-// Cave model ids follow `provider/model` with a conservative charset (mirrors
-// cleanModelId in chat-model-state.ts, inlined to keep this client-safe).
-const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
+/** Reserved `/model` arguments for returning to the runtime-owned default. */
+export function isRuntimeDefaultModelArg(arg: string): boolean {
+  return /^(?:default|runtime-default)$/i.test(arg.trim());
+}
 
 function modelsFor(
   harness: string | null | undefined,
@@ -46,6 +51,7 @@ export function resolveModelArg(
   arg: string,
   harness: string | null | undefined,
   discoveredModels?: RuntimeModelOption[],
+  allowCustom = catalogForRuntime(harness ?? "claude")?.allowCustom ?? false,
 ): string | null {
   const a = arg.trim();
   if (!a) return null;
@@ -59,7 +65,7 @@ export function resolveModelArg(
     (m) => m.id.toLowerCase().includes(lower) || m.label.toLowerCase().includes(lower),
   );
   if (partial) return partial.id;
-  return MODEL_ID_RE.test(a) ? a : null;
+  return allowCustom && isSafeRuntimeModelId(a) ? a : null;
 }
 
 /** One-line-per-model list for the `/model` (no-arg) system message. */
@@ -67,12 +73,22 @@ export function formatModelList(
   harness: string | null | undefined,
   current: string | null | undefined,
   discoveredModels?: RuntimeModelOption[],
+  allowCustom = catalogForRuntime(harness ?? "claude")?.allowCustom ?? false,
 ): string {
   const models = modelsFor(harness, discoveredModels);
-  const head = current ? `Current model: ${current}` : "No model set yet.";
+  const head = current === ""
+    ? "Current model: Runtime default"
+    : current
+      ? `Current model: ${current}`
+      : "No model set yet.";
   if (models.length === 0) {
-    return `${head}\nThis runtime has no model menu — type \`/model <id>\` to set one.`;
+    return allowCustom
+      ? `${head}\nThis runtime has no model menu — type \`/model <id>\` to set one.`
+      : `${head}\nThis runtime has no selectable model ids.`;
   }
   const lines = models.map((m) => `  ${m.id === current ? "●" : "○"} ${m.label} — \`${m.id}\``);
-  return `${head}\nAvailable models (type \`/model <id>\` or pick from the menu):\n${lines.join("\n")}`;
+  const guidance = allowCustom
+    ? "type `/model <id>` or `/model default`, or pick from the menu"
+    : "pick one of these ids, or type `/model default`";
+  return `${head}\nAvailable models (${guidance}):\n${lines.join("\n")}`;
 }

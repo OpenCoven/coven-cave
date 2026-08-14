@@ -1,0 +1,319 @@
+/* New-session "Start from" launcher — Chat.dc.html option 2b.
+ *
+ * One horizontal band per source of work. The band's left cell is a tinted
+ * head (icon · caret · label · count · note) that doubles as the collapse
+ * toggle; the rest is a strip of fixed-width tiles that scrolls sideways
+ * rather than wrapping, so the band's height is the same whether it holds two
+ * tiles or twelve. Collapsing folds the band to that head row alone.
+ *
+ * Per-source tint rides one custom property (--sf-tint), set once per band by
+ * data-kind; every tinted surface below derives from it with color-mix, so a
+ * new source needs one declaration, not six. */
+
+.cave-sf {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ── Band label row ───────────────────────────────────────────────────────
+   Mono label, hairline out to the note that states what the tiles promise. */
+.cave-sf__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cave-sf__head-rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+/* The promise is a sentence, not a label — it drops its tracking and caps. */
+.cave-sf__head-note {
+  flex: none;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* ── Band ─────────────────────────────────────────────────────────────────*/
+.cave-sf__band {
+  --sf-tint: var(--accent-presence);
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  width: 100%;
+  border: 1px solid color-mix(in oklch, var(--sf-tint) 32%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 35%, transparent);
+  overflow: hidden;
+}
+
+.cave-sf__band[data-kind="chats"] {
+  --sf-tint: var(--color-success);
+}
+.cave-sf__band[data-kind="tasks"] {
+  --sf-tint: var(--color-warning);
+}
+.cave-sf__band[data-kind="queue"] {
+  --sf-tint: var(--accent-presence);
+}
+/* Reviews read as GitHub, which is the one blue on this page. Literal for the
+   same reason activity.css's read-tool accent is: there is no blue token. */
+.cave-sf__band[data-kind="reviews"] {
+  --sf-tint: oklch(0.74 0.13 235);
+}
+
+/* ── Head cell ────────────────────────────────────────────────────────────
+   Open: a 188px column that stacks glyphs / label / count / note. Collapsed:
+   the same element as one full-width row, so the band folds to a single line
+   without a second markup path. */
+.cave-sf__band-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex: none;
+  width: 188px;
+  padding: 10px var(--space-3);
+  border: 0;
+  border-right: 1px solid color-mix(in oklch, var(--sf-tint) 32%, transparent);
+  background: color-mix(in oklch, var(--sf-tint) 9%, transparent);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cave-sf__band[data-open="false"] .cave-sf__band-head {
+  flex-direction: row;
+  align-items: center;
+  flex: 1 1 auto;
+  width: 100%;
+  border-right: 0;
+}
+
+.cave-sf__band-head:hover {
+  background: color-mix(in oklch, var(--sf-tint) 14%, transparent);
+}
+
+.cave-sf__band-head:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: -3px;
+}
+
+.cave-sf__band-glyphs {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  color: var(--sf-tint);
+}
+
+.cave-sf__caret {
+  color: var(--text-muted);
+  transform: rotate(90deg);
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+
+.cave-sf__band[data-open="false"] .cave-sf__caret {
+  transform: none;
+}
+
+.cave-sf__band-label {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sf-tint);
+}
+
+/* The mock draws these at 8.5–9px on a 1728px canvas. In a real chat pane they
+   snap up to the scale's floor (--text-2xs) — on-scale and legible beats
+   pixel-faithful at a width the mock never had to render. */
+.cave-sf__band-count,
+.cave-sf__band-note {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.cave-sf__band-spacer {
+  flex: 1 1 auto;
+}
+
+/* Open, the head is a column: the note wraps under the count and the spacer
+   has no width to give, so it is the collapsed row that needs it. */
+.cave-sf__band[data-open="true"] .cave-sf__band-note {
+  line-height: 1.4;
+}
+
+/* ── Tile strip ───────────────────────────────────────────────────────────
+   The strip's background paints the 1px gaps between tiles, so the hairlines
+   between them cost no extra borders (and never double up at the ends). */
+.cave-sf__strip {
+  display: flex;
+  flex-direction: row;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  background: color-mix(in oklch, var(--border-hairline) 70%, transparent);
+}
+
+/* A band's status content — skeletons, a load error — replaces its tiles and
+   spans the strip rather than pretending to be one more tile in the rhythm. */
+.cave-sf__strip > :not(.cave-sf__tile) {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) 13px;
+  background: var(--bg-base);
+}
+
+.cave-sf__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  flex: none;
+  width: 224px;
+  padding: var(--space-3) 13px;
+  border: 0;
+  border-top: 2px solid color-mix(in oklch, var(--sf-tint) 40%, transparent);
+  background: var(--bg-base);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.cave-sf__tile:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--sf-tint) 12%, var(--bg-base));
+}
+
+.cave-sf__tile:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: -3px;
+}
+
+.cave-sf__tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cave-sf__tile-top {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Three lines, then an ellipsis — the tile is a prompt, not the whole brief. */
+.cave-sf__tile-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.cave-sf__tile:hover:not(:disabled) .cave-sf__tile-title {
+  color: var(--foreground);
+}
+
+.cave-sf__tile-badge {
+  flex: none;
+  padding: 1px var(--space-1);
+  border: 1px solid var(--border-hairline);
+  /* --radius-sm (6px) is the scale's floor and the closest on-scale value to
+     the mock's 3px corner; --radius-control would read as a pill at this size. */
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cave-sf__tile-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.cave-sf__tile-dot {
+  width: 4px;
+  height: 4px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--sf-tint);
+}
+
+.cave-sf__tile-sub-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The overflow tile: same slot, none of the emphasis — it opens the surface
+   that holds what the strip could not. */
+.cave-sf__tile--more {
+  width: 132px;
+  justify-content: center;
+  border-top-color: transparent;
+  background: color-mix(in oklch, var(--foreground) 3%, var(--bg-base));
+}
+
+.cave-sf__tile-more-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cave-sf__tile--more:hover .cave-sf__tile-more-label {
+  color: var(--foreground);
+}
+
+/* Narrow panes: the head cell gives up its width before the tiles do, since
+   the tiles are the content and the head is the label. */
+@media (max-width: 900px) {
+  .cave-sf__band[data-open="true"] .cave-sf__band-head {
+    width: 132px;
+  }
+  .cave-sf__tile {
+    width: 196px;
+  }
+}

@@ -99,11 +99,40 @@ function fakeMouth() {
   };
 }
 
-function loopFixture({ brain, earsEngine, mouthEngine } = {}) {
+/** A mouth that parks mid-utterance until interrupted or released — the shape
+ *  barge-in actually has to work against. */
+function deferredMouth() {
+  const spoken = [];
+  let release = null;
+  return {
+    spoken,
+    release: () => { const r = release; release = null; r?.(); },
+    mouth: {
+      speak(text) {
+        spoken.push(text);
+        return new Promise((resolve) => { release = resolve; });
+      },
+      cancel() {
+        spoken.push("<cancel>");
+        const r = release;
+        release = null;
+        r?.();
+      },
+      interrupt() {
+        spoken.push("<interrupt>");
+        const r = release;
+        release = null;
+        r?.();
+      },
+    },
+  };
+}
+
+function loopFixture({ brain, earsEngine, mouthEngine, mouth: injected } = {}) {
   const ears = fakeEars();
   const mic = fakeMic();
-  const mouth = fakeMouth();
-  const events = { userFinals: [], assistantFinals: [], errors: [] };
+  const mouth = injected ?? fakeMouth();
+  const events = { userFinals: [], assistantFinals: [], errors: [], speaking: [] };
   const session = connectSpeechLoop({
     mic: mic.stream,
     ears: ears.factory,
@@ -114,6 +143,7 @@ function loopFixture({ brain, earsEngine, mouthEngine } = {}) {
       onUserTranscriptFinal: (t) => events.userFinals.push(t),
       onAssistantTranscriptFinal: (t) => events.assistantFinals.push(t),
       onPartialTranscript: () => {},
+      onSpeaking: (utterance) => events.speaking.push(utterance),
       onError: (err) => events.errors.push(err),
       onDisconnect: () => {},
     },
@@ -315,4 +345,149 @@ test("web ears route finals, partials, and non-routine errors", () => {
     recognition.onerror({ error: "audio-capture" });
     assert.deepEqual(got.errors, ["stt_audio-capture"]);
   });
+});
+
+// ── Live transcript, highlight, and typed replies (cave-zr9dx) ─────────────
+
+test("each queued utterance is announced as it starts and silence on drain", async () => {
+  const { ears, events } = loopFixture({
+    brain: async (userText, speak) => {
+      speak("First sentence out loud.");
+      speak("Second sentence out loud.");
+      return "First sentence out loud. Second sentence out loud.";
+    },
+  });
+  ears.handlers.onFinal("say two things");
+  await tick();
+  await tick();
+  await tick();
+
+  // The highlight follows the QUEUE, one sentence at a time, then clears —
+  // that is what lets the overlay mark only the words being heard.
+  assert.deepEqual(events.speaking, [
+    "First sentence out loud.",
+    "Second sentence out loud.",
+    null,
+  ]);
+});
+
+test("a typed reply becomes a real turn and barges in on the synthesizer", async () => {
+  const mouth = deferredMouth();
+  const { ears, events, session } = loopFixture({
+    mouth,
+    brain: async (userText, speak) => {
+      const reply = `heard: ${userText}`;
+      speak(reply);
+      return reply;
+    },
+  });
+
+  ears.handlers.onFinal("tell me a long story");
+  await tick();
+  await tick();
+  assert.deepEqual(mouth.spoken, ["heard: tell me a long story"]);
+  assert.equal(events.speaking[events.speaking.length - 1], "heard: tell me a long story");
+
+  session.sendText("  actually, stop  ");
+  await tick();
+  await tick();
+  await tick();
+
+  // The utterance in flight is cut off, the highlight clears immediately, and
+  // the typed text lands in the transcript exactly like a spoken final.
+  assert.ok(mouth.spoken.includes("<interrupt>"), "the mouth was interrupted");
+  assert.deepEqual(events.userFinals, ["tell me a long story", "actually, stop"]);
+  assert.ok(events.speaking.includes(null), "the highlight cleared on barge-in");
+  assert.ok(
+    events.assistantFinals.includes("heard: actually, stop"),
+    "the typed turn reached the brain",
+  );
+  assert.deepEqual(events.errors, []);
+});
+
+test("a blank typed reply is not a turn", async () => {
+  let brainCalls = 0;
+  const { events, session } = loopFixture({
+    brain: async () => { brainCalls += 1; return ""; },
+  });
+  session.sendText("   ");
+  await tick();
+  assert.equal(brainCalls, 0);
+  assert.deepEqual(events.userFinals, []);
+});
+
+test("interrupt drops the queue behind the current utterance and hands the floor back", async () => {
+  const mouth = deferredMouth();
+  const { ears, events, session } = loopFixture({
+    mouth,
+    brain: async (userText, speak) => {
+      speak("One.");
+      speak("Two.");
+      speak("Three.");
+      return "One. Two. Three.";
+    },
+  });
+  ears.handlers.onFinal("count");
+  await tick();
+  await tick();
+  assert.deepEqual(mouth.spoken, ["One."]);
+
+  session.interrupt();
+  await tick();
+  await tick();
+
+  // Only the sentence already in flight was ever voiced; the rest is dropped
+  // and the ears are listening again.
+  assert.deepEqual(mouth.spoken.filter((s) => !s.startsWith("<")), ["One."]);
+  assert.equal(events.speaking[events.speaking.length - 1], null);
+  assert.equal(ears.log[ears.log.length - 1], "listen");
+});
+
+test("a typed reply still works while the mic is muted", async () => {
+  const { events, session } = loopFixture();
+  session.setMuted(true);
+  session.sendText("typing instead");
+  await tick();
+  await tick();
+  assert.deepEqual(events.userFinals, ["typing instead"]);
+  assert.deepEqual(events.assistantFinals, ["heard: typing instead"]);
+});
+
+test("a closed session ignores typed replies", async () => {
+  const { events, session } = loopFixture();
+  await session.close();
+  session.sendText("too late");
+  await tick();
+  assert.deepEqual(events.userFinals, []);
+});
+
+test("a barged-in brain cannot refill the queue it was cut off from", async () => {
+  const mouth = deferredMouth();
+  let emit = null;
+  const { ears, session } = loopFixture({
+    mouth,
+    // A streaming brain: it keeps producing sentences after the barge-in.
+    brain: async (userText, speak) => {
+      speak("Once upon a time.");
+      await new Promise((resolve) => { emit = () => { speak("And then more."); resolve(); }; });
+      return "Once upon a time. And then more.";
+    },
+  });
+  ears.handlers.onFinal("tell me a story");
+  await tick();
+  await tick();
+  assert.deepEqual(mouth.spoken, ["Once upon a time."]);
+
+  session.interrupt();
+  await tick();
+  emit();
+  await tick();
+  await tick();
+
+  // The sentence the muzzled turn emitted after the interrupt is dropped —
+  // otherwise the familiar talks over the person who just stopped it.
+  assert.deepEqual(
+    mouth.spoken.filter((s) => !s.startsWith("<")),
+    ["Once upon a time."],
+  );
 });

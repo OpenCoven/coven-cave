@@ -76,7 +76,7 @@ struct TaskDetailView: View {
         Menu {
             Menu {
                 ForEach(CardStatus.allCases, id: \.self) { status in
-                    Button { Task { await app.setTaskStatus(live, status) } } label: {
+                    Button { app.requestTaskStatus(live, status) } label: {
                         Label(status.label, systemImage: live.status == status ? "checkmark" : status.systemImage)
                     }
                 }
@@ -199,7 +199,7 @@ struct TaskDetailView: View {
             cycleChip("Status", value: live.status.label, color: Theme.color(for: live.status)) {
                 guard let index = CardStatus.allCases.firstIndex(of: live.status) else { return }
                 let next = CardStatus.allCases[(index + 1) % CardStatus.allCases.count]
-                Task { await app.setTaskStatus(live, next) }
+                app.requestTaskStatus(live, next)
             }
             cycleChip("Priority", value: live.priority.label, color: Theme.color(for: live.priority)) {
                 guard let index = CardPriority.allCases.firstIndex(of: live.priority) else { return }
@@ -400,7 +400,7 @@ struct TaskDetailView: View {
             .buttonStyle(.borderedProminent)
 
             Button {
-                Task { await app.setTaskStatus(live, .done) }
+                app.requestTaskStatus(live, .done)
             } label: {
                 Label("Mark done", systemImage: "checkmark.circle")
                     .frame(maxWidth: .infinity)

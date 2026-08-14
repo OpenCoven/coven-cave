@@ -51,6 +51,44 @@ assert.match(
   "scan bounds are reported, never silently applied",
 );
 
+// ── Scoped truncation is reconciled, not just disclosed (cave-ed4s3) ─────────
+// MEMORY_SCAN_CAP is applied coven-wide BEFORE familiar scoping, so a scoped
+// view shows the familiar's slice of the coven's most-recent N files, not their
+// memory graph. Measured live: Echo's rail read 260 files while Relations drew
+// 35 nodes. The old copy explained the cap but never reconciled it with the
+// rail's number, so 35 read as "Echo has 35 memory docs".
+assert.match(
+  view,
+  /scopedMemoryTotal\?: number \| null/,
+  "the view takes the scope's own memory total — meta.memory is coven-wide and cannot supply it",
+);
+assert.match(
+  view,
+  /const scopedMemoryInWindow = useMemo\([\s\S]{0,320}node\.kind === "memory"/,
+  "the in-window count is derived from the memory nodes actually present, not from coven-wide meta",
+);
+// Review catch on #4431. buildDocGraph adds a LEAF node for any link target it
+// resolves but never scanned — and the resolution index deliberately spans the
+// whole corpus while the scan is capped, so a [[link]] into an out-of-window
+// memory file lands as a memory node with no body. Counting raw memory nodes
+// therefore overcounts the scanned window and makes this very notice state a
+// number it cannot back: precisely the failure it was written to prevent.
+assert.match(
+  view,
+  /node\.kind === "memory" && node\.scanned/,
+  "the in-window count excludes unscanned leaf nodes, which exist only because something linked to them",
+);
+assert.match(
+  view,
+  /scopedMemoryInWindow < scopedMemoryTotal/,
+  "the shortfall notice appears only when the cap actually cost this scope files",
+);
+assert.match(
+  view,
+  /\{scopedMemoryInWindow\} of \{scopeLabel\}&rsquo;s \{scopedMemoryTotal\} memory files are in\s*\n\s*the scanned window/,
+  "the scoped notice reconciles against the rail's number instead of quoting only coven-wide totals",
+);
+
 // ── Accessibility + reduced motion ───────────────────────────────────────────
 assert.match(view, /role="img"/, "the canvas exposes an accessible role");
 assert.match(view, /aria-label=\{`Document graph: \$\{summary\}/, "the canvas label carries a live summary");
@@ -83,10 +121,19 @@ assert.match(
 // ── Legibility floor (cave-zhk6) ─────────────────────────────────────────────
 // Prose notices in the filter card read at 12px (--text-sm); the status pill
 // at 11px. 10px stays reserved for uppercase eyebrows and count chips.
+// The notice now picks between a scoped-shortfall sentence and the coven-wide
+// one (cave-ed4s3), so the copy is no longer the paragraph's first child. The
+// legibility floor is unchanged and still pinned: same <p>, same --text-sm, and
+// BOTH branches are asserted below so neither can drift to a smaller size.
 assert.match(
   view,
-  /text-\[length:var\(--text-sm\)\] leading-snug text-\[var\(--text-muted\)\]">\s*\n\s*Scanned the/,
+  /text-\[length:var\(--text-sm\)\] leading-snug text-\[var\(--text-muted\)\]">\s*\n\s*\{scopedShortfall \?/,
   "the memory-truncation notice reads at --text-sm, not 10px",
+);
+assert.match(
+  view,
+  /\{scopedShortfall \? \([\s\S]{0,400}?memory files are in[\s\S]{0,200}?\) : \([\s\S]{0,200}?Scanned the \{meta\.memory\.scanned\}/,
+  "both truncation sentences live inside that one --text-sm paragraph",
 );
 assert.match(
   view,
@@ -97,6 +144,26 @@ assert.match(
   view,
   /pointer-events-none absolute bottom-2 left-2[^"]*text-\[length:var\(--text-xs\)\]/,
   "the graph status pill reads at --text-xs, not 10px",
+);
+
+// ── Familiar scoping (cave-relations-scope) ──────────────────────────────────
+// The graph arrives ALREADY scoped by grimoire-view; this component's job is
+// to make the narrowing legible instead of silently showing less.
+assert.match(view, /scopeLabel\?: string \| null;/, "the view accepts the active familiar-scope label");
+assert.match(
+  view,
+  /scopeLabel \? `No relations for \$\{scopeLabel\}` : "Nothing to graph yet"/,
+  "an empty graph blames the scope, not the corpus, when a familiar is selected",
+);
+assert.match(
+  view,
+  /Memory is scoped to \{scopeLabel\}\. Stitches and journal days stay coven-wide\./,
+  "the filter card states what the scope does and does not narrow",
+);
+assert.match(
+  view,
+  /\{meta\.memory\.total\} memory files\s*\n\s*\{scopeLabel \? " across the coven" : ""\}/,
+  "the truncation count stays honest under a scope — those totals are coven-wide",
 );
 
 console.log("grimoire-graph-view.test.ts: ok");

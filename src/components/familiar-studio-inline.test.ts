@@ -68,18 +68,19 @@ assert.match(source, /requestAgentsNewChat/, "Open chat uses the shared handoff"
 assert.match(source, /streamFamiliarText/, "Test run uses the sanctioned stream");
 assert.match(source, /useFamiliarImageUpload/, "Hero avatar uses the shared upload behavior");
 
-// Five real Studio surfaces; Look and Lifecycle remain merged into Identity.
-for (const tab of ["Identity", "Brain", "Memory", "Projects"]) {
+// Four real Studio surfaces; Look and Lifecycle remain merged into Identity,
+// and Projects moved wholesale to Chat → Projects (cave-2tmly).
+for (const tab of ["Identity", "Brain", "Memory"]) {
   assert.match(source, new RegExp(`FamiliarStudio${tab}Tab`), `Wires the ${tab} tab body`);
 }
-for (const gone of ["look", "lifecycle", "journal"]) {
+for (const gone of ["look", "lifecycle", "journal", "projects"]) {
   assert.doesNotMatch(source, new RegExp(`id: "${gone}"`), `No standalone ${gone} tab remains`);
 }
 assert.match(source, /id: "identity", label: "Identity"/, "Identity leads the tab strip");
 assert.match(
   source,
-  /const displayedTab = activeTab === "contract" \? "identity" : activeTab/,
-  "Retired Contract tab handoffs resolve onto the five-tab Identity surface",
+  /const displayedTab =\s*activeTab === "contract" \|\| activeTab === "projects" \? "identity" : activeTab/,
+  "Retired Contract and relocated Projects handoffs resolve onto the Identity surface",
 );
 assert.match(source, /value=\{displayedTab\}/, "The visible tab strip never receives the retired Contract value");
 assert.match(
@@ -104,7 +105,7 @@ assert.match(memoryTab, />\s*Add note\s*</, "Memory exposes the handoff's Add no
 assert.match(memoryTab, /breadcrumb=\{\["Familiars", familiar\.display_name, "Add note"\]\}/, "Notes open in the shared modal");
 assert.match(source, /<VaultPanel familiarId=\{familiar\.id\}/, "Vault is scoped to the active familiar");
 assert.match(source, /id: "vault", label: "Vault"/, "Vault remains a Studio tab");
-assert.match(source, /<AccessGroupsSection familiars=\{resolved\}/, "Cross-familiar access groups remain reachable in Projects");
+assert.doesNotMatch(source, /AccessGroupsSection/, "access groups moved to Chat → Projects, where they are a named tab");
 
 // Entry selection and cross-page handoff behavior remain intact.
 assert.match(

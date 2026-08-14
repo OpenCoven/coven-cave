@@ -23,6 +23,7 @@ import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer"
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import { ShellPeelReveal } from "@/components/shell-peel-reveal";
 import {
+  eventKey,
   getPanelShortcutBindings,
   labelPanelShortcut,
   matchesPanelShortcut,
@@ -33,6 +34,11 @@ import {
   resolveShellDestinationLayout,
   resolveShellLayoutPersistence,
   resolveShellNavOpenPreference,
+  resolveShellNavPolicyHandoff,
+  SHELL_NAV_DEFAULT_PX,
+  SHELL_NAV_MAX_PX,
+  SHELL_NAV_MIN_PX,
+  resolveShellNavWidth,
   type ShellPanelLayout,
 } from "./shell-layout";
 
@@ -153,6 +159,14 @@ function markShellMinimizeApplied(id: string): void {
 // preference; only user-driven resizes write it (the code-rail auto
 // collapse/restore coupling and programmatic group-swap layout churn don't).
 const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
+const NAV_WIDTH_PREF_KEY = "cave:shell:nav-width";
+// Who wrote NAV_OPEN_PREF_KEY. The key alone can't distinguish "the user
+// collapsed the sidebar" from "first-run minimization guessed collapsed", and
+// those must be treated differently on a policy handoff — only the former is a
+// choice worth preserving. A missing value reads as "seed", which is the safe
+// direction for installs that predate this key (worst case a sidebar stays
+// open).
+const NAV_OPEN_SOURCE_KEY = "cave:shell:nav-open:source";
 function readNavOpenPref(): boolean | null {
   if (typeof window === "undefined") return null;
   try {
@@ -162,18 +176,43 @@ function readNavOpenPref(): boolean | null {
     return null;
   }
 }
-function writeNavOpenPref(open: boolean): void {
+function readNavOpenFromUser(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(NAV_OPEN_SOURCE_KEY) === "user";
+  } catch {
+    return false;
+  }
+}
+function writeNavOpenPref(open: boolean, source: "user" | "seed" = "seed"): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(NAV_OPEN_PREF_KEY, open ? "1" : "0");
+    window.localStorage.setItem(NAV_OPEN_SOURCE_KEY, source);
   } catch {
     /* ignore — strict privacy mode or quota */
   }
 }
 function seedNavOpenPref(defaultOpen: boolean): boolean {
   const resolved = resolveShellNavOpenPreference(readNavOpenPref(), defaultOpen);
-  if (resolved.shouldPersist) writeNavOpenPref(resolved.open);
+  if (resolved.shouldPersist) writeNavOpenPref(resolved.open, "seed");
   return resolved.open;
+}
+function readNavWidthPref(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(NAV_WIDTH_PREF_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeNavWidthPref(width: number): void {
+  if (typeof window === "undefined" || !Number.isFinite(width)) return;
+  try {
+    window.localStorage.setItem(NAV_WIDTH_PREF_KEY, String(width));
+  } catch {
+    /* ignore — strict privacy mode or quota */
+  }
 }
 
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
@@ -182,7 +221,7 @@ const NAV_RAIL_PX = 56;
 // The nav Panel's open width (its defaultSize) — the ⌘B / hover-peek expand
 // target, and the basis for the minimized-by-default layout injection (the rail
 // is NAV_RAIL_PX/NAV_OPEN_PX of the open width).
-const NAV_OPEN_PX = 240;
+const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
 export type ShellHandle = {
@@ -264,6 +303,9 @@ function ShellInner({
   // their intent wins and we leave the nav alone.
   const railAutoCollapsedNavRef = useRef(false);
   const userOverrodeNavRef = useRef(false);
+  const [preferredNavWidth, setPreferredNavWidth] = useState(() =>
+    resolveShellNavWidth(readNavWidthPref()),
+  );
   const [mounted, setMounted] = useState(false);
   useLayoutEffect(() => setMounted(true), []);
   const layoutStorage = mounted ? shellStorage : hydrationShellStorage;
@@ -398,17 +440,22 @@ function ShellInner({
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
-  const defaultNavSize = chatContextual
-    ? "260px"
-    : mounted
-      ? `${NAV_OPEN_PX}px`
-      : `${NAV_RAIL_PX}px`;
+  // Mirror of navOpen for effects that need the CURRENT visible state without
+  // taking navOpen as a dependency (the policy handoff must fire on the policy
+  // change, not on every sidebar toggle).
+  const navOpenRef = useRef(navOpen);
+  navOpenRef.current = navOpen;
+  const defaultNavSize =
+    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
 
   // Hover-to-peek: when the desktop nav is collapsed to its icon rail, hovering
   // floats it open as an overlay (navPeeking) without changing the collapse
   // state. Reset whenever the rail goes away (expanded or mobile).
   const [navPeeking, setNavPeeking] = useState(false);
-  const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;
+  // Every desktop policy now collapses to the rail, so peek applies to all of
+  // them. It used to be remembered-only because Chat collapsed to zero width,
+  // leaving nothing to hover.
+  const navPeekEnabled = !isMobile && !navOpen;
   const navPeekVisible = navPeekEnabled && navPeeking;
   useEffect(() => {
     if (!navPeekEnabled) setNavPeeking(false);
@@ -542,13 +589,43 @@ function ShellInner({
     const cur = group.getLayout();
     const nav = cur.nav;
     if (typeof nav !== "number" || typeof cur.detail !== "number") return;
-    const railPct = nav * (NAV_RAIL_PX / NAV_OPEN_PX);
+    const railPct = nav * (NAV_RAIL_PX / preferredNavWidth);
     if (railPct >= nav) return; // already at/under the rail
     minimizedGroupsRef.current.add(groupId);
     seedNavOpenPref(false);
     markShellMinimizeApplied(groupId);
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
-  }, [settled, isMobile, groupId, chatContextual]);
+  }, [settled, isMobile, groupId, chatContextual, preferredNavWidth]);
+
+  // Policy handoff — MUST stay declared above the destination-layout effect
+  // below, because useLayoutEffects run in declaration order and that one reads
+  // the preference this one repairs.
+  //
+  // Leaving Chat swaps `chat-contextual` for `remembered` AND changes groupId,
+  // so the restore effect re-reads `cave:shell:nav-open`. Chat never maintains
+  // that key (its persistence branch is gated on the remembered policy) while
+  // first-run minimization seeds it to `false` — so the sidebar the user was
+  // looking at, and had just clicked "Home" inside, collapsed to the rail. Carry
+  // the visible state across instead. An explicit user collapse still wins; see
+  // resolveShellNavPolicyHandoff.
+  const navHandoffPolicyRef = useRef<ShellNavPolicy | null>(null);
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const fromPolicy = navHandoffPolicyRef.current;
+    navHandoffPolicyRef.current = navPolicy;
+    if (isMobile) return;
+    const handoff = resolveShellNavPolicyHandoff({
+      fromPolicy,
+      toPolicy: navPolicy,
+      visibleNavOpen: navOpenRef.current,
+      persistedOpen: readNavOpenPref(),
+      persistedFromUser: readNavOpenFromUser(),
+    });
+    if (!handoff) return;
+    // Seed, not "user": carrying state forward is not the user expressing a
+    // preference, so a later genuine toggle still outranks it.
+    if (handoff.persist) writeNavOpenPref(handoff.open, "seed");
+  }, [mounted, isMobile, navPolicy]);
 
   // The library retains an in-memory layout by panel-id set when Group's id
   // changes. Restore the destination group's complete saved/default layout
@@ -585,6 +662,10 @@ function ShellInner({
           : 0),
       0,
     );
+    // Still gated on !chatContextual: Chat must never write the REMEMBERED
+    // preference (cave:shell:nav-open). Chat collapsing to a rail changes what
+    // the panel looks like, not who owns that preference — the handoff added in
+    // #4404 depends on Chat leaving it alone.
     if (
       !chatContextual &&
       isShellNavCollapsedLayout({
@@ -602,8 +683,11 @@ function ShellInner({
       panelIds,
       savedLayout: defaultLayout,
       groupSize,
-      defaultPanelPixels: { nav: chatContextual ? 260 : NAV_OPEN_PX, ...(!twoPane && { list: 260 }) },
-      collapsedNavPixels: chatContextual ? 0 : NAV_RAIL_PX,
+      defaultPanelPixels: { ...(!twoPane && { list: 260 }) },
+      preferredNavPixels: preferredNavWidth,
+      // Matches the Panel's collapsedSize below — Chat collapses to the rail
+      // now, not to zero, so the restored layout must describe the same width.
+      collapsedNavPixels: isMobile ? 0 : NAV_RAIL_PX,
       isMobile,
     });
     if (!destinationLayout) return;
@@ -624,7 +708,16 @@ function ShellInner({
       minimizedGroupsRef.current.add(groupId);
       markShellMinimizeApplied(groupId);
     }
-  }, [mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy]);
+  }, [
+    mounted,
+    isMobile,
+    groupId,
+    chatContextual,
+    defaultLayout,
+    twoPane,
+    navPolicy,
+    preferredNavWidth,
+  ]);
 
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   const visitCollapsedGroupRef = useRef<string | null>(null);
@@ -716,7 +809,11 @@ function ShellInner({
         else toggleDesktopNav();
         return;
       }
-      const key = e.key.toLowerCase();
+      // Same guard as matchesPanelShortcut above: an event with no readable key
+      // is ignored rather than thrown on. Guarding only the call above would
+      // just move the crash down to this line (cave-lryhx).
+      const key = eventKey(e);
+      if (key === null) return;
       const meta = e.metaKey || e.ctrlKey;
       if (meta && key === "\\" && !twoPane) {
         e.preventDefault();
@@ -815,7 +912,7 @@ function ShellInner({
       groupRef={groupRef}
       elementRef={groupElementRef}
       defaultLayout={isMobile ? undefined : defaultLayout}
-      onLayoutChanged={(layout, detail) => {
+      onLayoutChanged={(layout, meta) => {
         if (layoutPersistenceGroupRef.current !== groupId) return;
         const navCollapsed = navRef.current?.isCollapsed() ?? true;
         const persistedLayout = resolveShellLayoutPersistence({
@@ -834,7 +931,23 @@ function ShellInner({
         if (!persistedLayout) return;
         collapsedLayoutRef.current = navCollapsed ? { groupId, layout } : null;
         expandedLayoutRef.current = { groupId, layout: persistedLayout };
-        onLayoutChanged(persistedLayout, detail);
+        onLayoutChanged(persistedLayout, meta);
+
+        // Unlike Panel.onResize, Group.onLayoutChanged identifies a completed
+        // direct separator interaction. This excludes observer, window-resize,
+        // mount, and imperative-layout notifications.
+        const pixelWidth = navRef.current?.getSize().inPixels;
+        if (
+          !isMobile &&
+          meta.isUserInteraction &&
+          !navCollapsed &&
+          Number.isFinite(pixelWidth) &&
+          !railAutoCollapsedNavRef.current
+        ) {
+          const normalizedWidth = resolveShellNavWidth(String(pixelWidth));
+          writeNavWidthPref(normalizedWidth);
+          setPreferredNavWidth(normalizedWidth);
+        }
       }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >
@@ -844,12 +957,17 @@ function ShellInner({
         // Chat uses list-like sizing for contextual workspace/session content.
         // Normal navigation keeps NAV_OPEN_PX as the ⌘B / hover-peek target.
         defaultSize={defaultNavSize}
-        minSize={chatContextual ? "220px" : "200px"}
-        maxSize="420px"
+        minSize={`${SHELL_NAV_MIN_PX}px`}
+        maxSize={`${SHELL_NAV_MAX_PX}px`}
         collapsible
         // Contextual Chat and mobile drawers close fully; normal desktop
         // navigation collapses to its icons-only rail.
-        collapsedSize={isMobile || chatContextual ? 0 : NAV_RAIL_PX}
+        // Mobile drawers close fully (they overlay the content). Every desktop
+        // surface — Chat included — collapses to the icons-only rail instead,
+        // so the destinations stay reachable. Chat used to collapse to zero,
+        // which left no rail, no peek target, and no visible way to reach any
+        // other surface.
+        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
           const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
@@ -864,14 +982,17 @@ function ShellInner({
             navPrefArmedGroupRef.current === groupId &&
             !railAutoCollapsedNavRef.current
           ) {
-            writeNavOpenPref(open);
+            // The ONE user-authored write — everything else that touches this
+            // key is seeding, and the policy handoff must be able to tell them
+            // apart.
+            writeNavOpenPref(open, "user");
           }
         }}
       >
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !chatContextual && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className={`shell-nav${!isMobile && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
           onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
           onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}

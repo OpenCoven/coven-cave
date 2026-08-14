@@ -5,7 +5,13 @@ const source = await readFile(new URL("./familiars-memory-reader.tsx", import.me
 
 assert.match(source, /export function MemoryReaderPane\(/, "MemoryReaderPane must be exported");
 assert.match(source, /useMemoryFile\(/, "reader must load file content via the shared hook");
-assert.match(source, /<MarkdownBlock/, "Rendered mode must use MarkdownBlock");
+assert.match(source, /<DocumentReader/, "Rendered mode must use the shared DocumentReader");
+assert.match(
+  source,
+  /parseMarkdownReaderDocument\(content,\s*row\?\.title \?\? "Memory"\)/,
+  "file memories must use the presentation-safe shared parser",
+);
+assert.doesNotMatch(source, /<MarkdownBlock/, "file memories no longer use the generic chat markdown renderer");
 
 // Rendered/Raw toggle, defaulting to rendered.
 assert.match(source, /useState<"rendered" \| "raw">\("rendered"\)/, "toggle defaults to rendered");

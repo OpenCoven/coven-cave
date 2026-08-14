@@ -45,6 +45,7 @@ import {
   type ProjectViewMode,
 } from "@/lib/projects/access-views";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -52,8 +53,28 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { StandardSelect } from "@/components/ui/select";
+import { Tabs } from "@/components/ui/tabs";
+import { AccessGroupsSection } from "@/components/access-groups-section";
+import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
 import { ProjectSettingsModal } from "@/components/project-settings-modal";
 import { useAddProjectFlow } from "@/components/project-picker";
+
+/**
+ * Which pane of the project-permissions protocol is on screen.
+ *
+ * These were three separate places before: the matrix lived here AND in
+ * Chat → Familiar → Settings → Projects (two live copies of the same grants),
+ * while access groups — the only primitive that grants a set of projects to a
+ * set of familiars at once — were buried two levels inside that settings tab
+ * where nobody found them. One surface, three peers.
+ */
+type ProjectsPane = "access" | "groups" | "activity";
+
+const PANE_STORAGE_KEY = "cave:projects:pane";
+
+function isPane(value: unknown): value is ProjectsPane {
+  return value === "access" || value === "groups" || value === "activity";
+}
 
 type ProjectsViewProps = {
   sessions?: SessionRow[];
@@ -122,7 +143,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const confirm = useConfirm();
   // Unscoped: access is managed over EVERY registered project, not just the
   // ones the active familiar can already see.
-  const { projects, loading: projectsLoading, error: projectsError, reload, createProject, updateRepoUrl, renameProject, deleteProject } = useProjects();
+  const { projects, loading: projectsLoading, error: projectsError, reload, createProject, createProjectOrThrow, updateRepoUrl, renameProject, deleteProject } = useProjects();
 
   const [grantsData, setGrantsData] = useState<GrantsSnapshot | null>(null);
   const [grantsLoading, setGrantsLoading] = useState(true);
@@ -181,6 +202,36 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
     [familiars, pickedFamiliarId],
   );
   const supreme = familiar ? isSupreme(familiar.id, grantsData?.supremeFamiliarId ?? null) : false;
+
+  // The Groups and Activity panes render familiar-shaped UI (avatars, glyphs,
+  // display-name overrides), so they need the resolved roster rather than the
+  // raw daemon rows this surface otherwise works in.
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const resolvedFamiliar = useMemo(
+    () => resolvedFamiliars.find((f) => f.id === familiar?.id) ?? null,
+    [resolvedFamiliars, familiar?.id],
+  );
+
+  // ── Pane ───────────────────────────────────────────────────────────────
+  const [pane, setPane] = useState<ProjectsPane>(() => {
+    if (typeof window === "undefined") return "access";
+    try {
+      const stored = window.localStorage.getItem(PANE_STORAGE_KEY);
+      return isPane(stored) ? stored : "access";
+    } catch {
+      return "access";
+    }
+  });
+  const pickPane = useCallback((next: ProjectsPane) => {
+    setPane(next);
+    try {
+      window.localStorage.setItem(PANE_STORAGE_KEY, next);
+    } catch {
+      // Storage failures (private mode) only lose the preference, not the pane.
+    }
+  }, []);
+  const groupCount = grantsData?.groups.length ?? 0;
+
   const orphanPermissionRecords = grantsData
     ? grantsData.integrity.directGrants + grantsData.integrity.groupGrants + grantsData.integrity.proposals
     : 0;
@@ -219,6 +270,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
   const addFlow = useAddProjectFlow({
     familiarId: familiar?.id ?? null,
     createProject,
+    createProjectOrThrow,
     projects,
     onAdded: () => {
       reload();
@@ -1010,36 +1062,85 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             <p className="projects-access-eyebrow">Familiars</p>
             <h1 className="projects-access-title">Project access</h1>
             <p className="projects-access-subtitle">
-              What {familiar ? familiarLabel(familiar) : "this familiar"} may read and write. Click a
-              project’s pill to cycle — none, read, full.
+              {pane === "access"
+                ? `What ${familiar ? familiarLabel(familiar) : "this familiar"} may read and write. Click a project’s pill to cycle — none, read, full.`
+                : pane === "groups"
+                  ? "Grant a set of projects to a set of familiars at once. A familiar’s access is the most permissive of its own grants and its groups’."
+                  : `Where ${familiar ? familiarLabel(familiar) : "this familiar"}’s access came from — inherited groups, requests, and every change on record.`}
             </p>
           </div>
-          {/* A proportional ledger, not three loose numbers: the bar IS the map. */}
-          <div
-            className="projects-access-ledger"
-            title={ledger.map((seg) => `${seg.count} ${seg.label}`).join(" · ")}
-          >
-            <div className="projects-access-ledger-bar">
-              {ledger.map((seg) => (
-                <span
-                  key={seg.state}
-                  className={`is-${seg.state}`}
-                  style={{ width: seg.width }}
-                  aria-hidden
-                />
-              ))}
+          {/* A proportional ledger, not three loose numbers: the bar IS the map.
+              It measures ONE familiar's grants, so it belongs to the Access
+              pane only — beside a cross-familiar group list it would read as a
+              tally of the thing on screen, which it is not. */}
+          {pane === "access" ? (
+            <div
+              className="projects-access-ledger"
+              title={ledger.map((seg) => `${seg.count} ${seg.label}`).join(" · ")}
+            >
+              <div className="projects-access-ledger-bar">
+                {ledger.map((seg) => (
+                  <span
+                    key={seg.state}
+                    className={`is-${seg.state}`}
+                    style={{ width: seg.width }}
+                    aria-hidden
+                  />
+                ))}
+              </div>
+              <div className="projects-access-ledger-key">
+                {ledger.map((seg) => (
+                  <span key={seg.state} className={`is-${seg.state}`}>
+                    <span className="projects-access-dot" aria-hidden />
+                    {seg.count} {seg.label}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="projects-access-ledger-key">
-              {ledger.map((seg) => (
-                <span key={seg.state} className={`is-${seg.state}`}>
-                  <span className="projects-access-dot" aria-hidden />
-                  {seg.count} {seg.label}
-                </span>
-              ))}
-            </div>
-          </div>
+          ) : null}
         </header>
 
+        <div className="projects-access-panes">
+          <Tabs<ProjectsPane>
+            idPrefix="projects-pane"
+            ariaLabel="Project access panes"
+            value={pane}
+            onChange={pickPane}
+            items={[
+              { id: "access", label: "Access", icon: "ph:sliders-horizontal", title: "Per-familiar project grants" },
+              {
+                id: "groups",
+                label: "Groups",
+                icon: "ph:users-three",
+                count: groupCount,
+                title: "Named groups that grant a set of projects to a set of familiars",
+              },
+              {
+                id: "activity",
+                label: "Activity",
+                icon: "ph:clock-counter-clockwise",
+                title: "Requests, history, and access decisions",
+              },
+            ]}
+          />
+        </div>
+
+        {/* Activity is per-familiar too, so it keeps the picker — but none of
+            the matrix controls, which have nothing to act on there. Groups are
+            cross-familiar and take no toolbar at all. */}
+        {pane === "activity" && familiars.length > 0 && familiar ? (
+          <div className="projects-access-toolbar">
+            <StandardSelect
+              label="Familiar"
+              value={familiar.id}
+              onChange={(id) => setPickedFamiliarId(id)}
+              options={familiars.map((f) => ({ value: f.id, label: familiarLabel(f) }))}
+              className="projects-access-familiar"
+            />
+          </div>
+        ) : null}
+
+        {pane === "access" ? (
         <div className="projects-access-toolbar">
           {familiars.length > 0 && familiar ? (
             <StandardSelect
@@ -1115,9 +1216,10 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             {addFlow.adding ? "Adding…" : "New project"}
           </Button>
         </div>
+        ) : null}
 
         {/* Bulk band — present only while selecting. */}
-        {bulk ? (
+        {pane === "access" && bulk ? (
           <div className="projects-access-bulk" role="group" aria-label="Bulk access actions">
             <span className="projects-access-bulk-count">{selectionLabel(selected.size)}</span>
             <span className="projects-access-bulk-sep" aria-hidden />
@@ -1140,12 +1242,12 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           </div>
         ) : null}
 
-        {mutateError ? (
+        {mutateError && pane === "access" ? (
           <p className="projects-access-error" role="alert">
             {mutateError}
           </p>
         ) : null}
-        {orphanPermissionRecords > 0 ? (
+        {orphanPermissionRecords > 0 && pane !== "groups" ? (
           <div className="projects-access-error" role="alert">
             <p>
               {orphanPermissionRecords} stale permission record{orphanPermissionRecords === 1 ? "" : "s"} refer to {grantsData?.integrity.orphanProjectIds.length === 1 ? "a project folder" : "project folders"} no longer registered in Cave. Repair removes only those stale records; it never grants access.
@@ -1160,13 +1262,36 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             </Button>
           </div>
         ) : null}
-        {addFlow.addError ? (
+        {addFlow.addError && pane === "access" ? (
           <p className="projects-access-error" role="alert">
             {addFlow.addError}
           </p>
         ) : null}
 
-        {body}
+        <div
+          role="tabpanel"
+          id={`projects-pane-panel-${pane}`}
+          aria-labelledby={`projects-pane-tab-${pane}`}
+          className="projects-access-pane"
+        >
+          {pane === "access" ? body : null}
+          {pane === "groups" ? <AccessGroupsSection familiars={resolvedFamiliars} /> : null}
+          {pane === "activity" ? (
+            resolvedFamiliar ? (
+              <FamiliarStudioProjectsTab
+                key={`${resolvedFamiliar.id}:activity`}
+                familiar={resolvedFamiliar}
+                variant="activity"
+              />
+            ) : (
+              <EmptyState
+                icon="ph:users-three"
+                headline="No familiars yet"
+                subtitle="Summon a familiar first — access activity is recorded per familiar."
+              />
+            )
+          ) : null}
+        </div>
       </div>
 
       <ProjectSettingsModal

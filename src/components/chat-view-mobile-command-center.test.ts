@@ -80,10 +80,30 @@ assert.match(
   "Mobile avatar rows should keep user content inside the phone-width transcript column",
 );
 
+// The popover's vertical placement became conditional in 235c6b669d: the
+// composer renders inline under the hero on a new session and docked
+// otherwise, so the menu must open downward in the first case and upward in
+// the second. This used to pin the literal `absolute bottom-full`, which the
+// refactor broke while the behaviour it protects stayed intact.
+//
+// Pin the two things that actually matter — the class hook and the horizontal
+// bounding that keeps the menu inside a phone-width column — plus the
+// conditional itself, rather than one branch's literal.
 assert.match(
   source,
-  /className="cave-composer-popover absolute bottom-full/,
+  /className=\{`cave-composer-popover absolute left-0 right-0 \$\{composerAutocompletePosition\}/,
   "Composer slash and mention menus should expose a mobile-bounded popover hook",
+);
+assert.match(
+  source,
+  /const composerAutocompletePosition = inlineComposer \? "top-full mt-2" : "bottom-full mb-2";/,
+  "the popover must open downward for the inline composer and upward when docked",
+);
+
+assert.match(
+  source,
+  /const composerAutocompletePosition = inlineComposer \? "top-full mt-2" : "bottom-full mb-2"/,
+  "Composer popovers should retain their bounded above/below placement contract",
 );
 
 assert.match(

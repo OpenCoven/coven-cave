@@ -5,9 +5,20 @@ export type DaemonAvailability =
   | "unhealthy"
   | "unauthorized"
   | "misconfigured"
-  | "status-unavailable";
+  | "status-unavailable"
+  | "incompatible";
+
+export type DaemonAvailabilityPresentation = {
+  label: string;
+  tone: "danger" | "success" | "warning";
+};
 
 export type DaemonTargetMode = "local" | "hub" | "unconfigured-hub";
+export type DaemonConnectionTravelCadence =
+  | "hub-unreachable"
+  | "hub-reachable"
+  | "non-hub"
+  | "unknown";
 
 const AVAILABILITY_VALUES = new Set<DaemonAvailability>([
   "online",
@@ -17,7 +28,38 @@ const AVAILABILITY_VALUES = new Set<DaemonAvailability>([
   "unauthorized",
   "misconfigured",
   "status-unavailable",
+  "incompatible",
 ]);
+
+export function describeDaemonAvailability(input: {
+  running: boolean;
+  availability?: DaemonAvailability;
+}): DaemonAvailabilityPresentation {
+  const availabilityAgreesWithRunning =
+    input.availability === undefined || input.availability === "online";
+  if (input.running && availabilityAgreesWithRunning) {
+    return { label: "Running", tone: "success" };
+  }
+  if (input.running || input.availability === "online") {
+    return { label: "Unhealthy", tone: "danger" };
+  }
+  switch (input.availability) {
+    case "unreachable":
+      return { label: "Unreachable", tone: "danger" };
+    case "unhealthy":
+      return { label: "Unhealthy", tone: "danger" };
+    case "unauthorized":
+      return { label: "Authorization required", tone: "danger" };
+    case "misconfigured":
+      return { label: "Configuration required", tone: "warning" };
+    case "status-unavailable":
+      return { label: "Status unavailable", tone: "warning" };
+    case "incompatible":
+      return { label: "Incompatible", tone: "danger" };
+    default:
+      return { label: "Offline", tone: "danger" };
+  }
+}
 
 export function classifyDaemonFailureAvailability(input: {
   targetMode: DaemonTargetMode;
@@ -60,11 +102,41 @@ function payloadReason(payload: DaemonStatusPayload): string | null {
     : null;
 }
 
+function payloadTargetMode(payload: DaemonStatusPayload): DaemonTargetMode | null {
+  const mode = payload.target?.mode;
+  return mode === "local" || mode === "hub" || mode === "unconfigured-hub" ? mode : null;
+}
+
 function payloadAvailability(payload: DaemonStatusPayload): DaemonAvailability | null {
   return typeof payload.availability === "string" &&
     AVAILABILITY_VALUES.has(payload.availability as DaemonAvailability)
     ? payload.availability as DaemonAvailability
     : null;
+}
+
+export function classifyDaemonConnectionTravelCadence(
+  payload: unknown,
+): DaemonConnectionTravelCadence {
+  const parsed = statusPayload(payload);
+  if (!parsed || typeof parsed.running !== "boolean") return "unknown";
+
+  const targetMode = payloadTargetMode(parsed);
+  if (targetMode === null) return "unknown";
+  if (targetMode === "local" || targetMode === "unconfigured-hub") {
+    return "non-hub";
+  }
+
+  const availability = payloadAvailability(parsed);
+  if (availability === "unreachable") return "hub-unreachable";
+  if (
+    availability === "online" ||
+    availability === "unauthorized" ||
+    availability === "unhealthy" ||
+    availability === "offline"
+  ) {
+    return "hub-reachable";
+  }
+  return "unknown";
 }
 
 /**
@@ -90,7 +162,14 @@ export function classifyDaemonStatusPoll(input: {
     return { kind: "unavailable", reason: "status service returned an invalid response" };
   }
   if (payload.running) {
-    const targetMode = payload.target?.mode;
+    const availability = payloadAvailability(payload);
+    if (payload.availability !== undefined && availability !== "online") {
+      return {
+        kind: "unavailable",
+        reason: payloadReason(payload) ?? "daemon status returned contradictory health evidence",
+      };
+    }
+    const targetMode = payloadTargetMode(payload);
     if (targetMode === "local" || targetMode === "hub") {
       return { kind: "running", targetMode };
     }

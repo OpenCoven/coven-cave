@@ -48,6 +48,7 @@ export type GitRunner = (projectRoot: string, args: string[]) => Promise<string 
 export const defaultGitRunner: GitRunner = async (projectRoot, args) => {
   try {
     const { stdout } = await execFileAsync("git", args, {
+      windowsHide: true,
       cwd: projectRoot,
       encoding: "utf8",
       timeout: GIT_TIMEOUT_MS,

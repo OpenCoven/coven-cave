@@ -46,16 +46,25 @@ const RailDisclosureContext = createContext<HTMLDivElement | null>(null);
 export function SurfaceRoom({
   accentHue,
   children,
+  className,
   drawer,
   drawerOpen,
   drawerTitle,
+  drawerSummary,
+  header,
   onToggleDrawer,
 }: {
   accentHue?: number;
   children: ReactNode;
+  /** Extra class on the room shell — for a room that lays its own columns out. */
+  className?: string;
   drawer?: ReactNode;
   drawerOpen?: boolean;
   drawerTitle?: string;
+  /** Trailing text on the drawer toggle: what is inside without opening it. */
+  drawerSummary?: ReactNode;
+  /** Full-bleed bar above the columns, outside their padding. */
+  header?: ReactNode;
   onToggleDrawer?: () => void;
 }) {
   const [disclosureTarget, setDisclosureTarget] = useState<HTMLDivElement | null>(null);
@@ -63,9 +72,10 @@ export function SurfaceRoom({
   return (
     <RailDisclosureContext.Provider value={disclosureTarget}>
       <div
-        className="role-surface-room"
+        className={`role-surface-room${className ? ` ${className}` : ""}`}
         style={accentHue != null ? ({ "--room-accent-h": String(accentHue) } as CSSProperties) : undefined}
       >
+        {header}
         <div
           ref={setDisclosureTarget}
           className="role-surface-disclosures"
@@ -86,6 +96,9 @@ export function SurfaceRoom({
             >
               <Icon name={drawerOpen ? "ph:caret-down" : "ph:caret-up"} width={14} height={14} aria-hidden />
               <span>{drawerTitle}</span>
+              {drawerSummary != null && (
+                <span className="role-surface-drawer-summary">{drawerSummary}</span>
+              )}
             </button>
             {drawerOpen && <div className="role-surface-drawer-body">{drawer}</div>}
           </section>

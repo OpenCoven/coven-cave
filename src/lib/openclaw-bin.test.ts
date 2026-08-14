@@ -37,8 +37,13 @@ assert.match(
 );
 assert.match(
   src,
-  /export function openClawLaunchCommandForBinary\(binary: string\): CovenLaunchCommand[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)/,
+  /export function openClawLaunchCommandForBinary\(binary: string\): OpenClawLaunchCommand[\s\S]*covenLaunchCommandForBinary\(binary, shimPlatform\)/,
   "OpenClaw Windows npm shims should launch their JavaScript target with Node instead of cmd.exe",
+);
+assert.match(
+  src,
+  /requiredFiles: \[launch\.fixedArgs\.at\(-1\)!\]/,
+  "OpenClaw Windows shim preflight should retain the resolved package target as a required artifact",
 );
 assert.match(
   src,

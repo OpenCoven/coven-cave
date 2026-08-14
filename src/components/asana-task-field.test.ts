@@ -24,10 +24,28 @@ assert.match(boardTypes, /export type CardAsanaLink = \{/, "Task cards expose a 
 assert.match(boardTypes, /asana: CardAsanaLink\[\]/, "Task cards persist structured Asana connections");
 assert.match(boardStore, /normalizeAsanaLinks/, "Board persistence normalizes Asana connections");
 assert.match(boardStore, /asanaLinksFromLinks/, "Board backfill derives Asana connections from bare links");
+// Asserted as separate facts rather than one literal expression: the call is
+// now multi-line, and pinning its exact text made this break on a change that
+// preserved every behaviour it names (cave-0b8t8).
 assert.match(
   boardStore,
-  /const asana = mergeAsanaLinks\(normalizeAsanaLinks\(c\.asana\), \.\.\.asanaLinksFromLinks\(c\.links\)\)/,
-  "Board backfill preserves explicit Asana connections and derives them from link URLs",
+  /const storedAsana = normalizeAsanaLinks\(c\.asana\)/,
+  "Board backfill normalizes the stored Asana connections",
+);
+assert.match(
+  boardStore,
+  /mergeAsanaLinks\(\s*storedAsana,/,
+  "Board backfill preserves explicit Asana connections as the merge base",
+);
+assert.match(
+  boardStore,
+  /asanaLinksFromLinks\(c\.links\)\.filter\(/,
+  "Board backfill still derives Asana connections from link URLs",
+);
+assert.match(
+  boardStore,
+  /sameAsanaTarget\(stored, derived\)/,
+  "a URL-derived Asana link is dropped when a stored link already names that task — otherwise its generated title overwrites the real one on every load (cave-0b8t8)",
 );
 
 // ── API surface ──────────────────────────────────────────────────────────────
@@ -49,6 +67,7 @@ assert.match(
   "createBoardCardFromAsanaItem seeds the card's asana field",
 );
 assert.match(asanaTasks, /action: "create"/, "fileAsanaItemAsBead routes through the beads create action");
+assert.match(asanaTasks, /surface: "shared"/, "fileAsanaItemAsBead marks shared platform ownership");
 assert.match(asanaTasks, /externalRef: item\.url/, "fileAsanaItemAsBead links the Asana permalink as external-ref");
 
 // task-asana helpers must stay isomorphic (importable from client + server), so
@@ -56,7 +75,7 @@ assert.match(asanaTasks, /externalRef: item\.url/, "fileAsanaItemAsBead links th
 assert.doesNotMatch(taskAsana, /next\/server|node:fs|node:child_process/, "task-asana helpers stay isomorphic");
 
 // ── Beads bridge ─────────────────────────────────────────────────────────────
-assert.match(beadsApi, /parsed\.body\.action === "create"/, "Beads API handles a create action");
+assert.match(beadsApi, /if \(action\.value === "create"\)/, "Beads API handles a create action");
 assert.match(beadsApi, /"--external-ref"/, "Beads create passes --external-ref for the source ticket");
 
 // ── Live data routes gate on the connected PAT ───────────────────────────────

@@ -18,10 +18,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // path, value = the reason (printed in the "allowlisted" summary). Keep this
 // short and justified — the whole point of the guard is that orphaning is loud.
 const ALLOWLIST = new Map([
-  [
-    "scripts/release-notes.test.mjs",
-    "needs live git history/tags; absent in CI's shallow checkout (runs in the release workflow)",
-  ],
+  // scripts/release-notes.test.mjs used to live here because it read this
+  // checkout's own tags and CHANGELOG; it now seeds a throwaway fixture repo
+  // and passes COVEN_RELEASE_NOTES_ROOT, so it runs anywhere (cave-5yyj1).
+  // Adding an entry means a test nothing runs — justify it here and expect the
+  // justification to be read.
 ]);
 
 function walk(dir, acc) {

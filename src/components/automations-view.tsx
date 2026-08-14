@@ -52,6 +52,7 @@ import {
 } from "@/components/automations/ritual-overview";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 // AutomationsView — Schedules surface, redesigned June 2026
@@ -746,6 +747,13 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     setSelectedItem(null);
     setSelectedCodex(null);
   };
+  // Overview/Calendar/Crons are destinations — ?mode=calendar lands straight on
+  // one, so Back has to have somewhere to return to.
+  const selectTabTracked = useTrackedSurfaceValue<AutomationTab>({
+    id: "rituals:tab",
+    value: activeTab,
+    onRestore: selectTab,
+  });
 
   const openCalendarDay = (day: RitualDay) => {
     window.sessionStorage.setItem("cave:calendar:pending-open-date", day.key);
@@ -912,7 +920,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
         <Tabs
           items={RITUAL_TABS}
           value={activeTab}
-          onChange={selectTab}
+          onChange={selectTabTracked}
           ariaLabel="Rituals sections"
           idPrefix="automations"
           size="sm"

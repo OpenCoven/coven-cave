@@ -20,10 +20,21 @@ import { TextInput } from "@/components/ui/text-input";
 import { copyText } from "@/lib/clipboard";
 import { Icon, type IconName } from "@/lib/icon";
 import { classifyTailscaleFailureKind } from "@/lib/tailscale-failure";
-import { parseExecutorUrls } from "./settings-multihost";
+import {
+  useDaemonAutomation,
+  writeDaemonAutomation,
+  type DaemonAutomationKey,
+} from "@/lib/daemon-automation-pref";
+import { createDaemonStatusRequestGate } from "@/lib/daemon-desktop-auto-start";
+import {
+  describeDaemonAvailability,
+  type DaemonAvailability,
+} from "@/lib/daemon-status-classification";
+import { parseExecutorUrls, suggestedHubEndpoint } from "./settings-multihost";
 
 type DaemonStatus = {
   running: boolean;
+  availability?: DaemonAvailability;
   reason?: string;
   checkedAt?: string;
   covenVersion?: string;
@@ -118,6 +129,80 @@ function SectionRule({ id, label, meta }: { id: string; label: string; meta?: Re
   );
 }
 
+/**
+ * Unattended lifecycle switches (cave-bqywj). Every one is opt-in and starts
+ * off: they restart processes and install binaries on this machine.
+ *
+ * There is no "auto-reconnect" switch on purpose — reconnection already
+ * happens unconditionally (the status poll re-probes every 5s and drops the
+ * offline banner the moment the daemon answers; the PTY bridge runs its own
+ * backoff loop). A toggle would either do nothing or, defaulting to off,
+ * remove recovery that works today.
+ *
+ * `.settings-switch` comes from dashboard.css, which settings-shell.tsx
+ * imports; DaemonSection only ever renders inside that shell.
+ */
+function AutomationSection() {
+  const automation = useDaemonAutomation();
+  const rows: {
+    key: DaemonAutomationKey;
+    label: string;
+    description: string;
+  }[] = [
+    {
+      key: "autoRestart",
+      label: "Restart the daemon",
+      description:
+        "Relaunch a local daemon that goes offline mid-session. Today it is only started once, at app launch.",
+    },
+    {
+      key: "autoUpgradeCli",
+      label: "Upgrade Coven",
+      description:
+        "Install Coven CLI updates unattended. This is also the daemon — they ship as one package — and it changes the version of the command you type at.",
+    },
+  ];
+
+  return (
+    <section
+      className="settings-daemon-section"
+      aria-labelledby="settings-daemon-automation-heading"
+    >
+      <SectionRule id="settings-daemon-automation-heading" label="AUTOMATION" />
+      <div className="settings-daemon-automation">
+        {rows.map((row) => {
+          const enabled = automation[row.key];
+          // The description is the consequence — a process restart or an
+          // unattended install. A screen reader must reach it from the switch
+          // itself, not only by having read the row on the way past.
+          const describedBy = `settings-daemon-automation-${row.key}-description`;
+          return (
+            <div className="settings-daemon-automation-row" key={row.key}>
+              <div className="settings-daemon-automation-copy">
+                <span className="settings-daemon-automation-label">{row.label}</span>
+                <span className="settings-daemon-automation-description" id={describedBy}>
+                  {row.description}
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enabled}
+                aria-label={row.label}
+                aria-describedby={describedBy}
+                onClick={() => writeDaemonAutomation(row.key, !enabled)}
+                className={`settings-switch focus-ring${enabled ? " is-on" : ""}`}
+              >
+                <span className="settings-switch__knob" aria-hidden />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function isValidHubUrl(value: string): boolean {
   try {
     const url = new URL(value.trim());
@@ -184,8 +269,21 @@ export function DaemonSection({
 
   const refreshCtlRef = useRef<AbortController | null>(null);
   const devicesCtlRef = useRef<AbortController | null>(null);
+  const probeCtlRef = useRef<AbortController | null>(null);
+  const probeRequestGateRef = useRef(createDaemonStatusRequestGate());
   const suggestionAppliedRef = useRef(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectionBusy = probing || savingConnection;
+
+  const invalidateProbe = useCallback(() => {
+    const hadActiveProbe = probeCtlRef.current !== null;
+    probeCtlRef.current?.abort();
+    probeCtlRef.current = null;
+    probeRequestGateRef.current.begin();
+    setProbe(null);
+    setProbing(false);
+    if (hadActiveProbe) setSavingConnection(false);
+  }, []);
 
   const refresh = useCallback(async (announceResult = false) => {
     refreshCtlRef.current?.abort();
@@ -250,15 +348,16 @@ export function DaemonSection({
   }, []);
 
   useEffect(() => {
-    if (!suggestedHubUrl) return;
+    if (!suggestedHubUrl || connectionBusy) return;
     suggestionAppliedRef.current = true;
     setMode("hub");
     setHubUrl(suggestedHubUrl);
-    setProbe(null);
+    invalidateProbe();
     onSuggestionConsumed();
-  }, [onSuggestionConsumed, suggestedHubUrl]);
+  }, [connectionBusy, invalidateProbe, onSuggestionConsumed, suggestedHubUrl]);
 
   useEffect(() => () => {
+    probeCtlRef.current?.abort();
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
   }, []);
 
@@ -302,9 +401,12 @@ export function DaemonSection({
     JSON.stringify(parseExecutorUrls(executorText)) !== JSON.stringify(savedConnection.executorUrls)
   );
 
-  const persistConnection = async (nextMode = mode) => {
-    const normalizedHubUrl = hubUrl.trim();
-    const normalizedExecutorUrls = parseExecutorUrls(executorText);
+  const persistConnection = async (
+    nextMode = mode,
+    override?: Pick<SavedConnection, "hubUrl" | "executorUrls">,
+  ) => {
+    const normalizedHubUrl = (override?.hubUrl ?? hubUrl).trim();
+    const normalizedExecutorUrls = override?.executorUrls ?? parseExecutorUrls(executorText);
     setSavingConnection(true);
     setConnectionError(null);
     try {
@@ -342,9 +444,14 @@ export function DaemonSection({
       return;
     }
     if (!isValidHubUrl(url)) {
-      setConnectionError("Enter a full HTTP URL, such as http://server.tailnet:8787.");
+      setConnectionError("Enter a full URL, such as https://server.tailnet:8787.");
       return;
     }
+    probeCtlRef.current?.abort();
+    const ctl = new AbortController();
+    probeCtlRef.current = ctl;
+    const requestId = probeRequestGateRef.current.begin();
+    const executorUrls = parseExecutorUrls(executorText);
     setProbing(true);
     setConnectionError(null);
     try {
@@ -352,11 +459,13 @@ export function DaemonSection({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url }),
+        signal: ctl.signal,
       });
       const result = await response.json().catch(() => ({})) as Partial<DaemonProbe> & {
         ok?: boolean;
         error?: string;
       };
+      if (!probeRequestGateRef.current.isLatest(requestId)) return;
       if (!response.ok || result.ok === false || typeof result.reachable !== "boolean") {
         throw new Error(result.error || `probe failed (${response.status})`);
       }
@@ -368,13 +477,21 @@ export function DaemonSection({
         url,
       };
       setProbe(nextProbe);
-      if (nextProbe.reachable && saveWhenReachable) await persistConnection("hub");
+      if (nextProbe.reachable && saveWhenReachable) {
+        probeCtlRef.current = null;
+        setProbing(false);
+        await persistConnection("hub", { hubUrl: url, executorUrls });
+      }
     } catch (error) {
+      if (ctl.signal.aborted || !probeRequestGateRef.current.isLatest(requestId)) return;
       const message = error instanceof Error ? error.message : "could not probe Server hub";
       setConnectionError(message);
       announce(`Couldn't check the Server hub: ${message}`, "assertive");
     } finally {
-      setProbing(false);
+      if (probeRequestGateRef.current.isLatest(requestId)) {
+        probeCtlRef.current = null;
+        setProbing(false);
+      }
     }
   };
 
@@ -389,7 +506,7 @@ export function DaemonSection({
   const chooseMode = (nextMode: MultiHostMode) => {
     setMode(nextMode);
     setConnectionError(null);
-    setProbe(null);
+    invalidateProbe();
   };
 
   const revertConnection = () => {
@@ -399,17 +516,17 @@ export function DaemonSection({
     setExecutorText(savedConnection.executorUrls.join("\n"));
     setExecutorsOpen(savedConnection.executorUrls.length > 0);
     setConnectionError(null);
-    setProbe(null);
+    invalidateProbe();
     announce("Daemon connection changes reverted.");
   };
 
   const selectDevice = (device: TailscaleDevice) => {
-    const host = device.tailnetIp || device.dnsName;
+    const host = device.dnsName || device.tailnetIp;
     if (!host) return;
-    const url = `http://${host}:8787`;
+    const url = suggestedHubEndpoint(host);
     setMode("hub");
     setHubUrl(url);
-    setProbe(null);
+    invalidateProbe();
     void probeHub(url, false);
   };
 
@@ -492,14 +609,16 @@ export function DaemonSection({
   };
 
   const manualOffline = status?.travel?.manualOffline === true;
-  const daemonOnline = status?.running === true && !manualOffline;
+  const availabilityPresentation = describeDaemonAvailability({
+    running: status?.running === true,
+    availability: status?.availability,
+  });
+  const daemonOnline = !manualOffline && availabilityPresentation.tone === "success";
   const statusTone: StatusTone = loading
     ? "neutral"
     : restarting || starting || manualOffline
       ? "warning"
-      : status?.running
-        ? "success"
-        : "danger";
+      : availabilityPresentation.tone;
   const stateLabel = loading
     ? "Checking…"
     : restarting
@@ -508,9 +627,13 @@ export function DaemonSection({
         ? "Starting…"
         : manualOffline
           ? "Offline (manual)"
-          : status?.running
-            ? "Running"
-            : "Offline";
+          : availabilityPresentation.label;
+  const statusFailureLead =
+    status?.target?.mode === "hub" && status.availability === "unreachable"
+      ? "Configured but unreachable"
+      : stateLabel;
+  const statusFailureReason =
+    !loading && !starting && !restarting && !daemonOnline ? status?.reason : null;
   const targetLabel = status?.target?.label || (mode === "hub" ? "server hub" : "local runtime");
   const queueCount = status?.travel?.pendingQueueCount ?? 0;
   const isAway = Boolean(status?.travel && status.travel.mode !== "home");
@@ -583,6 +706,11 @@ export function DaemonSection({
   ];
 
   const tailscaleFailure = devicesError ? describeTailscaleFailure(devicesError) : null;
+  const canStartDaemon =
+    !loading &&
+    mode === "local" &&
+    status?.running !== true &&
+    (status?.availability === undefined || status.availability === "offline");
 
   return (
     <section className="settings-daemon" aria-labelledby="settings-daemon-title">
@@ -613,7 +741,7 @@ export function DaemonSection({
           >
             Refresh
           </Button>
-          {!loading && !status?.running && mode === "local" && (
+          {canStartDaemon && (
             <Button
               variant="primary"
               size="sm"
@@ -702,9 +830,11 @@ export function DaemonSection({
             </div>
           ) : null}
 
-          {status?.target?.mode === "hub" && !loading && !status.running ? (
+          {statusFailureReason ? (
             <p className="settings-daemon-inline-error" role="alert">
-              Configured but unreachable · {status.target.url}{status.reason ? ` · ${status.reason}` : ""}
+              {statusFailureLead}
+              {status?.target?.url ? ` · ${status.target.url}` : ""}
+              {` · ${statusFailureReason}`}
             </p>
           ) : null}
           {startError ? <p className="settings-daemon-inline-error" role="alert">{startError}</p> : null}
@@ -742,6 +872,7 @@ export function DaemonSection({
                 className="settings-daemon-target focus-ring"
                 data-selected={mode === target.id || undefined}
                 aria-pressed={mode === target.id}
+                disabled={connectionBusy}
                 onClick={() => chooseMode(target.id)}
               >
                 <span className="settings-daemon-target-title">
@@ -773,12 +904,13 @@ export function DaemonSection({
                     value={hubUrl}
                     onChange={(event) => {
                       setHubUrl(event.target.value);
-                      setProbe(null);
+                      invalidateProbe();
                       setConnectionError(null);
                     }}
                     aria-label="Server hub URL"
                     aria-describedby="settings-daemon-hub-hint"
-                    placeholder="http://server.tailnet:8787"
+                    placeholder="https://server.tailnet:8787"
+                    disabled={connectionBusy}
                     spellCheck={false}
                   />
                   <span className="settings-daemon-field-badge" data-tone={hubBadgeTone}>{hubBadge}</span>
@@ -829,7 +961,7 @@ export function DaemonSection({
                           type="button"
                           className="settings-daemon-device focus-ring"
                           onClick={() => selectDevice(device)}
-                          disabled={!selectable}
+                          disabled={connectionBusy || !selectable}
                         >
                           <span className="settings-daemon-device-dot" data-online={device.online} aria-hidden="true" />
                           <span>
@@ -854,6 +986,7 @@ export function DaemonSection({
               className="settings-daemon-disclosure-trigger focus-ring"
               aria-expanded={executorsOpen}
               aria-controls="settings-daemon-executor-fields"
+              disabled={connectionBusy}
               onClick={() => setExecutorsOpen((open) => !open)}
             >
               <span className="settings-daemon-disclosure-icon" aria-hidden="true">
@@ -867,10 +1000,13 @@ export function DaemonSection({
               <div id="settings-daemon-executor-fields">
                 <TextArea
                   value={executorText}
-                  onChange={(event) => setExecutorText(event.target.value)}
+                  onChange={(event) => {
+                    setExecutorText(event.target.value);
+                    invalidateProbe();
+                  }}
                   aria-label="Executor addresses, one per line"
                   placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
-                  disabled={mode !== "hub"}
+                  disabled={connectionBusy || mode !== "hub"}
                   rows={3}
                   spellCheck={false}
                 />
@@ -894,6 +1030,7 @@ export function DaemonSection({
                 variant="ghost"
                 size="sm"
                 leadingIcon="ph:warning"
+                disabled={connectionBusy}
                 loading={savingConnection}
                 onClick={() => void persistConnection("hub")}
               >
@@ -903,7 +1040,7 @@ export function DaemonSection({
             <Button
               variant="ghost"
               size="sm"
-              disabled={!connectionDirty || savingConnection}
+              disabled={!connectionDirty || connectionBusy}
               onClick={revertConnection}
             >
               Revert
@@ -923,6 +1060,8 @@ export function DaemonSection({
       </section>
 
       {omnigentSettings}
+
+      <AutomationSection />
 
       <section className="settings-daemon-section settings-daemon-info-section" aria-labelledby="settings-daemon-info-heading">
         <SectionRule id="settings-daemon-info-heading" label="INFO" />

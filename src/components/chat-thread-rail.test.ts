@@ -129,7 +129,7 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /const onInspectorOpen = \(\) => setScope\("familiar"\)/,
+  /const onInspectorOpen = \(\) => selectScope\("familiar"\)/,
   "ChatSurface maps inspector-open to the Familiar chat tab",
 );
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");

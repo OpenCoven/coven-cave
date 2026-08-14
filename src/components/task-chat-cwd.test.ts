@@ -22,7 +22,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*recentProjectRoot,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
+  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*recentProjectRoot,\s*defaultProjectId: savedDefaults\.projectId,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
   "ChatView resolves the selected project through resolveChatProjectSelection, feeding the linked task's project and the most recent chat's project (sessions in unregistered cwds are No project — behaviorally pinned in chat-projects.test.ts)",
 );
 // A brand-new chat keeps a NULL draft so the default (opener root → linked

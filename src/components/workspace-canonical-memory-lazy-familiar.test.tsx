@@ -48,6 +48,7 @@ vi.mock("@/lib/surface-preferences", async () => {
 });
 vi.mock("@/lib/summon-events", () => ({
   SUMMON_FAMILIAR_EVENT: "test:summon",
+  hasSummonPending: () => false,
   consumeSummonPending: () => false,
 }));
 vi.mock("@/lib/icon", () => ({

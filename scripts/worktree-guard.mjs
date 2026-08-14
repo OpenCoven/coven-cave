@@ -30,6 +30,21 @@
  *     git's admin file keeps pointing at the old path, so moving a live
  *     worktree strands its work exactly like deleting it would.
  *
+ * "Retained" normally means a remote BRANCH or a TAG that is present on a
+ * remote. The strict direct guard also accepts one explicitly named merged
+ * GitHub PR whose exact `refs/pull/<number>/head` is freshly authenticated,
+ * fetched, and rechecked; this bounded path handles squash-source auto-delete
+ * without enumerating a large unrelated ref namespace. Tags count because
+ * archiving a branch as a signed, pushed tag preserves its OIDs
+ * more durably than a branch does — merging deletes the branch, never the tag.
+ * Requiring a branch made the guard block six provably-archived cleanups during
+ * one sweep (2026-07-29), and six bypasses to delete preserved work is how the
+ * bypass stops being read. A LOCAL-only tag never counts: it dies with the
+ * machine. Verifying a tag is remote needs the network (git keeps no
+ * remote-tracking refs for tags), and that probe fails CLOSED — unlike the
+ * warn-only probes here, it gates deletion, so "cannot verify" must not read as
+ * "verified".
+ *
  * Paths are resolved against the SEGMENT's effective cwd, which both a leading
  * `cd <dir> &&` and git's `-C <dir>` move. Resolving against the hook's cwd
  * instead made those forms silently unguarded (cave-6d2dp).
@@ -50,6 +65,596 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
+
+const FULL_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+// Generic branch/tag retention proof has a deterministic network/work ceiling.
+// Exceeding any one is uncertainty, not permission to turn an unbounded ref
+// inventory into deletion evidence. Exact merged-PR proof has its own smaller
+// ceiling: one PR API record and one exact PR ref, each checked twice.
+// With incremental 16-ref fetch batches this permits at most 16 initial
+// advertisements, 31 source-only fetches, and 31 rechecks: 78 remote round
+// trips total.
+const STRICT_MAX_REMOTES = 16;
+const STRICT_MAX_CANDIDATE_SOURCES = 256;
+const STRICT_FETCH_BATCH_SIZE = 16;
+const STRICT_MAX_REF_BYTES = 1024;
+const STRICT_GIT_UNSAFE_ENV = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_GRAFT_FILE",
+  "GIT_SHALLOW_FILE",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_NAMESPACE",
+  "GIT_QUARANTINE_PATH",
+  "GIT_EXEC_PATH",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_NOSYSTEM",
+  "GIT_PAGER",
+  "GIT_LITERAL_PATHSPECS",
+  "GIT_GLOB_PATHSPECS",
+  "GIT_NOGLOB_PATHSPECS",
+  "GIT_ICASE_PATHSPECS",
+];
+
+function strictRefuse(reason) {
+  process.stderr.write(`worktree-guard strict refusal: ${reason}\n`);
+  process.exit(2);
+}
+
+function strictGitEnv() {
+  const env = { ...process.env };
+  for (const key of STRICT_GIT_UNSAFE_ENV) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(key)) delete env[key];
+  }
+  env.GIT_NO_REPLACE_OBJECTS = "1";
+  env.GIT_PAGER = "cat";
+  return env;
+}
+
+function strictGitProbe(args, cwd) {
+  const probe = spawnSync("git", args, {
+    cwd,
+    env: strictGitEnv(),
+    encoding: "utf8",
+    timeout: 10000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (probe.error) throw new Error(`git probe failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`git probe ended on signal ${probe.signal}`);
+  if (!Number.isInteger(probe.status)) throw new Error("git probe returned no exit status");
+  if (probe.stderr !== "") throw new Error("git probe returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string") throw new Error("git probe returned malformed output");
+  return { status: probe.status, stdout: probe.stdout };
+}
+
+function strictGit(args, cwd) {
+  const probe = strictGitProbe(args, cwd);
+  if (probe.status !== 0) throw new Error(`git probe exited ${probe.status}`);
+  return probe.stdout;
+}
+
+function strictGithubApi(endpoint, cwd) {
+  const env = strictGitEnv();
+  delete env.GH_HOST;
+  delete env.GH_REPO;
+  env.GH_PAGER = "cat";
+  env.GH_PROMPT_DISABLED = "1";
+  const probe = spawnSync(
+    "gh",
+    ["api", "--hostname", "github.com", "--method", "GET", endpoint],
+    {
+      cwd,
+      env,
+      encoding: "utf8",
+      timeout: 10000,
+      maxBuffer: 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  if (probe.error) throw new Error(`GitHub API failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`GitHub API ended on signal ${probe.signal}`);
+  if (probe.status !== 0) throw new Error(`GitHub API exited ${probe.status}`);
+  if (probe.stderr !== "") throw new Error("GitHub API returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string" || !probe.stdout) {
+    throw new Error("GitHub API returned empty output");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(probe.stdout);
+  } catch {
+    throw new Error("GitHub API returned malformed JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("GitHub API returned malformed PR data");
+  }
+  return parsed;
+}
+
+function strictSingleOid(output, label) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "" || !FULL_OID.test(lines[0])) {
+    throw new Error(`${label} returned a malformed full OID`);
+  }
+  return lines[0];
+}
+
+function strictSingleLine(output, label) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "" || !lines[0]) {
+    throw new Error(`${label} returned malformed output`);
+  }
+  return lines[0];
+}
+
+function strictRegisteredWorktree(target) {
+  const output = strictGit(["-C", target, "worktree", "list", "--porcelain", "-z"]);
+  if (!output.endsWith("\0\0")) throw new Error("worktree registry returned malformed output");
+  const records = output.slice(0, -2).split("\0\0");
+  let found = false;
+  for (const record of records) {
+    const fields = record.split("\0");
+    if (!fields[0]?.startsWith("worktree ") || fields[0].length === "worktree ".length) {
+      throw new Error("worktree registry returned a malformed record");
+    }
+    const registeredPath = fields[0].slice("worktree ".length);
+    if (!path.isAbsolute(registeredPath) || fields.slice(1).some((field) => !field)) {
+      throw new Error("worktree registry returned malformed fields");
+    }
+    if (registeredPath === target) found = true;
+  }
+  if (!found) throw new Error("target is not an exactly registered worktree");
+}
+
+function strictRemoteNames(target) {
+  const output = strictGit(["-C", target, "remote"]);
+  if (!output.endsWith("\n")) throw new Error("git remote returned malformed output");
+  const remotes = output.slice(0, -1).split("\n");
+  if (remotes.length === 1 && remotes[0] === "") throw new Error("repository has no configured remotes");
+  if (remotes.some((remote) => !remote || /\s/.test(remote)) || new Set(remotes).size !== remotes.length) {
+    throw new Error("git remote returned malformed names");
+  }
+  if (remotes.length > STRICT_MAX_REMOTES) {
+    throw new Error(`repository exceeds strict remote limit ${STRICT_MAX_REMOTES}`);
+  }
+  return remotes;
+}
+
+function strictRemoteRefs(output, remote, target, expectedOidWidth, sourceCapacity) {
+  if (output && !output.endsWith("\n")) throw new Error(`remote ${remote} returned malformed output`);
+  const refs = [];
+  const seen = new Set();
+  for (const line of output ? output.slice(0, -1).split("\n") : []) {
+    const match = /^([0-9a-f]+)\t(refs\/(heads|tags)\/(.+))$/.exec(line);
+    if (
+      !match ||
+      !FULL_OID.test(match[1]) ||
+      match[1].length !== expectedOidWidth ||
+      !match[4] ||
+      seen.has(match[2])
+    ) {
+      throw new Error(`remote ${remote} returned malformed refs`);
+    }
+    if (match[3] === "heads" && match[4].endsWith("^{}")) {
+      throw new Error(`remote ${remote} returned a malformed branch ref`);
+    }
+    const peeled = match[3] === "tags" && match[4].endsWith("^{}");
+    const baseRef = peeled ? match[2].slice(0, -3) : match[2];
+    if (Buffer.byteLength(baseRef, "utf8") > STRICT_MAX_REF_BYTES) {
+      throw new Error(`remote ${remote} returned an overlong refname`);
+    }
+    seen.add(match[2]);
+    refs.push({ oid: match[1], ref: match[2], baseRef, kind: match[3], name: match[4], peeled });
+  }
+  const sourceCount = refs.filter((entry) => !entry.peeled).length;
+  if (sourceCount > sourceCapacity) {
+    throw new Error(`repository exceeds strict candidate source limit ${STRICT_MAX_CANDIDATE_SOURCES}`);
+  }
+  for (const entry of refs) strictGit(["-C", target, "check-ref-format", entry.baseRef]);
+  const advertised = new Set(refs.map((entry) => entry.ref));
+  for (const entry of refs) {
+    if (entry.peeled && !advertised.has(entry.baseRef)) {
+      throw new Error(`remote ${remote} returned a peeled tag without its base ref`);
+    }
+  }
+  return refs;
+}
+
+function strictFetchAdvertisedRefs(target, remote, sourceRefs) {
+  if (!sourceRefs.length || sourceRefs.length > STRICT_FETCH_BATCH_SIZE) {
+    throw new Error(`strict fetch batch must contain 1..${STRICT_FETCH_BATCH_SIZE} sources`);
+  }
+  strictGit([
+    "-C", target,
+    "fetch", "--quiet", "--refetch", "--no-auto-maintenance", "--no-write-fetch-head", "--no-tags", "--no-recurse-submodules", "--refmap=",
+    "--", remote, ...sourceRefs.map((sourceRef) => `${sourceRef}:`),
+  ], target);
+}
+
+function strictAdvertisementUnchanged(target, remote, expectedRefs, expectedOidWidth) {
+  const refreshed = strictRemoteRefs(
+    strictGit(["-C", target, "ls-remote", "--heads", "--tags", "--", remote]),
+    remote,
+    target,
+    expectedOidWidth,
+    STRICT_MAX_CANDIDATE_SOURCES,
+  );
+  const refreshedByRef = new Map(refreshed.map((entry) => [entry.ref, entry.oid]));
+  const expectedByRef = new Map(expectedRefs.map((entry) => [entry.ref, entry.oid]));
+  for (const [ref, oid] of expectedByRef) {
+    if (refreshedByRef.get(ref) !== oid) {
+      throw new Error(`remote ${remote} changed ${ref} during retention proof`);
+    }
+  }
+  for (const ref of refreshedByRef.keys()) {
+    if (!expectedByRef.has(ref)) {
+      throw new Error(`remote ${remote} added ${ref} during retention proof`);
+    }
+  }
+}
+
+function strictResolveAdvertisedCommit(target, remote, entry, peeled) {
+  const sourceType = strictSingleLine(
+    strictGit(["-C", target, "cat-file", "-t", entry.oid]),
+    `advertised source ${entry.ref}`,
+  );
+  if (peeled) {
+    if (entry.kind !== "tags" || sourceType !== "tag") {
+      throw new Error(`remote ${remote} advertised an invalid peeled tag base for ${entry.ref}`);
+    }
+    const actualPeeledOid = strictSingleOid(
+      strictGit(["-C", target, "rev-parse", "--verify", `${entry.oid}^{}`]),
+      `fetched tag peel ${entry.ref}`,
+    );
+    if (actualPeeledOid !== peeled.oid) {
+      throw new Error(`remote ${remote} advertised a false peeled target for ${entry.ref}`);
+    }
+  } else if (sourceType !== "commit") {
+    throw new Error(`remote ${remote} advertised non-commit retention source ${entry.ref}`);
+  }
+
+  const advertisedCommit = peeled?.oid ?? entry.oid;
+  const resolvedCommit = strictSingleOid(
+    strictGit(["-C", target, "rev-parse", "--verify", `${advertisedCommit}^{commit}`]),
+    `advertised target ${entry.ref}`,
+  );
+  if (resolvedCommit !== advertisedCommit) {
+    throw new Error(`remote ${remote} advertised ${entry.ref} as an ambiguous commit target`);
+  }
+  return advertisedCommit;
+}
+
+function strictGithubRepoFromRemoteUrl(output) {
+  const remoteUrl = strictSingleLine(output, "git remote get-url");
+  const match =
+    /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl) ??
+    /^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl) ??
+    /^ssh:\/\/git@github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remoteUrl);
+  if (!match) throw new Error("configured remote URL is not a canonical github.com repository URL");
+  return `${match[1]}/${match[2]}`;
+}
+
+function strictSingleExactRef(output, remote, expectedRef, expectedOidWidth) {
+  const lines = output.split("\n");
+  if (lines.length !== 2 || lines[1] !== "") {
+    throw new Error(`remote ${remote} returned malformed exact-ref output`);
+  }
+  const match = /^([0-9a-f]+)\t(refs\/pull\/([1-9][0-9]*)\/head)$/.exec(lines[0]);
+  if (
+    !match ||
+    !FULL_OID.test(match[1]) ||
+    match[1].length !== expectedOidWidth ||
+    match[2] !== expectedRef ||
+    Buffer.byteLength(match[2], "utf8") > STRICT_MAX_REF_BYTES
+  ) {
+    throw new Error(`remote ${remote} returned a malformed exact PR head`);
+  }
+  return { oid: match[1], ref: match[2], kind: "pull", name: match[3], peeled: false };
+}
+
+function strictValidateMergedGithubPr(pr, proof, head) {
+  if (pr.number !== proof.number) throw new Error("GitHub PR number does not match requested proof");
+  if (pr.state !== "closed" || pr.merged !== true || typeof pr.merged_at !== "string" || !Number.isFinite(Date.parse(pr.merged_at))) {
+    throw new Error("GitHub PR is not merged");
+  }
+  if (!FULL_OID.test(pr.merge_commit_sha) || pr.merge_commit_sha.length !== head.length) {
+    throw new Error("GitHub PR returned a malformed merge commit");
+  }
+  if (pr.head?.sha !== head) throw new Error("GitHub PR head does not match expected HEAD");
+  if (pr.base?.ref !== proof.base) throw new Error("GitHub PR base does not match expected base");
+  if (pr.base?.repo?.full_name?.toLowerCase() !== proof.repo.toLowerCase()) {
+    throw new Error("GitHub PR repository does not match requested proof");
+  }
+  return {
+    number: pr.number,
+    state: pr.state,
+    merged: pr.merged,
+    mergedAt: pr.merged_at,
+    mergeCommit: pr.merge_commit_sha,
+    head: pr.head.sha,
+    base: pr.base.ref,
+    repo: pr.base.repo.full_name.toLowerCase(),
+  };
+}
+
+function strictRetainedByMergedGithubPr(target, head, proof) {
+  const remotes = strictRemoteNames(target);
+  if (!remotes.includes(proof.remote)) throw new Error("GitHub PR proof remote is not configured");
+  strictGit(["-C", target, "check-ref-format", `refs/heads/${proof.base}`]);
+
+  const remoteRepo = strictGithubRepoFromRemoteUrl(
+    strictGit(["-C", target, "remote", "get-url", "--", proof.remote]),
+  );
+  if (remoteRepo.toLowerCase() !== proof.repo.toLowerCase()) {
+    throw new Error("configured remote URL does not match GitHub PR proof repository");
+  }
+
+  const endpoint = `repos/${proof.repo}/pulls/${proof.number}`;
+  const initialPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+
+  const prRef = `refs/pull/${proof.number}/head`;
+  strictGit(["-C", target, "check-ref-format", prRef]);
+  const advertised = strictSingleExactRef(
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    proof.remote,
+    prRef,
+    head.length,
+  );
+  if (advertised.oid !== head) throw new Error("advertised GitHub PR head does not match expected HEAD");
+
+  strictFetchAdvertisedRefs(target, proof.remote, [prRef]);
+  const refreshed = strictSingleExactRef(
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    proof.remote,
+    prRef,
+    head.length,
+  );
+  if (refreshed.oid !== advertised.oid) {
+    throw new Error(`remote ${proof.remote} changed ${prRef} during retention proof`);
+  }
+  const refreshedPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+  if (JSON.stringify(refreshedPr) !== JSON.stringify(initialPr)) {
+    throw new Error("GitHub PR changed during retention proof");
+  }
+  const advertisedCommit = strictResolveAdvertisedCommit(target, proof.remote, advertised, null);
+  if (advertisedCommit !== head) throw new Error("fetched GitHub PR head does not match expected HEAD");
+}
+
+function strictRetainedOnRemote(target, head) {
+  const advertisements = [];
+  let candidateSourceCount = 0;
+  for (const remote of strictRemoteNames(target)) {
+    const output = strictGit(["-C", target, "ls-remote", "--heads", "--tags", "--", remote]);
+    const refs = strictRemoteRefs(
+      output,
+      remote,
+      target,
+      head.length,
+      STRICT_MAX_CANDIDATE_SOURCES - candidateSourceCount,
+    );
+    candidateSourceCount += refs.filter((entry) => !entry.peeled).length;
+    advertisements.push({ remote, refs });
+  }
+
+  // A merged feature tip is retained when it is an ancestor of a freshly
+  // advertised remote branch or commit-bearing tag. Plan every remote before
+  // fetching so every configured remote must answer and the aggregate source
+  // cap is enforced before any allow. Exact-HEAD sources are then fetched,
+  // rechecked, and evaluated globally before unrelated ancestry sources.
+  const plans = advertisements.map(({ remote, refs }) => {
+    const peeledByBase = new Map(
+      refs.filter((entry) => entry.peeled).map((entry) => [entry.baseRef, entry]),
+    );
+    const candidates = [
+      ...refs.filter((entry) => entry.kind === "heads"),
+      ...refs.filter((entry) => entry.kind === "tags" && !entry.peeled),
+    ];
+    const exact = [];
+    const ancestry = [];
+    for (const entry of candidates) {
+      const advertisedCommit = peeledByBase.get(entry.ref)?.oid ?? entry.oid;
+      (advertisedCommit === head ? exact : ancestry).push(entry);
+    }
+    return { remote, refs, peeledByBase, exact, ancestry };
+  });
+
+  for (const phase of ["exact", "ancestry"]) {
+    for (const plan of plans) {
+      const candidates = plan[phase];
+      for (let offset = 0; offset < candidates.length; offset += STRICT_FETCH_BATCH_SIZE) {
+        const batch = candidates.slice(offset, offset + STRICT_FETCH_BATCH_SIZE);
+        strictFetchAdvertisedRefs(target, plan.remote, batch.map((entry) => entry.ref));
+        strictAdvertisementUnchanged(target, plan.remote, plan.refs, head.length);
+        for (const entry of batch) {
+          const peeled = plan.peeledByBase.get(entry.ref);
+          const advertisedCommit = strictResolveAdvertisedCommit(target, plan.remote, entry, peeled);
+          if (phase === "exact") {
+            if (advertisedCommit !== head) {
+              throw new Error(`remote ${plan.remote} changed exact source ${entry.ref}`);
+            }
+            return;
+          }
+
+          const ancestry = strictGitProbe(
+            ["-C", target, "merge-base", "--is-ancestor", head, advertisedCommit],
+            target,
+          );
+          if (ancestry.stdout !== "") throw new Error("git ancestry probe returned unexpected output");
+          if (ancestry.status === 0) return;
+          if (ancestry.status !== 1) throw new Error(`git ancestry probe exited ${ancestry.status}`);
+        }
+      }
+    }
+  }
+  throw new Error("HEAD is not retained by any configured remote");
+}
+
+function strictCanonicalCwd(cwd) {
+  const missingSegments = [];
+  let cursor = cwd;
+  for (;;) {
+    try {
+      return {
+        path: path.join(realpathSync(cursor), ...missingSegments),
+        missing: missingSegments.length > 0,
+      };
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw new Error(`lsof cwd cannot be resolved: ${error.message}`);
+      const parent = path.dirname(cursor);
+      if (parent === cursor) throw new Error(`lsof cwd cannot be resolved: ${error.message}`);
+      missingSegments.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+  }
+}
+
+function strictLiveProcesses(target) {
+  const testLsof =
+    process.env.WT_GUARD_TEST_MODE === "1" && process.env.WT_GUARD_TEST_LSOF_BIN
+      ? process.env.WT_GUARD_TEST_LSOF_BIN
+      : "lsof";
+  const probe = spawnSync(testLsof, ["-d", "cwd", "-F", "pcn"], {
+    cwd: path.parse(process.cwd()).root || path.sep,
+    encoding: "utf8",
+    timeout: 10000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (probe.error) throw new Error(`lsof probe failed: ${probe.error.message}`);
+  if (probe.signal) throw new Error(`lsof probe ended on signal ${probe.signal}`);
+  if (probe.status !== 0) throw new Error(`lsof probe exited ${probe.status}`);
+  if (probe.stderr !== "") throw new Error("lsof probe returned unexpected diagnostics");
+  if (typeof probe.stdout !== "string" || !probe.stdout || !probe.stdout.endsWith("\n")) {
+    throw new Error("lsof probe returned malformed output");
+  }
+
+  const prefix = target.endsWith(path.sep) ? target : `${target}${path.sep}`;
+  let state = "pid";
+  let processRecord = null;
+  let recordCount = 0;
+
+  for (const line of probe.stdout.slice(0, -1).split("\n")) {
+    if (state === "pid") {
+      if (!/^p[0-9]+$/.test(line)) throw new Error("lsof probe returned a malformed pid");
+      processRecord = { pid: line.slice(1), command: "" };
+      state = "command";
+    } else if (state === "command") {
+      if (!line.startsWith("c") || line.length === 1) throw new Error("lsof probe returned a malformed command");
+      processRecord.command = line.slice(1);
+      state = "descriptor";
+    } else if (state === "descriptor") {
+      if (line !== "fcwd") throw new Error("lsof probe returned a malformed cwd descriptor");
+      state = "name";
+    } else if (state === "name") {
+      const cwd = line.slice(1);
+      if (!line.startsWith("n") || !cwd || !path.isAbsolute(cwd)) {
+        throw new Error("lsof probe returned a malformed cwd name");
+      }
+      const canonicalCwd = strictCanonicalCwd(cwd);
+      recordCount += 1;
+      if (canonicalCwd.path === target || canonicalCwd.path.startsWith(prefix)) {
+        if (canonicalCwd.missing) throw new Error("lsof cwd inside target cannot be resolved");
+        throw new Error(`process ${processRecord.pid} has cwd inside target`);
+      }
+      processRecord = null;
+      state = "pid";
+    } else {
+      throw new Error("lsof probe entered an invalid parser state");
+    }
+  }
+  if (state !== "pid" || processRecord) throw new Error("lsof probe returned an incomplete final record");
+  if (!recordCount) throw new Error("lsof probe returned no process records");
+}
+
+function runStrictWorktreeRemove(args) {
+  const basicArgs =
+    args.length === 4 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head";
+  const githubPrArgs =
+    args.length === 10 &&
+    args[0] === "--strict-worktree-remove" &&
+    args[2] === "--expected-head" &&
+    args[4] === "--retained-by-github-pr" &&
+    args[8] === "--expected-base";
+  if (!basicArgs && !githubPrArgs) {
+    throw new Error(
+      "expected --strict-worktree-remove <absolute-path> --expected-head <full-oid> " +
+        "[--retained-by-github-pr <remote> <owner/repo> <number> --expected-base <branch>]",
+    );
+  }
+  const requestedPath = args[1];
+  const expectedHead = args[3];
+  if (!path.isAbsolute(requestedPath)) throw new Error("target path must be absolute");
+  if (!FULL_OID.test(expectedHead)) throw new Error("expected HEAD must be a full OID");
+  let githubProof = null;
+  if (githubPrArgs) {
+    const remote = args[5];
+    const repo = args[6];
+    const numberText = args[7];
+    const base = args[9];
+    if (!remote || /\s/.test(remote)) throw new Error("GitHub PR proof remote is malformed");
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || repo.endsWith(".git")) {
+      throw new Error("GitHub PR proof repository is malformed");
+    }
+    if (!/^[1-9][0-9]*$/.test(numberText) || numberText.length > 10) {
+      throw new Error("GitHub PR proof number is malformed");
+    }
+    if (!base || base.length > STRICT_MAX_REF_BYTES || strictSingleLine(`${base}\n`, "expected base") !== base) {
+      throw new Error("GitHub PR proof base is malformed");
+    }
+    const number = Number(numberText);
+    if (!Number.isSafeInteger(number)) throw new Error("GitHub PR proof number is out of range");
+    githubProof = { remote, repo, number, base };
+  }
+
+  let target;
+  try {
+    target = realpathSync(requestedPath);
+  } catch (error) {
+    throw new Error(`target cannot be resolved: ${error.message}`);
+  }
+  if (!statSync(target).isDirectory()) throw new Error("target is not a directory");
+  strictRegisteredWorktree(target);
+
+  const actualHead = strictSingleOid(
+    strictGit(["-C", target, "rev-parse", "--verify", "HEAD"]),
+    "git rev-parse HEAD",
+  );
+  if (actualHead !== expectedHead) throw new Error("target HEAD does not match expected HEAD");
+
+  const status = strictGit([
+    "-c", "core.fsmonitor=false",
+    "-c", "core.filemode=true",
+    "-c", "status.showUntrackedFiles=all",
+    "-c", "diff.ignoreSubmodules=none",
+    "-c", "status.submoduleSummary=true",
+    // Repository-owned .gitignore and .git/info/exclude remain intentionally
+    // ignored here; Branch Curator's normative ignored-state proof owns them.
+    // Only external/configured excludes are neutralized by this strict barrier.
+    "-c", `core.excludesFile=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
+    "-C", target,
+    "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none",
+  ]);
+  if (status !== "") throw new Error("target worktree is not clean");
+
+  if (githubProof) strictRetainedByMergedGithubPr(target, actualHead, githubProof);
+  else strictRetainedOnRemote(target, actualHead);
+  strictLiveProcesses(target);
+  process.stdout.write(`${JSON.stringify({
+    ok: true,
+    mode: "strict-worktree-remove",
+    path: target,
+    head: actualHead,
+  })}\n`);
+  process.exitCode = 0;
+}
 
 const BYPASS = "WT_GUARD_BYPASS=1";
 /** Fast pre-filter: commands that can't possibly match skip all work. */
@@ -252,6 +857,121 @@ function liveProcesses(wtPath) {
   return hits;
 }
 
+/** Tag names present on ANY configured remote, fetched at most once per run.
+ *
+ *  Git keeps no remote-tracking refs for tags, so there is no offline way to
+ *  tell a pushed tag from a local one — and the difference is the whole point,
+ *  since a local tag dies with the machine. One `ls-remote` per remote answers
+ *  it for every tag at once. Affordable here because this only runs when a
+ *  destructive command is already in flight, never on the hot edit path.
+ *
+ *  Fails CLOSED: if ls-remote errors (offline, auth, timeout) the set stays
+ *  empty, so no tag is credited and the guard blocks. Every other probe in this
+ *  file fails open, but those decide whether to *warn*; this one decides whether
+ *  deletion is safe, and "cannot verify" must never read as "verified".
+ */
+const remoteTagCache = new Map();
+
+/** Cache key: the repo's COMMON git dir, so every worktree of one repo shares
+ *  one lookup while a command reaching into a second repo (via `git -C`) never
+ *  inherits the first repo's tags. */
+function repoKey(cwd) {
+  try {
+    return (
+      git(["-C", cwd || ".", "rev-parse", "--path-format=absolute", "--git-common-dir"], undefined).trim() ||
+      cwd ||
+      "."
+    );
+  } catch {
+    return cwd || "."; // not a repo we can identify — key on the raw cwd
+  }
+}
+
+function remoteNames(cwd) {
+  try {
+    return git(["remote"], cwd)
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** Tag names present on ONE remote, fetched at most once per repo+remote.
+ *
+ *  Git keeps no remote-tracking refs for tags, so there is no offline way to
+ *  tell a pushed tag from a local one — and that difference is the whole point,
+ *  since a local tag dies with the machine. One `ls-remote` answers it for every
+ *  tag on that remote at once.
+ *
+ *  Fails CLOSED: if ls-remote errors (offline, auth, timeout) the set stays
+ *  empty, so nothing is credited and the guard blocks. Every other probe in this
+ *  file fails open, but those decide whether to *warn*; this one decides whether
+ *  deletion is safe, and "cannot verify" must never read as "verified".
+ */
+function tagsOnRemote(cwd, remote) {
+  const key = repoKey(cwd);
+  let perRemote = remoteTagCache.get(key);
+  if (!perRemote) {
+    perRemote = new Map();
+    remoteTagCache.set(key, perRemote);
+  }
+  const cached = perRemote.get(remote);
+  if (cached) return cached;
+  const found = new Set();
+  perRemote.set(remote, found);
+  try {
+    for (const line of git(["ls-remote", "--tags", remote], cwd).split("\n")) {
+      const m = /refs\/tags\/(.+?)(?:\^\{\})?$/.exec(line.trim());
+      if (m) found.add(m[1]);
+    }
+  } catch {
+    /* this remote is unreachable — credit nothing from it */
+  }
+  return found;
+}
+
+/** Where `oid` is durably retained, or "" if nowhere. A remote branch is the
+ *  cheap offline answer; a tag pushed to a remote counts too, and is in fact
+ *  the stronger one — merging deletes the branch but never the tag. */
+function retainedOnRemote(oid, cwd) {
+  try {
+    if (git(["branch", "-r", "--contains", oid], cwd).trim()) return "a remote branch";
+  } catch {
+    /* fall through to tags */
+  }
+  let tags = [];
+  try {
+    tags = git(["for-each-ref", "--format=%(refname:short)", "--contains", oid, "refs/tags"], cwd)
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return "";
+  }
+  if (!tags.length) return "";
+  // Every remote is probed — an archive tag pushed to a second remote is just as
+  // durable as one on origin, and capping the scan would reintroduce exactly the
+  // false block this helper exists to remove. Ordered scan with an early return
+  // keeps the ordinary single-remote case at one ls-remote.
+  for (const remote of remoteNames(cwd)) {
+    const pushed = tagsOnRemote(cwd, remote);
+    const hit = tags.find((t) => pushed.has(t));
+    if (hit) return `remote tag ${hit} on ${remote}`;
+  }
+  return "";
+}
+
+/** Both destructive paths offer the same two ways out, so word them once. */
+function retentionAdvice(ref) {
+  return (
+    `Push it (\`git push -u origin ${ref}\`), or archive the commits as a tag ` +
+    `(\`git tag -s archive/${ref.replace(/\//g, "-")} <oid> && git push origin archive/…\`) — ` +
+    `a pushed tag counts as retention and outlives the branch.`
+  );
+}
+
 function destructionRisk(wtPath) {
   if (!existsSync(wtPath)) return "";
   if (!existsSync(path.join(wtPath, ".git"))) return ""; // husk — GC freely
@@ -263,8 +983,9 @@ function destructionRisk(wtPath) {
       return `\`${wtPath}\` has ${n} uncommitted change(s) — a session may be mid-task in it.`;
     }
     const head = git(["-C", wtPath, "rev-parse", "HEAD"], undefined).trim();
-    const onRemote = git(["-C", wtPath, "branch", "-r", "--contains", head], undefined).trim();
-    if (!onRemote) return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    if (!retainedOnRemote(head, wtPath)) {
+      return `\`${wtPath}\` HEAD (${head.slice(0, 8)}) exists on NO remote ref — removing it orphans unpushed commits.`;
+    }
     const live = liveProcesses(wtPath);
     if (live.length) {
       const who = live.slice(0, 3).map((h) => `pid ${h.pid} (${h.cmd || "?"})`).join(", ");
@@ -356,11 +1077,10 @@ function checkBranchDelete(seg, cwd) {
     try {
       const tip = git(["rev-parse", "--verify", "--quiet", `refs/heads/${name}`], cwd).trim();
       if (!tip) continue;
-      const onRemote = git(["branch", "-r", "--contains", tip], cwd).trim();
-      if (!onRemote) {
+      if (!retainedOnRemote(tip, cwd)) {
         block(
           `\`git branch -D ${name}\` would orphan unpushed commits: its tip (${tip.slice(0, 8)}) exists on no remote ref.\n` +
-            `Push the branch first (\`git push -u origin ${name}\`) or confirm the commits are disposable.`,
+            retentionAdvice(name),
         );
       }
     } catch {
@@ -443,8 +1163,17 @@ function main() {
   return allow();
 }
 
-try {
-  main();
-} catch {
-  allow(); // a guard bug must never brick every Bash call
+const directArgs = process.argv.slice(2);
+if (directArgs.length > 0) {
+  try {
+    runStrictWorktreeRemove(directArgs);
+  } catch (error) {
+    strictRefuse(error instanceof Error ? error.message : "unknown strict probe error");
+  }
+} else {
+  try {
+    main();
+  } catch {
+    allow(); // a guard bug must never brick every Bash call
+  }
 }

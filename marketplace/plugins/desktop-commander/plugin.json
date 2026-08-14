@@ -21,6 +21,7 @@
     "shell",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/desktop-commander",
   "x-coven": {
     "displayName": "Desktop Commander",

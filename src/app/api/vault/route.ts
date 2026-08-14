@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
   saveVaultMap(map);
 
   if (storage === "encrypted" && typeof body.value === "string") {
-    mirrorVaultSecretToProcessEnv(key, body.value);
+    mirrorVaultSecretToProcessEnv(key, body.value, { source: "vault", storage: "encrypted" });
   } else if (canMirrorVaultKeyToProcessEnv(key)) {
     delete process.env[key];
   }

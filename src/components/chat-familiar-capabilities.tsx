@@ -22,6 +22,7 @@ import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Tabs } from "@/components/ui/tabs";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { Button } from "@/components/ui/button";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -30,11 +31,16 @@ import { deriveFamiliarSectionData } from "@/lib/familiar-tab-section-model";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
-import { isBindableRuntimeChoice, type AdapterReport } from "@/lib/harness-adapters";
+import {
+  canonicalHarnessId,
+  isBindableRuntimeChoice,
+  type AdapterReport,
+} from "@/lib/harness-adapters";
 import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/chat-tab-events";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
-import { useRuntimeModelOptions } from "@/lib/use-runtime-model-options";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
 import { relativeTime } from "@/lib/relative-time";
 import { FamiliarSkillsSection } from "@/components/familiar-tab-skills";
 import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";
@@ -96,8 +102,8 @@ function FamiliarIdentityHero({
 
   // Runtime select: "" inherits the cave default; anything else is a
   // per-familiar override (binding key: harness).
-  const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
-  const defaultHarness = harnesses.find((h) => h.id === defaultHarnessId);
+  const defaultHarnessId = canonicalHarnessId(familiar.defaultHarness ?? familiar.harness ?? "");
+  const defaultHarness = harnesses.find((h) => canonicalHarnessId(h.id) === defaultHarnessId);
   const runtimeValue = familiar.harnessOverride ?? "";
   const runtimeOptions: StandardSelectOption<string>[] = [
     { value: "", label: `Default${defaultHarness ? ` · ${defaultHarness.label}` : ""}`, detail: "Inherit the cave runtime" },
@@ -125,10 +131,17 @@ function FamiliarIdentityHero({
   // Model select: sourced from the same runtime → provider catalog the chat
   // picker uses; a saved id outside the curated seed stays selectable.
   const effectiveHarness = familiar.harness ?? defaultHarnessId;
-  const runtimeModelOptions = useRuntimeModelOptions(effectiveHarness, familiar.id);
+  const runtimeModelInventory = useRuntimeModelInventory(effectiveHarness, familiar.id);
+  const runtimeModelOptions = runtimeModelInventory.models;
   const modelValue = familiar.model ?? "";
   const modelOptions: StandardSelectOption<string>[] = [
-    { value: "", label: "Provider default", detail: "Runtime picks the model" },
+    {
+      value: "",
+      label: familiar.model === "" || runtimeModelInventory.defaultOwner === "runtime"
+        ? "Runtime default"
+        : "Cave default",
+      detail: inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading),
+    },
     ...runtimeModelOptions.map((m) => ({ value: m.id, label: m.label ?? m.id, detail: m.id })),
   ];
   if (modelValue && !modelOptions.some((o) => o.value === modelValue)) {
@@ -200,11 +213,11 @@ function FamiliarIdentityHero({
           <StandardSelect
             label="Runtime"
             value={runtimeValue}
-            onChange={(v) => void bind({ harness: v })}
+            onChange={(v) => void bind({ harness: v, model: modelForRuntimeSwitch(v) })}
             options={runtimeOptions}
           />
           <StandardSelect
-            label="Model"
+            label={`Model · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`}
             value={modelValue}
             onChange={(v) => void bind({ model: v })}
             options={modelOptions}
@@ -332,7 +345,7 @@ function FamiliarRosterWarning({ message, onRetry }: { message: string; onRetry?
 }
 
 function familiarCapabilitySummary(familiar: ResolvedFamiliar, snapshot: CapabilitySnapshot) {
-  const harnessId = familiar.harness ?? "codex";
+  const harnessId = canonicalHarnessId(familiar.harness ?? "codex");
   const roles = snapshot.roles.filter(
     (role) => role.active && (role.familiar === familiar.id || role.familiar === "all" || role.familiar === "global"),
   );
@@ -340,14 +353,18 @@ function familiarCapabilitySummary(familiar: ResolvedFamiliar, snapshot: Capabil
   const localSkills = snapshot.localSkills.filter(
     (skill) => skill.familiar === "global" || (skill.familiar as string) === familiar.id,
   );
-  const manifest = snapshot.harnessCapabilities.find((item) => item.harness_id === harnessId);
+  const manifest = snapshot.harnessCapabilities.find(
+    (item) => canonicalHarnessId(item.harness_id) === harnessId,
+  );
   const skillIds = new Set([
     ...roleSkills,
     ...localSkills.map((skill) => skill.id),
     ...(manifest?.skills ?? []).map((skill) => skill.id),
   ]);
   const enabledPlugins = (manifest?.plugins ?? []).filter((plugin) => plugin.enabled).length;
-  const harness = snapshot.harnesses.find((item) => item.id === harnessId);
+  const harness = snapshot.harnesses.find(
+    (item) => canonicalHarnessId(item.id) === harnessId,
+  );
   return {
     roleCount: roles.length,
     skillCount: skillIds.size,
@@ -471,7 +488,13 @@ function FamiliarCapabilityPanel({
   const harnessId = familiar.harness ?? "codex";
   const snapshot = useCapabilitySnapshot(harnessId);
   // Skills is the section this handoff is named for — it opens first.
-  const [section, setSection] = useState<FamiliarSectionId>("skills");
+  // Identity / Skills / MCP / Analytics / Memory are a level below the chat
+  // scope strip, and the composer's "Manage skills" lands straight on one.
+  const {
+    value: section,
+    select: selectSection,
+    show: setSection,
+  } = useSurfaceHistory<FamiliarSectionId>({ id: "familiar:capability", initial: "skills" });
   const [settingsTab, setSettingsTab] = useState<FamiliarSettingsTab | undefined>();
 
   useEffect(() => {
@@ -533,7 +556,7 @@ function FamiliarCapabilityPanel({
             { id: "settings", label: "Settings" },
           ]}
           value={section}
-          onChange={setSection}
+          onChange={selectSection}
           idPrefix="familiar-section"
           bordered={false}
           ariaLabel="Familiar sections"

@@ -111,7 +111,7 @@ assert.match(
 );
 assert.match(
   routeSource,
-  /mirrorVaultSecretToProcessEnv\(key, body\.value\)/,
+  /mirrorVaultSecretToProcessEnv\(key, body\.value, \{ source: "vault", storage: "encrypted" \}\)/,
   "/api/vault routes encrypted values through the process-env safety gate",
 );
 assert.doesNotMatch(routeSource, /applyEnvUpdates/, "/api/vault must not persist encrypted secrets to .env.local");

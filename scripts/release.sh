@@ -371,6 +371,11 @@ WHISPER_CLI="$APP_PATH/Contents/Resources/resources/whisper/whisper-cli"
 require_file "$WHISPER_CLI"
 "$WHISPER_CLI" --version >/dev/null
 echo "    bundled Whisper runtime present"
+KOKORO_CLI="$APP_PATH/Contents/Resources/resources/kokoro/sherpa-onnx-offline-tts"
+require_file "$KOKORO_CLI"
+"$KOKORO_CLI" --help >/dev/null
+require_file "$APP_PATH/Contents/Resources/resources/kokoro/espeak-ng-data/phontab"
+echo "    bundled Kokoro runtime present"
 
 echo "==> Signing every native binary inside the bundle"
 # Apple deprecated --deep; sign inner native binaries explicitly so each one

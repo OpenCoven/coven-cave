@@ -5,7 +5,7 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /spawn\(launch\.command, \[\.\.\.launch\.fixedArgs, "--no-auto-update", "models"\]/,
+  /runProbe\(\s*launch\.command,\s*\[\.\.\.launch\.fixedArgs, "--no-auto-update", "models"\]/,
   "the harness catalog probe must not trigger Grok's automatic updater on routine UI refreshes",
 );
 
@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(id === "codex"\) \{[\s\S]*?await probeCodexRuntimeAvailability\(\{[\s\S]*?launch: covenLaunchCommand\(\),[\s\S]*?env,[\s\S]*?\}\)/,
-  "Codex status uses the resolved Coven launch plan and its scoped spawn environment",
+  /if \(id === "codex"\) \{[\s\S]*?const launch = resolvedCovenLaunch\(\);[\s\S]*?if \(!launch\)[\s\S]*?await probeCodexRuntimeAvailability\(\{[\s\S]*?launch,[\s\S]*?env,[\s\S]*?\}\)/,
+  "Codex status fails closed on a missing Coven CLI and otherwise probes the exact resolved plan",
 );
 assert.match(
   source,
@@ -62,12 +62,22 @@ assert.match(
 );
 assert.match(
   source,
-  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable,[\s\S]*?spawnEnv: \(\) => harnessSpawnEnv\(null\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
+  /async function adapterAvailability[\s\S]*?id === "copilot"[\s\S]*?const copilotLaunch = await resolveCopilotRuntimeLaunch\(stream\.executable,[\s\S]*?spawnEnv: \(discoveryDeadline\) =>[\s\S]*?harnessSpawnEnv\(null, \{ discoveryDeadline \}\)[\s\S]*?availability: summarizeRuntimeAvailability\(copilotLaunch\.availability\)[\s\S]*?copilotLaunch/,
   "Copilot availability retains the shared exact launch plan for internal catalog probes",
 );
 assert.match(
   source,
-  /const runtime = await adapterAvailability\(h\.id\);[\s\S]*?const copilotLaunch = runtime\.copilotLaunch;[\s\S]*?const path =\s*copilotLaunch[\s\S]*?copilotLaunch\.availability\.state === "ready"[\s\S]*?copilotLaunch\.availability\.resolvedPath[\s\S]*?: await which\(h\.binary\)/,
+  /async function adapterAvailability[\s\S]*?if \(id === "copilot"\)[\s\S]*?resolveCopilotRuntimeLaunch[\s\S]*?const env = id === "opencode" \? openCodeSpawnEnv\(null\) : harnessSpawnEnv\(null\)/,
+  "Copilot resolves its deadline-aware environment before any generic environment can populate the PATH cache",
+);
+assert.match(
+  source,
+  /export async function GET\(\) \{[\s\S]*?const copilotRuntime = await adapterAvailability\("copilot"\);[\s\S]*?Promise\.all\([\s\S]*?const runtime = h\.id === "copilot"[\s\S]*?\? copilotRuntime[\s\S]*?: await adapterAvailability\(h\.id\)/,
+  "the harness catalog resolves Copilot before parallel generic adapter discovery can populate the PATH cache",
+);
+assert.match(
+  source,
+  /const runtime = h\.id === "copilot"[\s\S]*?\? copilotRuntime[\s\S]*?: await adapterAvailability\(h\.id\);[\s\S]*?const copilotLaunch = runtime\.copilotLaunch;[\s\S]*?const path =\s*copilotLaunch[\s\S]*?copilotLaunch\.availability\.state === "ready"[\s\S]*?copilotLaunch\.availability\.resolvedPath[\s\S]*?: await which\(h\.binary\)/,
   "the harness catalog reports the resolved Copilot launch target without running an independent which probe",
 );
 assert.match(
@@ -77,7 +87,7 @@ assert.match(
 );
 assert.match(
   source,
-  /function probeVersion\([\s\S]*?env: NodeJS\.ProcessEnv = covenSpawnEnv\(\)[\s\S]*?spawn\(binary,[\s\S]*?\{ env,/,
+  /function probeVersion\([\s\S]*?env: NodeJS\.ProcessEnv = covenSpawnEnv\(\)[\s\S]*?runProbe\(binary,[\s\S]*?\{\s*env,/,
   "version probing accepts the exact launch environment instead of always rebuilding one",
 );
 assert.doesNotMatch(
@@ -108,7 +118,7 @@ assert.match(
 );
 assert.match(
   source,
-  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(\) => harnessSpawnEnv\(null\)/,
+  /resolveCopilotRuntimeLaunch\(stream\.executable,\s*\{\s*spawnEnv: \(discoveryDeadline\) =>[\s\S]*?harnessSpawnEnv\(null, \{ discoveryDeadline \}\)/,
   "Copilot status must resolve the same direct launcher in the shared harness environment as chat send",
 );
 

@@ -499,12 +499,13 @@ assert.match(
   "CHAT-D4-01: interleaved tools retain their chronology while the shared run renderer preserves each ToolBlock",
 );
 
-// MessageBubble: only the LAST text span streams (progressive markdown +
-// cursor); settled spans render with pending=false.
+// MessageBubble: only the LAST text span streams (progressive markdown);
+// settled spans render with pending=false. The cursor this once also gated
+// was removed in cave-1yslk; `pending` still drives progressive rendering.
 assert.match(
   bubbleSource,
   /pending=\{pending && i === lastTextIdx\}/,
-  "CHAT-D4-01: the ▌ cursor / progressive render applies only to the last text span",
+  "CHAT-D4-01: progressive render applies only to the last text span",
 );
 assert.match(
   bubbleSource,

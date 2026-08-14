@@ -19,6 +19,7 @@ WINDOWS_ARCHIVE_TEMP="$WINDOWS_ARCHIVE_DIR/.server.tar.zst.$$.tmp"
 WINDOWS_ARCHIVE_MANIFEST_TEMP="$WINDOWS_ARCHIVE_DIR/.manifest.json.$$.tmp"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
 PIPER_RUNTIME_DIR="$ROOT/src-tauri/resources/piper"
+KOKORO_RUNTIME_DIR="$ROOT/src-tauri/resources/kokoro"
 # Use Node rather than shell-specific environment variables (such as OS) so
 # Git Bash and CI build the same Windows resource layout.
 BUILD_PLATFORM="$(node -p 'process.platform')"
@@ -30,7 +31,8 @@ cleanup_staging() {
 trap cleanup_staging EXIT
 
 bundle_piper_runtime() {
-  local platform asset expected_sha archive extract_root executable runtime_root actual_sha
+  local platform asset expected_sha archive extract_root executable runtime_executable_path runtime_root actual_sha
+  local phonemize_asset phonemize_sha phonemize_archive phonemize_extract_root phonemize_lib_path phonemize_lib_root mac_executable
   platform="$(node -p 'process.platform')"
   case "$platform/$(node -p 'process.arch')" in
     linux/x64)
@@ -46,11 +48,15 @@ bundle_piper_runtime() {
     darwin/arm64)
       asset="piper_macos_aarch64.tar.gz"
       expected_sha="6b1eb03b3735946cb35216e063e7eebcc33a6bbf5dd96ec0217959bf1cdcb0cc"
+      phonemize_asset="piper-phonemize_macos_aarch64.tar.gz"
+      phonemize_sha="78a9c28b3c94baf6e9526b2e386ce547909abaec4f31aadd7e16b01fbfe5f322"
       executable="piper"
       ;;
     darwin/x64)
       asset="piper_macos_x64.tar.gz"
       expected_sha="ced85c0a3df13945b1e623b878a48fdc2854d5c485b4b67f62857cf551deaf8b"
+      phonemize_asset="piper-phonemize_macos_x64.tar.gz"
+      phonemize_sha="9ec6e300c0d012a663758bc45a097b47ee759761a3b91c7742de042af789d84b"
       executable="piper"
       ;;
     *)
@@ -81,15 +87,173 @@ bundle_piper_runtime() {
     *.zip) unzip -q "$archive" -d "$extract_root" ;;
     *.tar.gz) tar -xzf "$archive" -C "$extract_root" ;;
   esac
-  runtime_root="$(dirname "$(find "$extract_root" -type f -name "$executable" -print -quit)")"
-  if [ -z "$runtime_root" ] || [ ! -f "$runtime_root/$executable" ]; then
+  runtime_executable_path="$(find "$extract_root" -type f -name "$executable" -print -quit)"
+  if [ -z "$runtime_executable_path" ]; then
     echo "ERROR: Piper archive does not contain $executable" >&2
     exit 1
   fi
+  runtime_root="$(dirname "$runtime_executable_path")"
   cp -a "$runtime_root/." "$PIPER_RUNTIME_DIR/"
   chmod +x "$PIPER_RUNTIME_DIR/$executable" 2>/dev/null || true
   if [ -f "$PIPER_RUNTIME_DIR/espeak-ng" ]; then
     chmod +x "$PIPER_RUNTIME_DIR/espeak-ng"
+  fi
+
+  if [ "$platform" = "darwin" ]; then
+    # Piper's pinned macOS archives omit every @rpath dylib used by piper,
+    # piper_phonemize, and espeak-ng. The matching piper-phonemize release
+    # contains that closure, including the compatibility-name symlinks.
+    phonemize_archive="$PNPM_STAGE/$phonemize_asset"
+    phonemize_extract_root="$PNPM_STAGE/piper-phonemize-runtime"
+    echo "==> downloading pinned Piper phonemize runtime $phonemize_asset"
+    curl --fail --location --retry 3 --silent --show-error \
+      "https://github.com/rhasspy/piper-phonemize/releases/download/2023.11.14-4/$phonemize_asset" \
+      --output "$phonemize_archive"
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual_sha="$(sha256sum "$phonemize_archive" | awk '{print $1}')"
+    else
+      actual_sha="$(shasum -a 256 "$phonemize_archive" | awk '{print $1}')"
+    fi
+    if [ "$actual_sha" != "$phonemize_sha" ]; then
+      echo "ERROR: Piper phonemize runtime checksum mismatch for $phonemize_asset" >&2
+      exit 1
+    fi
+
+    rm -rf "$phonemize_extract_root"
+    mkdir -p "$phonemize_extract_root"
+    tar -xzf "$phonemize_archive" -C "$phonemize_extract_root"
+    phonemize_lib_path="$(find "$phonemize_extract_root" -type f -name 'libpiper_phonemize.*.dylib' -print -quit)"
+    if [ -z "$phonemize_lib_path" ]; then
+      echo "ERROR: Piper phonemize archive does not contain the required macOS dylib closure" >&2
+      exit 1
+    fi
+    phonemize_lib_root="$(dirname "$phonemize_lib_path")"
+    if [ ! -e "$phonemize_lib_root/libespeak-ng.1.dylib" ] \
+      || [ ! -e "$phonemize_lib_root/libonnxruntime.1.14.1.dylib" ] \
+      || [ ! -e "$phonemize_lib_root/libpiper_phonemize.1.dylib" ]; then
+      echo "ERROR: Piper phonemize archive does not contain the required macOS dylib closure" >&2
+      exit 1
+    fi
+    cp -a "$phonemize_lib_root/"*.dylib "$PIPER_RUNTIME_DIR/"
+
+    # The upstream executables load these libraries through @rpath but ship no
+    # LC_RPATH command. Keep the relocatable closure flat and resolve it beside
+    # each executable; the release pipeline signs these modified Mach-O files.
+    for mac_executable in piper piper_phonemize espeak-ng; do
+      if [ -f "$PIPER_RUNTIME_DIR/$mac_executable" ]; then
+        chmod +x "$PIPER_RUNTIME_DIR/$mac_executable"
+        install_name_tool -add_rpath @executable_path "$PIPER_RUNTIME_DIR/$mac_executable"
+      fi
+    done
+  fi
+}
+
+# Kokoro synthesis runs through the sherpa-onnx offline TTS CLI. The upstream
+# release archives ship dozens of demo binaries; stage only the offline-tts
+# CLI plus the onnxruntime library it links (rpath starts with
+# @loader_path/$ORIGIN, so a flat directory resolves). espeak-ng-data rides
+# with the runtime — NOT the voice-model download — because Kokoro
+# phonemization needs it wherever the executable lives (the Node runner passes
+# --kokoro-data-dir=<dir-of-executable>/espeak-ng-data).
+bundle_kokoro_runtime() {
+  local platform asset expected_sha archive extract_root executable bin_root runtime_root actual_sha
+  local espeak_asset espeak_sha espeak_archive
+  platform="$(node -p 'process.platform')"
+  case "$platform/$(node -p 'process.arch')" in
+    linux/x64)
+      asset="sherpa-onnx-v1.13.4-linux-x64-shared.tar.bz2"
+      expected_sha="18887dc13c7d313d0e0f6c164ed31715c27c1c2c4f71acd7c0147dc84cf02514"
+      executable="sherpa-onnx-offline-tts"
+      ;;
+    win32/x64)
+      asset="sherpa-onnx-v1.13.4-win-x64-shared-MD-Release.tar.bz2"
+      expected_sha="d4dacc8be5afe03f22ade4d50cfd587c03a625eaca8c41f2d99a24d3db463eab"
+      executable="sherpa-onnx-offline-tts.exe"
+      ;;
+    darwin/arm64)
+      asset="sherpa-onnx-v1.13.4-osx-arm64-shared.tar.bz2"
+      expected_sha="809ab5d0c77bd8f358364a244e6ab17f2afecf9779eb9fd436fa469c3ff5375c"
+      executable="sherpa-onnx-offline-tts"
+      ;;
+    darwin/x64)
+      # Upstream publishes no x86_64-only shared archive; universal2 covers it.
+      asset="sherpa-onnx-v1.13.4-osx-universal2-shared.tar.bz2"
+      expected_sha="02b9b0cf30819a18c6d5cf861aebf32336cb79958ab97a2b248227059678058b"
+      executable="sherpa-onnx-offline-tts"
+      ;;
+    *)
+      echo "ERROR: no managed Kokoro (sherpa-onnx) runtime for $platform/$(node -p 'process.arch')" >&2
+      exit 1
+      ;;
+  esac
+  espeak_asset="espeak-ng-data.tar.bz2"
+  espeak_sha="4135ccf82e1f40613491c0874d4945ae9e9c7840933d8e25a6f9e003d9ebf533"
+
+  archive="$PNPM_STAGE/$asset"
+  extract_root="$PNPM_STAGE/kokoro-runtime"
+  echo "==> downloading pinned Kokoro (sherpa-onnx) runtime $asset"
+  curl --fail --location --retry 3 --silent --show-error \
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/$asset" \
+    --output "$archive"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+  else
+    actual_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+  fi
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    echo "ERROR: Kokoro runtime checksum mismatch for $asset" >&2
+    exit 1
+  fi
+
+  espeak_archive="$PNPM_STAGE/$espeak_asset"
+  echo "==> downloading pinned espeak-ng-data for the Kokoro runtime"
+  curl --fail --location --retry 3 --silent --show-error \
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$espeak_asset" \
+    --output "$espeak_archive"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual_sha="$(sha256sum "$espeak_archive" | awk '{print $1}')"
+  else
+    actual_sha="$(shasum -a 256 "$espeak_archive" | awk '{print $1}')"
+  fi
+  if [ "$actual_sha" != "$espeak_sha" ]; then
+    echo "ERROR: Kokoro espeak-ng-data checksum mismatch for $espeak_asset" >&2
+    exit 1
+  fi
+
+  rm -rf "$extract_root" "$KOKORO_RUNTIME_DIR"
+  mkdir -p "$extract_root" "$KOKORO_RUNTIME_DIR"
+  tar -xjf "$archive" -C "$extract_root"
+  bin_root="$(dirname "$(find "$extract_root" -type f -name "$executable" -print -quit)")"
+  if [ -z "$bin_root" ] || [ ! -f "$bin_root/$executable" ]; then
+    echo "ERROR: Kokoro archive does not contain $executable" >&2
+    exit 1
+  fi
+  runtime_root="$(dirname "$bin_root")"
+  cp "$bin_root/$executable" "$KOKORO_RUNTIME_DIR/"
+  if [ "$platform" = "win32" ]; then
+    # Windows resolves DLLs beside the executable; upstream stages them in bin/.
+    cp "$bin_root"/*.dll "$KOKORO_RUNTIME_DIR/"
+  elif [ "$platform" = "darwin" ]; then
+    # The TTS CLI's only runtime link dependency is the versioned dylib
+    # (LC_LOAD_DYLIB @rpath/libonnxruntime.1.27.0.dylib); the unversioned
+    # sibling in the archive is a full 28MB duplicate, not a symlink.
+    cp "$runtime_root"/lib/libonnxruntime.*.dylib "$KOKORO_RUNTIME_DIR/"
+  else
+    # DT_NEEDED references the unversioned soname; it is the only .so needed.
+    cp "$runtime_root"/lib/libonnxruntime.so "$KOKORO_RUNTIME_DIR/"
+  fi
+  tar -xjf "$espeak_archive" -C "$KOKORO_RUNTIME_DIR"
+  if [ ! -d "$KOKORO_RUNTIME_DIR/espeak-ng-data" ]; then
+    echo "ERROR: espeak-ng-data did not extract beside the Kokoro executable" >&2
+    exit 1
+  fi
+  chmod +x "$KOKORO_RUNTIME_DIR/$executable" 2>/dev/null || true
+  if [ "$platform" = "darwin" ]; then
+    # Upstream's ad-hoc signatures do not survive staging: the copied pages
+    # fault with SIGKILL (Code Signature Invalid) on Apple silicon. Re-sign
+    # cleanly here; release builds re-sign again with the real identity when
+    # Tauri assembles the app.
+    codesign --force -s - "$KOKORO_RUNTIME_DIR"/libonnxruntime* "$KOKORO_RUNTIME_DIR/$executable"
   fi
 }
 
@@ -305,6 +469,7 @@ write_windows_sidecar_archive() {
 }
 
 bundle_piper_runtime
+bundle_kokoro_runtime
 
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
@@ -335,7 +500,7 @@ copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
 "$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
 
 echo "==> staging bundled Whisper runtime"
-bash "$ROOT/scripts/whisper-runtime-bundle.sh"
+COVEN_CAVE_REFRESH_WHISPER=1 bash "$ROOT/scripts/whisper-runtime-bundle.sh"
 
 # Next.js + pnpm leaves a node_modules full of pnpm-style symlinks
 # (.pnpm/* paths) that don't survive the copy into the .app bundle. Recreate

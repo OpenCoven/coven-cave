@@ -1,3 +1,5 @@
+import type { ChatAttention } from "./chat-attention.ts";
+
 export type Familiar = {
   id: string;
   name?: string;
@@ -54,6 +56,10 @@ export type Familiar = {
   asanaEnabled?: boolean;
   /** Optional Asana workspace gid this familiar is scoped to. */
   asanaWorkspaceGid?: string;
+  /** Explicit per-familiar X research grant. Missing is false. */
+  xResearchEnabled?: boolean;
+  /** Explicit per-familiar X publishing grant. Missing is false. */
+  xPublishEnabled?: boolean;
   /** Per-familiar Omnigent fleet defaults (agent / host / workspace on host). */
   omnigent?: {
     agentId?: string;
@@ -77,11 +83,19 @@ export type SessionRow = {
   model?: string | null;
   runtime?: string | null;
   title: string;
+  /** Cave title ownership revision observed alongside title. */
+  titleRevision?: number;
   status: string;
   exit_code: number | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Canonical conversational responsibility; independent of runtime status. */
+  attention: ChatAttention;
+  /** Latest selected-path human send causally preceding canonical attention. */
+  attentionAfterOperationId?: string | null;
+  /** Bounded server-authored operation ancestry ending at attentionAfterOperationId. */
+  attentionOperationLineage?: string[];
   familiarId?: string | null;
   origin?: SessionOrigin;
   /** Cave has a saved local conversation transcript; preserves recoverable interrupted chats without surfacing daemon-only dead runs. */
@@ -112,6 +126,8 @@ export type SessionRow = {
   diff?: { additions: number; deletions: number } | null;
   /** Keep mark from Cave state (never auto-archived when true). */
   keep?: boolean;
+  /** Pinned by the user; chat lists sort pinned rows to the top. */
+  pinned?: boolean;
   /** Cave-local auto-archive defer-until timestamp, if set. */
   archive_extended_until?: string | null;
 };

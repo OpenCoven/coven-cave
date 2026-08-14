@@ -208,7 +208,11 @@ test.describe("Journal tab", () => {
     await gotoJournal(page, { dayStatus: 503 });
 
     await expect(page.locator(".journal-detail .ui-error-state")).toContainText("Couldn't load this journal entry");
-    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Journal entry" })
+        .getByRole("button", { name: "Retry" }),
+    ).toBeVisible();
   });
 
   test("does not announce generation success when the journal save fails", async ({ page }) => {

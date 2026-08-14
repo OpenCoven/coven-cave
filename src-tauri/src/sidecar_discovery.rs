@@ -59,6 +59,22 @@ pub(super) fn bundled_piper_path(resource_dir: &Path) -> PathBuf {
         .join("piper")
 }
 
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) fn bundled_kokoro_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("kokoro")
+        .join("sherpa-onnx-offline-tts.exe")
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+pub(super) fn bundled_kokoro_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("kokoro")
+        .join("sherpa-onnx-offline-tts")
+}
+
 /// Find a usable `node` binary. Release builds include a Node runtime under
 /// bundled resources so clean user machines can boot the sidecar. Development
 /// builds can still fall back to common local Node installs.
@@ -113,7 +129,10 @@ pub(super) fn find_node(resource_dir: &Path) -> Option<PathBuf> {
         }
 
         // Last ditch: where.exe (Windows equivalent of `which`)
-        if let Ok(out) = std::process::Command::new("where.exe").arg("node").output() {
+        if let Ok(out) = windows_command::hidden_system32_command("where.exe")
+            .arg("node")
+            .output()
+        {
             let path = String::from_utf8_lossy(&out.stdout)
                 .lines()
                 .next()
@@ -214,7 +233,7 @@ pub(super) fn find_coven() -> Option<PathBuf> {
                 return Some(c.clone());
             }
         }
-        if let Ok(out) = std::process::Command::new("where.exe")
+        if let Ok(out) = windows_command::hidden_system32_command("where.exe")
             .arg("coven")
             .output()
         {

@@ -42,6 +42,7 @@ import {
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { ResearchTabProps } from "./researcher-surface";
+import { ResearchXSources } from "./research-x-sources";
 import { useResearchLinks } from "./use-research-links";
 
 const VIEW_STORAGE_KEY = "cave:research:res-view";
@@ -305,6 +306,20 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
           {links.length} saved · from pastes, /save, and run citations
         </span>
       </header>
+
+      {/* cave-lsj8u: src/app/api/x/ never landed, so this section's every
+          fetch (/api/x/sources, /posts/search, /posts/lookup) 404s and it
+          renders a permanent ErrorState. Gate it on the capability flag the
+          familiars API already returns — off by default, so the surface stays
+          hidden until the routes exist. Delete this condition when they land;
+          the component itself needs no change. */}
+      {context.activeFamiliar?.xResearchEnabled ? (
+        <ResearchXSources
+          familiar={context.activeFamiliar}
+          selectedMissionId={selectedMission?.id ?? null}
+          onMissionAttached={research.applyMission}
+        />
+      ) : null}
 
       <form className="research-res__intake" onSubmit={onSave}>
         <div className="research-res__intake-head">

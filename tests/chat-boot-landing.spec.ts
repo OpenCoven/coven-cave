@@ -6,7 +6,8 @@ import { expect, test, type Page } from "@playwright/test";
 // composer) without waiting for /api/sessions/list — the fetch that used to
 // gate the boot-compose effect and left users on the ChatList skeleton wall
 // for its full duration. Also pins the landing affordances: the live board's
-// open-work rows and the hidden-not-disabled pre-session Voice button.
+// work surfacing as a tile in the Start-from Tasks band (Chat.dc.html 2b) and
+// the hidden-not-disabled pre-session Voice button.
 //
 // Desktop only (compose-first boot is a desktop affordance — mobile keeps
 // the thread list as the chat home). /api/familiars, /api/sessions/list and
@@ -18,6 +19,16 @@ const iso = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOStri
 const FAMILIARS = {
   ok: true,
   familiars: [
+    { id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" },
+  ],
+};
+
+// Two familiars, so "whichever sorts first" is an actual choice being made —
+// with one, adopting it is indistinguishable from asking.
+const FAMILIARS_TWO = {
+  ok: true,
+  familiars: [
+    { id: "aster", display_name: "Aster", role: "Builder", status: "active", icon: "ph:sparkle-fill" },
     { id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" },
   ],
 };
@@ -53,6 +64,36 @@ const BOARD = {
     },
   ],
 };
+
+// A project both mocked familiars can launch in. Without this the familiar
+// picker is racing a completely different surface (cave-pw3l0): FAMILIARS_TWO
+// invents `aster`/`nova`, which the E2E harness's seeded project does not grant,
+// so `/api/projects?familiarId=` resolves to zero accessible projects and
+// resolveFirstProjectGatePolicy opens the first-project gate — whose "Give this
+// familiar project access" panel REPLACES the launch surface in <main>.
+//
+// That made the test a coin flip on fetch ordering: `.cave-launch` renders while
+// the accessible-projects fetch is still in flight, and the gate displaces it the
+// moment that fetch settles. Locally, 4 of 15 runs under 4 workers lost the race.
+// Serving an accessible project keeps the gate shut, so what remains under test
+// is the thing the test is named for — whether boot ASKS which familiar or picks
+// one for you.
+const ACCESSIBLE_PROJECT = {
+  ok: true,
+  projects: [
+    { id: "p1", name: "Queue", root: "/repo/queue", access: "write" },
+  ],
+};
+
+async function seedWithoutActiveFamiliar(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+  });
+  await page.route("**/api/familiars**", (route) => route.fulfill({ json: FAMILIARS_TWO }));
+  await page.route("**/api/board**", (route) => route.fulfill({ json: BOARD }));
+  await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+  await page.route("**/api/projects**", (route) => route.fulfill({ json: ACCESSIBLE_PROJECT }));
+}
 
 async function seed(page: Page) {
   await page.addInitScript(() => {
@@ -163,13 +204,19 @@ test.describe("chat boot landing", () => {
     const dash = page.getByTestId("chat-new-dashboard");
     await expect(dash).toBeVisible({ timeout: 45_000 });
 
-    // The live board's inbox card surfaces as an open-work row with the
-    // visual Resume CTA…
-    const workRow = dash.locator(".home-dash__work-row", { hasText: "Fix login flow" });
-    await expect(workRow).toBeVisible();
-    await expect(workRow).toContainText("Resume");
-    // …and the headline counts it.
-    await expect(dash.locator(".home-dash__headline")).toContainText("1 thread open.");
+    // Chat.dc.html 2b: the launcher is a band per SOURCE of work, and the
+    // live board's inbox card surfaces as a tile in the Tasks band…
+    const tasksBand = dash.locator('.cave-sf__band[data-kind="tasks"]');
+    await expect(tasksBand).toBeVisible();
+    const workTile = tasksBand.locator(".cave-sf__tile", { hasText: "Fix login flow" });
+    await expect(workTile).toBeVisible();
+    // …badged with its column, since a medium priority is too quiet to spend
+    // the tile's one badge on (taskTileBadge).
+    await expect(workTile.locator(".cave-sf__tile-badge")).toHaveText("inbox");
+    // The band head states how much of the source is on screen, so the hero
+    // no longer repeats a count that is already there.
+    await expect(tasksBand.locator(".cave-sf__band-count")).toHaveText("1");
+    await expect(dash.locator(".home-dash__headline")).toContainText("What should we begin?");
 
     // The context rail is retired: no quick-start rows, no rail project
     // picker — the composer owns those affordances.
@@ -197,4 +244,50 @@ test.describe("chat boot landing", () => {
     await expect(page.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
     await page.keyboard.press("Escape");
   });
+});
+
+// Boot with NO active familiar — a first run, or after clearing storage or
+// deleting the active familiar. This used to open a composer silently bound to
+// whichever familiar sorted first, so the user's FIRST message went to it.
+// It must ask instead.
+test("booting with no active familiar asks which one instead of picking", async ({ page }) => {
+  await seedWithoutActiveFamiliar(page);
+  // Armed BEFORE navigating so the response cannot be missed. The gate policy
+  // cannot decide until this familiar-scoped read lands (it is the
+  // `accessibleProjects` input), so every assertion about the gate has to wait
+  // for it — a bare toHaveCount(0) beforehand passes vacuously against a page
+  // that has simply not rendered the gate YET, which is the exact race this
+  // test is being fixed for.
+  const projectScopeResolved = page.waitForResponse(
+    (res) => res.url().includes("/api/projects?familiarId="),
+    { timeout: 45_000 },
+  );
+  await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
+
+  // The chat-first landing still happens — we did not fall back to the list.
+  const launch = page.locator(".cave-launch");
+  await expect(launch).toBeVisible({ timeout: 45_000 });
+
+  await projectScopeResolved;
+
+  // Named explicitly so a regression here reports the surface that TOOK OVER
+  // rather than an absent heading. This is what cave-pw3l0 actually was: the
+  // first-project gate displacing the picker once accessible projects resolved
+  // empty, which reads as "element(s) not found" and sends you hunting a
+  // rendering delay that does not exist.
+  await expect(
+    page.getByRole("heading", { name: "Give this familiar project access" }),
+    "the first-project gate displaced the familiar picker — is /api/projects still mocked?",
+  ).toHaveCount(0);
+  // Still standing AFTER the policy had its data — the displacement window is
+  // shut, not merely not-yet-open.
+  await expect(launch).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible();
+
+  // Both familiars are offered; neither has been chosen for the user.
+  await expect(launch.getByText("Aster")).toBeVisible();
+  await expect(launch.getByText("Nova")).toBeVisible();
+
+  // And no composer is sitting there already bound to one of them.
+  await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);
 });

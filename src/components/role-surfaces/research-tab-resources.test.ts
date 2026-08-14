@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("./research-tab-resources.tsx", import.meta.url), "utf8");
+const xSources = readFileSync(new URL("./research-x-sources.tsx", import.meta.url), "utf8");
+const emptyState = readFileSync(new URL("../ui/empty-state.tsx", import.meta.url), "utf8");
 const styles = readFileSync(
   new URL("../../styles/globals/surface-research-resources.css", import.meta.url),
   "utf8",
@@ -182,4 +184,99 @@ test("resource cards and details keep actions in predictable footers", () => {
   assert.match(source, /context\.openUrl\(openLink\.url\)/);
   assert.match(styles, /\.research-res-card__footer/);
   assert.match(styles, /@container research-desk \(max-width: 560px\)/);
+});
+
+test("Resources mounts Grab from X inline without changing the five-tab host", () => {
+  assert.match(source, /import \{ ResearchXSources \} from "\.\/research-x-sources"/);
+  assert.match(
+    source,
+    /<ResearchXSources\s+familiar=\{context\.activeFamiliar\}\s+selectedMissionId=\{selectedMission\?\.id \?\? null\}\s+onMissionAttached=\{research\.applyMission\}/,
+  );
+  assert.match(source, /<ResearchXSources[\s\S]*<form className="research-res__intake"/);
+});
+
+test("X source links use theme-aware text contrast instead of the fixed research accent", () => {
+  assert.match(styles, /\.research-x-post__link:hover\s*\{\s*color: var\(--text-primary\);/);
+  assert.doesNotMatch(
+    styles,
+    /\.research-x-post__link:hover\s*\{\s*color: var\(--research-accent\);/,
+  );
+});
+
+test("X source ownership remounts by familiar/grant and same-scope retries claim a new generation", () => {
+  assert.match(
+    xSources,
+    /return <ResearchXSourcesScope key=\{scopeKey\} \{\.\.\.props\} \/>;/,
+  );
+  assert.match(xSources, /const generation = \+\+generationRef\.current;/);
+  assert.match(xSources, /setLookupBusy\(false\);[\s\S]*setSearchBusy\(false\);/);
+});
+
+test("X source mutations validate mission identity and preserve newer reads without stealing focus", () => {
+  assert.match(xSources, /const mission = parseResearchMission\(value\.mission\);/);
+  assert.match(xSources, /mission\.id === requestedMissionId/);
+  assert.match(xSources, /mission\.familiarId === familiar\.id/);
+  assert.doesNotMatch(xSources, /value\.mission as ResearchMission/);
+  assert.match(xSources, /const sourceReadEpoch = sourceMutationEpochRef\.current;/);
+  assert.match(xSources, /mergeSourceRead\(current, parsed as SavedXSourceView\[\]\)/);
+  assert.match(xSources, /const refreshButtonRefs = useRef\(new Map<string, HTMLButtonElement>\(\)\);/);
+  assert.match(xSources, /function focusBelongsToSourceCard\(/);
+  assert.match(xSources, /sourceCard\?\.contains\(activeElement as Node\) === true/);
+  assert.match(xSources, /function trackRefreshFocus\(/);
+  assert.match(xSources, /ownerDocument\.addEventListener\("pointerdown", onPointerDown, true\);/);
+  assert.match(xSources, /ownerDocument\.addEventListener\("focusin", onFocusIn, true\);/);
+  assert.match(xSources, /!focusOwnership\.movedElsewhere/);
+  assert.match(xSources, /focusOwnership\.ownerDocument\.body/);
+  assert.match(xSources, /\|\| retainedDisabledFocus\) \{\s*sourceCard\?\.focus\(\);/);
+  assert.match(xSources, /pendingRefreshFocusRef\.current = \{\s*sourceId: source\.id,/);
+  assert.match(xSources, /if \(activeElement === null \|\| activeElement === pending\.ownerDocument\.body\) \{\s*refreshButton\.focus\(\);/);
+  assert.match(xSources, /sourceMutationEpochRef\.current \+= 1;\s*setSources/);
+});
+
+test("manual zero-result announcements suppress duplicate EmptyState live output", () => {
+  assert.match(xSources, /<EmptyState\s+compact\s+live=\{false\}\s+headline="No X posts found"/);
+  assert.match(emptyState, /live = true/);
+  assert.match(emptyState, /role=\{live \? "status" : undefined\}/);
+});
+
+test("the grid collapses empty tracks, and the card cap is grid-only (cave-93jz1)", () => {
+  // Assertions are scoped to ONE rule body each. An unbounded [\s\S]*? from a
+  // selector runs to the end of the sheet, which both false-FAILS (an
+  // unrelated later `auto-fill` reads as this rule regressing) and
+  // false-PASSES (a later `auto-fit` satisfies the check even if this rule
+  // was reverted). Slice the body, then assert inside it.
+  const ruleBody = (selector: string, from = 0): string => {
+    const at = styles.indexOf(selector, from);
+    assert.notEqual(at, -1, `missing rule: ${selector}`);
+    const open = styles.indexOf("{", at);
+    const close = styles.indexOf("}", open);
+    assert.ok(open !== -1 && close !== -1, `unterminated rule: ${selector}`);
+    return styles.slice(open + 1, close);
+  };
+
+  // The base grid rule (the one that declares `display: grid`, not the 560px
+  // single-column override that shares its selector).
+  const grid = ruleBody('.research-res__items[data-view="grid"]');
+  assert.match(grid, /display: grid/, "sliced the base rule, not an override");
+  // auto-FILL creates and KEEPS empty tracks, so a group holding fewer links
+  // than the row fits leaves its cards stranded at the 250px minimum beside
+  // dead space. auto-fit collapses them.
+  assert.match(grid, /grid-template-columns: repeat\(auto-fit, minmax\(250px, 1fr\)\)/);
+  assert.doesNotMatch(grid, /auto-fill/, "auto-fill strands single-item groups — cave-93jz1");
+
+  // Collapsing alone would stretch ONE saved link across the whole row, so the
+  // card carries a cap. Measured: a lone card renders 360px against 255px in a
+  // packed row — recognisably the same component.
+  assert.match(ruleBody('.research-res-card[data-view="grid"]'), /max-width: 360px/);
+
+  // The cap must not reach the rows view, whose cards span the full surface
+  // (measured 1314px at 1440) — capping there shrinks every row to a quarter.
+  assert.doesNotMatch(ruleBody(".research-res-card {"), /max-width/);
+
+  // …nor the phone breakpoint's single column (measured 496px filling a 520px
+  // viewport), where a cap re-creates the very gap this fixes. Search from the
+  // start of that container block so the override, not the base rule, is read.
+  const narrowAt = styles.indexOf("@container research-desk (max-width: 560px)");
+  assert.notEqual(narrowAt, -1);
+  assert.match(ruleBody('.research-res-card[data-view="grid"]', narrowAt), /max-width: none/);
 });

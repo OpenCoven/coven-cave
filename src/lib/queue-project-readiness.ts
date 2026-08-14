@@ -130,6 +130,7 @@ type GitTopLevel =
 async function gitTopLevel(root: string): Promise<GitTopLevel> {
   try {
     const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+      windowsHide: true,
       cwd: /* turbopackIgnore: true */ root,
       env: caveToolSpawnEnv(),
       timeout: GIT_TIMEOUT_MS,

@@ -67,13 +67,34 @@ assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download U
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
 assert.match(src, /export function DaemonReleaseAlignmentTrigger/, "reconciles the daemon after the new Cave version starts");
-assert.match(src, /updateCovenCli\(\)/, "startup reconciliation checks the independently versioned CLI");
+assert.match(src, /updateCovenCli\(/, "startup reconciliation checks the independently versioned CLI");
 assert.doesNotMatch(src, /APP_VERSION/, "the running Cave version is never treated as a CLI version requirement");
 assert.match(src, /process\.env\.NODE_ENV !== "production"/, "development launches never mutate the global CLI");
 assert.match(src, /const start = \(\) =>/, "startup reconciliation never silently confirms a global install");
-assert.match(src, /updateCovenCli\(\)\.then\(\(\) =>/, "startup reconciliation is a quiet status check only");
+
+// This call site used to be pinned as `updateCovenCli()` with no arguments —
+// the guarantee being that a background startup path can never install a
+// global package. cave-bqywj keeps that guarantee and makes it stricter rather
+// than relaxing it: the ONLY thing that may confirm the install is the user's
+// own opt-in preference, read at call time and off by default. A literal
+// `true`, or consent from any other source, must fail here.
+assert.match(
+  src,
+  /updateCovenCli\(\{ confirmInstall: readDaemonAutomation\(\)\.autoUpgradeCli \}\)/,
+  "startup reconciliation installs only on the user's explicit opt-in preference",
+);
+assert.doesNotMatch(
+  src,
+  /confirmInstall:\s*true/,
+  "install consent is never hardcoded — it comes from the preference or not at all",
+);
+assert.match(
+  src,
+  /import \{ readDaemonAutomation \} from "@\/lib\/daemon-automation-pref"/,
+  "the preference is read from its own module, not reconstructed locally",
+);
 assert.doesNotMatch(src, /Update Coven CLI/, "ordinary CLI update actions stay out of the chat header");
-assert.match(src, /updateCovenCli\(\)\.then\(\(\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "the quiet startup check clears any stale CLI banner");
+assert.match(src, /updateCovenCli\([\s\S]{0,120}?\)\.then\(\(\) => \{[\s\S]*dismissBanner\(DAEMON_ALIGNMENT_BANNER_ID\)/, "the quiet startup check clears any stale CLI banner");
 assert.match(
   layoutSrc,
   /<ShellBannersProvider>[\s\S]{0,100}<DaemonReleaseAlignmentTrigger \/>/,

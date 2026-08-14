@@ -18,6 +18,7 @@ import {
   hermesChatSupportsModel,
   hermesHelpSupportsModel,
   parseOpenCodeRunCapabilitiesHelp,
+  probeHelpOutcome,
 } from "./chat-send-capabilities.ts";
 
 assert.equal(hermesHelpSupportsModel("  --query <prompt>\n"), false, "a launchable Hermes without --model remains a capability-only limitation");
@@ -193,6 +194,30 @@ assert.deepEqual(
   "timed-out Windows probes terminate the complete native process tree",
 );
 assert.equal(openCodeProbeTreeKillCommand(4242, "linux"), null, "non-Windows probes retain process-local termination");
+
+if (process.platform !== "win32") {
+  const probeDir = await mkdtemp(path.join(tmpdir(), "cave-probe-help-signal-close-"));
+  try {
+    const childScript = path.join(probeDir, "close-null.js");
+    await writeFile(
+      childScript,
+      'process.stdout.write("  --format <format>\\n"); process.kill(process.pid, "SIGTERM");\n',
+    );
+    const outcome = await probeHelpOutcome(process.execPath, [childScript], () => true, process.env);
+    assert.equal(outcome.ok, false, "a probe terminated by signal does not look like a successful capability miss");
+    if (!outcome.ok) assert.match(outcome.reason, /exited without an exit code/, "signal termination keeps its failure reason");
+  } finally {
+    await rm(probeDir, { recursive: true, force: true });
+  }
+}
+
+{
+  const outcome = await probeHelpOutcome(process.execPath, ["-e", 'process.stdout.write("help");'], () => {
+      throw new Error("matcher failed");
+    }, process.env);
+  assert.equal(outcome.ok, false, "an exception inside the help matcher resolves rather than hanging");
+  if (!outcome.ok) assert.match(outcome.reason, /help output could not be evaluated: matcher failed/, "matcher failures keep their probe-failure reason");
+}
 
 const capabilities = parseOpenCodeRunCapabilitiesHelp(`
   --structured-output <format>  Output format: text, json-v3

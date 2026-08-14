@@ -24,6 +24,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/pretext",
   "x-coven": {
     "displayName": "Pretext \u2014 Text Measurement & Layout",

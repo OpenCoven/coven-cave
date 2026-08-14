@@ -88,6 +88,8 @@ export type ComposerActionsMenuProps = {
   /** Skills flyout; picking inserts `/skill <id> ` into the composer. */
   skills?: { onPickSkill: (skill: SkillOption) => void };
   disabled?: boolean;
+  /** The docked chat composer presents the same menu as an edge-mounted Tools control. */
+  triggerVariant?: "icon" | "tools";
 };
 
 export function ComposerActionsMenu({
@@ -98,6 +100,7 @@ export function ComposerActionsMenu({
   attach,
   skills,
   disabled,
+  triggerVariant = "icon",
 }: ComposerActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [contextView, setContextView] = useState<ComposerContextView>(null);
@@ -142,6 +145,7 @@ export function ComposerActionsMenu({
   );
   const showIndicator = hasLinkedContext || Boolean(response.indicator);
   const expanded = open || contextView !== null;
+  const isToolsTrigger = triggerVariant === "tools";
 
   // The effective project selection (radio check in "Add to project ›"):
   // an explicit No-project choice maps to NO_PROJECT_ID, else the resolved
@@ -156,12 +160,12 @@ export function ComposerActionsMenu({
       <button
         ref={triggerRef}
         type="button"
-        className="cave-composer-plus composer-actions__trigger focus-ring"
+        className={`${isToolsTrigger ? "cave-composer-tools-tab" : "cave-composer-plus"} composer-actions__trigger focus-ring`}
         disabled={disabled}
-        aria-label="Chat options"
+        aria-label={isToolsTrigger ? "Tools" : "Chat options"}
         aria-haspopup="menu"
         aria-expanded={expanded}
-        title={`Chat options · ${context.summary}`}
+        title={`${isToolsTrigger ? "Tools" : "Chat options"} · ${context.summary}`}
         onClick={() => {
           if (expanded) {
             closeAll();
@@ -170,7 +174,8 @@ export function ComposerActionsMenu({
           setOpen(true);
         }}
       >
-        <Icon name="ph:plus" width={15} aria-hidden />
+        <Icon name="ph:plus" width="var(--icon-md)" aria-hidden />
+        {isToolsTrigger ? <span>Tools</span> : null}
         {showIndicator ? <span className="composer-actions__indicator" aria-hidden /> : null}
       </button>
 
@@ -181,12 +186,12 @@ export function ComposerActionsMenu({
           else closePanel();
         }}
         anchorRef={triggerRef}
-        placement="top-start"
+        placement={contextProps.popoverPlacement ?? "top-start"}
         minWidth={260}
-        ariaLabel="Chat options"
+        ariaLabel={isToolsTrigger ? "Tools" : "Chat options"}
         className="composer-actions__panel"
       >
-        <PopoverBody role="menu" ariaLabel="Chat options" className="composer-actions__body">
+        <PopoverBody role="menu" ariaLabel={isToolsTrigger ? "Tools" : "Chat options"} className="composer-actions__body">
           <ComposerAddMenu
             open={open}
             onClose={closePanel}

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# cave-7g7py: run the repository's commit-msg hook from the beads hook path.
+#
+# core.hooksPath is a single directory — git looks for every hook in exactly
+# one place. Clones point it at .beads/hooks (bd sets it), which had no
+# commit-msg, so scripts/git-hooks/commit-msg was NOT running: the guard that
+# requires Co-authored-by trailers to credit a person with GitHub's numeric
+# no-reply identity was silently inactive. That is the rule AGENTS.md and
+# CLAUDE.md exist to enforce, after a session added AI-attribution trailers
+# across eight merged PRs.
+#
+# A shim rather than a copy, deliberately. The two pre-commit hooks already
+# drifted into a 51-line difference by being maintained as separate copies;
+# duplicating commit-msg would set up the same failure. One implementation
+# lives in scripts/git-hooks/commit-msg and both hook paths reach it.
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+TARGET="$REPO_ROOT/scripts/git-hooks/commit-msg"
+
+# Missing implementation must FAIL, not pass silently: a commit-msg guard that
+# quietly no-ops is indistinguishable from one that approved the message.
+if [ ! -x "$TARGET" ]; then
+  if [ -f "$TARGET" ]; then
+    exec bash "$TARGET" "$@"
+  fi
+  printf '%s\n' "[commit-msg blocked] scripts/git-hooks/commit-msg is missing — cannot verify trailers" >&2
+  exit 1
+fi
+
+exec "$TARGET" "$@"

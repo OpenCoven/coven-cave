@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  createContext,
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -27,9 +29,35 @@ export type ProjectTreeHandle = {
   refresh: () => void;
 };
 
+/**
+ * Working-tree status for one file, as the Coding Desk's tree paints it
+ * (cave-0rcku). Status is the non-colour channel — the letter is always shown —
+ * so a colourblind reader never has to infer "changed" from a tint alone.
+ */
+export type TreeDecoration = {
+  /** Porcelain status letter: M, A, D, R, ? … */
+  status: string;
+  additions: number;
+  deletions: number;
+};
+
+/**
+ * Supplied by the Room so every row, at any depth, can ask about its own path
+ * without the callback being threaded through the recursion. Null outside a
+ * decorating tree, which is every other caller — the chat rail, the folder
+ * picker and the project browser all render undecorated.
+ */
+const TreeDecorationContext = createContext<((path: string) => TreeDecoration | null) | null>(null);
+
 type Props = {
   root?: string;
   familiarId?: string;
+  /**
+   * Optional per-file working-tree status. The Coding Desk passes the live
+   * `/api/changes` list so the tree marks what this session actually touched;
+   * everyone else leaves it undefined and gets the plain tree.
+   */
+  decorate?: (path: string) => TreeDecoration | null;
   /** Controlled selection — path of the currently open file */
   selectedPath?: string | null;
   onFileClick?: (path: string) => void;
@@ -152,7 +180,7 @@ async function requestMove(from: string, toDir: string, familiarId = ""): Promis
 // ─── Root component ───────────────────────────────────────────────────────────
 
 export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
-  function ProjectTree({ root: rootProp, familiarId = "", selectedPath, onFileClick, onDirSelect, selectedDirs }, ref) {
+  function ProjectTree({ root: rootProp, familiarId = "", decorate, selectedPath, onFileClick, onDirSelect, selectedDirs }, ref) {
     const [root, setRoot] = useState<string>("");
     const [entries, setEntries] = useState<TreeEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -273,7 +301,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     }
 
     return (
-      <>
+      <TreeDecorationContext.Provider value={decorate ?? null}>
         {moveError ? (
           <div
             role="alert"
@@ -359,7 +387,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
             />
           ))}
         </div>
-      </>
+      </TreeDecorationContext.Provider>
     );
   },
 );
@@ -397,6 +425,9 @@ function TreeRow({
   onMove: (from: string, toDir: string) => void;
   refetchSignal: RefetchSignal;
 }) {
+  const decorateFn = useContext(TreeDecorationContext);
+  const decoration = entry.isDir ? null : decorateFn?.(entry.path) ?? null;
+
   const startsExpanded =
     entry.isDir && depth === 0 && !HIDDEN_BY_DEFAULT.has(entry.name);
 
@@ -582,6 +613,22 @@ function TreeRow({
         <span className={`min-w-0 flex-1 truncate pl-1 ${isSelected ? "text-[var(--accent-presence-foreground)]" : ""}`}>
           {entry.name}
         </span>
+
+        {/* Working-tree status (Coding Desk only). The status letter is the
+            non-colour channel; the diffstat is a second, independent one. */}
+        {decoration ? (
+          <span className="project-tree__status" title={`${decoration.status} · +${decoration.additions} −${decoration.deletions}`}>
+            <span className="project-tree__status-letter" data-status={decoration.status}>
+              {decoration.status}
+            </span>
+            {decoration.additions ? (
+              <span className="project-tree__status-add">+{decoration.additions}</span>
+            ) : null}
+            {decoration.deletions ? (
+              <span className="project-tree__status-del">&minus;{decoration.deletions}</span>
+            ) : null}
+          </span>
+        ) : null}
 
         {/* Folder-picker affordance — pick this directory without leaving the
             tree. Uses role=button instead of another nested button inside the row

@@ -42,10 +42,29 @@ assert.match(
   "Board retry actions bypass a fresh warm-cache entry",
 );
 
-// handleUndoClear: re-create via POST.
+// handleUndoClear: RESTORE the stored records, don't re-create them.
+//
+// These two assertions used to pin the opposite — "undo re-creates cards via
+// POST /api/board" and "undo maps steps to {text}[] for POST". That was the
+// defect written down as a contract: re-creating minted a new card id (breaking
+// every Bead/GitHub reference to a completed mirror) and the {text}-only step
+// mapping is precisely how step state was lost. cave-xddxs replaced it.
 const undoFn = source.match(/const handleUndoClear = async[\s\S]*?\n {2}\};/)?.[0] ?? "";
-assert.match(undoFn, /"\/api\/board", \{[\s\S]*?method: "POST"/, "undo re-creates cards via POST /api/board");
-assert.match(undoFn, /steps: [\s\S]*?\.map\(\(s\) => \(\{ text: s\.text \}\)\)/, "undo maps steps to {text}[] for POST");
+assert.match(
+  undoFn,
+  /"\/api\/board\/restore", \{[\s\S]*?method: "POST"/,
+  "undo restores through /api/board/restore",
+);
+assert.match(
+  undoFn,
+  /body: JSON\.stringify\(\{ cards: banner\.snapshot \}\)/,
+  "undo sends the whole stored snapshot, not a rebuilt subset of fields",
+);
+assert.doesNotMatch(
+  undoFn,
+  /\.map\(\(s\) => \(\{ text: s\.text \}\)\)/,
+  "undo no longer flattens steps to text, which dropped done/doneAt/dates",
+);
 
 // Undo banner with an Undo action.
 assert.match(source, /clearedBanner &&/, "undo banner renders when a clear just happened");

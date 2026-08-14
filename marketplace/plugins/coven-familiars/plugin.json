@@ -19,6 +19,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/coven-familiars",
   "x-coven": {
     "displayName": "Coven Familiars",

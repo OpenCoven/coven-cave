@@ -20,6 +20,10 @@ const plugins = await read("apps/ios/CovenCave/CovenCave/Views/PluginsPanel.swif
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
+const responseControls = await read("apps/ios/CovenCave/CovenCave/Models/ChatResponseControls.swift");
+const models = await read("apps/ios/CovenCave/CovenCave/Models/Models.swift");
+const messageBubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
+const caveClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
@@ -28,6 +32,9 @@ const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swi
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
+const globalSearch = await read(
+  "apps/ios/CovenCave/CovenCave/Views/GlobalSearchView.swift",
+).catch(() => "");
 
 // Supplied device reference: this is the canonical first empty conversation.
 assert.match(chat, /Text\("Start a new session"\)/, "empty chat keeps the authored serif heading");
@@ -104,8 +111,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /private func loadHistory[\s\S]{0,500}DisplayMessage\.restored\(from: turn, familiarId: assignee\)/,
-  "initial server-history hydration restores retry controls",
+  /private func loadHistory[\s\S]{0,500}DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: assignee\)/,
+  "initial server-history hydration restores retry controls from the complete transcript",
 );
 assert.doesNotMatch(
   home,
@@ -131,8 +138,8 @@ assert.match(
 // Authored navigation and discovery surfaces.
 assert.match(
   home,
-  /List\(selection: \$selection\) \{\s*Section \{\s*familiarRail/s,
-  "Chats renders the familiar rail it defines",
+  /List\(selection: \$selection\) \{\s*ForEach\(filteredFamiliars\) \{ familiar in\s*FamiliarConversationRow\(familiar: familiar\)/s,
+  "Chats renders the familiar list it defines",
 );
 assert.match(root, /CaveNavigationDrawer\(/, "the global Claude Design drawer is mounted at app root");
 assert.doesNotMatch(root, /TabView/, "the primary shell does not retain a native tab view");
@@ -194,30 +201,149 @@ assert.match(
   /Color\.black\.opacity\(isOpen \? 0\.46 : 0\)/,
   "the closed drawer does not leave its dimming scrim over the app",
 );
-assert.match(root, /case \.projects:\s*ProjectsPanel/, "Projects is a real drawer destination");
+assert.match(
+  root,
+  /case \.projects\(let project\):\s*ProjectsPanel\(initialProject: project\)/,
+  "Projects carries its selected project atomically into the drawer destination",
+);
 assert.match(root, /case \.familiars: FamiliarsListView/, "Familiars is a real drawer destination");
 assert.match(drawer, /openProjects\(project\)/, "drawer project shortcuts preserve the selected project");
 assert.match(projects, /NavigationLink\(value: project\)/, "project rows navigate instead of rendering inertly");
 assert.match(
   projects,
-  /initialProject\.map \{ \[\$0\] \} \?\? \[\]/,
+  /if let initialProject \{[\s\S]{0,120}path\.append\(initialProject\)/,
   "a drawer project shortcut opens that project directly",
 );
 assert.match(familiars, /struct FamiliarDetailView: View/, "familiar rows open a real detail surface");
 assert.match(
   home,
-  /FamiliarsListView \{ familiar in[\s\S]*initialNewChatFamiliarIds = \[familiar\.id\][\s\S]*showNewChat = true/,
+  /FamiliarsListView \{ familiar in[\s\S]*fixedNewChatFamiliarId = familiar\.id[\s\S]*showNewChat = true/,
   "the familiar detail chat action opens project-aware New Chat",
 );
 assert.match(
   familiars,
-  /ModelPickerSheet\([\s\S]{0,240}application: \.familiarDefault/,
+  /ModelPickerSheet\([\s\S]{0,400}application: \.familiarDefault/,
   "the familiar default picker labels its real scope",
+);
+assert.match(
+  modelControl,
+  /presentedAllowsRuntimeDefault:[\s\S]{0,500}\(allowsRuntimeDefault \|\| state != nil\)/,
+  "loaded iOS model state keeps Runtime default actionable for explicit Cave-owned choices",
+);
+assert.match(
+  modelControl,
+  /allowsRuntimeDefault: presentedAllowsRuntimeDefault,/,
+  "the compact iOS model picker receives the current clear-action capability",
+);
+assert.match(
+  modelControl,
+  /onSelect\(nil\)/,
+  "the compact iOS model picker can persist a clear action",
+);
+assert.match(
+  modelControl,
+  /Text\("Runtime default"\)/,
+  "the compact iOS model picker labels the clear action",
+);
+assert.match(
+  modelControl,
+  /Section\("Inventory"\)[\s\S]{0,260}ChatModelInventoryProvenancePresentation\.label\(for: provenance\)/,
+  "the model picker visibly names every inventory provenance state",
+);
+assert.match(
+  modelControl,
+  /presentationScope\.beginLoading\(for: target\)[\s\S]{0,180}options = \[\][\s\S]{0,180}inventoryProvenance = nil/,
+  "the compact model bar masks options when its familiar/session target changes",
+);
+assert.match(
+  modelControl,
+  /\.task\(id: requestLoadTarget\)[\s\S]{0,5200}presentationScope\.canApplyResponse\([\s\S]{0,180}currentTarget: requestTarget/,
+  "the compact model bar reloads for its full target and rejects late responses",
+);
+assert.match(
+  modelControl,
+  /private var requestRuntimeIdentity:[\s\S]{0,900}session\?\.runtime[\s\S]{0,600}runtimeIdentity: requestRuntimeIdentity/,
+  "the compact model bar includes known session runtime and familiar harness identity in its target",
+);
+assert.match(
+  modelControl,
+  /var bindingScope: String\?[\s\S]{0,500}presentationBindingScope[\s\S]{0,6500}rekeyForResponse\([\s\S]{0,220}bindingScope: resp\.presentationBindingScope/,
+  "the compact model bar rekeys accepted inventory to the server-owned local, SSH, or profile binding scope",
+);
+assert.match(
+  chat,
+  /presentedModelPickerAllowsRuntimeDefault:[\s\S]{0,500}\(modelPickerAllowsRuntimeDefault \|\| sessionModelState != nil\)/,
+  "chat keeps Runtime default actionable for explicit Cave-owned choices",
+);
+assert.match(
+  chat,
+  /sessionDetailRow\(\s*"Inventory",[\s\S]{0,180}ChatModelInventoryProvenancePresentation\.label\(for: presentedModelPickerProvenance\)/,
+  "chat session details expose inventory provenance before the picker opens",
+);
+assert.match(
+  chat,
+  /prepareModelStateLoad\(for target:[\s\S]{0,320}modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,320}modelPickerOptions = \[\][\s\S]{0,220}modelControlCapabilities = \[\]/,
+  "a changed familiar/session masks prior inventory and selected-model controls",
+);
+assert.match(
+  familiars,
+  /presentedModelAllowsRuntimeDefault:[\s\S]{0,500}\(modelAllowsRuntimeDefault \|\| modelState != nil\)/,
+  "familiar defaults keep Runtime default actionable for explicit Cave-owned choices",
+);
+assert.match(
+  familiars,
+  /ModelPickerSheet\([\s\S]{0,320}provenance: presentedModelProvenance/,
+  "familiar defaults pass inventory provenance to the model picker",
+);
+assert.match(
+  familiars,
+  /\.disabled\([\s\S]{0,180}presentedModelOptions\.isEmpty && !presentedModelAllowsRuntimeDefault[\s\S]{0,100}changingModel/,
+  "familiar defaults keep Runtime default actionable without explicit options",
+);
+assert.match(
+  familiars,
+  /modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,180}modelOptions = \[\][\s\S]{0,180}modelProvenance = nil/,
+  "familiar details mask options when their familiar scope changes",
+);
+assert.match(
+  familiars,
+  /\.task\(id: modelLoadTarget\)[\s\S]{0,12000}modelPresentationScope\.canApplyResponse\([\s\S]{0,180}currentTarget: modelRequestTarget/,
+  "familiar details reload for their full target and reject late responses",
+);
+assert.match(
+  familiars,
+  /private var modelLoadTarget:[\s\S]{0,480}runtimeIdentity: harness/,
+  "familiar details include their known harness identity in the presentation target",
+);
+assert.match(
+  familiars,
+  /modelPresentationScope\.rekeyForResponse\([\s\S]{0,220}bindingScope: response\.presentationBindingScope[\s\S]{0,160}modelBindingScope = response\.presentationBindingScope/,
+  "familiar details rekey responses across local, SSH, and explicit profile bindings",
+);
+assert.match(
+  chat,
+  /modelPresentationIsCurrent[\s\S]{0,160}modelPresentationScope\.isCurrent\(for: currentModelRequestTarget\)[\s\S]{0,260}presentedModelPickerOptions[\s\S]{0,120}modelPresentationIsCurrent \? modelPickerOptions : \[\]/,
+  "chat rendering synchronously masks inventory before a changed-target task runs",
+);
+assert.match(
+  caveClient,
+  /func setChatModel\([\s\S]{0,180}?model: String\?[\s\S]*?encodeNil\(forKey: \.model\)/,
+  "clearing an iOS model sends JSON null instead of omitting the model field",
 );
 assert.match(
   modelControl,
   /Sets this familiar’s default for new chats and chats without a model override\./,
   "the model picker explains a familiar-default mutation",
+);
+assert.match(
+  modelControl,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,7000}private func choose\([\s\S]{0,1300}modelMutationQueue\.enqueue[\s\S]{0,1100}client\.setChatModel/,
+  "chat model PATCHes are serialized in selection order",
+);
+assert.match(
+  familiars,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,12000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
+  "familiar-default model PATCHes are serialized in selection order",
 );
 assert.match(
   familiars,
@@ -229,13 +355,18 @@ for (const section of ["Identity", "Defaults", "Access"]) {
 }
 
 // Session controls are transported, persisted for offline replay, and truthful.
-assert.match(client, /var reasoningEffort: ChatThinkingEffort/, "send body carries reasoning effort");
-assert.match(client, /var responseSpeed: ChatResponseSpeed/, "send body carries response speed");
+assert.match(client, /var reasoningEffort: ChatThinkingEffort\?/, "send body keeps legacy reasoning effort optional");
+assert.match(client, /var responseSpeed: ChatResponseSpeed\?/, "send body keeps legacy response speed optional");
 assert.match(client, /var modelOverride: String\?/, "send body carries the selected model");
 assert.match(
   client,
   /var modelOverrideScope: ChatModelOverrideScope\?/,
   "send body scopes the selected model to the chat",
+);
+assert.match(
+  models,
+  /var modelOverrideScope: ChatModelOverrideScope\?/,
+  "server history decodes the original turn's model scope",
 );
 assert.match(thread, /var reasoningEffort: ChatThinkingEffort\?/, "queued messages persist reasoning effort");
 assert.match(thread, /var responseSpeed: ChatResponseSpeed\?/, "queued messages persist response speed");
@@ -252,35 +383,85 @@ assert.match(
 );
 assert.match(
   thread,
-  /let retryModel = source\?\.retryModel\(for: familiarId\)[\s\S]{0,900}modelOverride: retryModel/,
+  /let retryModel = source\?\.retryModel\(for: familiarId\)[\s\S]{0,300}ChatModelTurnBinding\.resolveRetry\([\s\S]{0,900}modelOverride: modelBinding\.modelOverride/,
   "retry restores the original per-familiar model selection",
 );
 assert.match(
   thread,
-  /modelOverrideScope: retryModel == nil \? nil : \.nextMessage/,
-  "retry replays the original model without changing the chat’s current model",
+  /originalScope: source\?\.modelOverrideScope[\s\S]{0,900}modelOverrideScope: modelBinding\.scope/,
+  "retry preserves explicit runtime-default intent without changing the chat's current model",
+);
+assert.match(
+  responseControls,
+  /if originalScope == \.runtimeDefault \{\s*return ChatModelTurnBinding\(modelOverride: "", scope: \.nextMessage\)/,
+  "runtime-default retry is a one-turn empty override instead of a durable selection mutation",
 );
 assert.match(
   thread,
-  /DisplayMessage\.restored\(from: turn, familiarId: familiarId\)/,
-  "server reload restores the controls that retry reads",
+  /modelOverrideScope: turn\.modelOverrideScope/,
+  "history restoration retains runtime-default scope alongside capability controls",
+);
+assert.match(
+  thread,
+  /modelOverrideScope: message\.modelOverrideScope/,
+  "thread duplication retains runtime-default scope alongside capability controls",
+);
+assert.match(
+  thread,
+  /DisplayMessage\.restoredTranscript\(from: convo\.turns, familiarId: familiarId\)/,
+  "server reload restores applied controls and the retry model from the complete transcript",
 );
 assert.match(
   appModel,
   /DisplayMessage\.duplicate\(of: message\)/,
   "thread duplication preserves the controls that retry reads",
 );
-assert.match(chat, /Picker\("Thinking"/, "session details expose real thinking levels");
-assert.match(chat, /Picker\("Speed"/, "session details expose real response speeds");
+assert.match(chat, /ForEach\(presentedModelControlCapabilities\)/, "session details expose only selected-model controls");
+assert.match(chat, /capability\.delivery == "prompt-only"/, "prompt-only controls are identified as guidance, not native settings");
+assert.doesNotMatch(chat, /Picker\("Thinking"|Picker\("Speed"/, "session details do not present global Thinking or Speed controls");
 assert.match(
   chat,
-  /thread\.pendingModelOverride = model/,
-  "a selected model is synchronously retained as the chat's pending intent",
+  /let stagedModel = model \?\? ""[\s\S]{0,220}?thread\.pendingModelOverride = stagedModel/,
+  "a selected model or runtime-default clear is synchronously retained as the chat's pending intent",
 );
 assert.match(
   chat,
   /_ = selectModel\(id, familiarId: familiarId, sessionId: modelSessionId\(familiarId\)\)/,
   "the model picker stages intent synchronously before its sheet dismisses",
+);
+assert.match(
+  chat,
+  /if \["default", "runtime-default"\]\.contains\(trimmed\.lowercased\(\)\)\s*\{[\s\S]{0,180}selectModel\(nil, familiarId: familiarId, sessionId: sessionId\)/,
+  "iOS /model default clears the override instead of selecting a custom model named default",
+);
+assert.match(
+  chat,
+  /guard sessionId != nil \|\| model == nil else \{[\s\S]{0,1000}loadPendingModelCapabilities\(/,
+  "a pre-first-send model selection immediately previews the selected model capabilities",
+);
+assert.match(
+  chat,
+  /private func loadPendingModelCapabilities\([\s\S]{0,700}previewModel: model/,
+  "the pending-model preview requests capabilities for the selected model",
+);
+assert.match(caveClient, /func chatModelState\(/, "iOS exposes the shared model-state client");
+assert.match(caveClient, /previewModel: String\? = nil/, "iOS can request a pending-model preview");
+assert.ok(
+  caveClient.includes(String.raw`if let previewModel { path += "&model=\(urlQuery(previewModel))" }`),
+  "iOS sends a read-only model preview query after staging a new-chat selection",
+);
+assert.match(models, /requestedModel: String\?/, "iOS decodes requested model intent metadata");
+assert.match(models, /confirmedModel: String\?/, "iOS decodes confirmed model metadata");
+assert.match(models, /modelApplicationState: String\?/, "iOS decodes model application state metadata");
+assert.match(
+  messageBubble,
+  /private var responseModelStatus:[\s\S]*?Requested model:[\s\S]*?Applied model:/,
+  "iOS renders requested and applied model status separately",
+);
+assert.match(
+  messageBubble,
+  /let reason = message\.modelApplicationReason[\s\S]*?Model source:/,
+  "iOS renders safe model source and degraded reason metadata",
 );
 assert.match(
   chat,
@@ -299,8 +480,23 @@ assert.match(
 );
 assert.match(
   chat,
-  /destination\.pendingModelOverride[\s\S]{0,650}modelOverrideScope: destinationScope/,
+  /ChatModelTurnBinding\.resolve\([\s\S]{0,220}pendingModel: destination\.pendingModelOverride[\s\S]{0,800}modelOverrideScope: destinationModelBinding\.scope/,
   "forwarding honors a pending model choice on the destination chat",
+);
+assert.match(
+  chat,
+  /private var modelStateLoadKey: ChatModelRequestTarget\? \{ currentModelLoadTarget \}[\s\S]{0,1200}session\?\.runtime[\s\S]{0,500}runtimeIdentity: identity\.isEmpty \? nil : identity\.joined/,
+  "chat model reload identity includes the concrete session runtime and masks local-to-SSH changes synchronously",
+);
+assert.match(
+  chat,
+  /private var modelPresentationIsCurrent:[\s\S]{0,160}modelPresentationScope\.isCurrent\(for: currentModelRequestTarget\)[\s\S]{0,260}private var presentedModelPickerOptions:[\s\S]{0,120}modelPresentationIsCurrent \? modelPickerOptions : \[\]/,
+  "a same familiar/session/harness runtime-key change masks the prior inventory before its replacement response",
+);
+assert.match(
+  chat,
+  /private func rekeyModelPresentation\([\s\S]{0,420}bindingScope: response\.presentationBindingScope[\s\S]{0,180}modelBindingScope = response\.presentationBindingScope/,
+  "chat model responses rekey the presentation across same-session runtime profile changes",
 );
 assert.doesNotMatch(
   chat,
@@ -467,5 +663,137 @@ assert.match(
   "fresh installs default Tasks to the authored familiar grouping",
 );
 assert.match(zoom, /Rotate for width/, "full-screen rich content explains the landscape affordance");
+
+// The newer Claude Design shell promotes the drawer search affordance into a
+// loaded-data search across every navigable mobile collection.
+assert.match(
+  drawer,
+  /var openSearch: \(\) -> Void/,
+  "the global drawer exposes app-wide search instead of a chat-only request",
+);
+assert.match(drawer, /openSearch\(\)/, "the drawer search control opens global search");
+assert.match(root, /case \.search:\s*GlobalSearchView\(/, "the root presents global search");
+assert.match(
+  globalSearch,
+  /\.searchable\(text: \$query, prompt: "Search everything…"\)/,
+  "global search uses the canonical app-wide placeholder",
+);
+assert.match(
+  globalSearch,
+  /if let trailing \{[\s\S]*?Text\(trailing\)[\s\S]*?\.foregroundStyle\(chrome\.textSecondary\)/,
+  "global search recency metadata remains legible in dark mode",
+);
+for (const label of ["Chats", "Projects", "Familiars", "Tasks"]) {
+  assert.match(
+    globalSearch,
+    new RegExp(`Section\\("${label}"\\)`),
+    `global search includes truthful ${label.toLowerCase()} results`,
+  );
+}
+assert.match(
+  globalSearch,
+  /app\.serverOnlySessions\(for:/,
+  "global search includes conversations that only exist on the server",
+);
+assert.match(
+  globalSearch,
+  /app\.openServerSession\(/,
+  "selecting a server-only search result materializes and opens it",
+);
+assert.match(
+  projects,
+  /threadsByProjectRoot/,
+  "project summaries derive chat activity from real project-root threads",
+);
+assert.match(
+  projects,
+  /Set\([\s\S]{0,180}threads\.flatMap\(\\\.familiarIds\) \+ serverSessions\.compactMap\(\\\.familiarId\)[\s\S]{0,40}\)\.count/,
+  "project summaries count distinct familiars from those chats",
+);
+assert.ok(projects.includes('"\\(chats) chat'), "project summaries label real chat counts");
+assert.ok(
+  projects.includes('"\\(familiars) familiar'),
+  "project summaries label real familiar counts",
+);
+assert.match(
+  projects,
+  /serverSessionsByProjectRoot/,
+  "project summaries include eligible server-only conversations",
+);
+assert.match(
+  projects,
+  /if !app\.sessionsLoaded \{ await app\.loadSessions\(\) \}/,
+  "projects load server sessions before reporting activity",
+);
+assert.match(
+  projects,
+  /Text\(updated, format: \.relative\(presentation: \.numeric\)\)[\s\S]*?\.font\(\.caption\)\.foregroundStyle\(chrome\.textSecondary\)/,
+  "project recency metadata remains legible in dark mode",
+);
+assert.match(
+  chat,
+  /private func validGitHubURL\(for link: CardGitHubLink\) -> URL\?/,
+  "linked chat context validates a real GitHub PR or issue URL",
+);
+assert.match(chat, /url\.host\?\.lowercased\(\) == "github\.com"/, "linked GitHub context stays on GitHub");
+assert.match(chat, /Link\(destination: context\.url\)/, "linked GitHub context opens its validated URL");
+assert.match(chat, /githubContextLabel/, "linked GitHub context has a concise visible label");
+assert.match(
+  chat,
+  /dynamicTypeSize\.isAccessibilitySize[\s\S]*?AnyLayout\(VStackLayout/,
+  "linked GitHub and task context stacks at accessibility text sizes",
+);
+assert.match(
+  chat,
+  /\.lineLimit\(dynamicTypeSize\.isAccessibilitySize \? nil : 1\)/,
+  "linked task titles can fully wrap at accessibility text sizes",
+);
+assert.match(
+  chat,
+  /Text\(cards\.count == 1 \? "Linked task"[\s\S]{0,260}\.fixedSize\(horizontal: false, vertical: true\)/,
+  "linked task context labels can wrap at accessibility text sizes",
+);
+assert.match(
+  chat,
+  /\.padding\(\.top, dynamicTypeSize\.isAccessibilitySize \? 16 : 0\)/,
+  "accessibility-sized linked context clears the navigation bar",
+);
+assert.match(
+  chat,
+  /\.padding\(\.bottom, dynamicTypeSize\.isAccessibilitySize \? 16 : 0\)/,
+  "accessibility-sized linked task text clears the context divider",
+);
+assert.match(
+  chat,
+  /private var linkedContextStrip:[\s\S]{0,2200}showTasks = true/,
+  "the GitHub affordance remains paired with the linked-task action",
+);
+assert.match(
+  appModel,
+  /--ui-preview-design-closeout/,
+  "the remaining Claude Design affordances have a deterministic simulator fixture",
+);
+assert.match(
+  appModel,
+  /configureDesignCloseoutPreview[\s\S]{0,1800}projects = \[/,
+  "the design closeout fixture includes a real project result",
+);
+assert.match(
+  appModel,
+  /configureDesignCloseoutPreview[\s\S]{0,2200}cardThreadLinks\["cold-launch"\] = "ui-preview-empty-chat"/,
+  "the design closeout fixture exposes linked task and GitHub context",
+);
+assert.match(root, /--ui-open-search/, "simulator validation can launch directly into global search");
+assert.match(root, /--ui-open-projects/, "simulator validation can launch directly into projects");
+assert.match(
+  globalSearch,
+  /--ui-search-query/,
+  "simulator validation can seed a deterministic global-search query",
+);
+assert.match(
+  appModel,
+  /--ui-preview-light/,
+  "the design closeout fixture can be verified in the light appearance",
+);
 
 console.log("ios-claude-design-fidelity.test.mjs: ok");

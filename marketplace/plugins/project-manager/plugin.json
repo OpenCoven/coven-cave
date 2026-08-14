@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/project-manager",
   "x-coven": {
     "displayName": "Project Manager",

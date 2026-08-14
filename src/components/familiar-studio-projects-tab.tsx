@@ -40,7 +40,22 @@ import {
 } from "@/lib/permissions-console";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 
-type Props = { familiar: ResolvedFamiliar };
+/**
+ * Which half of the protocol to render.
+ *
+ * `full` is the original tab: the per-familiar grant matrix plus everything
+ * governing it. `activity` drops the matrix and the registry controls, keeping
+ * only the panels that have no counterpart elsewhere — inherited groups,
+ * pending requests, request history, access changes, and decisions.
+ *
+ * The split exists because Chat → Projects already owns a richer copy of that
+ * matrix over the same `/api/project-grants`. Mounting this component in
+ * `activity` mode beside it consolidates the two surfaces without duplicating
+ * the governance panels into a second implementation that could drift.
+ */
+export type FamiliarProjectsVariant = "full" | "activity";
+
+type Props = { familiar: ResolvedFamiliar; variant?: FamiliarProjectsVariant };
 
 const toneVar: Record<Tone, string> = {
   positive: "var(--accent-presence)",
@@ -94,7 +109,8 @@ function MetaChip({ children, title }: { children: ReactNode; title?: string }) 
  * `familiar.id`, and grant changes go straight to `/api/project-grants` with only
  * the target familiar + project (the route rejects relayed approvals).
  */
-export function FamiliarStudioProjectsTab({ familiar }: Props) {
+export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props) {
+  const showMatrix = variant === "full";
   const profileSnapshot = useUserProfile();
   const [projects, setProjects] = useState<ConsoleProject[]>([]);
   const [granted, setGranted] = useState<Set<string>>(new Set());
@@ -152,6 +168,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const {
     projects: registryProjects,
     createProject,
+    createProjectOrThrow,
     renameProject,
     deleteProject,
     updateRepoUrl,
@@ -164,6 +181,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const addFlow = useAddProjectFlow({
     familiarId: familiar.id,
     createProject,
+    createProjectOrThrow,
     projects: registryProjects,
     onAdded: () => void load(),
   });
@@ -338,20 +356,37 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
 
   return (
     <div className="space-y-4">
-      <p className="px-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
-        Choose which projects <span className="text-[var(--text-secondary)]">{familiar.display_name}</span>{" "}
-        can see and work in. It only has visibility into the projects granted here — chats, sessions,
-        file access, and the project picker all respect it. Changes apply immediately.
-      </p>
+      {showMatrix ? (
+        <p className="px-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          Choose which projects <span className="text-[var(--text-secondary)]">{familiar.display_name}</span>{" "}
+          can see and work in. It only has visibility into the projects granted here — chats, sessions,
+          file access, and the project picker all respect it. Changes apply immediately.
+        </p>
+      ) : (
+        <p className="px-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
+          Where{" "}
+          <span className="text-[var(--text-secondary)]">{familiar.display_name}</span>’s access came
+          from — groups it inherits, requests awaiting you, and every change and decision on record.
+          Grant and revoke projects on the Access tab.
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">
           {error}
         </p>
       )}
+      {addFlow.addError ? (
+        <p role="alert" className="px-1 text-[length:var(--text-sm)] text-[var(--color-danger)]">
+          {addFlow.addError}
+        </p>
+      ) : null}
 
-      {/* ── Project access (the grant matrix, one familiar) ── */}
-      {supreme ? (
+      {/* ── Project access (the grant matrix, one familiar) ──
+          Suppressed in `activity` mode: Chat → Projects already renders this
+          map, and two live copies of the same grants is what this variant
+          exists to end. */}
+      {!showMatrix ? null : supreme ? (
         <SettingsGroup label="Project access" description="Supreme · all-access">
           <p className="flex items-center gap-2 px-4 py-3 text-[length:var(--text-sm)] text-[var(--text-muted)]">
             <ToneIcon tone="positive" icon="ph:seal-check" size={15} />
@@ -453,7 +488,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                           return (
                             <span
                               key={g.groupId}
-                              title={`Granted through the “${g.groupName}” access group — ${levelMeta.title}. Manage it in Settings → Access groups.`}
+                              title={`Granted through the “${g.groupName}” access group — ${levelMeta.title}. Manage it on the Groups tab.`}
                               className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-hover)] px-1.5 py-px text-[length:var(--text-2xs)] font-medium text-[var(--text-muted)]"
                             >
                               <Icon name="ph:users-three" width={11} height={11} className="shrink-0" aria-hidden />
@@ -510,11 +545,27 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         </SettingsGroup>
       )}
 
+      {/* Activity mode carries no matrix, so an otherwise-silent familiar would
+          render as a lone paragraph. Say so explicitly instead. */}
+      {!showMatrix &&
+      (supreme || memberGroups.length === 0) &&
+      pendingProposals.length === 0 &&
+      resolvedProposals.length === 0 &&
+      famChanges.length === 0 &&
+      famAudit.length === 0 ? (
+        <EmptyState
+          icon="ph:clock-counter-clockwise"
+          headline="No access activity yet"
+          subtitle={`Nothing has been requested, granted, or revoked for ${familiar.display_name}. Group membership and access changes will appear here.`}
+          compact
+        />
+      ) : null}
+
       {/* ── Access groups this familiar belongs to ── */}
       {!supreme && memberGroups.length > 0 && (
         <SettingsGroup
           label={`Access groups (${memberGroups.length})`}
-          description="Base project access inherited through group membership — manage groups in Settings"
+          description="Base project access inherited through group membership — manage groups on the Groups tab"
         >
           {memberGroups.map((group) => (
             <div key={group.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -714,14 +765,18 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         </SettingsGroup>
       )}
 
-      <ProjectSettingsModal
-        project={settingsProject}
-        onClose={() => setSettingsProjectId(null)}
-        onSaveRepoUrl={updateRepoUrl}
-        onRename={renameRegistryProject}
-        onDelete={removeRegistryProject}
-      />
-      {addFlow.addProjectModal}
+      {showMatrix ? (
+        <>
+          <ProjectSettingsModal
+            project={settingsProject}
+            onClose={() => setSettingsProjectId(null)}
+            onSaveRepoUrl={updateRepoUrl}
+            onRename={renameRegistryProject}
+            onDelete={removeRegistryProject}
+          />
+          {addFlow.addProjectModal}
+        </>
+      ) : null}
     </div>
   );
 }

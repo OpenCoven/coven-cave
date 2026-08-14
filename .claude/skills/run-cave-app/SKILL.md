@@ -20,7 +20,7 @@ The primary checkout often has another live session's uncommitted work and concu
 - **`cd` ONLY into the path `add` just created**, and sanity-check `HEAD`.
 
 ```bash
-MAIN=/Users/buns/Documents/GitHub/OpenCoven/coven-cave
+MAIN=/Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git -C "$MAIN" worktree prune                        # drop stale entries from crashed runs
 # Pick a name that is neither an existing dir nor a registered worktree.
 WT=""; for _ in 1 2 3 4 5; do

@@ -2,6 +2,10 @@
 // Strand inspection (spec §3 route 4, threads-986.17.5): per-strand detail
 // for all five kinds; on a Frayed thread the blamed strand renders the
 // current-vs-expected diff; lineage deep-links strand → ward_audit entries.
+//
+// This is the body of an opened thread row rather than a third pane: the
+// question "why did this thread fray?" is answered where the fray is named,
+// so nothing about one thread's verdict lives a scroll away from the verdict.
 import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import {
@@ -32,25 +36,22 @@ function DiffBlock({ strand }: { strand: StrandView }) {
   const diff = strandDiff(strand);
   if (!diff) return null;
   return (
-    <div
-      aria-label="Current vs expected"
-      className="mt-2 rounded border border-[var(--color-warning)]/40 bg-[var(--bg-raised)] px-2 py-1.5"
-    >
-      <p className="mb-1 inline-flex items-center gap-1 text-[length:var(--text-2xs)] font-semibold uppercase tracking-wide text-[var(--color-warning)]">
+    <div aria-label="Current vs expected" className="wv-diff">
+      <p className="wv-diff__title">
         <Icon name="ph:warning" aria-hidden />
         current vs expected
       </p>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 font-mono text-[length:var(--text-xs)]">
-        <dt className="text-[var(--text-muted)]">expected</dt>
-        <dd className="break-all text-[var(--color-success)]">{diff.expected || "(empty)"}</dd>
-        <dt className="text-[var(--text-muted)]">observed</dt>
-        <dd className={`break-all ${diff.observed === null ? "text-[var(--text-muted)]" : "text-[var(--color-danger)]"}`}>
+      <dl>
+        <dt>expected</dt>
+        <dd className="wv-diff__expected">{diff.expected || "(empty)"}</dd>
+        <dt>observed</dt>
+        <dd className={diff.observed === null ? "wv-diff__unobserved" : "wv-diff__observed"}>
           {diff.observed === null
             ? "(could not observe — treated as blocked, not healthy)"
             : diff.observed || "(empty)"}
         </dd>
-        <dt className="text-[var(--text-muted)]">observed at</dt>
-        <dd className="text-[var(--text-primary)]">{diff.observedAt ?? "(unknown)"}</dd>
+        <dt>observed at</dt>
+        <dd className="wv-diff__at">{diff.observedAt ?? "(unknown)"}</dd>
       </dl>
     </div>
   );
@@ -59,25 +60,29 @@ function DiffBlock({ strand }: { strand: StrandView }) {
 export function StrandInspector({
   thread,
   knownProposalIds,
+  auditState,
+  onTraceThread,
 }: {
   thread: ThreadView;
   knownProposalIds: ReadonlySet<string>;
+  /**
+   * ward.audit for THIS thread, read once per weave by the view and passed
+   * down. Re-reading it here duplicated a request the parent had already made
+   * for every thread in the weave. It stays a SurfaceState so a thread whose
+   * audit read was blocked still says so in its own lineage rather than
+   * borrowing a neighbour's verified-empty.
+   */
+  auditState: SurfaceState<AuditEntryView[]>;
+  onTraceThread: () => void;
 }) {
   const [strandsState, setStrandsState] = useState<SurfaceState<StrandView[]>>({ kind: "loading" });
-  const [auditState, setAuditState] = useState<SurfaceState<AuditEntryView[]>>({ kind: "loading" });
 
   useEffect(() => {
     let cancelled = false;
     setStrandsState({ kind: "loading" });
-    setAuditState({ kind: "loading" });
     void fetchSurface<StrandView[]>(`/api/threads/${encodeURIComponent(thread.id)}/strands`).then(
       (state) => {
         if (!cancelled) setStrandsState(state);
-      },
-    );
-    void fetchSurface<AuditEntryView[]>(`/api/threads/${encodeURIComponent(thread.id)}/audit`).then(
-      (state) => {
-        if (!cancelled) setAuditState(state);
       },
     );
     return () => {
@@ -88,105 +93,108 @@ export function StrandInspector({
   const blamed = blamedStrandId(thread.tension);
 
   return (
-    <section aria-label="Strand inspection" className="flex min-w-0 flex-col gap-3">
-      <header>
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-          Strands of {thread.surface} <span className="text-[var(--text-muted)]">→</span> {thread.writer}
-        </h3>
-        <p className="text-xs text-[var(--text-muted)]">
-          Each strand is one fiber of commitment inside this thread — the thread survives a channel
-          iff its strands survive that channel.
-        </p>
-      </header>
+    <div className="wv-thread__body">
+      <section aria-label="Strand inspection">
+        <div className="wv-subhead">
+          <h4>Strands</h4>
+          <span className="wv-subhead__rule">
+            Each strand is one fiber of commitment — a thread survives a channel only if its
+            strands survive that channel
+          </span>
+          <button type="button" className="wv-ghost wv-ghost--sm focus-ring" onClick={onTraceThread}>
+            <Icon name="ph:path" aria-hidden />
+            Trace verdict
+          </button>
+        </div>
 
-      {strandsState.kind === "loading" ? (
-        <p className="text-xs text-[var(--text-muted)]">Reading strands…</p>
-      ) : strandsState.kind === "blocked" ? (
-        <p role="status" className="text-xs text-[var(--text-muted)]">
-          <Icon name="ph:shield-slash" aria-hidden /> {strandsState.message}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {strandsState.data.length === 0 ? (
-            <li className="text-xs text-[var(--color-warning)]">
-              No strands — this thread carries no commitments, so required-strand checks fray it on
-              every structured channel.
-            </li>
-          ) : (
-            strandsState.data.map((strand) => {
-              const isBlamed = strand.id === blamed;
-              return (
-                <li
-                  key={strand.id}
-                  className={`rounded border px-2 py-1.5 ${
-                    isBlamed
-                      ? "border-[var(--color-warning)]/60"
-                      : "border-[var(--border-hairline)]"
-                  }`}
-                >
-                  <p className="flex items-center gap-2 text-xs font-medium text-[var(--text-primary)]">
-                    {strand.kind}
-                    {isBlamed ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-warning)]/40 px-1.5 text-[length:var(--text-2xs)] text-[var(--color-warning)]">
-                        <Icon name="ph:warning" aria-hidden />
-                        blamed by the fray
-                      </span>
-                    ) : null}
-                  </p>
-                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[length:var(--text-xs)]">
-                    {strandDetailRows(strand).map((row) => (
-                      <div key={row.label} className="contents">
-                        <dt className="text-[var(--text-muted)]">{row.label}</dt>
-                        <dd className={`break-all text-[var(--text-primary)] ${row.mono ? "font-mono" : ""}`}>
-                          {row.value}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <DiffBlock strand={strand} />
-                </li>
-              );
-            })
-          )}
-        </ul>
-      )}
+        {strandsState.kind === "loading" ? (
+          <p className="wv-quiet">Reading strands…</p>
+        ) : strandsState.kind === "blocked" ? (
+          <p role="status" className="wv-quiet">
+            <Icon name="ph:shield-slash" aria-hidden /> {strandsState.message}
+          </p>
+        ) : (
+          <ul className="wv-strands">
+            {strandsState.data.length === 0 ? (
+              <li className="wv-chips__none">
+                No strands — this thread carries no commitments, so required-strand checks fray it on
+                every structured channel.
+              </li>
+            ) : (
+              strandsState.data.map((strand) => {
+                const isBlamed = strand.id === blamed;
+                return (
+                  <li key={strand.id} className={`wv-strand${isBlamed ? " wv-strand--blamed" : ""}`}>
+                    <div className="wv-strand__head">
+                      <Icon
+                        name={isBlamed ? "ph:warning" : "ph:seal-check"}
+                        className={isBlamed ? "wv-strand__warn" : "wv-strand__seal"}
+                        aria-hidden
+                      />
+                      <span className="wv-strand__kind">{strand.kind}</span>
+                      {isBlamed ? (
+                        <span className="wv-blamed-badge">
+                          <Icon name="ph:warning" aria-hidden />
+                          blamed by the fray
+                        </span>
+                      ) : null}
+                    </div>
+                    <dl className="wv-dl">
+                      {strandDetailRows(strand).map((row) => (
+                        <div key={row.label} className="contents">
+                          <dt>{row.label}</dt>
+                          <dd>{row.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <DiffBlock strand={strand} />
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        )}
+      </section>
 
       <section aria-label="Audit lineage">
-        <h4 className="text-xs font-semibold text-[var(--text-primary)]">
-          Lineage — ward.audit entries for this thread
-        </h4>
+        <h4 className="wv-subhead__title-only">Lineage — ward.audit entries for this thread</h4>
         {auditState.kind === "loading" ? (
-          <p className="text-xs text-[var(--text-muted)]">Reading audit lineage…</p>
+          <p className="wv-quiet">Reading audit lineage…</p>
         ) : auditState.kind === "blocked" ? (
-          <p role="status" className="text-xs text-[var(--text-muted)]">
+          <p role="status" className="wv-quiet">
             <Icon name="ph:shield-slash" aria-hidden /> {auditState.message}
           </p>
         ) : auditState.data.length === 0 ? (
-          <p className="text-xs text-[var(--text-muted)]">
+          <p className="wv-quiet">
             No audit entries reference this thread yet — verified empty, not an error.
           </p>
         ) : (
-          <ol className="mt-1 flex flex-col gap-1">
-            {annotateLineage(auditState.data, knownProposalIds).map(({ entry, unresolvedProposalRef }) => (
-              <li key={entry.id} className="rounded border border-[var(--border-hairline)] px-2 py-1 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
-                {lineageLine(entry)}
-                {entry.proposalId ? (
-                  <span className={`ml-1 ${unresolvedProposalRef ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
-                    proposal {entry.proposalId}
-                    {unresolvedProposalRef ? " (unresolved reference)" : ""}
-                  </span>
-                ) : null}
-                <span className="ml-1 text-[var(--text-muted)]">· recorded {entry.recordedAt}</span>
-              </li>
-            ))}
+          <ol className="wv-lineage">
+            {annotateLineage(auditState.data, knownProposalIds).map(
+              ({ entry, unresolvedProposalRef }) => (
+                <li key={entry.id}>
+                  <span>{lineageLine(entry)}</span>
+                  {entry.proposalId ? (
+                    <a
+                      className={`wv-lineage__ref${unresolvedProposalRef ? " wv-lineage__ref--unresolved" : ""}`}
+                      href={`/proposals?proposal=${encodeURIComponent(entry.proposalId)}`}
+                    >
+                      proposal {entry.proposalId}
+                      {unresolvedProposalRef ? " (unresolved reference)" : ""}
+                    </a>
+                  ) : null}
+                  <span className="wv-lineage__ref">· recorded {entry.recordedAt}</span>
+                </li>
+              ),
+            )}
           </ol>
         )}
         {auditState.kind === "ready" ? (
-          <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+          <p className="wv-blocked__meta">
             cursor {auditState.meta.sourceCursor} · observed {auditState.meta.observedAt}
           </p>
         ) : null}
       </section>
-    </section>
+    </div>
   );
 }

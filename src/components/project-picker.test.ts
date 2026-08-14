@@ -9,7 +9,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./project-picker.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8");
+// The picker's CSS moved out of surface-marketplace.css when that sheet was
+// code-split onto the Marketplace chunk (cave-ii7xi) — a shared picker used by
+// the always-loaded shell cannot ship with a mode-gated surface.
+const css = readFileSync(
+  new URL("../styles/globals/shared-pickers-and-toasts.css", import.meta.url),
+  "utf8",
+);
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 const addMenu = readFileSync(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");
@@ -18,6 +24,10 @@ const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.m
 // ── One shared add flow: register + grant in a single human-initiated step ──
 assert.match(src, /export function useAddProjectFlow\(/, "shared flow exported");
 assert.match(src, /addChatProject\(\{/, "register+grant goes through the tested helper");
+assert.match(src, /createProject\?: \(/, "the shared flow can rely on the throwing creator alone");
+assert.match(src, /createProjectOrThrow: args\.createProjectOrThrow/, "the shared flow threads the throwing creation path");
+assert.match(src, /const canAddProject = Boolean\(createProject \|\| createProjectOrThrow\)/, "a throwing-only creator still enables the shared add flow");
+assert.match(src, /onAddProject=\{canAddProject \? addFlow\.beginAddProject : undefined\}/, "the picker exposes add when only the throwing creator is available");
 assert.match(src, /shell_pick_directory/, "native folder dialog on desktop builds");
 assert.match(src, /DirectoryPickerModal/, "web fallback directory browser");
 
@@ -36,10 +46,18 @@ assert.match(
   /projectForPickerQuery\(sortedProjects, query\)/,
   "Enter resolves through the shared exact-name-first matcher",
 );
+// Enter now goes through pick(), which records the frecency pick, calls
+// onChange and closes (cave-ow9f) — same outcome, one path shared with
+// clicking a row instead of a second inline copy.
 assert.match(
   src,
-  /event\.key !== "Enter"[\s\S]*?event\.preventDefault\(\);[\s\S]*?onChange\(match\.id\);[\s\S]*?close\(\);/,
-  "Enter selects the typed match and closes the picker",
+  /event\.key !== "Enter"[\s\S]*?event\.preventDefault\(\);[\s\S]*?pick\(match\);/,
+  "Enter selects the typed match",
+);
+assert.match(
+  src,
+  /const pick = \(project: \{ id: string; root: string \}\) => \{[\s\S]*?onChange\(project\.id\);\s*close\(\);/,
+  "and pick() is what changes the selection and closes the picker",
 );
 assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
 assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");
@@ -80,6 +98,7 @@ assert.doesNotMatch(
 // the chat composer). The pill chains to the shared ProjectPickerPopover, so
 // selection reads the same everywhere (chat revamp 1d).
 assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{displayProjectId\}/, "home composer's context chips host the shared project picker");
+assert.match(homeComposer, /\{plusAddProject\.addError \? \(/, "home's Start a new project flow renders add failures");
 assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
 assert.match(
   contextPill,
@@ -100,6 +119,8 @@ assert.match(
 );
 assert.match(contextPill, /<ProjectPickerPopover/, "the context pill opens the shared ProjectPickerPopover");
 assert.match(contextPill, /useAddProjectFlow\(\{/, "the context pill folds in the shared add-project flow");
+assert.match(contextPill, /const canAddProject = Boolean\(config\.createProject \|\| config\.createProjectOrThrow\)/, "composer context supports throwing-only project creation");
+assert.match(contextPill, /onAddProject=\{context\.canAddProject \? context\.addFlow\.beginAddProject : undefined\}/, "composer pickers expose the add flow for the throwing creator");
 assert.match(
   contextPill,
   /projectAccessLabel\(context\.selectedProject\.access\)/,
@@ -133,5 +154,12 @@ assert.match(src, /registerCurrentRoot\?: string;/, "picker takes the candidate 
 assert.match(src, /onRegisterCurrentRoot\?: \(\) => void;/, "and the setup-open callback");
 assert.match(src, /Register this folder as a project…/, "in-place registration row");
 assert.match(src, /ph:folder-plus/, "register row carries the folder-plus icon");
+
+// cave-8e7q: selection travels as the project's generated id, never its display
+// name. Emitting the name would make presentation text a connection identifier,
+// which is what mangled names containing spaces. The behaviour of the id the
+// caller then resolves is pinned in lib/project-display-name-spaces.test.ts.
+assert.match(src, /onChange: \(id: string\) => void;/, "the picker's selection callback takes an id");
+assert.match(src, /onChange\(project\.id\);/, "picking a project emits its id, not its display name");
 
 console.log("project-picker.test.ts OK");

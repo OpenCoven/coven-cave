@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/globals/surface-reporting.css";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";

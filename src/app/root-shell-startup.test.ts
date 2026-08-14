@@ -33,5 +33,15 @@ assert.doesNotMatch(
   /await migration\.migrateCaveHomeOnce/,
   "Next route registration never waits for reconciliation",
 );
+assert.match(
+  instrumentation,
+  /void mediaJobs\.startResearchMediaJobs\(\)\.catch/,
+  "persisted research-media recovery begins in the background",
+);
+assert.doesNotMatch(
+  instrumentation,
+  /await mediaJobs\.startResearchMediaJobs\(\)/,
+  "Next route registration never waits for media renders",
+);
 
 console.log("root-shell-startup.test.ts: ok");

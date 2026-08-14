@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# coven-cave commit-msg hook
+#
+# Co-authored-by trailers are contributor credit. The repository requires a
+# GitHub-linked numeric no-reply identity so credit reaches the person rather
+# than a local machine, AI model, vendor, or coding harness address.
+set -euo pipefail
+
+message_file=${1:-}
+if [ -z "$message_file" ] || [ ! -f "$message_file" ]; then
+  printf '%s\n' "[commit-msg blocked] expected a commit-message file" >&2
+  exit 1
+fi
+
+trailer_re='^[[:space:]]*[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:'
+human_identity_re='^[[:space:]]*[Cc][Oo]-[Aa][Uu][Tt][Hh][Oo][Rr][Ee][Dd]-[Bb][Yy]:[[:space:]]+.+[[:space:]]+<[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com>[[:space:]]*$'
+
+while IFS= read -r line || [ -n "$line" ]; do
+  if [[ "$line" =~ $trailer_re ]] && ! [[ "$line" =~ $human_identity_re ]]; then
+    printf '%s\n' "[commit-msg blocked] Co-authored-by trailers must credit a person with GitHub's numeric no-reply identity: Full Name <ID+username@users.noreply.github.com>." >&2
+    exit 1
+  fi
+done < "$message_file"

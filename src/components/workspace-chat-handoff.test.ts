@@ -9,7 +9,7 @@ const pendingChatActionLib = await readFile(new URL("../lib/pending-chat-action.
 const pendingCodeOpenLib = await readFile(new URL("../lib/pending-code-open.ts", import.meta.url), "utf8");
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const codeWorkbench = await readFile(new URL("./code-workbench.tsx", import.meta.url), "utf8");
-const codeWorkbenchFiles = await readFile(new URL("./code-workbench-files.tsx", import.meta.url), "utf8");
+const codeReviewRail = await readFile(new URL("./code-review-rail.tsx", import.meta.url), "utf8");
 const workspaceRail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const railFilesPanel = await readFile(new URL("./rail-files-panel.tsx", import.meta.url), "utf8");
 const codeRoom = await readFile(new URL("./role-surfaces/code-room.tsx", import.meta.url), "utf8");
@@ -131,9 +131,13 @@ assert.match(
   /export type PendingCodeOpen =[\s\S]*kind: "files"[\s\S]*sessionId\?: string[\s\S]*kind: "changes"[\s\S]*path: string[\s\S]*sessionId\?: string[\s\S]*nonce: number/,
   "PendingCodeOpen should be defined once in the shared lib and carry the raising session",
 );
+// Pins the SOURCE, not the exact symbol list: the store may grow types (it
+// gained PendingCodeOrigin for the chat→workshop source card, cave-f6mu9) and
+// this should keep guarding "workspace uses the shared store" rather than
+// failing every time the import widens.
 assert.match(
   workspace,
-  /import \{ enqueuePendingCodeOpen, type PendingCodeOpen \} from "@\/lib\/pending-code-open"/,
+  /import \{[^}]*\benqueuePendingCodeOpen\b[^}]*\btype PendingCodeOpen\b[^}]*\} from "@\/lib\/pending-code-open"/,
   "Workspace should import the shared pending code open store",
 );
 assert.doesNotMatch(
@@ -186,25 +190,35 @@ assert.match(
   /openTarget=\{\s*workbenchTarget && \(workbenchTarget\.sessionId \?\? selected\.id\) === selected\.id\s*\? workbenchTarget\.open\s*: undefined\s*\}/,
   "CodeView should hand the open target only to the session it resolved to",
 );
+// cave-0rcku rebuilt the workbench from the design frame: the file tree and
+// the source viewer are permanent columns and review is a rail beside them, so
+// a routed open no longer has to select a tab at all — it selects the FILE (or
+// the rail's Changes tab for a diff) and, on a narrow room, the step that
+// actually shows it. The handoff contract is unchanged; these pins follow it.
 assert.match(
   codeWorkbench,
-  /if \(!openTarget\) return;[\s\S]*setTab\(openTarget\.kind === "changes" \? "diff" : "files"\)/,
-  "the workbench should land a routed open on the Diff or Files tab",
+  /if \(!openTarget\) return;[\s\S]*openPath\(openTarget\.path\);[\s\S]*setFocusLine\(openTarget\.line \?\? null\);/,
+  "a routed file open selects the path and its line in the viewer",
 );
 assert.match(
   codeWorkbench,
-  /<SessionChangesInner[\s\S]*focusPath=\{openTarget\?\.kind === "changes" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "changes" \? openTarget\.nonce : undefined\}/,
-  "the workbench should focus diff targets in its Diff tab",
+  /setRangeLabel\(openTarget\.origin\?\.selectionLabel \?\? null\);/,
+  "the handoff's selected range is shown as provenance, not silently dropped",
 );
 assert.match(
   codeWorkbench,
-  /<LazyFilesTab[\s\S]*focusPath=\{openTarget\?\.kind === "files" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "files" \? openTarget\.nonce : undefined\}/,
-  "the workbench should focus file targets in its Files tab",
+  /setRailTab\("changes"\);\s*setRailOpen\(true\);/,
+  "a routed diff open shows Changes in an OPEN rail — a correct-but-hidden rail reads as a no-op",
 );
 assert.match(
-  codeWorkbenchFiles,
-  /focusPath\?: string \| null[\s\S]*focusNonce\?: number[\s\S]*useEffect\(\(\) => \{[\s\S]*if \(!focusPath\) return;[\s\S]*openPath\(focusPath\)/,
-  "the workbench Files tab should select an externally focused path",
+  codeWorkbench,
+  /<CodeReviewRail[\s\S]*focusPath=\{openTarget\?\.kind === "changes" \? openTarget\.path : undefined\}[\s\S]*focusNonce=\{openTarget\?\.kind === "changes" \? openTarget\.nonce : undefined\}/,
+  "the workbench forwards the diff target to the rail that renders it",
+);
+assert.match(
+  codeReviewRail,
+  /<SessionChangesInner[\s\S]*focusPath=\{focusPath\}[\s\S]*focusNonce=\{focusNonce\}/,
+  "the rail focuses diff targets in its Changes tab",
 );
 
 // cave-z44: Projects hub "Browse files" drills into a project ROOT (no file).

@@ -13,6 +13,8 @@ import {
   OFFICIAL_IOS_INSTALL_URL,
   resolveIosInstallUrl,
   resolveTailscaleBin,
+  serveRouteFailure,
+  shouldAllowMagicDnsFallback,
   tailnetDiscoveryProof,
   tailscaleIpHost,
 } from "./mobile-handoff.ts";
@@ -36,6 +38,48 @@ const status = {
   },
 };
 const signingKey = ["handoff", "mobile", "key"].join("-");
+
+{
+  assert.equal(
+    shouldAllowMagicDnsFallback({
+      serveOk: false,
+      statusOk: false,
+    }),
+    false,
+    "a failed Serve mutation, including macOS CLIError 3, needs a matching route in status before a handoff can succeed",
+  );
+  assert.equal(
+    shouldAllowMagicDnsFallback({
+      serveOk: true,
+      statusOk: false,
+    }),
+    true,
+    "a successful Serve mutation may use MagicDNS when its follow-up status read is unavailable",
+  );
+  assert.equal(
+    shouldAllowMagicDnsFallback({ serveOk: true, statusOk: true }),
+    false,
+    "a readable Serve status remains authoritative",
+  );
+}
+
+{
+  const failure = serveRouteFailure({
+    backendUrl: "http://127.0.0.1:3000",
+    serveError: "serve config unavailable",
+    statusError: "status should not replace Serve stderr",
+  });
+  assert.match(failure.error, /serve config unavailable/);
+  assert.match(failure.error, /Enable HTTPS for this tailnet at https:\/\/login\.tailscale\.com\/admin\/dns/);
+  assert.equal(failure.stderr, "serve config unavailable");
+
+  const missingRoute = serveRouteFailure({
+    backendUrl: "http://127.0.0.1:3000",
+    routeReason: "tailscale serve route not found for http://127.0.0.1:3000",
+  });
+  assert.match(missingRoute.error, /tailscale serve route not found/);
+  assert.equal(missingRoute.stderr, undefined);
+}
 
 {
   const url = findServeUrl(status, "http://127.0.0.1:3000");
@@ -174,6 +218,54 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
     },
   );
   assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: {},
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: false,
+    }),
+    {
+      ok: false,
+      reason: "tailscale serve route not found for http://127.0.0.1:3000",
+    },
+    "a readable empty Serve status must not promote a bare MagicDNS name to a live route",
+  );
+  const linuxMismatchedServeStatus = {
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://127.0.0.1:4242" } },
+      },
+    },
+  };
+  assert.deepEqual(
+    tailnetDiscoveryProof({
+      selfStatus: self,
+      serveStatus: linuxMismatchedServeStatus,
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: false,
+    }),
+    {
+      ok: false,
+      reason: "tailscale serve route not found for http://127.0.0.1:3000",
+    },
+    "a Linux Serve status for another loopback backend must not promote MagicDNS to a live route",
+  );
+  assert.deepEqual(
+    nativeAppDiscoveryProof({
+      selfStatus: { Self: { DNSName: "cave.tailnet.example.ts.net.", TailscaleIPs: ["100.101.102.103"] } },
+      serveStatus: {},
+      backendUrl: "http://127.0.0.1:3000",
+      allowMagicDnsFallback: false,
+    }),
+    {
+      ok: true,
+      host: "100.101.102.103:3000",
+      serveUrl: "http://100.101.102.103:3000/",
+      source: "tailscale-ip-http",
+    },
+    "the explicit HTTP fallback must use the Tailscale IP even when MagicDNS exists",
+  );
+  assert.deepEqual(
     tailnetDiscoveryProof({ selfStatus: {}, serveStatus: {}, backendUrl: "http://127.0.0.1:3000" }),
     {
       ok: false,
@@ -256,6 +348,16 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 
   const refresh = read("../app/api/mobile-token/refresh/route.ts");
   assert.match(refresh, /await recordMobileSeen\(\);/, "a successful token refresh records the paired-device beat");
+  assert.match(
+    refresh,
+    /const PRIVATE_NO_STORE_HEADERS = \{\s*"Cache-Control": "private, no-store",?\s*\}/,
+    "token refresh declares the private no-store response boundary",
+  );
+  assert.equal(
+    refresh.match(/headers: PRIVATE_NO_STORE_HEADERS/g)?.length,
+    2,
+    "token refresh applies private no-store headers to success and failure responses",
+  );
 
   const modal = read("../components/mobile-handoff-modal.tsx");
   assert.match(modal, /chatId \? \{ action: "app-start", chatId \} : \{ action: "app-start" \}/, "the modal forwards its chatId to app-start");

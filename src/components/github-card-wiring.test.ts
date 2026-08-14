@@ -7,11 +7,12 @@ import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("./github-card.tsx", import.meta.url), "utf8");
+const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
 
 // chat-view: imports and render paths.
 assert.match(
   chatView,
-  /import \{ sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl \} from "@\/lib\/github-blocks"/,
+  /import \{ sliceGitHubBlocks, unfurlUserMessage, descriptorUrl \} from "@\/lib\/github-blocks"/,
   "chat-view imports the github-blocks lib",
 );
 assert.match(chatView, /import \{ GitHubCard \} from "@\/components\/github-card"/, "chat-view imports GitHubCard");
@@ -19,8 +20,8 @@ assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(splitTextForArtifacts\(visibleWithGh, artifactCtx\), onOpenUrl, ghFamiliar\)/,
-  "settled path composes github splitting after artifact splitting on the marker-bearing text",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
+  "settled path keeps GitHub splitting after artifacts while image groups remain intact across both boundaries",
 );
 assert.match(
   chatView,
@@ -29,8 +30,23 @@ assert.match(
 );
 assert.match(
   chatView,
-  /turn\.pending \? stripGitHubMarkers\(reasoningSplit\.visible\)/,
-  "streaming path strips markers so raw tags never flash",
+  /extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
+  "both pending and settled turns render through the shared marker pipeline",
+);
+assert.match(
+  renderedText,
+  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]*const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]*const attentionSplit = extractChatAttentionMarker\(autoStatusSplit\.visible,[\s\S]*const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);/,
+  "the shared projection resolves skill, auto-status, attention, then next paths before card markers",
+);
+assert.match(
+  renderedText,
+  /visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
+  "GitHub/image markers strip unconditionally and LAST — after skill, auto-status, attention, and next-path extraction have all seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
+);
+assert.doesNotMatch(
+  renderedText,
+  /pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
+  "GitHub/image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(
   chatView,
@@ -86,6 +102,10 @@ assert.match(card, /Workflow run failed/, "hydrated run glyph reflects a fail co
 // composer cockpit ("Final Card Components.dc.html" §01). The write routes are
 // unchanged — only where they are called from moved.
 const composer = readFileSync(new URL("./github-card-composer.tsx", import.meta.url), "utf8");
+// The composer's four accordion sections are presentation-only child files
+// (src/components/github-card/*.tsx) statically imported into the same chunk —
+// all state, fetches and mutation handlers stay in the composer above.
+const familiarSection = readFileSync(new URL("./github-card/familiar-section.tsx", import.meta.url), "utf8");
 // The composer MUST stay lazy. chat-view sits in the `/` startup graph, so a
 // static import drags gh-card-composer.css into the home first load for every
 // session — that is 8 KB over the CSS budget and fails `Frontend build`.
@@ -154,7 +174,7 @@ assert.match(
 );
 
 // The familiar drafts, the human sends.
-assert.match(composer, /never auto-sent/, "the draft strip says out loud that it is not sent");
+assert.match(familiarSection, /never auto-sent/, "the draft strip says out loud that it is not sent");
 
 // navigator.clipboard is undefined in the packaged Tauri webview, which is the
 // whole reason @/lib/clipboard exists. A direct call there no-ops while the
@@ -188,5 +208,36 @@ assert.match(actionCard, /const tier = classifyGitHubAction\(action\.kind\);/, "
 assert.match(actionCard, /agents propose, humans dispose/i, "proposal cards document the no-auto-fire rule");
 assert.doesNotMatch(actionCard, /useEffect\([^)]*fireGitHubAction/s, "no effect ever auto-fires a proposal — taps only");
 assert.match(chatView, /<GitHubActionCard action=\{p\.action\} \/>/, "assistant turns render proposal cards from action pieces");
+
+// ── reaction counts ride the item response; the list hydrates lazily ──────
+// (cave-6p628: one fewer GitHub request per mounted card)
+const itemRoute = readFileSync(new URL("../app/api/github/item/route.ts", import.meta.url), "utf8");
+assert.match(
+  itemRoute,
+  /reactionCounts: reactionCounts\(d\.reactions\)/,
+  "the item route folds per-content reaction counts from the payload GitHub already returns",
+);
+assert.match(card, /reactionCounts: item\.reactionCounts \?\? \{\}/, "the card threads counts into the composer");
+const composerSrc = readFileSync(new URL("./github-card-composer.tsx", import.meta.url), "utf8");
+assert.match(
+  composerSrc,
+  /useState<Reaction\[\]>\(\(\) =>\s*Object\.keys\(REACTION_EMOJI\)/,
+  "the composer seeds chips from the item's counts, not a fetch",
+);
+assert.doesNotMatch(
+  composerSrc,
+  /useEffect\([^}]*\/api\/github\/reactions/s,
+  "no mount-time reactions request — the list is only fetched on interaction",
+);
+assert.match(
+  composerSrc,
+  /onPointerEnter=\{hydrateReactionsOnce\}/,
+  "first pointer contact with a chip hydrates the viewer's own-reaction state",
+);
+assert.match(
+  composerSrc,
+  /if \(!reactionsHydratedRef\.current\) \{[\s\S]{0,400}await rereadReactions\(\)/,
+  "a toggle that beats hydration fetches the list first — never guesses add-vs-remove",
+);
 
 console.log("github chat-card wiring: ok");

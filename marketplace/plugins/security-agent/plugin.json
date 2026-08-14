@@ -21,6 +21,7 @@
     "write_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/security-agent",
   "x-coven": {
     "displayName": "Security Agent",

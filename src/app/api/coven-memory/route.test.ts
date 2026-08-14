@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -12,6 +13,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 
 const MEMORY_ID = "11111111-1111-5111-8111-111111111111";
+const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";
 const TEST_ROOT = mkdtempSync(path.join(tmpdir(), "coven-memory-routes-"));
 const COVEN_HOME = path.join(TEST_ROOT, "coven");
 const CAVE_HOME = path.join(TEST_ROOT, "cave");
@@ -23,6 +25,19 @@ const ORIGINAL_ENV = {
   COVEN_SOCKET: process.env.COVEN_SOCKET,
   COVEN_CAVE_AUTH_TOKEN: process.env.COVEN_CAVE_AUTH_TOKEN,
 };
+
+function readFixture(name: string): unknown {
+  const fixturePath = path.resolve(
+    import.meta.dirname,
+    "../../../../tests/fixtures/mobile-canonical-memory-v1",
+    name,
+  );
+  return JSON.parse(readFileSync(fixturePath, "utf8"));
+}
+
+const listSuccessFixture = readFixture("cave-list-success.json");
+const overviewSuccessFixture = readFixture("cave-overview-success.json");
+const detailSuccessFixture = readFixture("cave-detail-success.json");
 
 mkdirSync(COVEN_HOME, { recursive: true });
 mkdirSync(CAVE_HOME, { recursive: true });
@@ -218,12 +233,122 @@ async function expectSuccess(
   return body;
 }
 
+test("mobile canonical-memory routes require a verified mobile request before daemon access", async () => {
+  const [listModule, overviewModule, detailModule] = await Promise.all([
+    import("../mobile/coven-memory/route.ts"),
+    import("../mobile/coven-memory/overview/route.ts"),
+    import("../mobile/coven-memory/[id]/route.ts"),
+  ]);
+  const httpMethods = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+  ];
+  for (const routeModule of [listModule, overviewModule, detailModule]) {
+    assert.equal(routeModule.dynamic, "force-dynamic");
+    assert.equal(routeModule.runtime, "nodejs");
+    assert.deepEqual(
+      Object.keys(routeModule)
+        .filter((name) => httpMethods.includes(name))
+        .sort(),
+      ["GET", "HEAD", "OPTIONS", "POST"],
+    );
+  }
+
+  const routes: Route[] = [
+    {
+      name: "mobile list",
+      pathname: "/api/mobile/coven-memory",
+      call: (req) => listModule.GET(req),
+    },
+    {
+      name: "mobile overview",
+      pathname: "/api/mobile/coven-memory/overview",
+      call: (req) => overviewModule.GET(req),
+    },
+    {
+      name: "mobile detail",
+      pathname: `/api/mobile/coven-memory/${MEMORY_ID}`,
+      call: (req, id = MEMORY_ID) =>
+        detailModule.GET(req, { params: Promise.resolve({ id }) }),
+    },
+  ];
+
+  let before = socketPaths.length;
+  for (const route of routes) {
+    const response = await route.call(request(route.pathname));
+    assert.equal(
+      response.status,
+      401,
+      `${route.name} must require verified mobile access`,
+    );
+    assert.deepEqual(await responseJson(response), {
+      ok: false,
+      code: "mobile_access_required",
+    });
+  }
+  assert.equal(
+    socketPaths.length,
+    before,
+    "unstamped mobile requests must perform zero daemon reads",
+  );
+
+  before = socketPaths.length;
+  // Direct route tests run below `proxy.ts`, so they intentionally set its
+  // trusted marker. `project-permission-routes.test.ts` pins spoof resistance.
+  const [listBody, overviewBody, detailBody] = await Promise.all(
+    routes.map((route) =>
+      expectSuccess(route, { [MOBILE_ACCESS_HEADER]: "1" }),
+    ),
+  );
+  assert.deepEqual(socketPaths.slice(before).sort(), [
+    "/api/v1/memory",
+    `/api/v1/memory/${MEMORY_ID}`,
+    "/api/v1/memory/overview",
+  ].sort());
+  assert.deepEqual(listBody.entries[0].source, {
+    kind: "coven-origin",
+    label: "Coven origin",
+  });
+  assert.equal(overviewBody.overview.totals.entries, 1);
+  assert.equal(detailBody.entry.id, MEMORY_ID);
+  assert.deepEqual(listBody, listSuccessFixture);
+  assert.deepEqual(overviewBody, overviewSuccessFixture);
+  assert.deepEqual(detailBody, detailSuccessFixture);
+
+  before = socketPaths.length;
+  for (const [routeModule, pathname] of [
+    [listModule, "/api/mobile/coven-memory"],
+    [overviewModule, "/api/mobile/coven-memory/overview"],
+    [detailModule, `/api/mobile/coven-memory/${MEMORY_ID}`],
+  ] as const) {
+    for (const method of ["POST", "HEAD", "OPTIONS"] as const) {
+      const response = await routeModule[method](request(pathname));
+      assert.equal(response.status, 405, `${method} ${pathname} must be rejected`);
+      assert.equal(response.headers.get("allow"), "GET");
+      assert.deepEqual(await responseJson(response), {
+        ok: false,
+        code: "method_not_allowed",
+      });
+    }
+  }
+  assert.equal(
+    socketPaths.length,
+    before,
+    "mobile read-only route rejection must perform zero daemon reads",
+  );
+});
+
 test("all canonical-memory routes enforce the local boundary before config or transport", async () => {
   const listModule = await import("./route.ts");
   const firstSocketCount = socketPaths.length;
   const firstDenied = await listModule.GET(
     request("/api/coven-memory", {
-      "x-coven-cave-mobile-access": "1",
+      [MOBILE_ACCESS_HEADER]: "1",
     }),
   );
   assert.equal(firstDenied.status, 403);
@@ -294,11 +419,11 @@ test("all canonical-memory routes enforce the local boundary before config or tr
   ];
 
   for (const route of routes) {
-    await expectDenied(route, { "x-coven-cave-mobile-access": "1" });
+    await expectDenied(route, { [MOBILE_ACCESS_HEADER]: "1" });
   }
   await expectDenied(
     routes[2],
-    { "x-coven-cave-mobile-access": "1" },
+    { [MOBILE_ACCESS_HEADER]: "1" },
     "../fixture-note.md",
   );
 

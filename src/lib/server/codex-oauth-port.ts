@@ -69,6 +69,7 @@ export async function pidHoldingPort(port: number): Promise<number | null> {
   let stdout: string;
   try {
     const result = await execFileAsync("lsof", ["-ti", `tcp:${port}`], {
+      windowsHide: true,
       timeout: 2000,
     });
     stdout = result.stdout;
@@ -104,7 +105,7 @@ export async function describePid(pid: number): Promise<string> {
     const { stdout } = await execFileAsync(
       "ps",
       ["-o", "command=", "-p", String(pid)],
-      { timeout: 2000 },
+      { windowsHide: true, timeout: 2000 },
     );
     return stdout.trim();
   } catch {

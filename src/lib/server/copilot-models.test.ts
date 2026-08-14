@@ -234,6 +234,30 @@ assert.deepEqual(coalescedA, coalescedB);
 assert.equal(coalescedSpawns, 1, "concurrent model requests share one authenticated RPC");
 
 clearCopilotModelCache();
+let credential = "token-a";
+let credentialScopedSpawns = 0;
+const credentialDependencies = {
+  scopedEnv: () => ({
+    PATH: "/copilot",
+    COPILOT_GITHUB_TOKEN: credential,
+  }),
+  resolveRuntimeLaunch: readyLaunch as never,
+  spawnImpl: rpcSpawn({
+    models: [{ id: "claude-opus-5", name: "Claude Opus 5" }],
+    onSpawn: () => { credentialScopedSpawns += 1; },
+  }),
+};
+await listCopilotModels("credential-scope", credentialDependencies);
+await listCopilotModels("credential-scope", credentialDependencies);
+credential = "token-b";
+await listCopilotModels("credential-scope", credentialDependencies);
+assert.equal(
+  credentialScopedSpawns,
+  2,
+  "the same familiar is rediscovered after its scoped provider environment changes",
+);
+
+clearCopilotModelCache();
 let capacitySpawns = 0;
 const capacitySpawn = rpcSpawn({
   models: [{ id: "claude-opus-5", name: "Claude Opus 5" }],

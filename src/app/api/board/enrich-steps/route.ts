@@ -1,4 +1,8 @@
-import { loadBoard, updateCard } from "@/lib/cave-board";
+import {
+  loadBoard,
+  OrchestrationValidationError,
+  updateCard,
+} from "@/lib/cave-board";
 import {
   LIFECYCLES,
   PRIORITIES,
@@ -12,12 +16,8 @@ import {
 } from "@/lib/cave-board-types";
 import { normalizeTaskGitHubLinks } from "@/lib/task-github";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
-import { covenLaunchCommand } from "@/lib/coven-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { familiarWorkspace } from "@/lib/coven-paths";
+import { runCovenOneShot, resolveFamiliarWorkspace } from "@/lib/server/coven-oneshot";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
-import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
 import { stripAnsi } from "@/lib/ansi";
 import { resolveGitHubToken } from "@/lib/github-token";
 
@@ -201,67 +201,7 @@ async function readEnrichRequestBody(req: Request): Promise<{ familiarId: string
   }
 }
 
-async function resolveFamiliarWorkspace(
-  familiarId: string,
-): Promise<string | undefined> {
-  if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
-  const candidate = await familiarWorkspace(familiarId);
-  try {
-    const entry = await stat(candidate);
-    return entry.isDirectory() ? candidate : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
-// Run Coven CLI and collect full stdout output as a string.
-function runCoven(
-  args: string[],
-  signal: AbortSignal,
-  familiarWorkspacePath?: string,
-  familiarId?: string,
-): Promise<string> {
-  return new Promise((resolve) => {
-    try {
-      let out = "";
-      let settled = false;
-      const { command, fixedArgs } = covenLaunchCommand();
-      const child = spawn(command, [...fixedArgs, ...args], {
-        cwd: familiarWorkspacePath ?? process.cwd(),
-        stdio: ["ignore", "pipe", "pipe"],
-        env: harnessSpawnEnv(familiarId),
-      });
-
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        signal.removeEventListener("abort", onAbort);
-        resolve(out);
-      };
-      const onAbort = () => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          /* ignore */
-        }
-      };
-
-      if (signal.aborted) onAbort();
-      signal.addEventListener("abort", onAbort, { once: true });
-
-      child.stdout.on("data", (d: Buffer) => {
-        out += d.toString("utf8");
-      });
-      child.stderr.on("data", (d: Buffer) => {
-        out += d.toString("utf8");
-      });
-      child.on("close", finish);
-      child.on("error", finish);
-    } catch {
-      resolve("");
-    }
-  });
-}
 
 function assistantTextFromOutput(raw: string): string {
   const clean = stripAnsi(raw);
@@ -583,7 +523,7 @@ export async function POST(req: Request) {
         args.push("--", enrichPrompt(cardForPrompt));
 
         const workspace = await resolveFamiliarWorkspace(familiarId);
-        const raw = await runCoven(args, req.signal, workspace, familiarId);
+        const raw = await runCovenOneShot(args, req.signal, workspace, familiarId);
         if (req.signal.aborted) break;
         const enrichment = parseTaskEnrichment(raw);
         const now = new Date().toISOString();
@@ -598,7 +538,47 @@ export async function POST(req: Request) {
             push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
             continue;
           }
-          const updated = await updateCard(card.id, {
+          let updated;
+          try {
+            updated = await updateCard(card.id, {
+              notes: normalized.notes,
+              steps: normalized.steps,
+              status: normalized.status,
+              lifecycle: normalized.lifecycle,
+              priority: normalized.priority,
+              startDate: normalized.startDate,
+              endDate: normalized.endDate,
+              links: normalized.links,
+              github: normalized.github,
+              sessionId: normalized.sessionId,
+              needsHuman: normalized.needsHuman,
+              lifecycleReason: normalized.lifecycleReason,
+              lifecycleAt: normalized.lifecycleAt,
+            }, { automated: true });
+          } catch (error) {
+            if (error instanceof OrchestrationValidationError) {
+              push({
+                kind: "skip",
+                cardId: card.id,
+                reason: "orchestration_invalid",
+                errors: error.errors,
+              });
+              continue;
+            }
+            throw error;
+          }
+          if (!updated) {
+            push({ kind: "skip", cardId: card.id, reason: "card_missing" });
+            continue;
+          }
+          push({ kind: "done", cardId: card.id, count: normalized.steps.length });
+          continue;
+        }
+
+        const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
+        let updated;
+        try {
+          updated = await updateCard(card.id, {
             notes: normalized.notes,
             steps: normalized.steps,
             status: normalized.status,
@@ -612,31 +592,19 @@ export async function POST(req: Request) {
             needsHuman: normalized.needsHuman,
             lifecycleReason: normalized.lifecycleReason,
             lifecycleAt: normalized.lifecycleAt,
-          });
-          if (!updated) {
-            push({ kind: "skip", cardId: card.id, reason: "card_missing" });
+          }, { automated: true });
+        } catch (error) {
+          if (error instanceof OrchestrationValidationError) {
+            push({
+              kind: "skip",
+              cardId: card.id,
+              reason: "orchestration_invalid",
+              errors: error.errors,
+            });
             continue;
           }
-          push({ kind: "done", cardId: card.id, count: normalized.steps.length });
-          continue;
+          throw error;
         }
-
-        const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
-        const updated = await updateCard(card.id, {
-          notes: normalized.notes,
-          steps: normalized.steps,
-          status: normalized.status,
-          lifecycle: normalized.lifecycle,
-          priority: normalized.priority,
-          startDate: normalized.startDate,
-          endDate: normalized.endDate,
-          links: normalized.links,
-          github: normalized.github,
-          sessionId: normalized.sessionId,
-          needsHuman: normalized.needsHuman,
-          lifecycleReason: normalized.lifecycleReason,
-          lifecycleAt: normalized.lifecycleAt,
-        });
         if (!updated) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
           continue;

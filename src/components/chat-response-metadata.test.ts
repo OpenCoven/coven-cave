@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { formatRuntime } from "../lib/chat-response-metadata.ts";
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
 const chatModels = await readFile(new URL("../app/api/chat/send/chat-send-models.ts", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const chatTurnState = await readFile(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
@@ -55,7 +56,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /modelOverrideScope\?: "next-message" \| "session"/,
+  /modelOverrideScope\?: "next-message" \| "session" \| "runtime-default"/,
   "SendBody should distinguish next-message and session-scoped model intent",
 );
 assert.match(
@@ -77,6 +78,17 @@ assert.match(
   chatRoute,
   /modelApplicationState:/,
   "Response metadata should carry application state for honest UI rendering",
+);
+assert.match(
+  conversationRoute,
+  /provider payloads, credentials, and secret-bearing URLs/,
+  "conversation writes retain only bounded response facts",
+);
+assert.match(conversationRoute, /function normalizeResponseMetadata\(/, "conversation writes normalize response metadata");
+assert.match(
+  conversationRoute,
+  /const responseMetadata = value\.role === "user"[\s\S]*normalizeResponseMetadata\(value\.responseMetadata\)/,
+  "conversation restore writes preserve only harness-owned model application metadata",
 );
 assert.doesNotMatch(
   chatRoute,
@@ -119,10 +131,15 @@ assert.doesNotMatch(
   "The misleading 'model:'/'runtime:' label helpers should be gone — openclaw-local is not a model and the runtime is a cwd",
 );
 
-assert.doesNotMatch(
+assert.match(
   chatView,
-  /<ResponseMetadataText metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows should not duplicate model/runtime metadata inline; response metadata stays stored for debug/session surfaces",
+  /<ResponseControlStatus metadata=\{turn\.responseMetadata\} \/>/,
+  "Assistant turn rows render labeled requested/applied/rejected control state",
+);
+assert.match(
+  chatView,
+  /function ResponseModelStatus\([\s\S]*?Requested model:[\s\S]*?Applied model:[\s\S]*?<ResponseModelStatus metadata=\{turn\.responseMetadata\} \/>/,
+  "Assistant turn rows render requested, forwarded, and effective model state",
 );
 
 assert.match(

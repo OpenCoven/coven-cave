@@ -5,10 +5,11 @@ import "@/styles/home-dashboard.css";
 
 // ── ChatNewDashboard ──────────────────────────────────────────────────────────
 // The work-led dashboard (launcher 3a), relocated from Home to the brand-new
-// chat view, then simplified: one no-scroll open-work board (greeting +
-// All/Needs-you filter · capped open work · capped recent threads). The old
-// context rail (project · quick start · task arming · pick up) is retired —
-// ChatView's composer already owns the project picker and prompt snippets.
+// chat view, then rebuilt to Chat.dc.html option 2b: one no-scroll launcher
+// (greeting · a band per source of work, each a strip of tiles). The All/
+// Needs-you filter tabs are gone — the bands ARE the split, by source rather
+// than by state. The old context rail (project · quick start · task arming) is
+// retired — ChatView's composer already owns the project picker and snippets.
 // Home stays the quiet hearth; THIS surface greets a new chat, where the work
 // you resume lands anyway. ChatView supplies the chrome above and the real
 // composer below, so the component is body-only.
@@ -21,37 +22,37 @@ import "@/styles/home-dashboard.css";
 //   • cave:navigate-mode      (workspace switches surface: Tasks, Schedules)
 //   • cave:agents-open-session (ChatSurface routes into an existing session)
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { InboxItem } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
+import type { InboxItem } from "@/lib/cave-inbox";
 import { groupInboxFeed } from "@/lib/inbox-feed";
 import { greetingForHour } from "@/lib/home-greeting";
 import { relativeAge } from "@/lib/rss";
 import { filterVisibleChatSessions } from "@/lib/chat-projects";
-import { startFromGroup } from "@/lib/chat-start-from";
+import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat-start-from";
+import {
+  ChatStartFromBands,
+  type StartFromBand,
+  type StartFromTile,
+} from "@/components/chat-start-from-bands";
 import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
 import { useQueueFollowUps } from "@/lib/use-queue-followups";
 import { reviewRequestLabel } from "@/lib/chat-review-requests";
 import { useReviewRequests } from "@/lib/use-review-requests";
 import { useDashboardBoard } from "@/components/home/use-dashboard-board";
 import {
-  OPEN_WORK_FILTERS,
-  OPEN_WORK_FILTER_LABEL,
   filterFamiliarOwned,
   filterOpenWork,
-  openWorkCounts,
-  openWorkPriorityLabel,
   openWorkRows,
   runningTimeoutBadge,
   type OpenWorkFilter,
 } from "@/components/home/dashboard-open-work";
-import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 
 /** Hard caps that keep the no-scroll board inside the pane — the overflow
- *  stays reachable through the "View all in Tasks →" section link. */
+ *  stays reachable through each band's trailing "All in …" tile. */
 const OPEN_WORK_ROWS_CAP = 5;
 const RECENT_THREADS_CAP = 3;
 /** The launcher shows the top parked follow-ups; the Queue surface has the rest. */
@@ -134,11 +135,25 @@ const markInboxItemRead = (id: string) => {
 export function ChatNewDashboard({
   familiar,
   sessions = [],
+  composer = null,
+  onSaveDefaults,
+  defaultsSaved = false,
   modelId = null,
 }: {
   familiar: Familiar;
   /** Workspace-owned session list; powers Recent threads without a fetch. */
   sessions?: SessionRow[];
+  /** ChatView's own composer, rendered inline under the hero (Chat.dc.html 2b
+   *  puts the brief there and has no dock). Handed down rather than rebuilt so
+   *  there is exactly one draft, one project/model/branch selection and one
+   *  enhance flow — a second composer would fork all of them. */
+  composer?: ReactNode;
+  /** Pins the current project as the new-session default (2b's "Save as
+   *  default"). Absent when the surface has nothing to pin. */
+  onSaveDefaults?: () => void;
+  /** True when the saved default already matches the current selection — the
+   *  control reports state instead of inviting a no-op click. */
+  defaultsSaved?: boolean;
   /** Effective model for the board-head meta row (quiet text, not a badge). */
   modelId?: string | null;
 }) {
@@ -194,8 +209,12 @@ export function ChatNewDashboard({
   const queueFollowUps = useQueueFollowUps(familiar.id);
   // Reviews (cave-umgkh): PRs waiting on you. Absent without a GitHub token.
   const reviews = useReviewRequests();
-  const [workFilter, setWorkFilter] = useState<OpenWorkFilter>("all");
-  const workCounts = useMemo(() => openWorkCounts(openWork), [openWork]);
+  // Chat.dc.html 2b replaced the All/Needs-you filter tabs with one band per
+  // SOURCE of work, so the page no longer filters a single merged list. The
+  // filter helper stays in the call because the cap must still apply after it:
+  // "all" is now the only tab, and the tile badge carries what the "Needs you"
+  // tab used to isolate (an inbox row's badge reads `inbox`/`urgent`).
+  const workFilter: OpenWorkFilter = "all";
   // Capped so the no-scroll board fits the pane; "View all in Tasks →" carries
   // the overflow.
   const visibleWork = useMemo(
@@ -226,6 +245,89 @@ export function ChatNewDashboard({
   const reviewRows = reviews.rows.slice(0, REVIEW_CAP);
   const reviewsGroup = startFromGroup("reviews", reviewRows.length, reviews.rows.length);
 
+  // ── Bands (Chat.dc.html 2b) ───────────────────────────────────────────────
+  // One band per source, in the design's order: the threads you were just in,
+  // then the board, then what you parked, then what waits on your review. A
+  // source with nothing to offer contributes no band — this page never renders
+  // chrome around an empty strip.
+  const bands: StartFromBand[] = [];
+
+  if (recentThreads.length > 0) {
+    bands.push({
+      meta: chatsGroup,
+      tiles: recentThreads.map<StartFromTile>((s) => ({
+        id: s.id,
+        title: s.title ?? "Untitled thread",
+        badge: "resume",
+        sub: startFromSub([relativeAge(s.updated_at, nowMs)]),
+        ariaLabel: `Resume '${s.title}'`,
+        onPick: () => openSession(s.id, s.familiarId ?? null),
+      })),
+    });
+  }
+
+  if (visibleWork.length > 0) {
+    bands.push({
+      meta: tasksGroup,
+      tiles: visibleWork.map<StartFromTile>((row) => {
+        // One token, never two: the loud priority when there is one, else the
+        // column the card sits in — the same rule the zero-turn page uses.
+        const badge = taskTileBadge({ status: row.kind, priority: row.priority });
+        return {
+          id: row.id,
+          title: row.title,
+          badge,
+          // The sub-line says what the badge didn't: the column when the badge
+          // spent itself on a priority, then how long it has been running and
+          // whether it is waiting on a human.
+          sub: startFromSub([
+            badge === row.kind ? null : row.kind,
+            row.kind === "running"
+              ? runningTimeoutBadge(row.runningSince, row.timeoutMs, nowMs)
+              : null,
+            row.needsHuman ? "needs you" : null,
+          ]),
+          ariaLabel: `Open '${row.title}' — ${row.kind}, ${row.priority} priority`,
+          onPick: row.onOpen,
+        };
+      }),
+      viewAll: {
+        label: scopedNeedsYou.length > 0 ? "All in Rituals" : "All in Tasks",
+        onOpen: () => navigateMode(scopedNeedsYou.length > 0 ? "inbox" : "board"),
+      },
+    });
+  }
+
+  if (queueRows.length > 0) {
+    bands.push({
+      meta: queueGroup,
+      tiles: queueRows.map<StartFromTile>((row) => ({
+        id: row.id,
+        title: row.title,
+        badge: row.updatedAt ? relativeAge(row.updatedAt, nowMs) : row.id,
+        sub: startFromSub([row.id, "queued"]),
+        ariaLabel: queueFollowUpLabel(row),
+        hint: `Pick up ${row.id}`,
+        onPick: () => startFollowUp(familiar.id, row.id, row.title),
+      })),
+    });
+  }
+
+  if (reviewRows.length > 0) {
+    bands.push({
+      meta: reviewsGroup,
+      tiles: reviewRows.map<StartFromTile>((row) => ({
+        id: row.id,
+        title: row.title,
+        badge: row.badge,
+        sub: startFromSub([row.need]),
+        ariaLabel: reviewRequestLabel(row),
+        hint: `Review ${row.title}`,
+        onPick: () => startReview(familiar.id, row.url),
+      })),
+    });
+  }
+
   return (
     <div className="home-dash__body home-dash--embed select-none" data-testid="chat-new-dashboard">
 
@@ -241,11 +343,22 @@ export function ChatNewDashboard({
                 <span className="home-dash__eyebrow-dot" aria-hidden />
                 {`New session · ${familiar.display_name}${greeting ? ` · ${greeting}` : ""}`}
               </p>
+              {/* One serif line — the surface's single identity moment. It
+                  states what the page is FOR rather than counting what is
+                  open; the bands below do the counting. */}
               <h1 className="home-dash__headline">
-                {openWork.length > 0
-                  ? `${openWork.length} thread${openWork.length === 1 ? "" : "s"} open.`
-                  : "A clean slate — what shall we conjure?"}
+                {bands.length > 0 ? "What should we begin?" : "A clean slate — what shall we conjure?"}
               </h1>
+              {/* "Chat Session - Prototype.dc.html" (cave-n3jg2): one line under
+                  the headline naming the two ways off this page, in the order
+                  the surface presents them — the brief below, then the launcher
+                  under it. Without it the hero asks a question and offers no
+                  reading of what to do next. */}
+              <p className="home-dash__lede">
+                {bands.length > 0
+                  ? "Describe the work below, or start from something you already ran."
+                  : "Describe the work below and we\u2019ll begin."}
+              </p>
               {/* Identity meta — the roster's familiar.harness beside the
                   effective model, echoing the retired chrome's name·model. */}
               <p className="home-dash__meta">
@@ -253,191 +366,49 @@ export function ChatNewDashboard({
                 {modelId ? <span>{modelId}</span> : null}
               </p>
             </div>
-            <div className="home-dash__filters" role="tablist" aria-label="Filter open work">
-              {OPEN_WORK_FILTERS.map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  role="tab"
-                  aria-selected={workFilter === f}
-                  className={`home-dash__filter${workFilter === f ? " is-active" : ""}`}
-                  onClick={() => setWorkFilter(f)}
-                >
-                  {OPEN_WORK_FILTER_LABEL[f]}
-                  {workCounts[f] > 0 ? (
-                    <span className="home-dash__filter-count">{workCounts[f]}</span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
           </div>
+
+          {/* Chat.dc.html 2b: the brief sits directly under the hero, above
+              the launcher — you state the work first, and the bands below are
+              the shortcut for when it already exists somewhere. */}
+          {composer ? (
+            <div className="home-dash__composer">
+              {composer}
+              {/* 2b trails the config row with these two. The hint states the
+                  binding Cave actually has: the composer sends on plain Enter
+                  (Shift+Enter newlines), so labelling it ⌘⏎ — as the mock does —
+                  would teach a modifier nobody needs. */}
+              <div className="home-dash__composer-trail">
+                {onSaveDefaults ? (
+                  <button
+                    type="button"
+                    className="home-dash__save-default"
+                    onClick={onSaveDefaults}
+                    disabled={defaultsSaved}
+                    title={
+                      defaultsSaved
+                        ? "New sessions already start in this project"
+                        : "Start new sessions in this project"
+                    }
+                  >
+                    <Icon name="ph:sliders-horizontal" width={12} height={12} aria-hidden />
+                    {defaultsSaved ? "Saved as default" : "Save as default"}
+                  </button>
+                ) : null}
+                <span className="home-dash__start-hint">
+                  <kbd>⏎</kbd> start
+                </span>
+              </div>
+            </div>
+          ) : null}
 
           {/* Chat.dc.html 2b: everything below is a launcher over work that
-              already exists — one band, then a group per source. */}
-          <div className="home-dash__startfrom">
-            <span className="home-dash__startfrom-label">Start from</span>
-            <span className="home-dash__startfrom-rule" aria-hidden />
-          </div>
-
-          {/* Tasks */}
-          <section className="home-dash__section" aria-label="Open work">
-            <div className="home-dash__section-head">
-              <div className="home-dash__section-label">
-                {tasksGroup.label}
-                <span className="home-dash__section-count">{tasksGroup.count}</span>
-              </div>
-              {workFilter === "inbox" && scopedNeedsYou.length > 0 ? (
-                <button
-                  type="button"
-                  className="home-dash__section-link"
-                  onClick={() => navigateMode("inbox")}
-                >
-                  View all in Rituals →
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="home-dash__section-link"
-                  onClick={() => navigateMode("board")}
-                >
-                  View all in Tasks →
-                </button>
-              )}
-            </div>
-            <div className="home-dash__work">
-              {visibleWork.length === 0 ? (
-                <div className="home-dash__work-empty">
-                  {openWork.length === 0
-                    ? "No open work — start something below."
-                    : `Nothing ${OPEN_WORK_FILTER_LABEL[workFilter].toLowerCase()} right now.`}
-                </div>
-              ) : (
-                visibleWork.map((row) => {
-                  const priority = openWorkPriorityLabel(row.priority);
-                  const badge =
-                    row.kind === "running"
-                      ? runningTimeoutBadge(row.runningSince, row.timeoutMs, nowMs)
-                      : null;
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      className="home-dash__work-row"
-                      onClick={row.onOpen}
-                      title={`Open “${row.title}”`}
-                    >
-                      {row.kind === "running" ? (
-                        <LifecycleBadge lifecycle="running" needsHuman={row.needsHuman} />
-                      ) : (
-                        <span className="home-dash__work-chip" data-kind={row.kind}>
-                          {row.kind}
-                        </span>
-                      )}
-                      <span className="home-dash__work-title">{row.title}</span>
-                      {badge ? <span className="home-dash__work-meta">{badge}</span> : null}
-                      {priority ? (
-                        <span className="home-dash__work-priority" data-priority={priority}>
-                          {priority}
-                        </span>
-                      ) : null}
-                      {/* Visual CTA only — the whole row is the button, so
-                          this stays a non-interactive span (no nested button). */}
-                      <span className="home-dash__work-resume" aria-hidden>
-                        Resume
-                        <Icon name="ph:arrow-right-bold" width={11} />
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </section>
-
-          {/* Recent threads — first thing the height-adaptive CSS sheds. */}
-          {recentThreads.length > 0 ? (
-            <section
-              className="home-dash__section home-dash__section--recent"
-              aria-label="Recent threads"
-            >
-              <div className="home-dash__section-label">
-                {chatsGroup.label}
-                <span className="home-dash__section-count">{chatsGroup.count}</span>
-              </div>
-              <div className="home-dash__recent">
-                {recentThreads.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className="home-dash__recent-row"
-                    onClick={() => openSession(s.id, s.familiarId ?? null)}
-                    title={`Resume “${s.title}”`}
-                  >
-                    <span className="home-dash__recent-title">{s.title}</span>
-                    <span className="home-dash__recent-time">{relativeAge(s.updated_at, nowMs)}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {/* Queue — parked follow-ups, the third place work already lives. */}
-          {queueRows.length > 0 ? (
-            <section
-              className="home-dash__section home-dash__section--queue"
-              aria-label="Parked follow-ups"
-            >
-              <div className="home-dash__section-label">
-                {queueGroup.label}
-                <span className="home-dash__section-count">{queueGroup.count}</span>
-              </div>
-              <div className="home-dash__recent">
-                {queueRows.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className="home-dash__recent-row"
-                    onClick={() => startFollowUp(familiar.id, row.id, row.title)}
-                    aria-label={queueFollowUpLabel(row)}
-                    title={`Pick up ${row.id}`}
-                  >
-                    <span className="home-dash__recent-title">{row.title}</span>
-                    <span className="home-dash__recent-time">
-                      {row.updatedAt ? relativeAge(row.updatedAt, nowMs) : row.id}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {/* Reviews — pull requests waiting on you; a review is a good way to
-              start a session, since the diff is already chosen. */}
-          {reviewRows.length > 0 ? (
-            <section
-              className="home-dash__section home-dash__section--reviews"
-              aria-label="Reviews waiting on you"
-            >
-              <div className="home-dash__section-label">
-                {reviewsGroup.label}
-                <span className="home-dash__section-count">{reviewsGroup.count}</span>
-              </div>
-              <div className="home-dash__recent">
-                {reviewRows.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className="home-dash__recent-row"
-                    onClick={() => startReview(familiar.id, row.url)}
-                    aria-label={reviewRequestLabel(row)}
-                    title={`Review ${row.title}`}
-                  >
-                    <span className="home-dash__recent-title">{row.title}</span>
-                    <span className="home-dash__recent-time">{row.need}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
+              already exists — one band per source, each a strip of tiles. */}
+          {bands.length > 0 ? (
+            <ChatStartFromBands bands={bands} />
+          ) : (
+            <p className="home-dash__work-empty">No open work — start something below.</p>
+          )}
 
         </div>
       </main>

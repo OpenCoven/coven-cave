@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("./chat-artifact-viewer.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/chat-artifact.css", import.meta.url), "utf8");
 
-assert.match(src, /useState[^\n]*"canvas"/, "default tab is canvas");
+assert.match(src, /initial:\s*"canvas"/, "default tab is canvas");
 assert.match(src, /buildReactSrcDoc|buildPreviewSrcDoc/, "uses the canvas srcDoc builders");
 assert.match(src, /sandbox="allow-scripts allow-popups allow-modals"/, "iframe sandboxed");
 assert.doesNotMatch(src, /allow-same-origin/, "iframe must NOT allow same-origin");

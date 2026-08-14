@@ -22,7 +22,7 @@ assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grim
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire", "journal"\);/, "the journal mode routes into the Grimoire Journal tab and preserves that destination in history");
 assert.match(navigation, /export type WorkspaceNavMode = WorkspaceMode/, "the shared registry uses the WorkspaceMode union (no drifting copy)");
 assert.match(navigation, /id: "grimoire", label: "Memories"/, "grimoire has a navigation row labeled Memories (and a ⌘K palette entry)");
-assert.match(sidebar, /VISIBLE_WORKSPACE_NAV_ITEMS/, "the sidebar renders visible rows from the shared registry");
+assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar renders rows from the section-filtered visible registry");
 assert.match(
   view,
   /href="\/weaves"/,
@@ -154,6 +154,33 @@ assert.match(
   workspace,
   /<GrimoireView[\s\S]{0,240}scopeFamiliarIds=\{scopeIds\}/,
   "the Workspace hands Memories the same familiar scope as Tasks and Schedules",
+);
+
+// ── …and so is the Relations graph ──────────────────────────────────────────
+// The graph reads the SAME multiselect as the rail, so Relations can never
+// show a familiar's memory that the navigator beside it is hiding.
+assert.match(
+  view,
+  /const memoryOwnerByNodeId = useMemo\(\(\) => buildMemoryOwnerIndex\(memory \?\? \[\]\), \[memory\]\)/,
+  "ownership is indexed from the UNSCOPED inventory — the graph itself carries only paths",
+);
+assert.match(
+  view,
+  /const scopedGraph = useMemo\(\s*\(\) => scopeDocGraph\(graph, memoryScope, memoryOwnerByNodeId\)/,
+  "the graph is narrowed by the same memoryScope the Memory rail uses",
+);
+assert.match(view, /graph=\{scopedGraph\}/, "the launcher's graph stats reflect the scope, like its memory stats");
+assert.match(
+  view,
+  /<GrimoireGraphView\s*\n\s*graph=\{scopedGraph\}[\s\S]{0,160}scopeLabel=\{memoryScopeLabel\}/,
+  "the Relations canvas renders the scoped graph and is told who it is scoped to",
+);
+// Backlinks and [[wiki-link]] resolution stay on the UNSCOPED graph: a
+// document's own connections are an integrity signal, not a corpus browse.
+assert.match(
+  view,
+  /const backlinks = useMemo<GrimoireBacklink\[\]>\(\(\) => \{[\s\S]{0,400}new Map\(graph\.nodes\.map/,
+  "backlinks keep reading the unscoped graph so link integrity survives a UI filter",
 );
 
 // ── Detail: the right transport per source ───────────────────────────────────

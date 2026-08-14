@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SALEM_PRELOAD_CONTEXT, summarizePreload } from "@/components/salem/salem-context";
 import { COVEN_IDENTITY_CANON } from "@/lib/coven-identity-canon";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import { stripMdxLeakage } from "./strip-mdx";
 
 /**
@@ -208,7 +209,7 @@ async function askLocalFamiliar(args: {
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    const parts: string[] = [];
+    const attentionText = createAttentionSafeTextAccumulator();
     let buffer = "";
     try {
       while (true) {
@@ -222,10 +223,9 @@ async function askLocalFamiliar(args: {
           if (!line) continue;
           try {
             const event = JSON.parse(line.slice(5).trim()) as { kind?: string; text?: string };
-            if (event.kind === "assistant_chunk" && event.text) parts.push(event.text);
+            if (event.kind === "assistant_chunk" && event.text) attentionText.append(event.text);
             else if (event.kind === "assistant_replace") {
-              parts.length = 0;
-              if (event.text) parts.push(event.text);
+              attentionText.replace(event.text ?? "");
             }
           } catch {
             /* ignore malformed SSE frames */
@@ -237,7 +237,7 @@ async function askLocalFamiliar(args: {
       reader.releaseLock();
     }
 
-    const trimmed = parts.join("").trim();
+    const trimmed = attentionText.settled().trim();
     return trimmed.length > 0 ? trimmed : null;
   } catch {
     return null;

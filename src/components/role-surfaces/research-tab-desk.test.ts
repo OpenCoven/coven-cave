@@ -5,6 +5,7 @@ import test from "node:test";
 const deskTab = readFileSync(new URL("./research-tab-desk.tsx", import.meta.url), "utf8");
 const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
+const pane = readFileSync(new URL("./use-research-pane.ts", import.meta.url), "utf8");
 const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.meta.url), "utf8");
 // The desk sheet rides with the mode-gated surface (bundle budget, #3264
 // pattern), so selector pins read the sheet itself, not the root globals.
@@ -60,6 +61,28 @@ test("checkpoint tiles derive from real data and are omitted when missing", () =
   assert.doesNotMatch(detail, /pricing pages for two hosted harnesses/);
 });
 
+test("checkpoint direction can be drafted agentically without auto-continuing", () => {
+  assert.match(detail, /generateResearchRefineDirection/);
+  assert.match(detail, /Draft with familiar/);
+  assert.match(detail, /Redraft with familiar/);
+  assert.match(detail, /Reading the checkpoint and choosing the highest-value next pass…/);
+  assert.match(detail, /directionRef\.current === baseDraft/);
+  assert.match(detail, /Direction ready — your edits were kept\./);
+  assert.match(detail, /Apply direction/);
+  assert.match(detail, /Keep mine/);
+  assert.match(detail, /maxLength=\{RESEARCH_DIRECTION_MAX_LENGTH\}/);
+  assert.match(
+    detail,
+    /onClick=\{\(\) => void runAction\(\{ action: "refine", direction \}\)\}/,
+  );
+  assert.doesNotMatch(
+    detail,
+    /generateResearchRefineDirection\([\s\S]{0,800}?runAction\(\{ action: "refine"/,
+  );
+  assert.match(css, /\.research-desk-refine__actions \{/);
+  assert.match(css, /\.research-desk-refine__suggestion \{/);
+});
+
 test("running and completed blocks stay honest about their data", () => {
   // Live activity lists real step reports; absence is said, not faked.
   assert.match(detail, /iteration\?\.steps\?\.length \? \(/);
@@ -72,6 +95,33 @@ test("running and completed blocks stay honest about their data", () => {
   assert.match(detail, /<ClampedText className="research-desk-block__abstract" text=\{iteration\.summary\} \/>/);
   assert.match(detail, /\{mission\.sources\.length\} sources · \{sourceCounts\.used\} used/);
   assert.doesNotMatch(detail, /Finding 1|compFindings/);
+});
+
+test("run failures disclose persisted diagnostics without fabricating a cause", () => {
+  assert.match(detail, /View diagnostics/);
+  assert.match(detail, /<Modal[\s\S]*?breadcrumb=\{\["Research", "Diagnostics"\]\}/);
+  assert.match(detail, /researchDiagnosticTrace\(mission\)/);
+  assert.match(detail, /Copy trace JSON/);
+  assert.match(detail, /copyDiagnosticTrace/);
+  // Bind the transient copy confirmation to its mission at render time: an
+  // effect-only reset would paint the next mission as copied for one frame.
+  assert.match(detail, /const diagnosticsCopied = diagnosticsCopiedFor === missionId/);
+  assert.match(detail, /setDiagnosticsCopiedFor\(startedFor\)/);
+  assert.match(detail, /setActionError\(null\);\n    const copied = await copyText\(traceJson\)/);
+  assert.match(detail, /\{actionError \? <p className="research-mission-error" role="alert">\{actionError\}<\/p> : null\}/);
+  assert.match(detail, /actionError && !diagnosticsOpen/);
+  assert.match(detail, /Daemon trace: not recorded/);
+  assert.match(detail, /\["Error", mission\.lastError \?\? "No current error"\]/);
+  assert.match(detail, /\["Flow run", iteration\?\.flowRunId \?\? "No flow run recorded"\]/);
+  assert.match(detail, /\["Session", sessionId \?\? "No session recorded"\]/);
+  assert.match(detail, /primaryArtifact\.relativePath/);
+  assert.match(detail, /\["Sources", `\$\{mission\.sources\.length\} recorded/);
+  assert.match(css, /\.research-mission-diagnostics/);
+  assert.match(css, /\.research-mission-diagnostics__timeline/);
+  assert.match(css, /\.research-mission-diagnostics__finding/);
+  assert.match(css, /var\(--bg-sunken\)/);
+  assert.match(css, /research-mission-diagnostics__phase[^\n]*var\(--radius-pill\)/);
+  assert.doesNotMatch(css, /--radius-full/);
 });
 
 // ── Evidence triage: exact ledger source-update mechanism ──────────────────
@@ -107,17 +157,58 @@ test("desk commands map to real destinations only", () => {
   assert.doesNotMatch(deskTab, /"\/task"/);
 });
 
-test("plain text filters the runs rail and is never dropped silently", () => {
+test("desk toolbar is truthful, scoped, and keyboard reachable", () => {
+  assert.match(deskTab, /<SearchInput/);
+  assert.match(deskTab, /placeholder="Filter runs…"/);
+  assert.match(deskTab, /aria-label="Filter research runs"/);
+  assert.match(deskTab, /aria-keyshortcuts="\/"/);
+  assert.match(deskTab, />\s*New research\s*<\/Button>/);
+  assert.match(deskTab, /ResearchMissionScope/);
+  assert.match(
+    deskTab,
+    /researchMissionScopeCounts\(\s*filterResearchMissionsByText\(research\.missions, listFilter\)/,
+  );
+  assert.match(
+    deskTab,
+    /aria-label=\{`\$\{item\.label\}, \$\{scopeCounts\[item\.id\]\} \$\{scopeCounts\[item\.id\] === 1 \? "run" : "runs"\}`\}/,
+  );
+  assert.match(deskTab, /window\.addEventListener\("keydown", onKeyDown\)/);
+  assert.match(
+    deskTab,
+    /target\?\.closest\("input, textarea, select, \[contenteditable='true'\]"\)/,
+  );
+  assert.match(
+    deskTab,
+    /document\.querySelector\('\[role="dialog"\]\[aria-modal="true"\]'\)/,
+  );
+});
+
+test("focus mode persists per familiar and announces both states", () => {
+  assert.match(
+    deskTab,
+    /useEffect\(\(\) => \{\s*setQuery\(""\);\s*setScope\("all"\);\s*setFocusMode\(readFocusMode\(familiarId\)\);/,
+  );
+  assert.match(deskTab, /FOCUS_STORAGE_PREFIX[\s\S]*familiarId/);
+  assert.match(deskTab, /window\.localStorage\.getItem/);
+  assert.match(deskTab, /window\.localStorage\.setItem/);
+  assert.match(
+    deskTab,
+    /announce\(next \? "Focus mode enabled\." : "Workspace rails restored\."\)/,
+  );
+  assert.match(deskTab, /focusMode \? "Show workspace" : "Focus run"/);
+});
+
+test("plain text filters the runs rail and creation stays one action away", () => {
   // "/find rest" and plain text both feed the list filter.
   assert.match(deskTab, /\/\^\\\/find\\s\+\(\.\*\)\$\/i/);
   assert.match(deskTab, /findMatch \? findMatch\[1\] : isCommandText \? "" : query/);
   assert.match(deskTab, /filter=\{listFilter\}/);
-  // The Prompt hand-off is explicit and honest — the tab contract carries a
-  // mode, not a draft, and the hint says so.
-  assert.match(deskTab, /Open in Prompt ↗/);
-  assert.match(deskTab, /isn’t carried over/);
+  // New research is an always-visible, honest destination; the filter no
+  // longer masquerades as a question composer or grows a hand-off hint.
+  assert.match(deskTab, /onNavigate\("prompt"\)/);
+  assert.doesNotMatch(deskTab, /Open in Prompt ↗|isn’t carried over/);
   assert.match(list, /filter\?: string/);
-  assert.match(list, /`\$\{mission\.title\} \$\{mission\.intent\}`\.toLowerCase\(\)\.includes\(query\)/);
+  assert.match(list, /filterResearchMissionsByText\(missions, filter\)/);
   // A filtered-empty rail says the filter is why.
   assert.match(list, /No runs match/);
 });
@@ -140,7 +231,68 @@ test("planning missions read as active work in the runs rail", () => {
   assert.match(list, /queued: "busy"/);
 });
 
+test("mission navigation composes text scope and priority groups", () => {
+  assert.match(list, /scope: ResearchMissionScope/);
+  assert.match(list, /matchesResearchMissionScope\(mission, scope\)/);
+  assert.match(list, /groupResearchMissions\(filteredMissions\)/);
+  assert.match(list, /research-mission-nav__section-title/);
+  assert.match(list, />\s*Clear filters\s*<\/Button>/);
+  assert.match(list, /groups\.flatMap/);
+});
+
 // ── Right rail: state switching + reachable ledger ──────────────────────────
+
+test("focus mode removes both rails without changing mission detail", () => {
+  assert.match(detail, /showEvidence: boolean/);
+  assert.match(detail, /\{showEvidence \? \(\s*<aside/);
+  assert.match(detail, /data-evidence-open=\{showEvidence\}/);
+  // Focus hides the rail outright; the independent collapse (next test) is a
+  // second axis, so focus must win even with the evidence rail left open.
+  assert.match(deskTab, /showEvidence=\{!focusMode && evidenceOpen\}/);
+  assert.match(deskTab, /data-focus-mode=\{focusMode\}/);
+  assert.match(
+    css,
+    /\.research-desk-tab \.research-desk__workspace\[data-focus-mode="true"\]/,
+  );
+  // Focus also hides the queue's spine and drag separator — leaving either
+  // behind puts a stray 36px column beside a supposedly full-width run.
+  assert.match(css, /data-focus-mode="true"\]\s*>\s*\.research-desk-handle/);
+  assert.match(css, /data-focus-mode="true"\]\s*>\s*\.research-desk-spine/);
+  // And it offers no collapse controls, because there is nothing to collapse.
+  assert.match(deskTab, /onCollapseEvidence=\{focusMode \? undefined :/);
+  assert.match(deskTab, /onOpenEvidence=\{focusMode \? undefined :/);
+});
+
+test("both desk rails resize, persist and collapse to a labelled spine", () => {
+  // Width clamps on READ as well as write, so a stale or hand-edited
+  // localStorage value can never wedge a rail off screen.
+  assert.match(pane, /function readStoredWidth/);
+  assert.match(pane, /Number\.isFinite\(parsed\) \? clamp\(parsed, min, max\) : initial/);
+  // Pointer capture, not a bare mousemove listener: releasing outside the
+  // window must still end the drag rather than gluing the rail to the cursor.
+  assert.match(pane, /setPointerCapture/);
+  assert.match(pane, /pointercancel/);
+  // Keyboard parity — a drag handle no keyboard can reach is a rail no
+  // keyboard user can size.
+  assert.match(pane, /role: "separator"/);
+  assert.match(pane, /tabIndex: 0/);
+  assert.match(pane, /ArrowLeft/);
+  assert.match(deskTab, /useResearchPane\(QUEUE_PANE\)/);
+  assert.match(deskTab, /useResearchPane\(RAIL_PANE\)/);
+  assert.match(deskTab, /queue\.separatorProps/);
+  // The evidence rail grows leftward, so its drag direction is inverted —
+  // sharing the queue's +1 would move it the wrong way under the cursor.
+  assert.match(deskTab, /RAIL_PANE = \{[\s\S]*?direction: -1/);
+  assert.match(deskTab, /railSeparatorProps=\{focusMode \? undefined : rail\.separatorProps\}/);
+  assert.match(detail, /research-desk-handle--rail/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) 0 var\(--research-rail-width, 320px\)/);
+  // A collapsed rail still says what it holds, in words and in a count.
+  assert.match(deskTab, /research-desk-spine__badge/);
+  assert.match(deskTab, /aria-label=\{`Open the run queue/);
+  assert.match(detail, /aria-label=\{`Open the evidence inspector/);
+  assert.match(css, /\.research-desk__workspace\[data-queue-collapsed="true"\]/);
+  assert.match(css, /\.research-mission-detail__body\[data-evidence-spine="true"\]/);
+});
 
 test("the right rail is one Artifacts|Sources toggle over a full-height pane", () => {
   // No stacked state panels: a single segmented toggle drives one pane that
@@ -245,7 +397,7 @@ test("an action settling after a mission switch is discarded", () => {
   // so the fresh mission never inherits a disabled action bar.
   assert.match(
     detail,
-    /missionIdRef\.current = missionId;\s*setBusy\(false\);\s*setRetryRoot\(null\);\s*setActionError\(null\);\s*setDirection\(""\);\s*\}, \[missionId\]\)/,
+    /missionIdRef\.current = missionId;[\s\S]*?setBusy\(false\);\s*setDirectionDrafting\(false\);\s*setDirectionSuggestion\(null\);\s*setRetryRoot\(null\);\s*setActionError\(null\);\s*setDirection\(""\);\s*\}, \[missionId\]\)/,
   );
 });
 
@@ -259,9 +411,30 @@ test("archived missions gate automation controls like the schedule button", () =
 // ── Responsive collapses re-declared for the desk-tab overrides ─────────────
 
 test("desk-tab responsive collapses match the existing container breakpoints", () => {
-  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-tab \.research-desk__workspace \{ grid-template-columns: 1fr; \}/);
-  assert.match(css, /@container research-desk \(max-width: 760px\) \{[\s\S]*?\.research-desk-tab \.research-mission-detail__body \{ grid-template-columns: 1fr; \}/);
-  assert.match(css, /\.research-desk-rail \{ border-left: 0; border-top: 1px solid var\(--border\); \}/);
+  // Both the open and the collapsed grid must flatten together — flattening
+  // only one leaves a 36px spine stacked above a full-width run.
+  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-tab \.research-desk__workspace,\s*\.research-desk-tab \.research-desk__workspace\[data-queue-collapsed="true"\] \{\s*grid-template-columns: 1fr;/);
+  assert.match(css, /@container research-desk \(max-width: 900px\) \{[\s\S]*?\.research-desk-handle \{ display: none; \}/);
+  assert.match(css, /@container research-desk \(max-width: 760px\) \{[\s\S]*?\.research-desk-tab \.research-mission-detail__body,\s*\.research-desk-tab \.research-mission-detail__body\[data-evidence-spine="true"\] \{\s*grid-template-columns: 1fr;/);
+  assert.match(
+    css,
+    /\.research-desk-rail \{[\s\S]*?border-left: 0;[\s\S]*?border-top: 1px solid var\(--border\);/,
+  );
+});
+
+test("narrow desks bound secondary rails while preserving the run surface", () => {
+  assert.match(
+    css,
+    /@container research-desk \(max-width: 900px\)[\s\S]*?max-height: calc\(var\(--space-10\) \* 4\)/,
+  );
+  assert.match(
+    css,
+    /@container research-desk \(max-width: 760px\)[\s\S]*?\.research-desk-rail \{[\s\S]*?max-height: 44vh/,
+  );
+  assert.match(
+    css,
+    /@container research-desk \(max-width: 560px\)[\s\S]*?\.research-desk-toolbar__main/,
+  );
 });
 
 // ── Artifact actions: shared component mounted on rail + saved summary ──────

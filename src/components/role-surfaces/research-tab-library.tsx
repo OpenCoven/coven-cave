@@ -18,6 +18,16 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SearchInput } from "@/components/ui/search-input";
+import { StandardSelect } from "@/components/ui/select";
+import {
+  LIBRARY_PAGE_SIZE,
+  LIBRARY_SORTS,
+  matchesLibraryQuery,
+  paginateLibrary,
+  sortLibraryEntries,
+  type LibrarySort,
+} from "./research-library-view";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -243,6 +253,9 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
   useMinuteTick();
   const dateTimePrefs = useDateTimePrefs();
   const [filter, setFilter] = useState<LibraryFilter>("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<LibrarySort>("newest");
+  const [page, setPage] = useState(0);
   const [view, setViewState] = useState<LibraryView>(readStoredView);
   const [autoresearchRows, setAutoresearchRows] = useState<AutoresearchRow[]>([]);
   const [autoresearchAvailable, setAutoresearchAvailable] = useState(false);
@@ -364,7 +377,25 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
     return tally;
   }, [entries]);
 
-  const visible = filter === "all" ? entries : entries.filter((entry) => entry.type === filter);
+  // Filter chips → free-text search → sort → page. Counts on the chips stay
+  // measured against the unsearched set, so a chip never reads "0" for a
+  // filter that has artifacts the current query happens to exclude.
+  const matched = useMemo(() => {
+    const scoped = filter === "all" ? entries : entries.filter((entry) => entry.type === filter);
+    return sortLibraryEntries(
+      scoped.filter((entry) => matchesLibraryQuery(entry, query)),
+      sort,
+    );
+  }, [entries, filter, query, sort]);
+  const paged = paginateLibrary(matched, page, LIBRARY_PAGE_SIZE[view]);
+  const visible = paged.items;
+
+  // Any narrowing sends the reader back to page 1 — landing on a page that no
+  // longer exists is how a shelf reads as empty when it is not. (paginateLibrary
+  // also clamps, so this is about intent, not safety.)
+  useEffect(() => {
+    setPage(0);
+  }, [filter, query, sort, view]);
 
   // Ticker: the most recently touched live mission, if any.
   const tickerMission = useMemo(() => {
@@ -412,7 +443,6 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
           <span className="research-library__count">
             {artifactCount} artifact{artifactCount === 1 ? "" : "s"} from {runCount} run{runCount === 1 ? "" : "s"}
           </span>
-          <span className="research-library__sort">Sorted by newest</span>
         </header>
 
         {autoresearchAvailable || autoresearchError ? (
@@ -552,6 +582,22 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
                   </button>
                 ))}
               </div>
+              <SearchInput
+                value={query}
+                onValueChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder="Search artifacts…"
+                aria-label="Search artifacts"
+                containerClassName="research-library__search"
+                spellCheck={false}
+              />
+              <StandardSelect<LibrarySort>
+                label="Sort artifacts"
+                value={sort}
+                onChange={setSort}
+                options={LIBRARY_SORTS.map((option) => ({ value: option.id, label: option.label }))}
+                className="research-library__sort"
+              />
               <div className="research-library__seg" role="group" aria-label="Library layout">
                 <button
                   type="button"
@@ -576,7 +622,9 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
 
             {visible.length === 0 ? (
               <p className="research-library__filter-empty">
-                Nothing under this filter yet — runs publish here as they go.
+                {query.trim()
+                  ? `Nothing matches “${query.trim()}” under this filter.`
+                  : "Nothing under this filter yet — runs publish here as they go."}
               </p>
             ) : (
               <ul className="research-library__grid" data-view={view}>
@@ -645,6 +693,31 @@ export function ResearchTabLibrary({ research, onNavigate }: ResearchTabProps) {
                 })}
               </ul>
             )}
+
+            {paged.pageCount > 1 ? (
+              <nav className="research-library__pager" aria-label="Library pages">
+                <span className="research-library__pager-info" role="status">{paged.summary}</span>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={!paged.hasPrev}
+                  onClick={() => setPage(paged.page - 1)}
+                >
+                  ‹ Prev
+                </Button>
+                <span className="research-library__pager-count">
+                  {paged.page + 1} / {paged.pageCount}
+                </span>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={!paged.hasNext}
+                  onClick={() => setPage(paged.page + 1)}
+                >
+                  Next ›
+                </Button>
+              </nav>
+            ) : null}
           </>
         )}
       </div>

@@ -16,6 +16,7 @@
     "research",
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/oracles-measure",
   "x-coven": {
     "displayName": "Oracle's Measure",

@@ -1,3 +1,4 @@
+import "@/styles/globals/surface-reporting.css";
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
 import { AnalyticsPageShell } from "@/components/analytics-page-shell";

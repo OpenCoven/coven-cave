@@ -36,7 +36,7 @@ export function resolveFirstProjectGatePolicy(
   input: FirstProjectGatePolicyInput,
 ): FirstProjectGatePolicy {
   const familiarId = input.pendingGrant?.familiarId
-    ?? preferredFirstProjectGateFamiliarId(input.activeFamiliarId, input.visibleFamiliars);
+    ?? input.activeFamiliarId;
   const accessibleProjects = input.accessibleProjects ?? input.registeredProjects;
   const accessibleProjectsInitiallyResolved = input.accessibleProjectsInitiallyResolved ?? true;
   const blockChatLaunch = input.onboardingResolved

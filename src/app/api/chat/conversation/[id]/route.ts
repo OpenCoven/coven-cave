@@ -1,10 +1,8 @@
-// The explicit .js extension (matching src/app/api/voice/**/route.ts) lets
-// route.test.ts import this module directly under plain Node ESM resolution,
-// which — unlike Next's bundler — needs the real subpath: `next` ships no
-// "exports" map, so the extensionless "next/server" specifier 404s outside
-// Next's own resolver.
-import { NextResponse } from "next/server.js";
+import { NextResponse } from "next/server";
 import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import { cleanModelControlValues } from "@/lib/model-control-capabilities";
 import {
   isSafeConversationSessionId,
   deleteConversation,
@@ -20,6 +18,8 @@ import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { normalizeTurnUsage, parseCostUsd } from "@/lib/usage-format";
+import { CHAT_ATTENTION_REASONS } from "@/lib/chat-attention-marker";
+import { isCanonicalIsoInstant } from "@/lib/chat-attention";
 import {
   checkTurnBounds,
   sanitizeClientTurns,
@@ -54,6 +54,236 @@ function jsonError(error: string, status: number) {
   return NextResponse.json({ ok: false, error }, { status });
 }
 
+const MODEL_METADATA_SOURCES = new Set([
+  "runtime-default",
+  "global-default",
+  "familiar-default",
+  "session",
+  "next-message",
+]);
+const MODEL_METADATA_STATES = new Set([
+  "unknown",
+  "saved",
+  "pending",
+  "applied",
+  "unsupported",
+  "failed",
+]);
+const OPENCLAW_AGENT_SOURCES = new Set([
+  "explicit",
+  "id-match",
+  "name-match",
+  "default",
+  "fallback",
+]);
+const MODEL_APPLICATION_REASONS = new Set([
+  "Runtime rejected the selected model.",
+  "Runtime confirmed the selected model.",
+  "Cave saved the model intent and is waiting for runtime confirmation.",
+  "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.",
+  "Using the runtime's configured default model for this message.",
+  "Selected for the next message only.",
+  "Using the runtime's configured default model.",
+  "Saved for this chat.",
+  "Using the runtime default.",
+  "Inherited from Cave defaults.",
+  "The selected model id failed launch-boundary validation.",
+  "The model override scope must be next-message, session, or runtime-default.",
+  "Runtime-owned defaults are represented by omitting the model id.",
+  "Explicit model ids require session or next-message scope; clearing requires a runtime-default scope.",
+  "Model forwarding is unavailable for this runtime binding.",
+  "Coven forwarded the selected model; downstream acceptance was not confirmed.",
+]);
+const CHAT_ATTENTION_REASON_SET = new Set<string>(CHAT_ATTENTION_REASONS);
+
+function safeMetadataText(value: unknown, maxLength = 512, allowEmpty = false): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if ((!allowEmpty && !trimmed) || trimmed.length > maxLength) return undefined;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+function cleanMetadataModel(value: unknown, allowEmpty = false): string | undefined {
+  if (allowEmpty && value === "") return "";
+  return cleanModelId(value) ?? undefined;
+}
+
+function cleanMetadataHarness(value: unknown): string | undefined {
+  const harness = safeMetadataText(value, 80);
+  return harness && /^[A-Za-z0-9._-]+$/.test(harness) ? harness : undefined;
+}
+
+function cleanMetadataRuntime(value: unknown): string | undefined {
+  const runtime = safeMetadataText(value, 1024);
+  // Conversation runtime facts are Cave's `local:`/`ssh:` display tokens, not
+  // arbitrary provider URLs. Reject URL delimiters and userinfo so a client
+  // cannot smuggle credentials into persisted metadata.
+  return runtime && /^(?:local|ssh):/.test(runtime) && !/[?#@]/.test(runtime.slice(runtime.indexOf(":") + 1))
+    ? runtime
+    : undefined;
+}
+
+function cleanMetadataToken(value: unknown, maxLength: number): string | undefined {
+  const token = safeMetadataText(value, maxLength);
+  return token && !/[/?#@]/.test(token) ? token : undefined;
+}
+
+/**
+ * Conversation writes can come from older clients, so response metadata is
+ * normalized at this boundary before it is persisted. Keep only bounded,
+ * user-visible facts; provider payloads, credentials, and secret-bearing URLs
+ * are never accepted as transcript metadata.
+ */
+type AttentionRequestOwner = {
+  sessionId: string;
+  turnId: string;
+  createdAt: string;
+};
+
+function normalizeOwnedAttentionRequest(
+  input: unknown,
+  owner: AttentionRequestOwner | undefined,
+): ChatResponseMetadata["attentionRequest"] | undefined {
+  if (!owner || !input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  if (
+    value.sessionId !== owner.sessionId ||
+    value.turnId !== owner.turnId ||
+    value.requestedAt !== owner.createdAt ||
+    !isCanonicalIsoInstant(value.requestedAt) ||
+    typeof value.reason !== "string" ||
+    !CHAT_ATTENTION_REASON_SET.has(value.reason)
+  ) {
+    return undefined;
+  }
+  return {
+    sessionId: owner.sessionId,
+    turnId: owner.turnId,
+    requestedAt: owner.createdAt,
+    reason: value.reason as NonNullable<ChatResponseMetadata["attentionRequest"]>["reason"],
+  };
+}
+
+function normalizeResponseMetadata(
+  input: unknown,
+  attentionOwner?: AttentionRequestOwner,
+): ChatResponseMetadata | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as Record<string, unknown>;
+  const familiarId = safeMetadataText(value.familiarId, 160);
+  const harness = cleanMetadataHarness(value.harness);
+  // Model identity is a launch-safe id, not an arbitrary provider payload or
+  // URL. Keep the runtime-default empty sentinel, but reject everything else
+  // that cannot cross the launch boundary safely.
+  const model = cleanMetadataModel(value.model, true);
+  const runtime = cleanMetadataRuntime(value.runtime);
+  if (!familiarId || !/^[A-Za-z0-9._-]+$/.test(familiarId) || !harness || model === undefined || !runtime) {
+    return undefined;
+  }
+
+  const requestedModel = cleanMetadataModel(value.requestedModel, true);
+  const desiredModel = cleanMetadataModel(value.desiredModel, true);
+  const forwardedModel = cleanMetadataModel(value.forwardedModel);
+  const confirmedModel = cleanMetadataModel(value.confirmedModel);
+  const retryModel = cleanMetadataModel(value.retryModel);
+  const modelSource = MODEL_METADATA_SOURCES.has(String(value.modelSource))
+    ? value.modelSource as ChatResponseMetadata["modelSource"]
+    : undefined;
+  const modelApplicationState = MODEL_METADATA_STATES.has(String(value.modelApplicationState))
+    ? value.modelApplicationState as ChatResponseMetadata["modelApplicationState"]
+    : undefined;
+  const modelApplicationReason = MODEL_APPLICATION_REASONS.has(String(value.modelApplicationReason))
+    ? value.modelApplicationReason as string
+    : undefined;
+  const rejectedControlFamilies = Array.isArray(value.rejectedControlFamilies)
+    ? value.rejectedControlFamilies.flatMap((family) => {
+      const clean = safeMetadataText(family, 64);
+      return clean && /^[a-z][a-z0-9-]{0,63}$/.test(clean) ? [clean] : [];
+    }).slice(0, 16)
+    : undefined;
+  const normalizeControls = (controls: unknown): ChatResponseMetadata["requestedControls"] => {
+    const clean = cleanModelControlValues(controls);
+    const safe = Object.fromEntries(
+      Object.entries(clean).filter(([, control]) => /^[A-Za-z0-9._-]{1,80}$/.test(control)),
+    ) as ChatResponseMetadata["requestedControls"];
+    return safe && Object.keys(safe).length ? safe : undefined;
+  };
+  const openclawAgentId = cleanMetadataToken(value.openclawAgentId, 160);
+  const openclawAgentSource = OPENCLAW_AGENT_SOURCES.has(String(value.openclawAgentSource))
+    ? value.openclawAgentSource as ChatResponseMetadata["openclawAgentSource"]
+    : undefined;
+  const caveSessionId = cleanMetadataToken(value.caveSessionId, 160);
+  const gatewaySessionId = cleanMetadataToken(value.gatewaySessionId, 160);
+  const sessionKey = cleanMetadataToken(value.sessionKey, 256);
+  const attentionRequest = normalizeOwnedAttentionRequest(value.attentionRequest, attentionOwner);
+
+  return {
+    familiarId,
+    harness,
+    model,
+    runtime,
+    ...(requestedModel !== undefined ? { requestedModel } : {}),
+    ...(desiredModel !== undefined ? { desiredModel } : {}),
+    ...(forwardedModel !== undefined ? { forwardedModel } : {}),
+    ...(confirmedModel !== undefined ? { confirmedModel } : {}),
+    ...(retryModel !== undefined ? { retryModel } : {}),
+    ...(modelSource ? { modelSource } : {}),
+    ...(modelApplicationState ? { modelApplicationState } : {}),
+    ...(modelApplicationReason ? { modelApplicationReason } : {}),
+    ...(normalizeControls(value.requestedControls) ? { requestedControls: normalizeControls(value.requestedControls) } : {}),
+    ...(normalizeControls(value.forwardedControls) ? { forwardedControls: normalizeControls(value.forwardedControls) } : {}),
+    ...(normalizeControls(value.promptGuidanceControls) ? { promptGuidanceControls: normalizeControls(value.promptGuidanceControls) } : {}),
+    ...(normalizeControls(value.appliedControls) ? { appliedControls: normalizeControls(value.appliedControls) } : {}),
+    ...(rejectedControlFamilies?.length ? { rejectedControlFamilies } : {}),
+    ...(openclawAgentId ? { openclawAgentId } : {}),
+    ...(openclawAgentSource ? { openclawAgentSource } : {}),
+    ...(caveSessionId ? { caveSessionId } : {}),
+    ...(gatewaySessionId ? { gatewaySessionId } : {}),
+    ...(sessionKey ? { sessionKey } : {}),
+    ...(attentionRequest ? { attentionRequest } : {}),
+  };
+}
+
+function sanitizeConversationMetadata(conversation: ConversationFile): ConversationFile {
+  const modelIntent = conversation.modelIntent;
+  const safeModelIntent = modelIntent && modelIntent.source === "session"
+    ? (() => {
+        const model = cleanMetadataModel(modelIntent.model, true);
+        if (model === undefined) return undefined;
+        const applicationState = MODEL_METADATA_STATES.has(String(modelIntent.applicationState))
+          ? modelIntent.applicationState
+          : undefined;
+        const reason = MODEL_APPLICATION_REASONS.has(String(modelIntent.reason))
+          ? modelIntent.reason
+          : undefined;
+        return {
+          model,
+          source: "session" as const,
+          ...(applicationState ? { applicationState } : {}),
+          ...(reason ? { reason } : {}),
+        };
+      })()
+    : undefined;
+  return {
+    ...conversation,
+    ...(safeModelIntent ? { modelIntent: safeModelIntent } : { modelIntent: undefined }),
+    turns: conversation.turns.map((turn) => {
+      const responseMetadata = turn.role === "user"
+        ? undefined
+        : normalizeResponseMetadata(turn.responseMetadata, {
+            sessionId: conversation.sessionId,
+            turnId: turn.id,
+            createdAt: turn.createdAt,
+          });
+      return {
+        ...turn,
+        ...(responseMetadata ? { responseMetadata } : { responseMetadata: undefined }),
+      };
+    }),
+  };
+}
+
 async function readBody(req: Request): Promise<ConversationWriteBody | null> {
   try {
     return (await req.json()) as ConversationWriteBody;
@@ -85,6 +315,17 @@ function normalizeTurn(input: unknown): ChatTurn | null {
       ? value.responseSpeed
       : undefined;
   const modelOverride = cleanModelId(value.modelOverride);
+  const modelOverrideScope =
+    value.modelOverrideScope === "runtime-default"
+      ? "runtime-default" as const
+      : undefined;
+  const modelControls = cleanModelControlValues(value.modelControls);
+  // Response metadata is harness-owned. User turns may carry retry intent,
+  // but a client must not be able to persist a forged provider/runtime fact
+  // that later renders as an effective response in the transcript.
+  const responseMetadata = value.role === "user"
+    ? undefined
+    : normalizeResponseMetadata(value.responseMetadata);
   const progress = Array.isArray(value.progress)
     ? value.progress.flatMap((entry) => {
       if (!entry || typeof entry !== "object") return [];
@@ -130,7 +371,12 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(costUsd !== undefined ? { costUsd } : {}),
     ...(value.role === "user" && reasoningEffort ? { reasoningEffort } : {}),
     ...(value.role === "user" && responseSpeed ? { responseSpeed } : {}),
-    ...(value.role === "user" && modelOverride ? { modelOverride } : {}),
+    ...(value.role === "user" && modelOverride && !modelOverrideScope
+      ? { modelOverride }
+      : {}),
+    ...(value.role === "user" && modelOverrideScope ? { modelOverrideScope } : {}),
+    ...(value.role === "user" && Object.keys(modelControls).length ? { modelControls } : {}),
+    ...(responseMetadata ? { responseMetadata } : {}),
   };
 }
 
@@ -207,7 +453,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const conv = await loadConversation(id);
   if (conv) {
     const context = await linkedContextForSession(id);
-    return NextResponse.json({ ok: true, conversation: conv, context });
+    return NextResponse.json({
+      ok: true,
+      conversation: sanitizeConversationMetadata(conv),
+      context,
+    });
   }
 
   // Fallback: read the openclaw .jsonl transcript for sessions that were started
@@ -219,7 +469,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const jsonlConv = await loadConversationFromJsonl(id, familiarId);
     if (jsonlConv) {
       const context = await linkedContextForSession(id);
-      return NextResponse.json({ ok: true, conversation: jsonlConv, context });
+      return NextResponse.json({
+        ok: true,
+        conversation: sanitizeConversationMetadata(jsonlConv),
+        context,
+      });
     }
   }
 
@@ -249,7 +503,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   // Client writers cannot forge harness telemetry onto assistant/system turns.
   const safeTurns = sanitizeClientTurns(turns);
-  const existing = await loadConversation(id);
+  const existingRaw = await loadConversation(id);
+  const existing = existingRaw ? sanitizeConversationMetadata(existingRaw) : null;
   const merged = [...(existing?.turns ?? []), ...safeTurns];
   const bounds = checkTurnBounds(merged);
   if (bounds) return jsonError(bounds.error, bounds.status);
@@ -283,7 +538,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const safeTurns = sanitizeClientTurns(turns);
   const bounds = checkTurnBounds(safeTurns);
   if (bounds) return jsonError(bounds.error, bounds.status);
-  const existing = await loadConversation(id);
+  const existingRaw = await loadConversation(id);
+  const existing = existingRaw ? sanitizeConversationMetadata(existingRaw) : null;
   const conversation = buildConversation({ id, body, existing, turns: safeTurns });
   if (!conversation) {
     return jsonError("familiarId and harness are required", 400);
@@ -310,7 +566,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   return withConversationLock(id, async () => {
-    const existing = await loadConversation(id);
+    const existingRaw = await loadConversation(id);
+    const existing = existingRaw ? sanitizeConversationMetadata(existingRaw) : null;
     if (!existing) return jsonError("not found", 404);
 
     if (typeof body.activeLeafId === "string" && body.activeLeafId) {
@@ -325,7 +582,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
 
     if (body.modelIntent === null) {
-      delete existing.modelIntent;
+      existing.modelIntent = {
+        model: "",
+        source: "session",
+        applicationState: "saved",
+        reason: "Using the runtime's configured default model.",
+      };
       await saveConversation(existing);
       return NextResponse.json({ ok: true, conversation: existing });
     }
@@ -334,14 +596,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
         return jsonError("invalid model intent", 400);
       }
-      const model = cleanModelId(body.modelIntent.model);
-      if (!model) return jsonError("invalid model", 400);
+      const model = body.modelIntent.model === ""
+        ? ""
+        : cleanModelId(body.modelIntent.model);
+      if (model === null) return jsonError("invalid model", 400);
       if (body.modelIntent.source !== "session") {
         return jsonError("model intent source must be session", 400);
       }
-      const reason =
-        typeof body.modelIntent.reason === "string" && body.modelIntent.reason.trim()
-          ? body.modelIntent.reason.trim()
+      if (model && !isModelAllowedByRuntime(existing.harness, model)) {
+        return jsonError("model is not allowed by this runtime", 400);
+      }
+      const reason = MODEL_APPLICATION_REASONS.has(String(body.modelIntent.reason))
+        ? body.modelIntent.reason as string
+        : model === ""
+          ? "Using the runtime's configured default model."
           : "Saved for this chat.";
       existing.modelIntent = {
         model,

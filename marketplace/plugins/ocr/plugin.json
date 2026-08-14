@@ -20,6 +20,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/ocr",
   "x-coven": {
     "displayName": "OCR",

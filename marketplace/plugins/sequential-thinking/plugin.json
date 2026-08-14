@@ -17,6 +17,7 @@
   "capabilities": [
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/sequential-thinking",
   "x-coven": {
     "displayName": "Sequential Thinking",

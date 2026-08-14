@@ -119,6 +119,115 @@ try {
     assert.deepEqual(merged.travel.offlineQueue.map((item) => item.id).sort(), ["current-work", "legacy-work"]);
   }
 
+  // Title revisions are monotonic counters rather than competing state.
+  // Reconcile matching title ownership first, then retain the greatest
+  // observed revision while preserving equal and one-sided legacy counters.
+  {
+    const { coven, cave } = await home("state-title-revisions");
+    await mkdir(cave, { recursive: true });
+    const legacy = baseState();
+    legacy.sessionTitles = { divergent: "Shared title", equal: "Equal title" };
+    legacy.sessionTitleAuto = {};
+    legacy.sessionTitleManual = { divergent: true, equal: true };
+    legacy.sessionTitleRevision = { divergent: 7, equal: 4, legacyOnly: 2 };
+    const canonical = baseState();
+    canonical.sessionTitles = { divergent: "Shared title", equal: "Equal title" };
+    canonical.sessionTitleAuto = {};
+    canonical.sessionTitleManual = { divergent: true, equal: true };
+    canonical.sessionTitleRevision = { divergent: 9, equal: 4, canonicalOnly: 3 };
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual((await json(path.join(cave, "state.json"))).sessionTitleRevision, {
+      divergent: 9,
+      equal: 4,
+      legacyOnly: 2,
+      canonicalOnly: 3,
+    });
+  }
+
+  // Invalid revisions must not enter canonical state through reconciliation.
+  for (const [name, invalid] of [
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["string", "2"],
+    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+  ]) {
+    const { coven, cave } = await home(`state-title-revision-${name}`);
+    await mkdir(cave, { recursive: true });
+    const legacy = baseState();
+    legacy.sessionTitleRevision = { invalid };
+    const canonical = baseState();
+    canonical.sessionTitleRevision = {};
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-state.json"));
+    assert.deepEqual((await json(path.join(cave, "state.json"))).sessionTitleRevision, {});
+    assert.match(
+      (await caveHomeMigrationStatus()).details.find((entry) => entry.legacy === "cave-state.json").summary,
+      /sessionTitleRevision.*malformed/,
+    );
+  }
+
+  // Identical snapshots bypass mergeState, so canonical validation must reject
+  // malformed title-revision values and non-record map shapes on that path too.
+  for (const [name, sessionTitleRevision] of [
+    ["negative-value", { invalid: -1 }],
+    ["array", []],
+    ["null", null],
+    ["string", "invalid"],
+  ]) {
+    const { coven, cave } = await home(`state-identical-title-revision-${name}`);
+    await mkdir(cave, { recursive: true });
+    const state = baseState();
+    state.sessionTitleRevision = sessionTitleRevision;
+    const snapshot = JSON.stringify(state);
+    await writeFile(path.join(coven, "cave-state.json"), snapshot);
+    await writeFile(path.join(cave, "state.json"), snapshot);
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.equal(
+      result.errors.some((error) => error.legacy === "cave-state.json"),
+      true,
+      `${name} must fail canonical validation`,
+    );
+    assert.deepEqual((await json(path.join(cave, "state.json"))).sessionTitleRevision, sessionTitleRevision);
+    assert.equal(await kind(path.join(coven, "cave-state.json")), "file");
+  }
+
+  // A larger revision cannot choose between genuinely conflicting titles or
+  // ownership. Those conflicts must remain available for explicit review.
+  for (const [name, mutateLegacy, expectedConflict] of [
+    ["title", (state) => {
+      state.sessionTitles = { shared: "Legacy title" };
+      state.sessionTitleManual = { shared: true };
+    }, "sessionTitles"],
+    ["ownership", (state) => {
+      state.sessionTitles = { shared: "Shared title" };
+      state.sessionTitleManual = { shared: true };
+    }, "sessionTitleManual"],
+  ]) {
+    const { coven, cave } = await home(`state-title-revision-conflicting-${name}`);
+    await mkdir(cave, { recursive: true });
+    const legacy = baseState();
+    mutateLegacy(legacy);
+    legacy.sessionTitleRevision = { shared: 9 };
+    const canonical = baseState();
+    canonical.sessionTitles = { shared: name === "title" ? "Canonical title" : "Shared title" };
+    canonical.sessionTitleManual = {};
+    canonical.sessionTitleRevision = { shared: 2 };
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-state.json"));
+    assert.deepEqual((await json(path.join(cave, "state.json"))).sessionTitleRevision, { shared: 2 });
+    assert.match(
+      (await caveHomeMigrationStatus()).details.find((entry) => entry.legacy === "cave-state.json").summary,
+      new RegExp(expectedConflict),
+    );
+  }
+
   // Session titles, archive markers, and keep markers delete keys during
   // ordinary user actions. A one-sided key cannot be distinguished from a
   // later deletion, so preserve both snapshots for explicit review.

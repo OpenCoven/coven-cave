@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -25,11 +25,30 @@ import { resolveSidecarTarget } from "./sidecar-target.mjs";
 import { covenLaunchCommandForBinary } from "../src/lib/coven-bin.ts";
 import { tailnetDiscoveryProof } from "../src/lib/mobile-handoff.ts";
 import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir } from "../src/lib/opencode-bin.ts";
+import { researchMediaOpenFlags } from "../src/lib/server/research-media-store.ts";
 
 const skips: string[] = [];
 function skip(reason: string): void {
   skips.push(reason);
   console.log(`  ↷ skipped: ${reason}`);
+}
+
+// Media files use O_NOFOLLOW on POSIX. Windows lacks a dependable equivalent,
+// so its explicit fallback keeps the lstat + post-open FileHandle.stat checks.
+{
+  const simulatedNoFollow = 0x20_0000;
+  assert.equal(
+    researchMediaOpenFlags("darwin", simulatedNoFollow) & simulatedNoFollow,
+    simulatedNoFollow,
+  );
+  assert.equal(
+    researchMediaOpenFlags("linux", simulatedNoFollow) & simulatedNoFollow,
+    simulatedNoFollow,
+  );
+  assert.equal(
+    researchMediaOpenFlags("win32", simulatedNoFollow) & simulatedNoFollow,
+    0,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -129,10 +148,16 @@ function skip(reason: string): void {
       "",
     ].join("\r\n"),
   );
+  const resolvedShim = covenLaunchCommandForBinary(shim, "win32");
+  assert.equal(
+    resolvedShim.command,
+    process.execPath,
+    "win32 .cmd shims launch through node (never spawned directly — CVE-2024-27980 EINVAL)",
+  );
   assert.deepEqual(
-    covenLaunchCommandForBinary(shim, "win32"),
-    { command: process.execPath, fixedArgs: [shimScript] },
-    "win32 .cmd shims launch through node + the resolved script (never spawned directly — CVE-2024-27980 EINVAL)",
+    resolvedShim.fixedArgs?.map((target) => statSync(target).ino),
+    [statSync(shimScript).ino],
+    "win32 .cmd shims launch their resolved script, including through equivalent macOS /var paths",
   );
 
   // Host branch — the genuinely per-OS assertion.
@@ -146,9 +171,11 @@ function skip(reason: string): void {
     codeShim,
     'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@opencoven\\coven-code\\bin\\coven-code" %*\r\n',
   );
+  const resolvedCodeShim = covenLaunchCommandForBinary(codeShim, "win32");
+  assert.equal(resolvedCodeShim.command, process.execPath, "win32 Coven Code shims launch through node");
   assert.deepEqual(
-    covenLaunchCommandForBinary(codeShim, "win32"),
-    { command: process.execPath, fixedArgs: [codeShimScript] },
+    resolvedCodeShim.fixedArgs?.map((target) => statSync(target).ino),
+    [statSync(codeShimScript).ino],
     "win32 npm shims resolve extensionless Coven Code targets from their own package",
   );
 

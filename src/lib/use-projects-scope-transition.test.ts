@@ -4,7 +4,12 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 
-import { resetProjectRegistryListenersForTests } from "./project-registry-events.ts";
+import {
+  LOCAL_PROJECT_CREATION_MESSAGE,
+  LOCAL_REQUEST_REQUIRED_CODE,
+  ProjectCreationError,
+} from "./project-errors.ts";
+import { emitProjectRegistryMutation, resetProjectRegistryListenersForTests } from "./project-registry-events.ts";
 import { resetProjectsCacheForTests, useProjects } from "./use-projects.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -30,6 +35,12 @@ function ScopeProbe({ familiarId, snapshots }: { familiarId: string | null; snap
     loadedSuccessfully: state.loadedSuccessfully,
   });
   return createElement("scope-probe");
+}
+
+function CreationProbe({ onState }: { onState: (state: ReturnType<typeof useProjects>) => void }) {
+  const state = useProjects();
+  onState(state);
+  return createElement("creation-probe");
 }
 
 function deferredFetch() {
@@ -133,6 +144,160 @@ test("mounted familiar A-to-B transition stays empty through a failed B request"
       renderer?.unmount();
     });
     fetch.restore();
+    resetProjectRegistryListenersForTests();
+    resetProjectsCacheForTests();
+  }
+});
+
+test("project creation preserves the local-only code through nullable and throwing APIs", async () => {
+  resetProjectRegistryListenersForTests();
+  resetProjectsCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const pending: DeferredResponse[] = [];
+  let latestState: ReturnType<typeof useProjects> | null = null;
+  let renderer: ReturnType<typeof create> | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    return await new Promise((resolve) => pending.push({ url, resolve }));
+  }) as typeof fetch;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(CreationProbe, { onState: (state) => { latestState = state; } }));
+    });
+    assert.equal(pending.length, 1, "mount loads the project list before creation is attempted");
+    await settle(pending.shift()!, []);
+    assert.ok(latestState);
+
+    const reported: ProjectCreationError[] = [];
+    const nullable = latestState!.createProject("Remote", "/remote", {
+      onError: (error) => reported.push(error),
+    });
+    assert.equal(pending.length, 1);
+    pending.shift()!.resolve({
+      ok: false,
+      status: 403,
+      json: async () => ({ ok: false, code: LOCAL_REQUEST_REQUIRED_CODE, error: "forbidden" }),
+    });
+    assert.equal(await nullable, null, "the nullable API keeps its null-on-failure contract");
+    assert.equal(reported.length, 1);
+    assert.equal(reported[0]!.code, LOCAL_REQUEST_REQUIRED_CODE);
+    assert.equal(reported[0]!.message, LOCAL_PROJECT_CREATION_MESSAGE);
+
+    const throwing = latestState!.createProjectOrThrow("Remote", "/remote");
+    assert.equal(pending.length, 1);
+    pending.shift()!.resolve({
+      ok: false,
+      status: 403,
+      json: async () => ({ ok: false, code: LOCAL_REQUEST_REQUIRED_CODE, error: "forbidden" }),
+    });
+    await assert.rejects(throwing, (error: unknown) => {
+      assert.ok(error instanceof ProjectCreationError);
+      assert.equal(error.code, LOCAL_REQUEST_REQUIRED_CODE);
+      assert.equal(error.message, LOCAL_PROJECT_CREATION_MESSAGE);
+      return true;
+    });
+
+    const validationReported: ProjectCreationError[] = [];
+    const invalidRoot = latestState!.createProject("Missing", "/missing", {
+      onError: (error) => validationReported.push(error),
+    });
+    assert.equal(pending.length, 1);
+    pending.shift()!.resolve({
+      ok: false,
+      status: 400,
+      json: async () => ({ ok: false, error: "root does not exist" }),
+    });
+    assert.equal(await invalidRoot, null);
+    assert.equal(validationReported[0]!.message, "root does not exist");
+    assert.equal(validationReported[0]!.code, undefined);
+
+    const validationThrow = latestState!.createProjectOrThrow("Missing", "/missing");
+    assert.equal(pending.length, 1);
+    pending.shift()!.resolve({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        ok: false,
+        code: "PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE",
+        error: "Choose a specific folder for this project — your home folder itself or the top of a drive can't be a project root.",
+      }),
+    });
+    await assert.rejects(validationThrow, (error: unknown) => {
+      assert.ok(error instanceof ProjectCreationError);
+      assert.equal(error.code, "PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE");
+      assert.match(error.message, /home folder itself/);
+      return true;
+    });
+  } finally {
+    await act(async () => {
+      renderer?.unmount();
+    });
+    globalThis.fetch = originalFetch;
+    resetProjectRegistryListenersForTests();
+    resetProjectsCacheForTests();
+  }
+});
+
+test("unscoped project creation is visible before the initial registry load settles", async () => {
+  resetProjectRegistryListenersForTests();
+  resetProjectsCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const pending: DeferredResponse[] = [];
+  let latestState: ReturnType<typeof useProjects> | null = null;
+  let renderer: ReturnType<typeof create> | null = null;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    return await new Promise((resolve) => pending.push({ url, resolve }));
+  }) as typeof fetch;
+
+  try {
+    await act(async () => {
+      renderer = create(createElement(CreationProbe, { onState: (state) => { latestState = state; } }));
+    });
+    assert.equal(pending.length, 1, "the initial unscoped list is still in flight");
+
+    const created = project("created-before-load");
+    const creation = latestState!.createProject("Created", created.root, { emitMutation: false });
+    assert.equal(pending.length, 2, "creation is independent of the pending list request");
+    pending[1]!.resolve({ ok: true, status: 201, json: async () => ({ ok: true, project: created }) });
+    await act(async () => {
+      await creation;
+    });
+
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      [created.id],
+      "the successful local registration must not remain masked by the pending GET",
+    );
+
+    await settle(pending[0]!, [project("existing-before-create")]);
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      [created.id, "existing-before-create"],
+      "an older in-flight snapshot must not overwrite the new registration or hide existing projects",
+    );
+
+    await act(async () => {
+      emitProjectRegistryMutation({ kind: "delete", projectId: created.id });
+      await Promise.resolve();
+    });
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      ["existing-before-create"],
+      "a delete from another project hook must remove the locally pending registration",
+    );
+    await settle(pending[0]!, [project("existing-before-create")]);
+    assert.deepEqual(
+      latestState!.projects.map((entry) => entry.id),
+      ["existing-before-create"],
+      "a delete refresh must not resurrect a locally pending registration",
+    );
+  } finally {
+    await act(async () => {
+      renderer?.unmount();
+    });
+    globalThis.fetch = originalFetch;
     resetProjectRegistryListenersForTests();
     resetProjectsCacheForTests();
   }

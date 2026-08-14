@@ -1,4 +1,11 @@
-export type ModelScope = "global-default" | "familiar-default" | "session" | "next-message";
+import { isSafeRuntimeModelId, runtimeOwnsModelDefault } from "./runtime-models.ts";
+
+export type ModelScope =
+  | "runtime-default"
+  | "global-default"
+  | "familiar-default"
+  | "session"
+  | "next-message";
 
 export type ModelApplicationState =
   | "unknown"
@@ -14,6 +21,13 @@ export type ChatModelState = {
   runtime: string | null;
   effectiveModel: string;
   source: ModelScope;
+  /**
+   * The familiar's own stored default, independent of which scope produced
+   * `effectiveModel`. `source: "session"` only means a session intent exists —
+   * it does NOT imply the session model differs from this — so anything
+   * offering to promote a model to the familiar default must compare the two.
+   */
+  familiarDefaultModel: string | null;
   applicationState: ModelApplicationState;
   reason?: string;
 };
@@ -44,7 +58,6 @@ export type ResolveChatModelStateInput = {
 const UNSUPPORTED_REASON =
   "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.";
 const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
-const GROK_DEFAULT_MODEL = "grok-4.5";
 const SYNTHETIC_LOCAL_MODELS = new Set([
   "codex-local",
   "claude-local",
@@ -54,15 +67,13 @@ const SYNTHETIC_LOCAL_MODELS = new Set([
   "openclaw-local",
 ]);
 
-const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
-
 export function cleanModelId(value: unknown): string | null {
   if (typeof value !== "string") return null;
 
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (trimmed.includes(" ") || trimmed.includes("..")) return null;
-  if (!MODEL_ID_RE.test(trimmed)) return null;
+  if (!isSafeRuntimeModelId(trimmed)) return null;
 
   return trimmed;
 }
@@ -104,15 +115,6 @@ function globalDefaultForHarness(globalDefaultModel: unknown, harness: string): 
   reason: string;
 } {
   const model = effectiveModelForHarness(globalDefaultModel, harness) ?? GLOBAL_DEFAULT_MODEL;
-  // Grok Build cannot run Cave's default OpenAI model. A Grok familiar with no
-  // explicit model (for example, one switched to Grok in Familiar Studio)
-  // must use the CLI's own default instead of forwarding `gpt-5.6-sol`.
-  if (harness === "grok" && !/^(?:xai\/)?grok-/i.test(model)) {
-    return {
-      model: GROK_DEFAULT_MODEL,
-      reason: "Cave's global model is unavailable in Grok Build; using Grok's default.",
-    };
-  }
   return { model, reason: "Inherited from Cave defaults." };
 }
 
@@ -177,6 +179,17 @@ export function modelApplicationFromRun(input: {
 }
 
 export function resolveChatModelState(input: ResolveChatModelStateInput): ChatModelState {
+  // Empty string is the explicit one-turn Runtime-default sentinel. It must be
+  // evaluated before the durable session intent so regenerate/retry can use
+  // the provider default once without changing the chat's saved selection.
+  if (input.nextMessageModel === "") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "runtime-default",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model for this message.",
+    });
+  }
   const nextMessageModel = effectiveModelForHarness(input.nextMessageModel, input.harness);
   if (nextMessageModel) {
     return chatModelState(input, {
@@ -198,6 +211,30 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
+  // An empty persisted session intent is deliberately distinct from an absent
+  // intent: it is the user's durable request to defer to the runtime, even
+  // when the familiar or Cave has a concrete fallback model.
+  if (input.sessionModel === "") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "runtime-default",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model.",
+    });
+  }
+
+  // A familiar-scoped empty value is the durable clear sentinel. It is
+  // intentionally distinct from an absent config field, which may inherit
+  // Cave's configured global default for Cave-owned runtimes.
+  if (input.familiarModel === "") {
+    return chatModelState(input, {
+      effectiveModel: "",
+      source: "runtime-default",
+      applicationState: "saved",
+      reason: "Using the runtime's configured default model.",
+    });
+  }
+
   const familiarModel = effectiveModelForHarness(input.familiarModel, input.harness);
   if (familiarModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
@@ -209,17 +246,15 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  // OpenCode's authenticated account chooses its own default model.  Its
-  // catalog deliberately has an empty default, so inheriting Cave's global
-  // (usually OpenAI) model here would make an untouched OpenCode familiar run
-  // `opencode --model <unconfigured-global-model>` instead of letting the CLI
-  // select its configured default.
-  if (input.harness === "opencode") {
+  // Runtime-owned defaults are represented by no model id. Inventory entries
+  // may still be offered as explicit choices, but a seed/fallback must never
+  // become an implicit launch override.
+  if (runtimeOwnsModelDefault(input.harness)) {
     return chatModelState(input, {
       effectiveModel: "",
-      source: "global-default",
+      source: "runtime-default",
       applicationState: "saved",
-      reason: "Using OpenCode's authenticated default model.",
+      reason: "Using the runtime's configured default model.",
     });
   }
 
@@ -234,12 +269,17 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
 
 function chatModelState(
   input: ResolveChatModelStateInput,
-  state: Omit<ChatModelState, "familiarId" | "harness" | "runtime">,
+  state: Omit<ChatModelState, "familiarId" | "harness" | "runtime" | "familiarDefaultModel">,
 ): ChatModelState {
   return {
     familiarId: input.familiarId,
     harness: input.harness,
     runtime: input.runtime ?? null,
+    // Normalized through the same helper the resolver uses on every other
+    // model id, so a caller can compare it to `effectiveModel` directly. Set
+    // here rather than per-branch because it describes the familiar's stored
+    // default, which does not vary with the scope that happened to win.
+    familiarDefaultModel: effectiveModelForHarness(input.familiarModel, input.harness) || null,
     ...state,
   };
 }

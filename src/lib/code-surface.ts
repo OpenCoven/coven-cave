@@ -16,10 +16,112 @@ export function isCodeWorkbenchTab(value: string | null | undefined): value is C
   return (CODE_WORKBENCH_TABS as readonly string[]).includes(value ?? "");
 }
 
-/** Top-level surface tabs: the session workbench, then GitHub content split into
- *  its own tabs (PRs · Issues · Reviews) — the single generic "github" tab was
- *  replaced so each content type lands directly on its own list. */
-export const CODE_TOP_TABS = ["sessions", "prs", "issues", "reviews"] as const;
+/**
+ * Map a legacy `?wtab=` deep link onto the review rail (cave-0rcku).
+ *
+ * `diff` was renamed `changes` to match the panel it mounts. `files` and
+ * `terminal` resolve to null: both are now permanent parts of the room — a
+ * column and a drawer — rather than tabs, so those links land on a room that
+ * already shows them and the rail keeps whatever it was going to show.
+ */
+export function codeRailTabForWorkbenchTab(
+  tab: CodeWorkbenchTab | null | undefined,
+): "changes" | "pr" | null {
+  if (tab === "diff") return "changes";
+  if (tab === "pr") return "pr";
+  return null;
+}
+
+/**
+ * Room layout thresholds (cave-k3a9u).
+ *
+ * These are the ONE source of truth for how much width each zone needs; the
+ * CSS `minSize` strings are derived from them so a number can never drift
+ * between the constraint and the decision to apply it.
+ *
+ * They are measured against the Room's own box, never the viewport. The
+ * approved design is explicit about this — "container queries or measured
+ * panel width drive compact behavior; viewport width alone is insufficient
+ * because the Room can appear beside other pages" — and it is not a
+ * formality: the Room renders inside the role-surface host beside the app
+ * sidebar and can be placed in a split, so viewport width systematically
+ * overstates the width the Room actually got.
+ */
+export const CODE_ROOM_RAIL_WIDTH_PX = 256;
+
+/** The workbench's three columns (cave-0rcku): file tree, source, review rail. */
+export const CODE_ROOM_TREE_WIDTH_PX = 272;
+export const CODE_ROOM_MIN_VIEWER_WIDTH_PX = 380;
+export const CODE_ROOM_MIN_REVIEW_WIDTH_PX = 280;
+
+/** Below this the three columns cannot all be legible, so the workbench drills
+ *  in (Files / Source / Review) instead of showing three crushed columns. */
+export const CODE_ROOM_SPLIT_MIN_WIDTH_PX =
+  CODE_ROOM_TREE_WIDTH_PX + CODE_ROOM_MIN_VIEWER_WIDTH_PX + CODE_ROOM_MIN_REVIEW_WIDTH_PX;
+
+/** Below this the session rail cannot sit beside a workbench that still fits
+ *  its split, so the rail becomes the landing step. Derived from the two
+ *  zones it must accompany, which is what keeps this breakpoint and the split
+ *  breakpoint from disagreeing the way 768px and 900px did. */
+export const CODE_ROOM_RAIL_MIN_WIDTH_PX =
+  CODE_ROOM_RAIL_WIDTH_PX + CODE_ROOM_SPLIT_MIN_WIDTH_PX;
+
+/**
+ * The narrow workbench's three steps (cave-0rcku). `source` is the landing
+ * step: this is a reading surface, and the file you opened is what you came
+ * for. The terminal is NOT a step — it is the drawer, present at every width,
+ * so narrowing the room never takes the shell away.
+ */
+export const CODE_WORKBENCH_STEPS = ["files", "source", "review"] as const;
+export type CodeWorkbenchStep = (typeof CODE_WORKBENCH_STEPS)[number];
+
+/** Live-region copy per step, so the announcement can't drift from the label. */
+export const CODE_STEP_ANNOUNCEMENT: Record<CodeWorkbenchStep, string> = {
+  files: "Files shown.",
+  source: "Source shown.",
+  review: "Review shown.",
+};
+
+/**
+ * Does a measured box have room for a zone that needs `minWidth`?
+ *
+ * `width === null` means "not measured yet" — the first paint, SSR, or a test
+ * environment without ResizeObserver. That is not the same as "too narrow", so
+ * the caller supplies a viewport-derived guess to use until the real number
+ * arrives. Guessing wide on a phone would flash a crushed two-column layout
+ * before correcting, which is exactly the bug this replaces.
+ */
+export function codeRoomFits(
+  width: number | null | undefined,
+  minWidth: number,
+  fallbackNarrow: boolean,
+): boolean {
+  if (width === null || width === undefined || !Number.isFinite(width) || width <= 0) {
+    return !fallbackNarrow;
+  }
+  return width >= minWidth;
+}
+
+/** Can the Room show the session rail beside a usable workbench? */
+export function codeRoomFitsRail(
+  width: number | null | undefined,
+  fallbackNarrow: boolean,
+): boolean {
+  return codeRoomFits(width, CODE_ROOM_RAIL_MIN_WIDTH_PX, fallbackNarrow);
+}
+
+/** Can the workbench show tree, source and review side by side? */
+export function codeWorkbenchFitsSplit(
+  width: number | null | undefined,
+  fallbackNarrow: boolean,
+): boolean {
+  return codeRoomFits(width, CODE_ROOM_SPLIT_MIN_WIDTH_PX, fallbackNarrow);
+}
+
+/** Top-level surface tabs: the session workbench plus Activity (the former
+ *  all-content GitHub feed) and focused GitHub slices. Legacy `ctab=github`
+ *  deep links normalize onto Activity. */
+export const CODE_TOP_TABS = ["sessions", "activity", "prs", "issues", "reviews"] as const;
 export type CodeTopTab = (typeof CODE_TOP_TABS)[number];
 
 export function isCodeTopTab(value: string | null | undefined): value is CodeTopTab {
@@ -27,7 +129,7 @@ export function isCodeTopTab(value: string | null | undefined): value is CodeTop
 }
 
 /** The GitHub content tabs (every top tab except the session workbench). */
-export const CODE_GITHUB_TABS = ["prs", "issues", "reviews"] as const;
+export const CODE_GITHUB_TABS = ["activity", "prs", "issues", "reviews"] as const;
 export type CodeGithubTab = (typeof CODE_GITHUB_TABS)[number];
 
 export function isCodeGithubTab(value: string | null | undefined): value is CodeGithubTab {
@@ -35,10 +137,11 @@ export function isCodeGithubTab(value: string | null | undefined): value is Code
 }
 
 /** Normalize a raw `ctab` value to a top tab. The legacy `github` value (from
- *  deep links minted before the split) lands on PRs so old links keep working. */
+ *  deep links minted before Activity was named explicitly) lands on Activity so
+ *  old links keep working. */
 export function normalizeCodeTopTab(raw: string | null | undefined): CodeTopTab {
   if (isCodeTopTab(raw)) return raw;
-  if (raw === "github") return "prs";
+  if (raw === "github") return "activity";
   return "sessions";
 }
 
