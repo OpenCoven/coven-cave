@@ -16,7 +16,7 @@ import {
 } from "../../../../lib/chat-tool-events.ts";
 
 const chatRoute = await readFile(
-  new URL("../../../../lib/server/chat-send-service.ts", import.meta.url),
+  new URL("./route.ts", import.meta.url),
   "utf8",
 );
 const modelHelpers = await readFile(
@@ -480,7 +480,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /import \{ conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace \} from "@\/app\/api\/chat\/send\/chat-send-runtime";/,
+  /import \{ conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace \} from "\.\/chat-send-runtime";/,
   "The daemon-session resume fallback comes from the shared chat-send-runtime helper",
 );
 const sendRuntimeHelpers = await readFile(
