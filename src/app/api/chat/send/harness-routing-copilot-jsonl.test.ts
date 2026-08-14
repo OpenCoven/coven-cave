@@ -18,7 +18,7 @@ import { buildCopilotStreamArgs } from "../../../../lib/copilot-stream.ts";
 import { prepareCopilotChatRouting, resolveCopilotChatRouting } from "./copilot-routing.ts";
 
 const chatRoute = await readFile(
-  new URL("../../../../lib/server/chat-send-service.ts", import.meta.url),
+  new URL("./route.ts", import.meta.url),
   "utf8",
 );
 const streamEvents = await readFile(
