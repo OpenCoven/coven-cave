@@ -242,9 +242,6 @@ interface NormalizedRankingEnvelope {
   auditHash: string;
 }
 
-const AUDIT_MAX_DEPTH = 4;
-const AUDIT_MAX_ITEMS = 32;
-
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -263,106 +260,198 @@ function hashText(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function boundedAuditValue(
-  value: unknown,
-  depth = 0,
-  seen = new WeakSet<object>(),
-): unknown {
-  if (value === null) return { type: "null" };
-  if (typeof value === "string") {
-    return { type: "string", length: value.length, sha256: hashText(value) };
+function numberAuditToken(value: number): string {
+  if (Number.isNaN(value)) return "nan";
+  if (value === Number.POSITIVE_INFINITY) return "infinity";
+  if (value === Number.NEGATIVE_INFINITY) return "-infinity";
+  if (Object.is(value, -0)) return "-0";
+  return String(value);
+}
+
+function symbolAuditToken(value: symbol): string {
+  return `${Symbol.keyFor(value) === undefined ? "local" : "global"}:${
+    hashText(Symbol.keyFor(value) ?? value.description ?? "")
+  }`;
+}
+
+type RuntimePropertyKey = string | symbol;
+
+function propertyKeyAuditToken(value: RuntimePropertyKey): string {
+  return typeof value === "string"
+    ? `string:${hashText(value)}`
+    : `symbol:${symbolAuditToken(value)}`;
+}
+
+function comparePropertyKeys(left: RuntimePropertyKey, right: RuntimePropertyKey): number {
+  if (typeof left === "string" && typeof right === "string") {
+    return compareOrdinalStrings(left, right);
   }
-  if (typeof value === "number") {
-    return { type: "number", value: Number.isFinite(value) ? value : String(value) };
-  }
-  if (typeof value === "boolean" || typeof value === "undefined") {
-    return { type: typeof value, value };
-  }
-  if (typeof value === "bigint") {
-    return { type: "bigint", sha256: hashText(value.toString()) };
-  }
-  if (typeof value === "symbol" || typeof value === "function") {
-    return { type: typeof value };
-  }
-  if (depth >= AUDIT_MAX_DEPTH) return { type: "object", truncated: true };
-  if (seen.has(value)) return { type: "object", cycle: true };
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) {
-      const items = value.slice(0, AUDIT_MAX_ITEMS).map((item) =>
-        boundedAuditValue(item, depth + 1, seen)
-      );
-      return { type: "array", length: value.length, items };
-    }
-    const record = value as UnknownRecord;
-    const keys = Object.keys(record).sort(compareOrdinalStrings);
-    return {
-      type: "object",
-      keyCount: keys.length,
-      entries: keys.slice(0, AUDIT_MAX_ITEMS).map((key) => {
-        let child: unknown;
-        try {
-          child = record[key];
-        } catch {
-          child = { inaccessible: true };
-        }
-        return [
-          hashText(key),
-          boundedAuditValue(child, depth + 1, seen),
-        ];
-      }),
-    };
-  } catch {
-    return { type: "object", inaccessible: true };
-  }
+  if (typeof left === "string") return -1;
+  if (typeof right === "string") return 1;
+  return compareOrdinalStrings(symbolAuditToken(left), symbolAuditToken(right));
 }
 
 function auditEnvelopeHash(value: unknown): string {
-  return hashText(JSON.stringify(boundedAuditValue(value)));
+  const hash = createHash("sha256");
+  const seen = new Map<object, number>();
+
+  const write = (token: string): void => {
+    hash.update(String(token.length), "utf8");
+    hash.update(":", "utf8");
+    hash.update(token, "utf8");
+  };
+
+  const visit = (current: unknown): void => {
+    if (current === null) {
+      write("null");
+      return;
+    }
+    switch (typeof current) {
+      case "string":
+        write(`string:${current.length}:${hashText(current)}`);
+        return;
+      case "number":
+        write(`number:${numberAuditToken(current)}`);
+        return;
+      case "boolean":
+        write(`boolean:${current}`);
+        return;
+      case "undefined":
+        write("undefined");
+        return;
+      case "bigint":
+        write(`bigint:${hashText(current.toString())}`);
+        return;
+      case "symbol":
+        write(`symbol:${symbolAuditToken(current)}`);
+        return;
+      case "function":
+        write("function");
+        return;
+    }
+
+    const priorReference = seen.get(current);
+    if (priorReference !== undefined) {
+      write(`reference:${priorReference}`);
+      return;
+    }
+    const reference = seen.size;
+    seen.set(current, reference);
+
+    let array = false;
+    try {
+      array = Array.isArray(current);
+    } catch {
+      write(`inaccessible-object:${reference}`);
+      return;
+    }
+    write(`${array ? "array" : "object"}:${reference}`);
+
+    let descriptors: PropertyDescriptorMap;
+    try {
+      descriptors = Object.getOwnPropertyDescriptors(current);
+    } catch {
+      write("descriptors-inaccessible");
+      return;
+    }
+    const keys = (Reflect.ownKeys(descriptors) as RuntimePropertyKey[])
+      .sort(comparePropertyKeys);
+    write(`properties:${keys.length}`);
+    for (const key of keys) {
+      const descriptor = descriptors[key]!;
+      write(propertyKeyAuditToken(key));
+      write(`enumerable:${descriptor.enumerable === true}`);
+      write(`configurable:${descriptor.configurable === true}`);
+      if ("value" in descriptor) {
+        write(`writable:${descriptor.writable === true}`);
+        visit(descriptor.value);
+      } else {
+        write(`accessor:get:${descriptor.get === undefined ? "absent" : "present"}`);
+        write(`accessor:set:${descriptor.set === undefined ? "absent" : "present"}`);
+      }
+    }
+  };
+
+  try {
+    visit(value);
+  } catch {
+    write("structural-serialization-failed");
+  }
+  return hash.digest("hex");
+}
+
+function readRankingEnvelopeProperty(
+  value: UnknownRecord,
+  property: "candidate" | "scorecard" | "validation",
+  findings: DeterministicFinding[],
+): unknown {
+  let present = false;
+  try {
+    present = Object.prototype.hasOwnProperty.call(value, property);
+  } catch {
+    findings.push(auditFinding(
+      "ranking-input-property-inaccessible",
+      `Ranking input batch entry property "${property}" could not be inspected.`,
+    ));
+    return undefined;
+  }
+  if (!present) {
+    findings.push(auditFinding(
+      "ranking-input-envelope-invalid",
+      `Ranking input batch entry must provide a "${property}" property.`,
+    ));
+    return undefined;
+  }
+  try {
+    return value[property];
+  } catch {
+    findings.push(auditFinding(
+      "ranking-input-property-inaccessible",
+      `Ranking input batch entry property "${property}" could not be read.`,
+    ));
+    return undefined;
+  }
 }
 
 function normalizeRankingEnvelope(value: unknown): NormalizedRankingEnvelope {
   const findings: DeterministicFinding[] = [];
-  if (!isRecord(value)) {
-    const kind = runtimeKind(value);
+  const auditHash = auditEnvelopeHash(value);
+  try {
+    if (!isRecord(value)) {
+      const kind = runtimeKind(value);
+      findings.push(auditFinding(
+        "ranking-input-envelope-invalid",
+        `Ranking input batch entry has runtime type "${kind}"; expected an object envelope.`,
+      ));
+      return {
+        candidateValue: undefined,
+        scorecardValue: undefined,
+        findings,
+        auditHash,
+      };
+    }
+
+    const candidateValue = readRankingEnvelopeProperty(value, "candidate", findings);
+    const scorecardValue = readRankingEnvelopeProperty(value, "scorecard", findings);
+    readRankingEnvelopeProperty(value, "validation", findings);
+    return {
+      candidateValue,
+      scorecardValue,
+      findings,
+      auditHash,
+    };
+  } catch {
     findings.push(auditFinding(
-      "ranking-input-envelope-invalid",
-      `Ranking input batch entry has runtime type "${kind}"; expected an object envelope.`,
+      "ranking-input-envelope-inaccessible",
+      "Ranking input batch entry could not be normalized.",
     ));
     return {
       candidateValue: undefined,
       scorecardValue: undefined,
       findings,
-      auditHash: auditEnvelopeHash(value),
+      auditHash,
     };
   }
-
-  let candidateValue: unknown;
-  let scorecardValue: unknown;
-  try {
-    candidateValue = value.candidate;
-    scorecardValue = value.scorecard;
-  } catch {
-    findings.push(auditFinding(
-      "ranking-input-envelope-invalid",
-      "Ranking input batch entry properties could not be read.",
-    ));
-  }
-  if (
-    !Object.prototype.hasOwnProperty.call(value, "candidate")
-    || !Object.prototype.hasOwnProperty.call(value, "scorecard")
-  ) {
-    findings.push(auditFinding(
-      "ranking-input-envelope-invalid",
-      "Ranking input batch entry must provide candidate and scorecard properties.",
-    ));
-  }
-  return {
-    candidateValue,
-    scorecardValue,
-    findings,
-    auditHash: auditEnvelopeHash(value),
-  };
 }
 
 function schemaCheck(

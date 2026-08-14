@@ -359,6 +359,164 @@ for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] a
 }
 
 {
+  const valid = rankingInput(candidate("candidate-valid-getter-sibling"));
+  function hostileEnvelope() {
+    const accesses = {
+      candidate: 0,
+      scorecard: 0,
+      validation: 0,
+    };
+    const hostile = Object.defineProperties({}, {
+      candidate: {
+        enumerable: true,
+        get() {
+          accesses.candidate += 1;
+          throw new Error("candidate getter must stay inside its envelope");
+        },
+      },
+      scorecard: {
+        enumerable: true,
+        get() {
+          accesses.scorecard += 1;
+          throw new Error("scorecard getter must stay inside its envelope");
+        },
+      },
+      validation: {
+        enumerable: true,
+        get() {
+          accesses.validation += 1;
+          throw new Error("validation getter must stay inside its envelope");
+        },
+      },
+    });
+    Object.defineProperty(hostile, "cycle", {
+      enumerable: true,
+      value: hostile,
+    });
+    return { accesses, hostile };
+  }
+
+  const forwardHostile = hostileEnvelope();
+  const reverseHostile = hostileEnvelope();
+  const result = rankThreadCandidates(
+    [forwardHostile.hostile, valid] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+  const reversed = rankThreadCandidates(
+    [valid, reverseHostile.hostile] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+
+  assert.deepEqual(result, reversed);
+  assert.deepEqual(forwardHostile.accesses, {
+    candidate: 1,
+    scorecard: 1,
+    validation: 1,
+  });
+  assert.deepEqual(reverseHostile.accesses, {
+    candidate: 1,
+    scorecard: 1,
+    validation: 1,
+  });
+  assert.deepEqual(result.ranked.map((entry) => entry.candidateId), [
+    valid.candidate.candidateId,
+  ]);
+  assert.equal(result.rejected.length, 1);
+  assert.deepEqual(
+    result.rejected[0]?.findings
+      .filter((finding) => finding.code === "ranking-input-property-inaccessible")
+      .map((finding) => finding.message)
+      .sort(),
+    [
+      'Ranking input batch entry property "candidate" could not be read.',
+      'Ranking input batch entry property "scorecard" could not be read.',
+      'Ranking input batch entry property "validation" could not be read.',
+    ],
+  );
+  assert.deepEqual(Object.keys(result.rejected[0]!).sort(), [
+    "candidateId",
+    "candidateSha256",
+    "dimensions",
+    "eligible",
+    "findings",
+    "paretoDominated",
+    "scorecardId",
+    "validation",
+    "weightedTotal",
+  ]);
+  assert.ok(result.rejected[0]?.findings.every((finding) =>
+    Value.Check(DeterministicFindingSchema, finding)
+  ));
+}
+
+{
+  const valid = rankingInput(candidate("candidate-valid-revoked-proxy-sibling"));
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+
+  const result = rankThreadCandidates(
+    [revoked.proxy, valid] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+
+  assert.deepEqual(result.ranked.map((entry) => entry.candidateId), [
+    valid.candidate.candidateId,
+  ]);
+  assert.equal(result.rejected.length, 1);
+  assert.ok(result.rejected[0]?.findings.some((finding) =>
+    finding.code === "ranking-input-envelope-inaccessible"
+  ));
+}
+
+{
+  function malformedWithLatePostText(text: string) {
+    return {
+      candidate: {
+        posts: Array.from({ length: 34 }, (_, index) => ({
+          postId: `post-${index + 1}`,
+          text: index === 33 ? text : "Shared malformed audit post.",
+          claimIds: [],
+        })),
+        evidence: [],
+      },
+      scorecard: {},
+      validation: {},
+    };
+  }
+
+  const short = malformedWithLatePostText("Late.");
+  const long = malformedWithLatePostText(
+    "This late malformed post has a distinct weighted length.",
+  );
+  const forward = rankThreadCandidates(
+    [long, short] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+  const reverse = rankThreadCandidates(
+    [short, long] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+
+  assert.deepEqual(forward, reverse);
+  assert.equal(forward.rejected.length, 2);
+  assert.ok(forward.rejected.every((entry) => entry.candidateId === "candidate-invalid"));
+  assert.notEqual(
+    forward.rejected[0]?.validation.measurements[33]?.weightedLength,
+    forward.rejected[1]?.validation.measurements[33]?.weightedLength,
+  );
+}
+
+{
   const malformedAlpha = {
     candidate: {
       posts: [{ postId: "post-2", text: "Alpha malformed candidate.", claimIds: [] }],
