@@ -30,7 +30,7 @@ assert.match(
 );
 assert.match(
   source,
-  /\{hasAppliedFilters && \([\s\S]*?onClick=\{clearSessionFilters\}[\s\S]*?Clear filters/,
+  /\{hasAppliedFilters && !\(visibleRows === 0 && !showContentSection\) && \([\s\S]*?onClick=\{clearSessionFilters\}[\s\S]*?Clear filters/,
   "ChatList should show a clear filters action whenever a non-familiar filter is active",
 );
 
