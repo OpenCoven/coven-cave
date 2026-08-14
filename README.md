@@ -223,6 +223,11 @@ URL or query string. Pairing exchange reveals the bearer token exactly once; an
 exact same-key replay returns a typed terminal `pairing_already_exchanged`
 result instead of minting or re-revealing a second credential.
 
+Attachment uploads are private, unbound staging records until they are attached
+to a conversation. Clients should bind them promptly: unbound uploads expire
+after 24 hours, matching mutation-replay retention; bound payloads follow the
+canonical attachment store's 180-day retention policy.
+
 ---
 
 ## Development
