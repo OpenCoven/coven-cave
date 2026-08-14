@@ -100,9 +100,12 @@ type ClientRunOperationLocks = {
   operation: OperationTransactionLock;
 };
 
+type CleanupCursorPathHelpers = Pick<typeof path, "relative" | "sep">;
+
 let writeRecordHookForTest: ClientRunOperationWriteRecordHook | null = null;
 let beforeLaunchHookForTest: ((record: ClientRunOperationRecord) => Promise<void> | void) | null = null;
 let cleanupSidecarsHookForTest: ((storePath: string, next: () => Promise<void>) => Promise<void>) | null = null;
+let cleanupCursorPathHelpersForTest: CleanupCursorPathHelpers | null = null;
 
 export class ClientRunOperationStoreError extends Error {
   constructor(message: string) {
@@ -127,6 +130,12 @@ export function setClientRunOperationCleanupSidecarsHookForTest(
   hook: ((storePath: string, next: () => Promise<void>) => Promise<void>) | null,
 ): void {
   cleanupSidecarsHookForTest = hook;
+}
+
+export function setClientRunOperationCleanupCursorPathHelpersForTest(
+  helpers: CleanupCursorPathHelpers | null,
+): void {
+  cleanupCursorPathHelpersForTest = helpers;
 }
 
 export function clientRunOperationStoreRoot(): string {
@@ -290,6 +299,23 @@ function cleanupCursor(value: unknown): ClientRunOperationCleanupCursor | null {
   const [credentialId, operationFile] = cursor.lastCandidate.split("/");
   return isUuid(credentialId) && isUuid(operationFile.slice(0, -".json".length))
     ? { version: 1, lastCandidate: cursor.lastCandidate.toLowerCase() }
+    : null;
+}
+
+function cleanupCursorKeyForStorePath(root: string, storePath: string): string | null {
+  const pathHelpers = cleanupCursorPathHelpersForTest ?? path;
+  const lastCandidate = pathHelpers.relative(root, storePath)
+    .split(pathHelpers.sep)
+    .join("/");
+  return cleanupCursor({ version: 1, lastCandidate })?.lastCandidate ?? null;
+}
+
+function storePathForCleanupCursorKey(root: string, cursorKey: string): string | null {
+  const cursor = cleanupCursor({ version: 1, lastCandidate: cursorKey });
+  if (!cursor) return null;
+  const storePath = path.resolve(root, ...cursor.lastCandidate.split("/"));
+  return cleanupCursorKeyForStorePath(root, storePath) === cursor.lastCandidate
+    ? storePath
     : null;
 }
 
@@ -544,9 +570,12 @@ async function pruneExpiredClientRunOperationsUnlocked(
       if (storePath) directoryCandidates.add(storePath);
     }
     for (const storePath of directoryCandidates) {
+      const cursorKey = cleanupCursorKeyForStorePath(root, storePath);
+      const canonicalStorePath = cursorKey && storePathForCleanupCursorKey(root, cursorKey);
+      if (!cursorKey || !canonicalStorePath) continue;
       candidates.push({
-        storePath,
-        cursorKey: path.relative(root, storePath).toLowerCase(),
+        storePath: canonicalStorePath,
+        cursorKey,
       });
     }
   }
