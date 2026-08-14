@@ -24,10 +24,16 @@ import { resolveStageForBranch, type StageSnapshot, type StageStep } from "@/lib
 import { codeSessionBranch, codeSessionWorkRoot } from "@/lib/code-surface";
 import type { PullRequestSummary } from "@/lib/beads-pr-management";
 import type { MergedPrRef, ReadyBead } from "@/lib/beads-work-queue";
-import type { SessionRow } from "@/lib/types";
+import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
 
 const STAGE_POLL_MS = 60_000;
 const CHECKS_POLL_MS = 30_000;
+
+function isTrustedPrAttribution(
+  attribution: SessionPullRequestContext["attribution"] | undefined,
+): attribution is "branch" {
+  return attribution === "branch";
+}
 
 // ── Stage strip ───────────────────────────────────────────────────────────────
 
@@ -318,7 +324,15 @@ function usePrThreads(repo: string, number: number): ThreadsState & { refresh: (
   return { ...state, refresh };
 }
 
-function ThreadsSection({ repo, number }: { repo: string; number: number }) {
+function ThreadsSection({
+  repo,
+  number,
+  allowResolve,
+}: {
+  repo: string;
+  number: number;
+  allowResolve: boolean;
+}) {
   const state = usePrThreads(repo, number);
   const [busyThread, setBusyThread] = useState<string | null>(null);
 
@@ -369,7 +383,7 @@ function ThreadsSection({ repo, number }: { repo: string; number: number }) {
                   {thread.path ?? "(general)"}
                   {thread.isOutdated ? " · outdated" : ""}
                 </span>
-                {state.authed ? (
+                {state.authed && allowResolve ? (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -523,7 +537,7 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
 
   const pr = row.pullRequest;
   const hasPr = Boolean(pr?.repo && pr?.number != null);
-  const trustedForActions = hasPr && pr?.attribution !== "transcript";
+  const trustedForActions = hasPr && isTrustedPrAttribution(pr?.attribution);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -556,7 +570,11 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
             ) : null}
           </div>
           <ChecksSection repo={pr.repo} number={pr.number as number} />
-          <ThreadsSection repo={pr.repo} number={pr.number as number} />
+          <ThreadsSection
+            repo={pr.repo}
+            number={pr.number as number}
+            allowResolve={trustedForActions}
+          />
           {trustedForActions ? (
             <ActionsSection
               repo={pr.repo}

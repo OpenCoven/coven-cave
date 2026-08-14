@@ -485,13 +485,18 @@ assert.match(
 );
 assert.match(
   prPanel,
-  /const trustedForActions = hasPr && pr\?\.attribution !== "transcript";/,
-  "transcript-attributed PRs are badge-only and never trusted as review/merge action targets",
+  /const trustedForActions = hasPr && isTrustedPrAttribution\(pr\?\.attribution\);/,
+  "review/merge trust uses an explicit attribution allowlist helper",
 );
 assert.match(
   prPanel,
   /trustedForActions \? \(\s*<ActionsSection/,
   "review and merge controls render only after the PR is resolved from an authoritative branch attribution",
+);
+assert.match(
+  prPanel,
+  /allowResolve=\{trustedForActions\}/,
+  "review-thread resolve controls are withheld whenever PR actions are untrusted",
 );
 assert.match(
   prPanel,
