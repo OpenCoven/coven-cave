@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   CLIENT_V1_API_VERSION,
+  CLIENT_V1_ERROR_CODES,
   CLIENT_V1_MIN_CLIENT_VERSION,
   CLIENT_V1_SCOPES,
   parseIdempotencyKey,
@@ -20,6 +21,24 @@ test("locks the public v1 version and scope constants", () => {
     "attachments:write",
     "tasks:write",
     "github:write",
+  ]);
+  assert.deepEqual(CLIENT_V1_ERROR_CODES, [
+    "invalid_request",
+    "unauthorized",
+    "scope_denied",
+    "forbidden",
+    "not_found",
+    "conflict",
+    "operation_already_started",
+    "rate_limited",
+    "pairing_pending",
+    "pairing_denied",
+    "pairing_expired",
+    "pairing_already_exchanged",
+    "incompatible_version",
+    "unsupported",
+    "service_unavailable",
+    "internal_error",
   ]);
 });
 

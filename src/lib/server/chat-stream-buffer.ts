@@ -90,13 +90,11 @@ export function canonicalizeRunStreamEvent(event: StreamEvent): StreamEvent {
   }
 }
 
-/** Shared append path for every write into a buffer's ring — the real
- * producer's `record()` and the synthetic terminal insertion both funnel
- * through here so oversize handling, eviction, terminal tracking, and live
- * tail notification only exist once. */
-function appendToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEvent {
-  const finalEvent = canonicalizeRunStreamEvent(event);
-  const json = JSON.stringify(finalEvent);
+/** Shared append path for already-canonical events. The real producer's
+ * `record()` and synthetic terminal insertion both funnel through this path
+ * so eviction, terminal tracking, and live-tail notification only exist once. */
+function appendCanonicalToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEvent {
+  const json = JSON.stringify(event);
   const entry: BufferedStreamEvent = { seq: buffer.nextSeq++, json };
   buffer.events.push(entry);
   buffer.bytes += Buffer.byteLength(entry.json, "utf8");
@@ -108,9 +106,27 @@ function appendToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEven
     const dropped = buffer.events.shift();
     if (dropped) buffer.bytes -= Buffer.byteLength(dropped.json, "utf8");
   }
-  if (!buffer.terminalEntry && isTerminalStreamEvent(finalEvent)) buffer.terminalEntry = entry;
+  if (!buffer.terminalEntry && isTerminalStreamEvent(event)) buffer.terminalEntry = entry;
   for (const listener of buffer.tailListeners) listener(entry);
   return entry;
+}
+
+/** Canonicalizes an event before appending it to the bounded ring. */
+function appendToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEvent {
+  return appendCanonicalToRing(buffer, canonicalizeRunStreamEvent(event));
+}
+
+function recordCanonicalRunStreamEvent(buffer: RunBuffer, event: StreamEvent): number | undefined {
+  // Once the canonical history already carries a terminal event — real
+  // or synthetic, whether or not `finish()` has run yet — every later
+  // event (another terminal from a racing producer, or ordinary
+  // nonterminal chatter that arrives after) is rejected outright: no
+  // seq is consumed, no bytes are added, no listener fires. This is
+  // what keeps "exactly one terminal, ever" true even in the window
+  // between a real `done`/`error` landing and `finish()` closing the
+  // buffer, not just after `finish()`.
+  if (buffer.done || buffer.terminalEntry) return undefined;
+  return appendCanonicalToRing(buffer, event).seq;
 }
 
 function finalizeBuffer(buffer: RunBuffer): void {
@@ -181,10 +197,35 @@ export type RunBufferHandle = {
    *  forwards the return value straight into `chatSse(event, seq)` keeps
    *  working unchanged since that `seq` parameter is already optional. */
   record: (event: StreamEvent) => number | undefined;
+  /** Records an event already normalized by `canonicalizeRunStreamEvent`.
+   *  This exists for producers that must emit that exact same canonical value
+   *  live; callers should otherwise use `record()`. */
+  recordCanonical: (event: StreamEvent) => number | undefined;
   addKeys: (keys: Array<string | null | undefined>) => void;
   setHooks: (hooks: RunStreamHooks | null) => void;
   finish: () => void;
 };
+
+export type CanonicalRecordedRunStreamEvent = {
+  event: StreamEvent;
+  seq: number | undefined;
+};
+
+/**
+ * Canonicalizes once, then records the same value used by the live SSE
+ * producer. A terminal replacement closes canonical history immediately, so
+ * later producer events return `null` and must not be emitted live either.
+ * A not-yet-open buffer preserves the legacy live-only behavior.
+ */
+export function canonicalizeAndRecordRunStreamEvent(
+  runBuffer: RunBufferHandle | null,
+  event: StreamEvent,
+): CanonicalRecordedRunStreamEvent | null {
+  const canonicalEvent = canonicalizeRunStreamEvent(event);
+  const seq = runBuffer?.recordCanonical(canonicalEvent);
+  if (runBuffer && seq === undefined) return null;
+  return { event: canonicalEvent, seq };
+}
 
 /**
  * Open a buffer for a starting run, reachable under every non-empty key
@@ -219,18 +260,9 @@ export function openRunBuffer(
   }
 
   return {
-    record: (event: StreamEvent) => {
-      // Once the canonical history already carries a terminal event — real
-      // or synthetic, whether or not `finish()` has run yet — every later
-      // event (another terminal from a racing producer, or ordinary
-      // nonterminal chatter that arrives after) is rejected outright: no
-      // seq is consumed, no bytes are added, no listener fires. This is
-      // what keeps "exactly one terminal, ever" true even in the window
-      // between a real `done`/`error` landing and `finish()` closing the
-      // buffer, not just after `finish()`.
-      if (buffer.done || buffer.terminalEntry) return undefined;
-      return appendToRing(buffer, event).seq;
-    },
+    record: (event: StreamEvent) =>
+      recordCanonicalRunStreamEvent(buffer, canonicalizeRunStreamEvent(event)),
+    recordCanonical: (event: StreamEvent) => recordCanonicalRunStreamEvent(buffer, event),
     addKeys: (keys) => {
       if (buffer.done) return;
       for (const key of keys) {

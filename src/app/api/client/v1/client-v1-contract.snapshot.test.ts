@@ -57,7 +57,10 @@ const {
 } = await import("@/lib/cave-conversations.ts");
 const { sessionsListCache } = await import("@/lib/server/sessions-list-cache.ts");
 const { resetRateLimitsForTest } = await import("@/lib/server/client-v1/rate-limit.ts");
-const { createClientStreamTranslator } = await import("@/lib/server/client-v1/sse.ts");
+const {
+  classifyInitialChatResponse,
+  createClientStreamTranslator,
+} = await import("@/lib/server/client-v1/sse.ts");
 
 let stopDaemon = async () => {};
 
@@ -395,6 +398,10 @@ async function buildFixture() {
       { params: Promise.resolve({ id: CONVERSATION_ID }) },
     ),
   );
+  const unsupported = classifyInitialChatResponse(
+    new Response(null, { status: 501, headers: { "content-type": "application/json" } }),
+  );
+  assert.equal(unsupported.kind, "prelaunch_failure");
 
   return normalizePaths({
     health,
@@ -404,6 +411,7 @@ async function buildFixture() {
     projects,
     conversations,
     conversation,
+    unsupported: await snapshotResponse(unsupported.response),
     streamEvents: buildStreamSamples(),
   });
 }
