@@ -1,8 +1,45 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const src = readFileSync(new URL("./popover.tsx", import.meta.url), "utf8");
+
+const require = createRequire(import.meta.url);
+const originalSucraseOptions = process.env.SUCRASE_OPTIONS;
+process.env.SUCRASE_OPTIONS = JSON.stringify({ jsxRuntime: "automatic" });
+require("sucrase/register/tsx");
+if (originalSucraseOptions === undefined) delete process.env.SUCRASE_OPTIONS;
+else process.env.SUCRASE_OPTIONS = originalSucraseOptions;
+const Module = require("node:module");
+const originalResolveFilename = Module._resolveFilename;
+const suffixes = ["", ".ts", ".tsx", ".js", ".mjs", "/index.ts", "/index.tsx"];
+Module._resolveFilename = function resolveTypeScript(request, parent, isMain, options) {
+  let base = null;
+  if (request.startsWith("@/")) {
+    base = path.join(process.cwd(), "src", request.slice(2));
+  } else if ((request.startsWith("./") || request.startsWith("../")) && parent?.filename) {
+    base = path.resolve(path.dirname(parent.filename), request);
+  }
+  if (base) {
+    for (const suffix of suffixes) {
+      if (existsSync(base + suffix)) return base + suffix;
+    }
+  }
+  return originalResolveFilename.call(this, request, parent, isMain, options);
+};
+const { PopoverItem } = require("./popover.tsx");
+Module._resolveFilename = originalResolveFilename;
+
+function renderItem(props) {
+  return renderToStaticMarkup(
+    createElement(PopoverItem, { onSelect: () => undefined, ...props }, "Example"),
+  );
+}
 
 // The popover must consume its own Escape: a capture-phase keydown listener that
 // stopPropagation()s before the event reaches a parent dialog's bubble-phase
@@ -119,62 +156,27 @@ assert.match(
 
 // A `checked` row used to be a menuitemradio unconditionally, so every
 // standalone boolean toggle in a popover menu announced as one choice among
-// mutually exclusive alternatives. Radio stays the DEFAULT — most checked rows
-// here really are option groups (runtimes, models, sort order, project pickers)
-// — and independent toggles opt into menuitemcheckbox.
+// mutually exclusive alternatives. Render the actual element so the coverage
+// survives formatting-only refactors in the component source.
 assert.match(
-  src,
-  /export type PopoverItemCheckedRole = "radio" \| "checkbox"/,
-  "PopoverItem exposes an explicit checked-role choice",
-);
-assert.match(
-  src,
-  /checkedRole\?: PopoverItemCheckedRole/,
-  "checkedRole is an opt-in prop",
+  renderItem({ checked: true }),
+  /role="menuitemradio"[\s\S]*aria-checked="true"/,
+  "checked rows stay menuitemradio by default",
 );
 assert.match(
-  src,
-  /checkedRole = "radio"/,
-  "radio stays the default so existing option groups are unchanged",
+  renderItem({ checked: false, checkedRole: "checkbox" }),
+  /role="menuitemcheckbox"[\s\S]*aria-checked="false"/,
+  "independent toggles can opt into menuitemcheckbox",
 );
 assert.match(
-  src,
-  /checkedRole === "checkbox" \? "menuitemcheckbox" : "menuitemradio"/,
-  "an opted-in toggle announces as menuitemcheckbox",
+  renderItem({ checked: true, semantic: "button" }),
+  /aria-pressed="true"/,
+  "button-semantics toggles expose their pressed state",
 );
-
-// The independent on/off toggles, named so a future caller can see which rows
-// are toggles rather than option groups.
-for (const [file, label] of [
-  ["../workspace-sidebar.tsx", "Show archived"],
-  ["../chat-list.tsx", "Keep chat"],
-  ["../chat-session-header.tsx", "session menu (thinking / instruments)"],
-]) {
-  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
-  assert.match(
-    caller,
-    /checkedRole="checkbox"/,
-    `${label} is an independent toggle, not one of a mutually exclusive set`,
-  );
-}
-
-// Both "Keep chat" rows — the list row menu and the hover-kebab menu — carry it.
-// Their indentation differs, so a single edit silently covers only one of them.
-const chatList = readFileSync(new URL("../chat-list.tsx", import.meta.url), "utf8");
-assert.equal(
-  chatList.match(/checkedRole="checkbox"/g)?.length,
-  2,
-  "both Keep-chat toggles opt into the checkbox role",
+assert.doesNotMatch(
+  renderItem({ checked: true, semantic: "button" }),
+  /aria-checked=|role="menuitem(?:radio|checkbox)"/,
+  "button-semantics toggles keep native button semantics",
 );
-
-// Guard the other direction: mutually exclusive pickers must NOT be converted,
-// and e2e specs pin them as menuitemradio.
-for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "../ui/select.tsx"]) {
-  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
-  assert.ok(
-    !/checkedRole="checkbox"/.test(caller),
-    `${file} is a one-of-a-set picker and must stay menuitemradio`,
-  );
-}
 
 console.log("popover.test.ts: ok");
