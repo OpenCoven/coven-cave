@@ -5,6 +5,10 @@ Windows Host Audit is an optional, session-bound, read-only adapter for
 to a registered directory; it never grants Windows host, administrator, or
 Hyper-V authority.
 
+The capability is actionable only through the registered
+`windows-hyperv-broker` adapter. An approval is rejected when that adapter is
+absent; filesystem/runtime fingerprints are not authorization forwarding.
+
 Only a trusted server runtime that has bound an unexpired capability to its
 selected Cave conversation may invoke the audit. There is deliberately no
 browser endpoint that accepts familiar/session IDs and starts a host process.

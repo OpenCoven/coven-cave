@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { activeHostCapabilities } from "./host-capabilities.ts";
+import { activeHostCapabilities, hostCapabilityById } from "./host-capabilities.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -11,6 +11,9 @@ const execFileAsync = promisify(execFile);
  * Windows implementation and may request UAC only while it performs this audit. */
 export const WINDOWS_HYPERV_AUDIT_OPERATION = "inventory" as const;
 export const WINDOWS_HYPERV_AUDIT_CAPABILITY = "windows.hyperv.audit.read" as const;
+/** Matches the generic catalog entry. A capability cannot become actionable
+ * merely by sharing an id; this concrete broker must be registered too. */
+export const WINDOWS_HYPERV_AUDIT_ADAPTER_ID = "windows-hyperv-broker" as const;
 const HELPER_ARGS = ["hyperv-inventory", "--format", "json"] as const;
 const AUDIT_TIMEOUT_MS = 15_000;
 const MAX_RESULT_BYTES = 512 * 1024;
@@ -146,6 +149,9 @@ export function parseHypervInventory(raw: string): HypervInventory {
 export async function authorizeWindowsHypervAuditRuntime(input: { familiarId: string; sessionId: string; platform?: NodeJS.Platform }): Promise<WindowsHypervAuditRuntimeAuthority> {
   const platform = input.platform ?? process.platform;
   if (platform !== "win32") throw new WindowsHypervAuditError("unsupported_platform", "Windows Host Audit is available only on Windows.");
+  if (hostCapabilityById(WINDOWS_HYPERV_AUDIT_CAPABILITY)?.adapter !== WINDOWS_HYPERV_AUDIT_ADAPTER_ID) {
+    throw new WindowsHypervAuditError("capability_required", "The registered Windows Hyper-V audit adapter is unavailable.");
+  }
   const grants = await activeHostCapabilities({ familiarId: input.familiarId, sessionId: input.sessionId, platform });
   if (!grants.includes(WINDOWS_HYPERV_AUDIT_CAPABILITY)) {
     throw new WindowsHypervAuditError("capability_required", "An active Hyper-V audit approval is required for this session.");

@@ -114,7 +114,7 @@ function validAudit(value: unknown): value is HostCapabilityAudit {
   return Boolean(audit && typeof audit.id === "string" && typeof audit.at === "string" && typeof audit.familiarId === "string" && typeof audit.sessionId === "string" && validCapability(audit.capability) && (audit.kind === "granted" || audit.kind === "revoked" || audit.kind === "expired"));
 }
 export function hostCapabilitiesForPlatform(platform: NodeJS.Platform = process.platform) {
-  return HOST_CAPABILITY_CATALOG.filter((entry) => entry.platform === platform);
+  return HOST_CAPABILITY_CATALOG.filter((entry) => entry.platform === platform && entry.adapter !== null);
 }
 export function hostCapabilityById(value: unknown) {
   return HOST_CAPABILITY_CATALOG.find((entry) => entry.id === value) ?? null;

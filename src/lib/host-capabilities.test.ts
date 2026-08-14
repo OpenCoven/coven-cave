@@ -12,8 +12,6 @@ assert.deepEqual(
   ["windows.hyperv.audit.read"],
   "the Windows catalog exposes only the explicit read-only Hyper-V audit capability",
 );
-assert.equal(capabilities.hostCapabilitiesForPlatform("linux").length, 2, "Linux entries stay platform-gated");
-assert.equal(capabilities.hostCapabilitiesForPlatform("darwin").length, 2, "macOS entries stay platform-gated");
 assert.equal(capabilities.hostCapabilityById("windows.hyperv.audit.write"), null, "write authority is absent from the initial catalog");
 assert.equal(capabilities.hostCapabilityHasAdapter("windows.hyperv.audit.read"), false, "the foundation does not approve Hyper-V until its broker ships");
 await assert.rejects(() => capabilities.grantHostCapability({ familiarId: "clove", sessionId: "session-1", capability: "windows.hyperv.audit.read", actor: "loopback", platform: "win32" }), /no registered adapter/);

@@ -7,7 +7,8 @@ import { test } from "node:test";
 const root = await mkdtemp(path.join(tmpdir(), "cave-hyperv-audit-"));
 process.env.CAVE_HOST_CAPABILITY_GRANTS_PATH_OVERRIDE = path.join(root, "grants.json");
 const { grantHostCapability, revokeHostCapability } = await import("./host-capabilities.ts");
-const { authorizeWindowsHypervAuditRuntime, parseHypervInventory, runWindowsHypervAudit, WindowsHypervAuditError } = await import("./windows-hyperv-audit.ts");
+const { authorizeWindowsHypervAuditRuntime, parseHypervInventory, runWindowsHypervAudit, WindowsHypervAuditError, WINDOWS_HYPERV_AUDIT_ADAPTER_ID } = await import("./windows-hyperv-audit.ts");
+const { hostCapabilityById } = await import("./host-capabilities.ts");
 
 const fixture = JSON.stringify({
   host: { name: "CAVE-WIN", version: "10.0", hypervAvailable: true },
@@ -17,6 +18,8 @@ const fixture = JSON.stringify({
   vhdChains: [{ path: "D:\\\\VMs\\\\coven.vhdx", parentPath: null, sizeBytes: 4096 }],
   integrationServices: [{ vmId: "vm-1", name: "Heartbeat", enabled: true, primaryStatus: "OK" }],
 });
+
+assert.equal(hostCapabilityById("windows.hyperv.audit.read")?.adapter, WINDOWS_HYPERV_AUDIT_ADAPTER_ID, "the concrete Windows broker is the catalog's registered adapter");
 
 test("Windows audit is Windows-only and requires the exact unexpired session capability", async () => {
   let called = false;
