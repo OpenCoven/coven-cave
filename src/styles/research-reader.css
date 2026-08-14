@@ -131,7 +131,6 @@
 /* ── document typography ── */
 .rr-doc { padding: 34px 0; }
 .rr-doc__column {
-  max-width: var(--document-reader-column-width);
   margin: 0 auto;
   padding: 0 var(--document-reader-column-gutter);
 }
