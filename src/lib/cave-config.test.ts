@@ -28,6 +28,7 @@ try {
     sessionTitleRevision: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionSacrificeGeneration: {},
     sessionKeep: {},
     sessionPinned: {},
     sessionArchiveExtendedUntil: {},
@@ -47,12 +48,14 @@ try {
     new URL("./server/cave-home-reconciliation.ts", import.meta.url),
     "utf8",
   );
-  for (const mapName of ["sessionTitleAuto", "sessionTitleManual"]) {
+  for (const mapName of ["sessionTitleAuto", "sessionTitleManual", "sessionSacrificeGeneration"]) {
     assert.match(
       reconciliationSource,
       new RegExp(`const STATE_MAPS[^;]+["']${mapName}["']`, "s"),
       `${mapName} must survive Cave-home state reconciliation`,
     );
+  }
+  for (const mapName of ["sessionTitleAuto", "sessionTitleManual"]) {
     assert.match(
       reconciliationSource,
       new RegExp(`const DELETABLE_STATE_MAPS[^;]+["']${mapName}["']`, "s"),
@@ -454,6 +457,7 @@ try {
 
   const sacrificedAt = await config.sacrificeSessionLocal("session-1");
   assert.ok(Number.isFinite(Date.parse(sacrificedAt)));
+  assert.equal(await config.getSessionDeletionGeneration("session-1"), 1);
 
   // Keep / extend / batch auto-archive primitives.
   assert.equal(await config.setSessionKeepLocal("session-2", true), true);
@@ -768,6 +772,7 @@ try {
     sessionTitleManual: {},
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
+    sessionSacrificeGeneration: { "session-1": 1 },
     sessionKeep: {},
     sessionPinned: {},
     sessionOwned: {},

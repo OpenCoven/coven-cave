@@ -1,18 +1,20 @@
 import type { ConversationFile } from "@/lib/cave-conversations";
 
 export type GatewayInitialStubState =
-  | { kind: "created" }
-  | { kind: "already-existed" }
-  | { kind: "failed-before-exists"; error: unknown };
+  | { kind: "created"; deletionGeneration: number | null }
+  | { kind: "already-existed"; deletionGeneration: number | null }
+  | { kind: "failed-before-exists"; error: unknown; deletionGeneration: number | null };
 
 export type GatewayTranscriptPersistenceDeps = {
   loadConversation: (sessionId: string) => Promise<ConversationFile | null>;
   saveConversation: (conversation: ConversationFile) => Promise<void>;
   withConversationLock: <T>(sessionId: string, operation: () => Promise<T>) => Promise<T>;
+  getDeletionGeneration: (sessionId: string) => Promise<number>;
 };
 
 export async function settleGatewayInitialStub(
   write: Promise<boolean>,
+  deletionGeneration: () => number | null,
   reportFailure: (error: unknown) => void = (error) => {
     console.warn(
       "[chat] Gateway conversation stub persistence failed; retrying at transcript completion",
@@ -21,10 +23,12 @@ export async function settleGatewayInitialStub(
   },
 ): Promise<GatewayInitialStubState> {
   try {
-    return (await write) ? { kind: "created" } : { kind: "already-existed" };
+    return (await write)
+      ? { kind: "created", deletionGeneration: deletionGeneration() }
+      : { kind: "already-existed", deletionGeneration: deletionGeneration() };
   } catch (error) {
     reportFailure(error);
-    return { kind: "failed-before-exists", error };
+    return { kind: "failed-before-exists", error, deletionGeneration: deletionGeneration() };
   }
 }
 
@@ -43,7 +47,11 @@ export async function persistGatewayTranscript<Result>(args: {
     const createdAfterInitialStubFailure = existing == null;
     if (
       createdAfterInitialStubFailure
-      && args.initialStubState.kind !== "failed-before-exists"
+      && (
+        args.initialStubState.kind !== "failed-before-exists"
+        || args.initialStubState.deletionGeneration == null
+        || args.initialStubState.deletionGeneration !== await args.deps.getDeletionGeneration(args.sessionId)
+      )
     ) {
       throw new Error("conversation deleted before Gateway transcript save");
     }

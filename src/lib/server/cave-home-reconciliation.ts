@@ -939,6 +939,7 @@ const STATE_MAPS = [
   "sessionTitleManual",
   "sessionArchived",
   "sessionSacrificed",
+  "sessionSacrificeGeneration",
   "sessionKeep",
   "sessionPinned",
   "sessionArchiveExtendedUntil",
@@ -1031,6 +1032,46 @@ function mergeSessionTitleRevisions(
   return { ok: true, value };
 }
 
+function validateSessionSacrificeGenerations(
+  value: unknown,
+): { ok: true; value: Record<string, number> } | { ok: false; summary: string } {
+  const generations = record(value);
+  if (!generations) {
+    return { ok: false, summary: "State map sessionSacrificeGeneration is malformed." };
+  }
+  for (const [sessionId, generation] of Object.entries(generations)) {
+    if (
+      !sessionId
+      || typeof generation !== "number"
+      || !Number.isSafeInteger(generation)
+      || generation <= 0
+    ) {
+      return {
+        ok: false,
+        summary: `State map sessionSacrificeGeneration is malformed for ${sessionId || "(empty session ID)"}.`,
+      };
+    }
+  }
+  return { ok: true, value: generations as Record<string, number> };
+}
+
+function mergeSessionSacrificeGenerations(
+  leftValue: unknown,
+  rightValue: unknown,
+): { ok: true; value: Record<string, number> } | { ok: false; summary: string } {
+  const left = validateSessionSacrificeGenerations(leftValue);
+  if (!left.ok) return left;
+  const right = validateSessionSacrificeGenerations(rightValue);
+  if (!right.ok) return right;
+  const value: Record<string, number> = {};
+  for (const generations of [left.value, right.value]) {
+    for (const [sessionId, generation] of Object.entries(generations)) {
+      value[sessionId] = Math.max(value[sessionId] ?? 0, generation);
+    }
+  }
+  return { ok: true, value };
+}
+
 function mergeTravel(leftValue: unknown, rightValue: unknown): MergeOutcome {
   const left = record(leftValue);
   const right = record(rightValue);
@@ -1093,6 +1134,7 @@ function mergeState(legacy: unknown, canonical: unknown): MergeOutcome {
   if (!left || !right) return { ok: false, summary: "State data is malformed and requires review." };
   const value: Record<string, unknown> = { ...left, ...right };
   for (const name of STATE_MAPS) {
+    if (name === "sessionSacrificeGeneration") continue;
     const merged = mergeRecordMap(name, left[name] ?? {}, right[name] ?? {});
     if (!merged.ok) return merged;
     value[name] = merged.value;
@@ -1103,6 +1145,12 @@ function mergeState(legacy: unknown, canonical: unknown): MergeOutcome {
   );
   if (!titleRevisions.ok) return titleRevisions;
   value.sessionTitleRevision = titleRevisions.value;
+  const sacrificeGenerations = mergeSessionSacrificeGenerations(
+    left.sessionSacrificeGeneration === undefined ? {} : left.sessionSacrificeGeneration,
+    right.sessionSacrificeGeneration === undefined ? {} : right.sessionSacrificeGeneration,
+  );
+  if (!sacrificeGenerations.ok) return sacrificeGenerations;
+  value.sessionSacrificeGeneration = sacrificeGenerations.value;
   const travel = mergeTravel(left.travel ?? {}, right.travel ?? {});
   if (!travel.ok) return travel;
   value.travel = travel.value;
