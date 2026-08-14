@@ -1729,6 +1729,11 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // beads-delivery-source.ts imports "@/lib/beads-delivery",
+  // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
+  // values, so the resolver has to be loaded or the file throws
+  // ERR_MODULE_NOT_FOUND before a single assertion runs.
+  "src/lib/server/beads-delivery-source.test.ts",
   // the file provider wraps server/project-paths.ts, which resolves "@/lib/..."
   // for the project allow-list; the suite cannot load without the resolver.
   "src/lib/search-provider.test.ts",
