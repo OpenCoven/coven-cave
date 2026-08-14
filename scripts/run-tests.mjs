@@ -1102,6 +1102,7 @@ export const SUITES = {
     "src/components/minimalism-invariants.test.ts",
     "src/components/dead-ui-removal.test.ts",
     "scripts/ui-consistency.test.mjs",
+    "scripts/docs-index.test.mjs",
     "src/components/ui/select.test.ts",
     "src/components/ui/context-menu.test.ts",
     "src/components/ui/undo-toast.test.ts",
