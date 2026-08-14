@@ -256,6 +256,7 @@ export const SUITES = {
     "src/lib/gfm-autolink.test.ts",
     "src/lib/gh-diff.test.ts",
     "src/lib/gh-review-html.test.ts",
+    "src/lib/project-organizations.test.ts",
     "src/lib/chat-projects.test.ts",
     "src/lib/chat-pr-link.test.ts",
     "src/lib/changes-review.test.ts",
@@ -1727,6 +1728,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-orchestration.test.ts",
   "src/app/api/board/orchestration-route.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
+  // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
+  "src/lib/use-auto-expand-new-groups.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
