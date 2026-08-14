@@ -12,7 +12,12 @@ import {
   PAIRING_TTL_MS,
   resetPairingRequestsForTest,
 } from "@/lib/server/client-v1/pairing-store.ts";
-import { clientCredentialStorePath, setReadFileForTest, verifyCredential } from "@/lib/server/client-v1/credential-store.ts";
+import {
+  clientCredentialSettlementJournalPath,
+  clientCredentialStorePath,
+  setReadFileForTest,
+  verifyCredential,
+} from "@/lib/server/client-v1/credential-store.ts";
 
 const LOCAL_PEER_SECRET = "test-per-boot-secret-do-not-reuse";
 process.env.COVEN_CAVE_LOCAL_PEER_SECRET = LOCAL_PEER_SECRET;
@@ -33,7 +38,10 @@ after(async () => {
 
 afterEach(async () => {
   resetPairingRequestsForTest();
-  await rm(clientCredentialStorePath(), { force: true });
+  await Promise.all([
+    rm(clientCredentialStorePath(), { force: true }),
+    rm(clientCredentialSettlementJournalPath(), { force: true }),
+  ]);
   setReadFileForTest(null);
 });
 
