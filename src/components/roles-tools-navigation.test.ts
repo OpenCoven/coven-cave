@@ -310,15 +310,25 @@ assert.match(
 // accessible names.
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 
+// cave-x6rw moved title resolution out of a WORKSPACE_MODE_TITLES map and into
+// the workspace page registry, so pin the contract at its new home: the h1 is
+// still visually hidden, still names the active surface, and Role Surface rooms
+// still resolve a title (cave-ktvy0).
 assert.match(
   workspace,
-  /<h1 className="sr-only">\s*\{\(isRoleSurfaceMode\(mode\)[\s\S]{0,220}?WORKSPACE_MODE_TITLES\[mode\]\) \?\? "CovenCave"\}\s*<\/h1>/,
-  "Workspace detail must render a visually-hidden h1 naming the active surface (axe page-has-heading-one) — including Role Surface rooms",
+  /<h1 className="sr-only">\{primaryDefinition\?\.title \?\? "CovenCave"\}<\/h1>/,
+  "Workspace detail must render a visually-hidden h1 naming the active surface (axe page-has-heading-one)",
 );
 assert.match(
   workspace,
-  /const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = \{/,
-  "The h1 title map must cover every WorkspaceMode (Record enforces exhaustiveness)",
+  /const primaryDefinition = workspacePageDefinition\(/,
+  "the h1 title resolves through the workspace page registry",
+);
+const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+assert.match(
+  pageRegistry,
+  /if \(!isRoleSurfaceMode\(id\)\) return null;[\s\S]{0,200}?title: roleSurfaceTitle\(id\)|const title = roleSurfaceTitle\(id\);/,
+  "the registry names Role Surface rooms too, so their h1 is not the bare fallback",
 );
 
 assert.match(
