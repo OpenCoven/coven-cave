@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -16,6 +16,7 @@ import {
   retain,
   retentionTag,
   unpushedCount,
+  unpushedCountIgnoring,
 } from "./worktree-retention-push.mjs";
 
 // Fixtures must not inherit machine-level git config. A global
@@ -104,6 +105,127 @@ test("unpushedCount counts only commits absent from every remote", () => {
     commit(work, "one");
     commit(work, "two");
     assert.equal(unpushedCount(work), 2);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The regression that made the deleted-branch archive path unreachable in the
+// exact case it was written for (cave-fud4p, round two). `--remotes` trusts
+// every refs/remotes/* to still exist on the remote, and a remote-tracking ref
+// outlives the remote deleting its branch, so a squash-merged head reads as
+// fully retained and the hook skips it before ever consulting deletedUpstream.
+//
+// The fixture reproduces the real sequence rather than asserting on a mock: a
+// pushed branch, a squash merge landing a DIFFERENT commit on main, then the
+// server-side branch deletion `delete_branch_on_merge` performs. Deleting the
+// ref inside the bare remote is what makes it server-side — `git push
+// --delete` would also drop the local tracking ref, which is precisely the
+// signal that must survive.
+test("a squash-merged, remote-deleted head is at risk even though --remotes says otherwise", () => {
+  const { root, remote, work } = scaffold();
+  try {
+    git(["checkout", "-q", "-b", "feat/topic"], work);
+    commit(work, "one");
+    git(["push", "-q", "-u", "origin", "feat/topic"], work);
+    const head = git(["rev-parse", "HEAD"], work).trim();
+
+    // Squash merge: a different commit for the same tree lands on main, so the
+    // branch tip is an ancestor of nothing the remote keeps.
+    const mainWork = path.join(root, "mainwork");
+    git(["clone", "-q", remote, mainWork], root);
+    configure(mainWork);
+    git(["merge", "-q", "--squash", "origin/feat/topic"], mainWork);
+    git(["commit", "-q", "-m", "squashed topic (#1)"], mainWork);
+    git(["push", "-q", "origin", "main"], mainWork);
+
+    // delete_branch_on_merge, server-side.
+    bare(["update-ref", "-d", "refs/heads/feat/topic"], remote);
+    git(["fetch", "-q", "origin", "main"], work); // a normal fetch: prunes nothing
+
+    // The state the hook has to read correctly.
+    assert.equal(hadRemoteTracking(work, "feat/topic"), true, "the tracking ref survives the deletion");
+    assert.ok(!remoteBranchNames(work).has("feat/topic"), "the remote no longer advertises the branch");
+    assert.equal(
+      bare(["rev-list", "--count", "--all"], remote).trim() !== "0" &&
+        bare(["branch", "--contains", head], remote).trim(),
+      "",
+      "and no remote branch contains the head — the commit is on no remote ref",
+    );
+
+    assert.equal(
+      unpushedCount(work),
+      0,
+      "the stale tracking ref makes --remotes report the head as fully retained (the bug)",
+    );
+    assert.ok(
+      unpushedCountIgnoring(work, "refs/remotes/origin/feat/topic") > 0,
+      "ignoring that one ref reveals the head is retained by nothing",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// End-to-end through the hook's own entry point, because the helpers above
+// cannot show what the hook DECIDED. The masking bug lived in main()'s skip
+// test, so a fix proven only at helper level would leave the actual behaviour
+// untested — the same shape of gap that let this ship the first time.
+test("the hook archives a squash-merged, remote-deleted worktree instead of ignoring it", () => {
+  const { root, remote, work } = scaffold();
+  try {
+    // `work` plays the primary checkout; the unit at risk is a worktree of it.
+    const unit = path.join(work, ".worktrees", "topic");
+    git(["worktree", "add", "-q", "-b", "feat/topic", unit], work);
+    configure(unit);
+    commit(unit, "one");
+    git(["push", "-q", "-u", "origin", "feat/topic"], unit);
+    const head = git(["rev-parse", "HEAD"], unit).trim();
+
+    const mainWork = path.join(root, "mainwork");
+    git(["clone", "-q", remote, mainWork], root);
+    configure(mainWork);
+    git(["merge", "-q", "--squash", "origin/feat/topic"], mainWork);
+    git(["commit", "-q", "-m", "squashed topic (#1)"], mainWork);
+    git(["push", "-q", "origin", "main"], mainWork);
+    bare(["update-ref", "-d", "refs/heads/feat/topic"], remote);
+
+    execFileSync(process.execPath, [path.join(import.meta.dirname, "worktree-retention-push.mjs")], {
+      cwd: work,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...ISOLATED, CLAUDE_PROJECT_DIR: work },
+    });
+
+    // Retained as a TAG at the exact head — not resurrected as a branch.
+    const tag = retentionTag("feat/topic", head);
+    assert.equal(bare(["rev-parse", `refs/tags/${tag}`], remote).trim(), head, "the head is archived on the remote");
+    assert.equal(
+      bare(["for-each-ref", "--format=%(refname)", "refs/heads/feat/topic"], remote).trim(),
+      "",
+      "and the deliberately deleted branch stays deleted",
+    );
+
+    const log = readFileSync(path.join(work, ".claude", "worktree-retention-push.log"), "utf8")
+      .split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const entry = log.find((row) => row.branch === "feat/topic");
+    assert.equal(entry.verdict, "pushed-tag");
+    assert.equal(entry.reason, "branch-deleted-upstream", "and the record says WHY it was archived");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("unpushedCountIgnoring still counts every OTHER remote ref", () => {
+  const { root, work } = scaffold();
+  try {
+    // HEAD is on main, which the remote has; ignoring an unrelated branch's ref
+    // must not turn that into "at risk".
+    assert.equal(unpushedCountIgnoring(work, "refs/remotes/origin/feat/unrelated"), 0);
+    commit(work, "one");
+    assert.equal(unpushedCountIgnoring(work, "refs/remotes/origin/feat/unrelated"), 1);
+    // Ignoring a ref that does not exist is a no-op, not an error.
+    assert.equal(unpushedCountIgnoring(work, "refs/remotes/origin/nope"), unpushedCount(work));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

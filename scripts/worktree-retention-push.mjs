@@ -85,6 +85,35 @@ export function unpushedCount(worktreePath) {
   }
 }
 
+/**
+ * The same count, but ignoring ONE remote-tracking ref.
+ *
+ * `--remotes` believes every `refs/remotes/*` still exists on the remote, and a
+ * remote-tracking ref survives the remote deleting its branch until something
+ * prunes. So after a squash merge under `delete_branch_on_merge` the stale
+ * `refs/remotes/origin/<branch>` still satisfies `--not --remotes`, the head
+ * reads as fully retained, and the unit is skipped — which is why the
+ * deleted-branch archive path below could never fire for the case it was
+ * written for (cave-fud4p, round two).
+ *
+ * Enumerating the refs explicitly is what lets one be left out; `--not` has no
+ * "except" form. With no refs left, `rev-list HEAD --not` counts everything
+ * reachable from HEAD, which is the correct answer for a head nothing retains.
+ */
+export function unpushedCountIgnoring(worktreePath, ignoredRef) {
+  try {
+    const refs = git(["for-each-ref", "--format=%(refname)", "refs/remotes/"], worktreePath)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((ref) => ref !== ignoredRef);
+    const n = Number(git(["rev-list", "--count", "HEAD", "--not", ...refs], worktreePath).trim());
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0; // same posture as unpushedCount: unreadable means leave it alone
+  }
+}
+
 export function headSha(worktreePath) {
   try {
     return git(["rev-parse", "HEAD"], worktreePath).trim() || null;
@@ -285,12 +314,24 @@ function main() {
   for (const wt of worktrees) {
     if (pushes >= MAX_PUSHES_PER_PASS) break;
     if (wt.bare) continue;
-    const unpushed = unpushedCount(wt.path);
-    if (unpushed === 0) continue;
+    let unpushed = unpushedCount(wt.path);
     const branch = branchOf(wt.path);
     // `main` is protected and never the thing at risk; pushing it is exactly
     // the direct-to-main move the repository forbids.
     if (branch === "main") continue;
+
+    // A head can read as retained purely because of its OWN stale tracking ref
+    // — the exact state a squash merge plus `delete_branch_on_merge` leaves
+    // behind, and the moment a session turns to retiring the worktree. Recheck
+    // before believing "0", cheapest signal first: recount locally without that
+    // one ref, and only ask the remote when the answer actually depends on it.
+    // A head still covered by any other ref needs no network call at all, so a
+    // pass with nothing genuinely at risk stays offline as before.
+    if (unpushed === 0 && branch) {
+      const withoutOwnRef = unpushedCountIgnoring(wt.path, `refs/remotes/origin/${branch}`);
+      if (withoutOwnRef > 0 && deletedUpstream(wt.path, branch)) unpushed = withoutOwnRef;
+    }
+    if (unpushed === 0) continue;
 
     // Already archived: the remote advertises a tag at exactly this HEAD, which
     // is the guard's own definition of retained. Re-creating the branch here is
