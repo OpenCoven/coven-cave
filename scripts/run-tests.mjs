@@ -1984,6 +1984,8 @@ const VITEST_TESTS = new Set([
   // renders the hook through react-test-renderer
   "src/lib/use-surface-history.test.tsx",
   "src/lib/use-focus-trap-stack.test.tsx",
+  // drives the inline slash menu's keydown path through react-test-renderer
+  "src/lib/use-inline-slash-menus-behavior.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

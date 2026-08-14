@@ -824,8 +824,17 @@ assert.match(
 );
 assert.match(
   slashBranch,
-  /cmd\.argPlaceholder &&[\s\S]*canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*completeCommand\(cmd\.name, true\)/,
+  /cmd\.argPlaceholder &&[\s\S]*canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*completeCommand\(cmd\.name, Boolean\(cmd\.argPlaceholder\)\)/,
   "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
+);
+// cave-y7rg0: and a slash typed after prose completes too, whatever the
+// command — running an intent there discards the draft, and /clear wipes the
+// transcript with it. Behavior is covered in
+// src/lib/use-inline-slash-menus-behavior.test.tsx.
+assert.match(
+  slashBranch,
+  /const commandOwnsDraft = \(activeInvocation\?\.start \?\? 0\) === 0;[\s\S]*\(!commandOwnsDraft \|\|/,
+  "Slash-menu Enter only runs a command that owns the draft; mid-draft it completes",
 );
 assert.match(
   menusHookSource,
