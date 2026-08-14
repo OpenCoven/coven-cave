@@ -179,10 +179,10 @@
             "type": "string"
           },
           "sourceUrl": {
-            "format": "url",
+            "format": "uri",
             "maxLength": 2000,
             "minLength": 1,
-            "pattern": "\\S",
+            "pattern": "^https?:\\/\\/[^\\s/?#]+(?:[/?#]|$)",
             "type": "string"
           },
           "summary": {

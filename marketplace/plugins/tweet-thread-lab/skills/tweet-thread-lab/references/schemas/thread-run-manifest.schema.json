@@ -378,10 +378,10 @@
                   "type": "string"
                 },
                 "sourceUrl": {
-                  "format": "url",
+                  "format": "uri",
                   "maxLength": 2000,
                   "minLength": 1,
-                  "pattern": "\\S",
+                  "pattern": "^https?:\\/\\/[^\\s/?#]+(?:[/?#]|$)",
                   "type": "string"
                 },
                 "summary": {
@@ -817,7 +817,7 @@
                 "type": "string"
               },
               "threadUrl": {
-                "format": "url",
+                "format": "uri",
                 "maxLength": 2000,
                 "minLength": 1,
                 "pattern": "^https:\\/\\/x\\.com\\/[A-Za-z0-9_]{1,15}\\/status\\/[1-9][0-9]*$",
@@ -897,7 +897,7 @@
                 "type": "string"
               },
               "threadUrl": {
-                "format": "url",
+                "format": "uri",
                 "maxLength": 2000,
                 "minLength": 1,
                 "pattern": "^https:\\/\\/x\\.com\\/[A-Za-z0-9_]{1,15}\\/status\\/[1-9][0-9]*$",
@@ -1082,7 +1082,7 @@
                 "type": "string"
               },
               "threadUrl": {
-                "format": "url",
+                "format": "uri",
                 "maxLength": 2000,
                 "minLength": 1,
                 "pattern": "^https:\\/\\/x\\.com\\/[A-Za-z0-9_]{1,15}\\/status\\/[1-9][0-9]*$",

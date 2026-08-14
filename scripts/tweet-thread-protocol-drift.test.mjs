@@ -135,4 +135,9 @@ for (const [filename, schema] of schemaFiles) {
     JSON.parse(JSON.stringify(schema)),
     `${filename} must preserve the complete standalone TypeBox schema contract.`,
   );
+  assert.equal(
+    actual.includes('"format": "url"'),
+    false,
+    `${filename} must use standards-compatible JSON Schema URI formats.`,
+  );
 }

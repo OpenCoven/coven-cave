@@ -677,6 +677,7 @@ for (const field of ["summary", "sourceLabel"] as const) {
 for (const [label, sourceUrl] of [
   ["whitespace-only", " \t "],
   ["malformed", "not-a-url"],
+  ["non-HTTP", "ftp://example.com/plan"],
 ] as const) {
   assert.equal(
     Value.Check(EvidenceItemSchema, { ...validEvidence()[0], sourceUrl }),

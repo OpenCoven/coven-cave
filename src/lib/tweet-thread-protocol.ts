@@ -13,6 +13,7 @@ const CLAIM_ID_RE = /^claim-[a-z0-9-]+$/;
 const POST_ID_RE = /^post-[1-9][0-9]*$/;
 const X_POST_ID_RE = /^[1-9][0-9]*$/;
 const X_THREAD_URL_RE = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[1-9][0-9]*$/;
+const HTTP_URL_RE = /^https?:\/\/[^\s/?#]+(?:[/?#]|$)/;
 const WORD_CHARACTER_RE = /[\p{L}\p{N}_]/u;
 const THREAD_OBSERVATION_METRIC_NAMES = [
   "impressions",
@@ -26,8 +27,8 @@ const THREAD_OBSERVATION_METRIC_NAMES = [
 const boundedNonWhitespaceString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength, pattern: "\\S" });
 
-const boundedUrlString = (maxLength: number, pattern = "\\S") =>
-  Type.String({ format: "url", minLength: 1, maxLength, pattern });
+const boundedUrlString = (maxLength: number, pattern = HTTP_URL_RE.source) =>
+  Type.String({ format: "uri", minLength: 1, maxLength, pattern });
 
 const timestampString = () =>
   Type.String({ format: "date-time", minLength: 24, maxLength: 24, pattern: RFC3339_UTC_MILLIS.source });
