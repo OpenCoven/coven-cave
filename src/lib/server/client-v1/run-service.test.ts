@@ -424,7 +424,7 @@ test("a client disconnect propagates through to detach and clean up the run's ca
       const buffer = openRunBuffer([internalRunId]);
       buffer.record({ kind: "assistant_chunk", text: "partial" });
       assert.equal(req.signal.aborted, false, "not aborted while the client is still connected");
-      // Mirrors chat-send-service.ts: the canonical send pipeline listens
+      // Mirrors the canonical chat/send pipeline: it listens
       // on its own req.signal and finishes the buffer once the original
       // client disconnects, rather than running an orphaned turn to
       // completion nobody is left to read.
