@@ -30,7 +30,17 @@ export const CLIENT_ATTACHMENT_MAX_FILES = CLIENT_ATTACHMENT_MAX_IDS;
 export const CLIENT_ATTACHMENT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const CLIENT_ATTACHMENT_MAX_REQUEST_BYTES = 25 * 1024 * 1024;
 export const CLIENT_ATTACHMENT_MAX_RECORDS = 10_000;
+/** A credential may occupy at most one tenth of the shared attachment index. */
+export const CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL = 1_000;
 export const CLIENT_ATTACHMENT_INDEX_MAX_BYTES = 8 * 1024 * 1024;
+/**
+ * Uploads are only staging inputs for the immediately following client
+ * conversation/message mutation. They expire after the same 24-hour window
+ * that the v1 idempotency ledger retains completed mutation results. Bound
+ * conversation attachments remain subject to the canonical store's separate
+ * 180-day retention policy.
+ */
+export const CLIENT_UNBOUND_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 const MAX_NAME_CHARS = 180;
 const RECORD_KEYS = [
@@ -765,6 +775,78 @@ async function canonicalAttachmentExists(root: string, attachmentId: string): Pr
   }
 }
 
+async function canonicalMatchesPreparedAttachment(
+  attachmentId: string,
+  upload: PreparedClientAttachment,
+): Promise<boolean> {
+  try {
+    const canonical = await readCanonicalClientAttachment(attachmentId);
+    return canonical.name === upload.name
+      && canonical.mimeType === upload.mimeType
+      && canonical.sizeBytes === upload.sizeBytes
+      && sha256Hex(canonical.data) === upload.sha256;
+  } catch (error) {
+    if (error instanceof ClientAttachmentError && error.status === 404) return false;
+    throw error;
+  }
+}
+
+async function repairCanonicalAttachment(
+  attachmentId: string,
+  upload: PreparedClientAttachment,
+): Promise<void> {
+  try {
+    await deleteChatStoredAttachment(attachmentId);
+    await persistCanonicalAttachment(upload, attachmentId);
+  } catch {
+    throw new ClientAttachmentError(
+      503,
+      "service_unavailable",
+      "Canonical attachment storage is unavailable.",
+    );
+  }
+  if (!(await canonicalMatchesPreparedAttachment(attachmentId, upload))) {
+    throw new ClientAttachmentError(
+      503,
+      "service_unavailable",
+      "Canonical attachment storage is unavailable.",
+    );
+  }
+}
+
+function isExpiredUnboundAttachment(record: ClientAttachmentRecord, now: number): boolean {
+  return record.conversationId === null
+    && now >= record.createdAt
+    && now - record.createdAt >= CLIENT_UNBOUND_ATTACHMENT_TTL_MS;
+}
+
+/**
+ * Reclaim staging uploads while the attachment-index lock is held. Payloads
+ * are deleted before their index records so a failed index write can only
+ * leave a retryable stale record, never an untracked payload.
+ */
+async function reclaimExpiredUnboundAttachments(
+  index: AttachmentIndex,
+  now: number,
+): Promise<boolean> {
+  const expired = index.attachments.filter((record) => isExpiredUnboundAttachment(record, now));
+  if (expired.length === 0) return false;
+  try {
+    for (const record of expired) {
+      await deleteChatStoredAttachment(record.attachmentId);
+    }
+  } catch {
+    throw new ClientAttachmentError(
+      503,
+      "service_unavailable",
+      "Canonical attachment cleanup failed.",
+    );
+  }
+  const expiredIds = new Set(expired.map((record) => record.attachmentId));
+  index.attachments = index.attachments.filter((record) => !expiredIds.has(record.attachmentId));
+  return true;
+}
+
 async function writeAttachmentIndex(storePath: string, index: AttachmentIndex): Promise<void> {
   const commit = async () => {
     await mkdir(/* turbopackIgnore: true */ path.dirname(storePath), {
@@ -810,12 +892,28 @@ export async function saveUploadedClientAttachments(
       { storePath, label: "client-v1-attachment-index" },
       async () => {
         const index = await readIndexForMutation(storePath);
+        if (await reclaimExpiredUnboundAttachments(index, now)) {
+          await writeAttachmentIndex(storePath, index);
+        }
         const byId = new Map(index.attachments.map((record) => [record.attachmentId, record]));
         const planned = prepared.map((upload, indexInRequest) => ({
           upload,
           attachmentId: deterministicAttachmentId(effectId, indexInRequest, upload.mimeType),
         }));
         const newRecordCount = planned.filter(({ attachmentId }) => !byId.has(attachmentId)).length;
+        const ownedRecordCount = index.attachments.filter(
+          (record) => record.credentialId === credentialId.toLowerCase(),
+        ).length;
+        if (
+          newRecordCount > 0
+          && ownedRecordCount + newRecordCount > CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL
+        ) {
+          throw new ClientAttachmentError(
+            409,
+            "conflict",
+            "Attachment quota is full.",
+          );
+        }
         if (index.attachments.length + newRecordCount > CLIENT_ATTACHMENT_MAX_RECORDS) {
           throw new ClientAttachmentError(
             409,
@@ -838,10 +936,27 @@ export async function saveUploadedClientAttachments(
                   "The attachment index is unavailable.",
                 );
               }
+              if (!(await canonicalMatchesPreparedAttachment(attachmentId, upload))) {
+                if (existing.conversationId !== null) {
+                  throw new ClientAttachmentError(
+                    409,
+                    "conflict",
+                    "A bound attachment payload cannot be repaired by an upload retry.",
+                  );
+                }
+                await repairCanonicalAttachment(attachmentId, upload);
+              }
             } else {
               const existedBefore = await canonicalAttachmentExists(storageRoot, attachmentId);
               await persistCanonicalAttachment(upload, attachmentId);
               if (!existedBefore) newlyPersisted.push(attachmentId);
+              if (!(await canonicalMatchesPreparedAttachment(attachmentId, upload))) {
+                throw new ClientAttachmentError(
+                  503,
+                  "service_unavailable",
+                  "Canonical attachment storage is unavailable.",
+                );
+              }
               const created: ClientAttachmentRecord = {
                 attachmentId,
                 credentialId: credentialId.toLowerCase(),
