@@ -16,6 +16,7 @@
     "research",
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/artificers-codex",
   "x-coven": {
     "displayName": "Artificer's Codex",

@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/context7",
   "x-coven": {
     "displayName": "Context7",

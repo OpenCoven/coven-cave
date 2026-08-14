@@ -437,6 +437,19 @@ def craft_notice(plugin: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def bundles_skills(plugin: dict[str, Any]) -> bool:
+    """True when packaging writes a skills/ directory for this plugin.
+
+    Crafts and Knowledge Packs bundle their pinned upstream skills; a plain
+    plugin gets one generated (or hand-authored) skills/<name>/SKILL.md from
+    its catalog `skill` block. Prompt-only packs carry no skill at all, so
+    their manifest must not advertise a directory that does not exist.
+    """
+    if plugin.get("kind") in {"craft", "knowledge-pack"}:
+        return True
+    return bool(plugin.get("skill"))
+
+
 def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "name": plugin["name"],
@@ -448,6 +461,13 @@ def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
         "license": plugin.get("license", "GPL-3.0"),
         "keywords": plugin.get("keywords", []),
         "capabilities": plugin.get("capabilities", []),
+        # The runtime contract, not decoration: resolveBundledCopilotPluginDirs
+        # (src/lib/server/bundled-copilot-plugins.ts) loads an app-bundled
+        # plugin ONLY when its plugin.json advertises a skills directory and
+        # carries no agents/hooks/mcpServers. Omitting this silently drops the
+        # bundle from Copilot chats, which is how the coven-memory `recall`
+        # registration ended up hand-edited into this generated file.
+        **({"skills": "./skills/"} if bundles_skills(plugin) else {}),
         "marketplaceId": f"opencoven/{plugin['name']}",
         "x-coven": {
             "displayName": plugin["displayName"],

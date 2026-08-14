@@ -26,6 +26,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/mobile-touch-ux",
   "x-coven": {
     "displayName": "Mobile Touch UX & Responsive Patterns",

@@ -20,6 +20,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/tinyfish-fetch",
   "x-coven": {
     "displayName": "TinyFish Fetch",
