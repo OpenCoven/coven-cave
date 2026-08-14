@@ -125,16 +125,16 @@ assert.match(
   "Local skill sources should be declared as read-only runtime resources in the boundary prompt",
 );
 
-assert.match(
+assert.doesNotMatch(
   chatRoute,
   /createBoundarySentinel\([\s\S]*?allowedRoots:[\s\S]*?\.\.\.runtimeResourceRoots/,
-  "Reading an advertised skill should not be reported as a boundary violation",
+  "Read-only skill resources must not be accepted by the write-boundary sentinel",
 );
 
-assert.match(
+assert.doesNotMatch(
   chatRoute,
   /const grantDirs = !sshRuntime[\s\S]*?\.\.\.runtimeResourceRoots/,
-  "Harness launches should receive the same skill-resource directories as the boundary prompt",
+  "Read-only skill resources must not be promoted to writable harness grants",
 );
 
 assert.match(
