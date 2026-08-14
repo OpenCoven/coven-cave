@@ -75,7 +75,7 @@ assert.match(
 
 assert.match(
   pageRegistry,
-  /code: "Code"|id: "code"[\s\S]*?title: "Code"/,
+  /id: "code"[\s\S]*?title: "Code"/,
   "WORKSPACE_MODE_PAGES names the Code surface (canonical-nav agreement)",
 );
 assert.match(
