@@ -241,6 +241,25 @@ test("a >= 500 execute response is never persisted — a retry sees a live pendi
   assert.equal(calls, 1, "execute must not run again while the failed attempt's claim is still live");
 });
 
+test("a retryable 409 execute response stays pending instead of becoming a permanently replayed result", async () => {
+  const request = baseRequest();
+  let calls = 0;
+  const launching = await runIdempotentMutation(request, async () => {
+    calls += 1;
+    return clientV1Error(409, "operation_already_started", "Still launching.", true);
+  });
+  assert.equal(launching.status, 409);
+  assert.equal((await launching.json()).error.retryable, true);
+
+  const retry = await runIdempotentMutation(request, async () => {
+    calls += 1;
+    return clientV1Ok({ ok: true });
+  });
+  assert.equal(retry.status, 409);
+  assert.equal((await retry.json()).error.code, "conflict");
+  assert.equal(calls, 1, "the retryable result must leave its claim in progress, never replay it");
+});
+
 test("execute throwing an unexpected error returns a safe 500 and is never persisted", async () => {
   const request = baseRequest();
   const response = await runIdempotentMutation(request, async () => {
