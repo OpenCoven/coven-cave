@@ -198,9 +198,6 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install release checker runtime dependency
-        run: pnpm install --frozen-lockfile --prod --ignore-scripts
-
       - name: Require a verified signed tag on main
         id: tag
         shell: bash
@@ -233,6 +230,9 @@ jobs:
           fi
           echo "commit=$TAGGED_COMMIT" >> "$GITHUB_OUTPUT"
           echo "Verified signed $RELEASE_TAG at $TAGGED_COMMIT on origin/main."
+
+      - name: Install release checker runtime dependency
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts --ignore-pnpmfile
 
       - name: Load audited release-version checker
         id: checker
