@@ -152,7 +152,7 @@ test("client DELETE winning the lock prevents a late Gateway completion from res
 });
 
 test("production OpenClaw Gateway persistence holds the shared lock for the full RMW and fails closed after delete", async () => {
-  const source = await readFile(new URL("../../../../lib/server/chat-send-service.ts", import.meta.url), "utf8");
+  const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
   const start = source.indexOf('if (gatewayDispatch.kind === "accepted")');
   const end = source.indexOf("const openclawLaunch = openClawLaunchCommand()", start);
   assert.ok(start >= 0 && end > start);

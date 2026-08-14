@@ -16,7 +16,7 @@ import {
 } from "../../../../lib/chat-tool-events.ts";
 
 const chatRoute = await readFile(
-  new URL("../../../../lib/server/chat-send-service.ts", import.meta.url),
+  new URL("./route.ts", import.meta.url),
   "utf8",
 );
 const copilotStream = await readFile(
