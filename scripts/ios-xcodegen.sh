@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Generate CovenCave.xcodeproj — the ONLY supported way to run xcodegen here.
 #
+# Run it as `pnpm mobile:ios:xcodegen`. Until cave-bkp0o that alias did not
+# exist, so nothing routed anyone to this file: the README documented the right
+# order, and a direct `xcodebuild` skipped it and failed with `cannot find type
+# … in scope` — which reads as a code bug and invites hand-editing the
+# generated, gitignored .pbxproj.
+#
 # Resources/{markdown.html,terminal.html,markdown.css} are gitignored build
 # artifacts. `xcodegen generate` SCANS the source directory, so on a fresh
 # clone — where those files do not exist yet — they never enter the resource
