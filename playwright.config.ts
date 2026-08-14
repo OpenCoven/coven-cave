@@ -156,6 +156,16 @@ export default defineConfig({
       name: "desktop",
       dependencies: ["preferences-iphone-13"],
       testMatch: /.*\.spec\.ts/,
+      // tests/mobile/** belongs to the pixel-5 and iphone-13 projects below.
+      // Without this, `/.*\.spec\.ts/` also matches them and every mobile spec
+      // runs a THIRD time under Desktop Chrome. That was survivable only while
+      // mobile specs happened to be viewport-agnostic; the first one that
+      // genuinely is not (tests/mobile/workspace-half-split.spec.ts, asserting
+      // the container-width tab fallback) fails all 22 of its cases there and
+      // burns ~4.5 minutes locally. Doubled by `retries: 1` and multiplied on
+      // CI's slower runners, that is what pushed the job past its 60-minute cap
+      // so every PR reported a bare "cancelled" with no failing test (cave-3wmla).
+      testIgnore: /mobile\/.*\.spec\.ts/,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Desktop Chrome"] },
     },
