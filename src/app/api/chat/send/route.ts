@@ -1523,14 +1523,14 @@ export async function POST(req: Request) {
       ? await resolveInstalledClaudeCompatibility()
       : null;
   await ensureAdapterManifestScaffold(binding.harness);
-// The Responses API does not expose a documented, enforceable equivalent of
-  // Cave's read-only sandbox. Do not downgrade that security promise to a
-  // prompt merely because a familiar opted into the structured transport.
-  if (hermesDirect && hermesApi && body.permissionMode === "read") {
+  // Neither the Responses API nor the direct CLI exposes a documented,
+  // enforceable equivalent of Cave's read-only sandbox. Reject both transports
+  // rather than silently launching Hermes with full local access.
+  if (hermesDirect && body.permissionMode === "read") {
     return new Response(
       JSON.stringify({
         ok: false,
-        error: "Hermes API does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+        error: "Hermes does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
       }),
       { status: 501, headers: { "content-type": "application/json" } },
     );

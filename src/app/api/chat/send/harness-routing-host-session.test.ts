@@ -138,6 +138,11 @@ assert.match(
   /a\.push\("--permission", forwardPermission\)/,
   "coven run argv forwards --permission when enabled",
 );
+assert.match(
+  chatRoute,
+  /if \(hermesDirect && body\.permissionMode === "read"\)[\s\S]*?status: 501/,
+  "Hermes must reject Read-only mode before either the API or profile-bound CLI transport runs",
+);
 
 assert.match(
   chatRoute,
