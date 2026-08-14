@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import { Type } from "typebox";
@@ -21,9 +22,6 @@ const THREAD_OBSERVATION_METRIC_NAMES = [
   "quotes",
   "bookmarks",
 ] as const;
-
-const boundedString = (maxLength: number) =>
-  Type.String({ minLength: 1, maxLength });
 
 const boundedNonWhitespaceString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength, pattern: "\\S" });
@@ -74,8 +72,8 @@ export type ThreadConstraints = Static<typeof ThreadConstraintsSchema>;
 export const ThreadBriefSchema = Type.Object({
   protocolVersion: protocolVersionLiteral(),
   briefId: stableId("brief"),
-  topic: boundedString(500),
-  audience: boundedString(500),
+  topic: boundedNonWhitespaceString(500),
+  audience: boundedNonWhitespaceString(500),
   objectiveWeights: ObjectiveWeightsSchema,
   constraints: ThreadConstraintsSchema,
   notes: Type.Optional(Type.String({ maxLength: 2_000 })),
@@ -86,8 +84,8 @@ export const EvidenceItemSchema = Type.Object({
   protocolVersion: protocolVersionLiteral(),
   evidenceId: stableId("evidence"),
   claimId: claimIdSchema(),
-  summary: boundedString(2_000),
-  sourceLabel: boundedString(200),
+  summary: boundedNonWhitespaceString(2_000),
+  sourceLabel: boundedNonWhitespaceString(200),
   sourceUrl: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
   retrievedAt: timestampString(),
 }, { additionalProperties: false });
@@ -96,22 +94,22 @@ export type EvidenceItem = Static<typeof EvidenceItemSchema>;
 export const VoiceProfileSchema = Type.Object({
   protocolVersion: protocolVersionLiteral(),
   voiceProfileId: stableId("voice"),
-  displayName: boundedString(120),
-  tone: boundedString(500),
-  do: Type.Array(boundedString(200), { maxItems: 32, uniqueItems: true }),
-  dont: Type.Array(boundedString(200), { maxItems: 32, uniqueItems: true }),
+  displayName: boundedNonWhitespaceString(120),
+  tone: boundedNonWhitespaceString(500),
+  do: Type.Array(boundedNonWhitespaceString(200), { maxItems: 32, uniqueItems: true }),
+  dont: Type.Array(boundedNonWhitespaceString(200), { maxItems: 32, uniqueItems: true }),
 }, { additionalProperties: false });
 export type VoiceProfile = Static<typeof VoiceProfileSchema>;
 
 export const ThreadPostMediaSchema = Type.Object({
-  description: Type.String({ minLength: 1, maxLength: 500 }),
-  altText: Type.Optional(Type.String({ minLength: 1, maxLength: 1_000 })),
+  description: boundedNonWhitespaceString(500),
+  altText: Type.Optional(boundedNonWhitespaceString(1_000)),
 }, { additionalProperties: false });
 export type ThreadPostMedia = Static<typeof ThreadPostMediaSchema>;
 
 export const ThreadPostSchema = Type.Object({
   postId: postIdSchema(),
-  text: Type.String({ minLength: 1, maxLength: 25_000 }),
+  text: boundedNonWhitespaceString(25_000),
   claimIds: Type.Array(claimIdSchema(), { maxItems: 32, uniqueItems: true }),
   media: Type.Optional(Type.Array(ThreadPostMediaSchema, { maxItems: 4 })),
 }, { additionalProperties: false });
@@ -128,12 +126,13 @@ export const ThreadCandidateSchema = Type.Object({
   generatedAt: timestampString(),
 }, { additionalProperties: false });
 export type ThreadCandidate = Static<typeof ThreadCandidateSchema>;
+export type ThreadCandidateCanonicalContent = Omit<ThreadCandidate, "candidateSha256">;
 
 const DeterministicFindingSchemaInternal = Type.Object({
   findingId: stableId("finding"),
-  code: boundedString(120),
+  code: boundedNonWhitespaceString(120),
   severity: Type.Union([Type.Literal("info"), Type.Literal("warn"), Type.Literal("fail")]),
-  message: boundedString(2_000),
+  message: boundedNonWhitespaceString(2_000),
   postId: Type.Optional(postIdSchema()),
   claimId: Type.Optional(claimIdSchema()),
 }, { additionalProperties: false });
@@ -143,7 +142,7 @@ export type DeterministicFinding = Static<typeof DeterministicFindingSchemaInter
 const DimensionScoreSchemaInternal = (dimension: DeterministicDimension) => Type.Object({
   dimension: Type.Literal(dimension),
   score: Type.Number({ minimum: 0, maximum: 1 }),
-  rationale: boundedString(2_000),
+  rationale: boundedNonWhitespaceString(2_000),
   findings: Type.Array(DeterministicFindingSchemaInternal, { maxItems: 128 }),
 }, { additionalProperties: false });
 
@@ -183,7 +182,7 @@ export const ApprovalRecordSchema = Type.Object({
   approvalId: stableId("approval"),
   candidateSha256: sha256Schema(),
   decision: Type.Union([Type.Literal("approved"), Type.Literal("rejected")]),
-  actor: boundedString(200),
+  actor: boundedNonWhitespaceString(200),
   decidedAt: timestampString(),
   note: Type.Optional(Type.String({ maxLength: 2_000 })),
 }, { additionalProperties: false });
@@ -311,6 +310,32 @@ function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function canonicalizeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJsonValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalizeJsonValue(value[key])]),
+  );
+}
+
+export function serializeCanonicalThreadCandidate(
+  candidate: ThreadCandidate | ThreadCandidateCanonicalContent,
+): string {
+  const content: UnknownRecord = { ...candidate };
+  delete content.candidateSha256;
+  return JSON.stringify(canonicalizeJsonValue(content));
+}
+
+export function computeThreadCandidateSha256(
+  candidate: ThreadCandidate | ThreadCandidateCanonicalContent,
+): string {
+  return createHash("sha256")
+    .update(serializeCanonicalThreadCandidate(candidate), "utf8")
+    .digest("hex");
+}
+
 function trimIfString(value: unknown): unknown {
   return typeof value === "string" ? value.trim() : value;
 }
@@ -356,6 +381,8 @@ function collectObjectiveWeightIssues(value: unknown, path: string): string[] {
 function collectThreadBriefIssues(value: unknown, path = "ThreadBrief"): string[] {
   const issues: string[] = [];
   if (!isRecord(value)) return [`${path} must be an object.`];
+  issues.push(...collectNonWhitespaceStringIssues(value.topic, `${path}.topic`));
+  issues.push(...collectNonWhitespaceStringIssues(value.audience, `${path}.audience`));
   issues.push(...collectObjectiveWeightIssues(value.objectiveWeights, `${path}.objectiveWeights`));
   const constraints = value.constraints;
   if (!isRecord(constraints)) {
@@ -389,6 +416,12 @@ function collectTimestampIssues(value: unknown, path: string): string[] {
   const timestamp = new Date(value);
   if (!Number.isNaN(timestamp.getTime()) && timestamp.toISOString() === value) return [];
   return [`${path} must be a calendar-valid UTC-millisecond timestamp.`];
+}
+
+function collectNonWhitespaceStringIssues(value: unknown, path: string): string[] {
+  return typeof value === "string" && value.trim().length === 0
+    ? [`${path} must contain non-whitespace text.`]
+    : [];
 }
 
 function pushDuplicateIssue(seen: Set<string>, next: string, path: string, issues: string[]): void {
@@ -451,17 +484,40 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
   const issues: string[] = [];
   if (!isRecord(value)) return [`${path} must be an object.`];
   issues.push(...collectThreadBriefIssues(value.brief, `${path}.brief`));
-  if (!Value.Check(ThreadCandidateSchema, value)) {
+  const matchesCandidateSchema = Value.Check(ThreadCandidateSchema, value);
+  if (!matchesCandidateSchema) {
     issues.push(`${path} does not match ThreadCandidateSchema.`);
   }
   issues.push(...collectTimestampIssues(value.generatedAt, `${path}.generatedAt`));
+  if (
+    matchesCandidateSchema
+    && typeof value.candidateSha256 === "string"
+    && SHA256_HEX.test(value.candidateSha256)
+  ) {
+    try {
+      const computedSha256 = computeThreadCandidateSha256(value as ThreadCandidate);
+      if (computedSha256 !== value.candidateSha256) {
+        issues.push(
+          `${path}.candidateSha256 must equal the SHA-256 of canonical candidate content; expected "${computedSha256}".`,
+        );
+      }
+    } catch {
+      issues.push(`${path} must be serializable as canonical JSON before candidateSha256 can be verified.`);
+    }
+  }
   if (!isRecord(value.brief) || !Array.isArray(value.evidence) || !Array.isArray(value.posts)) return issues;
+  if (isRecord(value.voiceProfile)) {
+    issues.push(...collectNonWhitespaceStringIssues(value.voiceProfile.displayName, `${path}.voiceProfile.displayName`));
+    issues.push(...collectNonWhitespaceStringIssues(value.voiceProfile.tone, `${path}.voiceProfile.tone`));
+  }
 
   const evidenceClaimIds = new Set<string>();
   const evidenceIds = new Set<string>();
   for (const [index, item] of value.evidence.entries()) {
     if (!isRecord(item)) continue;
     issues.push(...collectTimestampIssues(item.retrievedAt, `${path}.evidence[${index}].retrievedAt`));
+    issues.push(...collectNonWhitespaceStringIssues(item.summary, `${path}.evidence[${index}].summary`));
+    issues.push(...collectNonWhitespaceStringIssues(item.sourceLabel, `${path}.evidence[${index}].sourceLabel`));
     if (typeof item.evidenceId === "string") {
       pushDuplicateIssue(evidenceIds, item.evidenceId, `${path}.evidence[${index}].evidenceId`, issues);
     }
@@ -483,6 +539,7 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
   const postedClaimIds = new Set<string>();
   for (const [index, post] of value.posts.entries()) {
     if (!isRecord(post)) continue;
+    issues.push(...collectNonWhitespaceStringIssues(post.text, `${path}.posts[${index}].text`));
     if (typeof post.postId === "string") {
       pushDuplicateIssue(postIds, post.postId, `${path}.posts[${index}].postId`, issues);
     }
@@ -504,6 +561,10 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
     if (constraints?.requireAltText && Array.isArray(post.media)) {
       for (const [mediaIndex, media] of post.media.entries()) {
         if (!isRecord(media)) continue;
+        issues.push(...collectNonWhitespaceStringIssues(
+          media.description,
+          `${path}.posts[${index}].media[${mediaIndex}].description`,
+        ));
         const altText = media.altText;
         if (typeof altText !== "string" || altText.trim().length === 0) {
           issues.push(`${path}.posts[${index}].media[${mediaIndex}] must include non-empty alt text when requireAltText is true.`);
@@ -610,6 +671,10 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
     for (const [index, approval] of input.approvals.entries()) {
       if (isRecord(approval)) {
         issues.push(...collectTimestampIssues(approval.decidedAt, `ThreadRunManifest.approvals[${index}].decidedAt`));
+        issues.push(...collectNonWhitespaceStringIssues(
+          approval.actor,
+          `ThreadRunManifest.approvals[${index}].actor`,
+        ));
       }
     }
   }
@@ -675,8 +740,16 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
   }
 
   for (const [index, approval] of manifest.approvals.entries()) {
-    if (!candidateBySha.has(approval.candidateSha256)) {
+    const candidate = candidateBySha.get(approval.candidateSha256);
+    if (!candidate) {
       issues.push(`ThreadRunManifest.approvals[${index}] candidate sha "${approval.candidateSha256}" does not match any candidate.`);
+      continue;
+    }
+    if (Date.parse(approval.decidedAt) < Date.parse(candidate.generatedAt)) {
+      const candidateIndex = manifest.candidates.indexOf(candidate);
+      issues.push(
+        `ThreadRunManifest.approvals[${index}].decidedAt must be greater than or equal to ThreadRunManifest.candidates[${candidateIndex}].generatedAt.`,
+      );
     }
   }
 
@@ -689,6 +762,12 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       continue;
     }
     const receiptPath = `ThreadRunManifest.publishReceipts[${index}]`;
+    if (Date.parse(receipt.attemptedAt) < Date.parse(candidate.generatedAt)) {
+      const candidateIndex = manifest.candidates.indexOf(candidate);
+      issues.push(
+        `${receiptPath}.attemptedAt must be greater than or equal to ThreadRunManifest.candidates[${candidateIndex}].generatedAt.`,
+      );
+    }
     if (publicationRequiresApproval(receipt)) {
       const latestApproval = latestApprovalAtOrBefore(
         manifest.approvals,

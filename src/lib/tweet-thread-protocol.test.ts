@@ -18,14 +18,14 @@ import {
   VoiceProfileSchema,
   assertValidThreadCandidate,
   assertValidThreadRunManifest,
+  computeThreadCandidateSha256,
   normalizeThreadBrief,
+  serializeCanonicalThreadCandidate,
 } from "./tweet-thread-protocol.ts";
 import type { PublishReceipt } from "./tweet-thread-protocol.ts";
 
 const TIMESTAMP = "2026-08-14T12:00:00.000Z";
 const OTHER_TIMESTAMP = "2026-08-14T12:05:00.000Z";
-const SHA_A = "a".repeat(64);
-const SHA_B = "b".repeat(64);
 type PublishedReceipt = Extract<PublishReceipt, { status: "published" }>;
 
 function validBrief() {
@@ -103,11 +103,10 @@ function validPosts() {
   ];
 }
 
-function validCandidate() {
+function validCandidateContent(candidateId = "candidate-portable-launch") {
   return {
     protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
-    candidateId: "candidate-portable-launch",
-    candidateSha256: SHA_A,
+    candidateId,
     brief: validBrief(),
     voiceProfile: validVoiceProfile(),
     evidence: validEvidence(),
@@ -115,6 +114,103 @@ function validCandidate() {
     generatedAt: TIMESTAMP,
   };
 }
+
+const SHA_A = computeThreadCandidateSha256(validCandidateContent());
+const SHA_B = computeThreadCandidateSha256(validCandidateContent("candidate-portable-launch-second"));
+
+function validCandidate() {
+  return {
+    ...validCandidateContent(),
+    candidateSha256: SHA_A,
+  };
+}
+
+function validSecondCandidate() {
+  return {
+    ...validCandidateContent("candidate-portable-launch-second"),
+    candidateSha256: SHA_B,
+  };
+}
+
+function rehashCandidate(candidate: ReturnType<typeof validCandidate>) {
+  return {
+    ...candidate,
+    candidateSha256: computeThreadCandidateSha256(candidate),
+  };
+}
+
+const EXPECTED_CANONICAL_CANDIDATE = JSON.stringify({
+  brief: {
+    audience: "Builders shipping cross-harness tweet threads",
+    briefId: "brief-launch-thread",
+    constraints: {
+      bannedPhrases: ["just vibing"],
+      maxPosts: 4,
+      minPosts: 2,
+      requireAltText: true,
+      requiredClaimIds: ["claim-source-of-truth"],
+    },
+    notes: "Keep the copy sharp.",
+    objectiveWeights: {
+      accessibility: 0.8,
+      coherence: 0.6,
+      engagement: 0.5,
+      factuality: 1,
+      provenance: 0.9,
+      voice: 0.7,
+    },
+    protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+    topic: "Portable protocol launch",
+  },
+  candidateId: "candidate-portable-launch",
+  evidence: [
+    {
+      claimId: "claim-source-of-truth",
+      evidenceId: "evidence-source-of-truth",
+      protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+      retrievedAt: TIMESTAMP,
+      sourceLabel: "Approved plan",
+      sourceUrl: "https://example.com/plan",
+      summary: "The protocol file is the single source for JSON Schema output.",
+    },
+    {
+      claimId: "claim-second-proof",
+      evidenceId: "evidence-claim-two",
+      protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+      retrievedAt: TIMESTAMP,
+      sourceLabel: "Review note",
+      sourceUrl: "https://example.com/review",
+      summary: "Score dimensions stay separate instead of collapsing into one total.",
+    },
+  ],
+  generatedAt: TIMESTAMP,
+  posts: [
+    {
+      claimIds: ["claim-source-of-truth"],
+      media: [{
+        altText: "A diagram showing one protocol feeding many validators.",
+        description: "Schema diagram",
+      }],
+      postId: "post-1",
+      text: "Portable thread contracts keep every harness speaking the same language.",
+    },
+    {
+      claimIds: ["claim-second-proof"],
+      postId: "post-2",
+      text: "Separate dimension scores preserve the why behind each decision.",
+    },
+  ],
+  protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+  voiceProfile: {
+    displayName: "Portable launch",
+    do: ["Lead with evidence", "Keep momentum"],
+    dont: ["Hype without proof"],
+    protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+    tone: "Grounded, exact, and readable.",
+    voiceProfileId: "voice-portable-launch",
+  },
+});
+const KNOWN_CANDIDATE_SHA256 = "a584ea99176246a443fe7242d634e5846e07487ff71c4a61a3c49aa980c74af8";
 
 function validScorecard(candidateSha256 = SHA_A) {
   return {
@@ -469,6 +565,114 @@ assert.equal(
 
 assert.ok(Value.Check(ThreadCandidateSchema, validCandidate()));
 assert.doesNotThrow(() => assertValidThreadCandidate(validCandidate()));
+assert.equal(
+  serializeCanonicalThreadCandidate(validCandidate()),
+  EXPECTED_CANONICAL_CANDIDATE,
+  "canonical candidate content includes every candidate field except candidateSha256",
+);
+assert.equal(
+  computeThreadCandidateSha256(validCandidate()),
+  KNOWN_CANDIDATE_SHA256,
+  "candidate SHA-256 is computed from the explicit canonical candidate content",
+);
+const reorderedCandidate = {
+  generatedAt: TIMESTAMP,
+  posts: validPosts().map((post) => ({
+    ...(post.media
+      ? {
+          media: post.media.map((media) => ({
+            altText: media.altText,
+            description: media.description,
+          })),
+        }
+      : {}),
+    claimIds: post.claimIds,
+    text: post.text,
+    postId: post.postId,
+  })),
+  evidence: validEvidence().map((item) => ({
+    retrievedAt: item.retrievedAt,
+    sourceUrl: item.sourceUrl,
+    sourceLabel: item.sourceLabel,
+    summary: item.summary,
+    claimId: item.claimId,
+    evidenceId: item.evidenceId,
+    protocolVersion: item.protocolVersion,
+  })),
+  voiceProfile: {
+    dont: validVoiceProfile().dont,
+    tone: validVoiceProfile().tone,
+    displayName: validVoiceProfile().displayName,
+    do: validVoiceProfile().do,
+    voiceProfileId: validVoiceProfile().voiceProfileId,
+    protocolVersion: validVoiceProfile().protocolVersion,
+  },
+  brief: {
+    notes: validBrief().notes,
+    constraints: {
+      requireAltText: validBrief().constraints.requireAltText,
+      bannedPhrases: validBrief().constraints.bannedPhrases,
+      requiredClaimIds: validBrief().constraints.requiredClaimIds,
+      maxPosts: validBrief().constraints.maxPosts,
+      minPosts: validBrief().constraints.minPosts,
+    },
+    objectiveWeights: {
+      engagement: validBrief().objectiveWeights.engagement,
+      coherence: validBrief().objectiveWeights.coherence,
+      voice: validBrief().objectiveWeights.voice,
+      accessibility: validBrief().objectiveWeights.accessibility,
+      provenance: validBrief().objectiveWeights.provenance,
+      factuality: validBrief().objectiveWeights.factuality,
+    },
+    audience: validBrief().audience,
+    topic: validBrief().topic,
+    briefId: validBrief().briefId,
+    protocolVersion: validBrief().protocolVersion,
+  },
+  candidateSha256: SHA_A,
+  candidateId: "candidate-portable-launch",
+  protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+};
+assert.equal(
+  computeThreadCandidateSha256(reorderedCandidate),
+  KNOWN_CANDIDATE_SHA256,
+  "candidate hashing is independent of object property insertion order while preserving array order",
+);
+
+const mutatedPostCandidateError = expectValidationError(
+  () => assertValidThreadCandidate({
+    ...validCandidate(),
+    posts: validPosts().map((post, index) => index === 0
+      ? { ...post, text: `${post.text} Mutated after hashing.` }
+      : post),
+  }),
+);
+assert.match(
+  mutatedPostCandidateError.issues.join("\n"),
+  /ThreadCandidate\.candidateSha256.*canonical candidate content/i,
+);
+
+for (const field of ["summary", "sourceLabel"] as const) {
+  const evidence = validEvidence().map((item, index) => index === 0
+    ? { ...item, [field]: " \t " }
+    : item);
+  assert.equal(
+    Value.Check(EvidenceItemSchema, evidence[0]),
+    false,
+    `evidence ${field} must contain non-whitespace provenance text`,
+  );
+  const candidate = { ...validCandidate(), evidence };
+  const whitespaceEvidenceError = expectValidationError(
+    () => assertValidThreadCandidate({
+      ...candidate,
+      candidateSha256: computeThreadCandidateSha256(candidate),
+    }),
+  );
+  assert.match(
+    whitespaceEvidenceError.issues.join("\n"),
+    new RegExp(`ThreadCandidate\\.evidence\\[0\\]\\.${field}.*non-whitespace`, "i"),
+  );
+}
 
 const invalidCandidateTimestampError = expectValidationError(
   () => assertValidThreadCandidate({
@@ -506,13 +710,13 @@ const omittedRequiredClaimError = expectValidationError(
 assert.match(omittedRequiredClaimError.issues.join("\n"), /requiredClaimIds.*claim-source-of-truth/i);
 
 assert.doesNotThrow(
-  () => assertValidThreadCandidate({
+  () => assertValidThreadCandidate(rehashCandidate({
     ...validCandidate(),
     posts: [
       { ...validPosts()[0], text: "The unjust vibingly named draft still cites its source." },
       validPosts()[1],
     ],
-  }),
+  })),
   "banned phrases do not match inside larger words",
 );
 const bannedPhraseError = expectValidationError(
@@ -548,6 +752,23 @@ assert.equal(
 );
 
 assert.ok(Value.Check(ApprovalRecordSchema, validApproval()));
+assert.equal(
+  Value.Check(ApprovalRecordSchema, { ...validApproval(), actor: " \t " }),
+  false,
+  "approval actors must contain non-whitespace identity text",
+);
+const whitespaceApprovalActorError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    approvals: [{ ...validApproval(), actor: " \t " }],
+    publishReceipts: [],
+    observations: [],
+  }),
+);
+assert.match(
+  whitespaceApprovalActorError.issues.join("\n"),
+  /ThreadRunManifest\.approvals\[0\]\.actor.*non-whitespace/i,
+);
 assert.ok(Value.Check(PublishReceiptSchema, validPublishReceipt()));
 assert.match(publishReceiptEvidence(validPublishReceipt()), /https:\/\/x\.com\/opencoven\/status\/1/);
 assert.ok(
@@ -841,13 +1062,13 @@ for (const timestampPath of [
 const manifestBriefBindingError = expectValidationError(
   () => assertValidThreadRunManifest({
     ...validManifest(),
-    candidates: [{
+    candidates: [rehashCandidate({
       ...validCandidate(),
       brief: {
         ...validBrief(),
         topic: "A different valid topic",
       },
-    }],
+    })],
   }),
 );
 assert.match(
@@ -858,13 +1079,13 @@ assert.match(
 const manifestVoiceBindingError = expectValidationError(
   () => assertValidThreadRunManifest({
     ...validManifest(),
-    candidates: [{
+    candidates: [rehashCandidate({
       ...validCandidate(),
       voiceProfile: {
         ...validVoiceProfile(),
         tone: "A different valid tone.",
       },
-    }],
+    })],
   }),
 );
 assert.match(
@@ -892,6 +1113,7 @@ function checkInvariant(label: string, check: () => void): void {
 
 const EARLIER_TIMESTAMP = "2026-08-14T12:04:00.000Z";
 const LATER_TIMESTAMP = "2026-08-14T12:10:00.000Z";
+const BEFORE_GENERATION_TIMESTAMP = "2026-08-14T11:59:00.000Z";
 
 function approvalAt(
   approvalId: string,
@@ -986,6 +1208,30 @@ checkInvariant("publication requires an approval at or before the attempt", () =
     observations: [],
   }));
   assert.match(laterApprovalError.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+});
+
+checkInvariant("approval decisions cannot predate candidate generation", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [approvalAt("approval-before-generation", "approved", BEFORE_GENERATION_TIMESTAMP)],
+    publishReceipts: [],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /approvals\[0\]\.decidedAt.*candidates\[0\]\.generatedAt/i);
+});
+
+checkInvariant("publication attempts cannot predate candidate generation", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [approvalAt("approval-at-generation", "approved", TIMESTAMP)],
+    publishReceipts: [{
+      ...validPublishReceipt(),
+      attemptedAt: BEFORE_GENERATION_TIMESTAMP,
+      publishedAt: OTHER_TIMESTAMP,
+    }],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /publishReceipts\[0\]\.attemptedAt.*candidates\[0\]\.generatedAt/i);
 });
 
 checkInvariant("a later rejection before the attempt revokes publication approval", () => {
@@ -1140,11 +1386,7 @@ checkInvariant("observations bind to a receipt with matching candidate and remot
   }));
   assert.match(missingReceiptError.issues.join("\n"), /observations\[0\]\.publishReceiptId.*missing/i);
 
-  const secondCandidate = {
-    ...validCandidate(),
-    candidateId: "candidate-portable-launch-second",
-    candidateSha256: SHA_B,
-  };
+  const secondCandidate = validSecondCandidate();
   const mismatchedCandidateError = expectValidationError(() => assertValidThreadRunManifest({
     ...validBoundManifest(),
     candidates: [validCandidate(), secondCandidate],
@@ -1231,7 +1473,7 @@ checkInvariant("stable manifest IDs report the duplicate occurrence path", () =>
         ...validBoundManifest(),
         candidates: [
           validCandidate(),
-          { ...validCandidate(), candidateSha256: SHA_B },
+          rehashCandidate({ ...validCandidate(), generatedAt: OTHER_TIMESTAMP }),
         ],
         observations: [],
       },
