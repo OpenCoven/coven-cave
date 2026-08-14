@@ -1,4 +1,9 @@
-import { ensureTerminalFailure, subscribeRunStream } from "@/lib/server/chat-stream-buffer";
+import {
+  canonicalizeRunStreamEvent,
+  ensureTerminalFailure,
+  RUN_STREAM_EVENT_MAX_BYTES,
+  subscribeRunStream,
+} from "@/lib/server/chat-stream-buffer";
 import type { StreamEvent } from "@/lib/stream-events";
 
 export type ClientStreamEvent =
@@ -21,7 +26,12 @@ const KEEP_ALIVE_MS = 15_000;
 const RESUME_QUEUE_MAX_BYTES = 64 * 1024;
 const CURSOR_RE = /^(0|[1-9][0-9]*)$/;
 const SAFE_FAILURE_CODE_RE = /^[a-z][a-z0-9_-]{0,63}$/;
-const UPSTREAM_FRAME_MAX_BYTES = 129 * 1024;
+// The canonical event's JSON is limited by the shared run buffer. A compact
+// SSE frame has a small `id:`/`data:` envelope around that payload; retain a
+// bounded allowance only for that transport metadata so an exactly-at-limit
+// canonical event remains valid on the initial stream too.
+const SSE_FRAME_METADATA_MAX_BYTES = 1024;
+const UPSTREAM_FRAME_MAX_BYTES = RUN_STREAM_EVENT_MAX_BYTES + SSE_FRAME_METADATA_MAX_BYTES;
 
 type Translation = {
   event: ClientStreamEvent | null;
@@ -321,7 +331,9 @@ export function translateInitialChatResponse(
             return;
           }
           lastSeq = frame.seq;
-          const translated = translator.translate(frame.event);
+          const translated = translator.translate(
+            canonicalizeRunStreamEvent(frame.event as StreamEvent),
+          );
           if (translated.event) {
             controller.enqueue(encodeClientStreamEvent(frame.seq, translated.event));
           }
