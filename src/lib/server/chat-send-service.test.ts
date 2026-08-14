@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-test("the legacy route preserves the representative Codex-direct stream contract", async () => {
+test("the HTTP route preserves the representative Codex-direct stream contract", async () => {
   const home = await mkdtemp(path.join(homedir(), "cave-send-service-characterization-"));
   const workspace = path.join(home, "familiars", "opal");
   const bin = path.join(home, "bin");
@@ -128,5 +128,8 @@ test("the route exports one canonical send entrypoint for HTTP and client caller
     "utf8",
   );
   assert.match(route, /export async function executeChatSend\(req: Request\)/);
-  assert.match(route, /export \{ executeChatSend as POST \};/);
+  assert.match(
+    route,
+    /export async function POST\(req: Request\): Promise<Response> \{\s*return executeChatSend\(req\);\s*\}/,
+  );
 });

@@ -668,9 +668,13 @@ async function maybeQueueOfflineChat(args: {
     },
   });
 
+  const runBuffer = openRunBuffer([args.body.runId, sessionId]);
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => {
-      const push = (event: StreamEvent) => controller.enqueue(chatSse(event));
+      const push = (event: StreamEvent) => {
+        const seq = runBuffer.record(event);
+        controller.enqueue(chatSse(event, seq));
+      };
       push({ kind: "session", sessionId });
       push({ kind: "user", text: args.promptText });
       push({
@@ -686,6 +690,7 @@ async function maybeQueueOfflineChat(args: {
         sessionId,
         responseMetadata: args.responseMetadata,
       });
+      runBuffer.finish();
       controller.close();
     },
   });
@@ -1075,85 +1080,73 @@ function openClawChatResponse(args: {
           pushProgress("save-transcript", "Saving transcript", "running");
           await recordSessionFamiliar(conversationId, args.body.familiarId);
           await stubWrite;
-          const existing = await loadConversation(conversationId);
-          const hadFirstTurnStub = existing ? stripConversationStubTurn(existing, pendingUserTurnId) : false;
-          const isFirstExchange =
-            ownsFirstExchangeTitle && (!existing || hadFirstTurnStub);
-          const now = new Date().toISOString();
-          const chatTitle = existing?.title ?? defaultChatTitleForSession(conversationId);
-          if (!existing && ownsFirstExchangeTitle) {
-            await setDefaultStubTitleAuto(conversationId, chatTitle);
-          }
-          const branchParentId =
-            args.body.parentTurnId !== undefined ? args.body.parentTurnId : existing?.activeLeafId ?? null;
-          const conv = existing ?? {
-            sessionId: conversationId,
-            familiarId: args.body.familiarId,
-            harness: "openclaw",
-            model: responseMetadata.model,
-            runtime: responseMetadata.runtime,
-            title: chatTitle,
-            ...(args.body.origin ? { origin: args.body.origin } : {}),
-            createdAt: now,
-            updatedAt: now,
-            turns: [],
-          };
-          conv.model = responseMetadata.model;
-          conv.runtime = responseMetadata.runtime;
-          persistSendModelIntent(
-            conv,
-            args.body,
-            args.modelState,
-            args.initialModelIntent,
-          );
-          const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
-          if (workBranch) conv.branch = workBranch;
-          const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
-          if (reportedPrUrl) conv.prUrl = reportedPrUrl;
-          const assistantTurnId = crypto.randomUUID();
-          const assistantCreatedAt = new Date().toISOString();
-          const leadingTrimShift =
-            gatewayAssistantText.length - gatewayAssistantText.trimStart().length;
-          const persistedGatewayTools = toPersistedTools(
-            gatewayToolTracker.snapshot(),
-            leadingTrimShift,
-          );
-          const gatewayAttention = prepareAttentionRequest({
-            text: gatewayAssistantText,
-            sessionId: conversationId,
-            turnId: assistantTurnId,
-            requestedAt: assistantCreatedAt,
-            incomplete: cancelledByUser || isError,
+          const isFirstExchange = await withConversationLock(conversationId, async () => {
+            const existing = await loadConversation(conversationId);
+            if (!existing) throw new Error("conversation deleted before Gateway transcript save");
+            const hadFirstTurnStub = stripConversationStubTurn(existing, pendingUserTurnId);
+            const firstExchange = ownsFirstExchangeTitle && hadFirstTurnStub;
+            const now = new Date().toISOString();
+            const branchParentId =
+              args.body.parentTurnId !== undefined ? args.body.parentTurnId : existing.activeLeafId ?? null;
+            const conv = existing;
+            conv.model = responseMetadata.model;
+            conv.runtime = responseMetadata.runtime;
+            persistSendModelIntent(
+              conv,
+              args.body,
+              args.modelState,
+              args.initialModelIntent,
+            );
+            const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+            if (workBranch) conv.branch = workBranch;
+            const reportedPrUrl = latestPrUrlFromText(gatewayAssistantText);
+            if (reportedPrUrl) conv.prUrl = reportedPrUrl;
+            const assistantTurnId = crypto.randomUUID();
+            const assistantCreatedAt = new Date().toISOString();
+            const leadingTrimShift =
+              gatewayAssistantText.length - gatewayAssistantText.trimStart().length;
+            const persistedGatewayTools = toPersistedTools(
+              gatewayToolTracker.snapshot(),
+              leadingTrimShift,
+            );
+            const gatewayAttention = prepareAttentionRequest({
+              text: gatewayAssistantText,
+              sessionId: conversationId,
+              turnId: assistantTurnId,
+              requestedAt: assistantCreatedAt,
+              incomplete: cancelledByUser || isError,
+            });
+            conv.turns.push(
+              {
+                id: pendingUserTurnId,
+                role: "user",
+                text: args.promptText,
+                ...(args.attachments.length ? { attachments: args.attachments } : {}),
+                ...attentionClearOperationForTurn(args.body.runId),
+                ...persistedTurnControls(args.body, responseMetadata.retryModel),
+                createdAt: now,
+                ...(branchParentId != null ? { parentId: branchParentId } : {}),
+              },
+              {
+                id: assistantTurnId,
+                role: "assistant",
+                text: gatewayAttention.text.trim(),
+                ...(gatewayAttention.reasoning ? { reasoning: gatewayAttention.reasoning } : {}),
+                createdAt: assistantCreatedAt,
+                durationMs,
+                isError,
+                parentId: pendingUserTurnId,
+                responseMetadata: gatewayAttention.request
+                  ? { ...responseMetadata, attentionRequest: gatewayAttention.request }
+                  : responseMetadata,
+                ...(persistedGatewayTools ? { tools: persistedGatewayTools } : {}),
+                ...(cancelledByUser ? { cancelled: true } : {}),
+              },
+            );
+            conv.activeLeafId = assistantTurnId;
+            await saveConversation(conv);
+            return firstExchange;
           });
-          conv.turns.push(
-            {
-              id: pendingUserTurnId,
-              role: "user",
-              text: args.promptText,
-              ...(args.attachments.length ? { attachments: args.attachments } : {}),
-              ...attentionClearOperationForTurn(args.body.runId),
-              ...persistedTurnControls(args.body, responseMetadata.retryModel),
-              createdAt: now,
-              ...(branchParentId != null ? { parentId: branchParentId } : {}),
-            },
-            {
-              id: assistantTurnId,
-              role: "assistant",
-              text: gatewayAttention.text.trim(),
-              ...(gatewayAttention.reasoning ? { reasoning: gatewayAttention.reasoning } : {}),
-              createdAt: assistantCreatedAt,
-              durationMs,
-              isError,
-              parentId: pendingUserTurnId,
-              responseMetadata: gatewayAttention.request
-                ? { ...responseMetadata, attentionRequest: gatewayAttention.request }
-                : responseMetadata,
-              ...(persistedGatewayTools ? { tools: persistedGatewayTools } : {}),
-              ...(cancelledByUser ? { cancelled: true } : {}),
-            },
-          );
-          conv.activeLeafId = assistantTurnId;
-          await saveConversation(conv);
           if (isFirstExchange && !isError) await autoNameSessionFromFirstExchange(conversationId, args.promptText);
           if (!isError) await maybeAutoRenameFromContext(conversationId, args.promptText);
           pushProgress("save-transcript", "Transcript saved", "done");
