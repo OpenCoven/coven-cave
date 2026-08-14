@@ -69,7 +69,7 @@ export function useResearchMediaUrl(familiarId: string, generationId: string, en
     };
   }, [attempt, enabled, familiarId, generationId, scope]);
 
-  const current = state.scope === scope
+  const current: Pick<ResearchMediaUrlState, "url" | "status"> = state.scope === scope
     ? state
     : { url: null, status: enabled ? "loading" : "idle" };
   return { ...current, retry, reportPlaybackFailure };
