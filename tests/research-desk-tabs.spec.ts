@@ -315,7 +315,8 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   );
   await page.route("**/api/chat/send", (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
-    if (body.origin === "enhance") handles.directionDraftBodies.push(body);
+    expect(body.origin, "unexpected Research Desk chat send").toBe("enhance");
+    handles.directionDraftBodies.push(body);
     return fulfillDirectionDraft(route);
   });
   await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
