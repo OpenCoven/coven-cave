@@ -2,6 +2,7 @@ import { requireClientPrincipal } from "@/lib/server/client-v1/auth";
 import {
   CLIENT_ATTACHMENT_MAX_REQUEST_BYTES,
   ClientAttachmentError,
+  isRetryableClientAttachmentError,
   parseClientAttachmentForm,
   saveUploadedClientAttachments,
 } from "@/lib/server/client-v1/attachment-service";
@@ -17,7 +18,7 @@ function attachmentErrorResponse(error: ClientAttachmentError): Response {
     error.status,
     error.code,
     error.message,
-    error.status === 503,
+    isRetryableClientAttachmentError(error),
   );
 }
 
