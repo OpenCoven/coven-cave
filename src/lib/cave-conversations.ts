@@ -667,14 +667,19 @@ export type QueuedOfflineConversationSeed = {
  * chat during its entire first turn — and so a mid-turn crash leaves a listed
  * chat with the user's message instead of nothing. No-op when a conversation
  * already exists (resumed turns must never be clobbered). Returns true when
- * the stub was created.
+ * the stub was created. `beforeCreate`, when supplied, runs under this
+ * conversation's lock before the existence check.
  *
  * The stub deliberately has no assistant turn, so its summary carries no
  * terminal status (see conversationTerminalStatus) — the session-list merge
  * then leaves any live daemon status untouched.
  */
-export async function createConversationStub(seed: ConversationStubSeed): Promise<boolean> {
+export async function createConversationStub(
+  seed: ConversationStubSeed,
+  beforeCreate?: () => Promise<void> | void,
+): Promise<boolean> {
   return withConversationLock(seed.sessionId, async () => {
+    await beforeCreate?.();
     if (await loadConversation(seed.sessionId)) return false;
     const now = new Date().toISOString();
     const attentionClearOperationId = normalizeChatAttentionOperationId(

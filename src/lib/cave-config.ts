@@ -154,6 +154,7 @@ function defaultState(): CaveState {
     sessionTitleRevision: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionSacrificeGeneration: {},
     sessionKeep: {},
     sessionPinned: {},
     sessionArchiveExtendedUntil: {},
@@ -184,6 +185,31 @@ function normalizeSessionTitleRevision(value: unknown): Record<string, number> {
     ) {
       normalized[sessionId] = revision;
     }
+  }
+  return normalized;
+}
+
+function normalizeSessionSacrificeGeneration(
+  value: unknown,
+  sacrificed: Record<string, string>,
+): Record<string, number> {
+  const normalized: Record<string, number> = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [sessionId, generation] of Object.entries(value)) {
+      if (
+        sessionId
+        && typeof generation === "number"
+        && Number.isSafeInteger(generation)
+        && generation > 0
+      ) {
+        normalized[sessionId] = generation;
+      }
+    }
+  }
+  // Old state files stored only the sacrifice timestamp. Treat each such
+  // tombstone as generation one so a later deletion still advances it.
+  for (const sessionId of Object.keys(sacrificed)) {
+    normalized[sessionId] ??= 1;
   }
   return normalized;
 }
@@ -389,6 +415,8 @@ export type CaveState = {
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
   sessionSacrificed: Record<string, string>;
+  /** Monotonic durable deletion generation for each sacrificed session. */
+  sessionSacrificeGeneration: Record<string, number>;
   /** Session to ISO timestamp when marked keep (never auto-archived). */
   sessionKeep: Record<string, string>;
   /** Session id -> ISO stamp when it was pinned. Absent means unpinned. */
@@ -903,6 +931,7 @@ async function loadStateUnlocked(): Promise<CaveState> {
       );
     }
     const parsed = value as Partial<CaveState>;
+    const sessionSacrificed = parsed.sessionSacrificed ?? {};
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
       sessionTitles: parsed.sessionTitles ?? {},
@@ -910,7 +939,11 @@ async function loadStateUnlocked(): Promise<CaveState> {
       sessionTitleManual: normalizeSessionTitleManual(parsed.sessionTitleManual),
       sessionTitleRevision: normalizeSessionTitleRevision(parsed.sessionTitleRevision),
       sessionArchived: parsed.sessionArchived ?? {},
-      sessionSacrificed: parsed.sessionSacrificed ?? {},
+      sessionSacrificed,
+      sessionSacrificeGeneration: normalizeSessionSacrificeGeneration(
+        parsed.sessionSacrificeGeneration,
+        sessionSacrificed,
+      ),
       sessionKeep: parsed.sessionKeep ?? {},
       sessionPinned: parsed.sessionPinned ?? {},
       sessionArchiveExtendedUntil: parsed.sessionArchiveExtendedUntil ?? {},
@@ -1566,9 +1599,22 @@ export async function sacrificeSessionLocal(sessionId: string): Promise<string> 
   const now = new Date().toISOString();
   await updateState((state) => {
     state.sessionSacrificed[sessionId] = now;
+    state.sessionSacrificeGeneration[sessionId] =
+      (state.sessionSacrificeGeneration[sessionId] ?? 0) + 1;
   });
   invalidateSessionsListCache();
   return now;
+}
+
+/**
+ * Read the durable deletion generation under the same cave-state transaction
+ * used by `sacrificeSessionLocal`. Callers that pair this with conversation
+ * persistence must read it while holding that conversation's lock.
+ */
+export async function getSessionDeletionGeneration(sessionId: string): Promise<number> {
+  return withStateTransaction(
+    (state) => state.sessionSacrificeGeneration[sessionId] ?? 0,
+  );
 }
 
 /** Upsert a role's config entry (active state, activatedAt). */
