@@ -3,6 +3,7 @@ import { afterEach, test } from "node:test";
 
 import {
   claimApprovedPairing,
+  claimApprovedPairingWithIdempotency,
   consumeApprovedPairing,
   createPairingRequest,
   decidePairingRequest,
@@ -10,6 +11,7 @@ import {
   isPairingRequestExpired,
   listPendingPairingRequests,
   MAX_PAIRING_REQUESTS,
+  PAIRING_CLAIM_STALE_MS,
   PAIRING_TOMBSTONE_TTL_MS,
   PAIRING_TTL_MS,
   readPairingRequest,
@@ -686,4 +688,98 @@ test("consumeApprovedPairing (legacy immediate claim+finalize) still leaves no c
   assert.ok(consumed);
   assert.equal(claimApprovedPairing(request.id, secret, 1_300), null, "already finalized — nothing left to claim");
   assert.equal(isPairingRequestExpired(request.id, secret, 1_300), true);
+});
+
+test("expiry during claim preserves finalize and exact-request terminal replay", () => {
+  const { request, secret } = createPairingRequest(input(), 1_000);
+  decidePairingRequest(request.id, "approved", 1_100);
+  const idempotencyKey = "claim-replay-key";
+  const requestHash = "claim-replay-hash";
+  const claim = claimApprovedPairingWithIdempotency(
+    request.id,
+    secret,
+    idempotencyKey,
+    requestHash,
+    1_200,
+  );
+  assert.equal(claim.kind, "claimed");
+  if (claim.kind !== "claimed") return;
+
+  // This read invokes pruneExpired after the original pairing TTL, but it
+  // must leave the healthy in-flight claim available for finalization.
+  assert.equal(readPairingRequest(request.id, secret, request.expiresAt + 1), null);
+  const credential = {
+    id: "9f4145de-9b43-4abc-876d-81ef63de60e0",
+    appName: "OpenCoven Mobile",
+    installationId: "4e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5b",
+    scopes: ["chat:read" as const],
+    createdAt: request.expiresAt + 2,
+  };
+  assert.equal(
+    finalizeApprovedPairingClaim(request.id, claim.claimId, request.expiresAt + 2, {
+      exchangeReplay: { idempotencyKey, requestHash, credential },
+    }),
+    true,
+  );
+  assert.deepEqual(
+    claimApprovedPairingWithIdempotency(
+      request.id,
+      secret,
+      idempotencyKey,
+      requestHash,
+      request.expiresAt + 3,
+    ),
+    { kind: "replay", credential },
+  );
+});
+
+test("rollback after expiry terminates a claim, while stale claimed requests are boundedly recovered", () => {
+  const rollbackRequest = createPairingRequest(input(), 1_000);
+  decidePairingRequest(rollbackRequest.request.id, "approved", 1_100);
+  const rollbackClaim = claimApprovedPairing(rollbackRequest.request.id, rollbackRequest.secret, 1_200);
+  assert.ok(rollbackClaim);
+  assert.equal(
+    rollbackApprovedPairingClaim(
+      rollbackRequest.request.id,
+      rollbackClaim.claimId,
+      rollbackRequest.request.expiresAt + 1,
+    ),
+    true,
+  );
+  assert.equal(
+    isPairingRequestExpired(
+      rollbackRequest.request.id,
+      rollbackRequest.secret,
+      rollbackRequest.request.expiresAt + 2,
+    ),
+    true,
+  );
+
+  const staleRequest = createPairingRequest(
+    input({ installationId: "5e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5c" }),
+    1_000,
+  );
+  decidePairingRequest(staleRequest.request.id, "approved", 1_100);
+  const staleClaim = claimApprovedPairing(staleRequest.request.id, staleRequest.secret, 1_200);
+  assert.ok(staleClaim);
+  const staleAt = 1_200 + PAIRING_CLAIM_STALE_MS;
+  listPendingPairingRequests(staleAt);
+  assert.equal(isPairingRequestExpired(staleRequest.request.id, staleRequest.secret, staleAt), true);
+  assert.equal(finalizeApprovedPairingClaim(staleRequest.request.id, staleClaim.claimId, staleAt), false);
+});
+
+test("concurrent prune and finalize leave one expired claim terminally tombstoned", async () => {
+  const { request, secret } = createPairingRequest(input(), 1_000);
+  decidePairingRequest(request.id, "approved", 1_100);
+  const claim = claimApprovedPairing(request.id, secret, 1_200);
+  assert.ok(claim);
+
+  const afterExpiry = request.expiresAt + 1;
+  const [pruned, finalized] = await Promise.all([
+    Promise.resolve().then(() => readPairingRequest(request.id, secret, afterExpiry)),
+    Promise.resolve().then(() => finalizeApprovedPairingClaim(request.id, claim.claimId, afterExpiry)),
+  ]);
+  assert.equal(pruned, null);
+  assert.equal(finalized, true);
+  assert.equal(isPairingRequestExpired(request.id, secret, afterExpiry + 1), true);
 });

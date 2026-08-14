@@ -12,6 +12,7 @@ import { clientV1Error, clientV1Ok } from "@/lib/server/client-v1/responses.ts";
 import {
   createPairingRequest,
   lookupPairingRequestCreateIdempotency,
+  PairingCapacityError,
 } from "@/lib/server/client-v1/pairing-store.ts";
 import { consumeClientV1PairingCreateLimit } from "@/lib/server/client-v1/rate-limit.ts";
 
@@ -112,10 +113,19 @@ export async function POST(req: Request): Promise<Response> {
     response.headers.set("Retry-After", String(limit.retryAfterSeconds));
     return response;
   }
-  const { request, secret } = createPairingRequest(input, Date.now(), {
-    idempotencyKey,
-    requestHash,
-  });
+  let created;
+  try {
+    created = createPairingRequest(input, Date.now(), {
+      idempotencyKey,
+      requestHash,
+    });
+  } catch (error) {
+    if (error instanceof PairingCapacityError) {
+      return clientV1Error(503, "service_unavailable", error.message, true);
+    }
+    throw error;
+  }
+  const { request, secret } = created;
 
   return clientV1Ok(
     {
