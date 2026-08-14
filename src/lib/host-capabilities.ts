@@ -11,7 +11,9 @@ export const HOST_CAPABILITY_CATALOG = [
     platform: "win32",
     label: "Hyper-V audit",
     description: "Read VM, switch, checkpoint, VHD-chain, and integration-service inventory.",
-    adapter: "windows-hyperv-broker",
+    // The broker ships in the follow-on platform PR. This foundation must not
+    // allow a capability merely because its future adapter has a name.
+    adapter: null,
   },
   {
     id: "linux.system.audit.read",
@@ -148,10 +150,10 @@ export async function activeHostCapabilities(input: { familiarId: string; sessio
   const grants = await listHostCapabilityGrants();
   return grants.filter((grant) => grant.familiarId === input.familiarId && grant.sessionId === input.sessionId && hostCapabilityById(grant.capability)?.platform === platform).map((grant) => grant.capability).sort();
 }
-export async function grantHostCapability(input: { familiarId: string; sessionId: string; capability: HostCapabilityId; expiresAt?: string; actor: "loopback" | "mobile"; now?: number; platform?: NodeJS.Platform }) {
+export async function grantHostCapability(input: { familiarId: string; sessionId: string; capability: HostCapabilityId; expiresAt?: string; actor: "loopback" | "mobile"; now?: number; platform?: NodeJS.Platform; adapterAvailable?: boolean }) {
   const definition = hostCapabilityById(input.capability);
   if (!definition || definition.platform !== (input.platform ?? process.platform)) throw new Error("host capability is unavailable on this platform");
-  if (!definition.adapter) throw new Error("host capability has no registered adapter");
+  if (!(input.adapterAvailable ?? Boolean(definition.adapter))) throw new Error("host capability has no registered adapter");
   const now = input.now ?? Date.now();
   const requested = input.expiresAt ? Date.parse(input.expiresAt) : now + DEFAULT_GRANT_MS;
   if (!Number.isFinite(requested) || requested <= now || requested > now + MAX_GRANT_MS) throw new Error("expiry must be in the next eight hours");

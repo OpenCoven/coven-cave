@@ -8,3 +8,4 @@ assert.match(source, /<StandardSelect[\s\S]*label="Cave session"/, "the trusted 
 assert.doesNotMatch(source, /<select\b/, "host access does not introduce an unapproved native select");
 assert.match(source, /capability\.adapter \? <Button/, "only broker-backed capabilities expose an approval action");
 assert.match(source, /never grants arbitrary shell/, "the UI does not overstate a broker grant as host authority");
+assert.match(source, /Broker unavailable/, "capabilities without a shipped broker are non-actionable");

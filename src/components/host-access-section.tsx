@@ -84,7 +84,7 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
               <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{capability.label}</p>
               <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">{capability.description}</p>
               </div>
-              {capability.adapter ? <Button variant="secondary" size="xs" disabled={busy === capability.id} onClick={() => void approve(capability)}>{busy === capability.id ? "Approving…" : "Approve"}</Button> : <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">No adapter installed</span>}
+              {capability.adapter ? <Button variant="secondary" size="xs" disabled={busy === capability.id} onClick={() => void approve(capability)}>{busy === capability.id ? "Approving…" : "Approve"}</Button> : <span className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Broker unavailable</span>}
             </div>)}
           </div>
         )}
