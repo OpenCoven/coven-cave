@@ -231,21 +231,22 @@ test("client-v1 rejects every observable percent-encoded pathname before non-adm
 
 // ─── 5. client-v1 admin with a configured sidecar token ───────────────────
 
-test("client-v1 admin: verified remote ingress WITHOUT the sidecar token is 401", async () => {
+test("client-v1 admin: a valid mobile bearer without the sidecar token is denied and receives no admin marker", async () => {
   setEnv({
     COVEN_CAVE_LOCAL_PEER_SECRET: "boot-secret-5",
     COVEN_CAVE_AUTH_TOKEN: "sidecar-secret-5",
-    COVEN_CAVE_TAILNET_PEER_SECRET: "tailnet-secret-5",
+    COVEN_CAVE_ACCESS_TOKEN: "mobile-secret-5",
   });
   const req = makeRequest("/api/client/v1/admin/credentials", {
     headers: {
-      [TAILNET_PEER_HEADER]: "tailnet-secret-5:node-99",
+      authorization: "Bearer mobile-secret-5",
       origin: ORIGIN,
       referer: `${ORIGIN}/`,
     },
   });
   const res = await proxy(req);
   assert.equal(res.status, 401);
+  assert.equal(forwardedHeader(res, CLIENT_V1_ADMIN_HEADER), null);
 });
 
 test("client-v1 admin: verified remote ingress WITH the correct sidecar header token and same-origin source succeeds", async () => {
@@ -265,6 +266,36 @@ test("client-v1 admin: verified remote ingress WITH the correct sidecar header t
   const res = await proxy(req);
   assert.ok(isPassedThrough(res), `expected success, got status ${res.status}`);
   assert.equal(forwardedHeader(res, CLIENT_V1_ADMIN_HEADER), "boot-secret-5b");
+});
+
+test("client-v1 admin: direct loopback without sidecar authentication is denied even in tokenless development", async () => {
+  setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: "boot-secret-loopback-no-sidecar" });
+  const res = await proxy(makeRequest("/api/client/v1/admin/credentials", {
+    headers: {
+      [LOCAL_PEER_HEADER]: "boot-secret-loopback-no-sidecar",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    },
+  }));
+  assert.equal(res.status, 401);
+  assert.equal(forwardedHeader(res, CLIENT_V1_ADMIN_HEADER), null);
+});
+
+test("mobile authentication continues to authorize non-admin API requests without a sidecar token", async () => {
+  setEnv({
+    COVEN_CAVE_AUTH_TOKEN: "sidecar-secret-mobile-non-admin",
+    COVEN_CAVE_ACCESS_TOKEN: "mobile-secret-non-admin",
+  });
+  const res = await proxy(makeRequest("/api/familiars", {
+    headers: {
+      authorization: "Bearer mobile-secret-non-admin",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    },
+  }));
+  assert.ok(isPassedThrough(res), `expected mobile non-admin API access, got ${res.status}`);
+  assert.equal(forwardedHeader(res, "x-coven-cave-mobile-access"), "1");
+  assert.equal(forwardedHeader(res, CLIENT_V1_ADMIN_HEADER), null);
 });
 
 test("client-v1 admin: an Authorization bearer or a forged internal marker alone never satisfies the sidecar-token gate", async () => {
@@ -290,22 +321,6 @@ test("client-v1 admin: an Authorization bearer or a forged internal marker alone
   });
   const res = await proxy(req);
   assert.equal(res.status, 401);
-});
-
-// ─── 6. tokenless dev admin (no COVEN_CAVE_AUTH_TOKEN configured) ─────────
-
-test("client-v1 admin (tokenless dev): trusted direct loopback + same-origin source succeeds", async () => {
-  setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: "boot-secret-6" });
-  const req = makeRequest("/api/client/v1/admin/credentials", {
-    headers: {
-      [LOCAL_PEER_HEADER]: "boot-secret-6",
-      origin: ORIGIN,
-      referer: `${ORIGIN}/`,
-    },
-  });
-  const res = await proxy(req);
-  assert.ok(isPassedThrough(res), `expected success, got status ${res.status}`);
-  assert.equal(forwardedHeader(res, CLIENT_V1_ADMIN_HEADER), "boot-secret-6");
 });
 
 test("client-v1 admin: caller-forged admin markers are stripped on denied and successful requests", async () => {
@@ -336,7 +351,7 @@ test("client-v1 admin: caller-forged admin markers are stripped on denied and su
   assert.equal(forwardedHeader(allowed, CLIENT_V1_ADMIN_HEADER), "boot-secret-admin-strip");
 });
 
-test("client-v1 admin (tokenless dev): a verified remote peer is still 403 (admin never opens to remote ingress, tokenless or not)", async () => {
+test("client-v1 admin (tokenless dev): a verified remote peer is denied before the general peer allowance", async () => {
   setEnv({ COVEN_CAVE_TAILNET_PEER_SECRET: "tailnet-secret-6b" });
   const req = makeRequest("/api/client/v1/admin/credentials", {
     headers: {
@@ -346,7 +361,8 @@ test("client-v1 admin (tokenless dev): a verified remote peer is still 403 (admi
     },
   });
   const res = await proxy(req);
-  assert.equal(res.status, 403);
+  assert.equal(res.status, 401);
+  assert.equal(forwardedHeader(res, CLIENT_V1_ADMIN_HEADER), null);
 });
 
 console.log("client-v1-proxy-runtime.test.ts: ok");
