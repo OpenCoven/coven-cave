@@ -160,28 +160,53 @@ assert.match(
 );
 assert.match(itemRoute, /not found/, "project item route should return not-found errors");
 assert.match(itemRoute, /rejectNonLocalRequest/, "project item route must enforce loopback before mutating project roots");
-// cave-eonxy: cascade must run even when the registry row is already gone, so
-// residue grants stay reachable. 404 only when BOTH the row and residue are absent.
+// cave-eonxy: the atomic helper deletes the registry row and cascades grants
+// under one authorization lock. A missing row with permission residue is still
+// successful cleanup; only an entirely unknown id is a 404.
 assert.match(
   itemRoute,
-  /revokeAllGrantsForProject\(id\)/,
-  "DELETE /api/projects/[id] must cascade grants",
+  /import\s*\{\s*deleteProjectAndRevokeGrants\s*\}\s*from\s*"@\/lib\/project-permissions"/,
+  "DELETE /api/projects/[id] must use the atomic project-and-grants delete helper",
 );
 assert.match(
   itemRoute,
-  /!deleted\s*&&\s*cleaned\.grants\s*===\s*0\s*&&\s*cleaned\.groupGrants\s*===\s*0\s*&&\s*cleaned\.proposals\s*===\s*0/,
-  "DELETE /api/projects/[id] 404s only when the registry row and grant residue are both gone",
+  /const\s+result\s*=\s*await\s+deleteProjectAndRevokeGrants\(id\)/,
+  "DELETE /api/projects/[id] must await atomic deletion and grant revocation",
+);
+assert.doesNotMatch(
+  itemRoute,
+  /revokeAllGrantsForProject/,
+  "DELETE /api/projects/[id] must not split atomic deletion into a separate grant-revocation call",
+);
+assert.match(
+  itemRoute,
+  /!result\.deleted\s*&&\s*result\.cleaned\s*===\s*null/,
+  "DELETE /api/projects/[id] 404s only when the atomic helper found neither a project nor grant residue",
+);
+assert.match(
+  itemRoute,
+  /return\s+NextResponse\.json\(\{\s*ok:\s*true,\s*cleaned:\s*result\.cleaned\s*\}\)/,
+  "DELETE /api/projects/[id] must report successful deletion or residue revocation with its cleanup result",
 );
 {
   const deleteStart = itemRoute.indexOf("export async function DELETE");
   assert.ok(deleteStart >= 0, "DELETE handler must exist");
   const deleteFn = itemRoute.slice(deleteStart);
-  const revokeAt = deleteFn.indexOf("revokeAllGrantsForProject");
+  const deleteAndRevokeAt = deleteFn.indexOf("deleteProjectAndRevokeGrants");
   const notFoundAt = deleteFn.indexOf('error: "not found"');
-  assert.ok(revokeAt >= 0 && notFoundAt >= 0, "DELETE should contain cascade and not-found branches");
+  const successAt = deleteFn.indexOf("ok: true, cleaned: result.cleaned");
   assert.ok(
-    revokeAt < notFoundAt,
-    "DELETE must cascade before deciding 404 so orphaned grants stay cleanable (cave-eonxy)",
+    deleteAndRevokeAt >= 0 && notFoundAt >= 0 && successAt >= 0,
+    "DELETE should contain atomic-delete, not-found, and success branches",
+  );
+  assert.ok(
+    deleteAndRevokeAt < notFoundAt && deleteAndRevokeAt < successAt,
+    "DELETE must resolve the atomic helper before choosing a 404 or success response (cave-eonxy)",
+  );
+  assert.doesNotMatch(
+    deleteFn,
+    /deleteProjectAndRevokeGrants\(id\)[\s\S]*?catch\s*\(/,
+    "atomic deletion failures must propagate instead of being misreported as a 404 or successful cleanup",
   );
 }
 
