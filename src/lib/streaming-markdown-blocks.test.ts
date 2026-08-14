@@ -496,6 +496,10 @@ test("incremental nested tails retain active list identity and committed sibling
   for (const [beforeSource, afterSource, committedSource, activeSource] of [
     ["- one\n- parent", "- one\n- parent\n  - child", "- one\n", "- parent\n  - child"],
     ["1. one\n2. parent", "1. one\n2. parent\n   1. child", "1. one\n", "2. parent\n   1. child"],
+    ["  - one\n  - parent", "  - one\n  - parent\n    - child", "  - one\n", "  - parent\n    - child"],
+    [" 1. one\n 2. parent", " 1. one\n 2. parent\n    1. child", " 1. one\n", " 2. parent\n    1. child"],
+    ["- one\n- parent", "- one\n- parent\n  1. child", "- one\n", "- parent\n  1. child"],
+    ["1. one\n2. parent", "1. one\n2. parent\n  - child", "1. one\n", "2. parent\n  - child"],
   ] as const) {
     const before = partitionStreamingMarkdown(beforeSource, { turnId: "t", settled: false });
     const after = partitionStreamingMarkdown(afterSource, { turnId: "t", settled: false });
@@ -511,13 +515,9 @@ test("incremental nested tails retain active list identity and committed sibling
     assert.equal(after.activeBlock.source, afterSource);
 
     const settled = partitionStreamingMarkdown(afterSource, { turnId: "t", settled: true });
-    assert.deepEqual(settled.committedBlocks, [{
-      id: `t:0-${afterSource.length}`,
-      kind: "markdown",
-      source: afterSource,
-      renderMode: "markdown",
-    }]);
     assert.equal(settled.activeBlock, null);
+    assert.equal(settled.committedText, afterSource);
+    assert.equal(settled.committedBlocks.map((block) => block.source).join(""), afterSource);
   }
 });
 

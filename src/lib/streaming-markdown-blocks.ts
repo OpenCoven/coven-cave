@@ -116,10 +116,14 @@ function isFenceClosingLine(line: Line, fence: FenceState): boolean {
   return !!match && match[2][0] === fence.marker && match[2].length >= fence.width;
 }
 
-function parseListMarker(line: Line): { ordered: boolean; markerIndent: number; contentIndent: number } | null {
+function parseListMarker(
+  line: Line,
+  maxMarkerIndent = 3,
+): { ordered: boolean; markerIndent: number; contentIndent: number } | null {
   const body = lineBody(line).replace(/\r$/, "");
-  const unordered = /^( {0,3})([-+*])(\s+).*$/.exec(body);
+  const unordered = /^( *)([-+*])(\s+).*$/.exec(body);
   if (unordered) {
+    if (unordered[1].length > maxMarkerIndent) return null;
     return {
       ordered: false,
       markerIndent: unordered[1].length,
@@ -127,8 +131,9 @@ function parseListMarker(line: Line): { ordered: boolean; markerIndent: number; 
     };
   }
 
-  const ordered = /^( {0,3})(\d+[.)])(\s+).*$/.exec(body);
+  const ordered = /^( *)(\d+[.)])(\s+).*$/.exec(body);
   if (ordered) {
+    if (ordered[1].length > maxMarkerIndent) return null;
     return {
       ordered: true,
       markerIndent: ordered[1].length,
@@ -235,6 +240,34 @@ function consumeStructuralBlankLine(line: Line, startIndex: number): { nextLineI
   return { nextLineIndex: startIndex + 1, end: line.end };
 }
 
+function makeAmbiguousListTailOrMarkdown(
+  source: string,
+  listStart: number,
+  ordered: boolean,
+  committedItems: InternalListItem[],
+  itemStart: number,
+): ParseResult {
+  if (committedItems.length > 0) {
+    return {
+      complete: false,
+      block: makeListBlock(
+        source,
+        listStart,
+        source.length,
+        ordered,
+        committedItems,
+        { start: itemStart, end: source.length, source: source.slice(itemStart) },
+        true,
+      ),
+    };
+  }
+
+  return {
+    complete: false,
+    block: makeMarkdownBlock(source, listStart, source.length, "plain"),
+  };
+}
+
 function parseFence(source: string, lines: Line[], startIndex: number): ParseResult | null {
   const fence = parseFenceOpening(lines[startIndex]);
   if (!fence) return null;
@@ -322,24 +355,13 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
     const nextMarker = parseListMarker(lines[index]);
     if (nextMarker && nextMarker.ordered === marker.ordered) {
       if (nextMarker.markerIndent >= marker.contentIndent) {
-        if (committedItems.length > 0) {
-          return {
-            complete: false,
-            block: makeListBlock(
-              source,
-              lines[startIndex].start,
-              source.length,
-              marker.ordered,
-              committedItems,
-              { start: itemStart, end: source.length, source: source.slice(itemStart) },
-              true,
-            ),
-          };
-        }
-        return {
-          complete: false,
-          block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain"),
-        };
+        return makeAmbiguousListTailOrMarkdown(
+          source,
+          lines[startIndex].start,
+          marker.ordered,
+          committedItems,
+          itemStart,
+        );
       }
       committedItems.push({
         start: itemStart,
@@ -349,6 +371,23 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
       itemStart = lines[index].start;
       index += 1;
       continue;
+    }
+
+    const nestedMarker = parseListMarker(lines[index], Number.POSITIVE_INFINITY);
+    if (
+      nestedMarker
+      && (
+        nestedMarker.markerIndent >= marker.contentIndent
+        || (nestedMarker.ordered !== marker.ordered && nestedMarker.markerIndent > marker.markerIndent)
+      )
+    ) {
+      return makeAmbiguousListTailOrMarkdown(
+        source,
+        lines[startIndex].start,
+        marker.ordered,
+        committedItems,
+        itemStart,
+      );
     }
 
     return {
