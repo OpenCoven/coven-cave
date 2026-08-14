@@ -190,8 +190,8 @@ export const PublishReceiptSchema = Type.Union([
     ...publishReceiptBaseProperties(),
     status: Type.Literal("published"),
     publishedAt: timestampString(),
-    threadUrl: Type.String({ minLength: 1, maxLength: 2_000 }),
-    remotePostIds: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { minItems: 1, maxItems: 50 }),
+    threadUrl: boundedNonWhitespaceString(2_000),
+    remotePostIds: Type.Array(boundedNonWhitespaceString(64), { minItems: 1, maxItems: 50 }),
   }, { additionalProperties: false }),
   Type.Object({
     ...publishReceiptBaseProperties(),

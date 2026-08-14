@@ -545,6 +545,19 @@ assert.equal(
   false,
   "published receipts forbid failure evidence",
 );
+assert.equal(
+  Value.Check(PublishReceiptSchema, { ...validPublishReceipt(), threadUrl: " \t " }),
+  false,
+  "published receipts reject whitespace-only thread URLs",
+);
+assert.equal(
+  Value.Check(PublishReceiptSchema, {
+    ...validPublishReceipt(),
+    remotePostIds: ["1888888888888888888", " \t "],
+  }),
+  false,
+  "published receipts reject any whitespace-only remote post ID",
+);
 const receiptWithoutOutcome = (status: "publishing" | "failed" | "uncertain", errorCode?: string) => ({
   protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
   receiptId: "publish-portable-launch",
