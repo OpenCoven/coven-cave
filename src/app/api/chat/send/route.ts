@@ -3082,6 +3082,7 @@ export async function executeChatSend(req: Request) {
         }
       };
       let runBuffer: RunBufferHandle | null = null;
+      let disposeDetachCleanup: (() => void) | null = null;
       // Compatibility notices are deliberately value-free and must survive
       // transcript reloads; the live SSE buffer alone expires after two
       // minutes. Keep only this narrowly-scoped subset of progress rows.
@@ -4427,24 +4428,13 @@ export async function executeChatSend(req: Request) {
         [body.runId, body.sessionId, sessionId],
         killCurrentChild,
       );
-      let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
-      const armDetachKill = () => {
-        if (runHandle.stopRequested || detachKillTimer != null) return;
-        detachKillTimer = setTimeout(killCurrentChild, CHAT_DETACH_MAX_MS);
-      };
-      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
-      // tail dropping re-arms it — but only once the ORIGINAL request is
-      // gone, so a resume tail closing can't kill a still-attached turn.
-      runBuffer = openRunBuffer([body.runId, body.sessionId], {
-        attach: () => {
-          if (detachKillTimer != null) {
-            clearTimeout(detachKillTimer);
-            detachKillTimer = null;
-          }
-        },
-        detach: () => {
-          if (req.signal.aborted) armDetachKill();
-        },
+      runBuffer = openRunBuffer([body.runId, body.sessionId]);
+      disposeDetachCleanup = wireRunDetachCleanup({
+        runBuffer,
+        signal: req.signal,
+        isStopRequested: () => runHandle.stopRequested,
+        timeoutMs: CHAT_DETACH_MAX_MS,
+        onTimeout: killCurrentChild,
       });
 
       const runHermesApiAttempt = async (apiPrompt: string): Promise<void> => {
@@ -4465,16 +4455,6 @@ export async function executeChatSend(req: Request) {
         // Endpoint paths can carry reverse-proxy credentials; never put a
         // configured URL in browser-visible progress or run-replay events.
         pushProgress("harness-start", "Starting Hermes API", "running");
-        const onAbort = () => {
-          // Transport loss is resumable, not a user Stop: keep consuming until
-          // the shared detach deadline, exactly like a child-process attempt.
-          armDetachKill();
-        };
-        req.signal.addEventListener("abort", onAbort, { once: true });
-        // AbortSignal does not replay an already-fired event. Route setup can
-        // outlive a client disconnect, so arm the shared deadline before the
-        // remote request starts in that race as well.
-        if (req.signal.aborted) onAbort();
         try {
           const previousResponseId = hermesPreviousResponseId;
           const response = await fetch(hermesResponsesUrl(hermesApi), {
@@ -4674,7 +4654,6 @@ export async function executeChatSend(req: Request) {
               ? "[tool interrupted because the Hermes stream was cancelled]"
               : "[tool did not settle before the Hermes stream ended]",
           );
-          req.signal.removeEventListener("abort", onAbort);
           if (currentHermesAbort === abort) currentHermesAbort = null;
           result.duration_ms = Date.now() - attemptStartedAt;
           pushProgress(
@@ -4890,12 +4869,6 @@ export async function executeChatSend(req: Request) {
 
           currentChild = child;
           let childLaunchFailed = false;
-          const onAbort = () => {
-            // Transport drop, not Stop — arm the detach cap and let the turn
-            // finish. Deliberate stops kill through the registry instead.
-            armDetachKill();
-          };
-          req.signal.addEventListener("abort", onAbort, { once: true });
 
           // Child-process chunks are arbitrary bytes, not UTF-8 character
           // boundaries. Preserve a split code point until its remaining bytes
@@ -4991,13 +4964,11 @@ export async function executeChatSend(req: Request) {
           child.on("error", (err: NodeJS.ErrnoException) => {
             childLaunchFailed = true;
             reportLaunchFailure(err);
-            req.signal.removeEventListener("abort", onAbort);
             resolve();
           });
 
           child.on("close", (code) => {
             if (childLaunchFailed) {
-              req.signal.removeEventListener("abort", onAbort);
               resolve();
               return;
             }
@@ -5108,7 +5079,6 @@ export async function executeChatSend(req: Request) {
             if (covenBackedProcessFailed) {
               result = { ...result, is_error: true };
             }
-            req.signal.removeEventListener("abort", onAbort);
             resolve();
           });
         });
@@ -5831,7 +5801,7 @@ export async function executeChatSend(req: Request) {
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
       cleanupStagedImageFiles(imageFilePaths);
-      if (detachKillTimer != null) clearTimeout(detachKillTimer);
+      disposeDetachCleanup?.();
       unregisterChatRun(runHandle);
       runBuffer?.finish();
       await sleep(20);
