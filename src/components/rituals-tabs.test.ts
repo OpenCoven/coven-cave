@@ -131,7 +131,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /initialTab=\{mode === "calendar"[^}]*\? "calendar" : "overview"\}/,
+  /initialTab=\{[^}]*mode === "calendar"[^}]*\? "calendar" : "overview"\}/,
   "Workspace lands on the overview unless the Calendar deep link asked for Calendar",
 );
 assert.match(automations, /sessionStorage\.setItem\("cave:calendar:pending-open-date", day\.key\)[\s\S]{0,100}selectTab\("calendar"\)/, "a ribbon day queues its date before Calendar mounts");
