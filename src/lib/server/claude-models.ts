@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import {
   CLAUDE_OPUS_5_CAVE_ID,
-  claudeOpus5Available,
   parseClaudeCodeVersion,
   withClaudeOpus5,
 } from "../claude-models.ts";
@@ -245,6 +244,15 @@ export async function claudeOpus5Routability(
   // absent, spawn refused, or the call timed out. That is not evidence about
   // the model.
   if (!parseClaudeCodeVersion(versionOutput)) return "unknown";
+  // Derive the verdict from the same list discovery would have built, and cache
+  // it under the same key, so a launch-time probe warms the picker instead of
+  // throwing its `claude --version` spawn away. Membership is equivalent to
+  // asking claudeOpus5Available() directly: withClaudeOpus5 prepends the Opus 5
+  // entry only when that probe passes, and the seed never contains it.
+  //
+  // Caching here is safe for the same reason discoverClaudeModels' write is —
+  // both sit behind the parse guard above, so only a probe that actually ran is
+  // ever stored. An unusable probe returns "unknown" and writes nothing.
   const models = withClaudeOpus5(seedModels(), {
     versionOutput,
     env: providerEnv,
