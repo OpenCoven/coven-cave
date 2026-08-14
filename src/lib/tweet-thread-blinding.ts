@@ -220,63 +220,135 @@ function createStrictJsonSnapshotter() {
     if (ancestors.has(current)) fail(code, message);
 
     let array: boolean;
-    let prototype: object | null;
-    let descriptors: PropertyDescriptorMap;
     try {
       array = Array.isArray(current);
-      prototype = Object.getPrototypeOf(current);
-      descriptors = Object.getOwnPropertyDescriptors(current);
     } catch {
       fail(code, message);
     }
 
-    const keys = Reflect.ownKeys(descriptors);
-    if (keys.some((key) => typeof key === "symbol")) fail(code, message);
-    if (!array && keys.length > STRICT_SNAPSHOT_MAX_OBJECT_KEYS) {
-      fail(code, message);
-    }
-    consumeBudget(1 + keys.length, code, message);
-    ancestors.add(current);
-    try {
-      if (array) {
-        if (prototype !== Array.prototype) fail(code, message);
-        const lengthDescriptor = descriptors.length;
+    if (array) {
+      let prototype: object | null;
+      let lengthDescriptor: PropertyDescriptor | undefined;
+      try {
+        prototype = Object.getPrototypeOf(current);
+        lengthDescriptor = Object.getOwnPropertyDescriptor(current, "length");
+      } catch {
+        fail(code, message);
+      }
+      if (prototype !== Array.prototype) fail(code, message);
+      if (
+        lengthDescriptor === undefined
+        || !("value" in lengthDescriptor)
+        || lengthDescriptor.enumerable === true
+        || !Number.isSafeInteger(lengthDescriptor.value)
+        || lengthDescriptor.value < 0
+        || lengthDescriptor.value > STRICT_SNAPSHOT_MAX_ARRAY_LENGTH
+      ) {
+        fail(code, message);
+      }
+
+      const length = lengthDescriptor.value as number;
+      let keys: PropertyKey[];
+      try {
+        keys = Reflect.ownKeys(current);
+      } catch {
+        fail(code, message);
+      }
+      if (
+        keys.some((key) => typeof key === "symbol")
+        || keys.length !== length + 1
+      ) {
+        fail(code, message);
+      }
+      const keySet = new Set(keys as string[]);
+      if (!keySet.has("length")) fail(code, message);
+      for (let index = 0; index < length; index += 1) {
+        if (!keySet.has(String(index))) fail(code, message);
+      }
+      consumeBudget(1 + keys.length, code, message);
+
+      const descriptors: PropertyDescriptor[] = new Array(length);
+      for (let index = 0; index < length; index += 1) {
+        let descriptor: PropertyDescriptor | undefined;
+        try {
+          descriptor = Object.getOwnPropertyDescriptor(current, String(index));
+        } catch {
+          fail(code, message);
+        }
         if (
-          lengthDescriptor === undefined
-          || !("value" in lengthDescriptor)
-          || lengthDescriptor.enumerable === true
-          || !Number.isSafeInteger(lengthDescriptor.value)
-          || lengthDescriptor.value < 0
-          || lengthDescriptor.value > STRICT_SNAPSHOT_MAX_ARRAY_LENGTH
+          descriptor === undefined
+          || !("value" in descriptor)
+          || descriptor.enumerable !== true
         ) {
           fail(code, message);
         }
-        const length = lengthDescriptor.value as number;
-        if (keys.length !== length + 1) fail(code, message);
-        const snapshot: unknown[] = new Array(length);
-        for (let index = 0; index < length; index += 1) {
-          const descriptor = descriptors[String(index)];
-          if (
-            descriptor === undefined
-            || !("value" in descriptor)
-            || descriptor.enumerable !== true
-          ) {
-            fail(code, message);
-          }
-          snapshot[index] = visit(descriptor.value, code, message, depth + 1);
-        }
-        return Object.freeze(snapshot);
+        descriptors[index] = descriptor;
       }
 
-      if (prototype !== Object.prototype && prototype !== null) {
+      ancestors.add(current);
+      try {
+        const snapshot: unknown[] = new Array(length);
+        for (let index = 0; index < length; index += 1) {
+          snapshot[index] = visit(
+            (descriptors[index] as PropertyDescriptor & { value: unknown }).value,
+            code,
+            message,
+            depth + 1,
+          );
+        }
+        return Object.freeze(snapshot);
+      } finally {
+        ancestors.delete(current);
+      }
+    }
+
+    let keys: PropertyKey[];
+    try {
+      keys = Reflect.ownKeys(current);
+    } catch {
+      fail(code, message);
+    }
+    if (
+      keys.some((key) => typeof key === "symbol")
+      || keys.length > STRICT_SNAPSHOT_MAX_OBJECT_KEYS
+    ) {
+      fail(code, message);
+    }
+    consumeBudget(1 + keys.length, code, message);
+
+    let prototype: object | null;
+    try {
+      prototype = Object.getPrototypeOf(current);
+    } catch {
+      fail(code, message);
+    }
+    if (prototype !== Object.prototype && prototype !== null) {
+      fail(code, message);
+    }
+
+    const descriptors: PropertyDescriptorMap = Object.create(null);
+    for (const key of keys as string[]) {
+      let descriptor: PropertyDescriptor | undefined;
+      try {
+        descriptor = Object.getOwnPropertyDescriptor(current, key);
+      } catch {
         fail(code, message);
       }
+      if (
+        descriptor === undefined
+        || !("value" in descriptor)
+        || descriptor.enumerable !== true
+      ) {
+        fail(code, message);
+      }
+      descriptors[key] = descriptor;
+    }
+
+    ancestors.add(current);
+    try {
       const snapshot: UnknownRecord = Object.create(null) as UnknownRecord;
       for (const key of keys as string[]) {
         const descriptor = descriptors[key]!;
-        if (!("value" in descriptor) || descriptor.enumerable !== true) {
-          fail(code, message);
-        }
         Object.defineProperty(snapshot, key, {
           configurable: false,
           enumerable: true,
@@ -301,24 +373,26 @@ function createStrictJsonSnapshotter() {
       depth > STRICT_SNAPSHOT_MAX_DEPTH
       || value === null
       || typeof value !== "object"
-      || Array.isArray(value)
     ) {
       fail(fallbackCode, fallbackMessage);
     }
 
-    let descriptors: PropertyDescriptorMap;
-    let prototype: object | null;
+    let array: boolean;
     try {
-      descriptors = Object.getOwnPropertyDescriptors(value);
-      prototype = Object.getPrototypeOf(value);
+      array = Array.isArray(value);
     } catch {
       fail(fallbackCode, fallbackMessage);
     }
-    if (prototype !== Object.prototype && prototype !== null) {
+    if (array) {
       fail(fallbackCode, fallbackMessage);
     }
 
-    const keys = Reflect.ownKeys(descriptors);
+    let keys: PropertyKey[];
+    try {
+      keys = Reflect.ownKeys(value);
+    } catch {
+      fail(fallbackCode, fallbackMessage);
+    }
     if (
       keys.some((key) => typeof key === "symbol")
       || keys.length > STRICT_SNAPSHOT_MAX_OBJECT_KEYS
@@ -328,8 +402,14 @@ function createStrictJsonSnapshotter() {
     consumeBudget(1 + keys.length, fallbackCode, fallbackMessage);
 
     const expectedKeys = new Set(fields.map((field) => field.key));
+    const descriptors: PropertyDescriptorMap = Object.create(null);
     for (const field of fields) {
-      const descriptor = descriptors[field.key];
+      let descriptor: PropertyDescriptor | undefined;
+      try {
+        descriptor = Object.getOwnPropertyDescriptor(value, field.key);
+      } catch {
+        fail(field.code, field.message);
+      }
       if (
         descriptor === undefined
         || !("value" in descriptor)
@@ -337,6 +417,17 @@ function createStrictJsonSnapshotter() {
       ) {
         fail(field.code, field.message);
       }
+      descriptors[field.key] = descriptor;
+    }
+
+    let prototype: object | null;
+    try {
+      prototype = Object.getPrototypeOf(value);
+    } catch {
+      fail(fallbackCode, fallbackMessage);
+    }
+    if (prototype !== Object.prototype && prototype !== null) {
+      fail(fallbackCode, fallbackMessage);
     }
     if (
       keys.length !== fields.length

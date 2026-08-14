@@ -946,6 +946,32 @@ function expectInvalidPublicMutation(
   const expected = createTrial();
   const input: Parameters<typeof createBlindedTweetThreadTrial>[0] = {
     trialId: TRIAL_ID,
+    candidates: [...CANDIDATES],
+    seed: SEED,
+    secret: SECRET,
+    stoppingRule: {
+      minimumVotes: 12,
+      closesAt: CLOSES_AT,
+    },
+  };
+  const attackedInput = new Proxy(input, {
+    getPrototypeOf(target) {
+      target.seed = "mutated-seed";
+      Reflect.set(target, "secret", "mutated-secret");
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  assert.deepEqual(
+    createBlindedTweetThreadTrial(attackedInput),
+    expected,
+    "known sibling descriptors are captured before later structural traps",
+  );
+}
+
+{
+  const expected = createTrial();
+  const input: Parameters<typeof createBlindedTweetThreadTrial>[0] = {
+    trialId: TRIAL_ID,
     candidates: [],
     seed: SEED,
     secret: SECRET,
@@ -1135,6 +1161,195 @@ function expectInvalidPublicMutation(
     nestedTrapCalls,
     0,
     "array length budgets reject before traversing entries",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const oversizedArray = new Proxy(
+    Array.from({ length: 1_025 }, () => null),
+    {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorTrapCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    },
+  );
+  expectCode(
+    () => createTrial({ candidates: oversizedArray }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    1,
+    "oversized arrays inspect only the length descriptor before rejection",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const sparseArray = new Array(1_024);
+  sparseArray[0] = null;
+  const trappedSparseArray = new Proxy(sparseArray, {
+    getOwnPropertyDescriptor(target, property) {
+      descriptorTrapCalls += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+  });
+  expectCode(
+    () => createTrial({ candidates: trappedSparseArray }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    1,
+    "sparse arrays reject after bounded key inspection without index descriptors",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const extraKeyArray = [null, null] as unknown[] & { extra?: null };
+  extraKeyArray.extra = null;
+  const trappedExtraKeyArray = new Proxy(extraKeyArray, {
+    getOwnPropertyDescriptor(target, property) {
+      descriptorTrapCalls += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+  });
+  expectCode(
+    () => createTrial({ candidates: trappedExtraKeyArray }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    1,
+    "arrays with extra keys reject without traversing index descriptors",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const oversizedObject = new Proxy(
+    Object.fromEntries(
+      Array.from({ length: 1_025 }, (_, index) => [`key-${index}`, null]),
+    ),
+    {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorTrapCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    },
+  );
+  expectCode(
+    () => createTrial({ candidates: [oversizedObject, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    0,
+    "oversized objects reject before any property descriptor retrieval",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const maximumArray = new Proxy(
+    Array.from({ length: 1_024 }, () => null),
+    {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorTrapCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    },
+  );
+  expectCode(
+    () => createTrial({ candidates: maximumArray }),
+    "TOO_MANY_ARMS",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    1_025,
+    "arrays at the snapshot maximum collect the length and every index descriptor",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const maximumObject = new Proxy(
+    Object.fromEntries(
+      Array.from({ length: 1_024 }, (_, index) => [`key-${index}`, null]),
+    ),
+    {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorTrapCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    },
+  );
+  expectCode(
+    () => createTrial({ candidates: [maximumObject, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    1_024,
+    "objects at the snapshot maximum collect every bounded descriptor",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const descriptorFailure = new Proxy(
+    { first: null, second: null, third: null },
+    {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorTrapCalls += 1;
+        if (property === "second") throw new Error("descriptor unavailable");
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    },
+  );
+  expectCode(
+    () => createTrial({ candidates: [descriptorFailure, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    2,
+    "descriptor collection stops at the first failing property trap",
+  );
+}
+
+{
+  let descriptorTrapCalls = 0;
+  const input = new Proxy(
+    {
+      trialId: TRIAL_ID,
+      seed: SEED,
+      secret: SECRET,
+      stoppingRule: {
+        minimumVotes: 12,
+        closesAt: CLOSES_AT,
+      },
+      candidates: CANDIDATES,
+    },
+    {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorTrapCalls += 1;
+        if (property === "secret") throw new Error("secret unavailable");
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    },
+  );
+  expectCode(
+    () => createBlindedTweetThreadTrial(input),
+    "INVALID_SECRET",
+  );
+  assert.equal(
+    descriptorTrapCalls,
+    3,
+    "known-field descriptor failures retain their field-specific error code",
   );
 }
 
