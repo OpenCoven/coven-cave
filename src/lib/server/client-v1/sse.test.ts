@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createClientStreamTranslator,
   createResumedRunStream,
+  encodeClientReconcileEvent,
   encodeClientStreamEvent,
   parseClientStreamCursor,
   translateInitialChatResponse,
@@ -97,6 +98,12 @@ test("SSE frames carry a canonical strictly increasing numeric id", () => {
   assert.match(second, /^id: 42\ndata: /);
   assert.throws(() =>
     encodeClientStreamEvent(-1, { type: "run.completed", conversationId: "c" }));
+});
+
+test("synthetic reconciliation repeats the last committed cursor", () => {
+  const frame = new TextDecoder().decode(encodeClientReconcileEvent(9, context.conversationId));
+  assert.match(frame, /^id: 9\ndata: /);
+  assert.match(frame, /"type":"reconcile_required"/);
 });
 
 test("cursor and Last-Event-ID are strict resumable nonnegative safe integers", () => {
@@ -377,7 +384,7 @@ test("resume seeds translator state through the cursor before translating a repl
   resetRunBuffersForTest();
 });
 
-test("resume reconciles when an evicted 100k assistant chunk leaves no complete seed", async () => {
+test("an incomplete-seed reconciliation preserves the next canonical replacement on reconnect", async () => {
   resetRunBuffersForTest();
   const run = openRunBuffer([context.runId]);
   const evictedText = "a".repeat(100_000);
@@ -386,23 +393,40 @@ test("resume reconciles when an evicted 100k assistant chunk leaves no complete 
     run.record({ kind: "user", text: "p".repeat(64 * 1024) });
   }
   const cursor = getRunBufferStatus(context.runId)!.latestSeq;
-  run.record({ kind: "assistant_replace", text: `${evictedText} corrected` });
-  run.record({ kind: "done", isError: false });
-  run.finish();
-
-  const response = createResumedRunStream(
+  const reconciliation = createResumedRunStream(
     context.runId,
     cursor,
     context,
     new AbortController().signal,
   );
-  assert.ok(response);
-  const text = await response.text();
-  assert.deepEqual(sseFrames(text), [{
-    id: cursor + 1,
+  assert.ok(reconciliation);
+  const reconciliationFrames = sseFrames(await reconciliation.text());
+  assert.deepEqual(reconciliationFrames, [{
+    id: cursor,
     payload: { type: "reconcile_required", conversationId: context.conversationId },
-  }], "a replacement cannot be emitted as a duplicate delta from an incomplete seed");
-  assert.doesNotMatch(text, /message\.delta|corrected/);
+  }], "the synthetic frame does not claim the next canonical sequence");
+
+  const replacement = `${evictedText} corrected`;
+  const replacementSeq = run.record({ kind: "assistant_replace", text: replacement });
+  const doneSeq = run.record({ kind: "done", isError: false });
+  assert.equal(replacementSeq, cursor + 1);
+  assert.equal(doneSeq, cursor + 2);
+  run.finish();
+
+  const response = createResumedRunStream(
+    context.runId,
+    reconciliationFrames[0].id,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(response);
+  assert.deepEqual(sseFrames(await response.text()), [{
+    id: replacementSeq,
+    payload: { type: "message.delta", text: replacement },
+  }, {
+    id: doneSeq,
+    payload: { type: "run.completed", conversationId: context.conversationId },
+  }], "reconnecting from reconciliation's cursor replays each next canonical event once");
   resetRunBuffersForTest();
 });
 
@@ -515,7 +539,7 @@ test("ahead resume cursor reconciles once and never tails later events", async (
   assert.equal(text.match(/"type":"reconcile_required"/g)?.length, 1);
   assert.deepEqual(
     [...text.matchAll(/^id: (\d+)$/gm)].map((match) => Number(match[1])),
-    [11],
+    [1],
   );
   assert.doesNotMatch(text, /later/);
   resetRunBuffersForTest();
