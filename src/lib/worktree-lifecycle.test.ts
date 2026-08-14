@@ -312,6 +312,72 @@ function legacyObservation(overrides = {}) {
   assert.equal(item.lane, "recovery", "backup branches are never cleanup candidates");
 }
 
+// cave-22d8v — `wip` is a NAMESPACE, not a token anywhere in the branch name.
+{
+  for (const branch of [
+    "backup/feat-x",
+    "archive/cave-8i8q5-wip-2026-07-29",
+    "rescue/cave-1-snapshot",
+    "retention/cave-58eoq-authenticated-readiness-wip-2026-08-10",
+    "wip/cave-2-half-done",
+  ]) {
+    const item = classifyLifecycleUnit(
+      observation({
+        branch,
+        ref: `refs/heads/${branch}`,
+        remoteRefsContainingHead: [`refs/remotes/origin/${branch}`],
+        remoteRef: { ref: `refs/remotes/origin/${branch}`, oid: "a".repeat(40) },
+      }),
+      NOW,
+    );
+    assert.equal(item.lane, "recovery", `${branch} is a snapshot namespace and stays preserved`);
+    assert.match(item.reasons.join("\n"), /recovery or WIP snapshot/);
+  }
+}
+
+// The false positives the old token-anywhere rule produced. Neither branch holds
+// WIP: the first is named for the WIP merge it REVERTS (observed 2026-08-14 —
+// clean tree, PR #4590 merged, and still unretirable because of its name), and
+// the second merely contains the letters as part of another word.
+//
+// The assertion is that the NAME contributes nothing, not that the unit is
+// retirable: each is compared against an ordinary control branch under an
+// otherwise identical observation, so whatever the control earns on its own
+// merits, these earn too. Asserting `lane !== "recovery"` outright would be
+// wrong — a unit whose head is not yet proven landed is `recovery` regardless
+// of its name, and the control shows exactly that.
+{
+  const unit = (branch) =>
+    classifyLifecycleUnit(
+      observation({
+        branch,
+        ref: `refs/heads/${branch}`,
+        remoteRefsContainingHead: [`refs/remotes/origin/${branch}`],
+        remoteRef: { ref: `refs/remotes/origin/${branch}`, oid: "a".repeat(40) },
+      }),
+      NOW,
+    );
+  const control = unit("feat/ordinary-branch");
+  for (const branch of ["fix/cave-qqt1g-revert-wip-merge", "fix/ios-wipe-gesture"]) {
+    const item = unit(branch);
+    assert.doesNotMatch(
+      item.reasons.join("\n"),
+      /recovery or WIP snapshot/,
+      `${branch} names WIP as its subject, not its content, so the name must not pin it`,
+    );
+    assert.equal(
+      item.lane,
+      control.lane,
+      `${branch} classifies exactly like an ordinary branch`,
+    );
+    assert.deepEqual(
+      item.reasons,
+      control.reasons,
+      `${branch} earns the same reasons as an ordinary branch`,
+    );
+  }
+}
+
 {
   const item = classifyLifecycleUnit(
     observation({
