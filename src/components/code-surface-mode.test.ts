@@ -17,6 +17,7 @@ import { readFile } from "node:fs/promises";
 // shape.
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
@@ -73,9 +74,9 @@ assert.match(
 // ── Workspace wiring ─────────────────────────────────────────────────────────
 
 assert.match(
-  workspace,
-  /code: "Code"/,
-  "WORKSPACE_MODE_TITLES names the Code surface (canonical-nav agreement)",
+  pageRegistry,
+  /code: "Code"|id: "code"[\s\S]*?title: "Code"/,
+  "WORKSPACE_MODE_PAGES names the Code surface (canonical-nav agreement)",
 );
 assert.match(
   workspace,

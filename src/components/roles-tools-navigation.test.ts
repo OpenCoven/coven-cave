@@ -42,7 +42,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /initialSection=\{mode === "roles" \? "roles" : mode === "capabilities" \? "capabilities" : "browse"\}/,
+  /initialSection=\{[\s\S]*?mode === "roles"[\s\S]*?\? "roles"[\s\S]*?: mode === "capabilities"[\s\S]*?\? "capabilities"[\s\S]*?: "browse"[\s\S]*?\}/,
   "Deep-link modes should map onto the hub's sections",
 );
 assert.doesNotMatch(
@@ -312,13 +312,13 @@ const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 
 assert.match(
   workspace,
-  /<h1 className="sr-only">\s*\{\(isRoleSurfaceMode\(mode\)[\s\S]{0,220}?WORKSPACE_MODE_TITLES\[mode\]\) \?\? "CovenCave"\}\s*<\/h1>/,
+  /<h1 className="sr-only">\{primaryDefinition\?\.title \?\? "CovenCave"\}<\/h1>/,
   "Workspace detail must render a visually-hidden h1 naming the active surface (axe page-has-heading-one) — including Role Surface rooms",
 );
 assert.match(
   workspace,
-  /const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = \{/,
-  "The h1 title map must cover every WorkspaceMode (Record enforces exhaustiveness)",
+  /workspacePageDefinition\(primaryPaneRequest\?\.requestedPageId \?\? mode\)/,
+  "The h1 title must derive from the page registry (workspacePageDefinition enforces exhaustiveness)",
 );
 
 assert.match(

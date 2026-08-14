@@ -77,28 +77,40 @@ assert.deepEqual(
 );
 
 // ── The sr-only h1 / split-tile title map agrees for sidebar destinations ────
-const titlesBlock = workspace.match(
-  /const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = \{[\s\S]*?\n\};/,
-)?.[0];
-assert.ok(titlesBlock, "WORKSPACE_MODE_TITLES should be extractable");
+// workspace.tsx migrated from a hand-written WORKSPACE_MODE_TITLES map to
+// deriving titles from workspacePageDefinition (workspace-page-registry.ts);
+// the canonical label check now targets the page registry directly.
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+// Extract id/title pairs from the WORKSPACE_MODE_PAGES block (ends before SUPPLEMENTAL_PAGES).
+const pageRegistryBlock = pageRegistry.slice(
+  pageRegistry.indexOf("const WORKSPACE_MODE_PAGES"),
+  pageRegistry.indexOf("\nconst SUPPLEMENTAL_PAGES"),
+);
+assert.ok(pageRegistryBlock.length > 0, "WORKSPACE_MODE_PAGES should be extractable from workspace-page-registry.ts");
 const modeTitles = new Map();
-for (const m of titlesBlock.matchAll(/"?([a-z-]+)"?: "([^"]+)"/g)) {
+for (const m of pageRegistryBlock.matchAll(/\bid\s*:\s*"([a-z-]+)"[\s\S]*?\btitle\s*:\s*"([^"]+)"/g)) {
   modeTitles.set(m[1], m[2]);
 }
+assert.ok(modeTitles.size > 0, "WORKSPACE_MODE_PAGES should declare id/title rows");
 for (const [id, canonical] of registryLabels) {
   const title = modeTitles.get(id);
   if (title === undefined) continue;
   assert.equal(
     title,
     canonical,
-    `WORKSPACE_MODE_TITLES["${id}"] must use the canonical navigation label "${canonical}", got "${title}"`,
+    `workspace-page-registry["${id}"].title must use the canonical navigation label "${canonical}", got "${title}"`,
   );
 }
 
 // Alias modes that render another surface's view keep that surface's name —
 // they must never introduce a new peer vocabulary (issue #3283 acceptance:
 // "Compatibility aliases do not appear as peer destinations").
-assert.equal(modeTitles.get("calendar"), modeTitles.get("inbox"), "calendar is a tab of Rituals, not a new name");
-assert.equal(modeTitles.get("familiar-work-queue"), modeTitles.get("board"), "the work queue is a tab of Tasks, not a new name");
+// The canonical relationship is tracked via canonicalId in the page registry.
+const canonicalIds = new Map();
+for (const m of pageRegistryBlock.matchAll(/\bid\s*:\s*"([a-z-]+)"[\s\S]*?\bcanonicalId\s*:\s*"([a-z-]+)"/g)) {
+  canonicalIds.set(m[1], m[2]);
+}
+assert.equal(canonicalIds.get("calendar"), "inbox", "calendar is a tab of Rituals, not a new name");
+assert.equal(canonicalIds.get("familiar-work-queue"), "board", "the work queue is a tab of Tasks, not a new name");
 
 console.log("canonical-nav-names: ok");
