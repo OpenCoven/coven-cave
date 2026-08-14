@@ -492,6 +492,35 @@ test("settlement preserves stable list container and item ids", () => {
   }
 });
 
+test("incremental nested tails retain active list identity and committed siblings", () => {
+  for (const [beforeSource, afterSource, committedSource, activeSource] of [
+    ["- one\n- parent", "- one\n- parent\n  - child", "- one\n", "- parent\n  - child"],
+    ["1. one\n2. parent", "1. one\n2. parent\n   1. child", "1. one\n", "2. parent\n   1. child"],
+  ] as const) {
+    const before = partitionStreamingMarkdown(beforeSource, { turnId: "t", settled: false });
+    const after = partitionStreamingMarkdown(afterSource, { turnId: "t", settled: false });
+
+    if (before.activeBlock?.kind !== "list" || after.activeBlock?.kind !== "list") {
+      assert.fail("expected both snapshots to stay in the same active list container");
+    }
+
+    assert.equal(after.activeBlock.id, before.activeBlock.id);
+    assert.deepEqual(before.activeBlock.committedItems, [{ id: "t:0-item-0", source: committedSource }]);
+    assert.deepEqual(after.activeBlock.committedItems, before.activeBlock.committedItems);
+    assert.deepEqual(after.activeBlock.activeItem, { id: "t:0-item-1", source: activeSource });
+    assert.equal(after.activeBlock.source, afterSource);
+
+    const settled = partitionStreamingMarkdown(afterSource, { turnId: "t", settled: true });
+    assert.deepEqual(settled.committedBlocks, [{
+      id: `t:0-${afterSource.length}`,
+      kind: "markdown",
+      source: afterSource,
+      renderMode: "markdown",
+    }]);
+    assert.equal(settled.activeBlock, null);
+  }
+});
+
 test("nested list markers stay ambiguous instead of committing sibling items", () => {
   for (const source of [
     "- parent\n  - child",

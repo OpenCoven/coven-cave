@@ -52,6 +52,7 @@ type InternalListBlock = {
   ordered: boolean;
   committedItems: InternalListItem[];
   activeItem?: InternalListItem;
+  ambiguousTail?: boolean;
   source: string;
 };
 
@@ -216,6 +217,7 @@ function makeListBlock(
   ordered: boolean,
   committedItems: InternalListItem[],
   activeItem?: InternalListItem,
+  ambiguousTail = false,
 ): InternalListBlock {
   return {
     kind: "list",
@@ -224,6 +226,7 @@ function makeListBlock(
     ordered,
     committedItems,
     activeItem,
+    ambiguousTail,
     source: source.slice(start, end),
   };
 }
@@ -319,6 +322,20 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
     const nextMarker = parseListMarker(lines[index]);
     if (nextMarker && nextMarker.ordered === marker.ordered) {
       if (nextMarker.markerIndent >= marker.contentIndent) {
+        if (committedItems.length > 0) {
+          return {
+            complete: false,
+            block: makeListBlock(
+              source,
+              lines[startIndex].start,
+              source.length,
+              marker.ordered,
+              committedItems,
+              { start: itemStart, end: source.length, source: source.slice(itemStart) },
+              true,
+            ),
+          };
+        }
         return {
           complete: false,
           block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain"),
@@ -466,7 +483,17 @@ function toPublicBlock(turnId: string, block: InternalBlock): StreamingContentBl
 }
 
 function finalizeSettledBlock(block: InternalBlock): InternalBlock {
-  if (block.kind !== "list" || !block.activeItem) return block;
+  if (block.kind !== "list") return block;
+  if (block.ambiguousTail) {
+    return {
+      kind: "markdown",
+      start: block.start,
+      end: block.end,
+      source: block.source,
+      renderMode: "plain",
+    };
+  }
+  if (!block.activeItem) return block;
   return {
     ...block,
     committedItems: [...block.committedItems, block.activeItem],
