@@ -278,19 +278,20 @@ assert.match(
   "Stat labels keep the uppercase/tracking hierarchy at the lifted 10px size",
 );
 
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const foundations = readFileSync(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
+const primitivesCss = readFileSync(new URL("../styles/globals/primitives.css", import.meta.url), "utf8");
 assert.match(
-  globals,
+  foundations,
   /--text-muted: color-mix\(in oklch, var\(--foreground\) 72%, transparent\);/,
   "Dark-mode --text-muted mixes at 72% — 55% passed AA only on Coven; 72% clears 4.5:1 on every premade palette (theme-contrast-audit.test.ts)",
 );
 assert.match(
-  globals,
+  foundations,
   /--text-muted: color-mix\(in oklch, var\(--foreground\) 76%, transparent\);/,
   "Light-mode --text-muted overrides to 76% (dark ink needs a higher mix for the same contrast)",
 );
 assert.doesNotMatch(
-  globals,
+  foundations,
   /--text-muted: color-mix\(in oklch, var\(--foreground\) 40%, transparent\);/,
   "The old 40% muted-ink mix (~3:1 on dark, ~2.5:1 on light) must not return",
 );
@@ -301,12 +302,12 @@ assert.match(
   "Chat rows should render the session initiator attribution pill",
 );
 assert.doesNotMatch(
-  globals,
+  primitivesCss,
   /\.ui-initiator-chip\[data-initiator="familiar"\]\s*\{[\s\S]*?color:\s*var\(--accent\);/,
   "Familiar initiator attribution text must not use the low-contrast accent token",
 );
 assert.match(
-  globals,
+  primitivesCss,
   /\.ui-initiator-chip\[data-initiator="familiar"\]\s*\{[\s\S]*?color:\s*var\(--text-secondary\);/,
   "Familiar initiator attribution text should use a readable text token",
 );
@@ -314,7 +315,7 @@ assert.match(
 // ── Row chrome consistency (origin + initiator pills, action buttons) ─────────
 // Both pills must share one base rule so adjacent pills read as siblings.
 assert.match(
-  globals,
+  primitivesCss,
   /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?\}/,
   "Origin and initiator pills must share a single base chrome rule",
 );
@@ -356,7 +357,11 @@ assert.match(
 assert.match(source, /const \[selectMode, setSelectMode\] = useState\(false\)/, "a select mode toggles bulk-select");
 assert.match(source, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected chat ids live in a Set");
 assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\)/, "the header Select toggle clears any selection");
-assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*clearSessionFilters\(\);\s*setSelectMode\(false\);\s*setSelectedIds\(new Set\(\)\);\s*\}, \[clearSessionFilters, familiar\?\.id\]\)/,
+  "selection resets with the familiar-scoped filters when the active familiar changes",
+);
 assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
 // Row click = open (Sessions): clicking a row opens the session directly on
 // every device; select mode still toggles selection. The old inline detail

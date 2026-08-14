@@ -229,6 +229,7 @@ const contracts: RouteContract[] = [
   { route: "/research/generations/cancel", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/generations/infographic", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
   { route: "/research/generations/media", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
+  { route: "/research/generations/media-ticket", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -413,9 +414,15 @@ for (const contract of contracts) {
     // (/x/oauth/start passes rejectNonLocalRequest into
     // createXOAuthStartRouteHandlers, which calls it), and reading only the
     // route file would report that as a missing guard when it is present.
-    assert.match(effectiveSource, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);
+    assert.match(
+      effectiveSource,
+      /isLocalOrigin|rejectNonLocalRequest|rejectResearchMediaRequest/,
+      `${contract.route} must preserve local-origin guard`,
+    );
     if (effectiveSource.includes("rejectNonLocalRequest")) {
       assert.match(effectiveSource, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
+    } else if (effectiveSource.includes("rejectResearchMediaRequest")) {
+      assert.match(effectiveSource, /rejectResearchMediaRequest\(req\)/, `${contract.route} must call the shared research media guard`);
     } else {
       assert.match(effectiveSource, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
     }
