@@ -1121,6 +1121,9 @@ function openClawChatResponse(args: {
         });
         const onAbort = () => armDetachKill();
         args.req.signal.addEventListener("abort", onAbort, { once: true });
+        // AbortSignal does not replay an abort that happened before this
+        // Gateway branch finished installing its detach cleanup.
+        if (args.req.signal.aborted) onAbort();
         pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
         const gatewayResult = await gatewayDispatch.done;
         markChatRunTransportSettled(runHandle);
@@ -1349,6 +1352,9 @@ function openClawChatResponse(args: {
       });
       const onAbort = () => armDetachKill();
       args.req.signal.addEventListener("abort", onAbort, { once: true });
+      // AbortSignal does not replay an abort that happened before the CLI
+      // fallback installed its detach cleanup.
+      if (args.req.signal.aborted) onAbort();
 
       // First-turn visibility (cave-0g2x): the OpenClaw path knows its
       // conversation id up front, so persist the stub (and the default title)
