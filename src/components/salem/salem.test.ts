@@ -73,7 +73,7 @@ assert.match(route, /HISTORY_TURN_CAP\s*=\s*8/, "history must cap turn count ser
 assert.match(route, /HISTORY_TURN_CHAR_CAP\s*=\s*600/, "history must cap per-turn length server-side");
 assert.match(route, /<prior_conversation>/, "history must be quoted as untrusted data, mirroring retrieved context");
 assert.match(route, /buildLocalSalemPrompt\(messageForLocal, apiContext, history\)/, "history and local Cave context feed local synthesis only");
-assert.match(route, /askChatApiContext\(message\)[\s\S]*sanitizeHistory|sanitizeHistory[\s\S]*askChatApiContext\(message\)/, "retrieval stays keyed on the question and excludes history/local context");
+assert.match(route, /(?:askChatApiContext\(message\)[\s\S]*sanitizeHistory|sanitizeHistory[\s\S]*askChatApiContext\(message\))/, "retrieval stays keyed on the question and excludes history/local context");
 assert.doesNotMatch(route, /askChatApi(?:Context|Answer)\(messageForLocal\)|askChatApi(?:Context|Answer)\(messageForApi\)/, "local Cave context must never be forwarded to the hosted Salem API");
 assert.doesNotMatch(route, /messageForLocal\s*=[^;]*history/, "history must never pollute the retrieval query");
 assert.match(route, /familiar|familiar/, "must know about familiars");
