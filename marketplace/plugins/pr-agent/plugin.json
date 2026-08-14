@@ -19,6 +19,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/pr-agent",
   "x-coven": {
     "displayName": "PR Agent \u2014 Maintainer Workflow Orchestrator",

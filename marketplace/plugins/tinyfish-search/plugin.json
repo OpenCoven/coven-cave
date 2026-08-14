@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/tinyfish-search",
   "x-coven": {
     "displayName": "TinyFish Search",

@@ -19,6 +19,7 @@
     "write_files",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/memory",
   "x-coven": {
     "displayName": "Memory",
