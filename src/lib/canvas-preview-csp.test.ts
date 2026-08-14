@@ -18,10 +18,19 @@ const ORIGIN = "http://127.0.0.1:3000";
 const policy = buildPreviewCsp(ORIGIN);
 assert.match(policy, /(^|; )default-src 'none'(;|$)/, "unnamed fetch directives fail closed");
 assert.ok(
-  policy.includes(`script-src ${ORIGIN} 'unsafe-inline' 'unsafe-eval'`),
-  "the sandbox runtime's origin, inline artifact scripts, and the JSX transpiler's eval are allowed",
+  policy.includes(`script-src ${ORIGIN}/sandbox/ 'unsafe-inline' 'unsafe-eval'`),
+  "scripts are scoped to the sandbox asset path, plus inline artifact code and the transpiler's eval",
 );
-assert.ok(policy.includes(`style-src ${ORIGIN} 'unsafe-inline'`), "Tailwind's injected <style> elements are allowed");
+// Scoping to /sandbox/ rather than the bare origin is the point: an artifact
+// would otherwise have `<script src="<origin>/anything?leak=…">` as a working
+// same-origin GET channel.
+assert.doesNotMatch(
+  policy,
+  new RegExp(`script-src ${ORIGIN}[ ;]`),
+  "the bare origin is never a script source",
+);
+assert.ok(policy.includes("style-src 'unsafe-inline'"), "Tailwind's injected <style> elements are allowed");
+assert.doesNotMatch(policy, new RegExp(`style-src[^;]*${ORIGIN}`), "no stylesheet URL channel either");
 // Every practical egress channel a sketch could reach for.
 assert.ok(policy.includes("connect-src 'none'"), "no fetch/XHR/WebSocket/beacon");
 assert.ok(policy.includes("img-src data: blob:"), "no remote image URL as a GET beacon");
@@ -48,8 +57,25 @@ assert.equal(
   "an origin carrying a quote can't break out of the meta attribute",
 );
 assert.equal(buildPreviewCsp("http://a.example; script-src *"), "", "an origin can't smuggle a second directive");
-assert.ok(buildPreviewCsp("tauri://localhost").includes("script-src tauri://localhost"), "the desktop shell's origin works");
-assert.ok(buildPreviewCsp("https://cave.example").includes("script-src https://cave.example"), "https origins work");
+// A URL is not an origin. Accepting one would narrow the emitted source to that
+// path prefix, which blocks /sandbox/ and blanks every React preview.
+assert.equal(buildPreviewCsp("https://cave.example/app"), "", "a path is rejected");
+assert.equal(buildPreviewCsp("https://cave.example/"), "", "even a bare trailing slash is rejected");
+assert.equal(buildPreviewCsp("https://cave.example?q=1"), "", "a query is rejected");
+assert.equal(buildPreviewCsp("https://cave.example#frag"), "", "a fragment is rejected");
+assert.equal(buildPreviewCsp("https://user@cave.example"), "", "userinfo is rejected");
+assert.ok(
+  buildPreviewCsp("tauri://localhost").includes("script-src tauri://localhost/sandbox/"),
+  "the desktop shell's origin works",
+);
+assert.ok(
+  buildPreviewCsp("https://cave.example").includes("script-src https://cave.example/sandbox/"),
+  "https origins work",
+);
+assert.ok(
+  buildPreviewCsp("http://[::1]:3000").includes("script-src http://[::1]:3000/sandbox/"),
+  "an IPv6 authority survives the origin check",
+);
 
 // In Node there is no location, so the default resolves to "" — which is what
 // keeps the pure builders' existing unit tests policy-free.

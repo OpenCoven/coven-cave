@@ -160,7 +160,8 @@ export function isFullDocument(code: string): boolean {
  * runs under `sandbox="allow-scripts"` (no same-origin) — isolation comes from
  * the sandbox, so we intentionally do NOT strip scripts here. The offline CSP
  * from canvas-preview-csp.ts is stamped on top: the artifact still runs its own
- * scripts, it just cannot reach the network to do it.
+ * inline scripts, but the only URL it can fetch is a sandbox asset under
+ * `/sandbox/` — no fetch, no remote image, font, frame, or stylesheet.
  *
  * `assetOrigin` defaults to the app's own origin; see buildPreviewCsp for why
  * an opaque-origin document can't express that as `'self'`.

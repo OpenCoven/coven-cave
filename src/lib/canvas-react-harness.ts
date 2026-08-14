@@ -9,8 +9,9 @@
 // <iframe sandbox="allow-scripts"> (no allow-same-origin). The assets are
 // same-origin to our server but the iframe stays an opaque origin — loading a
 // script is allowed; reaching Cave's DOM/cookies is not. The document also
-// carries the offline CSP from canvas-preview-csp.ts, which keeps a component
-// from reaching the network at all.
+// carries the offline CSP from canvas-preview-csp.ts: the component can load
+// the sandbox assets under `/sandbox/` and nothing else — no fetch, no remote
+// media, no third-party script.
 
 import { injectCanvasInspector } from "./canvas-inspector.ts";
 import { injectPreviewCsp } from "./canvas-preview-csp.ts";

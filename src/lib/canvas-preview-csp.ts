@@ -9,6 +9,13 @@
 // asks for a self-contained, network-free document; this makes the browser
 // enforce it rather than trusting a model to have complied.
 //
+// What the policy actually guarantees, stated exactly: the ONLY URL a preview
+// can fetch is a script under `<app origin>/sandbox/` — the offline runtime and
+// Tailwind engine it needs to render. Not "no network at all": that path stays
+// open by necessity, and the sandbox assets are static first-party files.
+// Everything else — fetch/XHR/WebSocket/beacon, remote images, fonts, media,
+// stylesheets, frames, workers, form posts — is denied.
+//
 // Two properties are load-bearing:
 //
 // 1. `'self'` is USELESS here. The preview document's own origin is opaque, so
@@ -26,10 +33,17 @@
 export const PREVIEW_CSP_MARKER = "cave-canvas-preview-csp";
 
 /** True for a source expression we can safely inline into a policy: a real
- *  scheme://host origin with no quote, whitespace, or delimiter that could
- *  break out of the directive (or out of the meta tag's attribute). */
+ *  `scheme://host[:port]` and nothing else.
+ *
+ *  The authority may not carry a path, query, fragment, or userinfo. A URL like
+ *  `https://example.com/app` is not an origin, and accepting one would silently
+ *  narrow the emitted source to that path prefix — blocking `/sandbox/` and
+ *  blanking every React preview. `[` and `]` stay legal so an IPv6 authority
+ *  (`http://[::1]:3000`) still passes; quotes, whitespace, and angle brackets
+ *  are excluded so a value can never break out of the directive or the meta
+ *  tag's attribute. */
 function isUsableOrigin(value: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:\/\/[^\s'";<>]+$/i.test(value);
+  return /^[a-z][a-z0-9+.-]*:\/\/[^\s'";<>/?#@]+$/i.test(value);
 }
 
 /**
@@ -58,14 +72,19 @@ export function buildPreviewCsp(assetOrigin: string = resolveSandboxAssetOrigin(
     // Everything not named below is denied outright, so a fetch directive we
     // forget fails closed instead of staying wide open.
     "default-src 'none'",
-    // The offline runtime + Tailwind engine load from our origin; the
-    // artifact's own inline <script> needs 'unsafe-inline', and the JSX
-    // transpiler evaluates the component through `new Function` ('unsafe-eval').
-    // Both are inherent to running untrusted code in the sandbox — the opaque
-    // origin, not the script policy, is what contains it.
-    `script-src ${origin} 'unsafe-inline' 'unsafe-eval'`,
-    // Tailwind's browser engine injects <style> elements as it scans the DOM.
-    `style-src ${origin} 'unsafe-inline'`,
+    // Scoped to the SANDBOX ASSET PATH, not the whole origin. Allowing the
+    // bare origin would leave `<script src="<origin>/anything?leak=…">` as a
+    // working GET channel — the artifact's own scripts are inline, so nothing
+    // legitimate loads a script by URL except our runtime and Tailwind engine.
+    // 'unsafe-inline' covers the artifact's inline <script> and event handlers;
+    // 'unsafe-eval' covers the JSX transpiler's `new Function`. Both are
+    // inherent to running untrusted code at all — the opaque origin, not the
+    // script policy, is what contains it.
+    `script-src ${origin}/sandbox/ 'unsafe-inline' 'unsafe-eval'`,
+    // Tailwind's browser engine injects <style> elements as it scans the DOM,
+    // which 'unsafe-inline' covers. No origin here at all: a stylesheet URL is
+    // another GET channel, and no artifact loads one.
+    "style-src 'unsafe-inline'",
     // Inline art only. A remote image URL is a GET beacon in disguise, which is
     // the cheapest exfil channel a generated sketch has.
     "img-src data: blob:",

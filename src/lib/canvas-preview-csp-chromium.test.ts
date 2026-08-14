@@ -32,6 +32,14 @@ if (!existsSync(executablePath)) {
     } catch (err) {
       parent.postMessage({ type: "eval-blocked", message: String(err) }, "*");
     }
+    // Same-origin script beacon. script-src has to name our origin for the
+    // runtime to load at all, so scoping it to /sandbox/ is the only thing
+    // standing between an artifact and a working GET channel back to the app.
+    const beaconScript = document.createElement("script");
+    beaconScript.onload = () => parent.postMessage({ type: "script-beacon-loaded" }, "*");
+    beaconScript.onerror = () => parent.postMessage({ type: "script-beacon-failed" }, "*");
+    beaconScript.src = ORIGIN + "/beacon-script?leak=secret";
+    document.head.append(beaconScript);
     const img = new Image();
     img.onload = () => parent.postMessage({ type: "img-loaded" }, "*");
     img.onerror = () => parent.postMessage({ type: "img-failed" }, "*");
@@ -105,6 +113,7 @@ if (!existsSync(executablePath)) {
     assert.ok(controlEvents.some((e) => e?.type === "img-loaded"), "control: a remote image load succeeds");
     assert.ok(hits.includes("/beacon-img"), "control: the beacon reached the server — the probe can observe egress");
     assert.ok(hits.includes("/beacon-fetch"), "control: the fetch reached the server too");
+    assert.ok(hits.includes("/beacon-script"), "control: the same-origin script beacon reached the server as well");
 
     // ── Policy on: the runtime still loads, the beacons never leave ─────────
     hits.length = 0;
@@ -123,6 +132,14 @@ if (!existsSync(executablePath)) {
     assert.ok(guardedEvents.some((e) => e?.type === "img-failed"), "the remote image is refused");
     assert.ok(!hits.includes("/beacon-img"), "and the request never reached the network");
     assert.ok(!hits.includes("/beacon-fetch"), "connect-src 'none' stops fetch before it is sent");
+    assert.ok(
+      !hits.includes("/beacon-script"),
+      "scoping script-src to /sandbox/ closes the same-origin script channel that naming the bare origin would leave open",
+    );
+    assert.ok(
+      guardedEvents.some((e) => e?.type === "script-beacon-failed"),
+      "and the artifact sees it refused rather than silently pending",
+    );
 
     // ── The HTML path gets the same treatment ──────────────────────────────
     const htmlArtifact = [
