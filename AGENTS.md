@@ -100,6 +100,17 @@
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
+## Pull-request Review Standard
+
+When asked to review or assess a pull request, treat the request as **read-only**
+unless the user separately authorizes repairs. Review the exact current
+`headRefOid`: inspect the scoped diff and relevant code paths, check mergeability
+and conflicts, read every review thread (including paginated thread comments),
+and inspect the current check runs. Pending, missing, stale, cancelled, or
+failed checks are incomplete—not green. Report the exact head, evidence, and
+remaining blockers; never edit, push, merge, resolve threads, or change PR state
+as part of a review-only request.
+
 ## Design System (any UI work)
 
 [`docs/coven-design-language.md`](docs/coven-design-language.md) is the

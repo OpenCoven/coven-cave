@@ -21,6 +21,17 @@ yours. Use a PR.
 
 **Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was originally enabled with `enforce_admins=true` so the hard stop applied to everyone; that part has since changed at the owner's direction (see the `enforce_admins` bullet below), while the PR requirement it exists to enforce has not.
 
+## Pull-request review standard
+
+When asked to review or assess a pull request, treat the request as **read-only**
+unless the user separately authorizes repairs. Review the exact current
+`headRefOid`: inspect the scoped diff and relevant code paths, check mergeability
+and conflicts, read every review thread (including paginated thread comments),
+and inspect the current check runs. Pending, missing, stale, cancelled, or
+failed checks are incomplete—not green. Report the exact head, evidence, and
+remaining blockers; never edit, push, merge, resolve threads, or change PR state
+as part of a review-only request.
+
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
