@@ -17,6 +17,7 @@ import {
   readClientRunOperation,
   setClientRunOperationBeforeLaunchHookForTest,
   setClientRunOperationWriteRecordHookForTest,
+  type ClientRunOperationLaunchOutcome,
   type ClientRunOperationRecord,
 } from "./run-operation-store.ts";
 import {
@@ -144,7 +145,7 @@ function createRunOperationDeps() {
       credentialId: string;
       requestHash: string;
       now?: number;
-      launch: (record: ClientRunOperationRecord) => Promise<T>;
+      launch: (record: ClientRunOperationRecord) => Promise<ClientRunOperationLaunchOutcome<T>>;
     }) => {
       const key = keyFor(operationId, credentialId);
       const record = records.get(key);
@@ -152,10 +153,30 @@ function createRunOperationDeps() {
       if (record.requestHash !== requestHash) return { kind: "conflict" as const };
       if (record.state === "launching") return { kind: "already_launching" as const, record };
       if (record.state === "launched") return { kind: "already_launched" as const, record };
-      const value = await launch(record);
+      if (record.state === "terminal") return { kind: "already_terminal" as const, record };
+      const outcome = await launch(record);
+      if (outcome.kind === "retryable_prelaunch_failure") {
+        record.state = "reserved";
+        records.set(key, record);
+        return {
+          kind: "retryable_prelaunch_failure" as const,
+          record,
+          value: outcome.value,
+        };
+      }
+      if (outcome.kind === "terminal_prelaunch_failure") {
+        record.state = "terminal";
+        record.terminalResponse = outcome.terminalResponse;
+        records.set(key, record);
+        return {
+          kind: "terminal_prelaunch_failure" as const,
+          record,
+          value: outcome.value,
+        };
+      }
       record.state = "launched";
       records.set(key, record);
-      return { kind: "launched_now" as const, record, value };
+      return { kind: "launched_now" as const, record, value: outcome.value };
     },
     records,
   };
@@ -258,6 +279,95 @@ test("run reservation happens before launch and the durable replay receipt lands
   assert.match(text, /"type":"run.started"/);
   assert.match(text, /"type":"message.delta"/);
   assert.match(text, /"type":"run.completed"/);
+});
+
+test("a retryable non-SSE launch failure reverts to reserved and the same operation id succeeds", async () => {
+  let executions = 0;
+  const service = createDurableService({
+    authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
+    resolveAttachments: async () => [],
+    executeChatSend: async () => {
+      executions += 1;
+      if (executions === 1) {
+        return Response.json({ error: "temporarily unavailable" }, { status: 503 });
+      }
+      return new Response(
+        `id: 1\ndata: ${JSON.stringify({ kind: "done", isError: false })}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+
+  const first = await service.send(input, principal);
+  assert.equal(first.status, 503);
+  assert.deepEqual(await first.json(), {
+    ok: false,
+    error: {
+      code: "service_unavailable",
+      message: "Run launch is temporarily unavailable.",
+      retryable: true,
+    },
+  });
+  assert.equal((await storedRunOperation())?.state, "reserved");
+
+  const second = await service.send(input, principal);
+  assert.equal(second.status, 200);
+  assert.equal((await storedRunOperation())?.state, "launched");
+  assert.equal(executions, 2);
+});
+
+test("a terminal non-SSE launch failure persists and replays its original response", async () => {
+  let executions = 0;
+  const service = createDurableService({
+    authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
+    resolveAttachments: async () => [],
+    executeChatSend: async () => {
+      executions += 1;
+      return Response.json({ error: "request rejected" }, { status: 400 });
+    },
+  });
+
+  const first = await service.send(input, principal);
+  const firstBody = await first.json();
+  assert.equal(first.status, 400);
+  assert.equal((await storedRunOperation())?.state, "terminal");
+
+  const replay = await service.send(input, principal);
+  assert.equal(replay.status, 400);
+  assert.deepEqual(await replay.json(), firstBody);
+  assert.equal(executions, 1, "a terminal response never redispatches");
+});
+
+test("concurrent duplicate launches serialize around one canonical chat send", async () => {
+  let executions = 0;
+  let releaseLaunch!: () => void;
+  let markLaunchStarted!: () => void;
+  const launchStarted = new Promise<void>((resolve) => { markLaunchStarted = resolve; });
+  const launchRelease = new Promise<void>((resolve) => { releaseLaunch = resolve; });
+  const service = createDurableService({
+    authorizeConversation: async (_id, effect) => ({ ok: true, value: await effect(conversation) }),
+    resolveAttachments: async () => [],
+    executeChatSend: async () => {
+      executions += 1;
+      markLaunchStarted();
+      await launchRelease;
+      return new Response(
+        `id: 1\ndata: ${JSON.stringify({ kind: "done", isError: false })}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+
+  const first = service.send(input, principal);
+  await launchStarted;
+  const duplicate = service.send(input, principal);
+  releaseLaunch();
+
+  const [firstResponse, duplicateResponse] = await Promise.all([first, duplicate]);
+  assert.equal(firstResponse.status, 200);
+  assert.equal(duplicateResponse.status, 409);
+  assert.equal((await duplicateResponse.json()).error.code, "operation_already_started");
+  assert.equal(executions, 1);
 });
 
 test("same operation attaches with stable metadata and never executes twice", async () => {

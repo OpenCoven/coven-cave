@@ -47,7 +47,10 @@ import {
   type ClientRunOperationRecord,
 } from "./run-operation-store.ts";
 import { clientV1Error, clientV1Ok } from "./responses.ts";
-import { translateInitialChatResponse } from "./sse.ts";
+import {
+  classifyInitialChatResponse,
+  translateInitialChatResponse,
+} from "./sse.ts";
 
 export const CLIENT_SEND_MAX_ATTACHMENTS = 4;
 const MAX_PROJECT_ROOT_CHARS = 4096;
@@ -421,6 +424,40 @@ function responseFromStored(stored: ClientOperationResponse): Response {
   return Response.json(stored.body, { status: stored.status });
 }
 
+function responseFromTerminalRunOperation(record: ClientRunOperationRecord): Response {
+  if (!record.terminalResponse) {
+    return clientV1Error(
+      503,
+      "service_unavailable",
+      "Run launch state is unavailable.",
+      true,
+    );
+  }
+  return Response.json(record.terminalResponse.body, {
+    status: record.terminalResponse.status,
+  });
+}
+
+async function persistTerminalRunResponse(
+  deps: ClientRunServiceDeps,
+  input: Pick<ClientSendInput, "operationId">,
+  claimId: string | null,
+  record: ClientRunOperationRecord,
+): Promise<void> {
+  if (!claimId || !record.terminalResponse) return;
+  try {
+    const completed = await deps.completeOperation(
+      { key: input.operationId, claimId },
+      record.terminalResponse,
+    );
+    if (completed.kind === "conflict" || completed.kind === "not_found") {
+      console.warn("[client-v1] unable to durably persist terminal run response");
+    }
+  } catch (error) {
+    console.warn("[client-v1] failed to persist terminal run response:", error);
+  }
+}
+
 function parseStoredRunReceipt(
   runId: string,
   operation: ClientOperationResponse | null,
@@ -693,6 +730,16 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
           );
       }
 
+      if (reserved.state === "terminal") {
+        await persistTerminalRunResponse(
+          deps,
+          input,
+          claim.kind === "claimed" ? claim.claimId : null,
+          reserved,
+        );
+        return responseFromTerminalRunOperation(reserved);
+      }
+
       if (reserved.state === "launching" || reserved.state === "launched") {
         const status = await resolveStoredRunStatus(deps, reserved, principal.credentialId);
         await persistRunStatusResponse(
@@ -749,11 +796,24 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
                 signal: originalRequest?.signal ?? undefined,
               },
             ));
+            const classified = classifyInitialChatResponse(response);
+            if (classified.kind === "prelaunch_failure") {
+              return classified.retryable
+                ? {
+                  kind: "retryable_prelaunch_failure" as const,
+                  value: classified.response,
+                }
+                : {
+                  kind: "terminal_prelaunch_failure" as const,
+                  value: classified.response,
+                  terminalResponse: classified.terminalResponse,
+                };
+            }
             aliasRunBuffer(
               record.internalRunId,
               clientRunBufferKey(input.operationId, principal.credentialId),
             );
-            return response;
+            return { kind: "launched" as const, value: classified.response };
           },
         });
       } catch (error) {
@@ -777,7 +837,10 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
       }
 
       if (launched.kind === "conflict") return claimFailure("conflict");
-      if (launched.kind === "already_launching" || launched.kind === "already_launched") {
+      if (
+        launched.kind === "already_launching"
+        || launched.kind === "already_launched"
+      ) {
         const status = await resolveStoredRunStatus(deps, launched.record, principal.credentialId);
         await persistRunStatusResponse(
           deps,
@@ -786,6 +849,27 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
           status,
         );
         return status.response;
+      }
+      if (launched.kind === "already_terminal") {
+        await persistTerminalRunResponse(
+          deps,
+          input,
+          claim.kind === "claimed" ? claim.claimId : null,
+          launched.record,
+        );
+        return responseFromTerminalRunOperation(launched.record);
+      }
+      if (launched.kind === "retryable_prelaunch_failure") {
+        return launched.value;
+      }
+      if (launched.kind === "terminal_prelaunch_failure") {
+        await persistTerminalRunResponse(
+          deps,
+          input,
+          claim.kind === "claimed" ? claim.claimId : null,
+          launched.record,
+        );
+        return launched.value;
       }
       const started: ResolvedStoredRun = {
         metadata: metadataForRecord(launched.record),
@@ -820,6 +904,9 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
         operationId: runId,
         credentialId,
       });
+      if (reserved?.state === "terminal") {
+        return responseFromTerminalRunOperation(reserved);
+      }
       if (reserved?.state === "launching" || reserved?.state === "launched") {
         return (await resolveStoredRunStatus(deps, reserved, credentialId)).response;
       }
