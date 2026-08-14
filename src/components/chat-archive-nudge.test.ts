@@ -114,7 +114,7 @@ assert.match(
 // triggers the existing onSessionsChanged + onBack flow.
 assert.match(
   chatViewSrc,
-  /const archiveChat = useCallback\(async \(\) => \{[\s\S]*\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}[\s\S]*archived: true[\s\S]*onSessionsChanged\?\.\(\)[\s\S]*onBack\?\.\(\)/,
+  /const archiveChat = useCallback\(async \(\) => \{[\s\S]*\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}[\s\S]*archived: true[\s\S]*onSessionsChanged\?\.\(\)[\s\S]*onBack\?\.\(sessionId\)/,
   "archiveChat PATCHes the session as archived and tells the host to refresh + leave",
 );
 assert.match(

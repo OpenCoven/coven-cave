@@ -124,6 +124,7 @@ import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
+import type { SessionRemovalReason } from "@/lib/chat-session-removal";
 import {
   isChatArchiveNudgeDismissed,
   markChatArchiveNudgeDismissed,
@@ -424,6 +425,7 @@ type Props = {
   /** Workspace-owned session list; the starting page's "Continue" row reads it
    *  so no extra fetch rides on every new chat. */
   sessions?: SessionRow[];
+  composerDraftKey?: string;
   composeInstance?: number;
   onSessionStarted?: (request: ChatSessionPromotionRequest) => void;
   /** Pre-session voice call: ChatView created a conversation for the call;
@@ -432,11 +434,30 @@ type Props = {
   /** An auto-created call session was discarded (empty, hung up) while the
    *  view was still parked on it — the router returns the view to a fresh
    *  compose state instead of leaving the user composing into a deleted
-   *  session. Not called when the user had already switched away. */
-  onVoiceSessionDiscarded?: () => void;
+   *  session. Not called when the user had already switched away. Passed the
+   *  discarded session's id so the router can re-check it's still the one
+   *  showing before navigating (cave-rl980 Task 4 final review) — the discard
+   *  itself is async, and the user may have switched threads or familiars
+   *  while it was in flight. */
+  onVoiceSessionDiscarded?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onSessionsDeleted: (sessionIds: readonly string[]) => void;
-  onBack?: () => void;
+  /** Fires exactly when THIS view's own session is confirmed removed —
+   *  archived, deleted, or a discarded empty voice/pre-session — immediately
+   *  before onBack/onVoiceSessionDiscarded navigates away. Unlike
+   *  onSessionsChanged/onSessionsDeleted (which also fire for unrelated
+   *  refreshes), a consumer can treat this as an unambiguous removal signal
+   *  for the exact session named, with no need to infer it from call order. */
+  onSessionRemoved?: (sessionId: string, reason: SessionRemovalReason) => void;
+  /** Passed the session this back navigation is for — the removal call sites
+   *  below always pass their own (non-null) sessionId; the two "Back to
+   *  sessions" render buttons pass whatever is currently shown. ChatRouter
+   *  only actually navigates when it's still displaying that exact session
+   *  (cave-rl980 Task 4 final review): archiveChat/deleteChat/setChatArchived
+   *  are async, and by the time the request settles the user may have
+   *  already switched to a different thread or familiar, whose view must
+   *  never be clobbered by a now-irrelevant completion. */
+  onBack?: (sessionId: string | null) => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   /** Reverse navigation for a chat that's linked to a board task — clicking
@@ -543,9 +564,9 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
 // Persist the in-progress composer text so a page reload doesn't eat a
-// half-written message. The composer is a single shared input (it isn’t
-// remounted per session), so one key mirrors the in-memory behaviour.
-const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
+// half-written message. Callers can isolate mounted composers while the
+// default retains the original shared slot.
+export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the chat composer.
 const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
@@ -1879,7 +1900,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2233,11 +2254,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const [input, setInput] = useState(() => readComposerDraft(COMPOSER_DRAFT_KEY));
+  const [input, setInput] = useState(() => readComposerDraft(composerDraftKey));
   // Persist the composer draft so a reload restores a half-written message.
   // Cleared (key removed) when the input empties — e.g. after a send. Shared
   // hook — debounce + remove-on-empty semantics live in use-composer-draft.
-  const { clearNow: clearDraft } = useDraftPersistence(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
+  const { clearNow: clearDraft } = useDraftPersistence(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
   // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
   // chat deliberately never records slash commands (send() returns before the push).
   const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
@@ -6731,13 +6752,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsChanged?.();
-      onBack?.();
+      onSessionRemoved?.(sessionId, "archived");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "archive failed");
     } finally {
       setArchivingChat(false);
     }
-  }, [sessionId, archivingChat, onSessionsChanged, onBack]);
+  }, [sessionId, archivingChat, onSessionsChanged, onSessionRemoved, onBack]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -6751,7 +6773,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       onSessionsDeleted([sessionId]);
-      onBack?.();
+      onSessionRemoved?.(sessionId, "deleted");
+      onBack?.(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
@@ -6856,7 +6879,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
       onSessionsChanged?.();
       // Leaving mirrors delete only for archive; unarchive keeps you in place.
-      if (archived) onBack?.();
+      if (archived) {
+        onSessionRemoved?.(sessionId, "archived");
+        onBack?.(sessionId);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
     } finally {
@@ -7776,7 +7802,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <FlowSessionTranscriptFallback
                 transcript={flowTranscriptFallback}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
@@ -7785,14 +7811,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
                   : "This session exists, but CovenCave could not find a saved transcript for it yet."}
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "error" ? (
               <ChatHistoryNotice
                 title="Could not load chat history"
                 body="The transcript request failed. You can still continue this session."
                 onRetry={retryHistory}
-                onBack={onBack}
+                onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : sessionId === null ? (
               // Brand-new chat (no session yet): the 2b launcher — hero, the
@@ -8073,7 +8099,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   // Only yank the view back to compose when it's still
                   // parked on the session we just discarded — if the user
                   // has already switched away, leave them where they are.
-                  if (target === sessionId) onVoiceSessionDiscarded?.();
+                  if (target === sessionId) {
+                    onSessionRemoved?.(target, "discarded");
+                    onVoiceSessionDiscarded?.(target);
+                  }
                 }
               });
             }
