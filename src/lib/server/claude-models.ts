@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import {
+  CLAUDE_OPUS_5_CAVE_ID,
+  claudeOpus5Available,
   parseClaudeCodeVersion,
   withClaudeOpus5,
 } from "../claude-models.ts";
@@ -192,6 +194,57 @@ async function discoverClaudeModels(
   // Keep this result degraded until Claude exposes a bounded entitlement
   // discovery path that can validate the complete inventory.
   return { models };
+}
+
+/**
+ * Whether this familiar's Claude Code/provider configuration can still route
+ * Opus 5 — asked at launch time, not only when the picker was built.
+ *
+ * Three-valued on purpose. `modelForRuntimeLaunch` hands Claude Code the family
+ * alias `anthropic/opus`, and `modelForCaveFromRuntimeEcho` maps that echo back
+ * to `anthropic/claude-opus-5`; the round trip is only truthful while the same
+ * probe that gated the picker still holds. A selection persisted to a
+ * conversation or a familiar default outlives that, so the launch boundary has
+ * to re-ask.
+ *
+ * It deliberately does NOT reuse `listClaudeModelInventory` as the verdict.
+ * That function degrades to the bare seed — which omits Opus 5 — on an env read
+ * that throws, on the concurrent-discovery cap, and on a version probe that
+ * times out. Reading any of those as "unavailable" would refuse a legitimate
+ * turn for reasons that say nothing about the model, so an unusable probe
+ * answers `unknown` and only a probe that actually ran answers `unavailable`.
+ *
+ * A cache hit is authoritative for free: `discoverClaudeModels` caches only
+ * when the version parsed, so a cached entry is always a real verdict.
+ */
+export async function claudeOpus5Routability(
+  familiarId?: string | null,
+  dependencies: ClaudeModelDependencies = {},
+): Promise<"available" | "unavailable" | "unknown"> {
+  let providerEnv: Record<string, string | undefined>;
+  try {
+    providerEnv = modelEnvironment(
+      (dependencies.scopedEnv ?? harnessSpawnEnv)(familiarId),
+    );
+  } catch {
+    return "unknown";
+  }
+  const now = dependencies.now ?? Date.now;
+  pruneExpiredCache(now());
+  const cached = cache.get(cacheKey(familiarId, providerEnv));
+  if (cached) {
+    return cached.models.some((model) => model.id === CLAUDE_OPUS_5_CAVE_ID)
+      ? "available"
+      : "unavailable";
+  }
+  const versionOutput = await readVersion(dependencies);
+  // A version that will not parse means the probe could not run — Claude Code
+  // absent, spawn refused, or the call timed out. That is not evidence about
+  // the model.
+  if (!parseClaudeCodeVersion(versionOutput)) return "unknown";
+  return claudeOpus5Available({ versionOutput, env: providerEnv })
+    ? "available"
+    : "unavailable";
 }
 
 /** Return the Claude seed augmented only when this familiar's concrete
