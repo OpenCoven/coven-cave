@@ -203,6 +203,14 @@ export const PublishReceiptSchema = Type.Union([
   }, { additionalProperties: false }),
   Type.Object({
     ...publishReceiptBaseProperties(),
+    status: Type.Literal("partial"),
+    publishedAt: timestampString(),
+    threadUrl: xThreadUrlSchema(),
+    remotePostIds: Type.Array(xPostIdSchema(), { minItems: 1, maxItems: 50, uniqueItems: true }),
+    errorCode: boundedNonWhitespaceString(120),
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...publishReceiptBaseProperties(),
     status: Type.Literal("failed"),
     errorCode: boundedNonWhitespaceString(120),
   }, { additionalProperties: false }),
@@ -571,8 +579,20 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
     const candidate = candidateBySha.get(receipt.candidateSha256);
     if (!candidate) {
       issues.push(`ThreadRunManifest.publishReceipts[${index}] candidate sha "${receipt.candidateSha256}" does not match any candidate.`);
-    } else if (receipt.status === "published" && receipt.remotePostIds.length !== candidate.posts.length) {
-      issues.push(`ThreadRunManifest.publishReceipts[${index}].remotePostIds count must equal the associated candidate posts count.`);
+      continue;
+    }
+    if (receipt.status === "published" || receipt.status === "partial") {
+      const receiptPath = `ThreadRunManifest.publishReceipts[${index}]`;
+      const threadStatusId = receipt.threadUrl.slice(receipt.threadUrl.lastIndexOf("/") + 1);
+      if (threadStatusId !== receipt.remotePostIds[0]) {
+        issues.push(`${receiptPath}.threadUrl status ID must equal ${receiptPath}.remotePostIds[0].`);
+      }
+      if (receipt.status === "published" && receipt.remotePostIds.length !== candidate.posts.length) {
+        issues.push(`${receiptPath}.remotePostIds count must equal the associated candidate posts count for a published receipt.`);
+      }
+      if (receipt.status === "partial" && receipt.remotePostIds.length >= candidate.posts.length) {
+        issues.push(`${receiptPath}.remotePostIds count must be less than the associated candidate posts count for a partial receipt.`);
+      }
     }
   }
 

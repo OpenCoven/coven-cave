@@ -154,9 +154,24 @@ function validPublishReceipt(candidateSha256 = SHA_A): PublishedReceipt {
     status: "published",
     attemptedAt: OTHER_TIMESTAMP,
     publishedAt: OTHER_TIMESTAMP,
-    threadUrl: "https://x.com/opencoven/status/1",
+    threadUrl: "https://x.com/opencoven/status/1888888888888888888",
     remotePostIds: ["1888888888888888888", "1888888888888888889"],
   };
+}
+
+function validPartialPublishReceipt(candidateSha256 = SHA_A) {
+  return {
+    protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+    receiptId: "publish-portable-launch-partial",
+    candidateSha256,
+    platform: "x",
+    status: "partial",
+    attemptedAt: OTHER_TIMESTAMP,
+    publishedAt: OTHER_TIMESTAMP,
+    threadUrl: "https://x.com/opencoven/status/1888888888888888888",
+    remotePostIds: ["1888888888888888888"],
+    errorCode: "reply-chain-write-failed",
+  } as const;
 }
 
 function publishReceiptEvidence(receipt: PublishReceipt): string {
@@ -164,6 +179,7 @@ function publishReceiptEvidence(receipt: PublishReceipt): string {
     case "publishing":
       return receipt.attemptedAt;
     case "published":
+    case "partial":
       return `${receipt.publishedAt}:${receipt.threadUrl}:${receipt.remotePostIds.join(",")}`;
     case "failed":
     case "uncertain":
@@ -531,6 +547,19 @@ assert.equal(
 assert.ok(Value.Check(ApprovalRecordSchema, validApproval()));
 assert.ok(Value.Check(PublishReceiptSchema, validPublishReceipt()));
 assert.match(publishReceiptEvidence(validPublishReceipt()), /https:\/\/x\.com\/opencoven\/status\/1/);
+assert.ok(
+  Value.Check(PublishReceiptSchema, validPartialPublishReceipt()),
+  "partial receipts preserve successful root publication evidence",
+);
+assert.doesNotThrow(() => assertValidThreadRunManifest({
+  ...validManifest(),
+  publishReceipts: [validPartialPublishReceipt()],
+}));
+assert.equal(
+  Value.Check(PublishReceiptSchema, { ...validPartialPublishReceipt(), errorCode: " \t " }),
+  false,
+  "partial receipts require a nonblank error code",
+);
 for (const field of ["publishedAt", "threadUrl", "remotePostIds"] as const) {
   const incompleteReceipt: Partial<ReturnType<typeof validPublishReceipt>> = { ...validPublishReceipt() };
   delete incompleteReceipt[field];
@@ -714,7 +743,7 @@ for (const metric of ["impressions", "likes", "reposts", "replies", "bookmarks"]
     `${metric} rejects fractional counts`,
   );
 }
-const mismatchedRemotePostCountError = expectValidationError(
+const invalidPublishedRemotePostCountError = expectValidationError(
   () => assertValidThreadRunManifest({
     ...validManifest(),
     publishReceipts: [{
@@ -723,7 +752,45 @@ const mismatchedRemotePostCountError = expectValidationError(
     }],
   }),
 );
-assert.match(mismatchedRemotePostCountError.issues.join("\n"), /remotePostIds.*candidate.*posts/i);
+assert.ok(
+  invalidPublishedRemotePostCountError.issues.some((issue) =>
+    issue.includes("ThreadRunManifest.publishReceipts[0].remotePostIds")
+  ),
+  "published receipt count errors point to remotePostIds",
+);
+
+const invalidPartialRemotePostCountError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    publishReceipts: [{
+      ...validPartialPublishReceipt(),
+      remotePostIds: ["1888888888888888888", "1888888888888888889"],
+    }],
+  }),
+);
+assert.ok(
+  invalidPartialRemotePostCountError.issues.some((issue) =>
+    issue.includes("ThreadRunManifest.publishReceipts[0].remotePostIds")
+  ),
+  "partial receipt count errors point to remotePostIds",
+);
+
+const mismatchedThreadRootError = expectValidationError(
+  () => assertValidThreadRunManifest({
+    ...validManifest(),
+    publishReceipts: [{
+      ...validPublishReceipt(),
+      threadUrl: "https://x.com/opencoven/status/1999999999999999999",
+    }],
+  }),
+);
+assert.ok(
+  mismatchedThreadRootError.issues.some((issue) =>
+    issue.includes("ThreadRunManifest.publishReceipts[0].threadUrl")
+    && issue.includes("remotePostIds[0]")
+  ),
+  "thread root mismatches identify both bound receipt paths",
+);
 
 const invalidManifestTimestampError = expectValidationError(
   () => assertValidThreadRunManifest({
