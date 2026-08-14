@@ -252,6 +252,109 @@ export function runtimeProcessFailure(
   };
 }
 
+/**
+ * A persisted, support-shareable account of the launch plan that actually
+ * failed. This intentionally describes provenance without serialising local
+ * paths, PATH values, prompts, credentials, or child diagnostic output.
+ */
+export type RuntimeLaunchDiagnostics = {
+  schemaVersion: 1;
+  runner: DirectRunnerId | CovenBackedRunnerId;
+  failure: { kind: "process-exit"; exitCode: number | null; emittedDiagnostic: boolean };
+  launcher?: RuntimeLaunchDiagnosticCommand;
+  adapter?: RuntimeLaunchDiagnosticCommand;
+  privacy: "paths-and-environment-values-redacted";
+};
+
+type RuntimeLaunchDiagnosticCommand = {
+  command: string;
+  availability: RuntimeAvailabilityState;
+  source: "absolute-command" | "PATH" | "coven-adapter" | "unresolved";
+  pathEntryIndex?: number;
+  installKind?: "managed" | "node-package" | "system" | "user-local" | "custom";
+};
+
+type RuntimeLaunchDiagnosticInput = {
+  /** Stable, allow-listed logical role; never derive this from a local path. */
+  identity: "coven" | "codex";
+  command: string;
+  availability: RuntimeAvailability | null | undefined;
+  env: Record<string, string | undefined>;
+  source?: "coven-adapter";
+};
+
+function diagnosticInstallKind(resolvedPath: string): RuntimeLaunchDiagnosticCommand["installKind"] {
+  const normalized = resolvedPath.replaceAll("\\", "/").toLowerCase();
+  if (normalized.includes("/opencoven/coven-cave/toolchains/")) return "managed";
+  if (normalized.includes("/node_modules/")) return "node-package";
+  if (normalized.startsWith("/usr/") || normalized.startsWith("/opt/")) return "system";
+  if (normalized.includes("/.local/") || normalized.includes("/appdata/")) return "user-local";
+  return "custom";
+}
+
+function diagnosticCommand(
+  input: RuntimeLaunchDiagnosticInput,
+  platform: NodeJS.Platform,
+): RuntimeLaunchDiagnosticCommand {
+  const availability = input.availability;
+  if (!availability || availability.state !== "ready") {
+    return { command: input.identity, availability: availability?.state ?? "probe_failed", source: input.source ?? "unresolved" };
+  }
+  if (input.source === "coven-adapter") {
+    return { command: input.identity, availability: "ready", source: "coven-adapter" };
+  }
+  if (isPathLike(input.command, platform)) {
+    return {
+      command: input.identity,
+      availability: "ready",
+      source: "absolute-command",
+      installKind: diagnosticInstallKind(availability.resolvedPath),
+    };
+  }
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const resolvedDirectory = pathApi.dirname(availability.resolvedPath);
+  const pathEntryIndex = pathEntries(input.env, platform).findIndex((entry) => {
+    const candidateDirectory = pathApi.isAbsolute(entry)
+      ? entry
+      : pathApi.resolve(process.cwd(), entry);
+    const normalize = (value: string) => {
+      const normalized = pathApi.normalize(value);
+      return platform === "win32" ? normalized.toLowerCase() : normalized;
+    };
+    return normalize(candidateDirectory) === normalize(resolvedDirectory);
+  });
+  return {
+    command: input.identity,
+    availability: "ready",
+    source: "PATH",
+    ...(pathEntryIndex >= 0 ? { pathEntryIndex } : {}),
+    installKind: diagnosticInstallKind(availability.resolvedPath),
+  };
+}
+
+export function runtimeLaunchDiagnostics(input: {
+  runner: DirectRunnerId | CovenBackedRunnerId;
+  exitCode?: number | null;
+  emittedDiagnostic: boolean;
+  launcher?: RuntimeLaunchDiagnosticInput;
+  adapter?: RuntimeLaunchDiagnosticInput;
+  platform?: NodeJS.Platform;
+}): RuntimeLaunchDiagnostics {
+  const platform = input.platform ?? process.platform;
+  return {
+    schemaVersion: 1,
+    runner: input.runner,
+    failure: {
+      kind: "process-exit",
+      exitCode: typeof input.exitCode === "number" && Number.isInteger(input.exitCode) ? input.exitCode : null,
+      emittedDiagnostic: input.emittedDiagnostic,
+    },
+    ...(input.launcher ? { launcher: diagnosticCommand(input.launcher, platform) } : {}),
+    ...(input.adapter ? { adapter: diagnosticCommand(input.adapter, platform) } : {}),
+    privacy: "paths-and-environment-values-redacted",
+  };
+}
+
 type CandidateInspection = "launchable" | "missing" | "unlaunchable";
 
 type CommandResolution =

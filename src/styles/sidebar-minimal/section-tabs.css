@@ -73,11 +73,23 @@
 }
 
 /* Collapsed 56px rail: labels drop, the control stacks so both rooms stay
-   reachable as icons (same treatment as the destination rows). */
+   reachable as icons (same treatment as the destination rows), and each tab
+   takes the rail's shared --rail-control width so the strip sits on the same
+   column as every control below it.
+
+   This strip is the ONE control whose rail form is a different SHAPE than its
+   panel form — two stacked tabs cannot be as tall as one row of two — so it is
+   also the one place where hover-peek still shifts the content below it, by
+   about 25px (under one row's pitch, so the control under the cursor does not
+   change). Every other control in both states is pinned to the same box; see
+   the geometry note on .shell-nav in styles/globals/shell-navigation.css. */
 .shell-nav--rail .nav-sections {
   grid-auto-flow: row;
-  grid-auto-columns: auto;
-  margin-inline: var(--space-1);
+  grid-auto-columns: var(--rail-control);
+  /* Tighter than the panel's --space-1 so the strip plus its border still fits
+     the rail's content box once the tabs are a full --rail-control wide. */
+  padding: 2px;
+  margin-inline: auto;
 }
 
 .shell-nav--rail .nav-sections__label {
@@ -85,6 +97,10 @@
 }
 
 .shell-nav--rail .nav-sections__tab {
+  padding: 0;
+}
+
+.shell-nav--rail .nav-sections__tab.is-active {
   padding: 0;
 }
 

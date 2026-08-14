@@ -1,5 +1,5 @@
 /**
- * Coding Room keyboard shortcuts (cave-uod42).
+ * Coding Desk keyboard shortcuts (cave-uod42).
  *
  * The Room's approved design asks for five bindings — focus next terminal,
  * split right, split down, close pane, toggle broadcast — and adds one hard

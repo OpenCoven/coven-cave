@@ -6,7 +6,7 @@ import {
   isValidResearchGenerationFamiliarId,
   type ResearchGenerationMediaFileRef,
 } from "@/lib/research-generations";
-import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { rejectResearchMediaRequest } from "@/lib/server/api-security";
 import { listResearchGenerations } from "@/lib/server/research-generations";
 import {
   openResearchGenerationMedia,
@@ -27,7 +27,7 @@ function mediaRefForGeneration(generation: Awaited<ReturnType<typeof listResearc
 }
 
 export async function GET(req: Request) {
-  const forbidden = rejectNonLocalRequest(req);
+  const forbidden = await rejectResearchMediaRequest(req);
   if (forbidden) return forbidden;
   const url = new URL(req.url);
   const familiarId = url.searchParams.get("familiarId")?.trim() ?? "";

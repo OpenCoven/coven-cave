@@ -1,7 +1,8 @@
 import path from "node:path";
 
 import type { CaveProject } from "./cave-projects-types.ts";
-import { projectForRoot } from "./cave-projects.ts";
+import { projectById, projectForRoot } from "./cave-projects.ts";
+import { realpathOrResolve } from "./server/canonical-path.ts";
 
 export type ChatProjectAccessArgs = {
   projects: CaveProject[];
@@ -16,19 +17,101 @@ export type ChatProjectAccessArgs = {
 };
 
 /**
- * The registered project whose `.worktrees/` directory contains `root`, if
- * any. Separator-exact and traversal-safe: the candidate is `path.resolve`d
- * (collapsing `..` escapes) and must sit strictly BELOW
- * `<project>/.worktrees/`, so `/proj-evil/...`, `/proj/.worktrees` itself,
- * and `/proj/.worktrees/../..` all miss.
+ * The registered project whose `.worktrees/` directory contains BOTH the
+ * requested root and the cwd the runtime actually resolved for this turn.
+ *
+ * Separator-exact and traversal-safe: every path is canonicalized with
+ * `realpathOrResolve` (collapsing `..` escapes AND symlinks) and must sit
+ * strictly BELOW `<project>/.worktrees/`, so `/proj-evil/...`,
+ * `/proj/.worktrees` itself, and `/proj/.worktrees/../..` all miss.
+ *
+ * Checking the resolved cwd is the security half: the requested root is
+ * client-supplied, so on its own it only proves the CLIENT spelled a path
+ * under a registered project. A symlink at `<project>/.worktrees/<name>`
+ * pointing anywhere else would otherwise hand the caller the parent project's
+ * grant while the harness ran outside it. `resolvedCwd` arrives realpathed
+ * from `resolveLocalRuntimeCwd`, so requiring it under the same prefix pins
+ * authorization to where the work will actually happen.
+ *
+ * Canonicalizing the project root is the correctness half, and it is required
+ * for the check above to be usable: `project.root` is stored as registered,
+ * so a project registered through a symlinked path — or any root with a
+ * symlinked ancestor, `/var -> /private/var` on macOS being the everyday case
+ * — builds a prefix the realpathed cwd can never start with, and every
+ * legitimate `.worktrees/<branch>` chat fails closed as unregistered. Putting
+ * both sides in one namespace never widens containment: a symlink that
+ * escapes the project resolves outside the prefix and still misses.
  */
-function worktreeParentProject(root: string, projects: CaveProject[]): CaveProject | null {
-  const resolved = path.resolve(root);
+function worktreeParentProject(
+  root: string,
+  resolvedCwd: string,
+  projects: CaveProject[],
+): CaveProject | null {
+  const requested = realpathOrResolve(root);
+  const realCwd = realpathOrResolve(resolvedCwd);
   for (const project of projects) {
-    const prefix = path.resolve(project.root) + path.sep + ".worktrees" + path.sep;
-    if (resolved.startsWith(prefix) && resolved.length > prefix.length) return project;
+    const prefix = realpathOrResolve(project.root) + path.sep + ".worktrees" + path.sep;
+    if (
+      requested.startsWith(prefix) &&
+      requested.length > prefix.length &&
+      realCwd.startsWith(prefix) &&
+      realCwd.length > prefix.length
+    ) {
+      return project;
+    }
   }
   return null;
+}
+
+function isInsideRoot(root: string, candidate: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(candidate));
+  return (
+    rel === "" ||
+    (
+      rel !== ".." &&
+      !rel.startsWith(".." + path.sep) &&
+      !path.isAbsolute(rel) &&
+      !rel.split(path.sep).includes("..")
+    )
+  );
+}
+
+export type TaskWorktreeProjectAccessArgs = {
+  projects: CaveProject[];
+  startNewConversation: boolean;
+  hasExistingConversation: boolean;
+  taskProjectId?: string | null;
+  taskCwd?: string | null;
+  requestedProjectRoot?: string;
+  resolvedCwd: string;
+};
+
+export function taskWorktreeProjectAccessId(
+  args: TaskWorktreeProjectAccessArgs,
+): string | null {
+  if (
+    !args.startNewConversation ||
+    args.hasExistingConversation ||
+    !args.taskProjectId ||
+    !args.taskCwd ||
+    !args.requestedProjectRoot ||
+    args.taskCwd !== args.requestedProjectRoot
+  ) {
+    return null;
+  }
+
+  const taskProject = projectById(args.taskProjectId, args.projects);
+  if (!taskProject) return `unregistered:${args.requestedProjectRoot}`;
+
+  // Board worktrees are allowed as a first-turn shortcut only when the
+  // symlink-resolved runtime cwd remains inside the task's registered project.
+  // Otherwise the normal unregistered-project chokepoint must deny the turn
+  // instead of authorizing one project while spawning the harness elsewhere.
+  if (!isInsideRoot(taskProject.root, args.resolvedCwd)) {
+    return `unregistered:${args.resolvedCwd}`;
+  }
+
+  return args.taskProjectId;
 }
 
 /**
@@ -60,7 +143,7 @@ export function chatProjectAccessId(args: ChatProjectAccessArgs): string | null 
     projectForRoot(args.resolvedCwd, args.projects);
   if (project) return project.id;
 
-  const worktreeParent = worktreeParentProject(projectRoot, args.projects);
+  const worktreeParent = worktreeParentProject(projectRoot, args.resolvedCwd, args.projects);
   if (worktreeParent) return worktreeParent.id;
 
   return `unregistered:${projectRoot}`;

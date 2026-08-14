@@ -2156,55 +2156,11 @@
 .fa-pulse-panel__head > svg { color: var(--accent-presence); }
 .fa-pulse-panel__head > b { font-size: var(--text-md); font-weight: 650; }
 .fa-pulse-panel__head .fa-ghost-btn { margin-left: auto; }
-.fa-pulse-panel__chart {
-  flex: 1;
-  min-height: 100px;
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-1);
-}
-.fa-pulse-day {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) 0;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard);
-}
-.fa-pulse-day:hover { background: color-mix(in oklch, var(--accent-presence) 9%, transparent); }
-.fa-pulse-day.is-selected { background: color-mix(in oklch, var(--accent-presence) 16%, transparent); }
-.fa-pulse-day b {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-.fa-pulse-day i {
-  width: 100%;
-  /* Rounded cap, square foot — the bar sits on the axis, so a bottom radius
-     would only lift it off the line it is measured against. */
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: color-mix(in oklch, var(--accent-presence) 70%, var(--bg-sunken));
-  box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 30%, transparent);
-}
-.fa-pulse-day.is-empty i { background: var(--bg-hover); box-shadow: none; }
-.fa-pulse-day span {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
+/* The single 14-bar pulse chart that used to live here is gone: the activity
+   panel now renders the three-view lattice (.fa-lattice*, below), so a rule
+   set for .fa-pulse-panel__chart / .fa-pulse-day would style nothing. Dead
+   CSS that still looks live is how cave-k3a9u shipped a layout rule that had
+   never once applied. */
 /* ── Stage overlays ─────────────────────────────────────────────────────── */
 .fa-overlay {
   position: absolute;
@@ -3063,4 +3019,148 @@
   gap: var(--space-1);
   color: var(--color-success, var(--accent-presence));
   font-size: var(--text-xs);
+}
+
+/* ── Activity lattice (cave-yd3qu) ──────────────────────────────────────────
+   Year, quarter and fortnight in one lattice. The point of the layout is that
+   all three are on screen together: a quiet fortnight reads one way against a
+   quiet year and the opposite against a busy one, and paging between them
+   hides exactly that comparison. The year takes the full first row because a
+   52-week grid needs the width; the quarter and the fortnight share the second
+   row, where they are directly comparable to each other and to the year above.
+   Density shades are a color-mix ramp off --accent-presence, so the grid
+   survives all 12 palettes and both modes without a single literal colour. */
+.fa-lattice {
+  /* Host only. The container lives here so the query below asks how wide the
+     LATTICE is, not how wide the analytics root is — this docks inside a panel
+     narrower than that root. A container query also cannot restyle the element
+     that declares it, which is why the grid is a child. */
+  container-type: inline-size;
+  container-name: fa-lattice;
+  min-width: 0;
+}
+.fa-lattice__views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.fa-lattice__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.fa-lattice__cell--year {
+  grid-column: 1 / -1;
+}
+.fa-lattice__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+}
+.fa-lattice__head b {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+.fa-lattice__count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fa-lattice__hint {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+/* Year: one grid, weeks left to right, weekdays top to bottom. Flowing 364
+   cells down columns of 7 needs no per-week wrapper — which also means ONE
+   gutter declaration instead of two. 2px is the micro-mark the density grid
+   needs: --space-1 (4px) is nearly as wide as a cell at 52 columns, so the
+   grid would read as more gutter than data. */
+.fa-lattice__grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 1fr);
+  grid-auto-columns: minmax(6px, 1fr);
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fa-lattice__grid::-webkit-scrollbar { display: none; }
+.fa-lattice__day {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--bg-hover);
+}
+.fa-lattice__day[data-step="1"] { background: color-mix(in oklch, var(--accent-presence) 28%, transparent); }
+.fa-lattice__day[data-step="2"] { background: color-mix(in oklch, var(--accent-presence) 52%, transparent); }
+.fa-lattice__day[data-step="3"] { background: color-mix(in oklch, var(--accent-presence) 76%, transparent); }
+.fa-lattice__day[data-step="4"] { background: var(--accent-presence); }
+/* The selected day stays findable in the year even though the click happened
+   in the fortnight — that is the payoff of showing both at once. */
+.fa-lattice__day[data-selected="true"] {
+  outline: 1px solid var(--text-primary);
+  outline-offset: 1px;
+}
+
+/* Quarter: the Sparkline and its caption stack vertically. */
+.fa-lattice__trend {
+  display: block;
+  min-width: 0;
+  margin: 0;
+}
+.fa-lattice__trend figcaption {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+/* Fortnight: daily bars share one fixed-height baseline. */
+.fa-lattice__pulse {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  height: 72px;
+}
+/* Only the fortnight draws bars; the quarter is a Sparkline. */
+.fa-lattice__pulse-day {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.fa-lattice__pulse-day i {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--accent-presence);
+}
+.fa-lattice__pulse-day[data-empty="true"] i {
+  background: var(--bg-hover);
+}
+.fa-lattice__pulse-day {
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.fa-lattice__pulse-day:hover i {
+  background: color-mix(in oklch, var(--accent-presence) 70%, var(--text-primary));
+}
+.fa-lattice__pulse-day[data-selected="true"] i {
+  background: var(--text-primary);
+}
+
+/* One column below the width where a 52-week grid and two charts stop being
+   readable side by side. Measured against the panel, not the viewport — this
+   surface docks beside other panes. */
+@container fa-lattice (max-width: 560px) {
+  .fa-lattice__views {
+    grid-template-columns: 1fr;
+  }
 }

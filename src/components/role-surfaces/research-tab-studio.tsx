@@ -37,6 +37,7 @@ import {
   type ResearchPodcastStyle,
 } from "@/lib/research-generations";
 import type { ResearchTabProps } from "./researcher-surface";
+import { describeProviderChips, researchProviderChips } from "./research-studio-providers";
 import {
   GenerationConfigModal,
   GenerationReviewModal,
@@ -62,6 +63,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [readiness, setReadiness] = useState<ResearchGenerationReadiness | null>(null);
+  const providerChips = useMemo(() => researchProviderChips(readiness), [readiness]);
 
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [configKind, setConfigKind] = useState<ResearchGenerationCreatableKind | null>(null);
@@ -263,6 +265,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     setCreateError(null);
     setDirections("");
     if (!isResearchGenerationKind(kind) && readiness) {
+      const elevenLabsShortVideoDefaultIsReady =
+        kind === "short-video" &&
+        readiness.providers.elevenlabs.ready &&
+        readiness.providers.elevenlabs.defaultVoiceId.trim().length > 0;
       const localSelectionIsValid =
         mediaProvider === "local" &&
         readiness.providers.local.ready &&
@@ -273,7 +279,10 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
         mediaProvider === "elevenlabs" &&
         readiness.providers.elevenlabs.ready &&
         mediaVoice.trim().length > 0;
-      if (!localSelectionIsValid && !elevenLabsSelectionIsValid) {
+      if (elevenLabsShortVideoDefaultIsReady) {
+        setMediaProvider("elevenlabs");
+        setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
+      } else if (!localSelectionIsValid && !elevenLabsSelectionIsValid) {
         const firstLocalVoice = readiness.providers.local.voices[0];
         if (readiness.providers.local.ready && firstLocalVoice) {
           setMediaProvider("local");
@@ -283,7 +292,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           setMediaVoice(readiness.providers.elevenlabs.defaultVoiceId);
         }
       }
-      if (kind === "short-video" && mediaLength === "extended") {
+      if (kind === "short-video") {
         setMediaLength("standard");
       }
     }
@@ -459,6 +468,27 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
       <header className="research-studio__header">
         <h2>Studio</h2>
         <p>Turn finished research into shareable drafts — extracted from each run&rsquo;s cited findings.</p>
+        {/* Provider strip: why a card is disabled, before you click it. Each
+            chip carries the readiness endpoint's own hint, so the chip and the
+            card it blocks say the same thing. */}
+        <div
+          className="research-studio__providers"
+          role="group"
+          aria-label={describeProviderChips(providerChips)}
+        >
+          {providerChips.map((chip) => (
+            <span
+              key={chip.id}
+              className="research-studio__provider"
+              data-state={chip.state}
+              title={`${chip.name} — ${chip.detail}`}
+            >
+              <i aria-hidden />
+              {chip.name}
+              <span className="sr-only"> — {chip.detail}</span>
+            </span>
+          ))}
+        </div>
       </header>
 
       <div className="research-studio__sources">

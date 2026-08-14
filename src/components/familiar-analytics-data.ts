@@ -14,6 +14,7 @@ import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-gr
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
 import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
+import { buildActivityLattice, type ActivityLattice } from "@/lib/activity-lattice";
 import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
@@ -94,6 +95,9 @@ export type FamiliarAnalyticsModel = {
   } | null;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
+  /** Year / quarter / fortnight of the same session series, derived together
+   *  so the three views can be compared rather than paged between (cave-yd3qu). */
+  activityLattice: ActivityLattice;
   /** This familiar's complete session history, newest first, for scoped evidence. */
   recentSessions: SessionRow[];
   errors: string[];
@@ -208,7 +212,10 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     memoryAvailability:
       memoryJson.state === "ready" ? "ready" : "unavailable",
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
-    threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
+    // `ok: true` says the request succeeded, not that the payload has the shape
+    // its type claims — SelfReportsResponse is erased at runtime. Check it here
+    // rather than let a non-array reach the aggregation (cave-p9dsb).
+    threadReports: Array.isArray(selfReportsJson.reports) ? selfReportsJson.reports : [],
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     errors,
@@ -267,6 +274,7 @@ export function buildFamiliarAnalyticsModel(
         }
       : null,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
+    activityLattice: buildActivityLattice(familiarSessions, data.familiarId, now),
     recentSessions: [...familiarSessions]
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
     errors: data.errors,

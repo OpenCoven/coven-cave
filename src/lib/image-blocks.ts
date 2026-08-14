@@ -75,7 +75,7 @@ function parseAttrs(raw: string): Record<string, string> | null {
  * - `https:` — remote pictures (generated images, docs, avatars).
  * - `data:image/…` — inline payloads the turn already carries.
  * - `blob:` — object URLs minted in-process.
- * - same-origin `/api/…` — the attachment store, fetched through
+ * - same-origin `/api/chat/attachment` — the attachment store, fetched through
  *   {@link file://src/lib/authed-image.ts} so the packaged sidecar's auth gate
  *   is satisfied.
  *
@@ -93,12 +93,34 @@ export function isRenderableImageSrc(src: string | null | undefined): boolean {
   if (/[\u0000-\u001f\u007f]/.test(src)) return false;
   const value = src.trim();
   if (value.startsWith("//")) return false;
-  if (value.startsWith("/api/")) return true;
+  // Model output must not be allowed to turn image rendering into an
+  // authenticated GET to an arbitrary API route. Only the read-only image
+  // endpoint used by persisted chat attachments is safe here.
+  if (/^\/api\/chat\/attachment(?:[?#]|$)/.test(value)) return true;
+  if (/^\/api\//.test(value)) return false;
   if (value.startsWith("blob:")) return true;
   // `image/svg+xml` is deliberately absent: an inline SVG can carry script, and
   // nothing here can render it inert.
   if (/^data:image\/(png|jpeg|jpg|gif|webp|avif);base64,/i.test(value)) return true;
-  if (/^https:\/\/[^/\s]+/i.test(value)) return true;
+  if (/^https:\/\/[^/\s]+/i.test(value)) {
+    // A relative `/api/...` is refused above, but the same route reached as an
+    // absolute same-origin URL would slip through this arm -- and
+    // `needsAuthedImageFetch` turns any same-origin `/api/*` into an
+    // authenticated GET, which is the exact capability the relative check
+    // exists to deny. This module also runs where no origin is known (SSR,
+    // unit tests), so rather than compare origins we refuse every `https:`
+    // URL whose path enters `/api/` unless it is the attachment endpoint.
+    // Losing third-party hosts that serve pictures under `/api/` is a far
+    // cheaper trade than leaving the bypass open.
+    //
+    // The path is sliced by hand rather than via `new URL`, because the
+    // documented placeholder `https://.../shot.png` (with a real ellipsis) is
+    // not a parseable URL and must keep rendering as the teachable example.
+    const afterHost = value.replace(/^https:\/\/[^/\s?#]*/i, "");
+    const path = afterHost.split(/[?#]/)[0].replace(/\\/g, "/").toLowerCase();
+    if (path === "/api/chat/attachment") return true;
+    return !path.startsWith("/api/");
+  }
   return false;
 }
 

@@ -500,6 +500,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             action: "create",
+            surface: "shared",
             title: pr.title,
             description: `Filed from unlinked PR #${pr.number} — ${pr.url}`,
             externalRef: `gh-${pr.number}`,

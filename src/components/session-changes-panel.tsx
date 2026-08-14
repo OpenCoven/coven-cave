@@ -19,6 +19,7 @@ import {
   type CheckpointMeta,
   type DiffState,
 } from "@/lib/session-changes-api";
+import { isCodeRailFileViewed, type CodeRailViewedState } from "@/lib/code-side-rail";
 import { ChangesSkeleton, CheckpointSection, FileRow } from "./session-changes-rows";
 
 /**
@@ -48,6 +49,9 @@ export function SessionChangesInner({
   running,
   focusPath,
   focusNonce,
+  viewed,
+  onToggleViewed,
+  onFilesChange,
 }: {
   projectRoot: string;
   running: boolean;
@@ -55,7 +59,17 @@ export function SessionChangesInner({
    *  tool). `focusNonce` re-triggers the jump even when the same path repeats. */
   focusPath?: string | null;
   focusNonce?: number;
+  /**
+   * Per-file review state, owned by the Coding Desk's rail (cave-0rcku). Both
+   * props are required together to light the Viewed column; the chat panel
+   * passes neither and renders exactly as before.
+   */
+  viewed?: CodeRailViewedState;
+  onToggleViewed?: (file: ChangedFile) => void;
+  /** Report the live file list up, so a host can show its own diffstat. */
+  onFilesChange?: (files: ChangedFile[]) => void;
 }) {
+  const reviewable = Boolean(viewed && onToggleViewed);
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [notARepo, setNotARepo] = useState(false);
@@ -120,6 +134,12 @@ export function SessionChangesInner({
       setLoaded(true);
     }
   }, [projectRoot]);
+
+  // Let a host (the Coding Desk's rail) render its own diffstat header off the
+  // same list this panel is showing, so the two can never disagree.
+  useEffect(() => {
+    onFilesChange?.(files);
+  }, [files, onFilesChange]);
 
   const loadCheckpoints = useCallback(async () => {
     try {
@@ -543,6 +563,7 @@ export function SessionChangesInner({
               <colgroup>
                 <col />
                 <col className="w-[70px]" />
+                {reviewable ? <col className="w-[var(--space-6)]" /> : null}
                 <col className="w-[var(--space-8)]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-[var(--bg-base)] text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
@@ -553,6 +574,11 @@ export function SessionChangesInner({
                   <th scope="col" className="px-2 py-1.5 text-right font-medium">
                     Diff
                   </th>
+                  {reviewable ? (
+                    <th scope="col" className="px-1 py-1.5 text-right font-medium">
+                      <span className="sr-only">Viewed</span>
+                    </th>
+                  ) : null}
                   <th scope="col" className="px-2 py-1.5 text-right font-medium">
                     <span className="sr-only">Actions</span>
                   </th>
@@ -568,6 +594,13 @@ export function SessionChangesInner({
                     reverting={revertingPath === file.path}
                     onToggle={() => toggleFile(file)}
                     onRevert={() => void revertFile(file)}
+                    viewed={reviewable ? isCodeRailFileViewed(viewed ?? {}, {
+                      path: file.path,
+                      status: file.status,
+                      additions: file.insertions,
+                      deletions: file.deletions,
+                    }) : undefined}
+                    onToggleViewed={reviewable ? () => onToggleViewed?.(file) : undefined}
                   />
                 ))}
               </tbody>

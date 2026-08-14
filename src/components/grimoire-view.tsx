@@ -1379,6 +1379,7 @@ export function GrimoireView({
         memory={scopedMemory}
         journal={journal ?? []}
         graph={scopedGraph}
+        scopeLabel={memoryScopeLabel}
         journalTitle={(date) => journalDayLabel(date, dateTimePrefs)}
         onOpen={openDoc}
         onNewStitch={openStitchNew}
@@ -1883,6 +1884,7 @@ export function GrimoireView({
                 graph={scopedGraph}
                 meta={scan?.meta ?? null}
                 scopeLabel={memoryScopeLabel}
+                scopedMemoryTotal={memoryScoped ? scopedMemory.length : null}
                 scanning={scanning}
                 scanError={scan ? null : scanError}
                 onOpen={(ref) => {

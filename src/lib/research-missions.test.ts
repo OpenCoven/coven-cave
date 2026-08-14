@@ -10,12 +10,23 @@ import {
   ensureStandardArtifactRefs,
   normalizeResearchBounds,
   parseResearchMission,
+  RESEARCH_AUDIENCE_MAX_LENGTH,
   RESEARCH_BOUND_LIMITS,
+  RESEARCH_CONSTRAINT_MAX_COUNT,
+  RESEARCH_CONSTRAINT_MAX_LENGTH,
+  RESEARCH_DELIVERABLE_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
+  RESEARCH_PROJECT_ROOT_MAX_LENGTH,
+  RESEARCH_HARNESS_IDS,
+  RESEARCH_MODEL_MAX_LENGTH,
+  RESEARCH_RUNTIME_DEFAULT_HARNESS,
+  RESEARCH_TITLE_MAX_LENGTH,
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
+  researchDiagnosticTrace,
   researchIntentAddsContext,
+  researchPhaseMeta,
   researchPhaseStatuses,
   researchSourceStatusCounts,
   type ResearchMission,
@@ -61,6 +72,126 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
     ...validMission(),
     sources: [{ id: "x", title: "X", sourceType: "x", status: "invented" }],
   }), null);
+  assert.equal(parseResearchMission({ ...validMission(), projectRoot: "/tmp/root\0hidden" }), null);
+  assert.equal(parseResearchMission({
+    ...validMission(),
+    constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
+  }), null);
+});
+
+test("mission parser strips private process-owner provenance from public state", () => {
+  const parsed = parseResearchMission({
+    ...validMission(),
+    iterations: [{
+      number: 1,
+      status: "running",
+      sessionId: "public-session-reference",
+      sessionAuthority: {
+        kind: "owner-local-daemon",
+        socketPath: "/tmp/private-owner.sock",
+      },
+      sessionOwnerKind: "owner-local-daemon",
+    }],
+  });
+  assert.deepEqual(parsed?.iterations, [{
+    number: 1,
+    status: "running",
+    sessionId: "public-session-reference",
+  }]);
+  assert.equal("sessionAuthority" in (parsed?.iterations[0] ?? {}), false);
+  assert.equal("sessionOwnerKind" in (parsed?.iterations[0] ?? {}), false);
+});
+
+test("diagnostic trace keeps the clipboard record bounded to non-content state", () => {
+  const mission = validMission();
+  mission.intent = "Private research brief: https://example.test/secret";
+  mission.projectRoot = "/private/workspace";
+  mission.lastError = "Failed reading /private/workspace/source.md";
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    flowRunId: "file:C:private-workspace-run-1",
+    sessionId: "private-research-brief",
+    automationRunId: "private research brief",
+    summary: "private source https://example.test/secret",
+    decisionReason: "private brief detail",
+    steps: Array.from({ length: 51 }, () => ({
+      id: "private-step-id",
+      type: "private phase name",
+      status: "failed" as const,
+      detail: "failed at /private/workspace/source.md",
+    })),
+  }];
+  mission.artifacts = [{
+    key: "private-key",
+    kind: "brief",
+    title: "Private artifact",
+    relativePath: "/private/workspace/artifact.md",
+    iteration: 1,
+    state: "rejected",
+    rejectionReason: "private source https://example.test/secret",
+    updatedAt: mission.updatedAt,
+  }];
+  mission.sources = [{
+    id: "source-1",
+    title: "Private source",
+    url: "https://example.test/secret",
+    localPath: "/private/workspace/source.md",
+    sourceType: "web",
+    status: "rejected",
+  }];
+
+  const trace = researchDiagnosticTrace(mission);
+  const json = JSON.stringify(trace);
+
+  assert.equal(trace.outcome.hasError, true);
+  assert.deepEqual(trace.latestIteration?.flowRun, { value: null, redacted: true });
+  assert.deepEqual(trace.latestIteration?.session, { value: null, redacted: true });
+  assert.deepEqual(trace.latestIteration?.automationRun, { value: null, redacted: true });
+  assert.equal(trace.latestIteration?.phases.recorded, 51);
+  assert.equal(trace.latestIteration?.phases.captured, 50);
+  assert.equal(trace.latestIteration?.phases.truncated, true);
+  assert.equal(trace.latestIteration?.phases.statuses.length, 50);
+  assert.deepEqual(trace.latestIteration?.session, { value: null, redacted: true });
+  assert.deepEqual(trace.evidence.artifacts, {
+    recorded: 1,
+    byState: { working: 0, published: 0, rejected: 1 },
+    byKind: { brief: 1, report: 0, paper: 0, findings: 0, "source-ledger": 0, "research-log": 0, presentation: 0 },
+  });
+  for (const privateValue of [
+    "Private research brief",
+    "private research brief",
+    "private-research-brief",
+    "file:C:private-workspace-run-1",
+    "https://example.test/secret",
+    "/private/workspace",
+    "private phase name",
+    "private-step-id",
+    "private-key",
+  ]) assert.doesNotMatch(json, new RegExp(privateValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("diagnostic trace retains UUID run references for support correlation", () => {
+  const mission = validMission();
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    flowRunId: "0f8fad5b-d9cb-469f-a165-70867728950e",
+    sessionId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    automationRunId: "550e8400-e29b-41d4-a716-446655440000",
+  }];
+
+  assert.deepEqual(researchDiagnosticTrace(mission).latestIteration, {
+    number: 1,
+    status: "failed",
+    flowRun: { value: "0f8fad5b-d9cb-469f-a165-70867728950e", redacted: false },
+    session: { value: "7c9e6679-7425-40de-944b-e07fc1f90ae7", redacted: false },
+    automationRun: { value: "550e8400-e29b-41d4-a716-446655440000", redacted: false },
+    startedAt: null,
+    finishedAt: null,
+    costUsd: null,
+    phases: { recorded: 0, captured: 0, truncated: false, statuses: [] },
+  });
 });
 
 test("Auto-routing is explainable and ambiguous work never loops", () => {
@@ -173,6 +304,93 @@ test("mission creation validates familiar, intent, mode, and bounded input", () 
     }).ok,
     false,
   );
+});
+
+test("mission input rejects lossful and NUL-bearing prompt fields", () => {
+  const valid = {
+    familiarId: "sage",
+    intent: "Compare two databases",
+    mode: "brief",
+    modeSource: "auto",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+  for (const patch of [
+    { intent: "Compare\0 hidden intent" },
+    { deliverable: "brief\0 hidden deliverable" },
+    { title: "title\0 hidden" },
+    { audience: "audience\0 hidden" },
+    { projectRoot: "/tmp/project\0hidden" },
+    { constraints: ["safe", "unsafe\0hidden"] },
+  ]) {
+    assert.equal(validateCreateResearchMissionInput({ ...valid, ...patch }).ok, false);
+  }
+
+  for (const patch of [
+    { intent: `Compare ${"\ud800"} databases` },
+    { deliverable: `brief${"\udfff"}` },
+    { title: `title${"\ud800"}` },
+    { audience: `audience${"\udfff"}` },
+    { projectRoot: `/tmp/${"\ud800"}` },
+    { constraints: [`safe${"\udfff"}`] },
+  ]) {
+    const rejected = validateCreateResearchMissionInput({ ...valid, ...patch });
+    assert.equal(rejected.ok, false, "unpaired UTF-16 surrogates are rejected before JSON/process transport");
+  }
+
+  for (const text of [
+    "plain BMP text",
+    "astral 😀 text",
+    "combining e\u0301 text",
+  ]) {
+    assert.equal(
+      validateCreateResearchMissionInput({ ...valid, intent: `Compare ${text}` }).ok,
+      true,
+      `${text} remains lossless and valid`,
+    );
+  }
+
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: Array.from({ length: RESEARCH_CONSTRAINT_MAX_COUNT + 1 }, () => "bounded"),
+  }).ok, false, "excess constraints are rejected instead of sliced");
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: ["valid", 42],
+  }).ok, false, "non-string constraints are rejected instead of discarded");
+  assert.equal(validateCreateResearchMissionInput({
+    ...valid,
+    constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
+  }).ok, false, "overlong constraints are rejected instead of truncated");
+
+  for (const patch of [
+    { title: "t".repeat(RESEARCH_TITLE_MAX_LENGTH + 1) },
+    { deliverable: "d".repeat(RESEARCH_DELIVERABLE_MAX_LENGTH + 1) },
+    { audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH + 1) },
+    { projectRoot: `/${"p".repeat(RESEARCH_PROJECT_ROOT_MAX_LENGTH)}` },
+  ]) {
+    assert.equal(validateCreateResearchMissionInput({ ...valid, ...patch }).ok, false);
+  }
+
+  const boundary = validateCreateResearchMissionInput({
+    ...valid,
+    title: "t".repeat(RESEARCH_TITLE_MAX_LENGTH),
+    deliverable: "d".repeat(RESEARCH_DELIVERABLE_MAX_LENGTH),
+    audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH),
+    constraints: ["c".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH)],
+  });
+  assert.equal(boundary.ok, true);
+  if (boundary.ok) {
+    assert.equal(boundary.value.title?.length, RESEARCH_TITLE_MAX_LENGTH);
+    assert.equal(boundary.value.constraints?.[0]?.length, RESEARCH_CONSTRAINT_MAX_LENGTH);
+  }
 });
 
 test("intent below the minimum never launches a real session", () => {
@@ -840,3 +1058,203 @@ test("Continue reports every runner stop gate, not just the iteration limit", ()
   assert.equal(noCost.gated, true);
   assert.match(noCost.description, /finished without reporting cost/);
 });
+
+// --- bound readings: a bar only where a denominator exists -----------------
+
+test("bound readings carry a clamped progress ratio, and only where one exists", () => {
+  const mission = validMission();
+  mission.startedAt = new Date(Date.now() - 15 * 60_000).toISOString();
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+    { id: "s2", title: "Two", sourceType: "web", status: "used" },
+  ];
+  const byId = Object.fromEntries(
+    researchBoundReadings(mission).map((reading) => [reading.id, reading]),
+  );
+  // 15 of 30 minutes, 2 of 5 sources.
+  assert.equal(byId.time.progress, 0.5);
+  assert.equal(byId.sources.progress, 0.4);
+  // A cadence is not a fraction of anything, and spend with no cap has no
+  // denominator — those readings ship no bar rather than a meaningless one.
+  assert.equal(byId.checkpoint.progress, undefined);
+  assert.equal(byId.spend.progress, undefined);
+});
+
+test("an overrun pins its bar at 1 while the tone still says over", () => {
+  const mission = validMission();
+  mission.startedAt = new Date(Date.now() - 300 * 60_000).toISOString();
+  const time = researchBoundReadings(mission).find((reading) => reading.id === "time");
+  assert.equal(time?.progress, 1, "clamped, never past the track");
+  assert.equal(time?.tone, "over");
+  assert.equal(time?.badge, "over");
+});
+
+test("a zero source target yields no bar instead of a divide-by-zero", () => {
+  const mission = validMission();
+  mission.bounds = { ...mission.bounds, sourceTarget: 0 };
+  const sources = researchBoundReadings(mission).find((reading) => reading.id === "sources");
+  assert.equal(sources?.progress, undefined);
+});
+
+test("a capped spend gets a bar measured against the cap", () => {
+  const mission = validMission();
+  mission.bounds = { ...mission.bounds, maxSpendUsd: 4 };
+  mission.iterations = [{ number: 1, status: "completed", costUsd: 1 }];
+  const spend = researchBoundReadings(mission).find((reading) => reading.id === "spend");
+  assert.equal(spend?.progress, 0.25);
+});
+
+// --- phase meta: reports findings, never invents them ----------------------
+
+test("phase meta reports real counts and says — when it has nothing", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+    { id: "s2", title: "Two", sourceType: "web", status: "conflicting" },
+  ];
+  mission.artifacts = [];
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [
+      { id: "scope", type: "scope", status: "succeeded" },
+      { id: "gather", type: "gather", status: "running" },
+    ],
+  }];
+  const meta = researchPhaseMeta(mission, PHASE_IDS);
+  assert.deepEqual(meta.slice(0, 3), ["bounds set", "2/5 src", "1 conflicting"]);
+  // Nothing has been synthesized and nothing is waiting on a person.
+  assert.equal(meta[4], "—");
+  assert.equal(meta[5], "gated");
+});
+
+test("phase meta flags the checkpoint as the reader's turn", () => {
+  const mission = validMission();
+  mission.status = "checkpoint";
+  mission.iterations = [{ number: 1, status: "checkpoint" }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[4], "your turn");
+});
+
+test("phase meta counts artifacts but never the rejected ones", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [{ id: "synthesize", type: "synthesize", status: "running" }],
+  }];
+  mission.artifacts = [
+    { key: "a", kind: "brief", title: "A", relativePath: "a.md", iteration: 1, state: "working", updatedAt: "2026-08-01T00:00:00.000Z" },
+    { key: "b", kind: "brief", title: "B", relativePath: "b.md", iteration: 1, state: "rejected", updatedAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[3], "1 artifact");
+});
+
+test("a succeeded publish with nothing published says so, never \"shipped\"", () => {
+  const mission = validMission();
+  mission.status = "completed";
+  mission.artifacts = [];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[5], "none published");
+});
+
+test("phase meta reports published artifacts rather than a bare shipped", () => {
+  const mission = validMission();
+  mission.status = "completed";
+  mission.artifacts = [
+    { key: "a", kind: "brief", title: "A", relativePath: "a.md", iteration: 1, state: "published", updatedAt: "2026-08-01T00:00:00.000Z" },
+  ];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[5], "1 published");
+});
+
+test("a failed challenge says where the run stopped", () => {
+  const mission = validMission();
+  mission.status = "failed";
+  mission.iterations = [{
+    number: 1,
+    status: "failed",
+    steps: [
+      { id: "scope", type: "scope", status: "succeeded" },
+      { id: "gather", type: "gather", status: "succeeded" },
+      { id: "challenge", type: "challenge", status: "failed" },
+    ],
+  }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[2], "stopped here");
+});
+
+test("a zero source target reports the count alone, never \"N/0 src\"", () => {
+  const mission = validMission();
+  mission.status = "running";
+  mission.bounds = { ...mission.bounds, sourceTarget: 0 };
+  mission.sources = [
+    { id: "s1", title: "One", sourceType: "web", status: "used" },
+  ] as ResearchMission["sources"];
+  mission.iterations = [{
+    number: 1,
+    status: "running",
+    steps: [{ id: "gather", type: "gather", status: "running" }],
+  }];
+  assert.equal(researchPhaseMeta(mission, PHASE_IDS)[1], "1 src");
+});
+
+// ─── mission runtime selection (cave-hhwc5) ──────────────────────────────────
+// A mission used to inherit the familiar's Coven binding with no override, so a
+// codex-bound familiar could not run Research at all against a daemon lacking
+// `sessionLaunchPolicy`. The runtime is now chosen per mission and defaults to
+// copilot, the one Cave launches directly.
+{
+  const { COMPATIBILITY_ADAPTERS } = await import("./harness-adapters.ts");
+  // The allowlist is duplicated in research-missions.ts to keep this shared
+  // client/server contract free of adapter-registry imports. Pin the two
+  // together so a new adapter cannot drift out of it unnoticed.
+  assert.deepEqual(
+    [...RESEARCH_HARNESS_IDS].sort(),
+    COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id).sort(),
+    "every compatibility adapter must be selectable as a research runtime",
+  );
+  assert.ok(
+    (RESEARCH_HARNESS_IDS as readonly string[]).includes(RESEARCH_RUNTIME_DEFAULT_HARNESS),
+    "the default runtime must itself be an accepted harness",
+  );
+
+  const base = {
+    familiarId: "sage",
+    intent: "Runtime selection contract probe with enough characters.",
+    mode: "brief" as const,
+    modeSource: "user" as const,
+    deliverable: "One sentence.",
+    bounds: {
+      wallClockMinutes: 10,
+      maxIterations: 2,
+      sourceTarget: 3,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+
+  const omitted = validateCreateResearchMissionInput({ ...base });
+  assert.equal(omitted.ok, true, "omitting the runtime is valid");
+  assert.equal(omitted.value.harness, undefined, "validation does not invent a harness");
+
+  const chosen = validateCreateResearchMissionInput({ ...base, harness: "codex", model: "gpt-5" });
+  assert.equal(chosen.ok, true);
+  assert.equal(chosen.value.harness, "codex");
+  assert.equal(chosen.value.model, "gpt-5");
+
+  // An unknown harness is REFUSED, never silently replaced with the default —
+  // running somewhere the caller did not ask for is the lock-in this removes.
+  const unknown = validateCreateResearchMissionInput({ ...base, harness: "definitely-not-real" });
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error, /harness must be one of/);
+
+  // A flag-shaped model would be parsed as an option rather than its value.
+  const flagModel = validateCreateResearchMissionInput({ ...base, model: "--sandbox" });
+  assert.equal(flagModel.ok, false);
+  assert.match(flagModel.error, /must not begin with '-'/);
+
+  const longModel = validateCreateResearchMissionInput({
+    ...base,
+    model: "m".repeat(RESEARCH_MODEL_MAX_LENGTH + 1),
+  });
+  assert.equal(longModel.ok, false);
+}

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const route = readFileSync(
-  new URL("./api/onboarding/install/route.ts", import.meta.url),
+  new URL("./api/onboarding/install/install-service.ts", import.meta.url),
   "utf8",
 );
 const npmLane = readFileSync(
@@ -55,14 +55,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /Coven CLI self-update:[\s\S]*?npm beside the detected CLI/,
-  "the CLI update must use the npm installation that owns the detected CLI",
+  /Coven CLI repair:[\s\S]*?npm beside[\s\S]*?the detected CLI/,
+  "the reviewed CLI repair must use the npm installation that owns the detected CLI",
 );
 
 assert.match(
   route,
-  /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"/,
-  "the Coven CLI button installs the latest published package",
+  /"coven-cli": \{[\s\S]*?packageName: reviewedPackage\("coven-cli"\)/,
+  "the Coven CLI button installs the reviewed maintenance-compatible package",
 );
 assert.doesNotMatch(
   route,
@@ -72,14 +72,14 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /reserveGlobalNpmInstall\(targetName\)[\s\S]*?return npmBusyResponse\(owner\)/,
+  /reserveGlobalNpmInstall\(targetName\)[\s\S]*?return npmBusyResult\(owner\)/,
   "all npm installers reserve the shared global npm lane before starting",
 );
 
 assert.match(
   route,
-  /function npmBusyResponse\([\s\S]*?status: 409/,
-  "a competing npm installer receives an actionable busy response",
+  /function npmBusyResult\([\s\S]*?status: 409/,
+  "a competing npm installer receives a reusable actionable busy result",
 );
 
 assert.match(

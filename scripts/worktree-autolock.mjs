@@ -63,10 +63,26 @@ export function parseWorktrees(porcelain) {
 
 // At risk = a removal would destroy something unrecoverable.
 //   dirty            → uncommitted edits exist nowhere else
-//   commits off-remote → committed but not yet on any remote
-// `rev-list HEAD --not --remotes` counts commits absent from every remote ref,
-// which is the same "retained on a remote" test the guard applies.
-export function riskOf(worktreePath) {
+//   commits off-remote → committed but on neither a remote branch nor a
+//                        remote tag
+//
+// `rev-list HEAD --not --remotes` alone is NOT the test the guard applies, and
+// the comment that claimed it was is how this hook came to fight the
+// documented retirement route (cave-qbr34). `--remotes` is refs/remotes/*,
+// which is remote-tracking BRANCHES; git keeps no remote-tracking refs for tags
+// at all. So a branch retired the recommended way — archived as a pushed tag,
+// then deleted — read as unretained, was re-locked on the next tool call, and
+// could never be removed. Two `beads:worktrees:apply` runs were defeated by
+// exactly this, and WT_AUTOLOCK_DISABLE=1 does not help: the hook fires per
+// tool call, so a unit unlocked in one call is re-locked before the next.
+//
+// The missing half is `remoteTagCommits`, which asks the remote what tags it
+// actually has — the same helper `worktree-retention-push.mjs` already uses for
+// this exact blind spot (cave-nw3hq, where it re-created twelve branches it had
+// just been asked to retire). Note what is deliberately NOT used: `--tags`
+// would count LOCAL tags, and a local-only tag is not retention — it dies with
+// the checkout, which is the hole the guard exists to close.
+export function riskOf(worktreePath, tagRetained = () => false) {
   let dirty = 0;
   let unpushed = 0;
   try {
@@ -82,8 +98,48 @@ export function riskOf(worktreePath) {
   } catch {
     unpushed = 0; // detached/unborn HEAD — dirtiness alone decides
   }
+  // Only asked once the branch test already says "unretained", so a pass with
+  // nothing at risk stays offline. An unreachable remote leaves `unpushed`
+  // standing and the tree locked: a lock is reversible, while treating an
+  // unanswerable question as "retained" hands out the one verdict that permits
+  // destruction.
+  if (unpushed > 0 && tagRetained(worktreePath)) unpushed = 0;
   if (dirty === 0 && unpushed === 0) return null;
   return { dirty, unpushed };
+}
+
+// Commit oids the REMOTE holds under a tag, HEAD included when a tag points at
+// it. `ls-remote` prints both the tag object and its peeled `^{}` commit on
+// separate lines; collecting every oid covers annotated and lightweight tags
+// without having to tell them apart.
+//
+// Deliberately duplicated from `worktree-retention-push.mjs` rather than
+// imported. Every hook in this directory loads standalone — none imports a
+// sibling — and the symlink test copies THIS FILE ALONE into a temp directory
+// to prove the hook still fires. An unresolvable import would throw at load,
+// and a guard that silently never runs is the worst outcome available here
+// (see the isDirectRun comment below). Keep the two in step by hand; both name
+// each other.
+export function remoteTagCommits(worktreePath) {
+  try {
+    const output = git(["ls-remote", "--tags", "origin"], worktreePath);
+    const oids = new Set();
+    for (const line of output.split("\n")) {
+      const oid = line.slice(0, 40);
+      if (/^[0-9a-f]{40}$/.test(oid)) oids.add(oid);
+    }
+    return oids;
+  } catch {
+    return null; // offline or no remote — the caller keeps the tree locked
+  }
+}
+
+export function headShaOf(worktreePath) {
+  try {
+    return git(["rev-parse", "HEAD"], worktreePath).trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 export function reasonFor({ dirty, unpushed }, today) {
@@ -135,10 +191,21 @@ function main() {
     return; // not a git repo, or git unavailable — nothing to do
   }
 
+  // Resolved lazily and at most once per pass, matching the retention-push
+  // hook: only a worktree the branch test already calls unretained needs it, so
+  // a pass where everything is pushed never touches the network.
+  let tagCommits;
+  const tagRetained = (worktreePath) => {
+    if (tagCommits === undefined) tagCommits = remoteTagCommits(root);
+    if (!tagCommits || tagCommits.size === 0) return false;
+    const head = headShaOf(worktreePath);
+    return head !== null && tagCommits.has(head);
+  };
+
   // The first record is the main working tree; git refuses to lock it.
   for (const wt of worktrees.slice(1)) {
     if (wt.locked || wt.bare) continue;
-    const risk = riskOf(wt.path);
+    const risk = riskOf(wt.path, tagRetained);
     if (!risk) continue;
     const today = new Date().toISOString().slice(0, 10);
     try {

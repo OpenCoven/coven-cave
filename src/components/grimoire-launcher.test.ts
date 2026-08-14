@@ -79,6 +79,26 @@ assert.match(launcher, /STITCH_PATTERNS\.map\(/, "the new-stitch row offers the 
 assert.match(launcher, /onNewStitch\(\{ patternId: p\.id \}\)/, "template tiles preselect their pattern");
 assert.match(launcher, /journalStreakDays\(journal\.map\(\(j\) => j\.date\)/, "the journal tile shows the reflection streak");
 assert.match(launcher, /launcherGraphCounts\(graph\)/, "the graph tiles count nodes/edges/detached from the doc graph");
+
+// ── The detached stat is scope-relative, and says so (cave-c4pzv) ────────────
+// `graph` arrives already scoped (grimoire-view passes scopedGraph), and
+// scopeDocGraph recomputes degree from the SCOPED edge set. So a doc that is
+// well-linked coven-wide, but whose links all land on memory owned by a
+// non-selected familiar, drops to degree 0 and was counted as "detached docs
+// with no links" — a claim about the DOC made from a scope-relative value.
+// The number stays scoped (its neighbours on the card are, and clicking through
+// opens the scoped graph where exactly these nodes are visible); the sentence
+// is what gets qualified.
+assert.match(
+  launcher,
+  /scopeLabel\?: string \| null/,
+  "the launcher knows whether a familiar scope is active",
+);
+assert.match(
+  launcher,
+  /\{scopeLabel \? "detached docs with no links in this scope" : "detached docs with no links"\}/,
+  "the detached copy is qualified under a scope and unchanged in All",
+);
 assert.match(launcher, /aria-label="Search all documents or paste a URL"/, "the big search is labelled");
 assert.match(launcher, /suppressHydrationWarning/, "the client-clock date line is hydration-safe");
 assert.ok(!/\bfetch\(/.test(launcher), "the launcher fetches nothing — it renders what the view loaded");

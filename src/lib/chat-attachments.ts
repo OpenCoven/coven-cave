@@ -4,6 +4,10 @@ export const MAX_ATTACHMENT_TEXT_CHARS = 64_000;
 /** Hard cap on a decoded image payload, enforced on capture (client) and on
  * normalize (server) — the server never trusts the client-side check. */
 export const MAX_ATTACHMENT_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Hard cap on a decoded audio/video payload. Larger than the image cap
+ * because even a short mp4 clears 5 MB; enforced on capture, on normalize,
+ * and again by the attachment store on both save and read. */
+export const MAX_ATTACHMENT_MEDIA_BYTES = 50 * 1024 * 1024;
 export const IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE =
   "(image attachments are not supported by this harness)";
 const IMAGE_NOT_DELIVERED_NOTE =
@@ -12,8 +16,30 @@ const IMAGE_METADATA_ONLY_NOTE =
   "(image attached as metadata only — task cards don't store image content)";
 const VIDEO_METADATA_ONLY_NOTE =
   "(video attached as metadata only — frames and audio are not decoded yet)";
+const AUDIO_METADATA_ONLY_NOTE =
+  "(audio attached as metadata only — sound is not decoded yet)";
 const FILE_METADATA_ONLY_NOTE =
   "(file attached as metadata only — text content was not available)";
+
+/**
+ * The playable-media allowlist: MIME types the chat can round-trip through the
+ * durable attachment store and hand to a native `<audio>`/`<video>` element.
+ * The value is the extension the store mints into the stored id, so it must
+ * stay consistent with `MIME_BY_EXT` in `lib/server/chat-attachment-store.ts`.
+ * Anything not listed here stays a metadata-only chip.
+ */
+export const MEDIA_EXT_BY_MIME: Record<string, string> = {
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/ogg": "ogg",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+};
 
 export type ChatAttachment = {
   name: string;
@@ -103,19 +129,18 @@ function cleanSize(size: unknown): number | undefined {
  * characters of base64 inside one `String.prototype.match` call. That blew V8's
  * stack — `RangeError: Maximum call stack size exceeded at String.match` — on a
  * ~6 MB data URL. Thrown from a streaming route handler, that took the whole
- * response down with it; in the scry route's stream `start` it died after the
- * `staged` event with no terminal frame at all.
+ * response down with it rather than rejecting one attachment.
  *
  * The length gate below is NOT the fix and must not be lowered to become one.
  * It admits 5 MB of image on purpose, which is a legitimate photo; a cap tight
  * enough to keep the old pattern safe would have rejected real images and hidden
  * the defect rather than removed it.
  *
- * This was never scry-specific. `POST /api/chat/send` runs user-pasted images
- * through `normalizeChatAttachments` -> `cleanImageDataUrl` on exactly the same
- * multi-megabyte strings (`fileToAttachment` inlines any image up to
- * MAX_ATTACHMENT_IMAGE_BYTES with no downscale), as do the board and the agent
- * attachment reader. The scry only got there first.
+ * Every image-attachment path shares this parse. `POST /api/chat/send` runs
+ * user-pasted images through `normalizeChatAttachments` -> `cleanImageDataUrl`
+ * on exactly these multi-megabyte strings (`fileToAttachment` inlines any image
+ * up to MAX_ATTACHMENT_IMAGE_BYTES with no downscale), as do the board and the
+ * agent attachment reader.
  */
 const IMAGE_DATA_URL_HEADER_RE = /^data:(image\/[a-z0-9.+-]{1,60});base64$/i;
 
@@ -128,6 +153,13 @@ const MAX_DATA_URL_HEADER_CHARS = 128;
 // before anything scans them: base64 inflates bytes 4/3 plus prefix.
 const MAX_IMAGE_DATA_URL_CHARS =
   Math.ceil(MAX_ATTACHMENT_IMAGE_BYTES / 3) * 4 + 128;
+
+/** Header of a base64 audio/video data URL — validated against the
+ * {@link MEDIA_EXT_BY_MIME} allowlist after this shape check. */
+const MEDIA_DATA_URL_HEADER_RE = /^data:((?:audio|video)\/[a-z0-9.+-]{1,60});base64$/i;
+
+const MAX_MEDIA_DATA_URL_CHARS =
+  Math.ceil(MAX_ATTACHMENT_MEDIA_BYTES / 3) * 4 + 128;
 
 /**
  * Is this the base64 body of a data URL?
@@ -187,12 +219,51 @@ export function cleanImageDataUrl(
   return { dataUrl, mimeType: header[1].toLowerCase() };
 }
 
+/**
+ * Validate a base64 audio/video data URL against the playable-media allowlist
+ * and the media size cap. Same non-backtracking machinery as
+ * {@link cleanImageDataUrl} — the header regex never touches the payload, and
+ * the body scan is linear with constant stack (see the V8 note above).
+ */
+export function cleanMediaDataUrl(
+  dataUrl: unknown,
+): { dataUrl: string; mimeType: string } | null {
+  if (typeof dataUrl !== "string" || dataUrl.length > MAX_MEDIA_DATA_URL_CHARS) return null;
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0 || comma > MAX_DATA_URL_HEADER_CHARS) return null;
+  const header = MEDIA_DATA_URL_HEADER_RE.exec(dataUrl.slice(0, comma));
+  if (!header) return null;
+  const mimeType = header[1].toLowerCase();
+  // Allowlist, not prefix: only types the store can mint an extension for.
+  if (!MEDIA_EXT_BY_MIME[mimeType]) return null;
+  const body = dataUrl.slice(comma + 1);
+  if (!isBase64Body(body)) return null;
+  const decodedBytes = base64DecodedBytes(body);
+  if (decodedBytes === 0 || decodedBytes > MAX_ATTACHMENT_MEDIA_BYTES) return null;
+  return { dataUrl, mimeType };
+}
+
 function isImageAttachment(attachment: ChatAttachment): boolean {
   return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("image/"));
 }
 
 function isVideoAttachment(attachment: ChatAttachment): boolean {
   return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("video/"));
+}
+
+function isAudioAttachment(attachment: ChatAttachment): boolean {
+  return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("audio/"));
+}
+
+/**
+ * "audio" / "video" when the attachment is playable media on the allowlist,
+ * null otherwise. Drives the inline player and the send/persist media paths,
+ * so a mime outside {@link MEDIA_EXT_BY_MIME} never reaches a native element.
+ */
+export function attachmentMediaKind(attachment: ChatAttachment): "audio" | "video" | null {
+  const mimeType = (attachment.mimeType ?? attachment.type ?? "").toLowerCase();
+  if (!MEDIA_EXT_BY_MIME[mimeType]) return null;
+  return mimeType.startsWith("audio/") ? "audio" : "video";
 }
 
 export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
@@ -203,9 +274,11 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
       const raw = (item && typeof item === "object") ? item as Record<string, unknown> : {};
       const rawText = typeof raw.text === "string" ? raw.text.replace(/\r\n/g, "\n") : undefined;
       const text = rawText != null ? rawText.slice(0, MAX_ATTACHMENT_TEXT_CHARS) : undefined;
-      // Image payloads ride through normalization (bounded + validated) so the
-      // server can hand them to the harness. Everything else stays metadata-only.
+      // Image and playable-media payloads ride through normalization (bounded
+      // + validated) so the server can persist them. Everything else stays
+      // metadata-only.
       const image = cleanImageDataUrl(raw.dataUrl);
+      const media = image ? null : cleanMediaDataUrl(raw.dataUrl);
       const mimeType = cleanType(raw.mimeType);
       const storedId = cleanStoredId(raw.storedId);
       return {
@@ -216,6 +289,7 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
         ...(text != null ? { text } : {}),
         ...(rawText != null && rawText.length > MAX_ATTACHMENT_TEXT_CHARS ? { truncated: true } : {}),
         ...(image ? { mimeType: image.mimeType, dataUrl: image.dataUrl } : {}),
+        ...(media ? { mimeType: media.mimeType, dataUrl: media.dataUrl } : {}),
         ...(storedId ? { storedId } : {}),
       };
     });
@@ -225,16 +299,19 @@ export function stripPreviewOnlyAttachmentFields(attachments: ChatAttachment[]):
   return attachments.map(({ dataUrl: _dataUrl, mimeType: _mimeType, ...attachment }) => attachment);
 }
 
-/** Send-body variant of stripPreviewOnlyAttachmentFields: image attachments
- * keep their bounded `dataUrl`/`mimeType` (the only channel that gets the
- * pixels to the harness); everything else is stripped to metadata. */
+/** Send-body variant of stripPreviewOnlyAttachmentFields: image and playable
+ * media attachments keep their bounded `dataUrl`/`mimeType` (the only channel
+ * that gets the bytes to the server for persistence); everything else is
+ * stripped to metadata. */
 export function stripPreviewOnlyAttachmentFieldsKeepingImages(
   attachments: ChatAttachment[],
 ): ChatAttachment[] {
   return attachments.map((attachment) => {
     const { dataUrl, mimeType, ...rest } = attachment;
     const image = mimeType?.startsWith("image/") ? cleanImageDataUrl(dataUrl) : null;
-    return image ? { ...rest, mimeType: image.mimeType, dataUrl: image.dataUrl } : rest;
+    if (image) return { ...rest, mimeType: image.mimeType, dataUrl: image.dataUrl };
+    const media = cleanMediaDataUrl(dataUrl);
+    return media ? { ...rest, mimeType: media.mimeType, dataUrl: media.dataUrl } : rest;
   });
 }
 
@@ -299,6 +376,8 @@ export function buildPromptWithAttachments(
       }
     } else if (isVideoAttachment(attachment)) {
       body = VIDEO_METADATA_ONLY_NOTE;
+    } else if (isAudioAttachment(attachment)) {
+      body = AUDIO_METADATA_ONLY_NOTE;
     } else {
       body = FILE_METADATA_ONLY_NOTE;
     }
@@ -334,6 +413,7 @@ export function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "ty
   const mimeType = attachment.mimeType ?? attachment.type ?? "";
   if (mimeType.startsWith("image/")) return "ph:camera";
   if (mimeType.startsWith("video/")) return "ph:video";
+  if (mimeType.startsWith("audio/")) return "ph:waveform";
   if (mimeType.startsWith("text/") || /json|xml|yaml|toml|csv|javascript|typescript/.test(mimeType)) {
     return "ph:file-text";
   }
@@ -341,7 +421,8 @@ export function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "ty
 }
 
 /** Convert a picked File into a ComposerAttachment: inline text bodies, embed
- *  small images as data URLs, keep everything else as metadata (truncated). */
+ *  small images and playable media as data URLs, keep everything else as
+ *  metadata (truncated). */
 export async function fileToAttachment(file: File): Promise<ComposerAttachment> {
   const attachment: ComposerAttachment = {
     id: crypto.randomUUID(),
@@ -350,12 +431,14 @@ export async function fileToAttachment(file: File): Promise<ComposerAttachment> 
     mimeType: file.type || undefined,
     size: file.size,
   };
+  const mediaMime = MEDIA_EXT_BY_MIME[file.type.toLowerCase()] ? file.type.toLowerCase() : null;
   if (isTextLike(file)) {
     const text = await file.slice(0, MAX_ATTACHMENT_TEXT_CHARS).text();
     attachment.text = text;
     if (file.size > new Blob([text]).size) attachment.truncated = true;
-  } else if (file.type.startsWith("image/")) {
-    if (file.size > MAX_ATTACHMENT_IMAGE_BYTES) {
+  } else if (file.type.startsWith("image/") || mediaMime) {
+    const cap = mediaMime ? MAX_ATTACHMENT_MEDIA_BYTES : MAX_ATTACHMENT_IMAGE_BYTES;
+    if (file.size > cap) {
       attachment.truncated = true;
       return attachment;
     }

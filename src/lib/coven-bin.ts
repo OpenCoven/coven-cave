@@ -24,7 +24,7 @@
 // for the env option.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -240,10 +240,6 @@ function candidateDirs(discovery = discoveryOptions()): string[] {
   ].filter((d): d is string => !!d && existsSync(/* turbopackIgnore: true */ d));
 }
 
-function candidateBinNames(): string[] {
-  return process.platform === "win32" ? ["coven.cmd", "coven.exe", "coven"] : ["coven"];
-}
-
 /**
  * Pick the spawnable launcher from `where` output. npm's global installs
  * write three launchers per package (an extensionless POSIX script, a .cmd
@@ -322,6 +318,15 @@ export function windowsPathFromRegQuery(
 // which already-running processes never receive. Re-reading the registry is
 // how a refresh actually picks those up without an app restart.
 function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
+  const systemRoot = discovery.env.SystemRoot ?? Object.entries(discovery.env).find(
+    ([key]) => key.toUpperCase() === "SYSTEMROOT",
+  )?.[1];
+  const regExecutable = systemRoot
+    ? path.join(/* turbopackIgnore: true */ systemRoot, "System32", "reg.exe")
+    : null;
+  if (!regExecutable || !path.isAbsolute(regExecutable) || !existsSync(regExecutable)) {
+    return null;
+  }
   // Machine PATH first, then user PATH — the same order Windows itself uses
   // when it builds a process environment.
   const keys = [
@@ -333,7 +338,7 @@ function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
     const timeout = remainingDiscoveryTimeout(2000, discovery.deadline, discovery.now);
     if (timeout <= 0) break;
     try {
-      const out = execFileSync("reg", ["query", key, "/v", "Path"], {
+      const out = execFileSync(regExecutable, ["query", key, "/v", "Path"], {
         windowsHide: true,
         encoding: "utf-8",
         timeout,
@@ -348,11 +353,99 @@ function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
   return parts.length > 0 ? parts.join(path.delimiter) : null;
 }
 
+export const COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC =
+  "Coven CLI was not found in Cave's launch environment. Install or repair @opencoven/cli, restart Cave, and try again.";
+
+/** UNC and extended-UNC paths cross Cave's owner-local executable boundary. */
+export function isWindowsRemoteExecutablePath(candidate: string): boolean {
+  const normalized = candidate.replaceAll("/", "\\");
+  return /^\\\\[^?.\\]/.test(normalized) || /^\\\\\?\\UNC\\/i.test(normalized);
+}
+
+function verifiedAbsoluteBinary(
+  candidate: string,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const crossHostAbsolute = platform !== process.platform && path.isAbsolute(candidate);
+  if (!pathApi.isAbsolute(candidate) && !crossHostAbsolute) return null;
+  // A Cave-owned local daemon/CLI must not be sourced from a remote UNC share.
+  // Besides crossing the local trust boundary, probing one synchronously can
+  // defeat the bounded onboarding/status request when the share is offline.
+  if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) {
+    return null;
+  }
+  const absolute = crossHostAbsolute
+    ? path.resolve(/* turbopackIgnore: true */ candidate)
+    : pathApi.resolve(/* turbopackIgnore: true */ candidate);
+  try {
+    const canonical = realpathSync(/* turbopackIgnore: true */ absolute);
+    if (platform === "win32" && isWindowsRemoteExecutablePath(canonical)) return null;
+    const st = statSync(/* turbopackIgnore: true */ canonical);
+    return st.isFile() ? canonical : null;
+  } catch {
+    return null;
+  }
+}
+
+function environmentValue(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  platform: NodeJS.Platform,
+): string | undefined {
+  if (platform !== "win32") return env[key];
+  const wanted = key.toUpperCase();
+  return Object.entries(env).find(([name]) => name.toUpperCase() === wanted)?.[1];
+}
+
 /**
- * Resolve the absolute path to the `coven` binary. If nothing is found,
- * returns the literal string "coven" so callers can still spawn — the OS
- * will resolve via PATH and surface a "not found" error to the user.
+ * Resolve Coven from one explicit environment without invoking `where.exe`.
+ *
+ * Windows' executable search checks the child cwd before PATH. Research and
+ * onboarding operate inside user-controlled project/workspace directories,
+ * so a bare `where coven` or `spawn("coven")` can select a planted launcher.
+ * Only an existing absolute override or a launcher inside an absolute PATH
+ * entry is eligible here. Relative entries and remote UNC paths fail closed.
  */
+export function covenBinaryFromEnvironment(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const override = environmentValue(env, "COVEN_BIN", platform)?.trim();
+  if (override) {
+    const verified = verifiedAbsoluteBinary(override, platform);
+    if (verified) return verified;
+  }
+
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const pathValue = environmentValue(env, "PATH", platform);
+  if (!pathValue) return null;
+  const names = platform === "win32"
+    ? ["coven.cmd", "coven.exe", "coven.com", "coven.bat"]
+    : ["coven"];
+  const seen = new Set<string>();
+  for (const configuredDir of pathValue.split(pathApi.delimiter)) {
+    const normalizedDir = configuredDir.trim().replace(/^"|"$/g, "");
+    if (!normalizedDir || !pathApi.isAbsolute(normalizedDir)) continue;
+    if (platform === "win32" && isWindowsRemoteExecutablePath(normalizedDir)) {
+      continue;
+    }
+    const directory = pathApi.resolve(/* turbopackIgnore: true */ normalizedDir);
+    const dedupeKey = platform === "win32" ? directory.toLowerCase() : directory;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    for (const name of names) {
+      const verified = verifiedAbsoluteBinary(
+        pathApi.join(/* turbopackIgnore: true */ directory, name),
+        platform,
+      );
+      if (verified) return verified;
+    }
+  }
+  return null;
+}
+
+/** Resolve an existing absolute Coven launcher. Windows never returns a bare name. */
 export function covenBin(): string {
   if (cachedBin) return cachedBin;
 
@@ -360,60 +453,31 @@ export function covenBin(): string {
   // ~/.cargo/bin/coven is newer than the npm-bundled one in ~/.nvm/.../bin.
   const envBin = process.env.COVEN_BIN;
   if (envBin) {
-    try {
-      const st = statSync(/* turbopackIgnore: true */ envBin);
-      if (st.isFile() || st.isSymbolicLink()) {
-        cachedBin = envBin;
-        return cachedBin;
-      }
-    } catch {
-      /* fall through to discovery */
+    const verified = verifiedAbsoluteBinary(envBin);
+    if (verified) {
+      cachedBin = verified;
+      return cachedBin;
     }
   }
 
   const discovery = discoveryOptions();
-  for (const dir of candidateDirs(discovery)) {
-    for (const name of candidateBinNames()) {
-      const candidate = path.join(/* turbopackIgnore: true */ dir, name);
-      try {
-        const st = statSync(/* turbopackIgnore: true */ candidate);
-        if (st.isFile() || st.isSymbolicLink()) {
-          cachedBin = candidate;
-          return cachedBin;
-        }
-      } catch {
-        /* not here; keep looking */
-      }
-    }
+  const resolved = covenBinaryFromEnvironment(
+    {
+      ...discovery.env,
+      PATH: augmentedSpawnPath(false, discovery),
+    },
+    process.platform,
+  );
+  if (resolved) {
+    cachedBin = resolved;
+    return cachedBin;
   }
 
-  // Nothing in the well-known dirs. On Windows, resolve through PATH with
-  // `where` before falling back to the literal name: npm installs the CLI
-  // as coven.cmd (plus an unspawnable extensionless POSIX script), and a
-  // bare spawn("coven") only resolves .exe/.com — so the literal fallback
-  // ENOENTs even when the CLI is plainly on PATH (scoop/winget node,
-  // cave-observed on Windows 11).
-  if (process.platform === "win32") {
-    try {
-      const out = execFileSync("where", ["coven"], {
-        windowsHide: true,
-        encoding: "utf-8",
-        timeout: 1500,
-        env: {
-          ...discovery.env,
-          PATH: covenSpawnEnv({ discoveryEnv: discovery.env }).PATH,
-        },
-      });
-      const picked = pickWindowsLauncher(out.split(/\r?\n/));
-      if (picked) {
-        cachedBin = picked;
-        return cachedBin;
-      }
-    } catch {
-      /* not on PATH either — fall through to the literal fallback */
-    }
-  }
-
+  // CreateProcess searches the child cwd before PATH for bare executable
+  // names. A Research/project directory must never get to supply `coven.exe`
+  // through a bare fallback or relative PATH entry merely because the real CLI
+  // is absent from Cave's verified search path.
+  if (process.platform === "win32") throw new Error(COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC);
   cachedBin = "coven";
   return cachedBin;
 }
@@ -463,10 +527,14 @@ export function windowsShimLaunchCommandForBinary(
   if (!script) {
     return { command: binary, fixedArgs: [], unresolvedWindowsShim: true };
   }
-  if (/\.(?:exe|com)$/i.test(script)) {
-    return { command: script, fixedArgs: [] };
+  const verifiedScript = verifiedAbsoluteBinary(script, platform);
+  if (!verifiedScript) {
+    return { command: binary, fixedArgs: [], unresolvedWindowsShim: true };
   }
-  return { command: process.execPath, fixedArgs: [script] };
+  if (/\.(?:exe|com)$/i.test(verifiedScript)) {
+    return { command: verifiedScript, fixedArgs: [] };
+  }
+  return { command: process.execPath, fixedArgs: [verifiedScript] };
 }
 
 export function covenLaunchCommandForBinary(
@@ -538,7 +606,38 @@ function augmentedSpawnPath(
   return parts.filter((part) => !!part && !seen.has(part) && (seen.add(part), true)).join(path.delimiter);
 }
 
-function spawnEnv(pathValue: string, includeManagedNode = true): NodeJS.ProcessEnv {
+export const COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV =
+  "COVEN_WINDOWS_HIDE_NATIVE_WINDOW";
+
+/**
+ * Mark only Cave-owned Coven-wrapper launches as GUI children on Windows.
+ * The npm wrapper keeps ordinary terminal invocations interactive unless this
+ * exact opt-in is present; user-selected project tools never inherit it.
+ */
+export function withCovenWrapperWindowPolicy(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+  appOwnedCovenLaunch = true,
+): NodeJS.ProcessEnv {
+  const next = { ...env };
+  for (const key of Object.keys(next)) {
+    if (
+      (platform === "win32" ? key.toUpperCase() : key)
+      === COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV
+    ) {
+      delete next[key];
+    }
+  }
+  if (appOwnedCovenLaunch && platform === "win32") {
+    next[COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV] = "1";
+  }
+  return next;
+}
+
+function spawnEnv(
+  pathValue: string,
+  includeManagedNode = true,
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: pathValue };
   if (includeManagedNode) {
     const managed = managedNodeSpawnEnv(env);
@@ -558,7 +657,14 @@ function spawnEnv(pathValue: string, includeManagedNode = true): NodeJS.ProcessE
   if (env.NPM_CONFIG_LOGLEVEL === undefined && env.npm_config_loglevel === undefined) {
     env.NPM_CONFIG_LOGLEVEL = "error";
   }
-  return scrubSidecarInternalEnv(env);
+  // This is the shared baseline for Coven itself, harnesses, onboarding
+  // probes, npm, SSH, and user-selected tools. A wrapper-only control signal
+  // must never ride that generic environment into an unrelated child.
+  return withCovenWrapperWindowPolicy(
+    scrubSidecarInternalEnv(env),
+    process.platform,
+    false,
+  );
 }
 
 export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.ProcessEnv {
@@ -569,6 +675,18 @@ export function covenSpawnEnv(options: CovenSpawnEnvOptions = {}): NodeJS.Proces
     cachedPath = pathValue;
   }
   return spawnEnv(pathValue);
+}
+
+/**
+ * Opt one exact Cave-owned Coven CLI invocation into the npm wrapper's native
+ * no-window policy. Call this only at a call site whose resolved command is
+ * `coven`; generic harness/tool environments deliberately stay scrubbed.
+ */
+export function covenWrapperSpawnEnv(
+  env: NodeJS.ProcessEnv = covenSpawnEnv(),
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  return withCovenWrapperWindowPolicy(env, platform, true);
 }
 
 /**

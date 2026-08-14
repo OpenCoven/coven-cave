@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SALEM_PRELOAD_CONTEXT, summarizePreload } from "@/components/salem/salem-context";
 import { COVEN_IDENTITY_CANON } from "@/lib/coven-identity-canon";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
 import { stripMdxLeakage } from "./strip-mdx";
 
 /**
@@ -208,7 +209,7 @@ async function askLocalFamiliar(args: {
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    const parts: string[] = [];
+    const attentionText = createAttentionSafeTextAccumulator();
     let buffer = "";
     try {
       while (true) {
@@ -222,10 +223,9 @@ async function askLocalFamiliar(args: {
           if (!line) continue;
           try {
             const event = JSON.parse(line.slice(5).trim()) as { kind?: string; text?: string };
-            if (event.kind === "assistant_chunk" && event.text) parts.push(event.text);
+            if (event.kind === "assistant_chunk" && event.text) attentionText.append(event.text);
             else if (event.kind === "assistant_replace") {
-              parts.length = 0;
-              if (event.text) parts.push(event.text);
+              attentionText.replace(event.text ?? "");
             }
           } catch {
             /* ignore malformed SSE frames */
@@ -237,7 +237,7 @@ async function askLocalFamiliar(args: {
       reader.releaseLock();
     }
 
-    const trimmed = parts.join("").trim();
+    const trimmed = attentionText.settled().trim();
     return trimmed.length > 0 ? trimmed : null;
   } catch {
     return null;
@@ -440,16 +440,18 @@ export async function POST(req: Request) {
 
     const context = body.context;
     const searchContext = formatSearchContextForPrompt(context);
-    const messageForApi = searchContext ? `${message}\n\n${searchContext}` : message;
+    const messageForLocal = searchContext ? `${message}\n\n${searchContext}` : message;
 
-    // Primary Cave path: use the hosted RAG index for context, then synthesize
-    // through the local familiar so the user's connected model/provider pays.
-    const apiContext = await askChatApiContext(messageForApi);
+    // Primary Cave path: use the hosted RAG index for public docs context with
+    // only the user's question. Client-supplied local Cave context may contain
+    // private chats or memory metadata, so it is reserved for local familiar
+    // synthesis below and is never forwarded to the hosted Salem API.
+    const apiContext = await askChatApiContext(message);
     if (apiContext && familiarId) {
       const apiReply = await askLocalFamiliar({
         req,
         familiarId,
-        message: buildLocalSalemPrompt(messageForApi, apiContext, history),
+        message: buildLocalSalemPrompt(messageForLocal, apiContext, history),
         model,
       });
       if (apiReply) {
@@ -473,7 +475,7 @@ export async function POST(req: Request) {
 
     // No-regression fallback: the backend doesn't serve context mode yet, so use
     // its hosted streamed answer rather than dropping to weak local retrieval.
-    const hostedReply = await askChatApiAnswer(messageForApi);
+    const hostedReply = await askChatApiAnswer(message);
     if (hostedReply) {
       return NextResponse.json({
         reply: hostedReply,

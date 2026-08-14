@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * CodeTerminalWorkspace — the Coding Room's terminal center (cave-98o51).
+ * CodeTerminalWorkspace — the Coding Desk's terminal center (cave-98o51).
  *
  * The middle zone of the three-zone Room: a persistent, splittable terminal
  * surface that never unmounts while the reader works in the context dock. It

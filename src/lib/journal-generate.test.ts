@@ -43,8 +43,8 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   );
   assert.match(
     source,
-    /const trimmed = extractNextPaths\(text\)\.visible\.trim\(\);/,
-    "the directive block is stripped from the reflection text",
+    /const trimmed = extractNextPaths\(error !== null \? attentionText\.terminal\(\) : attentionText\.settled\(\)\)\.visible\.trim\(\);/,
+    "failed streams terminally strip partial attention markers before next-path directives are removed",
   );
 }
 
@@ -167,6 +167,228 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
     );
     const result = await generateReflection({ familiarId: "nova", context: "ctx" });
     assert.equal(result.error, "Familiar runtime is unavailable.", "a later reader rejection does not replace the SSE error");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// ── Attention markers never leak into Journal streaming or stored text ─────────
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: "Please choose.\n<cov" },
+            { kind: "assistant_chunk", text: "en:atten" },
+            { kind: "assistant_chunk", text: 'tion reason="decision"' },
+            { kind: "assistant_chunk", text: " />" },
+            { kind: "done", sessionId: "j3", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const seen: string[] = [];
+    const result = await generateReflection({
+      familiarId: "nova",
+      context: "ctx",
+      onText: (value) => seen.push(value),
+    });
+    assert.equal(result.error, null);
+    assert.equal(result.text, "Please choose.", "final journal text strips the completed attention marker");
+    for (const value of seen) {
+      assert.doesNotMatch(value, /<cov/, "onText hides partial attention marker prefixes mid-stream");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// Failed direct generations keep useful preceding text but must not restore a
+// partial attention directive that had been hidden while the stream was live.
+for (const [event, expectedError] of [
+  [{ kind: "error", message: "generation failed" }, "generation failed"],
+  [{ kind: "done", isError: true }, "the familiar reported an error"],
+] as const) {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"kind":"assistant_chunk","text":"Useful text.<coven:atten"}\n\n'));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.text, "Useful text.");
+    assert.equal(result.error, expectedError);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  const abortController = new AbortController();
+  let pulls = 0;
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(encoder.encode('data: {"kind":"assistant_chunk","text":"Useful text.<coven:atten"}\n\n'));
+            abortController.abort();
+            return;
+          }
+          controller.error(new Error("request aborted"));
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({
+      familiarId: "nova",
+      context: "ctx",
+      signal: abortController.signal,
+    });
+    assert.equal(result.text, "Useful text.");
+    assert.equal(result.error, "cancelled");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: 'Literal example: `<coven:attention reason="decision" />`' },
+            { kind: "done", sessionId: "j4", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.error, null);
+    assert.equal(
+      result.text,
+      'Literal example: `<coven:attention reason="decision" />`',
+      "fenced literal markers remain visible in journal prose",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: 'Need input.\n<coven:attention reason="decision">' },
+            { kind: "done", sessionId: "j5", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.error, null);
+    assert.equal(result.text, "Need input.", "malformed complete attention markup is stripped from the stored reflection");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: "A useful reflection.\n<cov" },
+            { kind: "assistant_chunk", text: "en:attention rea" },
+            { kind: "done", sessionId: "j6", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const seen: string[] = [];
+    const result = await generateReflection({
+      familiarId: "nova",
+      context: "ctx",
+      onText: (value) => seen.push(value),
+    });
+    assert.equal(result.error, null);
+    assert.equal(
+      result.text,
+      "A useful reflection.\n<coven:attention rea",
+      "settled Journal text preserves an incomplete marker that never became valid",
+    );
+    assert.ok(seen.every((value) => !value.includes("<cov")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  try {
+    globalThis.fetch = async () => new Response(
+      new ReadableStream({
+        start(controller) {
+          const frames = [
+            { kind: "assistant_chunk", text: '<coven:attention" reason="decision">' },
+            { kind: "assistant_chunk", text: "AFTER" },
+            { kind: "done", sessionId: "j7", isError: false },
+          ];
+          frames.forEach((frame, index) => {
+            controller.enqueue(encoder.encode(`id: ${index + 1}\ndata: ${JSON.stringify(frame)}\n\n`));
+          });
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    const result = await generateReflection({ familiarId: "nova", context: "ctx" });
+    assert.equal(result.error, null);
+    assert.equal(result.text, "AFTER", "malformed quoted markup cannot truncate following Journal prose");
   } finally {
     globalThis.fetch = originalFetch;
   }

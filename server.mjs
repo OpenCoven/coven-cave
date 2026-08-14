@@ -71,7 +71,8 @@ const PRESENCE_COOKIE = "coven_passkey_presence";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
-function terminatePackagedUnixSidecarTree() {
+const PACKAGED_CHILD_SHUTDOWN_BUDGET_MS = 1200;
+function terminatePtySessions() {
   for (const session of sessions.values()) {
     try {
       session.pty.kill();
@@ -79,15 +80,43 @@ function terminatePackagedUnixSidecarTree() {
     }
   }
   sessions.clear();
+}
+async function terminatePackagedUnixSidecarTree() {
+  terminatePtySessions();
   try {
-    process.kill(-process.pid, "SIGKILL");
-  } catch {
-    process.exit(1);
+    const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
+    if (terminateDirectRuns) {
+      await Promise.race([
+        terminateDirectRuns(),
+        new Promise((_resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("direct Copilot shutdown exceeded its native parent lease")),
+            PACKAGED_CHILD_SHUTDOWN_BUDGET_MS
+          );
+          timer.unref?.();
+        })
+      ]);
+    }
+  } catch (error) {
+    console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
+  } finally {
+    terminatePtySessions();
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      process.exit(1);
+    }
   }
 }
 if (process.platform !== "win32" && process.env.COVEN_CAVE_PARENT_WATCHDOG === "stdin-eof") {
-  process.stdin.once("end", terminatePackagedUnixSidecarTree);
-  process.stdin.once("error", terminatePackagedUnixSidecarTree);
+  let parentShutdownStarted = false;
+  const onParentShutdown = () => {
+    if (parentShutdownStarted) return;
+    parentShutdownStarted = true;
+    void terminatePackagedUnixSidecarTree();
+  };
+  process.stdin.once("end", onParentShutdown);
+  process.stdin.once("error", onParentShutdown);
   process.stdin.resume();
 }
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
@@ -263,7 +292,7 @@ async function refreshTailnetPeers() {
     const { stdout } = await execFileAsync(
       process.env.COVEN_CAVE_TAILSCALE_BIN ?? "tailscale",
       ["status", "--json"],
-      { timeout: 1e4, maxBuffer: 16 * 1024 * 1024 }
+      { timeout: 1e4, maxBuffer: 16 * 1024 * 1024, windowsHide: true }
     );
     const status = JSON.parse(stdout);
     const next2 = /* @__PURE__ */ new Map();
@@ -372,6 +401,14 @@ function parseUpgradeTarget(rawUrl) {
 }
 function isPtyAuthRequired() {
   return Boolean(accessToken() || SIDECAR_TOKEN);
+}
+function shouldRejectUnauthenticatedPtyUpgrade({
+  sidecarTokenConfigured = false,
+  accessTokenConfigured = false,
+  tokenAuthenticated = false
+} = {}) {
+  if (tokenAuthenticated) return false;
+  return sidecarTokenConfigured || accessTokenConfigured;
 }
 function isAuthorized(req, query) {
   if (!isPtyAuthRequired()) return false;
@@ -686,8 +723,14 @@ function handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor) {
     detachPtyConsumer(threadId, session, ws);
   });
 }
+function loopbackHostname(raw = process.env.HOSTNAME) {
+  if (raw === "127.0.0.1" || raw === "localhost" || raw === "::1") {
+    return raw;
+  }
+  return "127.0.0.1";
+}
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "127.0.0.1";
+const hostname = loopbackHostname();
 const port = cavePort();
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -724,14 +767,17 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
   const tailnetNodeId = resolveTailnetPeer(req);
-  const tailnetAuthenticated = tailnetNodeId !== null;
-  const tokenAuthenticated = tailnetAuthenticated || (isPtyAuthRequired() ? isAuthorized(req, query) : false);
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (isPtyAuthRequired() && !tokenAuthenticated && !isDirectLoopbackRequest(req)) {
+  if (shouldRejectUnauthenticatedPtyUpgrade({
+    sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
+    accessTokenConfigured: Boolean(accessToken()),
+    tokenAuthenticated
+  })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;

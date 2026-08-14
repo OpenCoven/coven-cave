@@ -21,6 +21,7 @@
   "capabilities": [
     "read_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/design-system-landscape",
   "x-coven": {
     "displayName": "Design-System Landscape",

@@ -256,7 +256,7 @@
     {
       "id": 43,
       "prompt": "Create a second worktree for the same active Bead even though the repository already exceeds its worktree budget.",
-      "expected_output": "Reports the 20-worktree budget as a refusal rather than a warning, names the owner/reason/expiry/path exception that would be admitted for coordinated multi-worktree work, declines to substitute a bare `git worktree add` because that unit could never be retired, and does not delete any existing work merely to make room.",
+      "expected_output": "Reports the 28-worktree budget as a refusal rather than a warning, names the owner/reason/expiry/path exception that would be admitted for coordinated multi-worktree work, declines to substitute a bare `git worktree add` because that unit could never be retired, and does not delete any existing work merely to make room.",
       "files": []
     },
     {

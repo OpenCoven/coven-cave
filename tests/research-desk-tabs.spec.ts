@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 // Research Desk five-tab surface (cave-dl74) — Prompt / Desk / Library /
 // Studio / Resources inside the researcher role room (surface:researcher-desk).
@@ -264,10 +264,45 @@ const DIAGRAM_GENERATION = {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
-type BootHandles = { createdGenerationBodies: unknown[] };
+type BootHandles = {
+  createdGenerationBodies: unknown[];
+  directionDraftBodies: Array<Record<string, unknown>>;
+};
+
+function fulfillDirectionDraft(route: Route) {
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: [
+      `data: ${JSON.stringify({
+        kind: "assistant_chunk",
+        text: "<direction>Verify the conflicting throughput claims against reproducible primary benchmarks, normalize cost per million vectors, and update the decision memo with one defensible ranking.</direction>",
+      })}`,
+      "",
+      `data: ${JSON.stringify({ kind: "done", sessionId: "research-direction-1" })}`,
+      "",
+      "",
+    ].join("\n"),
+  });
+}
+
+function fulfillJournalSend(route: Route) {
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: [
+      `data: ${JSON.stringify({ kind: "done", sessionId: "research-journal-1" })}`,
+      "",
+      "",
+    ].join("\n"),
+  });
+}
 
 async function mockResearchApis(page: Page): Promise<BootHandles> {
-  const handles: BootHandles = { createdGenerationBodies: [] };
+  const handles: BootHandles = {
+    createdGenerationBodies: [],
+    directionDraftBodies: [],
+  };
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "rida");
@@ -290,6 +325,15 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   await page.route(/\/api\/research\/missions\?/, (route) =>
     route.fulfill({ json: { ok: true, missions: MISSIONS } }),
   );
+  await page.route("**/api/chat/send", (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (body.origin === "enhance") {
+      handles.directionDraftBodies.push(body);
+      return fulfillDirectionDraft(route);
+    }
+    if (body.origin === "journal") return fulfillJournalSend(route);
+    throw new Error(`unexpected Research Desk chat send origin: ${String(body.origin)}`);
+  });
   await page.route(/\/api\/research\/missions\/[^/]+\/files\/[^/]+$/, (route) =>
     route.fulfill({
       json: {
@@ -394,7 +438,7 @@ test.describe("research desk tabs", () => {
   test.describe.configure({ timeout: 180_000 });
 
   test("tab strip has five tabs and the Desk shows runs rail, stepper, and checkpoint actions", async ({ page }) => {
-    await openResearchDesk(page);
+    const handles = await openResearchDesk(page);
     const desk = page.locator(".research-desk");
 
     // Five tabs with real tablist semantics; missions exist, so the surface
@@ -435,6 +479,21 @@ test.describe("research desk tabs", () => {
     await expect(actions.getByRole("button", { name: "Cancel run" })).toBeVisible();
     await expect(actions.getByRole("button", { name: "Archive" })).toBeVisible();
     await expect(desk.getByText("Refine direction before continuing")).toBeVisible();
+    const direction = desk.getByLabel("Refined research direction");
+    await desk.getByRole("button", { name: "Draft with familiar" }).click();
+    await expect(direction).toHaveValue(
+      "Verify the conflicting throughput claims against reproducible primary benchmarks, normalize cost per million vectors, and update the decision memo with one defensible ranking.",
+    );
+    await expect(desk.getByRole("button", { name: "Refine and continue" })).toBeEnabled();
+    await expect.poll(() => handles.directionDraftBodies.length).toBe(1);
+    expect(String(handles.directionDraftBodies[0].prompt)).toContain(
+      "Produce one execution-ready refined direction",
+    );
+    expect(String(handles.directionDraftBodies[0].prompt)).toContain(
+      "[conflicting] Vendor benchmarks blog",
+    );
+    expect(handles.directionDraftBodies[0].permissionMode).toBe("read");
+    expect(handles.directionDraftBodies[0].reasoningEffort).toBe("medium");
 
     // The rail is one Artifacts|Sources toggle over a single pane. A run at a
     // checkpoint opens on Sources, where the conflicting source can be triaged.
@@ -796,9 +855,28 @@ test.describe("research desk tabs", () => {
     await intake.locator(".research-mode-card", { hasText: "Deep loop" }).click();
     await expect(intake.getByText("You chose Deep loop — this run will use it.")).toBeVisible();
 
-    // Quick saves panel lists the shared saved-links store.
+    // Quick saves is a drawer docked to the bottom edge: collapsed by default
+    // so the intake is not competing with a permanent list, and it says how
+    // many saves it holds before you open it.
+    const savesToggle = intake.getByRole("button", { name: /^Quick saves/ });
+    await expect(savesToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(intake.getByRole("region", { name: "Quick saves" })).toHaveCount(0);
+
+    await savesToggle.click();
+    await expect(savesToggle).toHaveAttribute("aria-expanded", "true");
+
+    // Opened, it lists the shared saved-links store, grouped rather than flat.
     const saves = intake.getByRole("region", { name: "Quick saves" });
     await expect(saves.getByRole("button", { name: /acme\/vector-bench/ })).toBeVisible();
     await expect(saves.getByRole("button", { name: /Qdrant guide/ })).toBeVisible();
+
+    // The draft typed above ("vector databases") promotes its matches into a
+    // suggested group, each explaining itself.
+    await expect(saves.getByText("✦ Suggested for this prompt")).toBeVisible();
+    await expect(saves.getByText(/matches “vector”/).first()).toBeVisible();
+
+    // Attaching one reports back on the collapsed bar.
+    await saves.getByRole("button", { name: /Qdrant guide/ }).click();
+    await expect(intake.getByText("1 attached to this run")).toBeVisible();
   });
 });

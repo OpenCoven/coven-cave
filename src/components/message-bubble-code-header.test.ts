@@ -78,7 +78,8 @@ assert.match(
   "SyntaxBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
 );
 
-const markdownBlock = /export function MarkdownBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const markdownBlock =
+  /export function MarkdownBlock\([\s\S]*?\n\}\n\nfunction escHtml/.exec(source)?.[0] ?? "";
 assert.match(
   markdownBlock,
   /useWireCopyButtons\(/,
@@ -90,7 +91,8 @@ assert.match(
   "MarkdownBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
 );
 
-const markdownContent = /function MarkdownContent\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const markdownContent =
+  /function MarkdownContent\([\s\S]*?\n\}\n\nexport function ProgressiveMarkdownBlock/.exec(source)?.[0] ?? "";
 assert.match(
   markdownContent,
   /useWireCopyButtons\(/,

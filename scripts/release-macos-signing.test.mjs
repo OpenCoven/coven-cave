@@ -218,14 +218,21 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
   assert.doesNotMatch(stripStep, /TAURI_SIGNING_PRIVATE_KEY/);
 });
 
-test("manual release retries build from the release tag before publishing", () => {
+test("manual release verifies the tag once and pins publication to its commit", () => {
   assert.doesNotMatch(releaseWorkflow, /source_ref:/);
   assert.doesNotMatch(releaseWorkflow, /github\.event\.inputs\.source_ref/);
   assert.match(
     releaseWorkflow,
-    /ref: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref \}\}/,
-    "release checkouts must use the same tag/ref whose release receives assets",
+    /release-commit: \$\{\{ steps\.tag\.outputs\.commit \}\}/,
+    "the source gate must expose the commit peeled from the verified release tag",
   );
+  for (const jobName of ["build", "checksums", "updater-manifest"]) {
+    assert.match(
+      getWorkflowJob(jobName),
+      /ref: \$\{\{ needs\.source-version\.outputs\.release-commit \}\}/,
+      `${jobName} must use the immutable commit verified by the source-version gate`,
+    );
+  }
   assert.match(
     releaseWorkflow,
     /RAW_RELEASE_TAG: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref_name \}\}/,
@@ -297,6 +304,30 @@ test("release packages and checksum manifest receive GitHub artifact attestation
     checksumsJob.indexOf("name: Compute SHA256SUMS") <
       checksumsJob.indexOf("name: Attest SHA256SUMS"),
     "the checksum manifest must be complete before it is attested",
+  );
+});
+
+test("Windows release publication treats an absent release as a recoverable probe result", () => {
+  const buildJob = getWorkflowJob("build");
+  const publishStep = buildJob.slice(
+    buildJob.indexOf("name: Publish validated Windows MSI"),
+    buildJob.indexOf("name: Sign Linux/Windows updater artifact"),
+  );
+
+  assert.match(
+    publishStep,
+    /function Test-GitHubRelease[\s\S]*ErrorActionPreference = "SilentlyContinue"[\s\S]*gh release view \$env:RELEASE_TAG \*> \$null[\s\S]*return \$LASTEXITCODE -eq 0/,
+    "the expected not-found probe must not terminate the PowerShell step",
+  );
+  assert.match(
+    publishStep,
+    /ErrorActionPreference = "Continue"[\s\S]*gh release create \$env:RELEASE_TAG[\s\S]*\$createExitCode = \$LASTEXITCODE/,
+    "a concurrent create race must be handled by exit code and a follow-up probe",
+  );
+  assert.match(
+    publishStep,
+    /if \(-not \(Test-GitHubRelease\)\)[\s\S]*if \(\$createExitCode -ne 0\)[\s\S]*if \(-not \(Test-GitHubRelease\)\)/,
+    "both initial absence and a losing create race must use the non-terminating probe",
   );
 });
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const routerSource = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
 const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
@@ -83,6 +84,12 @@ assert.match(
 
 assert.match(
   source,
+  /case "session": \{[\s\S]*const isBrandNewSession = liveGeneration\.sessionId == null;[\s\S]*if \(!isBrandNewSession\) \{[\s\S]*emitAttentionClear\(ev\.sessionId, liveGeneration\.runId, liveGeneration\.clearWatermark\);[\s\S]*liveGeneration\.markAttentionCleared\(ev\.sessionId\);[\s\S]*\}\n\s*reconcileLiveChatGenerationSession\(\s*liveGeneration,\s*ev\.sessionId,\s*liveGeneration\.runId,\s*\);/,
+  "A brand-new chat's first session event must not emit an attention clear — no canonical row exists yet, so the assistant's first genuine request must surface instead of being masked by an unknown-baseline projection",
+);
+
+assert.match(
+  source,
   /function ProgressGroup[\s\S]*<details[\s\S]*open=\{pending \|\| undefined\}[\s\S]*Progress[\s\S]*progress\.map/,
   "Progress events should render as a collapsible activity timeline that stays open while running",
 );
@@ -124,7 +131,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const replaceAssistantText = \(\s*text: string,\s*correction: ToolOffsetCorrection \| undefined,[\s\S]*?t\.id === assistantId\s*\? \{[\s\S]*?text,[\s\S]*?tools: rebaseToolTextOffsets\(t\.tools, correction\),[\s\S]*?pending: true,[\s\S]*?lifecycle: "streaming"/,
+  /const replaceAssistantText = \(\s*text: string,\s*correction: ToolOffsetCorrection \| undefined,[\s\S]*?const canonicalText = liveGeneration\.responseText\.replace\(text\);[\s\S]*?t\.id === assistantId\s*\? \{[\s\S]*?text: canonicalText,[\s\S]*?tools: rebaseToolTextOffsets\(t\.tools, correction\),[\s\S]*?pending: true,[\s\S]*?lifecycle: "streaming"/,
   "authoritative text replacement should atomically rebase the same assistant turn's live tools",
 );
 assert.match(
@@ -260,8 +267,8 @@ assert.match(
 );
 assert.match(
   turnStateSource,
-  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;/,
-  "Live chat snapshots should persist run ownership and client stream health without widening unrelated registries",
+  /type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn> & \{[\s\S]*runId\?: string \| null;[\s\S]*streamHealth\?: ChatStreamClientHealth;[\s\S]*clearWatermark\?: string \| null;/,
+  "Live chat snapshots should persist run ownership, client stream health, and the stable attention-clear watermark without widening unrelated registries",
 );
 assert.match(
   turnStateSource,
@@ -281,8 +288,20 @@ assert.match(
 
 assert.match(
   source,
-  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth/,
-  "sendRaw should persist the active stream snapshot with its controller, run ID, and health",
+  /const liveGeneration: LiveStreamGeneration = \{[\s\S]*?sessionId: initialLiveSessionId,[\s\S]*?originSessionId: initialLiveSessionId,[\s\S]*?controller,[\s\S]*?runId,[\s\S]*?clearWatermark: now,[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns,[\s\S]*?runId,[\s\S]*?streamHealth: generationStreamHealth,[\s\S]*?clearWatermark: now/,
+  "sendRaw should persist the active stream snapshot with its controller, run ID, health, and stable clear watermark",
+);
+
+assert.match(
+  source,
+  /function attentionClearWatermarkForLiveGeneration\([\s\S]*?return live\.clearWatermark \?\? live\.turns\.find\(\(turn\) => turn\.id === live\.activeLeafId\)\?\.createdAt \?\? null;/,
+  "adopted live generations should reuse the snapshot's own clear watermark, falling back to its active pending turn timestamp instead of remount time",
+);
+
+assert.match(
+  source,
+  /function maybeEmitAdoptedPendingAttentionClear\([\s\S]*?emitAttentionClear\(targetSessionId, live\.runId, attentionClearWatermarkForLiveGeneration\(live\)\);/,
+  "adopted pending generations should emit clears with the stable snapshot watermark",
 );
 
 // sessionAliases must be seeded with the origin id so the pre-migration
@@ -424,8 +443,8 @@ assert.match(
 
 assert.match(
   bubbleSource,
-  /aria-label="Regenerate response"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"/,
-  "Regenerate renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
+  /aria-label="Retry response"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-response-action focus-ring"/,
+  "Retry renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
 );
 
 // ── CHAT-D12-03: visible retry at failed turns on desktop ──
@@ -662,13 +681,53 @@ assert.match(
 // these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(COMPOSER_DRAFT_KEY\)\)/,
-  "composer input initialises from the persisted draft",
+  /export const DEFAULT_CHAT_COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1"/,
+  "ChatView exports the existing draft key as its safe default",
 );
 assert.match(
   source,
-  /const \{ clearNow: clearDraft \} = useDraftPersistence\(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
-  "the draft persists through the shared debounced hook (no per-keystroke localStorage writes)",
+  /composerDraftKey\?: string/,
+  "ChatView accepts a caller-owned draft namespace",
+);
+assert.match(
+  source,
+  /composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY/,
+  "ChatView preserves the existing draft slot when no override is provided",
+);
+assert.match(
+  source,
+  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(composerDraftKey\)\)/,
+  "composer input initialises from the selected draft namespace",
+);
+assert.match(
+  source,
+  /const \{ clearNow: clearDraft \} = useDraftPersistence\(composerDraftKey, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
+  "the selected draft namespace persists through the shared debounced hook",
+);
+assert.match(
+  routerSource,
+  /import \{ ChatView, DEFAULT_CHAT_COMPOSER_DRAFT_KEY \} from "@\/components\/chat-view"/,
+  "ChatRouter shares ChatView's compatibility default",
+);
+assert.match(
+  routerSource,
+  /composerDraftKey\?: string/,
+  "ChatRouter accepts an independent draft namespace",
+);
+assert.match(
+  routerSource,
+  /composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY/,
+  "ChatRouter keeps the legacy draft namespace by default",
+);
+assert.match(
+  routerSource,
+  /<ChatView[\s\S]*?composerDraftKey=\{composerDraftKey\}[\s\S]*?key=\{`chat-compose-\$\{composerDraftKey\}-\$\{composeInstance\}`\}/,
+  "ChatRouter keys the primary ChatView by draft namespace and compose lineage so namespace changes restore the matching draft",
+);
+assert.match(
+  routerSource,
+  /<ChatView[\s\S]*?composerDraftKey=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?key=\{`\$\{composerDraftKey\}:split:\$\{paneId\}`\}[\s\S]*?sessionId=\{paneId\}/,
+  "ChatRouter keys every split ChatView by its draft namespace so namespace changes safely remount persisted panes",
 );
 assert.match(
   draftHook,

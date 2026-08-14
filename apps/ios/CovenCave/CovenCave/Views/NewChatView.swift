@@ -35,12 +35,14 @@ struct NewChatView: View {
     init(
         initialFamiliarIds: [String] = [],
         fixedFamiliarId: String? = nil,
+        initialProjectRoot: String? = nil,
         onStart: @escaping (ChatThread) -> Void
     ) {
         self.fixedFamiliarId = fixedFamiliarId
         self.onStart = onStart
         let seededFamiliarIds = fixedFamiliarId.map { [$0] } ?? initialFamiliarIds
         _selected = State(initialValue: Set(seededFamiliarIds))
+        _selectedProjectRoot = State(initialValue: initialProjectRoot)
     }
 
     var body: some View {

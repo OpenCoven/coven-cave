@@ -35,7 +35,7 @@ import { ResearchTabLibrary } from "./research-tab-library";
 import { ResearchTabPrompt } from "./research-tab-prompt";
 import { ResearchTabResources } from "./research-tab-resources";
 import { ResearchTabStudio } from "./research-tab-studio";
-import { researchLiveRunCount } from "./researcher-status";
+import { researchEngineStatus, researchLiveRunCount } from "./researcher-status";
 import { useResearchMissions } from "./use-research-missions";
 
 export type ResearchDeskTab = "prompt" | "desk" | "library" | "studio" | "resources";
@@ -170,6 +170,11 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     ) : TAB_LABELS[id],
   }));
 
+  const checkpointCount = research.missions.filter(
+    (mission) => mission.status === "checkpoint",
+  ).length;
+  const engine = researchEngineStatus(context.runtimeState.daemonRunning, liveRunCount);
+
   return (
     <div className="research-desk">
       <div className="research-desk__tabs">
@@ -182,6 +187,35 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
           size="sm"
           bordered={false}
         />
+        {/* Status cluster: engine readiness, live runs, and the review queue —
+            the three numbers the frame keeps permanently on screen so the desk
+            never has to be opened to learn there is work waiting. The review
+            segment is a button because it has somewhere to go. */}
+        <div className="research-desk__status">
+          <span className="research-desk__status-seg" data-tone={engine.tone} title={engine.label}>
+            <i aria-hidden />
+            engine
+            <span className="sr-only"> — {engine.label}</span>
+          </span>
+          <span className="research-desk__status-seg" title={`${liveRunCount} live`}>
+            {liveRunCount} live
+          </span>
+          {checkpointCount > 0 ? (
+            <button
+              type="button"
+              className="research-desk__status-review focus-ring"
+              title="Runs paused for your direction"
+              onClick={() => selectTabTracked("desk")}
+            >
+              {checkpointCount} review
+              <span className="sr-only">
+                {" — "}
+                {checkpointCount === 1 ? "one run is" : `${checkpointCount} runs are`} waiting at a
+                checkpoint. Opens the Desk.
+              </span>
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div

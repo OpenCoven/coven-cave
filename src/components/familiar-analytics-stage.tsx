@@ -13,6 +13,8 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { Icon } from "@/lib/icon";
 import type { SelfHealRequest } from "@/lib/familiar-heal-requests";
 import { pulseTotal, type PulseDay } from "@/lib/session-pulse";
+import { FamiliarActivityLattice } from "@/components/familiar-activity-lattice";
+import type { ActivityLattice } from "@/lib/activity-lattice";
 import type { SessionRow } from "@/lib/types";
 
 // ─── Scope: one lens and one time window for the whole stage ─────────────────
@@ -665,6 +667,7 @@ export const SelfHealStrip = memo(function SelfHealStrip({
  */
 export const PulseOverlay = memo(function PulseOverlay({
   pulse,
+  lattice,
   lastActive,
   streakDays,
   onClose,
@@ -672,6 +675,10 @@ export const PulseOverlay = memo(function PulseOverlay({
   selectedDayKey,
 }: {
   pulse: PulseDay[];
+  /** All three time views. The stats below still read the fortnight, because
+   *  "peak day" and "sessions per day" are fortnight questions — the lattice
+   *  adds the year and the quarter beside it, it does not restate them. */
+  lattice: ActivityLattice;
   lastActive: string | null;
   streakDays: number;
   onClose: () => void;
@@ -679,7 +686,6 @@ export const PulseOverlay = memo(function PulseOverlay({
   selectedDayKey: string | null;
 }) {
   const total = pulseTotal(pulse);
-  const max = Math.max(1, ...pulse.map((day) => day.count));
   const peak = pulse.reduce<PulseDay | null>(
     (best, day) => (best === null || day.count > best.count ? day : best),
     null,
@@ -693,10 +699,10 @@ export const PulseOverlay = memo(function PulseOverlay({
   // focus and traps none. role="dialog" would have AT announce a modal that
   // never arrives.
   return (
-    <section className="fa-pulse-panel" aria-label={`Activity — last ${pulse.length} days`}>
+    <section className="fa-pulse-panel" aria-label="Activity — year, quarter and fortnight">
       <div className="fa-pulse-panel__head">
         <Icon name="ph:chart-line-up" width={15} aria-hidden />
-        <b>Activity — last {pulse.length} days</b>
+        <b>Activity</b>
         <span className="fa-band-count">
           {total} session{total === 1 ? "" : "s"}
           {peak && peak.count > 0 ? ` · peak ${peak.label}` : ""}
@@ -707,22 +713,11 @@ export const PulseOverlay = memo(function PulseOverlay({
           Collapse
         </button>
       </div>
-      <div className="fa-pulse-panel__chart">
-        {pulse.map((day) => (
-          <button
-            key={day.key}
-            type="button"
-            className={`fa-pulse-day${day.count === 0 ? " is-empty" : ""}${day.key === selectedDayKey ? " is-selected" : ""} focus-ring`}
-            aria-pressed={day.key === selectedDayKey}
-            title={`${day.label} · ${day.count} session${day.count === 1 ? "" : "s"}`}
-            onClick={() => onSelectDay(day)}
-          >
-            <b>{day.count}</b>
-            <i style={{ height: `${day.count === 0 ? 4 : Math.max(12, (day.count / max) * 100)}%` }} aria-hidden />
-            <span>{day.label}</span>
-          </button>
-        ))}
-      </div>
+      <FamiliarActivityLattice
+        lattice={lattice}
+        onSelectDay={onSelectDay}
+        selectedDayKey={selectedDayKey}
+      />
       <div className="fa-pulse-panel__stats">
         <span className="fa-pulse-stat fa-pulse-stat--good">
           <b>{peak?.count ?? 0}</b>

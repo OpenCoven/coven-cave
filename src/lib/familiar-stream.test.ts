@@ -152,13 +152,52 @@ describe("streamFamiliarText", () => {
 
   it("surfaces an error frame", async () => {
     globalThis.fetch = (async () => sseResponse([
-      frame({ kind: "assistant_chunk", text: "partial" }),
+      frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" }),
       frame({ kind: "error", message: "boom" }),
     ])) as typeof fetch;
 
     const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
-    assert.equal(text, "partial");
+    assert.equal(text, "Useful text.");
     assert.equal(error, "boom");
+  });
+
+  it("removes a partial attention marker after a failed done frame", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" }),
+      frame({ kind: "done", isError: true }),
+    ])) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(text, "Useful text.");
+    assert.equal(error, "the familiar reported an error");
+  });
+
+  it("returns terminally stripped text when an aborted reader rejects", async () => {
+    const abortController = new AbortController();
+    const encoder = new TextEncoder();
+    let pulls = 0;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(encoder.encode(frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" })));
+            abortController.abort();
+            return;
+          }
+          controller.error(new Error("request aborted"));
+        },
+      }),
+    }) as unknown as Response) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      signal: abortController.signal,
+    });
+    assert.equal(text, "Useful text.");
+    assert.equal(error, "cancelled");
   });
 
   it("reports a non-ok HTTP status as an error", async () => {
@@ -241,5 +280,113 @@ describe("streamFamiliarText", () => {
       modelOverrideScope: "runtime-default",
       modelControls: { reasoning: "medium" },
     });
+  });
+
+  // Attention-marker leak coverage (holistic review: the directive applies to
+  // every chat send, so every direct familiar-stream consumer — quick chat,
+  // voice, prompt enhance, review draft — must never see raw `<coven:attention
+  // …>` markup, complete or partial, through onText or the returned text).
+  it("hides a complete attention marker from onText and the returned text", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: 'Choose a channel.\n<coven:attention reason="decision" />' }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const seen: string[] = [];
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onText: (t) => seen.push(t),
+    });
+    assert.equal(error, null);
+    assert.equal(text, "Choose a channel.\n", "returned text has the marker stripped");
+    for (const t of seen) {
+      assert.doesNotMatch(t, /<coven:attention/, "onText never sees the raw marker");
+    }
+  });
+
+  it("hides a chunked/partial attention marker tail while streaming", async () => {
+    // The marker's opening tag arrives split across several chunks — a real
+    // streaming boundary can land anywhere, including mid-tag.
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Pick one.\n<cov" }),
+      frame({ kind: "assistant_chunk", text: "en:atten" }),
+      frame({ kind: "assistant_chunk", text: 'tion reason="input"' }),
+      frame({ kind: "assistant_chunk", text: " />" }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const seen: string[] = [];
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onText: (t) => seen.push(t),
+    });
+    assert.equal(error, null);
+    for (const t of seen) {
+      assert.doesNotMatch(t, /<cov/, "no partial marker prefix ever flashes mid-stream");
+    }
+    assert.equal(text, "Pick one.\n", "the completed marker is stripped from the final text");
+  });
+
+  it("hides a possible marker tail while streaming but preserves it after settlement", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Still useful.\n<coven:attention rea" }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const seen: string[] = [];
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onText: (value) => seen.push(value),
+    });
+    assert.equal(error, null);
+    assert.equal(text, "Still useful.\n<coven:attention rea");
+    assert.ok(seen.every((value) => !value.includes("<coven:")));
+  });
+
+  it("preserves prose after malformed quoted attention markup", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: '<coven:attention" reason="decision">' }),
+      frame({ kind: "assistant_chunk", text: "AFTER" }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(error, null);
+    assert.equal(text, "AFTER");
+  });
+
+  it("keeps a fenced literal attention marker visible (never a live request)", async () => {
+    const literal = 'Example: `<coven:attention reason="decision" />`';
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: literal }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(error, null);
+    assert.equal(text, literal, "a marker inside an inline code span is left untouched");
+  });
+
+  it("hides an attention marker delivered via assistant_replace", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "draft" }),
+      frame({ kind: "assistant_replace", text: 'Final answer.\n<coven:attention reason="approval" />' }),
+      frame({ kind: "done" }),
+    ])) as typeof fetch;
+
+    const seen: string[] = [];
+    const { text, error } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onText: (t) => seen.push(t),
+    });
+    assert.equal(error, null);
+    assert.equal(text, "Final answer.\n");
+    for (const t of seen) {
+      assert.doesNotMatch(t, /<coven:attention/, "the replace event's marker never reaches onText raw");
+    }
   });
 });

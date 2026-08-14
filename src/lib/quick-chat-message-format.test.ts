@@ -293,7 +293,7 @@ test("inline delimiters inside block fences cannot suppress later controls", () 
   assert.ok(formatted.pieces.some((piece) => piece.kind === "card"));
 });
 
-test("a list delimiter that opens renderer code protects following controls", () => {
+test("a list delimiter that opens renderer code still yields to following live controls after close", () => {
   const text = [
     "- ```xml",
     "  example",
@@ -303,8 +303,8 @@ test("a list delimiter that opens renderer code protects following controls", ()
 
   const formatted = formatQuickChatAssistantMessage(text, false);
 
-  assert.equal(formatted.copyText, text);
-  assert.deepEqual(formatted.pieces, [{ kind: "text", text }]);
+  assert.equal(formatted.copyText, "- ```xml\n  example\n  ```");
+  assert.ok(formatted.pieces.some((piece) => piece.kind === "action"));
 });
 
 test("indented fence examples cannot activate protocol controls", () => {

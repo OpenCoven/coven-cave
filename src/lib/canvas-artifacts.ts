@@ -5,6 +5,7 @@
 // unit-tested without a DOM, a daemon, or React Flow.
 
 import { injectCanvasInspector } from "./canvas-inspector.ts";
+import { injectPreviewCsp } from "./canvas-preview-csp.ts";
 
 // An artifact is either a self-contained HTML document or a single React
 // component (transpiled + rendered by the sandbox runtime). Older records
@@ -157,12 +158,24 @@ export function isFullDocument(code: string): boolean {
  * bare fragment is wrapped in a minimal document with neutral base styling so
  * it renders sensibly on its own. The result is fed to `<iframe srcdoc>` and
  * runs under `sandbox="allow-scripts"` (no same-origin) — isolation comes from
- * the sandbox, so we intentionally do NOT strip scripts here.
+ * the sandbox, so we intentionally do NOT strip scripts here. The offline CSP
+ * from canvas-preview-csp.ts is stamped on top: the artifact still runs its own
+ * inline scripts, but the only URL it can fetch is a sandbox asset under
+ * `/sandbox/` — no fetch, no remote image, font, frame, or stylesheet.
+ *
+ * `assetOrigin` defaults to the app's own origin; see buildPreviewCsp for why
+ * an opaque-origin document can't express that as `'self'`.
  */
-export function buildPreviewSrcDoc(code: string, inspectorGeneration = ""): string {
+export function buildPreviewSrcDoc(
+  code: string,
+  inspectorGeneration = "",
+  assetOrigin?: string,
+): string {
   const src = typeof code === "string" ? code : "";
-  if (isFullDocument(src)) return injectCanvasInspector(src, inspectorGeneration);
-  return injectCanvasInspector([
+  if (isFullDocument(src)) {
+    return injectPreviewCsp(injectCanvasInspector(src, inspectorGeneration), assetOrigin);
+  }
+  return injectPreviewCsp(injectCanvasInspector([
     "<!doctype html>",
     '<html lang="en">',
     "<head>",
@@ -175,7 +188,7 @@ export function buildPreviewSrcDoc(code: string, inspectorGeneration = ""): stri
     "</head>",
     `<body>${src}</body>`,
     "</html>",
-  ].join("\n"), inspectorGeneration);
+  ].join("\n"), inspectorGeneration), assetOrigin);
 }
 
 /** A compact title from a prompt: first line, collapsed, clamped. */

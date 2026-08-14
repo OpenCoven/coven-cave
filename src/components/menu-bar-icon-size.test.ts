@@ -6,11 +6,16 @@ const css = readFileSync(
   "utf8",
 );
 // One compact top-chrome glyph size, var(--icon-sm) (14px) — shared by the
-// menu-bar action/status icons, the search glyph, and the sidepanel toggle.
+// menu-bar action/status icons, the notification bell, the search glyph, and
+// the sidepanel toggle.
+//
+// The bell joined this list deliberately: it sits in the same status cluster
+// but was omitted, so its glyph fell through to Icon's 1em default and was the
+// one control in the bar sized by accident rather than by this rule.
 assert.match(
   css,
-  /\.menu-bar__task > svg,\s*\n\.menu-bar__status > svg \{[^}]*width:\s*var\(--icon-sm\)[^}]*height:\s*var\(--icon-sm\)[^}]*\}/,
-  "task and status icons are var(--icon-sm)",
+  /\.menu-bar__task > svg,\s*\n\.menu-bar__status > svg,\s*\n\.menu-bar__group--status \.notification-bell__trigger > svg \{[^}]*width:\s*var\(--icon-sm\)[^}]*height:\s*var\(--icon-sm\)[^}]*\}/,
+  "task, status and bell icons are var(--icon-sm)",
 );
 assert.match(css, /\.menu-bar__search-icon\s*\{[^}]*width:\s*var\(--icon-sm\)[^}]*height:\s*var\(--icon-sm\)[^}]*\}/, "search icon is var(--icon-sm)");
 // Action buttons + search input use the design-token body size, not ad-hoc px.

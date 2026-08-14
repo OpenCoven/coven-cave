@@ -6,7 +6,6 @@ import {
   setFamiliarImage,
   clearFamiliarImage,
 } from "@/lib/cave-familiar-images";
-import { clearFamiliarFoil } from "@/lib/cave-familiar-foil";
 import { useAnnouncer } from "@/components/ui/live-region";
 
 export type PreparedFamiliarImage = {
@@ -121,11 +120,6 @@ export function useFamiliarImageUpload(familiarId: string) {
           announce(res.reason, "assertive");
           return;
         }
-        // The card's foil is cut from the portrait, so a new portrait retires
-        // the old plate. Dropping it here rather than relying on the stored
-        // source key is what closes the one gap that key cannot see: a plate
-        // the summoning rite stored before the avatar had a URL to key on.
-        void clearFamiliarFoil(familiarId);
         if (prepared.downsized) {
           setToast("Image was downsized for Cave.");
           announce("Avatar updated. Image was downsized for Cave.");
@@ -141,10 +135,16 @@ export function useFamiliarImageUpload(familiarId: string) {
     [familiarId, announce],
   );
 
-  const clear = useCallback(() => {
-    void clearFamiliarImage(familiarId);
-    void clearFamiliarFoil(familiarId);
-  }, [familiarId]);
+  const clear = useCallback(async () => {
+    setToast(null);
+    const res = await clearFamiliarImage(familiarId);
+    if (!res.ok) {
+      setToast(res.reason);
+      announce(res.reason, "assertive");
+      return;
+    }
+    announce("Avatar removed.");
+  }, [familiarId, announce]);
 
   return { onFile, clear, toast, setToast };
 }

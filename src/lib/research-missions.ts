@@ -1,4 +1,5 @@
 import { parseCodexRrule, RRULE_DAY_LABEL } from "./codex-automation-form.ts";
+import { hasUnpairedUtf16Surrogate } from "./utf16.ts";
 
 export const RESEARCH_MISSION_MODES = [
   "brief",
@@ -185,6 +186,9 @@ export type ResearchMission = {
   projectRoot?: string;
   constraints: string[];
   bounds: ResearchBounds;
+  /** Resolved at creation so a mission's runtime cannot drift mid-flight. */
+  harness?: string;
+  model?: string;
   status: ResearchMissionStatus;
   createdAt: string;
   updatedAt: string;
@@ -199,6 +203,134 @@ export type ResearchMission = {
   lastError?: string;
 };
 
+const DIAGNOSTIC_REFERENCE_MAX_LENGTH = 256;
+const DIAGNOSTIC_REFERENCE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function diagnosticReference(value: string | undefined) {
+  if (value === undefined) return { value: null, redacted: false } as const;
+  // Run references are useful support correlators, but the persisted schema
+  // does not constrain them. Do not let a malformed runtime value turn the
+  // clipboard into a path or URL disclosure channel.
+  if (
+    value.length > DIAGNOSTIC_REFERENCE_MAX_LENGTH
+    // These fields are persisted as unrestricted strings. A permissive slug
+    // check still accepts a hyphenated research brief, so retain only the UUID
+    // references minted by the flow/session stores; redact legacy or malformed
+    // values rather than turning the support record into a content channel.
+    || !DIAGNOSTIC_REFERENCE_UUID_RE.test(value)
+  ) {
+    return { value: null, redacted: true } as const;
+  }
+  return { value, redacted: false } as const;
+}
+
+/**
+ * A deliberately bounded, shareable support record. It is derived entirely
+ * from persisted mission state: it never claims to be a daemon log, and it
+ * omits local paths, source URLs, the research brief, and other content that
+ * would make a clipboard handoff unexpectedly disclose workspace data.
+ */
+export function researchDiagnosticTrace(mission: ResearchMission) {
+  const latestIteration = mission.iterations.at(-1) ?? null;
+  const sourceCounts = researchSourceStatusCounts(mission.sources);
+  const steps = latestIteration?.steps ?? [];
+  // Iteration fields are persisted free text, so never put their contents in a
+  // clipboard report. Keep a small, ordered status trace instead: it is enough
+  // to locate the failed phase without turning support copy into a channel for
+  // a prompt, source, filesystem path, or daemon output.
+  const capturedPhases = steps.slice(0, 50).map((step) => step.status);
+  const artifactStates = { working: 0, published: 0, rejected: 0 };
+  const artifactKinds = Object.fromEntries(
+    RESEARCH_ARTIFACT_KINDS.map((kind) => [kind, 0]),
+  ) as Record<ResearchArtifactKind, number>;
+  for (const artifact of mission.artifacts) {
+    artifactStates[artifact.state] += 1;
+    artifactKinds[artifact.kind] += 1;
+  }
+  return {
+    schema: "coven-cave.research-diagnostic.v1",
+    // The record is a snapshot of persisted state, not a live daemon event.
+    // Keeping this deterministic also prevents a server/client hydration drift
+    // when the diagnostics dialog is rendered in a Client Component.
+    generatedAt: mission.updatedAt,
+    mission: {
+      id: mission.id,
+      mode: mission.mode,
+      status: mission.status,
+      createdAt: mission.createdAt,
+      startedAt: mission.startedAt ?? null,
+      updatedAt: mission.updatedAt,
+      finishedAt: mission.finishedAt ?? null,
+      hasProjectRoot: Boolean(mission.projectRoot),
+    },
+    bounds: mission.bounds,
+    outcome: {
+      hasError: Boolean(mission.lastError),
+      decision: latestIteration?.decision ?? null,
+    },
+    latestIteration: latestIteration ? {
+      number: latestIteration.number,
+      status: latestIteration.status,
+      flowRun: diagnosticReference(latestIteration.flowRunId),
+      session: diagnosticReference(latestIteration.sessionId),
+      automationRun: diagnosticReference(latestIteration.automationRunId),
+      startedAt: latestIteration.startedAt ?? null,
+      finishedAt: latestIteration.finishedAt ?? null,
+      costUsd: latestIteration.costUsd ?? null,
+      phases: {
+        recorded: steps.length,
+        captured: capturedPhases.length,
+        truncated: steps.length > capturedPhases.length,
+        statuses: capturedPhases,
+      },
+    } : null,
+    evidence: {
+      sources: {
+        recorded: mission.sources.length,
+        byStatus: sourceCounts,
+      },
+      artifacts: {
+        recorded: mission.artifacts.length,
+        byState: artifactStates,
+        byKind: artifactKinds,
+      },
+    },
+    availability: {
+      daemonTrace: "not-recorded",
+      note: "This report contains persisted research-mission state only; no daemon trace was recorded for this run.",
+    },
+  } as const;
+}
+
+/**
+ * Runtime the mission's iterations execute on, chosen per mission.
+ *
+ * Before this existed, a mission silently inherited the familiar's Coven
+ * binding, so a familiar bound to `codex` could not run Research at all on a
+ * daemon lacking the `sessionLaunchPolicy` capability — the launch failed with
+ * "This Coven daemon cannot safely run unattended Research with workspace
+ * writes" and there was no way to pick a runtime that works.
+ */
+export const RESEARCH_RUNTIME_DEFAULT_HARNESS = "copilot";
+export const RESEARCH_MODEL_MAX_LENGTH = 200;
+/**
+ * Harness ids accepted for a mission, mirroring COMPATIBILITY_ADAPTERS.
+ *
+ * Duplicated as a literal rather than imported because this module is the
+ * shared client/server contract and must stay free of adapter-registry
+ * imports; research-missions.test.ts pins the two lists together so a new
+ * adapter cannot drift out of this allowlist unnoticed.
+ */
+export const RESEARCH_HARNESS_IDS = [
+  "codex",
+  "claude",
+  "copilot",
+  "hermes",
+  "grok",
+  "openclaw",
+  "opencode",
+] as const;
+
 export type CreateResearchMissionInput = {
   familiarId: string;
   title?: string;
@@ -210,6 +342,14 @@ export type CreateResearchMissionInput = {
   projectRoot?: string;
   constraints?: string[];
   bounds: ResearchBounds;
+  /**
+   * Harness id (see COMPATIBILITY_ADAPTERS). Omitted means
+   * RESEARCH_RUNTIME_DEFAULT_HARNESS — deliberately copilot, which is the
+   * runtime Cave can launch directly without a daemon capability.
+   */
+  harness?: string;
+  /** Harness-specific model id, passed through verbatim when supported. */
+  model?: string;
 };
 
 export type ResearchMissionActionInput =
@@ -266,6 +406,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function validTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function validResearchPromptText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && !value.includes("\0")
+    && !hasUnpairedUtf16Surrogate(value)
+    && value.length <= maxLength;
 }
 
 function optionalString(
@@ -476,13 +623,17 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     || !RESEARCH_MISSION_ID_RE.test(value.id)
     || typeof value.familiarId !== "string"
     || !FAMILIAR_ID_RE.test(value.familiarId)
-    || typeof value.title !== "string"
-    || typeof value.intent !== "string"
+    || !validResearchPromptText(value.title, RESEARCH_TITLE_MAX_LENGTH)
+    || !validResearchPromptText(value.intent, RESEARCH_INTENT_MAX_LENGTH)
     || !RESEARCH_MISSION_MODES.includes(value.mode as ResearchMissionMode)
     || !["auto", "user"].includes(String(value.modeSource))
-    || typeof value.deliverable !== "string"
+    || !validResearchPromptText(value.deliverable, RESEARCH_DELIVERABLE_MAX_LENGTH)
+    || !value.deliverable.trim()
     || !Array.isArray(value.constraints)
-    || value.constraints.some((constraint) => typeof constraint !== "string")
+    || value.constraints.length > RESEARCH_CONSTRAINT_MAX_COUNT
+    || value.constraints.some((constraint) => (
+      !validResearchPromptText(constraint, RESEARCH_CONSTRAINT_MAX_LENGTH)
+    ))
     || !isRecord(value.bounds)
     || !RESEARCH_MISSION_STATUSES.has(value.status as ResearchMissionStatus)
     || !validTimestamp(value.createdAt)
@@ -501,13 +652,34 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   const finishedAt = optionalTimestamp(value, "finishedAt");
   const automationId = optionalString(value, "automationId");
   const lastError = optionalString(value, "lastError");
+  // The mission's runtime must survive a read/write round trip. This parser
+  // rebuilds from an explicit field list, so a field it does not name is
+  // silently dropped — which is what happened to `harness`: it was written at
+  // creation, then erased the first time the mission was re-read and saved.
+  const harness = optionalString(value, "harness");
+  const model = optionalString(value, "model");
   if (direction === null
     || audience === null
     || projectRoot === null
     || startedAt === null
     || finishedAt === null
     || automationId === null
-    || lastError === null) {
+    || lastError === null
+    || harness === null
+    || model === null) {
+    return null;
+  }
+  // An unrecognised harness on disk is refused rather than coerced: the record
+  // would otherwise claim a runtime the launcher cannot honour.
+  if (harness !== undefined && !(RESEARCH_HARNESS_IDS as readonly string[]).includes(harness)) {
+    return null;
+  }
+  if (model !== undefined && !validResearchPromptText(model, RESEARCH_MODEL_MAX_LENGTH)) {
+    return null;
+  }
+  if ((direction !== undefined && !validResearchPromptText(direction, RESEARCH_DIRECTION_MAX_LENGTH))
+    || (audience !== undefined && !validResearchPromptText(audience, RESEARCH_AUDIENCE_MAX_LENGTH))
+    || (projectRoot !== undefined && !validResearchPromptText(projectRoot, RESEARCH_PROJECT_ROOT_MAX_LENGTH))) {
     return null;
   }
   const iterations = value.iterations.map(parseResearchIteration);
@@ -536,6 +708,8 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     ...(projectRoot !== undefined ? { projectRoot } : {}),
     constraints: value.constraints as string[],
     bounds: bounds.value,
+    ...(harness !== undefined ? { harness } : {}),
+    ...(model !== undefined ? { model } : {}),
     status: value.status as ResearchMissionStatus,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
@@ -555,6 +729,13 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
  *  validator (server) and the desk composer (client). */
 export const RESEARCH_INTENT_MIN_LENGTH = 8;
 export const RESEARCH_INTENT_MAX_LENGTH = 10_000;
+export const RESEARCH_TITLE_MAX_LENGTH = 160;
+export const RESEARCH_DELIVERABLE_MAX_LENGTH = 160;
+export const RESEARCH_AUDIENCE_MAX_LENGTH = 500;
+export const RESEARCH_PROJECT_ROOT_MAX_LENGTH = 2_000;
+export const RESEARCH_DIRECTION_MAX_LENGTH = 2_000;
+export const RESEARCH_CONSTRAINT_MAX_COUNT = 20;
+export const RESEARCH_CONSTRAINT_MAX_LENGTH = 500;
 
 export function validateCreateResearchMissionInput(
   input: unknown,
@@ -567,7 +748,14 @@ export function validateCreateResearchMissionInput(
   if (!FAMILIAR_ID_RE.test(familiarId) || familiarId.includes("..")) {
     return { ok: false, error: "invalid familiar id" };
   }
-  const intent = typeof value.intent === "string" ? value.intent.trim() : "";
+  const rawIntent = typeof value.intent === "string" ? value.intent : "";
+  const intent = rawIntent.trim();
+  if (intent.includes("\0")) {
+    return { ok: false, error: "intent contains an invalid NUL character" };
+  }
+  if (hasUnpairedUtf16Surrogate(rawIntent)) {
+    return { ok: false, error: "intent contains invalid Unicode" };
+  }
   if (intent.length < RESEARCH_INTENT_MIN_LENGTH || intent.length > RESEARCH_INTENT_MAX_LENGTH) {
     return {
       ok: false,
@@ -580,9 +768,19 @@ export function validateCreateResearchMissionInput(
   if (value.modeSource !== "auto" && value.modeSource !== "user") {
     return { ok: false, error: "invalid mode source" };
   }
-  const deliverable = typeof value.deliverable === "string" ? value.deliverable.trim() : "";
-  if (!deliverable || deliverable.length > 160) {
-    return { ok: false, error: "deliverable required" };
+  const rawDeliverable = typeof value.deliverable === "string" ? value.deliverable : "";
+  const deliverable = rawDeliverable.trim();
+  if (deliverable.includes("\0")) {
+    return { ok: false, error: "deliverable contains an invalid NUL character" };
+  }
+  if (hasUnpairedUtf16Surrogate(rawDeliverable)) {
+    return { ok: false, error: "deliverable contains invalid Unicode" };
+  }
+  if (!deliverable || deliverable.length > RESEARCH_DELIVERABLE_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `deliverable must be between 1 and ${RESEARCH_DELIVERABLE_MAX_LENGTH} characters`,
+    };
   }
   const bounds = normalizeResearchBounds(
     value.bounds && typeof value.bounds === "object"
@@ -590,25 +788,99 @@ export function validateCreateResearchMissionInput(
       : {},
   );
   if (!bounds.ok) return { ok: false, error: bounds.reason };
-  const constraints = Array.isArray(value.constraints)
-    ? value.constraints
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 20)
-        .map((item) => item.slice(0, 500))
-    : [];
+  if (value.constraints !== undefined && !Array.isArray(value.constraints)) {
+    return { ok: false, error: "constraints must be an array of strings" };
+  }
+  const rawConstraints = value.constraints ?? [];
+  if (rawConstraints.length > RESEARCH_CONSTRAINT_MAX_COUNT) {
+    return {
+      ok: false,
+      error: `constraints must contain at most ${RESEARCH_CONSTRAINT_MAX_COUNT} items`,
+    };
+  }
+  if (rawConstraints.some((item) => typeof item !== "string")) {
+    return { ok: false, error: "constraints must be an array of strings" };
+  }
+  const constraints: string[] = [];
+  for (const rawConstraint of rawConstraints as string[]) {
+    if (rawConstraint.includes("\0")) {
+      return { ok: false, error: "constraint contains an invalid NUL character" };
+    }
+    if (hasUnpairedUtf16Surrogate(rawConstraint)) {
+      return { ok: false, error: "constraint contains invalid Unicode" };
+    }
+    const constraint = rawConstraint.trim();
+    if (constraint.length > RESEARCH_CONSTRAINT_MAX_LENGTH) {
+      return {
+        ok: false,
+        error: `each constraint must be at most ${RESEARCH_CONSTRAINT_MAX_LENGTH} characters`,
+      };
+    }
+    if (constraint) constraints.push(constraint);
+  }
   const optionalText = (field: "title" | "audience" | "projectRoot", max: number) => {
     const raw = value[field];
     if (raw === undefined || raw === null || raw === "") return undefined;
-    if (typeof raw !== "string" || raw.includes("\0")) return null;
-    return raw.trim().slice(0, max) || undefined;
+    if (
+      typeof raw !== "string"
+      || raw.includes("\0")
+      || hasUnpairedUtf16Surrogate(raw)
+    ) return null;
+    const trimmed = raw.trim();
+    if (trimmed.length > max) return null;
+    return trimmed || undefined;
   };
-  const title = optionalText("title", 160);
-  const audience = optionalText("audience", 500);
-  const projectRoot = optionalText("projectRoot", 2_000);
-  if (title === null || audience === null || projectRoot === null) {
-    return { ok: false, error: "invalid optional research field" };
+  const title = optionalText("title", RESEARCH_TITLE_MAX_LENGTH);
+  const audience = optionalText("audience", RESEARCH_AUDIENCE_MAX_LENGTH);
+  const projectRoot = optionalText("projectRoot", RESEARCH_PROJECT_ROOT_MAX_LENGTH);
+  if (title === null) {
+    return { ok: false, error: `title must be valid Unicode text without NUL and at most ${RESEARCH_TITLE_MAX_LENGTH} characters` };
+  }
+  if (audience === null) {
+    return { ok: false, error: `audience must be valid Unicode text without NUL and at most ${RESEARCH_AUDIENCE_MAX_LENGTH} characters` };
+  }
+  if (projectRoot === null) {
+    return { ok: false, error: `projectRoot must be valid Unicode text without NUL and at most ${RESEARCH_PROJECT_ROOT_MAX_LENGTH} characters` };
+  }
+  // An unknown harness is REFUSED rather than quietly replaced with the
+  // default: a mission that silently ran on a different runtime than the caller
+  // asked for is the lock-in this field exists to remove, wearing a friendlier
+  // face. Omitting the field is the only way to accept the default.
+  const rawHarness = value.harness;
+  let harness: string | undefined;
+  if (rawHarness !== undefined && rawHarness !== null && rawHarness !== "") {
+    if (
+      typeof rawHarness !== "string"
+      || !(RESEARCH_HARNESS_IDS as readonly string[]).includes(rawHarness)
+    ) {
+      return {
+        ok: false,
+        error: `harness must be one of: ${RESEARCH_HARNESS_IDS.join(", ")}`,
+      };
+    }
+    harness = rawHarness;
+  }
+  const rawModel = value.model;
+  let model: string | undefined;
+  if (rawModel !== undefined && rawModel !== null && rawModel !== "") {
+    if (
+      typeof rawModel !== "string"
+      || rawModel.includes("\0")
+      || hasUnpairedUtf16Surrogate(rawModel)
+      || rawModel.trim().length > RESEARCH_MODEL_MAX_LENGTH
+    ) {
+      return {
+        ok: false,
+        error: `model must be valid Unicode text without NUL and at most ${RESEARCH_MODEL_MAX_LENGTH} characters`,
+      };
+    }
+    // A flag-shaped model would be read as an option by the harness CLI rather
+    // than as its value, so refuse it at the boundary instead of building argv
+    // that means something else.
+    if (rawModel.trim().startsWith("-")) {
+      return { ok: false, error: "model must not begin with '-'" };
+    }
+    model = rawModel.trim();
   }
   return {
     ok: true,
@@ -623,6 +895,8 @@ export function validateCreateResearchMissionInput(
       ...(projectRoot ? { projectRoot } : {}),
       constraints,
       bounds: bounds.value,
+      ...(harness ? { harness } : {}),
+      ...(model ? { model } : {}),
     },
   };
 }
@@ -745,6 +1019,62 @@ function settledPhaseOutcome(
  * - cancelled/archived mid-run — unfinished phases read skipped.
  * Live missions pass raw step statuses through unchanged.
  */
+/**
+ * One short meta line per display phase, for the Desk stepper.
+ *
+ * The handoff prints a second line under each phase node ("12/12 src",
+ * "your turn") so the stepper reports progress rather than only position.
+ * Every string here is read off the mission — counts, statuses, the
+ * checkpoint state — so a phase with nothing to report says "—" instead of
+ * inventing a number.
+ */
+export function researchPhaseMeta(
+  mission: Pick<ResearchMission, "status" | "bounds" | "sources" | "artifacts" | "iterations">,
+  phaseIds: readonly string[],
+): string[] {
+  const statuses = researchPhaseStatuses(mission, phaseIds);
+  const counts = researchSourceStatusCounts(mission.sources);
+  const artifacts = mission.artifacts.filter((artifact) => artifact.state !== "rejected").length;
+  return phaseIds.map((phase, index) => {
+    const status = statuses[index];
+    if (phase === "scope") {
+      return status === "succeeded" ? "bounds set" : status === "running" ? "framing…" : "—";
+    }
+    if (phase === "gather") {
+      if (status === "pending") return "—";
+      // A zero target is a real (if legacy) bound. "3/0 src" reads as a broken
+      // divide, so report the count alone when there is nothing to divide by.
+      return mission.bounds.sourceTarget > 0
+        ? `${mission.sources.length}/${mission.bounds.sourceTarget} src`
+        : `${mission.sources.length} src`;
+    }
+    if (phase === "challenge") {
+      if (status === "failed") return "stopped here";
+      if (counts.conflicting > 0) {
+        return `${counts.conflicting} conflicting`;
+      }
+      return status === "succeeded" ? "verified" : status === "running" ? "testing…" : "—";
+    }
+    if (phase === "synthesize") {
+      if (status === "pending") return "—";
+      return artifacts > 0 ? `${artifacts} artifact${artifacts === 1 ? "" : "s"}` : "drafting…";
+    }
+    if (phase === "control") {
+      if (mission.status === "checkpoint") return "your turn";
+      return status === "succeeded" ? "approved" : "—";
+    }
+    if (phase === "publish") {
+      const published = mission.artifacts.filter((artifact) => artifact.state === "published").length;
+      if (published > 0) return `${published} published`;
+      // A succeeded publish phase with nothing published is a real state (the
+      // run finished without promoting an artifact). "shipped" would claim
+      // something went out; say what actually happened instead.
+      return status === "succeeded" ? "none published" : "gated";
+    }
+    return "—";
+  });
+}
+
 export function researchPhaseStatuses(
   mission: Pick<ResearchMission, "status" | "iterations">,
   phaseIds: readonly string[],
@@ -876,7 +1206,21 @@ export type ResearchBoundReading = {
   badge?: "over" | "met";
   /** Plain-prose gate-vs-target semantics for tooltips and screen readers. */
   detail: string;
+  /**
+   * Fraction of the bound consumed, clamped to 0–1, for the reading's meter
+   * bar. Present only where a denominator genuinely exists: a spend with no
+   * cap and the checkpoint cadence have nothing to be a fraction *of*, so they
+   * carry no bar rather than a bar that means nothing (the value text still
+   * says everything). Past a stop gate it pins at 1 while `tone` says "over".
+   */
+  progress?: number;
 };
+
+/** Clamp a ratio into 0–1; a zero or absent denominator yields no bar. */
+function boundProgress(used: number, total: number): number | undefined {
+  if (!Number.isFinite(total) || total <= 0) return undefined;
+  return Math.max(0, Math.min(1, used / total));
+}
 
 /**
  * Bound-meter rows with honest over/met states.
@@ -917,6 +1261,9 @@ export function researchBoundReadings(
       value: `$${reportedCost.toFixed(2)}${bounds.maxSpendUsd === undefined ? " reported" : `/$${bounds.maxSpendUsd.toFixed(2)}`}`,
       tone: spendOver ? "over" : "neutral",
       ...(spendOver ? { badge: "over" as const } : {}),
+      ...(bounds.maxSpendUsd === undefined
+        ? {}
+        : { progress: boundProgress(reportedCost, bounds.maxSpendUsd) }),
       detail: bounds.maxSpendUsd === undefined
         ? "Reported spend so far; no spend cap is set."
         : spendOver
@@ -937,6 +1284,7 @@ export function researchBoundReadings(
       value: `${elapsedMinutes}/${bounds.wallClockMinutes} min`,
       tone: timeOver ? "over" : "neutral",
       ...(timeOver ? { badge: "over" as const } : {}),
+      progress: boundProgress(elapsedMinutes, bounds.wallClockMinutes),
       detail: timeOver
         ? "Past the wall-clock budget — it is a stop gate checked between iterations, so a running iteration may finish over it, but no further iterations will start."
         : "Wall-clock budget is a stop gate checked between iterations.",
@@ -947,6 +1295,7 @@ export function researchBoundReadings(
       value: `${mission.sources.length}/${bounds.sourceTarget}`,
       tone: sourcesMet ? "met" : "neutral",
       ...(sourcesMet ? { badge: "met" as const } : {}),
+      progress: boundProgress(mission.sources.length, bounds.sourceTarget),
       detail: sourcesMet
         ? "Source target reached — it is a goal, not a cap."
         : "Source target is a goal, not a cap.",

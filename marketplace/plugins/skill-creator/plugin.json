@@ -21,6 +21,7 @@
     "write_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/skill-creator",
   "x-coven": {
     "displayName": "Skill Creator",

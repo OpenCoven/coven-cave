@@ -12,7 +12,7 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 
-import { covenLaunchCommand } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenWrapperSpawnEnv } from "@/lib/coven-bin";
 import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { familiarWorkspace } from "@/lib/coven-paths";
 
@@ -61,7 +61,7 @@ export function runCovenOneShot(
         windowsHide: true,
         cwd: cwd ?? process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
-        env: harnessSpawnEnv(familiarId),
+        env: covenWrapperSpawnEnv(harnessSpawnEnv(familiarId)),
       });
 
       const finish = () => {

@@ -42,13 +42,17 @@ export type CardPatch = Partial<Omit<Card, "id" | "createdAt">> & { ops?: CardOp
 const MAX_STEP_TEXT = 500;
 const MAX_LIST_VALUE = 2_000;
 
+function nonEmptyArray<T>(value: T[] | undefined): T[] | null {
+  return Array.isArray(value) && value.length > 0 ? value : null;
+}
+
 export function hasCardOps(ops: CardOps | undefined): ops is CardOps {
   return Boolean(
     ops &&
-      ((ops.stepOps?.length ?? 0) > 0 ||
-        (ops.labelOps?.length ?? 0) > 0 ||
-        (ops.linkOps?.length ?? 0) > 0 ||
-        (ops.attachmentOps?.length ?? 0) > 0),
+      (nonEmptyArray(ops.stepOps) ||
+        nonEmptyArray(ops.labelOps) ||
+        nonEmptyArray(ops.linkOps) ||
+        nonEmptyArray(ops.attachmentOps)),
   );
 }
 
@@ -144,11 +148,13 @@ export function applyCardOps(
   now: string,
 ): Pick<CardPatch, "steps" | "labels" | "links" | "attachments"> {
   const out: Pick<CardPatch, "steps" | "labels" | "links" | "attachments"> = {};
-  if (ops.stepOps?.length) out.steps = applyStepOps(card.steps ?? [], ops.stepOps, now);
-  if (ops.labelOps?.length) out.labels = applyListOps(card.labels ?? [], ops.labelOps);
-  if (ops.linkOps?.length) out.links = applyListOps(card.links ?? [], ops.linkOps);
-  if (ops.attachmentOps?.length) {
-    out.attachments = applyAttachmentOps(card.attachments ?? [], ops.attachmentOps);
-  }
+  const stepOps = nonEmptyArray(ops.stepOps);
+  if (stepOps) out.steps = applyStepOps(card.steps ?? [], stepOps, now);
+  const labelOps = nonEmptyArray(ops.labelOps);
+  if (labelOps) out.labels = applyListOps(card.labels ?? [], labelOps);
+  const linkOps = nonEmptyArray(ops.linkOps);
+  if (linkOps) out.links = applyListOps(card.links ?? [], linkOps);
+  const attachmentOps = nonEmptyArray(ops.attachmentOps);
+  if (attachmentOps) out.attachments = applyAttachmentOps(card.attachments ?? [], attachmentOps);
   return out;
 }

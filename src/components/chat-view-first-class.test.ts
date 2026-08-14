@@ -71,8 +71,8 @@ assert.match(
 
 assert.match(
   source,
-  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
-  "Chat attachments should explicitly accept images, videos, documents, and common text/code files",
+  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"audio\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
+  "Chat attachments should explicitly accept images, videos, audio, documents, and common text/code files",
 );
 
 assert.match(
@@ -123,8 +123,8 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
-  "Composer should keep voice, grouped options (attach inside), and send actions in the footer row",
+  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*<EnhanceControl[\s\S]*aria-label="Send message"/,
+  "Composer should keep Tools at its edge plus voice, context, enhance, and send actions in the footer row",
 );
 assert.match(
   addMenuSource,
@@ -134,8 +134,8 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-utility-row"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue/,
-  "Composer places the grouped Chat options menu in the utility row",
+  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue/,
+  "Composer places the grouped Tools menu at the composer edge",
 );
 
 assert.match(

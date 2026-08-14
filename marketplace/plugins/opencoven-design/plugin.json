@@ -19,6 +19,7 @@
   "capabilities": [
     "read_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/opencoven-design",
   "x-coven": {
     "displayName": "OpenCoven Design Skill",

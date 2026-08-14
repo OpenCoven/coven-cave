@@ -79,6 +79,11 @@ for (const malformed of ["[", "[action"]) {
   const r = extractNextPaths("Answer.\n<coven:next-paths>\n- [reply] first next step (imperative, <= ~7 words)\n- [task] second next step\n- [reply] Draft the follow-up message\n- [reply] Draft the follow-up message (imperative, <= ~7 words)\n- [task] Create a task for the follow-up\n- [action:open-tasks] Review open tasks\n</coven:next-paths>");
   assert.deepEqual(r.suggestions, []);
 }
+// The former template block stays inert even when it is echoed verbatim.
+{
+  const r = extractNextPaths("Answer.\n<coven:next-paths>\n- [reply] first next step (imperative, <= ~7 words)\n- [task] second next step\n- [reply] Draft the follow-up message\n- [task] Create a task for the follow-up\n- [action:open-tasks] Review open tasks\n</coven:next-paths>");
+  assert.deepEqual(r.suggestions, []);
+}
 // Only exact template echoes are suppressed; useful longer suggestions remain available.
 {
   const r = extractNextPaths("Answer.\n<coven:next-paths>\n- [action:open-tasks] Review open tasks for this project\n- [reply] Draft the follow-up message to Jules\n</coven:next-paths>");
@@ -97,4 +102,42 @@ for (const malformed of ["[", "[action"]) {
     { kind: "reply", label: "Three", prompt: "Three" },
   ] satisfies NextPath[]);
 }
+
+// A renderer-style list fence must end at its real closing delimiter; otherwise
+// that closing line is mistaken for a new unclosed fence and hides the live
+// protocol block that follows it.
+{
+  const fenced = [
+    "- ```text",
+    "  <coven:next-paths>",
+    "  - [reply] Literal example",
+    "  </coven:next-paths>",
+    "  ```",
+  ].join("\n");
+  const r = extractNextPaths(
+    `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`,
+  );
+  assert.equal(r.visible, fenced);
+  assert.deepEqual(r.suggestions, [
+    { kind: "reply", label: "Continue the work", prompt: "Continue the work" },
+  ] satisfies NextPath[]);
+}
+
+{
+  const fenced = [
+    "> ```text",
+    "> <coven:next-paths>",
+    "> - [reply] Literal example",
+    "> </coven:next-paths>",
+    "> ````",
+  ].join("\n");
+  const r = extractNextPaths(
+    `${fenced}\n<coven:next-paths>\n- [reply] Continue the work\n</coven:next-paths>`,
+  );
+  assert.equal(r.visible, fenced);
+  assert.deepEqual(r.suggestions, [
+    { kind: "reply", label: "Continue the work", prompt: "Continue the work" },
+  ] satisfies NextPath[]);
+}
+
 console.log("next-paths.test.ts: ok");

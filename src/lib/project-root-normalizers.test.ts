@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import { normalizeProjectRoot } from "./cave-projects-types.ts";
 import { normalizeChatProjectRoot } from "./chat-projects.ts";
 import { deriveComuxProjects } from "./comux-projects.ts";
@@ -87,6 +88,7 @@ function session(over: Partial<SessionRow> & { id: string }): SessionRow {
     updated_at: "2026-01-01T00:00:00.000Z",
     familiarId: "cody",
     ...over,
+    attention: over.attention ?? NO_CHAT_ATTENTION,
   };
 }
 

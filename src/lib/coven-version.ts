@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { covenLaunchCommand, covenSpawnEnv } from "./coven-bin.ts";
+import { covenLaunchCommand, covenWrapperSpawnEnv } from "./coven-bin.ts";
 import { exactSemver } from "./exact-semver.ts";
 
 const execFileAsync = promisify(execFile);
@@ -29,7 +29,7 @@ export async function installedCovenVersion(): Promise<string | null> {
     const { command, fixedArgs } = covenLaunchCommand();
     const { stdout, stderr } = await execFileAsync(command, [...fixedArgs, "--version"], {
       windowsHide: true,
-      env: covenSpawnEnv(),
+      env: covenWrapperSpawnEnv(),
       timeout: 2500,
     });
     return firstSemver(`${stdout}\n${stderr}`);

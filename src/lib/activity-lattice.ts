@@ -49,14 +49,16 @@ const DAYS_PER_WEEK = 7;
 export const DENSITY_STEPS = 4;
 
 /**
- * Bucket a day count into a 0–4 density step, scaled against the window's
- * peak. Any non-zero day is at least step 1, so a single session is never
- * indistinguishable from silence — the thing a density grid exists to show.
+ * Bucket a day count into a 0-4 density step on a logarithmic curve against
+ * the window peak. The curve keeps one extreme day from flattening ordinary
+ * active days into one shade. Any non-zero day is still at least step 1.
  */
 export function densityStep(count: number, peak: number): number {
   if (count <= 0) return 0;
   if (peak <= 0) return 0;
-  const scaled = Math.ceil((count / peak) * DENSITY_STEPS);
+  const scaled = Math.ceil(
+    (Math.log1p(count) / Math.log1p(peak)) * DENSITY_STEPS,
+  );
   return Math.min(DENSITY_STEPS, Math.max(1, scaled));
 }
 

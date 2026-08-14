@@ -20,6 +20,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/brand-voice-generator",
   "x-coven": {
     "displayName": "Brand & Voice Generator",

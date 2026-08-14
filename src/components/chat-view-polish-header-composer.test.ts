@@ -140,11 +140,11 @@ assert.match(
   "composer exposes the permission-mode (Access) control",
 );
 // Context, linked work, prompt-improvement, and response controls collapse into
-// one grouped Chat options surface while attachment and voice stay one click away.
+// one grouped Tools surface at the composer edge while voice stays one click away.
 assert.match(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Voice call"[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{/,
-  "composer keeps the direct voice control before the grouped Chat options trigger (attach folds into the menu)",
+  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*<div className="cave-composer-utility-row">[\s\S]*aria-label="Voice call"/,
+  "composer exposes the grouped Tools trigger at its edge while keeping Voice direct in the lower control row",
 );
 const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
 assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");
@@ -211,8 +211,8 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
-  "composer footer lays out the utility cluster and submit actions in one minimal row",
+  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
+  "composer footer lays out utility, live context, and submit controls in one minimal row",
 );
 // The extracted response section renders each control inline (no nested
 // popover) and keeps the connect-host dialog available to the grouped surface.
@@ -289,7 +289,7 @@ assert.match(
   "Only the active slash command row should receive the scroll target ref",
 );
 
-const splitFn = source.match(/function splitReasoning\([\s\S]*?\n}\n/)?.[0] ?? "";
+const splitFn = splitReasoning;
 assert.match(
   splitFn,
   /DEBUG_PREFIX_RE/,
@@ -824,8 +824,17 @@ assert.match(
 );
 assert.match(
   slashBranch,
-  /cmd\.argPlaceholder &&[\s\S]*canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*completeCommand\(cmd\.name, true\)/,
+  /cmd\.argPlaceholder &&[\s\S]*canonicalize\(activeInvocation\?\.commandToken \?\? ""\) !== cmd\.name[\s\S]*completeCommand\(cmd\.name, Boolean\(cmd\.argPlaceholder\)\)/,
   "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
+);
+// cave-y7rg0: and a slash typed after prose completes too, whatever the
+// command — running an intent there discards the draft, and /clear wipes the
+// transcript with it. Behavior is covered in
+// src/lib/use-inline-slash-menus-behavior.test.tsx.
+assert.match(
+  slashBranch,
+  /const commandOwnsDraft = \(activeInvocation\?\.start \?\? 0\) === 0;[\s\S]*\(!commandOwnsDraft \|\|/,
+  "Slash-menu Enter only runs a command that owns the draft; mid-draft it completes",
 );
 assert.match(
   menusHookSource,

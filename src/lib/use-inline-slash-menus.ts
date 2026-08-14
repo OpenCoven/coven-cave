@@ -32,7 +32,7 @@ import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prom
  * - onPickSkill: home starts a new chat, chat sends in-thread;
  * - onInsertPrompt: both insert-for-editing (never send) — but with their own
  *   caret/announce plumbing;
- * - onRunCommand: home submits the typed text, chat runs the slash intent;
+ * - onRunCommand: each composer runs the highlighted slash intent;
  * - onNoMatchEnter: home falls through to submit; chat consumes and does
  *   nothing.
  *
@@ -295,15 +295,26 @@ export function useInlineSlashMenus(opts: {
           e.preventDefault();
           const cmd = slashSuggestions[slashIdx];
           const s = skillAt(slashIdx);
-          // If the highlighted command takes an argument and the input isn't
-          // the exact command yet, autocomplete first (like Tab) so the user
-          // can fill in args; otherwise run the highlighted suggestion.
+          // A slash that follows prose completes; only a slash that OWNS the
+          // draft runs. inlineSlashInvocation deliberately opens this menu
+          // mid-draft ("commands after prose or on later lines"), and running
+          // an intent from there throws away everything the user typed —
+          // /clear additionally wipes the whole transcript, and 19 of the 31
+          // commands declare no argPlaceholder, so they skipped the
+          // autocomplete guard below and executed on the first Enter
+          // (cave-y7rg0). Completing instead keeps Enter non-destructive
+          // wherever the draft is more than the command itself.
+          const commandOwnsDraft = (activeInvocation?.start ?? 0) === 0;
+          // Within a command-owned draft, autocomplete first when the command
+          // takes an argument and the token isn't already that command (like
+          // Tab), so the user can fill in args; otherwise run it.
           if (
             cmd &&
-            cmd.argPlaceholder &&
-            canonicalize(activeInvocation?.commandToken ?? "") !== cmd.name
+            (!commandOwnsDraft ||
+              (cmd.argPlaceholder &&
+                canonicalize(activeInvocation?.commandToken ?? "") !== cmd.name))
           ) {
-            completeCommand(cmd.name, true);
+            completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
           } else if (cmd) {
             cbRef.current.onRunCommand(cmd);
           } else if (s) {

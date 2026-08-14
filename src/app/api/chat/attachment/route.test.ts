@@ -15,7 +15,7 @@ const OUTSIDE = mkdtempSync(join(tmpdir(), "chat-attachment-route-outside-"));
 process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = ROOT;
 
 const { GET } = await import("./route.ts");
-const { saveChatImageAttachment } = await import("@/lib/server/chat-attachment-store");
+const { saveChatImageAttachment, saveChatMediaAttachment } = await import("@/lib/server/chat-attachment-store");
 
 after(() => {
   rmSync(ROOT, { recursive: true, force: true });
@@ -53,6 +53,23 @@ test("a stored image is served with its own bytes and mime type", async () => {
 
   const body = Buffer.from(await res.arrayBuffer());
   assert.deepEqual(body, PIXEL, "the served bytes are the stored bytes");
+});
+
+test("a stored media attachment is served for inline playback", async () => {
+  // Bigger than the 5MB image cap — proves the read path uses the media cap.
+  const clip = Buffer.alloc(6 * 1024 * 1024, 9);
+  const storedId = await saveChatMediaAttachment(
+    `data:video/mp4;base64,${clip.toString("base64")}`,
+    "video/mp4",
+  );
+  assert.ok(storedId, "the store minted a media id");
+
+  const res = await GET(localRequest(`id=${encodeURIComponent(storedId)}`));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "video/mp4");
+  assert.equal(res.headers.get("content-length"), String(clip.byteLength));
+  const body = Buffer.from(await res.arrayBuffer());
+  assert.deepEqual(body, clip, "the served bytes are the stored bytes");
 });
 
 test("a non-local request is refused before the store is touched", async () => {

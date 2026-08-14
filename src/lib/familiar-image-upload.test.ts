@@ -33,5 +33,20 @@ assert.match(source, /useAnnouncer/, "the upload hook announces outcomes");
 assert.match(source, /announce\(res\.reason, "assertive"\)/, "store rejections announce assertively");
 assert.match(source, /announce\("Avatar updated\."\)/, "plain successes are announced");
 assert.match(source, /announce\(message, "assertive"\)/, "read/resize failures announce assertively");
+assert.match(
+  source,
+  /const res = await clearFamiliarImage\(familiarId\)/,
+  "clear waits for the host mutation result",
+);
+assert.match(
+  source,
+  /announce\("Avatar removed\."\)/,
+  "successful clears are announced",
+);
+assert.match(
+  source,
+  /setToast\(res\.reason\)/,
+  "failed clears preserve the image and surface the host error",
+);
 
 console.log("familiar-image-upload.test.ts: ok");

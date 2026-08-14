@@ -46,15 +46,17 @@ mod app_lifecycle_tests;
 #[cfg(desktop)]
 pub mod browser;
 #[cfg(desktop)]
-mod discord_presence;
-#[cfg(desktop)]
 mod desktop_reachability;
 #[cfg(desktop)]
-mod platform_lifecycle;
+mod discord_presence;
 #[cfg(all(desktop, target_os = "macos"))]
 mod microphone;
 #[cfg(desktop)]
+mod platform_lifecycle;
+#[cfg(desktop)]
 mod pty;
+#[cfg(desktop)]
+mod reliability_metrics;
 #[cfg(desktop)]
 mod shell_open_commands;
 #[cfg(desktop)]
@@ -65,6 +67,8 @@ mod sidecar_archive;
 mod sidecar_auth;
 #[cfg(desktop)]
 mod sidecar_discovery;
+#[cfg(desktop)]
+mod sidecar_diagnostics;
 #[cfg(desktop)]
 mod sidecar_lifecycle;
 #[cfg(desktop)]
@@ -80,11 +84,15 @@ mod tauri_setup;
 mod window_geometry;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
+#[cfg(all(desktop, target_os = "windows"))]
+mod windows_command;
 
 #[cfg(desktop)]
 use desktop_reachability::*;
 #[cfg(desktop)]
 use platform_lifecycle::*;
+#[cfg(desktop)]
+use reliability_metrics::*;
 #[cfg(all(test, desktop))]
 use shell_open_commands::launch_x_oauth_url_with_window;
 #[cfg(desktop)]
@@ -92,8 +100,7 @@ use shell_open_commands::{open_x_oauth_url, shell_open, shell_open_path, shell_p
 #[cfg(desktop)]
 use shell_open_helpers::{
     normalize_picked_directory, validate_shell_open_path, validate_shell_open_url,
-    validate_x_oauth_url,
-    windows_system32_binary,
+    validate_x_oauth_url, windows_system32_binary,
 };
 #[cfg(desktop)]
 use sidecar_auth::*;

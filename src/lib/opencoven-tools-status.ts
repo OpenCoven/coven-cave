@@ -9,8 +9,10 @@ import {
   type OpenCovenToolState,
 } from "./opencoven-tools-state.ts";
 import {
+  covenBinaryFromEnvironment,
   covenLaunchCommandForBinary,
   covenSpawnEnv,
+  covenWrapperSpawnEnv,
   pickWindowsLauncher,
   refreshCovenSpawnEnv,
 } from "./coven-bin.ts";
@@ -34,7 +36,7 @@ export const OPEN_COVEN_TOOLS = [
     packageName: "@opencoven/cli",
     binary: "coven",
     versionArgs: ["--version"],
-    minimumVersion: "0.1.1",
+    minimumVersion: "0.2.5",
     installCommand: "npm i -g @opencoven/cli@latest",
   },
 ] as const;
@@ -138,9 +140,12 @@ async function commandPath(
   binary: string,
   options: { env?: NodeJS.ProcessEnv; refresh?: boolean; timeoutMs?: number } = {},
 ): Promise<CommandPathResult> {
-  const finder = process.platform === "win32" ? "where" : "which";
   const timeout = options.timeoutMs ?? LOOKUP_TIMEOUT_MS;
   const find = async (env: NodeJS.ProcessEnv): Promise<CommandPathResult> => {
+    if (process.platform === "win32" && binary.toLowerCase() === "coven") {
+      return { path: covenBinaryFromEnvironment(env) };
+    }
+    const finder = process.platform === "win32" ? "where" : "which";
     try {
       const { stdout } = await execFileAsync(finder, [binary], { windowsHide: true, env, timeout });
       const lines = stdout.split(/\r?\n/);
@@ -286,7 +291,11 @@ export async function probeOpenCovenBinaryAt(
     const { stdout, stderr } = await execFileAsync(
       launch.command,
       [...launch.fixedArgs, ...tool.versionArgs],
-      { windowsHide: true, env, timeout: options.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS },
+      {
+        windowsHide: true,
+        env: tool.binary === "coven" ? covenWrapperSpawnEnv(env) : env,
+        timeout: options.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS,
+      },
     );
     const version = firstSemver(`${stdout}\n${stderr}`);
     return {
@@ -316,7 +325,11 @@ async function execLatestVersion(
   args: string[],
   options: { env: NodeJS.ProcessEnv; timeout: number; windowsHide: true },
 ): Promise<{ stdout: string }> {
-  const { stdout } = await execFileAsync(command, args, options);
+  const { stdout } = await execFileAsync(command, args, {
+    env: options.env,
+    timeout: options.timeout,
+    windowsHide: true,
+  });
   return { stdout: String(stdout) };
 }
 

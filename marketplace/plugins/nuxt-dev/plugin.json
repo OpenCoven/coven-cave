@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/nuxt-dev",
   "x-coven": {
     "displayName": "Nuxt Dev",

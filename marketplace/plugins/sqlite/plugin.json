@@ -19,6 +19,7 @@
     "read_files",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/sqlite",
   "x-coven": {
     "displayName": "SQLite",

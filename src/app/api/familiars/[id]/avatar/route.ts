@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { constants } from "node:fs";
-import { mkdir, open, writeFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
+import {
+  removeAvatarFiles,
+  writeCanonicalAvatar,
+} from "@/lib/server/familiar-avatar-mutation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,21 +23,6 @@ const MAX_AVATAR_BYTES = 48 * 1024 * 1024;
 // crisp at 3–4× DPR while turning a ~30MB source into a small PNG that every
 // supported desktop WebView can decode.
 const AVATAR_MAX_DIM = 256;
-
-// …except on the familiar's card, where the same portrait is the full-bleed
-// art of something that fills most of the viewport, and a 256px source is
-// visibly soft. `?size=` opts into a larger render; it is a CEILING, not an
-// enlargement (`withoutEnlargement` still applies), and it is clamped so the
-// query string can never ask the server to rasterise something enormous.
-const AVATAR_MAX_REQUESTED_DIM = 1024;
-
-function requestedDim(req: Request): number {
-  const raw = new URL(req.url).searchParams.get("size");
-  if (!raw) return AVATAR_MAX_DIM;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return AVATAR_MAX_DIM;
-  return Math.min(AVATAR_MAX_REQUESTED_DIM, Math.max(AVATAR_MAX_DIM, parsed));
-}
 
 type RenderedAvatar = { body: Uint8Array<ArrayBuffer>; contentType: string };
 
@@ -75,7 +64,7 @@ function cacheSet(key: string, value: RenderedAvatar): void {
  * — so this can't read outside the avatars dir. 404 when the familiar has no
  * avatar; the UI then falls back to the glyph.
  */
-export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   if (!id || !isValidFamiliarId(id)) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
@@ -86,8 +75,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json({ ok: false, error: "no avatar" }, { status: 404 });
   }
 
-  const dim = requestedDim(req);
-  const cacheKey = `${avatar.absPath}\0${avatar.mtimeMs}\0${dim}`;
+  const cacheKey = `${avatar.absPath}\0${avatar.mtimeMs}`;
   const cached = cacheGet(cacheKey);
   if (cached) {
     return imageResponse(cached);
@@ -115,7 +103,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   try {
     const png = await sharp(bytes)
       .rotate() // honor EXIF orientation before resizing
-      .resize(dim, dim, { fit: "inside", withoutEnlargement: true })
+      .resize(AVATAR_MAX_DIM, AVATAR_MAX_DIM, { fit: "inside", withoutEnlargement: true })
       .png({ compressionLevel: 9, adaptiveFiltering: true })
       .toBuffer();
     rendered = { body: new Uint8Array(png), contentType: "image/png" };
@@ -164,12 +152,40 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const dir = await avatarsDirFor(id);
-  await mkdir(dir, { recursive: true });
-  // `id` is a validated slug (no separators / `..`); basename is a belt-and-
-  // suspenders sanitizer on the filename sink (mirrors familiar-notes.ts).
-  await writeFile(path.join(dir, `${path.basename(id)}.png`), png);
+  let result;
+  try {
+    result = await writeCanonicalAvatar(dir, id, png);
+  } catch (error) {
+    return avatarMutationError(error, "save");
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    avatarUrl: revisionedAvatarUrl(id, result.revision),
+    revision: result.revision,
+  });
+}
+
+/** Clear every supported workspace avatar image. Missing avatars are already
+ *  clear, so repeated DELETE requests succeed with `removed: false`. */
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  if (!id || !isValidFamiliarId(id)) {
+    return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
+  }
+
+  const dir = await avatarsDirFor(id);
+  try {
+    const result = await removeAvatarFiles(dir);
+    return NextResponse.json({
+      ok: true,
+      avatarUrl: null,
+      revision: null,
+      removed: result.removed,
+    });
+  } catch (error) {
+    return avatarMutationError(error, "remove");
+  }
 }
 
 /** Resolve a familiar's avatars dir, re-asserting the slug guard inline so the
@@ -178,6 +194,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 async function avatarsDirFor(id: string): Promise<string> {
   if (!isValidFamiliarId(id)) throw new Error("invalid familiar id");
   return path.join(await familiarWorkspace(id), "avatars");
+}
+
+function revisionedAvatarUrl(id: string, revision: number): string {
+  return `/api/familiars/${encodeURIComponent(id)}/avatar?v=${revision}&format=png`;
+}
+
+function avatarMutationError(error: unknown, action: "save" | "remove"): NextResponse {
+  const message = error instanceof Error ? error.message : "";
+  if (/symbolic link|not a directory|not a regular file/i.test(message)) {
+    return NextResponse.json(
+      { ok: false, error: `Could not ${action} avatar: unsafe workspace avatar path.` },
+      { status: 409 },
+    );
+  }
+  return NextResponse.json(
+    { ok: false, error: `Could not ${action} avatar.` },
+    { status: 500 },
+  );
 }
 
 function imageResponse({ body, contentType }: RenderedAvatar): NextResponse {

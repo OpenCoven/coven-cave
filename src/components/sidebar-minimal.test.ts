@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { transformSync } from "esbuild";
 
 const styles = [
   readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8"),
@@ -15,6 +16,9 @@ const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "
 const railHeaderSource = readFileSync(new URL("./sidebar-rail-header.tsx", import.meta.url), "utf8");
 const railHeaderCss = readFileSync(new URL("../styles/globals/rail-header.css", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+// The Home/Code split itself — the sidebar reaches the registry only through
+// this module, so a committed artifact here breaks the rail just as badly.
+const navSection = readFileSync(new URL("../lib/nav-section.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) lives in a shared component so it
 // stays identical when Chat replaces SidebarMinimal with WorkspaceSidebar.
@@ -62,10 +66,19 @@ assert.match(
   "Sidebar nav options should stay visually close together on desktop",
 );
 
+// One height for the row and for its collapsed-rail square (#4351), so hovering
+// the rail open never changes a control's pitch — `flex: none` is part of the
+// same contract, since .sidebar-nav-scroll is a flex column that otherwise
+// compressed rows below their min-height as soon as the list overflowed.
 assert.match(
   styles,
-  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*min-height:\s*30px/,
-  "Desktop sidebar option rows should use compact height before mobile touch-target overrides",
+  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*flex: none;[^}]*min-height:\s*var\(--rail-control\)/,
+  "Desktop sidebar option rows take the shared rail control height and never shrink",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*padding:\s*0 var\(--rail-lead\)/,
+  "Desktop sidebar option rows lead their icon from the shared rail column",
 );
 
 assert.match(
@@ -112,7 +125,7 @@ assert.doesNotMatch(
 assert.match(
   source,
   /const sectionRooms = React\.useMemo\(\s*\(\) => \(props\.roleSurfaces \?\? \[\]\)\.filter\(/,
-  "Code Workshop remains registry-driven through the active familiar's rooms",
+  "Coding Desk remains registry-driven through the active familiar's rooms",
 );
 assert.match(
   source,
@@ -286,10 +299,12 @@ assert.match(
   "Footer controls should use the fixed footer icon cell",
 );
 
+// The footer glyph cell is exactly the glyph: a wider cell centres the icon
+// inside it and pushes it off the rail's shared icon column (#4351).
 assert.match(
   styles,
-  /\.sidebar-foot-bell > \.relative,\n\.sidebar-foot-icon-cell/,
-  "Footer rows should align labels from matching icon cells",
+  /\.sidebar-foot-icon-cell \{[^}]*width: var\(--icon-md\);[^}]*flex: 0 0 var\(--icon-md\)/,
+  "Footer icon cells are exactly one icon wide, so footer glyphs sit on the nav column",
 );
 
 // The left sidepanel footer stays quiet: reminders/notifications live in the
@@ -460,22 +475,28 @@ assert.match(
   /className="sidebar-version"[\s\S]{0,280}?v\{APP_VERSION\}[\s\S]{0,40}?<\/a>/,
   "the version line is the bottommost element of the shared footer",
 );
-// Phase D (chat-revamp): the rail-only account avatar circle closes the nav,
-// directly under the shared footer — both route to Settings.
+// The shared footer is the bottommost element of the nav in BOTH states. The
+// phase-D rail-only account avatar that used to close the column is gone: its
+// onClick was onOpenSettings — the same action as the Settings button right
+// above it — and being rail-only it left the footer at a different height than
+// its own hover-peek form (#4351).
 assert.match(
   source,
-  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>[\s\S]{0,700}?<button\s+type="button"\s+className="sidebar-user-avatar focus-ring"\s+onClick=\{onOpenSettings\}[\s\S]{0,300}?<\/button>\s*<\/nav>/,
-  "the shared footer sits above the rail-only account avatar, which is the bottommost element of the sidebar nav",
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
+  "the shared footer is the bottommost element of the sidebar nav",
 );
 assert.match(
   styles,
   /\.sidebar-version \{[^}]*line-height: 1;[^}]*color: var\(--text-muted\)/,
   "The version line should be minimal-height muted text",
 );
-assert.match(
+// The version line stays in the 56px rail ("v0.3.3" fits): it is the nav's
+// bottom-most band, so hiding it there while showing it in the panel left the
+// footer buttons at two different heights across hover-peek (#4351).
+assert.doesNotMatch(
   styles,
   /\.shell-nav--rail \.sidebar-version \{[^}]*display: none/,
-  "The 56px rail has no room for text — the version line hides there",
+  "The rail keeps the version line so the footer band matches the panel's",
 );
 
 // Explore retains quiet row treatment, while its section header now owns the
@@ -534,7 +555,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const splitPageModes = useMemo\([\s\S]{0,220}t\.kind === "page"[\s\S]{0,120}\[splitTargets\],?\s*\n\s*\)/,
+  /const splitPageModes = useMemo\([\s\S]{0,220}\.map\(\(request\) => request\.requestedPageId\)[\s\S]{0,160}\.filter\(\(pageId\): pageId is WorkspaceMode => isWorkspaceMode\(pageId\)\)[\s\S]{0,100}\[splitTargets\],?\s*\n\s*\)/,
   "workspace derives splitPageModes from the live split tiles",
 );
 assert.match(
@@ -546,6 +567,96 @@ assert.match(
   styles,
   /\.sidebar-folder-row--split \{[^}]*color-mix\(in oklch, var\(--accent-presence\)/,
   "the split marker reuses the active accent at a lighter wash",
+);
+
+// ── Committed merge-artifact guard (cave-2hh5q) ──────────────────────────────
+// 23316da3 committed two unresolved conflict-marker blocks into this component.
+// The file stopped PARSING, so every route 500'd — including
+// /api/app/build-info — until 4ea88862 repaired it (cave-tbdnt).
+//
+// The whole suite above stayed green through it. That is the point worth
+// keeping: every assertion in this file is a source-TEXT match, and a regex is
+// perfectly happy to find its pattern inside a file no compiler would accept.
+// Text pinning cannot, even in principle, notice that a file stopped parsing.
+// So this section adds the two checks that can.
+
+// 1. Parse the component for real. This is the guard that generalizes: it fails
+//    on conflict markers, but equally on any other syntax breakage that a
+//    source-text assertion would sail straight past. esbuild's parser is the
+//    same one Next uses to transform the file, so a pass here means the route
+//    can at least build.
+for (const [name, text, loader] of [
+  ["sidebar-minimal.tsx", source, "tsx"],
+  ["sidebar-rail-header.tsx", railHeaderSource, "tsx"],
+  ["sidebar-footer.tsx", footer, "tsx"],
+  ["nav-section.ts", navSection, "ts"],
+  ["workspace-navigation.ts", navigation, "ts"],
+]) {
+  assert.doesNotThrow(
+    () => transformSync(text, { loader, sourcefile: name }),
+    `${name} must parse — a source-text assertion cannot tell a broken file from a working one`,
+  );
+}
+
+// 2. Name the artifact explicitly as well. The parse check already rejects a
+//    conflicted file, but it reports a bare "Expression expected" pointing at
+//    whichever line the parser gave up on; this one says what actually
+//    happened, which is the difference between a five-minute fix and the
+//    outage that produced this bead.
+//
+//    All FOUR marker kinds, not three: `|||||||` opens the base section under
+//    `merge.conflictStyle = diff3` / `zdiff3`, which is a per-contributor git
+//    setting this repo does not pin. A complete diff3 conflict would still trip
+//    the other three, so this mainly covers a partial resolution that clears
+//    `<<<<<<<` / `=======` / `>>>>>>>` and leaves the base section behind —
+//    which is precisely the artifact a hand-edited conflict tends to strand.
+//
+//    Anchored at line start on purpose: a seven-character run only reads as a
+//    conflict marker when it opens the line, and `=======` appears mid-line in
+//    legitimate comment rules and CSS.
+const CONFLICT_MARKER = /^(?:<{7}|\|{7}|={7}|>{7})/m;
+for (const [name, text] of [
+  ["sidebar-minimal.tsx", source],
+  ["sidebar-rail-header.tsx", railHeaderSource],
+  ["sidebar-footer.tsx", footer],
+  ["nav-section.ts", navSection],
+  ["workspace-navigation.ts", navigation],
+  ["the sidebar stylesheets", styles],
+  ["rail-header.css", railHeaderCss],
+]) {
+  assert.doesNotMatch(
+    text,
+    CONFLICT_MARKER,
+    `${name} must not carry unresolved Git conflict markers (cave-2hh5q / cave-tbdnt)`,
+  );
+}
+
+// ── Stale navigation identifier (cave-2hh5q) ─────────────────────────────────
+// The conflicted merge left BOTH sides live in the file at once: the old flat
+// `VISIBLE_WORKSPACE_NAV_ITEMS.map(...)` and its tabbed replacement. The flat
+// list is the whole registry, unsplit — mapping it here would render every Home
+// destination under Code and every Code destination under Home, while each
+// individual row assertion above kept passing, because the rows themselves are
+// unchanged. Only the section split is allowed to reach the registry.
+assert.doesNotMatch(
+  source,
+  /VISIBLE_WORKSPACE_NAV_ITEMS/,
+  "the sidebar must reach nav rows through navItemsForSection(section), never the unsplit VISIBLE_WORKSPACE_NAV_ITEMS list",
+);
+assert.match(
+  navSection,
+  /export function navItemsForSection\(section: NavSection\)[\s\S]{0,160}navSectionForMode\(item\.id\) === section/,
+  "navItemsForSection must keep filtering by section — a passthrough would un-split the rail without failing a row assertion",
+);
+
+// Recent Activity is Code-only (cave-24d2r): Home is destinations, Code is live
+// work. The prop assertions above fire wherever the rollup is mounted, so
+// without this the section gate could be dropped and every one of them would
+// still pass.
+assert.match(
+  source,
+  /section === "code" \? \(\s*<RecentActivityRollup/,
+  "Recent Activity renders only in the Code section — Home stays destinations-only",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

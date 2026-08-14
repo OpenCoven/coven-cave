@@ -31,6 +31,31 @@ assert.match(
 );
 assert.match(
   styles,
+  /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?display: flex;[\s\S]*?align-items: center;[\s\S]*?gap: var\(--space-2\);/,
+  "composer follow-up cards keep the type/separator/title summary on one line",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__type \{[\s\S]*?white-space: nowrap;/,
+  "the type label itself never wraps away from the title",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__title \{[\s\S]*?min-width: 0;[\s\S]*?overflow: hidden;[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/,
+  "footer titles ellipsize instead of wrapping",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__separator \{[\s\S]*?display: inline;/,
+  "the footer keeps the type/title separator visible",
+);
+assert.match(
+  styles,
+  /\.cave-followup-card__separator \{[\s\S]*?display: none;/,
+  "historical cards keep the separator hidden and retain their full detail layout",
+);
+assert.match(
+  styles,
   /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-chat-followups \.cave-followup-card \{[\s\S]*?min-height: var\(--touch-target\);/,
   "narrow composer follow-ups preserve touch-safe targets",
 );

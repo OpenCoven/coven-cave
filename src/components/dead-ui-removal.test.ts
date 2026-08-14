@@ -90,7 +90,7 @@ test("BottomTerminal's broadcast interface is wired, not inert", () => {
 
   // This guard used to require the broadcast surface be ABSENT, because an
   // earlier attempt shipped the props with no consumer. cave-98o51 gave them
-  // one — the Coding Room's split terminal center — so the rule inverts rather
+  // one — the Coding Desk's split terminal center — so the rule inverts rather
   // than disappears: the interface may exist only while something drives it.
   for (const liveIdentifier of ["onUserInput", "writerRef"]) {
     assert.match(terminal, new RegExp(`\\b${liveIdentifier}\\b`));

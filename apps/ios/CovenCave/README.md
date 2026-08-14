@@ -7,6 +7,13 @@ trust boundary. This is *not* a webview wrapper around the web app.
 See [`docs/ios-native-rebuild.md`](../../../docs/ios-native-rebuild.md) for the full
 phased plan and architecture.
 
+## Distribution
+
+Maintainer release builds use TestFlight, but Coven Cave does not currently
+publish a public TestFlight or App Store enrollment link. End users cannot
+install the native iOS client publicly yet; the source-build path below is the
+available contributor route.
+
 ## Requirements
 
 - Xcode 16+ (developed against Xcode 26)
@@ -18,9 +25,11 @@ phased plan and architecture.
 ```bash
 # from the repo root: build the web bundles the app embeds (Resources/markdown.html
 # and Resources/terminal.html — generated & gitignored, the Xcode build can't run
-# node). Needs `pnpm install`. Skipping the terminal bundle ships a blank Terminal tab.
-bash scripts/ios-xcodegen.sh   # builds the bundles, verifies them, then
+# node). Run `pnpm install --frozen-lockfile` first. Skipping the terminal bundle
+# ships a blank Terminal tab.
+pnpm mobile:ios:xcodegen       # builds the bundles, verifies them, then
                                # runs xcodegen — in that order, which matters
+                               # (alias for scripts/ios-xcodegen.sh)
 
 cd apps/ios/CovenCave
 open CovenCave.xcodeproj    # ⌘R to run, or:
@@ -29,6 +38,17 @@ xcodebuild -project CovenCave.xcodeproj -scheme CovenCave \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
   -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
 ```
+
+⚠️ **`cannot find type <Something> in scope` means a stale `.xcodeproj`, not a
+code bug.** `xcodegen` SCANS the source directory, so a project generated before
+a Swift file was added simply does not contain it — the file is on disk, in git,
+and excluded from the target. Regenerate with `pnpm mobile:ios:xcodegen` rather
+than adding the file to `CovenCave.xcodeproj/project.pbxproj`: that file is
+generated and gitignored, so a hand-edit fixes one machine, is invisible to git,
+and is erased by the next generation. `project.yml` declares the target's
+sources as the whole `CovenCave` directory, so regeneration always picks new
+files up. CI regenerates before every iOS build (`ci.yml`), which is why `main`
+stays green while one laptop fails (`cave-bkp0o`).
 
 On first launch, enter your desktop's Tailscale MagicDNS name (e.g.
 `my-mac.tailnet.ts.net`) or its `100.x` address. `.ts.net` hosts use HTTPS; bare
