@@ -1,0 +1,73 @@
+id: optimize-tweet-thread
+version: 0.1.0
+name: Optimize Tweet Thread
+summary: Generate, validate, judge, and revise an evidence-backed X/Twitter thread, then stop for exact human approval.
+familiar: comms
+pattern: tournament
+tags:
+  - social
+  - thread
+  - evaluation
+limits:
+  max_agents: 6
+  timeout_s: 1800
+  cost_ceiling_usd: 6
+permissions:
+  - file.read
+  - file.write
+visibility:
+  public: true
+  coven_cave: true
+steps:
+  - id: input
+    kind: input
+    name: Thread brief
+    summary: Accept the topic, audience, objective, evidence constraints, voice, and optional existing run directory.
+  - id: evidence
+    kind: agent
+    name: Evidence packet
+    uses: research
+    summary: Build or verify the cited evidence packet, preserving missing support and uncertainty.
+    requires:
+      - input
+  - id: candidates
+    kind: skill
+    name: Candidate tournament
+    uses: tweet-thread-lab
+    summary: Materialize three strategy-declared thread candidates and their canonical hashes.
+    requires:
+      - evidence
+  - id: validate
+    kind: tool
+    name: Deterministic validation
+    uses: cave.exec
+    summary: Run repository tweet-thread schema, X-length, accessibility, provenance, hash, and hard-gate checks.
+    requires:
+      - candidates
+  - id: judge
+    kind: agent
+    name: Blinded review
+    uses: reviewer
+    summary: Judge eligible blinded candidates in a separate context when available and write six-dimension scorecards.
+    requires:
+      - validate
+  - id: revise
+    kind: skill
+    name: Bounded revision
+    uses: tweet-thread-lab
+    summary: Rank, revise, and stop according to the declared threshold, meaningful-gain, regression, time, and cost bounds.
+    requires:
+      - judge
+  - id: approval
+    kind: human-gate
+    name: Exact thread approval
+    uses: valentina
+    summary: Stop until a human approves the exact selected candidate SHA-256; this workflow does not publish.
+    requires:
+      - revise
+  - id: output
+    kind: output
+    name: Portable thread run
+    summary: Return the run directory, manifest, selected candidate, scorecards, deterministic results, and approval state.
+    requires:
+      - approval

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
   coerceManifest,
   deleteLocalWorkflow,
@@ -451,6 +452,7 @@ await (async () => {
     "curate-reading-list",
     "devrel-response",
     "draft-copy",
+    "optimize-tweet-thread",
     "prepare-social-post",
     "research-brief",
     "retrospective-synthesis",
@@ -487,6 +489,33 @@ await (async () => {
       assert.ok((workflow.steps?.length ?? 0) >= 3, `${id} has a multi-step execution graph`);
       assert.notEqual(workflow.summary, "Declared by a role, but no workflow manifest exists yet.", `${id} is not a placeholder`);
     }
+
+    const threadWorkflowPath = path.join(process.cwd(), "workflows", "optimize-tweet-thread.yaml");
+    const threadLayoutPath = path.join(process.cwd(), "workflows", "optimize-tweet-thread.cave.json");
+    const threadManifest = parseYaml(await readFile(threadWorkflowPath, "utf8"));
+    const threadLayout = JSON.parse(await readFile(threadLayoutPath, "utf8"));
+    assert.equal(threadManifest.id, "optimize-tweet-thread");
+    assert.equal(threadManifest.version, "0.1.0");
+    assert.equal(threadManifest.familiar, "comms");
+    assert.equal(threadManifest.pattern, "tournament");
+    assert.deepEqual(threadManifest.limits, {
+      max_agents: 6,
+      timeout_s: 1800,
+      cost_ceiling_usd: 6,
+    });
+    assert.deepEqual(threadManifest.permissions, ["file.read", "file.write"]);
+    assert.deepEqual(
+      threadManifest.steps.map((step: { id: string }) => step.id),
+      ["input", "evidence", "candidates", "validate", "judge", "revise", "approval", "output"],
+    );
+    assert.equal(threadManifest.steps.find((step: { id: string }) => step.id === "approval")?.uses, "valentina");
+    assert.equal(threadManifest.steps.some((step: { id: string }) => /publish/i.test(step.id)), false);
+    assert.equal(threadLayout.version, 1);
+    assert.deepEqual(
+      Object.keys(threadLayout.positions),
+      threadManifest.steps.map((step: { id: string }) => step.id),
+      "the Cave layout covers the YAML execution graph in the same order",
+    );
   } finally {
     if (prevCovenHome === undefined) delete process.env.COVEN_HOME;
     else process.env.COVEN_HOME = prevCovenHome;

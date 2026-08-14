@@ -354,6 +354,46 @@ expectRejected(fixtureCatalog(nested, [nestedComponent]), /nested Craft componen
 // slice, publicly browsable and installable alongside the other six
 // audited research Crafts.
 const productionCatalog = JSON.parse(readFileSync(path.join(ROOT, "marketplace", "catalog.json"), "utf8"));
+const productionThreadLab = productionCatalog.plugins.find((plugin) => plugin.name === "tweet-thread-lab");
+assert.ok(productionThreadLab, "the production catalog includes Tweet Thread Lab");
+assert.equal(productionThreadLab.displayName, "Tweet Thread Lab");
+assert.equal(productionThreadLab.trust, "official-local");
+assert.deepEqual(productionThreadLab.capabilities, ["read_files", "write_files", "network"]);
+assert.equal(productionThreadLab.skill.managed, "manual");
+
+const productionThreadLabRoot = path.join(ROOT, "marketplace", "plugins", "tweet-thread-lab");
+const threadLabManifest = JSON.parse(readFileSync(path.join(productionThreadLabRoot, "plugin.json"), "utf8"));
+const threadLabCodexManifest = JSON.parse(
+  readFileSync(path.join(productionThreadLabRoot, ".codex-plugin", "plugin.json"), "utf8"),
+);
+assert.equal(threadLabManifest.name, "tweet-thread-lab");
+assert.deepEqual(threadLabManifest.capabilities, ["read_files", "write_files", "network"]);
+assert.equal(threadLabCodexManifest.name, "tweet-thread-lab");
+assert.equal(threadLabCodexManifest.skills, "./skills/");
+
+const threadLabSkillRoot = path.join(productionThreadLabRoot, "skills", "tweet-thread-lab");
+const threadLabSkill = readFileSync(path.join(threadLabSkillRoot, "SKILL.md"), "utf8");
+assert.match(threadLabSkill, /^## When to use$/m);
+assert.match(threadLabSkill, /^## Inputs$/m);
+assert.match(threadLabSkill, /^## Steps$/m);
+assert.match(threadLabSkill, /^## Hard gates$/m);
+assert.match(threadLabSkill, /^## Artifacts$/m);
+assert.match(threadLabSkill, /^## Verification$/m);
+for (const reference of ["protocol.md", "rubric.md"]) {
+  assert.ok(existsSync(path.join(threadLabSkillRoot, "references", reference)), `${reference} is bundled`);
+}
+for (const schema of [
+  "thread-brief.schema.json",
+  "thread-candidate.schema.json",
+  "thread-run-manifest.schema.json",
+  "thread-scorecard.schema.json",
+]) {
+  assert.ok(
+    existsSync(path.join(threadLabSkillRoot, "references", "schemas", schema)),
+    `${schema} is bundled without drifting from the protocol generator`,
+  );
+}
+
 const productionSeeker = productionCatalog.plugins.find((plugin) => plugin.name === "seekers-lens");
 assert.ok(productionSeeker, "the production catalog includes Seeker's Lens");
 assert.equal(productionSeeker.kind, "craft");
@@ -380,6 +420,7 @@ for (const skill of productionSeeker.craft.bundled.skills) {
 }
 const productionBrowse = JSON.parse(readFileSync(path.join(ROOT, "marketplace", "marketplace.json"), "utf8"));
 assert.ok(productionBrowse.plugins.some((plugin) => plugin.name === "seekers-lens"), "public Crafts are browsable");
+assert.ok(productionBrowse.plugins.some((plugin) => plugin.name === "tweet-thread-lab"), "Tweet Thread Lab is browsable");
 const productionCodexBrowse = JSON.parse(readFileSync(path.join(ROOT, "marketplace", ".claude-plugin", "marketplace.json"), "utf8"));
 const codexSeeker = productionCodexBrowse.plugins.find((plugin) => plugin.name === "seekers-lens");
 assert.ok(codexSeeker, "public Crafts are installable through the Codex marketplace export");
@@ -417,6 +458,11 @@ if (promptOnly) {
   assert.ok(!("skills" in promptManifest), `${promptOnly.name} carries no skill, so it advertises no skills directory`);
 }
 
+assert.equal(
+  productionCodexBrowse.plugins.find((plugin) => plugin.name === "tweet-thread-lab")?.source,
+  "./plugins/tweet-thread-lab",
+  "Tweet Thread Lab stays inside the registered marketplace root",
+);
 const productionCheck = spawnSync("python3", [SYNC, "--check"], { cwd: ROOT, encoding: "utf8" });
 assert.equal(productionCheck.status, 0, productionCheck.stderr);
 
