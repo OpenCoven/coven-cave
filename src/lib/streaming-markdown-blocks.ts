@@ -97,10 +97,7 @@ function isHeadingLine(line: Line): boolean {
 }
 
 function isThematicBreakLine(line: Line): boolean {
-  const trimmed = lineBody(line).replace(/\r$/, "").trim();
-  if (!trimmed) return false;
-  const compact = trimmed.replace(/\s+/g, "");
-  return /^(?:-{3,}|\*{3,}|_{3,})$/.test(compact);
+  return /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(lineBody(line).replace(/\r$/, ""));
 }
 
 function parseFenceOpening(line: Line): FenceState | null {
@@ -118,8 +115,8 @@ function isFenceClosingLine(line: Line, fence: FenceState): boolean {
 
 function parseListMarker(line: Line): { ordered: boolean } | null {
   const body = lineBody(line).replace(/\r$/, "");
-  if (/^[-+*]\s+/.test(body)) return { ordered: false };
-  if (/^\d+[.)]\s+/.test(body)) return { ordered: true };
+  if (/^ {0,3}[-+*]\s+/.test(body)) return { ordered: false };
+  if (/^ {0,3}\d+[.)]\s+/.test(body)) return { ordered: true };
   return null;
 }
 
@@ -385,10 +382,10 @@ function parseParagraph(source: string, lines: Line[], startIndex: number): Pars
 function parseNextBlock(source: string, lines: Line[], startIndex: number): ParseResult {
   return (
     parseFence(source, lines, startIndex)
-    ?? parseList(source, lines, startIndex)
     ?? parseTable(source, lines, startIndex)
     ?? parseIndentedCode(source, lines, startIndex)
     ?? parseHeadingOrThematic(source, lines, startIndex)
+    ?? parseList(source, lines, startIndex)
     ?? parseBlockquote(source, lines, startIndex)
     ?? parseParagraph(source, lines, startIndex)
   );

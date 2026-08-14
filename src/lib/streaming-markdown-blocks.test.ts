@@ -170,6 +170,90 @@ test("top-level lists stay stable containers with stable item ids", () => {
   });
 });
 
+test("spaced thematic breaks outrank list parsing and commit through their newline", () => {
+  for (const marker of ["* * *\n", "- - -\n"] as const) {
+    const source = `${marker}Tail`;
+    const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+
+    assert.deepEqual(partition.committedBlocks, [{
+      id: `t:0-${marker.length}`,
+      kind: "markdown",
+      source: marker,
+      renderMode: "markdown",
+    }]);
+    assert.deepEqual(partition.activeBlock, {
+      id: `t:${marker.length}-${source.length}`,
+      kind: "markdown",
+      source: "Tail",
+      renderMode: "markdown",
+    });
+    assert.equal(partition.committedText, marker);
+  }
+
+  const starredList = partitionStreamingMarkdown("* item\n* tw", { turnId: "t", settled: false });
+  assert.deepEqual(starredList.activeBlock, {
+    id: "t:0-list",
+    kind: "list",
+    ordered: false,
+    committedItems: [{ id: "t:0-item-0", source: "* item\n" }],
+    activeItem: { id: "t:0-item-1", source: "* tw" },
+    source: "* item\n* tw",
+  });
+});
+
+test("top-level lists may start with one to three spaces and keep stable ids", () => {
+  const unorderedSource = "Intro\n\n - one\n  - two\n   - thre";
+  const unordered = partitionStreamingMarkdown(unorderedSource, { turnId: "t", settled: false });
+  assert.deepEqual(unordered.committedBlocks, [{
+    id: "t:0-7",
+    kind: "markdown",
+    source: "Intro\n\n",
+    renderMode: "markdown",
+  }]);
+  assert.deepEqual(unordered.activeBlock, {
+    id: "t:7-list",
+    kind: "list",
+    ordered: false,
+    committedItems: [
+      { id: "t:7-item-0", source: " - one\n" },
+      { id: "t:7-item-1", source: "  - two\n" },
+    ],
+    activeItem: { id: "t:7-item-2", source: "   - thre" },
+    source: " - one\n  - two\n   - thre",
+  });
+
+  const orderedSource = "Lead\n\n 1. one\n  2. two\n   3. thre";
+  const ordered = partitionStreamingMarkdown(orderedSource, { turnId: "t", settled: false });
+  assert.deepEqual(ordered.committedBlocks, [{
+    id: "t:0-6",
+    kind: "markdown",
+    source: "Lead\n\n",
+    renderMode: "markdown",
+  }]);
+  assert.deepEqual(ordered.activeBlock, {
+    id: "t:6-list",
+    kind: "list",
+    ordered: true,
+    committedItems: [
+      { id: "t:6-item-0", source: " 1. one\n" },
+      { id: "t:6-item-1", source: "  2. two\n" },
+    ],
+    activeItem: { id: "t:6-item-2", source: "   3. thre" },
+    source: " 1. one\n  2. two\n   3. thre",
+  });
+
+  for (const source of ["    - item", "    1. item"] as const) {
+    const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+    assert.deepEqual(partition.committedBlocks, []);
+    assert.deepEqual(partition.activeBlock, {
+      id: `t:0-${source.length}`,
+      kind: "markdown",
+      source,
+      renderMode: "plain",
+    });
+  }
+});
+
 test("nested or ambiguous containers remain one active markdown block", () => {
   const source = "> Intro\n> - one\n> - two";
   const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
