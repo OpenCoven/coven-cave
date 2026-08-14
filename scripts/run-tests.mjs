@@ -1583,7 +1583,6 @@ export const SUITES = {
     "src/app/api/changes/route.test.ts",
     "src/app/api/project-grants/route.test.ts",
     "src/app/api/host-capability-grants/route.test.ts",
-    "src/app/api/windows-hyperv-audit/route.test.ts",
     "src/lib/server/trusted-grant-mutation.test.ts",
     "src/app/api/flows/runs/route.test.ts",
     "src/lib/server/run-history-guards.test.ts",

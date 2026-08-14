@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import { activeHostCapabilities } from "./host-capabilities.ts";
@@ -13,6 +14,19 @@ export const WINDOWS_HYPERV_AUDIT_CAPABILITY = "windows.hyperv.audit.read" as co
 const HELPER_ARGS = ["hyperv-inventory", "--format", "json"] as const;
 const AUDIT_TIMEOUT_MS = 15_000;
 const MAX_RESULT_BYTES = 512 * 1024;
+const MAX_ROWS = 512;
+const MAX_STRING_LENGTH = 4_096;
+const EXPECTED_PUBLISHER = "CompleteTech";
+const VM_STATES = new Set(["Off", "Running", "Paused", "Saved", "Starting", "Stopping", "Resetting", "Pausing", "Resuming", "Saving"]);
+const SWITCH_TYPES = new Set(["External", "Internal", "Private"]);
+const INTEGRATION_STATUSES = new Set(["OK", "Error", "No Contact", "Lost Communication", "Unknown"]);
+
+declare const runtimeAuthorityBrand: unique symbol;
+/** Opaque proof produced only after a trusted server runtime has bound the
+ * capability to its selected conversation. It cannot be serialized or forged
+ * by a browser request. */
+export type WindowsHypervAuditRuntimeAuthority = { readonly [runtimeAuthorityBrand]: true; readonly familiarId: string; readonly sessionId: string };
+const runtimeAuthorities = new WeakSet<object>();
 
 export type HypervInventory = {
   host: { name: string; version: string; hypervAvailable: boolean };
@@ -24,8 +38,8 @@ export type HypervInventory = {
 };
 
 export class WindowsHypervAuditError extends Error {
-  readonly code: "unsupported_platform" | "capability_required" | "broker_failed" | "invalid_broker_response";
-  constructor(code: "unsupported_platform" | "capability_required" | "broker_failed" | "invalid_broker_response", message: string) {
+  readonly code: "unsupported_platform" | "capability_required" | "broker_failed" | "invalid_broker_response" | "signature_rejected";
+  constructor(code: "unsupported_platform" | "capability_required" | "broker_failed" | "invalid_broker_response" | "signature_rejected", message: string) {
     super(message);
     this.name = "WindowsHypervAuditError";
     this.code = code;
@@ -33,6 +47,10 @@ export class WindowsHypervAuditError extends Error {
 }
 
 export type HypervAuditRunner = (command: string, args: readonly string[]) => Promise<string>;
+export type WindowsHypervAuditTestDependencies = {
+  /** Test seam only. Production always uses the system process runner. */
+  run?: HypervAuditRunner;
+};
 
 async function systemRunner(command: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync(command, [...args], {
@@ -45,17 +63,40 @@ async function systemRunner(command: string, args: readonly string[]): Promise<s
   return stdout;
 }
 
+function installManagedHelperPath(): string {
+  // The directory comes from Windows itself; callers cannot supply this path.
+  return path.win32.join(process.env.ProgramW6432 ?? process.env.ProgramFiles ?? "C:\\Program Files", "CompleteTech", "Coven Cave", "coven-host-audit.exe");
+}
+
+function windowsPowerShellPath(): string {
+  return path.win32.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+async function verifyAuthenticode(helperPath: string, run: HypervAuditRunner = systemRunner): Promise<void> {
+  // This immutable script asks Windows to validate the chain and authenticode
+  // status. It has no user-provided arguments or shell interpolation.
+  const script = "$s=Get-AuthenticodeSignature -LiteralPath $args[0]; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'CompleteTech'){exit 1}";
+  try {
+    await run(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", script, helperPath]);
+  } catch {
+    throw new WindowsHypervAuditError("signature_rejected", `Windows Host Audit rejected the helper because its Authenticode chain or ${EXPECTED_PUBLISHER} publisher could not be verified.`);
+  }
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
-function string(value: unknown): string | null { return typeof value === "string" ? value : null; }
-function nullableNumber(value: unknown): number | null { return typeof value === "number" && Number.isFinite(value) ? value : null; }
-function nullableString(value: unknown): string | null { return value === null ? null : string(value); }
+function string(value: unknown, maxLength = MAX_STRING_LENGTH): string | null { return typeof value === "string" && value.length > 0 && value.length <= maxLength ? value : null; }
+function nullableNumber(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+function nullableString(value: unknown): string | null | undefined { return value === null ? null : string(value) ?? undefined; }
 function array(value: unknown): unknown[] | null { return Array.isArray(value) ? value : null; }
 
 function parseRows<T>(value: unknown, parse: (row: Record<string, unknown>) => T | null): T[] | null {
   const rows = array(value);
-  if (!rows) return null;
+  if (!rows || rows.length > MAX_ROWS) return null;
   const parsed = rows.map((row) => {
     const item = record(row);
     return item ? parse(item) : null;
@@ -74,24 +115,24 @@ export function parseHypervInventory(raw: string): HypervInventory {
   const hostVersion = host && string(host.version);
   const available = host?.hypervAvailable;
   const vms = root && parseRows(root.vms, (row) => {
-    const id = string(row.id), name = string(row.name), state = string(row.state), generation = nullableNumber(row.generation);
-    return id && name && state && (generation === null || Number.isInteger(generation)) ? { id, name, state, generation } : null;
+    const id = string(row.id, 256), name = string(row.name, 512), state = string(row.state, 32), generation = nullableNumber(row.generation);
+    return id && name && state && VM_STATES.has(state) && (generation === null || generation === 1 || generation === 2) ? { id, name, state, generation } : null;
   });
   const switches = root && parseRows(root.switches, (row) => {
-    const id = string(row.id), name = string(row.name), type = string(row.type);
-    return id && name && type ? { id, name, type } : null;
+    const id = string(row.id, 256), name = string(row.name, 512), type = string(row.type, 32);
+    return id && name && type && SWITCH_TYPES.has(type) ? { id, name, type } : null;
   });
   const checkpoints = root && parseRows(root.checkpoints, (row) => {
-    const id = string(row.id), vmId = string(row.vmId), name = string(row.name), createdAt = nullableString(row.createdAt);
-    return id && vmId && name && createdAt !== undefined ? { id, vmId, name, createdAt } : null;
+    const id = string(row.id, 256), vmId = string(row.vmId, 256), name = string(row.name, 512), createdAt = nullableString(row.createdAt);
+    return id && vmId && name && createdAt !== undefined && (createdAt === null || !Number.isNaN(Date.parse(createdAt))) ? { id, vmId, name, createdAt } : null;
   });
   const vhdChains = root && parseRows(root.vhdChains, (row) => {
-    const path = string(row.path), parentPath = nullableString(row.parentPath), sizeBytes = nullableNumber(row.sizeBytes);
-    return path && parentPath !== undefined && sizeBytes !== undefined ? { path, parentPath, sizeBytes } : null;
+    const vhdPath = string(row.path), parentPath = nullableString(row.parentPath), sizeBytes = nullableNumber(row.sizeBytes);
+    return vhdPath && parentPath !== undefined && sizeBytes !== undefined ? { path: vhdPath, parentPath, sizeBytes } : null;
   });
   const integrationServices = root && parseRows(root.integrationServices, (row) => {
-    const vmId = string(row.vmId), name = string(row.name), primaryStatus = string(row.primaryStatus);
-    return vmId && name && primaryStatus && typeof row.enabled === "boolean" ? { vmId, name, enabled: row.enabled, primaryStatus } : null;
+    const vmId = string(row.vmId, 256), name = string(row.name, 512), primaryStatus = string(row.primaryStatus, 32);
+    return vmId && name && primaryStatus && INTEGRATION_STATUSES.has(primaryStatus) && typeof row.enabled === "boolean" ? { vmId, name, enabled: row.enabled, primaryStatus } : null;
   });
   if (!hostName || !hostVersion || typeof available !== "boolean" || !vms || !switches || !checkpoints || !vhdChains || !integrationServices) {
     throw new WindowsHypervAuditError("invalid_broker_response", "Windows Host Audit returned an incomplete inventory.");
@@ -99,23 +140,29 @@ export function parseHypervInventory(raw: string): HypervInventory {
   return { host: { name: hostName, version: hostVersion, hypervAvailable: available }, vms, switches, checkpoints, vhdChains, integrationServices };
 }
 
-export async function runWindowsHypervAudit(input: {
-  familiarId: string;
-  sessionId: string;
-  platform?: NodeJS.Platform;
-  helperPath?: string;
-  run?: HypervAuditRunner;
-}): Promise<HypervInventory> {
+/** Server runtime entrypoint. Browser routes must not expose this operation:
+ * callers first obtain authority from the active runtime/session binding. */
+export async function authorizeWindowsHypervAuditRuntime(input: { familiarId: string; sessionId: string; platform?: NodeJS.Platform }): Promise<WindowsHypervAuditRuntimeAuthority> {
   const platform = input.platform ?? process.platform;
   if (platform !== "win32") throw new WindowsHypervAuditError("unsupported_platform", "Windows Host Audit is available only on Windows.");
   const grants = await activeHostCapabilities({ familiarId: input.familiarId, sessionId: input.sessionId, platform });
   if (!grants.includes(WINDOWS_HYPERV_AUDIT_CAPABILITY)) {
     throw new WindowsHypervAuditError("capability_required", "An active Hyper-V audit approval is required for this session.");
   }
+  const authority = { familiarId: input.familiarId, sessionId: input.sessionId } as WindowsHypervAuditRuntimeAuthority;
+  runtimeAuthorities.add(authority);
+  return authority;
+}
+
+export async function runWindowsHypervAudit(authority: WindowsHypervAuditRuntimeAuthority, dependencies: WindowsHypervAuditTestDependencies = {}): Promise<HypervInventory> {
+  if (!runtimeAuthorities.has(authority)) throw new WindowsHypervAuditError("capability_required", "Windows Host Audit requires trusted runtime session authority.");
+  const helperPath = installManagedHelperPath();
   try {
-    // The helper path is deployment-controlled. Tests inject a runner; no test
-    // executes host commands, and clients cannot choose either argument.
-    const raw = await (input.run ?? systemRunner)(input.helperPath ?? "coven-host-audit.exe", HELPER_ARGS);
+    const run = dependencies.run ?? systemRunner;
+    await verifyAuthenticode(helperPath, run);
+    // Tests inject a runner; production cannot choose the binary or argv, and
+    // the auth check is always completed before the helper can execute.
+    const raw = await run(helperPath, HELPER_ARGS);
     return parseHypervInventory(raw);
   } catch (error) {
     if (error instanceof WindowsHypervAuditError) throw error;

@@ -5,12 +5,20 @@ Windows Host Audit is an optional, session-bound, read-only adapter for
 to a registered directory; it never grants Windows host, administrator, or
 Hyper-V authority.
 
-The desktop app invokes the separately deployed `coven-host-audit.exe` helper
-with one fixed operation: `hyperv-inventory --format json`. The helper is
-responsible for requesting UAC only when that inventory needs elevation. It may
-return host, VM, switch, checkpoint, VHD-chain, and integration-service
-inventory. It must reject arbitrary PowerShell, scripts, VM lifecycle actions,
-checkpoint changes, disk writes, network changes, and credential access.
+Only a trusted server runtime that has bound an unexpired capability to its
+selected Cave conversation may invoke the audit. There is deliberately no
+browser endpoint that accepts familiar/session IDs and starts a host process.
+
+The desktop app invokes the separately deployed, install-managed helper at
+`%ProgramW6432%\CompleteTech\Coven Cave\coven-host-audit.exe` with one fixed
+operation: `hyperv-inventory --format json`. Before every invocation Windows
+must report an Authenticode `Valid` chain and a CompleteTech publisher; any
+missing, altered, expired, or differently signed helper fails closed. The
+helper is responsible for requesting UAC only when that inventory needs
+elevation. It may return host, VM, switch, checkpoint, VHD-chain, and
+integration-service inventory. It must reject arbitrary PowerShell, scripts,
+VM lifecycle actions, checkpoint changes, disk writes, network changes, and
+credential access.
 
 Signing verifies publisher identity and artifact integrity; it does not grant
 this capability, bypass UAC, or turn a project grant into host authority. The

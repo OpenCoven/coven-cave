@@ -23,8 +23,9 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
   const [busy, setBusy] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState("");
   const load = useCallback(async () => {
+    if (!familiarId) { setCatalog([]); setGrants([]); setSessions([]); return; }
     try {
-      const response = await fetch(`/api/host-capability-grants${familiarId ? `?familiarId=${encodeURIComponent(familiarId)}` : ""}`, { cache: "no-store" });
+      const response = await fetch(`/api/host-capability-grants?familiarId=${encodeURIComponent(familiarId)}`, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error("load failed");
       setCatalog(Array.isArray(body.catalog) ? body.catalog : []);
