@@ -33,6 +33,7 @@ import {
   ACCESS_TOKEN_QUERY_PARAM,
   isClientV1Path,
   isClientV1AdminPath,
+  shouldBypassMobileAccessGateForClientV1,
   hasEncodedClientV1PathOctet,
   CLIENT_V1_PREFIX,
 } from "./proxy-helpers.ts";
@@ -417,6 +418,28 @@ assert.equal(
   "no per-boot secret configured (Next running without server.ts) fails closed",
 );
 assert.equal(isTrustedLocalPeer("", ""), false, "empty header and secret never match");
+
+// ─── client-v1 mobile-gate exception ─────────────────────────────────────
+assert.equal(
+  shouldBypassMobileAccessGateForClientV1("/api/client/v1/conversations", "localhost:3000", true),
+  true,
+  "only a server-proven direct loopback non-admin facade request bypasses an armed mobile gate",
+);
+assert.equal(
+  shouldBypassMobileAccessGateForClientV1("/api/client/v1/conversations", "cave.tailnet.example.ts.net", true),
+  false,
+  "a non-loopback host never earns the client-v1 mobile-gate exception",
+);
+assert.equal(
+  shouldBypassMobileAccessGateForClientV1("/api/client/v1/admin/credentials", "localhost:3000", true),
+  false,
+  "admin routes remain behind the mobile/sidecar gates",
+);
+assert.equal(
+  shouldBypassMobileAccessGateForClientV1("/api/client/v1/conversations", "localhost:3000", false),
+  false,
+  "a loopback-looking Host alone never substitutes for server peer proof",
+);
 
 // ─── bearerFromReferer ─────────────────────────────────────────────────────
 assert.equal(
