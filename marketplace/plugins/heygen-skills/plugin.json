@@ -22,6 +22,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/heygen-skills",
   "x-coven": {
     "displayName": "HeyGen Skills",

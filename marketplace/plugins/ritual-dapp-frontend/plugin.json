@@ -21,6 +21,7 @@
     "shell",
     "network"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/ritual-dapp-frontend",
   "x-coven": {
     "displayName": "Ritual dApp Frontend",

@@ -22,6 +22,7 @@
     "write_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/pptx-generator",
   "x-coven": {
     "displayName": "PPTX Generator",

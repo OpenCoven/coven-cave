@@ -22,6 +22,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/dataviz-dashboard-ux",
   "x-coven": {
     "displayName": "Data-Viz & Dashboard UX",

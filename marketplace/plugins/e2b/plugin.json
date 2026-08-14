@@ -20,6 +20,7 @@
     "shell",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/e2b",
   "x-coven": {
     "displayName": "E2B Code Sandbox",

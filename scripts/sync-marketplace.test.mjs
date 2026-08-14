@@ -384,6 +384,39 @@ const productionCodexBrowse = JSON.parse(readFileSync(path.join(ROOT, "marketpla
 const codexSeeker = productionCodexBrowse.plugins.find((plugin) => plugin.name === "seekers-lens");
 assert.ok(codexSeeker, "public Crafts are installable through the Codex marketplace export");
 assert.equal(codexSeeker.source, "./plugins/seekers-lens", "Codex plugin sources stay inside the registered marketplace root");
+// Generated manifests must satisfy the runtime contract in
+// src/lib/server/bundled-copilot-plugins.ts (isSkillOnlyManifest): an
+// app-bundled plugin loads ONLY when its plugin.json advertises a skills
+// directory and carries no agents/hooks/mcpServers. That field was previously
+// absent from the generator and hand-edited into the generated file, so a
+// routine `sync-marketplace.py` run would have deleted it and silently dropped
+// Coven recall from Copilot chats. Pin it on the generated output.
+const bundledMemory = JSON.parse(
+  readFileSync(path.join(ROOT, "marketplace", "plugins", "coven-memory", "plugin.json"), "utf8"),
+);
+const bundledSkills = Array.isArray(bundledMemory.skills) ? bundledMemory.skills : [bundledMemory.skills];
+assert.ok(
+  bundledSkills.length > 0 && bundledSkills.every((entry) => entry === "skills/" || entry === "./skills/"),
+  "coven-memory advertises its skills directory, or the app stops loading the bundle",
+);
+for (const key of ["agents", "hooks", "mcpServers"]) {
+  assert.ok(!(key in bundledMemory), `coven-memory stays skill-only (no ${key})`);
+}
+assert.ok(
+  existsSync(path.join(ROOT, "marketplace", "plugins", "coven-memory", "skills", "recall", "SKILL.md")),
+  "the advertised directory actually holds the recall skill",
+);
+// A prompt-only plugin has no skills/ directory, so it must not claim one.
+const promptOnly = productionCatalog.plugins.find(
+  (plugin) => !plugin.skill && plugin.kind !== "craft" && plugin.kind !== "knowledge-pack",
+);
+if (promptOnly) {
+  const promptManifest = JSON.parse(
+    readFileSync(path.join(ROOT, "marketplace", "plugins", promptOnly.name, "plugin.json"), "utf8"),
+  );
+  assert.ok(!("skills" in promptManifest), `${promptOnly.name} carries no skill, so it advertises no skills directory`);
+}
+
 const productionCheck = spawnSync("python3", [SYNC, "--check"], { cwd: ROOT, encoding: "utf8" });
 assert.equal(productionCheck.status, 0, productionCheck.stderr);
 

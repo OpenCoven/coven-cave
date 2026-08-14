@@ -24,6 +24,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/command-palette-keyboard-ux",
   "x-coven": {
     "displayName": "Command Palette & Keyboard UX (\u2318K)",

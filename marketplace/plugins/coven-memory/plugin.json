@@ -19,9 +19,7 @@
     "read_files",
     "write_files"
   ],
-  "skills": [
-    "skills/"
-  ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/coven-memory",
   "x-coven": {
     "displayName": "Coven Memory & Knowledge",
