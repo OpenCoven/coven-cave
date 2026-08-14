@@ -555,7 +555,11 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const splitPageModes = useMemo\([\s\S]{0,220}t\.kind === "page"[\s\S]{0,120}\[splitTargets\],?\s*\n\s*\)/,
+  // Pin the derivation — a memo over the live split tiles, keyed on them — not
+  // the predicate inside it. cave-x6rw replaced `t.kind === "page"` with a
+  // requestedPageId/isWorkspaceMode filter, which is the same contract
+  // (cave-ktvy0).
+  /const splitPageModes = useMemo\([\s\S]{0,300}?splitTargets[\s\S]{0,200}?\[splitTargets\],?\s*\n\s*\)/,
   "workspace derives splitPageModes from the live split tiles",
 );
 assert.match(
