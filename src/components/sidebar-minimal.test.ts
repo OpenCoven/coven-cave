@@ -66,10 +66,19 @@ assert.match(
   "Sidebar nav options should stay visually close together on desktop",
 );
 
+// One height for the row and for its collapsed-rail square (#4351), so hovering
+// the rail open never changes a control's pitch — `flex: none` is part of the
+// same contract, since .sidebar-nav-scroll is a flex column that otherwise
+// compressed rows below their min-height as soon as the list overflowed.
 assert.match(
   styles,
-  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*min-height:\s*30px/,
-  "Desktop sidebar option rows should use compact height before mobile touch-target overrides",
+  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*flex: none;[^}]*min-height:\s*var\(--rail-control\)/,
+  "Desktop sidebar option rows take the shared rail control height and never shrink",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*padding:\s*0 var\(--rail-lead\)/,
+  "Desktop sidebar option rows lead their icon from the shared rail column",
 );
 
 assert.match(
@@ -290,10 +299,12 @@ assert.match(
   "Footer controls should use the fixed footer icon cell",
 );
 
+// The footer glyph cell is exactly the glyph: a wider cell centres the icon
+// inside it and pushes it off the rail's shared icon column (#4351).
 assert.match(
   styles,
-  /\.sidebar-foot-bell > \.relative,\n\.sidebar-foot-icon-cell/,
-  "Footer rows should align labels from matching icon cells",
+  /\.sidebar-foot-icon-cell \{[^}]*width: var\(--icon-md\);[^}]*flex: 0 0 var\(--icon-md\)/,
+  "Footer icon cells are exactly one icon wide, so footer glyphs sit on the nav column",
 );
 
 // The left sidepanel footer stays quiet: reminders/notifications live in the
@@ -464,22 +475,28 @@ assert.match(
   /className="sidebar-version"[\s\S]{0,280}?v\{APP_VERSION\}[\s\S]{0,40}?<\/a>/,
   "the version line is the bottommost element of the shared footer",
 );
-// Phase D (chat-revamp): the rail-only account avatar circle closes the nav,
-// directly under the shared footer — both route to Settings.
+// The shared footer is the bottommost element of the nav in BOTH states. The
+// phase-D rail-only account avatar that used to close the column is gone: its
+// onClick was onOpenSettings — the same action as the Settings button right
+// above it — and being rail-only it left the footer at a different height than
+// its own hover-peek form (#4351).
 assert.match(
   source,
-  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>[\s\S]{0,700}?<button\s+type="button"\s+className="sidebar-user-avatar focus-ring"\s+onClick=\{onOpenSettings\}[\s\S]{0,300}?<\/button>\s*<\/nav>/,
-  "the shared footer sits above the rail-only account avatar, which is the bottommost element of the sidebar nav",
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
+  "the shared footer is the bottommost element of the sidebar nav",
 );
 assert.match(
   styles,
   /\.sidebar-version \{[^}]*line-height: 1;[^}]*color: var\(--text-muted\)/,
   "The version line should be minimal-height muted text",
 );
-assert.match(
+// The version line stays in the 56px rail ("v0.3.3" fits): it is the nav's
+// bottom-most band, so hiding it there while showing it in the panel left the
+// footer buttons at two different heights across hover-peek (#4351).
+assert.doesNotMatch(
   styles,
   /\.shell-nav--rail \.sidebar-version \{[^}]*display: none/,
-  "The 56px rail has no room for text — the version line hides there",
+  "The rail keeps the version line so the footer band matches the panel's",
 );
 
 // Explore retains quiet row treatment, while its section header now owns the
