@@ -1349,6 +1349,42 @@
   .mobile-drawer-backdrop { animation: none; }
 }
 
+.mobile-right-chat-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  width: min(100vw, 480px);
+  height: 100dvh;
+  padding-top: var(--sai-top);
+  padding-right: var(--sai-right);
+  padding-bottom: var(--sai-bottom);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-hairline);
+  box-shadow: 0 0 30px color-mix(in oklch, black 30%, transparent);
+  animation: mobile-right-chat-in var(--duration-base) var(--ease-emphasized);
+  overscroll-behavior: contain;
+}
+
+@keyframes mobile-right-chat-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@media (max-width: 480px) {
+  .mobile-right-chat-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-right-chat-drawer {
+    animation: none;
+  }
+}
+
 /* ─── Mobile bottom tabs ───────────────────────────────────────────────
    Sticky bottom navigation strip rendered by the Shell on mobile/tablet
    viewports (≤1023px). Fixed destinations (Home / Chat / Board / Inbox);
@@ -1378,6 +1414,10 @@
   .shell-top > .shell-top-toggle--nav,
   .shell-top > .shell-top-history {
     display: none;
+  }
+
+  .shell-top > .shell-top-toggle--right {
+    display: inline-flex;
   }
 
   .mobile-bottom-tabs {

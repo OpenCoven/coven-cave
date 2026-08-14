@@ -237,6 +237,11 @@ assert.doesNotMatch(
   "Shift+B must not fall through to the left sidebar toggle",
 );
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
+assert.match(css, /\.shell-right-chat-panel,[\s\S]*?height:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;/, "the fourth panel fills its allocation");
+assert.match(css, /\.right-chat__header\s*\{[^}]*display:\s*flex;[^}]*min-height:/, "the compact Chat header is a stable flex row");
+assert.match(css, /\.mobile-right-chat-drawer\s*\{[^}]*right:\s*0;[^}]*width:\s*min\(100vw,\s*480px\);/, "the modal enters from the right with a tablet cap");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer\s*\{[^}]*width:\s*100vw;/, "narrow phones use the available width");
+assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?\.mobile-right-chat-drawer[\s\S]*?animation:\s*none/, "drawer motion respects the global reduced-motion contract");
 
 // The right companion panel (and its in-panel collapse bridge) was removed.
 assert.doesNotMatch(
