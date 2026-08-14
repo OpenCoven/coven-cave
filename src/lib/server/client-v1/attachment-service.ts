@@ -133,6 +133,14 @@ export type ClientAttachmentRecord = {
 
 type AttachmentIndex = { version: 1; attachments: ClientAttachmentRecord[] };
 
+type AttachmentIndexWriteHook = (
+  storePath: string,
+  index: AttachmentIndex,
+  next: () => Promise<void>,
+) => Promise<void>;
+
+let writeIndexHookForTest: AttachmentIndexWriteHook | null = null;
+
 export class ClientAttachmentError extends Error {
   readonly status: 400 | 404 | 409 | 413 | 415 | 503;
   readonly code: "invalid_request" | "not_found" | "conflict" | "service_unavailable";
@@ -147,6 +155,13 @@ export class ClientAttachmentError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+/** Test-only fault injection for the index commit after canonical writes. */
+export function setClientAttachmentIndexWriteHookForTest(
+  hook: AttachmentIndexWriteHook | null,
+): void {
+  writeIndexHookForTest = hook;
 }
 
 /**
@@ -735,6 +750,47 @@ async function readCanonicalClientAttachment(
   }
 }
 
+async function canonicalAttachmentExists(root: string, attachmentId: string): Promise<boolean> {
+  const target = path.join(root, attachmentId);
+  try {
+    const info = await lstat(/* turbopackIgnore: true */ target);
+    return info.isFile() && !info.isSymbolicLink();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw new ClientAttachmentError(
+      503,
+      "service_unavailable",
+      "Canonical attachment storage is unavailable.",
+    );
+  }
+}
+
+async function writeAttachmentIndex(storePath: string, index: AttachmentIndex): Promise<void> {
+  const commit = async () => {
+    await mkdir(/* turbopackIgnore: true */ path.dirname(storePath), {
+      recursive: true,
+      mode: 0o700,
+    });
+    await writeJsonAtomic(storePath, index);
+  };
+  if (writeIndexHookForTest) {
+    await writeIndexHookForTest(storePath, index, commit);
+    return;
+  }
+  await commit();
+}
+
+async function cleanupUnindexedCanonicalAttachments(ids: readonly string[]): Promise<void> {
+  const results = await Promise.allSettled(ids.map((attachmentId) => deleteChatStoredAttachment(attachmentId)));
+  if (results.some((result) => result.status === "rejected")) {
+    throw new ClientAttachmentError(
+      503,
+      "service_unavailable",
+      "Canonical attachment cleanup failed.",
+    );
+  }
+}
+
 export async function saveUploadedClientAttachments(
   uploads: readonly PreparedClientAttachment[],
   credentialId: string,
@@ -748,53 +804,73 @@ export async function saveUploadedClientAttachments(
 
   const storePath = clientAttachmentIndexPath();
   await assertStoreBoundary(storePath);
-  await clientAttachmentStorageRoot();
+  const storageRoot = await clientAttachmentStorageRoot();
   return withMutationQueue(storePath, () =>
     withCredentialTransactionLock(
       { storePath, label: "client-v1-attachment-index" },
       async () => {
         const index = await readIndexForMutation(storePath);
         const byId = new Map(index.attachments.map((record) => [record.attachmentId, record]));
+        const planned = prepared.map((upload, indexInRequest) => ({
+          upload,
+          attachmentId: deterministicAttachmentId(effectId, indexInRequest, upload.mimeType),
+        }));
+        const newRecordCount = planned.filter(({ attachmentId }) => !byId.has(attachmentId)).length;
+        if (index.attachments.length + newRecordCount > CLIENT_ATTACHMENT_MAX_RECORDS) {
+          throw new ClientAttachmentError(
+            409,
+            "conflict",
+            "Attachment capacity is full.",
+          );
+        }
         const receipts: UploadedClientAttachment[] = [];
         let indexChanged = false;
+        const newlyPersisted: string[] = [];
 
-        for (const [indexInRequest, upload] of prepared.entries()) {
-          const attachmentId = deterministicAttachmentId(effectId, indexInRequest, upload.mimeType);
-          await persistCanonicalAttachment(upload, attachmentId);
-          const existing = byId.get(attachmentId);
-          if (existing) {
-            if (existing.credentialId !== credentialId.toLowerCase()) {
-              throw new ClientAttachmentError(
-                503,
-                "service_unavailable",
-                "The attachment index is unavailable.",
-              );
+        try {
+          for (const { upload, attachmentId } of planned) {
+            const existing = byId.get(attachmentId);
+            if (existing) {
+              if (existing.credentialId !== credentialId.toLowerCase()) {
+                throw new ClientAttachmentError(
+                  503,
+                  "service_unavailable",
+                  "The attachment index is unavailable.",
+                );
+              }
+            } else {
+              const existedBefore = await canonicalAttachmentExists(storageRoot, attachmentId);
+              await persistCanonicalAttachment(upload, attachmentId);
+              if (!existedBefore) newlyPersisted.push(attachmentId);
+              const created: ClientAttachmentRecord = {
+                attachmentId,
+                credentialId: credentialId.toLowerCase(),
+                createdAt: now,
+                conversationId: null,
+              };
+              index.attachments.push(created);
+              byId.set(attachmentId, created);
+              indexChanged = true;
             }
-          } else {
-            const created: ClientAttachmentRecord = {
-              attachmentId,
-              credentialId: credentialId.toLowerCase(),
-              createdAt: now,
-              conversationId: null,
-            };
-            index.attachments.push(created);
-            byId.set(attachmentId, created);
-            indexChanged = true;
+            receipts.push({
+              id: attachmentId,
+              name: upload.name,
+              mimeType: upload.mimeType,
+              sizeBytes: upload.sizeBytes,
+            });
           }
-          receipts.push({
-            id: attachmentId,
-            name: upload.name,
-            mimeType: upload.mimeType,
-            sizeBytes: upload.sizeBytes,
-          });
-        }
 
-        if (indexChanged) {
-          await mkdir(/* turbopackIgnore: true */ path.dirname(storePath), {
-            recursive: true,
-            mode: 0o700,
-          });
-          await writeJsonAtomic(storePath, index);
+          if (indexChanged) await writeAttachmentIndex(storePath, index);
+        } catch (error) {
+          try {
+            await cleanupUnindexedCanonicalAttachments(newlyPersisted);
+          } catch (cleanupError) {
+            console.error("[client-v1-attachment] cleanup failed after index write failure", {
+              error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            });
+            throw cleanupError;
+          }
+          throw error;
         }
         return receipts;
       },
