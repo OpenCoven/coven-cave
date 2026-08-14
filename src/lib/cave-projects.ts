@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomBytes, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -12,12 +12,40 @@ export {
 import type { CaveProject } from "./cave-projects-types.ts";
 import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
 import { caveHome } from "./coven-paths.ts";
-import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
+import {
+  caveHomeStoreNeedsRecoveryNormalization,
+  markCaveHomeStoreRecoveryNormalized,
+  withCaveHomeReconciledStore,
+} from "./server/cave-home-migration.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
+import { withProjectAuthorizationGuard } from "./server/project-authorization-lock.ts";
 
 type ProjectsFile = {
   version: 1;
   projects: CaveProject[];
+  /**
+   * Cross-process session-list cache visibility nonce (Task 5/7 finding —
+   * see `@/lib/project-permissions.ts`'s `ProjectPermissionsFile.visibilityGeneration`
+   * for the full rationale, mirrored exactly here for the project registry).
+   * Regenerated inside `saveProjects`'s SAME atomic write only when effective
+   * visibility changes (create/delete/re-root), so metadata-only and no-op
+   * writes keep it stable and a failed write never advances it. Absent on every store written before
+   * this field existed — a fixed sentinel, never a freshly random value, so
+   * an unmutated legacy file keeps producing the SAME cache key on every
+   * read.
+   */
+  visibilityGeneration: string;
 };
+
+const MISSING_PROJECTS_VISIBILITY_GENERATION = "missing";
+
+export class ProjectRegistryIntegrityError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ProjectRegistryIntegrityError";
+  }
+}
 
 function projectsFilePath(): string {
   return (
@@ -64,14 +92,153 @@ function nanoid(len = 10): string {
 async function readFileOrNull(filePath: string): Promise<string | null> {
   try {
     return await readFile(filePath, "utf8");
-  } catch {
-    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new ProjectRegistryIntegrityError(`Unable to read project registry: ${filePath}`, {
+      cause: error,
+    });
   }
 }
 
-async function writeProjectsFile(filePath: string, data: string): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, data, "utf8");
+function isStrictProject(value: unknown): value is CaveProject {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const project = value as Record<string, unknown>;
+  const allowedKeys = new Set([
+    "id",
+    "name",
+    "root",
+    "createdAt",
+    "updatedAt",
+    "color",
+    "repoUrl",
+  ]);
+  return (
+    Object.keys(project).every((key) => allowedKeys.has(key)) &&
+    typeof project.id === "string" &&
+    project.id.length > 0 &&
+    typeof project.name === "string" &&
+    typeof project.root === "string" &&
+    project.root.length > 0 &&
+    typeof project.createdAt === "string" &&
+    typeof project.updatedAt === "string" &&
+    (project.color === undefined || typeof project.color === "string") &&
+    (project.repoUrl === undefined || typeof project.repoUrl === "string") &&
+    project.legacyRoot === undefined &&
+    project.access === undefined
+  );
+}
+
+function parseStrictProjects(raw: string): ProjectsFile {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new ProjectRegistryIntegrityError("Project registry contains invalid JSON.", {
+      cause: error,
+    });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ProjectRegistryIntegrityError("Project registry has an invalid schema.");
+  }
+  const file = parsed as Record<string, unknown>;
+  const allowedKeys = new Set(["version", "projects", "visibilityGeneration"]);
+  if (
+    !Object.keys(file).every((key) => allowedKeys.has(key)) ||
+    file.version !== 1 ||
+    !Array.isArray(file.projects) ||
+    !file.projects.every(isStrictProject) ||
+    typeof file.visibilityGeneration !== "string" ||
+    !file.visibilityGeneration ||
+    file.visibilityGeneration === "unversioned"
+  ) {
+    throw new ProjectRegistryIntegrityError("Project registry has an invalid schema.");
+  }
+  return file as ProjectsFile;
+}
+
+function normalizeRecoveredProjects(raw: string): CaveProject[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new ProjectRegistryIntegrityError("Recovered project registry contains invalid JSON.", {
+      cause: error,
+    });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ProjectRegistryIntegrityError("Recovered project registry has an invalid schema.");
+  }
+  const projects = (parsed as { version?: unknown; projects?: unknown }).projects;
+  if ((parsed as { version?: unknown }).version !== 1 || !Array.isArray(projects) || !projects.every(isStrictProject)) {
+    throw new ProjectRegistryIntegrityError("Recovered project registry has an invalid schema.");
+  }
+  return projects;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * True when `record` is the genuine durable legacy (pre-`visibilityGeneration`)
+ * project registry shape: version 1, ONLY the `version`/`projects` keys (no
+ * `visibilityGeneration` key present at all — not merely one holding an
+ * invalid value), and every project entry independently passes the exact
+ * same strict per-project validation {@link isStrictProject} enforces for
+ * the current schema.
+ *
+ * This is a pure content check. It is deliberately never combined with, or
+ * gated by, `caveHomeStoreNeedsRecoveryNormalization`'s process-local marker
+ * or whether the file was previously absent — those are process-local
+ * signals that a DIFFERENT process (or an earlier cold start of this same
+ * one) can never have set. Detecting the legacy shape from the actual bytes
+ * on disk is what makes normalization work identically whether another
+ * process already performed the physical cave-home migration move (this
+ * process never ran it, so it has no marker for it) or a legacy-schema file
+ * simply already sits at the canonical path on a cold start.
+ *
+ * Anything else — extra or missing top-level keys, the wrong `version`, or
+ * even a single project entry that fails strict validation — is NOT legacy
+ * here; it falls through to {@link parseStrictProjects}, which fails closed.
+ * An arbitrary missing field is never mistaken for this specific, fully
+ * validated legacy shape.
+ */
+function isLegacyProjectsRecord(
+  record: Record<string, unknown>,
+): record is { version: 1; projects: CaveProject[] } {
+  const allowedLegacyKeys = new Set(["version", "projects"]);
+  return (
+    Object.keys(record).every((key) => allowedLegacyKeys.has(key)) &&
+    record.version === 1 &&
+    Array.isArray(record.projects) &&
+    record.projects.every(isStrictProject)
+  );
+}
+
+/**
+ * Content-only detection, never throwing: malformed JSON or a non-object top
+ * level simply means "not legacy" here — the strict parse path is what
+ * reports those failures to the caller.
+ */
+function isLegacyProjectsSchema(raw: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  return isRecord(parsed) && isLegacyProjectsRecord(parsed);
+}
+
+/** Assumes {@link isLegacyProjectsSchema} already returned true for `raw`. */
+function normalizeLegacyProjectsFile(raw: string): ProjectsFile {
+  const record = JSON.parse(raw) as { version: 1; projects: CaveProject[] };
+  return {
+    version: 1,
+    projects: record.projects,
+    // A fresh cryptographic generation — this file has never had one.
+    visibilityGeneration: randomUUID(),
+  };
 }
 
 // Serialize mutating operations so concurrent API calls don't clobber each other.
@@ -90,12 +257,53 @@ function withProjectsStore<T>(operation: () => Promise<T>): Promise<T> {
   return withCaveHomeReconciledStore("cave-projects.json", operation);
 }
 
-async function loadProjectsUnlocked(): Promise<CaveProject[]> {
+async function loadProjectsUnlocked(options: { normalizeRecovered?: boolean } = {}): Promise<CaveProject[]> {
   const raw = await readFileOrNull(projectsFilePath());
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as Partial<ProjectsFile>;
-    if (!Array.isArray(parsed.projects)) return [];
+  if (!raw) {
+    if (options.normalizeRecovered) {
+      await writeJsonAtomic(projectsFilePath(), {
+        version: 1,
+        projects: [],
+        visibilityGeneration: randomUUID(),
+      } satisfies ProjectsFile);
+      markCaveHomeStoreRecoveryNormalized("cave-projects.json");
+      invalidateSessionsListCache();
+    }
+    return [];
+  }
+  let parsed: ProjectsFile;
+  if (isLegacyProjectsSchema(raw)) {
+    // Durable legacy normalization: this branch is reached purely from the
+    // ACTUAL on-disk bytes at the canonical path — never from
+    // `caveHomeStoreNeedsRecoveryNormalization`'s process-local marker or
+    // from the file having been absent (`options.normalizeRecovered` below
+    // is a SEPARATE, more lenient fallback for the explicit recover-legacy
+    // flow). It therefore fires identically whether another process already
+    // performed the physical cave-home migration move (this process never
+    // ran that migration, so it has no marker) or the legacy-schema file
+    // simply already sits at the canonical path on a cold start. Every
+    // concurrent reader that observes legacy bytes here runs the SAME
+    // parse+regenerate+persist while holding the SAME project-authorization
+    // lock (`loadProjects`/`projectsVisibilityGeneration` route through it
+    // whenever this content shape is detected), so racing readers normalize
+    // exactly once: the loser re-reads the now-current schema on its own
+    // turn instead of clobbering the winner's write.
+    parsed = normalizeLegacyProjectsFile(raw);
+    await writeJsonAtomic(projectsFilePath(), parsed);
+    markCaveHomeStoreRecoveryNormalized("cave-projects.json");
+    invalidateSessionsListCache();
+  } else if (options.normalizeRecovered) {
+    parsed = {
+      version: 1 as const,
+      projects: normalizeRecoveredProjects(raw),
+      visibilityGeneration: randomUUID(),
+    };
+    await writeJsonAtomic(projectsFilePath(), parsed);
+    markCaveHomeStoreRecoveryNormalized("cave-projects.json");
+    invalidateSessionsListCache();
+  } else {
+    parsed = parseStrictProjects(raw);
+  }
     // Dedupe at the source of truth: the normalized path IS the project
     // identity. createProject/patchProject keep new writes one-per-root, but
     // duplicates persisted before that guard (or written by hand) would
@@ -114,18 +322,67 @@ async function loadProjectsUnlocked(): Promise<CaveProject[]> {
     // the side that knows the homedir, rather than by shipping one to the
     // client. `legacyRoot` carries the old key so the client can re-key what
     // it already stored; it is response-only and never written back.
-    return dedupeByRoot(parsed.projects, normalizeRootExpandingHome).map((project) => {
+  return dedupeByRoot(parsed.projects, normalizeRootExpandingHome).map((project) => {
       const expanded = normalizeRootExpandingHome(project.root);
       if (expanded === project.root) return project;
       return { ...project, root: expanded, legacyRoot: project.root };
     });
-  } catch {
-    return [];
-  }
+}
+
+/**
+ * Whether the registry needs a normalizing pass under the project-
+ * authorization lock before it can be read on the fast (lock-free) path:
+ * the file is absent, or its on-disk bytes are the genuine durable legacy
+ * shape {@link isLegacyProjectsRecord} describes. Content-based, not marker-
+ * based — see `loadProjectsUnlocked`'s legacy branch for why that matters.
+ */
+async function projectsRegistryNeedsAuthorizedNormalization(): Promise<boolean> {
+  const raw = await readFileOrNull(projectsFilePath());
+  return raw === null || isLegacyProjectsSchema(raw);
 }
 
 export async function loadProjects(): Promise<CaveProject[]> {
-  return withProjectsStore(loadProjectsUnlocked);
+  if (!(await projectsRegistryNeedsAuthorizedNormalization())) {
+    return withProjectsStore(loadProjectsUnlocked);
+  }
+  return withProjectAuthorizationGuard(
+    () => loadProjectsAlreadyAuthorized(),
+    "project-registry-recovery",
+  );
+}
+
+/** Read/recover the registry for a caller that already holds project authorization. */
+export async function loadProjectsAlreadyAuthorized(): Promise<CaveProject[]> {
+  const wasMissing = (await readFileOrNull(projectsFilePath())) === null;
+  return withProjectsStore(() =>
+    loadProjectsUnlocked({
+      normalizeRecovered:
+        wasMissing || caveHomeStoreNeedsRecoveryNormalization("cave-projects.json"),
+    }),
+  );
+}
+
+async function readProjectsVisibilityGenerationUnlocked(): Promise<string> {
+  const raw = await readFileOrNull(projectsFilePath());
+  if (!raw) return MISSING_PROJECTS_VISIBILITY_GENERATION;
+  return parseStrictProjects(raw).visibilityGeneration;
+}
+
+/**
+ * The current cross-process session-list cache visibility nonce for the
+ * project registry — see `ProjectsFile.visibilityGeneration`'s doc comment.
+ * Read by `@/lib/server/client-v1/read-model.ts` ahead of every canonical
+ * sessions-list cache lookup so a project create/rename/delete committed by
+ * ANOTHER process is observed on this process's very next read.
+ */
+export async function projectsVisibilityGeneration(): Promise<string> {
+  if (await projectsRegistryNeedsAuthorizedNormalization()) {
+    await withProjectAuthorizationGuard(
+      () => loadProjectsAlreadyAuthorized(),
+      "project-registry-recovery",
+    );
+  }
+  return withProjectsStore(readProjectsVisibilityGenerationUnlocked);
 }
 
 /**
@@ -140,10 +397,18 @@ export async function loadProjects(): Promise<CaveProject[]> {
 export function withProjectRegistryLock<T>(
   operation: (projects: CaveProject[]) => Promise<T>,
 ): Promise<T> {
-  return withProjectsStore(() => withWriteMutex(async () => operation(await loadProjectsUnlocked())));
+  return withProjectAuthorizationGuard(async () => {
+    const wasMissing = (await readFileOrNull(projectsFilePath())) === null;
+    return withProjectsStore(() =>
+      withWriteMutex(async () => operation(await loadProjectsUnlocked({
+        normalizeRecovered:
+          wasMissing || caveHomeStoreNeedsRecoveryNormalization("cave-projects.json"),
+      }))),
+    );
+  }, "project-registry");
 }
 
-async function saveProjects(projects: CaveProject[]): Promise<void> {
+async function saveProjects(projects: CaveProject[], visibilityChanged: boolean): Promise<void> {
   // Strip legacyRoot before it reaches disk. loadProjectsUnlocked attaches it
   // in memory so the client can follow a moved root, and every mutation path
   // (create/patch/delete) writes back the array that load returned — so without
@@ -154,8 +419,23 @@ async function saveProjects(projects: CaveProject[]): Promise<void> {
   const file: ProjectsFile = {
     version: 1,
     projects: projects.map(({ legacyRoot: _legacyRoot, ...project }) => project),
+    // Cross-process cache-visibility nonce: regenerated in THIS SAME write
+    // only for create/delete/re-root. Metadata and no-op writes retain it.
+    visibilityGeneration: visibilityChanged
+      ? randomUUID()
+      : await readProjectsVisibilityGenerationUnlocked(),
   };
-  await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
+  await writeJsonAtomic(projectsFilePath(), file);
+  // Adding/removing a project or changing its root can change which sessions
+  // fall into a known (grant-checked) project vs. the always-visible
+  // "(no project)" bucket (session-project-scope.ts), so it can change
+  // effective visibility just like a permission-file change can. Invalidate
+  // the shared sessions-list cache HERE — the one function every registry
+  // mutation (createProject/patchProject/deleteProject) funnels through —
+  // AFTER `writeProjectsFile` succeeds (it throws on failure), so a failed
+  // write never busts a cache that still correctly reflects the unchanged
+  // on-disk registry.
+  if (visibilityChanged) invalidateSessionsListCache();
 }
 
 export function createProject(input: {
@@ -165,8 +445,13 @@ export function createProject(input: {
   /** Canonical GitHub repository link — callers validate/normalize first. */
   repoUrl?: string;
 }): Promise<CaveProject> {
-  return withProjectsStore(() => withWriteMutex(async () => {
-    const projects = await loadProjectsUnlocked();
+  return withProjectAuthorizationGuard(async () => {
+    const wasMissing = (await readFileOrNull(projectsFilePath())) === null;
+    return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked({
+      normalizeRecovered:
+        wasMissing || caveHomeStoreNeedsRecoveryNormalization("cave-projects.json"),
+    });
     const root = normalizeRootExpandingHome(input.root);
     // One project per root. Creating at an already-registered root would persist
     // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
@@ -185,9 +470,10 @@ export function createProject(input: {
       updatedAt: now,
     };
     if (input.repoUrl) project.repoUrl = input.repoUrl;
-    await saveProjects([...projects, project]);
+    await saveProjects([...projects, project], true);
     return project;
-  }));
+    }));
+  }, "project-registry");
 }
 
 export function patchProject(
@@ -197,8 +483,13 @@ export function patchProject(
   // string-sets / null-clears / undefined-keeps contract.
   patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null },
 ): Promise<CaveProject | null> {
-  return withProjectsStore(() => withWriteMutex(async () => {
-    const projects = await loadProjectsUnlocked();
+  return withProjectAuthorizationGuard(async () => {
+    const wasMissing = (await readFileOrNull(projectsFilePath())) === null;
+    return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked({
+      normalizeRecovered:
+        wasMissing || caveHomeStoreNeedsRecoveryNormalization("cave-projects.json"),
+    });
     const idx = projects.findIndex((project) => project.id === id);
     if (idx < 0) return null;
     const current = projects[idx];
@@ -230,19 +521,31 @@ export function patchProject(
     }
     const next = [...projects];
     next[idx] = updated;
-    await saveProjects(next);
+    await saveProjects(next, nextRoot !== current.root);
     return updated;
+    }));
+  }, "project-registry");
+}
+
+export async function deleteProjectAlreadyAuthorized(id: string): Promise<boolean> {
+  const wasMissing = (await readFileOrNull(projectsFilePath())) === null;
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked({
+      normalizeRecovered:
+        wasMissing || caveHomeStoreNeedsRecoveryNormalization("cave-projects.json"),
+    });
+    const next = projects.filter((project) => project.id !== id);
+    if (next.length === projects.length) return false;
+    await saveProjects(next, true);
+    return true;
   }));
 }
 
 export function deleteProject(id: string): Promise<boolean> {
-  return withProjectsStore(() => withWriteMutex(async () => {
-    const projects = await loadProjectsUnlocked();
-    const next = projects.filter((project) => project.id !== id);
-    if (next.length === projects.length) return false;
-    await saveProjects(next);
-    return true;
-  }));
+  return withProjectAuthorizationGuard(
+    () => deleteProjectAlreadyAuthorized(id),
+    "project-registry",
+  );
 }
 
 export async function seedDefaultProjectsIfEmpty(): Promise<void> {
@@ -252,7 +555,7 @@ export async function seedDefaultProjectsIfEmpty(): Promise<void> {
 
 export function projectForRoot(
   root: string | null | undefined,
-  projects: CaveProject[],
+  projects: readonly CaveProject[],
 ): CaveProject | null {
   if (!root?.trim()) return null;
   const normalized = normalizeRootExpandingHome(root);
@@ -261,7 +564,7 @@ export function projectForRoot(
 
 export function projectById(
   id: string | null | undefined,
-  projects: CaveProject[],
+  projects: readonly CaveProject[],
 ): CaveProject | null {
   if (!id) return null;
   return projects.find((project) => project.id === id) ?? null;

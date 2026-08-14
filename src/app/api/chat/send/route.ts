@@ -1565,7 +1565,7 @@ function openClawChatResponse(args: {
   });
 }
 
-export async function POST(req: Request) {
+export async function executeChatSend(req: Request) {
   let body: SendBody;
   try {
     body = (await req.json()) as SendBody;
@@ -5786,3 +5786,5 @@ export async function POST(req: Request) {
     },
   });
 }
+
+export { executeChatSend as POST };

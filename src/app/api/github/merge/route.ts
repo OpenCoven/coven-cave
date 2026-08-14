@@ -32,12 +32,6 @@ const GH = "https://api.github.com";
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 const METHODS = new Set(["squash", "merge", "rebase"]);
 
-// A branch name we are willing to interpolate into `git/refs/heads/…`. Branch
-// names legitimately contain slashes, so REPO_RE cannot be reused: this allows
-// slash-joined segments of [A-Za-z0-9._-] with no empty segment (hence no
-// leading or trailing slash) and no segment starting with "-" (git rejects
-// those). Deliberately narrower than git's own rules. This guards a value that
-// already came from GitHub, so it is defence in depth, not the only barrier.
 const BRANCH_SEGMENTS_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]*(?:\/[A-Za-z0-9._][A-Za-z0-9._-]*)*$/;
 
 function ghHeaders(token: string): Record<string, string> {
@@ -50,9 +44,109 @@ function ghHeaders(token: string): Record<string, string> {
 }
 
 function isSafeBranch(value: string): boolean {
-  // ".." is spellable from the allowed characters and is both a git-invalid ref
-  // and the path-traversal sequence, so it needs its own rejection.
   return value.length <= 255 && !value.includes("..") && BRANCH_SEGMENTS_RE.test(value);
+}
+
+export type GitHubMergeInput = {
+  repo: string;
+  number: number;
+  method: "squash" | "merge" | "rebase";
+  deleteBranch?: boolean;
+};
+export type GitHubMergeResult =
+  | {
+      ok: true;
+      merged: true;
+      sha: string | null;
+      branchDeleted: boolean;
+      branchDeleteError: string | null;
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      reason: "auth_required" | "upstream" | "network";
+    };
+
+export async function executeGitHubMerge(input: GitHubMergeInput): Promise<GitHubMergeResult> {
+  const token = resolveGitHubToken();
+  if (!token) {
+    return { ok: false, status: 401, error: "auth_required", reason: "auth_required" };
+  }
+
+  try {
+    const res = await fetch(`${GH}/repos/${input.repo}/pulls/${input.number}/merge`, {
+      method: "PUT",
+      headers: ghHeaders(token),
+      cache: "no-store",
+      body: JSON.stringify({ merge_method: input.method }),
+    });
+    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok || !data || data.merged !== true) {
+      const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
+      return { ok: false, status: res.status, error: message, reason: "upstream" };
+    }
+
+    let branchDeleted = false;
+    let branchDeleteError: string | null = null;
+    if (input.deleteBranch) {
+      try {
+        const prRes = await fetch(`${GH}/repos/${input.repo}/pulls/${input.number}`, {
+          headers: ghHeaders(token),
+          cache: "no-store",
+        });
+        const pr = (await prRes.json().catch(() => null)) as {
+          head?: { ref?: unknown; repo?: { full_name?: unknown } | null };
+        } | null;
+        const ref = typeof pr?.head?.ref === "string" ? pr.head.ref.trim() : "";
+        const headRepo = typeof pr?.head?.repo?.full_name === "string" ? pr.head.repo.full_name.trim() : "";
+        if (!headRepo) {
+          branchDeleteError = "could not read head repository";
+        } else if (headRepo.toLowerCase() !== input.repo.toLowerCase()) {
+          branchDeleteError = "head branch belongs to a different repository";
+        } else if (!isSafeBranch(ref)) {
+          branchDeleteError = ref ? "branch name is not one this route will delete" : "could not read the head branch";
+        } else {
+          const del = await fetch(`${GH}/repos/${input.repo}/git/refs/heads/${ref}`, {
+            method: "DELETE",
+            headers: ghHeaders(token),
+            cache: "no-store",
+          });
+          if (del.ok || del.status === 404) {
+            branchDeleted = true;
+          } else {
+            const err = (await del.json().catch(() => null)) as Record<string, unknown> | null;
+            branchDeleteError = typeof err?.message === "string" ? err.message : `github error (${del.status})`;
+          }
+        }
+      } catch (error) {
+        branchDeleteError = error instanceof Error ? error.message : "failed to delete branch";
+      }
+    }
+
+    return {
+      ok: true,
+      merged: true,
+      sha: typeof data.sha === "string" ? data.sha : null,
+      branchDeleted,
+      branchDeleteError,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      error: error instanceof Error ? error.message : "failed to merge",
+      reason: "network",
+    };
+  }
+}
+
+function toLegacyResponse(result: GitHubMergeResult): Response {
+  if (result.ok) return NextResponse.json(result);
+  return NextResponse.json(
+    { ok: false, error: result.error },
+    { status: result.reason === "auth_required" ? 401 : result.status === 403 ? 403 : 502 },
+  );
 }
 
 export async function POST(req: Request) {
@@ -78,103 +172,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid method" }, { status: 400 });
   }
 
-  const token = resolveGitHubToken();
-  if (!token) {
-    return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
-  }
-
-  try {
-    // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/merge`, {
-      method: "PUT",
-      headers: ghHeaders(token),
-      cache: "no-store",
-      body: JSON.stringify({ merge_method: method }),
-    });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!res.ok || !data || data.merged !== true) {
-      // 405/409 carry GitHub's protection/mergeability reason — pass verbatim.
-      const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
-    }
-
-    let branchDeleted = false;
-    let branchDeleteError: string | null = null;
-    if (deleteBranch) {
-      try {
-        // Ask GitHub which branch this PR merged from, rather than believing the
-        // caller. `head.ref` survives the merge, so this is available here.
-        const prRes = await fetch(`${GH}/repos/${repo}/pulls/${number}`, {
-          headers: ghHeaders(token),
-          cache: "no-store",
-        });
-        const pr = (await prRes.json().catch(() => null)) as {
-          head?: { ref?: unknown; repo?: { full_name?: unknown } | null };
-        } | null;
-        const ref = typeof pr?.head?.ref === "string" ? pr.head.ref.trim() : "";
-        const headRepo = typeof pr?.head?.repo?.full_name === "string" ? pr.head.repo.full_name.trim() : "";
-        if (!headRepo) {
-          branchDeleteError = "could not read head repository";
-          return NextResponse.json({
-            ok: true,
-            merged: true,
-            sha: typeof data.sha === "string" ? data.sha : null,
-            branchDeleted: false,
-            branchDeleteError,
-          });
-        }
-        if (headRepo.toLowerCase() !== repo.toLowerCase()) {
-          branchDeleteError = "head branch belongs to a different repository";
-          return NextResponse.json({
-            ok: true,
-            merged: true,
-            sha: typeof data.sha === "string" ? data.sha : null,
-            branchDeleted: false,
-            branchDeleteError,
-          });
-        }
-        if (!isSafeBranch(ref)) {
-          branchDeleteError = ref ? "branch name is not one this route will delete" : "could not read the head branch";
-          return NextResponse.json({
-            ok: true,
-            merged: true,
-            sha: typeof data.sha === "string" ? data.sha : null,
-            branchDeleted: false,
-            branchDeleteError,
-          });
-        }
-        // `ref` is GitHub's own value and passed isSafeBranch — safe to
-        // interpolate, and not reachable from the request body.
-        const del = await fetch(`${GH}/repos/${repo}/git/refs/heads/${ref}`, {
-          method: "DELETE",
-          headers: ghHeaders(token),
-          cache: "no-store",
-        });
-        // 404 means the ref is already gone — usually the repo's own
-        // "automatically delete head branches" setting won the race. The
-        // requested end state holds, so report it as deleted.
-        if (del.ok || del.status === 404) {
-          branchDeleted = true;
-        } else {
-          const err = (await del.json().catch(() => null)) as Record<string, unknown> | null;
-          branchDeleteError = typeof err?.message === "string" ? err.message : `github error (${del.status})`;
-        }
-      } catch (e) {
-        branchDeleteError = e instanceof Error ? e.message : "failed to delete branch";
-      }
-    }
-
-    return NextResponse.json({
-      ok: true,
-      merged: true,
-      sha: typeof data.sha === "string" ? data.sha : null,
-      branchDeleted,
-      branchDeleteError,
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "failed to merge" },
-      { status: 502 },
-    );
-  }
+  return toLegacyResponse(await executeGitHubMerge({
+    repo,
+    number,
+    method: method as GitHubMergeInput["method"],
+    deleteBranch,
+  }));
 }

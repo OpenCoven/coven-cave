@@ -180,7 +180,7 @@ test("adapter scaffolding preserves a user-managed non-file manifest path", asyn
 // writer, which refuses to resurrect a quarantined manifest.
 test("chat send route wires conflict detection and heal-retry", async () => {
   const source = await readFileFs(
-    path.join(process.cwd(), "src/app/api/chat/send/route.ts"),
+    path.join(process.cwd(), "src/lib/server/chat-send-service.ts"),
     "utf8",
   );
   assert.match(source, /detectBuiltinAdapterConflict\(text\)/);

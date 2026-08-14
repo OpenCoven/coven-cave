@@ -6,6 +6,12 @@ import path from "node:path";
 
 const previousHome = process.env.HOME;
 const tempHome = await mkdtemp(path.join(process.cwd(), ".cave-config-test-"));
+const cleanupTempHome = () => {
+  try {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  } catch {}
+};
+process.once("exit", cleanupTempHome);
 process.env.HOME = tempHome;
 
 const config = await import("./cave-config.ts");
@@ -1043,7 +1049,7 @@ try {
 } finally {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;
-  await rm(tempHome, { recursive: true, force: true });
+  cleanupTempHome();
 }
 
 // ── Config write-race mutex (2026-07-03 settings audit) ──────────────────────
@@ -1053,8 +1059,19 @@ try {
 {
   const src = fs.readFileSync(new URL("./cave-config.ts", import.meta.url), "utf8");
   assert.match(src, /async function withConfigLock<T>/, "cave-config has a config mutex helper");
-  assert.equal((src.match(/return withConfigLock\(async \(\) => \{/g) || []).length, 5, "all config writers run under the lock");
+  // `saveConfig` (cave-client-v1 Task 5/7 followup: familiar-lifecycle
+  // guard) now delegates to the extracted `saveConfigPatched` helper via
+  // `withConfigLock(() => saveConfigPatched(patch))` rather than an inline
+  // `async () => { ... }` body, so it no longer matches the literal
+  // `async () => {` shape the other four writers still use — count both
+  // call shapes together so the total (still five real config-writing entry
+  // points) stays the invariant under test, not the exact syntax of any one
+  // of them.
+  const inlineAsyncWriters = (src.match(/return withConfigLock\(async \(\) => \{/g) || []).length;
+  const delegatingWriters = (src.match(/return withConfigLock\(\(\) => saveConfigPatched\(patch\)\);/g) || []).length;
+  assert.equal(inlineAsyncWriters + delegatingWriters, 5, "all config writers run under the lock");
 }
+
 
 // ── Omnigent enable toggle (explicit opt-in) ─────────────────────────────────
 // The fleet master switch defaults OFF: pre-toggle configs (no `enabled`
@@ -1065,4 +1082,123 @@ try {
   assert.equal(config.normalizeOmnigentConfig({}).enabled, false, "missing enabled field → fleet off");
   assert.equal(config.normalizeOmnigentConfig({ enabled: "yes" }).enabled, false, "non-boolean enabled → fleet off");
   assert.equal(config.normalizeOmnigentConfig({ enabled: true }).enabled, true, "explicit true persists");
+}
+
+// ── applySessionMetadataWithCheckpoint (Task 7 quality finding #2:
+// transactional PATCH metadata) ──────────────────────────────────────────────
+// This is the shared primitive `/api/client/v1` conversation PATCH runs its
+// title/pin/archive fields, plus its own conversation-file save, through as
+// ONE atomic transaction: a checkpoint failure (or a partial-field patch
+// failing) must leave NONE of the patch's fields durably applied, and the
+// sessions-list cache must be invalidated only once a commit actually lands.
+{
+  const sessionId = "atomic-patch-session";
+  await config.recordSessionFamiliar(sessionId, "charm");
+  const cacheKey = `atomic-patch:${sessionId}`;
+  let computeCalls = 0;
+  const bumpCache = () =>
+    sessionsListCache.get(cacheKey, async () => {
+      computeCalls++;
+      return { payload: { ok: true, sessions: [] } };
+    });
+  await bumpCache();
+  assert.equal(computeCalls, 1, "seed the cache once before any patch attempt");
+
+  // (a) All three fields at once, checkpoint throws: none may land.
+  await assert.rejects(
+    () =>
+      config.applySessionMetadataWithCheckpoint(
+        sessionId,
+        { title: "Should never persist", pinned: true, archived: true },
+        async () => {
+          throw new Error("simulated checkpoint failure");
+        },
+      ),
+    /simulated checkpoint failure/,
+  );
+  let state = await config.loadState();
+  assert.equal(state.sessionTitles[sessionId], undefined, "title must not be applied when the checkpoint throws");
+  assert.equal(state.sessionTitleManual[sessionId], undefined, "title ownership must not be applied either");
+  assert.equal(state.sessionPinned[sessionId], undefined, "pinned must not be applied when the checkpoint throws");
+  assert.equal(state.sessionArchived[sessionId], undefined, "archived must not be applied when the checkpoint throws");
+  await bumpCache();
+  assert.equal(computeCalls, 1, "a failed checkpoint must never invalidate the sessions-list cache");
+
+  // (b) Each field in isolation, checkpoint throws: proves the all-or-none
+  // guarantee isn't an artifact of testing all three fields together.
+  for (const [field, value] of [
+    ["title", "Solo title should not land"],
+    ["pinned", true],
+    ["archived", true],
+  ] as const) {
+    await assert.rejects(() =>
+      config.applySessionMetadataWithCheckpoint(sessionId, { [field]: value }, async () => {
+        throw new Error(`simulated ${field}-only checkpoint failure`);
+      }),
+    );
+    const afterFieldFailure = await config.loadState();
+    assert.equal(afterFieldFailure.sessionTitles[sessionId], undefined, `${field}-only failure must not apply title`);
+    assert.equal(afterFieldFailure.sessionPinned[sessionId], undefined, `${field}-only failure must not apply pinned`);
+    assert.equal(afterFieldFailure.sessionArchived[sessionId], undefined, `${field}-only failure must not apply archived`);
+  }
+  await bumpCache();
+  assert.equal(computeCalls, 1, "field-by-field checkpoint failures must never invalidate the sessions-list cache");
+
+  // (c) A successful checkpoint commits every field in the patch, observes
+  // the IN-MEMORY (not-yet-persisted) mutation directly, and the cache is
+  // invalidated exactly once, only after the commit.
+  const committed = await config.applySessionMetadataWithCheckpoint(
+    sessionId,
+    { title: "Committed title", pinned: true, archived: true },
+    async (mutatedState) => {
+      assert.equal(mutatedState.sessionTitles[sessionId], "Committed title");
+      assert.ok(mutatedState.sessionPinned[sessionId], "pinned must be stamped in-memory before the checkpoint runs");
+      assert.ok(mutatedState.sessionArchived[sessionId]);
+      return "checkpoint-result";
+    },
+  );
+  assert.equal(committed, "checkpoint-result", "the checkpoint's own return value threads back to the caller");
+  state = await config.loadState();
+  assert.equal(state.sessionTitles[sessionId], "Committed title");
+  assert.equal(state.sessionTitleManual[sessionId], true);
+  assert.ok(state.sessionPinned[sessionId]);
+  assert.ok(state.sessionArchived[sessionId]);
+  await bumpCache();
+  assert.equal(computeCalls, 2, "a successful checkpoint invalidates the sessions-list cache exactly once per commit");
+
+  // (d) If the checkpoint SUCCEEDS but the subsequent state persistence
+  // fails, no metadata may be reported committed twice / partially: the
+  // checkpoint's own effect may already be durable, but the state write is
+  // atomic (writeJsonAtomic) so it either fully lands or not at all — a
+  // retry against the pre-write state is always safe. This is exercised
+  // indirectly: forcing `saveStateUnlocked` to fail is out of this module's
+  // seam, so this is instead proven at the integration level in
+  // chat-service.test.ts ("patch: a canonical save failure propagates as a
+  // thrown error, never a false success completion").
+
+  // (e) Concurrency: two applySessionMetadataWithCheckpoint calls for the
+  // SAME session, fired concurrently, must fully serialize through the
+  // shared state transaction — neither's mutation is lost to the other's
+  // load-mutate-save window (no lost update).
+  const order: string[] = [];
+  const callA = config.applySessionMetadataWithCheckpoint(sessionId, { title: "Concurrent A" }, async () => {
+    order.push("A-start");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    order.push("A-end");
+  });
+  const callB = config.applySessionMetadataWithCheckpoint(sessionId, { pinned: false }, async () => {
+    order.push("B-start");
+  });
+  await Promise.all([callA, callB]);
+  assert.equal(order.length, 3);
+  const aStart = order.indexOf("A-start");
+  const aEnd = order.indexOf("A-end");
+  const bStart = order.indexOf("B-start");
+  assert.ok(
+    bStart < aStart || bStart > aEnd,
+    "the two concurrent transactions must never interleave (strict serialization through the shared state transaction)",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionTitles[sessionId], "Concurrent A", "the title mutation from A must have landed");
+  assert.equal(state.sessionPinned[sessionId], undefined, "the pinned:false mutation from B must have landed too — no lost update");
 }
