@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
   coerceManifest,
   deleteLocalWorkflow,
@@ -451,6 +452,7 @@ await (async () => {
     "curate-reading-list",
     "devrel-response",
     "draft-copy",
+    "optimize-tweet-thread",
     "prepare-social-post",
     "research-brief",
     "retrospective-synthesis",
@@ -487,6 +489,75 @@ await (async () => {
       assert.ok((workflow.steps?.length ?? 0) >= 3, `${id} has a multi-step execution graph`);
       assert.notEqual(workflow.summary, "Declared by a role, but no workflow manifest exists yet.", `${id} is not a placeholder`);
     }
+
+    const threadWorkflowPath = path.join(process.cwd(), "workflows", "optimize-tweet-thread.yaml");
+    const threadLayoutPath = path.join(process.cwd(), "workflows", "optimize-tweet-thread.cave.json");
+    const threadManifest = parseYaml(await readFile(threadWorkflowPath, "utf8"));
+    const threadLayout = JSON.parse(await readFile(threadLayoutPath, "utf8"));
+    assert.equal(threadManifest.id, "optimize-tweet-thread");
+    assert.equal(threadManifest.version, "0.1.0");
+    assert.equal(threadManifest.familiar, "comms");
+    assert.equal(threadManifest.pattern, "tournament");
+    assert.deepEqual(threadManifest.limits, {
+      max_agents: 6,
+      timeout_s: 1800,
+      cost_ceiling_usd: 6,
+    });
+    assert.deepEqual(threadManifest.permissions, ["file.read", "file.write", "command.run"]);
+    const evidenceStep = threadManifest.steps.find((step: { id: string }) => step.id === "evidence");
+    assert.ok(evidenceStep);
+    assert.match(evidenceStep.summary, /supplied or local evidence/i);
+    assert.match(evidenceStep.summary, /without network retrieval/i);
+    const validateStep = threadManifest.steps.find((step: { id: string }) => step.id === "validate");
+    assert.ok(validateStep);
+    const candidatesStep = threadManifest.steps.find((step: { id: string }) => step.id === "candidates");
+    assert.ok(candidatesStep);
+    assert.match(candidatesStep.summary, /tooling\.json/i);
+    assert.match(candidatesStep.summary, /absolute installed validator path/i);
+    assert.match(candidatesStep.summary, /loaded `SKILL\.md`/i);
+    assert.match(
+      validateStep.summary,
+      /read.*tooling\.json.*validator.*absolute path/i,
+    );
+    assert.doesNotMatch(validateStep.summary, /marketplace\/plugins\/tweet-thread-lab/);
+    assert.match(validateStep.summary, /strict JSON stdout.*deterministic\/<candidate-id>\.json/i);
+    assert.match(validateStep.summary, /exit 1 blocks.*exit 2/i);
+    assert.match(
+      validateStep.summary,
+      /node "<validatorPath>" validate candidates\/<candidate-id>\.json brief\.json/i,
+    );
+    const judgeStep = threadManifest.steps.find((step: { id: string }) => step.id === "judge");
+    assert.ok(judgeStep);
+    assert.match(judgeStep.summary, /scorecard set commitment/i);
+    assert.match(judgeStep.summary, /before identity reveal or stopping unlock/i);
+    assert.match(judgeStep.summary, /retain/i);
+    assert.deepEqual(
+      threadManifest.steps.map(
+        (step: { id: string; kind: string; uses?: string; requires?: string[] }) => ({
+          id: step.id,
+          kind: step.kind,
+          uses: step.uses,
+          requires: step.requires,
+        }),
+      ),
+      [
+        { id: "input", kind: "input", uses: undefined, requires: undefined },
+        { id: "evidence", kind: "agent", uses: "research", requires: ["input"] },
+        { id: "candidates", kind: "skill", uses: "tweet-thread-lab", requires: ["evidence"] },
+        { id: "validate", kind: "tool", uses: "cave.exec", requires: ["candidates"] },
+        { id: "judge", kind: "agent", uses: "reviewer", requires: ["validate"] },
+        { id: "revise", kind: "skill", uses: "tweet-thread-lab", requires: ["judge"] },
+        { id: "approval", kind: "human-gate", uses: "valentina", requires: ["revise"] },
+        { id: "output", kind: "output", uses: undefined, requires: ["approval"] },
+      ],
+    );
+    assert.equal(threadManifest.steps.some((step: { id: string }) => /publish/i.test(step.id)), false);
+    assert.equal(threadLayout.version, 1);
+    assert.deepEqual(
+      Object.keys(threadLayout.positions),
+      threadManifest.steps.map((step: { id: string }) => step.id),
+      "the Cave layout covers the YAML execution graph in the same order",
+    );
   } finally {
     if (prevCovenHome === undefined) delete process.env.COVEN_HOME;
     else process.env.COVEN_HOME = prevCovenHome;

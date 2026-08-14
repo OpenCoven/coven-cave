@@ -9,6 +9,8 @@ import {
   type ChatModelState,
 } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { CLAUDE_OPUS_5_CAVE_ID } from "@/lib/claude-models";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
@@ -112,6 +114,26 @@ export function resolveSendModelMetadata(args: {
     modelState.source !== "familiar-default",
   );
   return { desiredModel, modelState, invalidSavedModel, suppressedSavedModel };
+}
+
+/**
+ * Whether this turn's selection is the one whose launch value is an alias
+ * rather than the id itself, and therefore needs its availability re-proved
+ * before the alias echo may be reported as Opus 5.
+ *
+ * Deliberately not scoped to saved selections the way
+ * `savedModelSelectionRejection` is. The invariant is "never report Opus 5
+ * unless the probe currently holds", and scoping it to persisted sources would
+ * leave a stale client able to defeat it by sending the id as a fresh pick.
+ */
+export function needsClaudeOpus5Routability(args: {
+  harness: string;
+  desiredModel: string;
+}): boolean {
+  return (
+    canonicalHarnessId(args.harness) === "claude" &&
+    cleanModelId(args.desiredModel) === CLAUDE_OPUS_5_CAVE_ID
+  );
 }
 
 export function savedModelSelectionRejection(args: {
