@@ -73,6 +73,7 @@ test("Piper runner sends text on stdin and cleans its bounded WAV output", async
     "Hello from Piper.",
     undefined,
     {
+      executable: "piper",
       spawnImpl: fakeRunner,
       removeImpl: async (target, options) => {
         cleanupOptions = options;
@@ -309,7 +310,10 @@ test("Kokoro runner passes the utterance as argv and cleans its bounded WAV outp
     kokoroAssets,
     "  Hello from\r\nKokoro.  ",
     undefined,
-    { spawnImpl: fakeRunner },
+    {
+      executable: "sherpa-onnx-offline-tts",
+      spawnImpl: fakeRunner,
+    },
   );
 
   assert.equal(command, "sherpa-onnx-offline-tts");

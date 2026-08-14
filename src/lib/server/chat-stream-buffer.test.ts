@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  ensureTerminalFailure,
   hasRunBuffer,
   getRunBufferStatus,
   openRunBuffer,
   resetRunBuffersForTest,
+  RUN_STREAM_EVENT_MAX_BYTES,
+  RUN_STREAM_RING_MAX_EVENTS,
   subscribeRunStream,
 } from "./chat-stream-buffer.ts";
 import type { StreamEvent } from "@/lib/stream-events";
@@ -42,7 +45,12 @@ test("replays past the cursor, tails live events, and finish closes tails", () =
 
   const late = subscribeRunStream("run-1", 0, () => {}, () => {});
   assert.ok(late && late.done, "a late subscriber sees done and drains the replay");
-  assert.equal(late.replay.length, 4, "the full retained ring replays after finish");
+  // None of the four recorded events were terminal (`done`/`error`), so
+  // `finish()` appends the guaranteed synthetic `run.failed` before marking
+  // the buffer done — the retained ring is the 4 real events plus that one.
+  assert.equal(late.replay.length, 5, "the retained ring plus the guaranteed terminal replays after finish");
+  const terminal = JSON.parse(late.replay[late.replay.length - 1].json);
+  assert.equal(terminal.kind, "error", "finish synthesizes a terminal when none was ever recorded");
   resetRunBuffersForTest();
 });
 
@@ -217,15 +225,19 @@ test("getRunBufferStatus tracks live tails, eviction, and finish", () => {
   const liveAgain = subscribeRunStream("run-health", evicted!.latestSeq, () => {}, () => {});
   assert.ok(liveAgain);
   handle.finish();
-  assert.deepEqual(getRunBufferStatus("run-health"), {
+  // None of the 12 recorded chunks were terminal, so `finish()` appends the
+  // guaranteed synthetic terminal (one more small event) before marking done
+  // — retainedEventCount/latestSeq/retainedBytes advance by that one entry.
+  const finished = getRunBufferStatus("run-health");
+  assert.deepEqual(finished, {
     done: true,
-    oldestRetainedSeq: evicted!.oldestRetainedSeq,
-    latestSeq: evicted!.latestSeq,
-    retainedEventCount: evicted!.retainedEventCount,
-    retainedBytes: evicted!.retainedBytes,
+    oldestRetainedSeq: finished!.oldestRetainedSeq,
+    latestSeq: evicted!.latestSeq + 1,
+    retainedEventCount: evicted!.retainedEventCount + 1,
+    retainedBytes: finished!.retainedBytes,
     hasEvictedEvents: true,
     liveTails: 0,
-  }, "finish marks the run done and clears live tails");
+  }, "finish marks the run done, clears live tails, and appends the guaranteed terminal");
   resetRunBuffersForTest();
 });
 
@@ -236,6 +248,258 @@ test("recording after finish is a no-op (late child chatter can't grow a dead ri
   handle.finish();
   handle.record({ kind: "assistant_chunk", text: "ghost" });
   const sub = subscribeRunStream("run-late", 0, () => {}, () => {});
-  assert.equal(sub!.replay.length, 1, "post-finish records are dropped");
+  // The "only" user event plus the guaranteed synthetic terminal finish()
+  // appended (no terminal had ever been recorded) — but the post-finish
+  // "ghost" record is still dropped.
+  assert.equal(sub!.replay.length, 2, "post-finish records are dropped");
+  const terminal = JSON.parse(sub!.replay[1].json);
+  assert.equal(terminal.kind, "error", "finish synthesizes the missing terminal");
+  resetRunBuffersForTest();
+});
+
+test("oversized raw events are replaced before append and count plus bytes stay bounded", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-bounded"]);
+  const secret = `/private/token-${"x".repeat(RUN_STREAM_EVENT_MAX_BYTES + 1)}`;
+  handle.record({ kind: "assistant_chunk", text: secret });
+  let subscription = subscribeRunStream("run-bounded", 0, () => {}, () => {});
+  assert.ok(subscription);
+  assert.equal(subscription.replay.length, 1);
+  assert.deepEqual(JSON.parse(subscription.replay[0].json), {
+    kind: "error",
+    code: "stream_event_too_large",
+    message: "The run failed.",
+  });
+  assert.doesNotMatch(subscription.replay[0].json, /private|token/);
+
+  for (let index = 0; index < RUN_STREAM_RING_MAX_EVENTS + 100; index += 1) {
+    handle.record({ kind: "assistant_chunk", text: "" });
+  }
+  subscription = subscribeRunStream("run-bounded", 0, () => {}, () => {});
+  assert.ok(subscription);
+  assert.ok(subscription.replay.length <= RUN_STREAM_RING_MAX_EVENTS);
+  const status = getRunBufferStatus("run-bounded");
+  assert.ok(status && status.retainedBytes <= 512 * 1024);
+  resetRunBuffersForTest();
+});
+
+test("an ahead cursor never subscribes to later canonical events", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-ahead"]);
+  handle.record({ kind: "assistant_chunk", text: "one" });
+  const seen: number[] = [];
+  const subscription = subscribeRunStream(
+    "run-ahead",
+    10,
+    (entry) => seen.push(entry.seq),
+    () => {},
+  );
+  assert.ok(subscription?.cursorAhead);
+  handle.record({ kind: "assistant_chunk", text: "two" });
+  assert.deepEqual(seen, []);
+  resetRunBuffersForTest();
+});
+
+test("ensureTerminalFailure is atomic across concurrent subscribers — exactly one synthetic terminal", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-concurrent"]);
+  handle.record({ kind: "assistant_chunk", text: "partial" });
+
+  const seenA: string[] = [];
+  const seenB: string[] = [];
+  let finishedA = false;
+  let finishedB = false;
+  const subA = subscribeRunStream("run-concurrent", 0, (e) => seenA.push(e.json), () => { finishedA = true; });
+  const subB = subscribeRunStream("run-concurrent", 0, (e) => seenB.push(e.json), () => { finishedB = true; });
+  assert.ok(subA && !subA.done && subB && !subB.done, "both attach live before any terminal exists");
+
+  // Two independent consumers (e.g. the initial requester's own truncated
+  // read, and a concurrently resumed subscriber) both discover the upstream
+  // ended without a terminal and race to publish one — only the first call
+  // actually inserts an event; the second converges on that same entry.
+  const first = ensureTerminalFailure("run-concurrent", "upstream_disconnected");
+  const second = ensureTerminalFailure("run-concurrent", "upstream_disconnected");
+  assert.ok(first && second, "both calls resolve to an entry");
+  assert.equal(first!.seq, second!.seq, "concurrent callers converge on the same synthetic terminal");
+  assert.equal(first!.json, second!.json);
+
+  assert.equal(finishedA, true, "attached tail A is notified the run finished");
+  assert.equal(finishedB, true, "attached tail B is notified the run finished");
+  assert.equal(seenA.length, 1, "tail A observes exactly one terminal event, not two");
+  assert.equal(seenB.length, 1, "tail B observes exactly one terminal event, not two");
+  assert.equal(seenA[0], first!.json);
+  assert.equal(seenB[0], first!.json);
+
+  const status = getRunBufferStatus("run-concurrent");
+  assert.equal(status?.retainedEventCount, 2, "only one real event plus one synthetic terminal — never two synthetics");
+  resetRunBuffersForTest();
+});
+
+test("a terminal at/before the resume cursor closes with no extra synthetic event", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-terminal-before-cursor"]);
+  handle.record({ kind: "assistant_chunk", text: "hi" });
+  handle.record({ kind: "done" });
+  handle.finish();
+
+  // ensureTerminalFailure must never synthesize a second terminal once a
+  // real one is already in history — "never synthesize failure after
+  // completed/failed".
+  const result = ensureTerminalFailure("run-terminal-before-cursor", "upstream_disconnected");
+  assert.equal(result?.seq, 2, "the real done event remains the one and only terminal");
+  assert.deepEqual(JSON.parse(result!.json), { kind: "done" });
+
+  // Resuming with a cursor at (or past) the terminal replays nothing extra —
+  // history is already terminal.
+  const resumed = subscribeRunStream("run-terminal-before-cursor", 2, () => {}, () => {});
+  assert.ok(resumed?.done);
+  assert.deepEqual(resumed!.replay, [], "no extra event when the terminal is at/before the cursor");
+
+  // Resuming from before the terminal still replays it exactly once.
+  const resumedEarlier = subscribeRunStream("run-terminal-before-cursor", 1, () => {}, () => {});
+  assert.ok(resumedEarlier?.done);
+  assert.equal(resumedEarlier!.replay.length, 1, "terminal after the cursor is replayed");
+  assert.deepEqual(JSON.parse(resumedEarlier!.replay[0].json), { kind: "done" });
+  resetRunBuffersForTest();
+});
+
+test("subscriber cancellation detaches only — it never marks the run failed while the producer is still active", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-cancel-only"]);
+  let finished = false;
+  const sub = subscribeRunStream("run-cancel-only", 0, () => {}, () => { finished = true; });
+  assert.ok(sub && !sub.done);
+  assert.equal(getRunBufferStatus("run-cancel-only")?.liveTails, 1);
+
+  sub!.unsubscribe();
+
+  assert.equal(finished, false, "unsubscribe does not fire the finish notification");
+  assert.equal(getRunBufferStatus("run-cancel-only")?.done, false, "the run is not marked done by a lone subscriber detaching");
+  assert.equal(getRunBufferStatus("run-cancel-only")?.liveTails, 0, "detach only decrements liveTails");
+
+  // The producer is still active and can keep recording / finish normally.
+  handle.record({ kind: "assistant_chunk", text: "still going" });
+  handle.record({ kind: "done" });
+  handle.finish();
+  const status = getRunBufferStatus("run-cancel-only");
+  assert.equal(status?.done, true);
+  assert.equal(ensureTerminalFailure("run-cancel-only", "upstream_disconnected")?.seq, status?.latestSeq, "the real done event stands — no synthetic terminal was ever needed");
+  resetRunBuffersForTest();
+});
+
+test("chunk -> done -> error -> chunk records only the chunk and the done, ignoring everything after the terminal", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-post-terminal"]);
+
+  const chunkSeq = handle.record({ kind: "assistant_chunk", text: "hi" });
+  const doneSeq = handle.record({ kind: "done" });
+  const errorSeq = handle.record({ kind: "error", code: "boom", message: "should never land" });
+  const ghostChunkSeq = handle.record({ kind: "assistant_chunk", text: "ghost" });
+
+  assert.equal(chunkSeq, 1, "the leading nonterminal event is recorded normally");
+  assert.equal(doneSeq, 2, "the first terminal event is recorded normally");
+  assert.equal(errorSeq, undefined, "a second terminal after the first is ignored, not appended");
+  assert.equal(ghostChunkSeq, undefined, "nonterminal chatter after the terminal is ignored too");
+
+  const sub = subscribeRunStream("run-post-terminal", 0, () => {}, () => {});
+  assert.ok(sub);
+  assert.deepEqual(
+    sub!.replay.map((e) => JSON.parse(e.json).kind),
+    ["assistant_chunk", "done"],
+    "only the chunk and the done ever entered the canonical ring",
+  );
+  resetRunBuffersForTest();
+});
+
+test("seq and latestSeq stop advancing the instant a terminal is recorded, even before finish()", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-seq-frozen"]);
+
+  handle.record({ kind: "assistant_chunk", text: "hi" });
+  handle.record({ kind: "done" });
+  const frozen = getRunBufferStatus("run-seq-frozen");
+  assert.equal(frozen?.latestSeq, 2, "latestSeq stops at the terminal entry");
+  assert.equal(frozen?.retainedEventCount, 2);
+  const frozenBytes = frozen?.retainedBytes;
+
+  // Neither seq nor bytes may move for any event recorded after the
+  // terminal — whether or not finish() has run yet.
+  for (let i = 0; i < 5; i += 1) {
+    handle.record({ kind: "assistant_chunk", text: "x".repeat(1024) });
+  }
+  const stillFrozen = getRunBufferStatus("run-seq-frozen");
+  assert.equal(stillFrozen?.latestSeq, 2, "latestSeq is unchanged by post-terminal chatter");
+  assert.equal(stillFrozen?.retainedEventCount, 2, "no post-terminal event was appended to the ring");
+  assert.equal(stillFrozen?.retainedBytes, frozenBytes, "bytes never grow past the terminal");
+
+  handle.finish();
+  const afterFinish = getRunBufferStatus("run-seq-frozen");
+  assert.equal(afterFinish?.latestSeq, 2, "finish() does not append or advance seq once a real terminal exists");
+  assert.equal(afterFinish?.retainedEventCount, 2);
+  assert.equal(afterFinish?.retainedBytes, frozenBytes);
+  resetRunBuffersForTest();
+});
+
+test("racing terminal publishes through record() converge on exactly one canonical terminal", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-race-terminal"]);
+
+  // Two producers racing to close out the same run both attempt to record a
+  // terminal event back-to-back (e.g. a real `done` immediately followed by
+  // a late upstream `error`). Only the first lands.
+  const firstSeq = handle.record({ kind: "done" });
+  const secondSeq = handle.record({ kind: "error", code: "late", message: "late upstream error" });
+  assert.ok(typeof firstSeq === "number", "the first terminal publish wins and is recorded");
+  assert.equal(secondSeq, undefined, "the racing second terminal publish is ignored, not appended");
+
+  const status = getRunBufferStatus("run-race-terminal");
+  assert.equal(status?.retainedEventCount, 1, "exactly one terminal entry exists in the ring");
+
+  handle.finish();
+  const afterFinish = getRunBufferStatus("run-race-terminal");
+  assert.equal(afterFinish?.retainedEventCount, 1, "finish() does not add a second terminal on top of the real one");
+  assert.equal(
+    ensureTerminalFailure("run-race-terminal", "upstream_disconnected")?.seq,
+    firstSeq,
+    "ensureTerminalFailure also stays a no-op once the real terminal already won the race",
+  );
+  resetRunBuffersForTest();
+});
+
+test("a subscriber resumed after the terminal never sees any post-terminal event, seeded or replayed", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-resume-post-terminal"]);
+
+  handle.record({ kind: "assistant_chunk", text: "hi" });
+  handle.record({ kind: "done" });
+  // These are ignored by the invariant under test — asserting they truly
+  // never reach any subscriber, seeded (<= cursor) or replayed (> cursor).
+  handle.record({ kind: "assistant_chunk", text: "ghost-1" });
+  handle.record({ kind: "error", code: "ghost", message: "ghost-2" });
+  handle.finish();
+
+  const resumedFromZero = subscribeRunStream("run-resume-post-terminal", 0, () => {}, () => {});
+  assert.ok(resumedFromZero?.done);
+  assert.deepEqual(
+    resumedFromZero!.seed.map((e) => JSON.parse(e.json).kind ?? JSON.parse(e.json).text),
+    [],
+    "cursor 0 seeds nothing — everything is past the cursor",
+  );
+  assert.deepEqual(
+    resumedFromZero!.replay.map((e) => JSON.parse(e.json).kind),
+    ["assistant_chunk", "done"],
+    "replay from a fresh resume contains only the pre-terminal chunk and the terminal itself",
+  );
+
+  const resumedFromTerminal = subscribeRunStream("run-resume-post-terminal", 2, () => {}, () => {});
+  assert.ok(resumedFromTerminal?.done);
+  assert.deepEqual(
+    resumedFromTerminal!.seed.map((e) => JSON.parse(e.json).kind),
+    ["assistant_chunk", "done"],
+    "a cursor at the terminal seeds exactly the chunk and the terminal, nothing ghosted after",
+  );
+  assert.deepEqual(resumedFromTerminal!.replay, [], "nothing replays past a cursor already at the terminal");
+  assert.equal(resumedFromTerminal?.latestSeq, 2, "latestSeq reported to a resumed subscriber never counts ignored events");
+
   resetRunBuffersForTest();
 });

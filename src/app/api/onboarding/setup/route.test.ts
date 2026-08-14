@@ -31,33 +31,22 @@ assert.match(
   "setup should use the shared platform-aware adapter writer",
 );
 
-// 1. The route must still load the existing config so we can carry over
-//    user-set fields when writing.
+// 1. The lifecycle guard provides the canonical config snapshot and the
+//    already-locked saver deep-merges only onboarding's patch.
 assert.match(
   source,
-  /const\s+existing\s*=\s*await\s+loadConfig\(\)/,
-  "setup route should call loadConfig() to read the existing cave-config.json before writing",
+  /withFamiliarLifecycleGuard\(async \(existing\) => \{/,
+  "setup route should hold the lifecycle guard across TOML and config setup",
 );
-
-// 2. The route MUST preserve addons from the existing config.
 assert.match(
   source,
-  /addons:\s*existing\.addons/,
-  "setup route should preserve existing.addons when writing the next config (otherwise creating a familiar wipes the user's add-on settings)",
+  /await saveConfigUnlocked\(\{/,
+  "setup route should persist through the canonical already-locked atomic config saver",
 );
-
-// 3. Same for roles.
-assert.match(
+assert.doesNotMatch(
   source,
-  /roles:\s*existing\.roles/,
-  "setup route should preserve existing.roles when writing the next config",
-);
-
-// 4. Same for marketplace.installed.
-assert.match(
-  source,
-  /marketplace:\s*existing\.marketplace/,
-  "setup route should preserve existing.marketplace (installed plugins) when writing the next config",
+  /writeFile\(\s*configJson/,
+  "setup route must never bypass the canonical atomic config saver",
 );
 
 // 5. Multi-host daemon routing is part of onboarding now: setup may receive

@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const chatRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const chatRoute = await readFile(new URL("../../../../lib/server/chat-send-service.ts", import.meta.url), "utf8");
 
 assert.match(
   chatRoute,
@@ -117,7 +117,7 @@ assert.match(
 assert.equal(
   (
     chatRoute.match(
-      /const (?:isFirstExchange|firstExchange) =\s*ownsFirstExchangeTitle && \(!existing \|\| hadFirstTurnStub\);/g,
+      /const (?:isFirstExchange|firstExchange) =\s*ownsFirstExchangeTitle && (?:\(!existing \|\| hadFirstTurnStub\)|hadFirstTurnStub);/g,
     ) ?? []
   ).length,
   3,
@@ -154,7 +154,11 @@ assert.match(
 // ── Shared turn identity ─────────────────────────────────────────────────────
 
 assert.equal(
-  (chatRoute.match(/const hadFirstTurnStub = existing\s*\? stripConversationStubTurn\(existing, pendingUserTurnId\)\s*: false;/g) ?? []).length,
+  (
+    chatRoute.match(
+      /const hadFirstTurnStub = (?:existing\s*\? stripConversationStubTurn\(existing, pendingUserTurnId\)\s*: false|stripConversationStubTurn\(existing, pendingUserTurnId\));/g,
+    ) ?? []
+  ).length,
   3,
   "all save paths must strip the stub turn so the authoritative user turn re-lands cleanly",
 );

@@ -60,19 +60,38 @@ function fnBlock(source, name) {
   return next === -1 ? source.slice(start) : source.slice(start, next);
 }
 
-// The list route consumes the SHARED cache; a locally re-created cache would
+// The list route consumes the shared canonical accessor (`getCanonicalSessionList`
+// in @/lib/server/client-v1/read-model.ts), which itself wraps the SAME shared
+// cache singleton this file tests — the route no longer touches the cache
+// directly, and a locally re-created cache anywhere in that chain would
 // silently detach it from the invalidation hook.
 {
   const route = read("../../app/api/sessions/list/route.ts");
+  const readModel = read("./client-v1/read-model.ts");
+  assert.match(
+    readModel,
+    /import \{\s*sessionsListCache,?\s*(?:type SessionsListResult\s*)?\} from "@\/lib\/server\/sessions-list-cache"/,
+    "the shared canonical read-model imports the shared sessions-list cache",
+  );
   assert.match(
     route,
-    /import \{\s*sessionsListCache,[\s\S]{0,120}\} from "@\/lib\/server\/sessions-list-cache"/,
-    "the list route imports the shared sessions-list cache",
+    /import \{\s*getCanonicalSessionList\s*\} from "@\/lib\/server\/client-v1\/read-model"/,
+    "the list route delegates to the shared cached canonical accessor",
+  );
+  assert.doesNotMatch(
+    route,
+    /sessionsListCache/,
+    "the list route does not touch the cache singleton directly",
   );
   assert.doesNotMatch(
     route,
     /createSwrCache/,
     "the list route does not create a private cache instance",
+  );
+  assert.doesNotMatch(
+    readModel,
+    /createSwrCache/,
+    "the shared canonical accessor reuses the existing cache singleton instead of creating a private one",
   );
 }
 

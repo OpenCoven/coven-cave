@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -24,6 +24,7 @@ try {
     filterProjectsForFamiliar,
     grantProjectToFamiliar,
     revokeAllGrantsForProject,
+    revokeProjectFromFamiliar,
     inspectProjectPermissionIntegrity,
     repairOrphanProjectPermissions,
     listProjectGrants,
@@ -36,8 +37,10 @@ try {
     undoGrantProposal,
     updateAccessGroup,
     updateMobileWriteAccess,
+    withProjectAccessGuard,
     GRANT_ACCEPT_UNDO_WINDOW_MS,
     ProjectAccessDeniedError,
+    ProjectPermissionsIntegrityError,
   } = await import("./project-permissions.ts");
   const { withProjectRegistryLock } = await import("./cave-projects.ts");
 
@@ -47,7 +50,7 @@ try {
   ];
   await writeFile(
     process.env.CAVE_PROJECTS_PATH_OVERRIDE,
-    JSON.stringify({ version: 1, projects }),
+    JSON.stringify({ version: 1, projects, visibilityGeneration: "projects-fixture" }),
     "utf8",
   );
 
@@ -61,6 +64,76 @@ try {
     false,
     "the Supreme familiar id is not an implicit bearer token for project access",
   );
+
+  await writeFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, '{"version":2,"projectGrants":[', "utf8");
+  await assert.rejects(
+    () => loadProjectPermissions(),
+    ProjectPermissionsIntegrityError,
+    "a torn permission store fails closed instead of granting from an empty default",
+  );
+  const tornPermissions = await readFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, "utf8");
+  await assert.rejects(
+    () => grantProjectToFamiliar({ familiarId: "must-not-land", projectId: "cave", source: "human" }),
+    ProjectPermissionsIntegrityError,
+    "a mutation cannot overwrite a torn permission store",
+  );
+  assert.equal(
+    await readFile(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, "utf8"),
+    tornPermissions,
+  );
+  await writeFile(
+    process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 2,
+      projectGrants: [],
+      accessGroups: [],
+      grantProposals: [],
+      permissionAudit: [],
+      grantAudit: [],
+      repairAudit: [],
+      visibilityGeneration: 42,
+    }),
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadProjectPermissions(),
+    ProjectPermissionsIntegrityError,
+    "a wrong-schema permission store fails closed",
+  );
+  await writeFile(
+    process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 2,
+      projectGrants: [{
+        familiarId: "strict",
+        projectId: "cave",
+        access: "read",
+        source: "human",
+        grantedAt: "now",
+        unexpectedAuthorityField: true,
+      }],
+      accessGroups: [],
+      grantProposals: [],
+      permissionAudit: [],
+      grantAudit: [],
+      repairAudit: [],
+      visibilityGeneration: "strict-generation",
+    }),
+    "utf8",
+  );
+  await assert.rejects(
+    () => loadProjectPermissions(),
+    ProjectPermissionsIntegrityError,
+    "unknown nested permission keys fail strict schema validation",
+  );
+  await chmod(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, 0o000);
+  await assert.rejects(
+    () => loadProjectPermissions(),
+    ProjectPermissionsIntegrityError,
+    "an unreadable permission store fails closed",
+  );
+  await chmod(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, 0o600);
+  await rm(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE, { force: true });
 
   await grantProjectToFamiliar({ familiarId: "nova", projectId: "cave", source: "human" });
   const permissions = await loadProjectPermissions();
@@ -175,7 +248,8 @@ try {
     "level-less grants (v1) migrate as write",
   );
 
-  // A v1-era file on disk (grants without access, no accessGroups) loads as v2.
+  // A legacy file copied directly into the canonical path is not trusted as a
+  // migration: only cave-home recovery may normalize it under authority.
   const { writeFile: writeRaw } = await import("node:fs/promises");
   const v1Path = path.join(tmp, "v1-permissions.json");
   await writeRaw(v1Path, JSON.stringify({
@@ -185,11 +259,11 @@ try {
     permissionAudit: [],
   }), "utf8");
   process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = v1Path;
-  const migrated = await loadProjectPermissions();
-  assert.equal(migrated.version, 2, "v1 file loads as version 2");
-  assert.deepEqual(migrated.accessGroups, [], "v1 file gains an empty accessGroups list");
-  assert.equal(migrated.projectGrants[0]?.access, "write", "v1 grants are stamped write on load");
-  await assertProjectAccess({ familiarId: "old" }, "cave", "file-write");
+  await assert.rejects(
+    () => loadProjectPermissions(),
+    ProjectPermissionsIntegrityError,
+    "a non-current canonical permission schema fails closed",
+  );
   process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(tmp, "permissions.json");
 
   await grantProjectToFamiliar({ familiarId: "quill", projectId: "docs", source: "human", access: "read" });
@@ -344,6 +418,7 @@ try {
   const stored = raw.grantProposals.find((p) => p.id === undoable.id);
   stored.finalizesAt = new Date(Date.now() - 1_000).toISOString();
   await writeFile(permissionsPath, JSON.stringify(raw, null, 2), "utf8");
+  const generationBeforeFinalization = raw.visibilityGeneration;
 
   const finalized = await loadProjectPermissions();
   const finalizedProposal = finalized.grantProposals.find((p) => p.id === undoable.id);
@@ -353,11 +428,65 @@ try {
     true,
     "the grant materializes once the window elapses",
   );
+  assert.notEqual(
+    finalized.visibilityGeneration,
+    generationBeforeFinalization,
+    "materializing a due grant persists a fresh visibility generation before returning",
+  );
+  const finalizedOnDisk = JSON.parse(await readFile(permissionsPath, "utf8"));
+  assert.equal(
+    finalizedOnDisk.grantProposals.find((p) => p.id === undoable.id)?.status,
+    "accepted",
+    "the due proposal is atomically persisted, not only materialized in memory",
+  );
+  assert.equal(
+    (await loadProjectPermissions()).visibilityGeneration,
+    finalized.visibilityGeneration,
+    "a subsequent no-op load does not advance the generation again",
+  );
   await assert.rejects(
     () => undoGrantProposal({ proposalId: undoable.id }),
     ProjectAccessDeniedError,
     "a finalized grant can no longer be undone via the proposal",
   );
+
+  // Audit/proposal/no-op writes are durable but visibility-generation stable.
+  {
+    const beforeAudit = (await loadProjectPermissions()).visibilityGeneration;
+    await assertProjectAccess({ familiarId: "nova" }, "cave", "chat");
+    assert.equal(
+      (await loadProjectPermissions()).visibilityGeneration,
+      beforeAudit,
+      "audit-only writes keep the visibility generation stable",
+    );
+    await grantProjectToFamiliar({
+      familiarId: "nova",
+      projectId: "cave",
+      source: "human",
+      access: "write",
+    });
+    assert.equal(
+      (await loadProjectPermissions()).visibilityGeneration,
+      beforeAudit,
+      "an idempotent grant at the same effective level keeps the generation stable",
+    );
+    const auditOnlyProposal = await createGrantProposal({
+      proposedBy: "supreme",
+      targetFamiliarId: "proposal-only",
+      projectId: "docs",
+    });
+    assert.equal(
+      (await loadProjectPermissions()).visibilityGeneration,
+      beforeAudit,
+      "creating a proposal does not change effective visibility",
+    );
+    await resolveGrantProposal({ proposalId: auditOnlyProposal.id, decision: "rejected" });
+    assert.equal(
+      (await loadProjectPermissions()).visibilityGeneration,
+      beforeAudit,
+      "rejecting a proposal does not change effective visibility",
+    );
+  }
 
   // Mobile write-access opt-ins: fail closed by default, persist via the
   // config mutator, and normalize non-boolean junk back to off.
@@ -478,7 +607,11 @@ try {
     await registrationGate;
     await writeFile(
       process.env.CAVE_PROJECTS_PATH_OVERRIDE,
-      JSON.stringify({ version: 1, projects: [...currentProjects, restoredProject] }),
+      JSON.stringify({
+        version: 1,
+        projects: [...currentProjects, restoredProject],
+        visibilityGeneration: "registration-fixture",
+      }),
       "utf8",
     );
   });
@@ -503,6 +636,246 @@ try {
     ),
     "a concurrent registry restore cannot lose its existing permission record",
   );
+
+  // ── Task5 quality finding — authorization revocation cache invalidation.
+  // Every mutation that can alter effective project visibility (direct
+  // grants/revokes, group create/edit/delete, ...) must bust the shared
+  // sessions-list cache AFTER a successful durable write — so a revoked
+  // familiar's next list/detail/search read recomputes/denies immediately
+  // instead of possibly being served the pre-revocation payload for up to
+  // the 30s stale-serve window — and must NEVER bust it on a failed write,
+  // since a failed write must not pretend state changed. ──────────────────
+  {
+    const { sessionsListCache } = await import("./server/sessions-list-cache.ts");
+    const { writeFile: writeFileRaw } = await import("node:fs/promises");
+    const cacheKey = "project-permissions-invalidation-test";
+    let computeCount = 0;
+    const compute = async () => {
+      computeCount += 1;
+      return { payload: { ok: true, sessions: [] } };
+    };
+
+    // Prime a familiar-scoped cache entry (mirrors what a list/detail/search
+    // read for this familiar would have warmed).
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 1, "cache primed by the first read");
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 1, "sanity check: a fresh (unexpired) entry is served without recomputing");
+
+    // A successful direct grant busts the cache.
+    await grantProjectToFamiliar({ familiarId: "invalidation-fam", projectId: "cave", source: "human" });
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 2, "a successful grantProjectToFamiliar invalidates the shared sessions-list cache");
+
+    // A successful revoke busts the cache — the actual revocation scenario
+    // this finding targets: the next read must recompute/deny immediately.
+    assert.equal(
+      await revokeProjectFromFamiliar({ familiarId: "invalidation-fam", projectId: "cave" }),
+      true,
+    );
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(
+      computeCount,
+      3,
+      "a successful revokeProjectFromFamiliar invalidates the shared sessions-list cache",
+    );
+
+    // Access-group changes bust only when effective visibility moves.
+    const invalidationGroup = await createAccessGroup({
+      name: "Invalidation group",
+      memberFamiliarIds: ["invalidation-fam"],
+      projectGrants: [{ projectId: "docs", access: "read" }],
+    });
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 4, "a successful createAccessGroup invalidates the shared sessions-list cache");
+
+    await updateAccessGroup({
+      groupId: invalidationGroup.id,
+      memberFamiliarIds: [],
+      projectGrants: [{ projectId: "docs", access: "read" }],
+    });
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(computeCount, 5, "a successful updateAccessGroup invalidates the shared sessions-list cache");
+
+    assert.equal(await deleteAccessGroup(invalidationGroup.id), true);
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(
+      computeCount,
+      5,
+      "deleting an already-empty group is audit/config-only and keeps visibility cache stable",
+    );
+
+    // A FAILED save must NOT invalidate. Force saveProjectPermissions's
+    // `writeJsonAtomic` to fail by pointing the permissions path's parent
+    // directory segment at a plain file — `mkdir(..., {recursive:true})`
+    // throws before the atomic write is ever attempted.
+    const blockerFile = path.join(tmp, "permissions-blocked-by-a-file");
+    await writeFileRaw(blockerFile, "not a directory", "utf8");
+    const previousPermissionsPathOverride = process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE;
+    process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(blockerFile, "permissions.json");
+    await assert.rejects(
+      () => grantProjectToFamiliar({ familiarId: "should-fail-fam", projectId: "cave", source: "human" }),
+      undefined,
+      "grantProjectToFamiliar rejects when its durable write cannot land",
+    );
+    process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = previousPermissionsPathOverride;
+    await sessionsListCache.get(cacheKey, compute);
+    assert.equal(
+      computeCount,
+      5,
+      "a failed permissions write must NOT invalidate the cache — a failed write never pretends state changed",
+    );
+    // ...and the grant genuinely never landed: no false "granted" state either.
+    assert.equal(
+      (await listProjectGrants()).some((grant) => grant.familiarId === "should-fail-fam"),
+      false,
+      "a failed grant write must not silently persist a partial/false grant",
+    );
+
+    sessionsListCache.clear(); // leave no test entry behind for later test files
+  }
+
+  // ── withProjectAccessGuard barrier tests (Task 7 quality finding #4: grant
+  // revocation race) ──────────────────────────────────────────────────────
+  // A revocation racing a guard callback that's already running must queue
+  // behind it on the shared write mutex — it can never interleave with (or
+  // precede the completion of) an in-flight guarded create/PATCH/DELETE
+  // effect. Only once the guard's callback has fully returned may the
+  // revocation itself run; a NEW guarded call issued after that revocation
+  // resolves must observe the updated (denied) permissions.
+  {
+    await grantProjectToFamiliar({ familiarId: "barrier-fam", projectId: "cave", source: "human", access: "read" });
+    assert.equal(
+      canAccessProject(await loadProjectPermissions(), { familiarId: "barrier-fam" }, "cave"),
+      true,
+      "the barrier test's familiar starts with direct access",
+    );
+
+    const order: string[] = [];
+    let releaseGuard: () => void;
+    const guardGate = new Promise<void>((resolve) => {
+      releaseGuard = resolve;
+    });
+
+    const guardPromise = withProjectAccessGuard(async (permissions) => {
+      order.push("guard-start");
+      const accessAtEntry = canAccessProject(permissions, { familiarId: "barrier-fam" }, "cave");
+      await guardGate;
+      order.push("guard-end");
+      return accessAtEntry;
+    });
+
+    // The guard's callback awaits a real file read before it runs — wait for
+    // it to actually start before racing a revoke against it.
+    while (order.length === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+
+    let revokeSettled = false;
+    const revokePromise = revokeProjectFromFamiliar({ familiarId: "barrier-fam", projectId: "cave" }).then(
+      (result) => {
+        revokeSettled = true;
+        return result;
+      },
+    );
+
+    // The revoke shares the SAME in-process write mutex the guard callback
+    // is holding open — it must stay pending for as long as that callback
+    // hasn't returned.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(
+      revokeSettled,
+      false,
+      "a revocation racing a still-running guard callback must block until the guard releases the mutex",
+    );
+    assert.deepEqual(order, ["guard-start"], "the guard callback must still be blocked mid-flight");
+
+    releaseGuard();
+    const [guardResult, revokeResult] = await Promise.all([guardPromise, revokePromise]);
+    assert.equal(
+      guardResult,
+      true,
+      "the in-flight mutation observed access as still granted at the moment it acquired the guard's snapshot",
+    );
+    assert.equal(revokeResult, true, "the revoke itself succeeded once it was unblocked");
+    assert.deepEqual(
+      order,
+      ["guard-start", "guard-end"],
+      "the guard callback ran to completion before the revoke could proceed",
+    );
+
+    // A NEW guarded mutation started AFTER the revoke has resolved must see
+    // the updated (denied) permissions — never a stale pre-revocation
+    // snapshot.
+    const deniedAfter = await withProjectAccessGuard(async (permissions) =>
+      canAccessProject(permissions, { familiarId: "barrier-fam" }, "cave"),
+    );
+    assert.equal(deniedAfter, false, "a guard entered after a completed revocation must observe the revoked state");
+  }
+
+  // ── Group-grant variant of the barrier test ──────────────────────────────
+  // The same barrier must hold when the revocation is a GROUP membership
+  // change (updateAccessGroup removing a member) rather than a direct-grant
+  // revoke — both go through the SAME write mutex.
+  {
+    const group = await createAccessGroup({
+      name: "Barrier Group",
+      memberFamiliarIds: ["barrier-group-fam"],
+      projectGrants: [{ projectId: "cave", access: "read" }],
+    });
+    assert.equal(
+      canAccessProject(await loadProjectPermissions(), { familiarId: "barrier-group-fam" }, "cave"),
+      true,
+      "the barrier group test's familiar starts with GROUP access",
+    );
+
+    const order: string[] = [];
+    let releaseGuard: () => void;
+    const guardGate = new Promise<void>((resolve) => {
+      releaseGuard = resolve;
+    });
+
+    const guardPromise = withProjectAccessGuard(async (permissions) => {
+      order.push("guard-start");
+      const accessAtEntry = canAccessProject(permissions, { familiarId: "barrier-group-fam" }, "cave");
+      await guardGate;
+      order.push("guard-end");
+      return accessAtEntry;
+    });
+
+    while (order.length === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+
+    let revokeSettled = false;
+    // Group revocation: drop the member from the group entirely.
+    const revokePromise = updateAccessGroup({ groupId: group.id, memberFamiliarIds: [] }).then((result) => {
+      revokeSettled = true;
+      return result;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(
+      revokeSettled,
+      false,
+      "a GROUP revocation racing a still-running guard callback must also block until release",
+    );
+    assert.deepEqual(order, ["guard-start"]);
+
+    releaseGuard();
+    const [guardResult] = await Promise.all([guardPromise, revokePromise]);
+    assert.equal(
+      guardResult,
+      true,
+      "the in-flight mutation observed GROUP access as still granted at the moment it acquired the guard's snapshot",
+    );
+    assert.deepEqual(order, ["guard-start", "guard-end"]);
+
+    const deniedAfter = await withProjectAccessGuard(async (permissions) =>
+      canAccessProject(permissions, { familiarId: "barrier-group-fam" }, "cave"),
+    );
+    assert.equal(
+      deniedAfter,
+      false,
+      "a guard entered after a completed GROUP revocation must observe the revoked state",
+    );
+  }
 
   console.log("project-permissions.test.ts: ok");
 } finally {

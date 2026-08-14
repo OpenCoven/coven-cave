@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
-import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { saveConfig, type FamiliarBinding } from "@/lib/cave-config";
+import {
+  saveConfigUnlocked,
+  withFamiliarLifecycleGuard,
+  type FamiliarBinding,
+} from "@/lib/cave-config";
+import { covenHome } from "@/lib/coven-paths";
 import { buildFamiliarsToml, familiarsTomlContainsId } from "@/lib/onboarding-familiars";
 import { hasNonemptyDescriptionFromTomlBlock } from "@/lib/familiar-removal";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readTombstones, takeTombstone } from "@/lib/server/familiar-tombstones";
+import { writeFileAtomic } from "@/lib/server/atomic-write";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,55 +48,64 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "A familiar id is required." }, { status: 400 });
   }
 
-  const entry = (await readTombstones()).find((tombstone) => tombstone.id === id);
-  if (!entry) {
-    return NextResponse.json(
-      { ok: false, error: `Nothing to restore for "${id}".` },
-      { status: 404 },
-    );
-  }
+  return withFamiliarLifecycleGuard(async (config) => {
+    const entry = (await readTombstones()).find((tombstone) => tombstone.id === id);
+    if (!entry) {
+      return NextResponse.json(
+        { ok: false, error: `Nothing to restore for "${id}".` },
+        { status: 404 },
+      );
+    }
 
-  // Older tombstones can contain the same description-less block that broke
-  // the daemon roster. Keep the tombstone so the user can recreate it with a
-  // description; never restore a registry record Coven cannot parse.
-  if (entry.tomlBlock && !hasNonemptyDescriptionFromTomlBlock(entry.tomlBlock)) {
-    return NextResponse.json(
-      { ok: false, error: `"${id}" needs a description before it can be restored.` },
-      { status: 409 },
-    );
-  }
+    if (entry.tomlBlock && !hasNonemptyDescriptionFromTomlBlock(entry.tomlBlock)) {
+      return NextResponse.json(
+        { ok: false, error: `"${id}" needs a description before it can be restored.` },
+        { status: 409 },
+      );
+    }
 
-  const familiarsToml = path.join(homedir(), ".coven", "familiars.toml");
-  let existing = "";
-  try {
-    existing = await readFile(familiarsToml, "utf8");
-  } catch {
-    /* absent — restore recreates the file */
-  }
+    const familiarsToml = path.join(covenHome(), "familiars.toml");
+    let existing: string | null = null;
+    try {
+      existing = await readFile(familiarsToml, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (entry.tomlBlock && familiarsTomlContainsId(existing ?? "", id)) {
+      return NextResponse.json(
+        { ok: false, error: `A familiar with id "${id}" already exists — cannot restore over it.` },
+        { status: 409 },
+      );
+    }
 
-  // Conflict-check BEFORE consuming the tombstone: if the id was re-created in
-  // the meantime, appending the snapshot would register a duplicate block (the
-  // daemon only reads the first) and the binding write would clobber the new
-  // familiar's. Leave both the tombstone and the newcomer intact instead.
-  if (entry.tomlBlock && familiarsTomlContainsId(existing, id)) {
-    return NextResponse.json(
-      { ok: false, error: `A familiar with id "${id}" already exists — cannot restore over it.` },
-      { status: 409 },
-    );
-  }
+    const priorBinding = config.familiars[id] ? { ...config.familiars[id] } : null;
+    let configSaved = false;
+    let tomlSaved = false;
+    try {
+      if (entry.binding) {
+        await saveConfigUnlocked({
+          familiars: { [id]: entry.binding as unknown as Partial<FamiliarBinding> },
+        });
+        configSaved = true;
+      }
+      if (entry.tomlBlock) {
+        const base = existing ?? buildFamiliarsToml(null);
+        const separator = base.endsWith("\n") ? "\n" : "\n\n";
+        await writeFileAtomic(familiarsToml, `${base}${separator}${entry.tomlBlock}\n`);
+        tomlSaved = true;
+      }
+      await takeTombstone(id);
+    } catch (error) {
+      if (tomlSaved) {
+        if (existing === null) await rm(familiarsToml, { force: true }).catch(() => {});
+        else await writeFileAtomic(familiarsToml, existing).catch(() => {});
+      }
+      if (configSaved) {
+        await saveConfigUnlocked({ familiars: { [id]: priorBinding } }).catch(() => {});
+      }
+      throw error;
+    }
 
-  await takeTombstone(id);
-
-  if (entry.tomlBlock) {
-    const base = existing || buildFamiliarsToml(null);
-    const separator = base.endsWith("\n") ? "\n" : "\n\n";
-    await writeFile(familiarsToml, `${base}${separator}${entry.tomlBlock}\n`, "utf8");
-  }
-  if (entry.binding) {
-    await saveConfig({
-      familiars: { [id]: entry.binding as unknown as Partial<FamiliarBinding> },
-    });
-  }
-
-  return NextResponse.json({ ok: true, id });
+    return NextResponse.json({ ok: true, id });
+  });
 }
