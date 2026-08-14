@@ -38,20 +38,39 @@ const ciSource = await readFile(new URL("../.github/workflows/ci.yml", import.me
 const ciWorkflow = parse(ciSource);
 assert.deepEqual(
   Object.keys(ciWorkflow.jobs),
-  ["paths", "ios", "frontend-static", "frontend-tests", "frontend-bundle", "build"],
+  ["paths", "ios", "frontend-validation", "frontend-bundle", "build"],
   "routine CI classifies once, fans frontend validation out, then reports through the required job",
 );
 assert.equal(ciWorkflow.jobs.build.name, "Frontend build");
 assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "paths",
   "ios",
-  "frontend-static",
-  "frontend-tests",
+  "frontend-validation",
   "frontend-bundle",
 ]);
 assert.equal(ciWorkflow.jobs.ios.name, "iOS build");
-assert.deepEqual(ciWorkflow.jobs["frontend-tests"].strategy.matrix.suite, ["app", "api", "mobile"]);
-assert.equal(ciWorkflow.jobs["frontend-tests"].strategy["fail-fast"], false);
+assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validation, [
+  { name: "lint", command: "lint" },
+  { name: "typecheck", command: "typecheck" },
+  { name: "test wiring", command: "check:tests-wired" },
+  { name: "app tests", command: "test:app" },
+  { name: "API tests", command: "test:api" },
+  { name: "mobile tests", command: "test:mobile" },
+]);
+assert.equal(ciWorkflow.jobs["frontend-validation"].strategy["fail-fast"], false);
+assert.equal(
+  ciWorkflow.jobs["frontend-validation"].steps.at(-1)?.run,
+  "pnpm ${{ matrix.validation.command }}",
+  "each frontend validation matrix lane runs its declared command",
+);
+const bundleRun = ciWorkflow.jobs["frontend-bundle"].steps.at(-1)?.run;
+assert.match(bundleRun, /if \[ "\$attempt" -lt 3 \]; then/);
+assert.match(bundleRun, /::error::pnpm build failed after 3 attempts/);
+assert.doesNotMatch(
+  bundleRun,
+  /echo "::warning::pnpm build attempt \$attempt failed; retrying with clean \.next"\n\s*rm -rf \.next\n\s*done/,
+  "the terminal build failure must not claim that another retry will run",
+);
 assert.equal(
   ciWorkflow["run-name"],
   "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}",
@@ -87,9 +106,7 @@ const expectedJobGuards = {
   paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
   ios:
     "needs.paths.outputs.ios == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
-  "frontend-static":
-    "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
-  "frontend-tests":
+  "frontend-validation":
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
   "frontend-bundle":
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
@@ -118,8 +135,7 @@ const prerequisite = ciWorkflow.jobs.build.steps.find(
 );
 assert.ok(prerequisite, "the required Frontend build aggregates prerequisite job results");
 assert.match(prerequisite.run, /test "\$IOS_RESULT" = "success"/);
-assert.match(prerequisite.run, /test "\$FRONTEND_STATIC_RESULT" = "success"/);
-assert.match(prerequisite.run, /test "\$FRONTEND_TESTS_RESULT" = "success"/);
+assert.match(prerequisite.run, /test "\$FRONTEND_VALIDATION_RESULT" = "success"/);
 assert.match(prerequisite.run, /test "\$FRONTEND_BUNDLE_RESULT" = "success"/);
 
 const releaseSource = await readFile(
