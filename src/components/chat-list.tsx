@@ -1046,7 +1046,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 );
               })}
             </span>
-            {hasAppliedFilters && (
+            {hasAppliedFilters && !(visibleRows === 0 && !showContentSection) && (
               <Button
                 variant="ghost"
                 size="xs"

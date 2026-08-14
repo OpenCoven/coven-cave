@@ -132,6 +132,10 @@ test.describe("sessions list", () => {
     await expect(chip(page, "All")).toHaveAttribute("aria-pressed", "true");
 
     const search = page.getByPlaceholder("Search sessions…");
+    await search.fill("no matching session");
+    await expect(clearFilters).toHaveCount(1);
+    await clearFilters.click();
+
     await search.fill("image");
     await expect(clearFilters).toBeVisible();
     await clearFilters.click();
