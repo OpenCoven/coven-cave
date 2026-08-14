@@ -144,6 +144,46 @@ assert.match(
   /timingSafeEqualString\(parts\[5\], expected\)[\s\S]{0,100}expiresAt > Date\.now\(\)[\s\S]{0,100}parts\[2\] === tailnetNodeId/,
   "PTY presence verification checks the signature, expiry, and tailnet-device binding",
 );
+
+// ── Presence-verification parity (cave: keep server.ts in sync with passkey-presence.ts) ────────
+// The HMAC/expiry/tailnet-binding check in hasValidPasskeyPresence is intentionally duplicated
+// from src/lib/passkey-presence.ts because server.mjs is emitted without bundling. These
+// assertions pin the key structural invariants (token format, part count, HMAC body
+// construction, field ordering) so that a divergence between the two implementations
+// manifests as a CI failure rather than a silent security regression.
+{
+  const presenceSrc = readFileSync(new URL("../src/lib/passkey-presence.ts", import.meta.url), "utf8");
+
+  // Both files must agree on the version prefix.
+  assert.match(src, /parts\[0\] !== "v1"/, "server.ts presence verifier checks for 'v1' prefix");
+  assert.match(presenceSrc, /"v1"/, "passkey-presence.ts also uses 'v1' as the token version");
+
+  // Both files must require exactly 6 dot-delimited parts.
+  assert.match(src, /parts\.length !== 6/, "server.ts presence verifier expects 6 token parts");
+  assert.match(presenceSrc, /parts\.length !== 6/, "passkey-presence.ts also expects 6 token parts");
+
+  // Both files must construct the HMAC body from the first 5 parts.
+  // passkey-presence.ts uses payload() which produces `v1.${expiresAt}.${tailnetNodeId}.${credentialId}.${nonce}`,
+  // matching parts 0–4. server.ts must use parts.slice(0, 5).join(".").
+  assert.match(
+    src,
+    /parts\.slice[(]0, 5[)]\.join/,
+    "server.ts HMAC body is parts.slice(0,5).join('.'), matching passkey-presence.ts payload()",
+  );
+  assert.match(
+    presenceSrc,
+    /`\$\{VERSION\}\.\$\{expiresAt\}\.\$\{tailnetNodeId\}\.\$\{credentialId\}\.\$\{nonce\}`/,
+    "passkey-presence.ts payload() constructs a 5-field dot-delimited HMAC body",
+  );
+
+  // Both files must bind the tailnet node id (parts[2]).
+  assert.match(src, /parts\[2\] === tailnetNodeId/, "server.ts presence verifier checks tailnetNodeId at parts[2]");
+  assert.match(presenceSrc, /tailnetNodeId/, "passkey-presence.ts also verifies tailnetNodeId binding");
+
+  // Both files must sign/verify with HMAC-SHA256.
+  assert.match(src, /createHmac\("sha256"/, "server.ts presence verifier uses HMAC-SHA256");
+  assert.match(presenceSrc, /SHA-256/, "passkey-presence.ts also uses SHA-256");
+}
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
 // src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
 // pairing flow mints them and the phone renews them monthly. The WS gate must
