@@ -403,6 +403,25 @@ export function isClientV1AdminPath(pathname: string): boolean {
   return pathname === CLIENT_V1_ADMIN_ROOT || pathname.startsWith(CLIENT_V1_ADMIN_PREFIX);
 }
 
+/**
+ * A direct loopback client-v1 caller has server.ts's unforgeable peer stamp,
+ * not merely a loopback-looking Host header. Its non-admin facade requests
+ * use route-level bearer auth, so they can bypass the mobile invite gate even
+ * while it is armed. Admin and non-loopback requests must remain gated.
+ */
+export function shouldBypassMobileAccessGateForClientV1(
+  pathname: string,
+  host: string | null,
+  trustedLocalPeer: boolean,
+): boolean {
+  return (
+    trustedLocalPeer
+    && isLoopbackHost(host)
+    && isClientV1Path(pathname)
+    && !isClientV1AdminPath(pathname)
+  );
+}
+
 export const SAFE_CONTENT_TYPES = [
   "application/json",
   "application/x-www-form-urlencoded",
