@@ -68,6 +68,7 @@ import { usePrReadiness } from "./use-pr-readiness";
 import { useReviewSource } from "./use-review-source";
 import { SurfaceEmpty, SurfaceError, SurfaceLoading } from "./surface-room";
 import { REVIEWER_SURFACE_ID } from "./ids";
+import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
 
 /** Queue size plus the scope and pressure the room header shows as status chips. */
 export type ReviewDeckCounts = {
@@ -268,8 +269,9 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
   const setNote = useCallback(
     (next: string) => {
       if (!selected) return;
-      setNotes((prev) => ({ ...prev, [selected.session.id]: next }));
-      if (next.trim()) setNoteError(null);
+      const bounded = next.slice(0, GITHUB_REVIEW_BODY_MAX_LENGTH);
+      setNotes((prev) => ({ ...prev, [selected.session.id]: bounded }));
+      if (bounded.trim()) setNoteError(null);
     },
     [selected],
   );
@@ -1403,11 +1405,15 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                 className="rd-note"
                 placeholder="Add a note…"
                 value={note}
+                maxLength={GITHUB_REVIEW_BODY_MAX_LENGTH}
                 disabled={!selected}
                 onChange={(e) => setNote(e.target.value)}
-                aria-describedby="rd-note-help"
+                aria-describedby="rd-note-help rd-note-count"
                 aria-invalid={noteError ? true : undefined}
               />
+              <span id="rd-note-count" className="rd-character-count">
+                {note.length.toLocaleString()} / {GITHUB_REVIEW_BODY_MAX_LENGTH.toLocaleString()}
+              </span>
               {noteError ? (
                 <span className="rd-error" role="alert">
                   {noteError}
@@ -1581,10 +1587,14 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               className="rd-composer-textarea"
               placeholder="Describe what has to change…"
               value={note}
+              maxLength={GITHUB_REVIEW_BODY_MAX_LENGTH}
               onChange={(e) => setNote(e.target.value)}
-              aria-describedby="rd-rc-help"
+              aria-describedby="rd-rc-help rd-rc-count"
               aria-invalid={noteError ? true : undefined}
             />
+            <span id="rd-rc-count" className="rd-character-count">
+              {note.length.toLocaleString()} / {GITHUB_REVIEW_BODY_MAX_LENGTH.toLocaleString()}
+            </span>
             {noteError ? (
               <span className="rd-error" role="alert">
                 {noteError}
