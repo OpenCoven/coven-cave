@@ -994,6 +994,12 @@
   width: 100% !important;
 }
 
+/* `> [data-panel][data-active="false"]` covers the two-pane path, whose Panel
+   elements carry NO class at all — only the tile path gets .split-host__tile*.
+   Without it the inactive pane stayed fully laid out under the tab fallback, so
+   mobile rendered BOTH panes stacked past the viewport and the tabs changed
+   nothing visually (cave-ktvy0). */
+.split-host__group[data-presentation="tabs"] > [data-panel][data-active="false"],
 .split-host__group[data-presentation="tabs"] .split-host__tile-panel[data-active="false"],
 .split-host__group[data-presentation="tabs"] .split-host__tile[data-active="false"] {
   position: absolute !important;

@@ -4,6 +4,12 @@ import { BUILT_IN_WORKSPACE_PAGE_IDS } from "../../src/lib/workspace-page-regist
 for (const pageId of BUILT_IN_WORKSPACE_PAGE_IDS) {
   test(`${pageId} uses the container-width tab fallback`, async ({ page }) => {
     test.setTimeout(120_000);
+    // Pin a narrow viewport. The tab fallback is a CONTAINER-WIDTH behaviour,
+    // and the desktop project deliberately runs tests/mobile specs too (see the
+    // header comment in playwright.config.ts), so without this the assertion ran
+    // at 1280x720 where the switcher correctly never engages — 49 guaranteed
+    // failures per run. Its desktop sibling pins 1440x900 the same way.
+    await page.setViewportSize({ width: 393, height: 851 });
     await page.addInitScript(() => {
       window.localStorage.setItem("cave:onboarding:dismissed", "1");
     });
