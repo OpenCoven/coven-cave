@@ -43,23 +43,32 @@ function isClientV1Scope(value: unknown): value is ClientV1Scope {
  * well-shaped request (e.g. the requested familiar has no grant for the
  * requested project) — reusing `scope_denied` for that case would incorrectly
  * suggest the credential itself needs a different scope to succeed.
+ *
+ * `unsupported` is the non-retryable code for an HTTP 501: Cave understood
+ * the request but that run is not implemented by this installation. It is
+ * deliberately distinct from `service_unavailable`, which denotes a
+ * temporarily unavailable run launch.
  */
-export type ClientV1ErrorCode =
-  | "invalid_request"
-  | "unauthorized"
-  | "scope_denied"
-  | "forbidden"
-  | "not_found"
-  | "conflict"
-  | "operation_already_started"
-  | "rate_limited"
-  | "pairing_pending"
-  | "pairing_denied"
-  | "pairing_expired"
-  | "pairing_already_exchanged"
-  | "incompatible_version"
-  | "service_unavailable"
-  | "internal_error";
+export const CLIENT_V1_ERROR_CODES = [
+  "invalid_request",
+  "unauthorized",
+  "scope_denied",
+  "forbidden",
+  "not_found",
+  "conflict",
+  "operation_already_started",
+  "rate_limited",
+  "pairing_pending",
+  "pairing_denied",
+  "pairing_expired",
+  "pairing_already_exchanged",
+  "incompatible_version",
+  "unsupported",
+  "service_unavailable",
+  "internal_error",
+] as const;
+
+export type ClientV1ErrorCode = (typeof CLIENT_V1_ERROR_CODES)[number];
 
 export type ClientV1ErrorBody = {
   ok: false;

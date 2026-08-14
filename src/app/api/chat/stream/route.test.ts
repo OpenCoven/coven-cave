@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { GET } from "./route.ts";
-import { openRunBuffer, resetRunBuffersForTest } from "@/lib/server/chat-stream-buffer";
+import {
+  canonicalizeAndRecordRunStreamEvent,
+  openRunBuffer,
+  resetRunBuffersForTest,
+  RUN_STREAM_EVENT_MAX_BYTES,
+} from "@/lib/server/chat-stream-buffer";
+import { chatSse } from "../send/chat-send-sse.ts";
 
 // GET /api/chat/stream (cave-h40l): re-attach to a live chat run mid-turn.
 // Behavior: 400 without a key, 404 for unknown runs (client falls back to
@@ -69,6 +75,95 @@ test("a finished run drains its replay and closes immediately", async () => {
   resetRunBuffersForTest();
 });
 
+function assistantChunkAtSerializedSize(byteLength: number) {
+  const empty = JSON.stringify({ kind: "assistant_chunk", text: "" });
+  const text = "x".repeat(byteLength - Buffer.byteLength(empty, "utf8"));
+  const event = { kind: "assistant_chunk", text } as const;
+  assert.equal(Buffer.byteLength(JSON.stringify(event), "utf8"), byteLength);
+  return event;
+}
+
+function rawSseFrames(text: string) {
+  return text
+    .split("\n\n")
+    .filter(Boolean)
+    .map((frame) => {
+      const id = frame.match(/^id: (\d+)$/m);
+      const data = frame.match(/^data: (.+)$/m);
+      assert.ok(id, "every canonical event frame has an id");
+      assert.ok(data, "every canonical event frame has a payload");
+      return { id: Number(id[1]), payload: JSON.parse(data[1]) };
+    });
+}
+
+async function liveAndReplayFrames(
+  key: string,
+  events: Array<Parameters<typeof canonicalizeAndRecordRunStreamEvent>[1]>,
+) {
+  const run = openRunBuffer([key]);
+  const live: Uint8Array[] = [];
+  for (const event of events) {
+    const recorded = canonicalizeAndRecordRunStreamEvent(run, event);
+    if (recorded) live.push(chatSse(recorded.event, recorded.seq));
+  }
+  run.finish();
+  const replay = await GET(new Request(`http://127.0.0.1/api/chat/stream?runId=${key}`));
+  return {
+    live: rawSseFrames(new TextDecoder().decode(Buffer.concat(live))),
+    replay: rawSseFrames(await drain(replay)),
+  };
+}
+
+test("live and replay sequences are identical at the canonical event-size boundary", async () => {
+  resetRunBuffersForTest();
+  const boundary = assistantChunkAtSerializedSize(RUN_STREAM_EVENT_MAX_BYTES);
+  const { live, replay } = await liveAndReplayFrames("run-live-boundary", [
+    boundary,
+    { kind: "done", isError: false },
+  ]);
+  const expected = [
+    { id: 1, payload: boundary },
+    { id: 2, payload: { kind: "done", isError: false } },
+  ];
+
+  assert.deepEqual(live, expected, "the live producer preserves an exactly-at-limit event");
+  assert.deepEqual(replay, expected, "the replay buffer preserves the same ids and payloads");
+  assert.deepEqual(live, replay);
+  resetRunBuffersForTest();
+});
+
+test("an oversized canonical terminal is the complete identical live and replay sequence", async () => {
+  resetRunBuffersForTest();
+  const oversized = {
+    kind: "assistant_chunk",
+    text: `${assistantChunkAtSerializedSize(RUN_STREAM_EVENT_MAX_BYTES).text}x`,
+  } as const;
+  assert.ok(Buffer.byteLength(JSON.stringify(oversized), "utf8") > RUN_STREAM_EVENT_MAX_BYTES);
+  const { live, replay } = await liveAndReplayFrames("run-live-oversized", [
+    { kind: "assistant_chunk", text: "before" },
+    oversized,
+    { kind: "assistant_chunk", text: "must-not-leak" },
+    { kind: "done", isError: false },
+  ]);
+  const expected = [
+    { id: 1, payload: { kind: "assistant_chunk", text: "before" } },
+    {
+      id: 2,
+      payload: {
+        kind: "error",
+        code: "stream_event_too_large",
+        message: "The run failed.",
+      },
+    },
+  ];
+
+  assert.deepEqual(live, expected, "live emission replaces the oversized event and stops");
+  assert.deepEqual(replay, expected, "replay retains the exact same terminal sequence");
+  assert.deepEqual(live, replay);
+  assert.doesNotMatch(JSON.stringify(live), /must-not-leak/);
+  resetRunBuffersForTest();
+});
+
 // ── Send-route wiring pins ────────────────────────────────────────────────────
 // The buffer only works if the send route tees events BEFORE its
 // closed/aborted guard (a dropped transport must keep recording) and pairs
@@ -82,9 +177,11 @@ assert.match(
 const send = sendRoute;
 
 test("send route tees both harness stream paths through the run buffer", () => {
-  const tees = send.match(/const seq = runBuffer\?\.record\(e(?:vent)?\);\s*\n\s*if \(closed \|\| (?:args\.)?req\.signal\.aborted\) return;/g);
+  const canonicalRecords = send.match(/const recorded = canonicalizeAndRecordRunStreamEvent\(runBuffer, e(?:vent)?\);/g);
+  assert.equal(canonicalRecords?.length, 3, "all SSE producers canonicalize before recording or emitting");
+  const tees = send.match(/const recorded = canonicalizeAndRecordRunStreamEvent\(runBuffer, e(?:vent)?\);\s*\n\s*if \(!recorded\) return;\s*\n\s*if \(closed \|\| (?:args\.)?req\.signal\.aborted\) return;/g);
   assert.equal(tees?.length, 2, "both push() implementations record before the closed/aborted guard");
-  const seqEmits = send.match(/controller\.enqueue\(chatSse\(e(?:vent)?, seq\)\)/g);
+  const seqEmits = send.match(/controller\.enqueue\(chatSse\(recorded\.event, recorded\.seq\)\)/g);
   assert.equal(seqEmits?.length, 3, "all three SSE producers emit the seq as the SSE id — live clients always hold a resume cursor");
   const opens = send.match(/openRunBuffer\(\[/g);
   assert.equal(opens?.length, 4, "all four dispatch paths (offline, harness, OpenClaw CLI, OpenClaw Gateway) open a buffer under runId + conversation keys");

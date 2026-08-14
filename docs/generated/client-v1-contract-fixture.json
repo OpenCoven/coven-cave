@@ -162,6 +162,17 @@
       "degraded": false
     }
   },
+  "unsupported": {
+    "status": 501,
+    "body": {
+      "ok": false,
+      "error": {
+        "code": "unsupported",
+        "message": "This run is not supported.",
+        "retryable": false
+      }
+    }
+  },
   "streamEvents": {
     "success": [
       {
