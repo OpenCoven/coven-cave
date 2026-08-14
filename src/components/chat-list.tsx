@@ -37,12 +37,8 @@ import { useProjects } from "@/lib/use-projects";
 import {
   applyProjectScope,
   normalizeSelection,
-  projectSelectionKeys,
-  readPersisted,
-  PROJECT_SIDEBAR_KEYS,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
-import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import {
   isSessionPinned,
   sortPinnedFirst,
@@ -107,6 +103,10 @@ type Props = {
   familiar: Familiar | null;
   familiars?: Familiar[];
   sessions: SessionRow[];
+  selection: ProjectSelection;
+  expandedKeys: string[];
+  onSelectionChange: (selection: ProjectSelection) => void;
+  onToggleExpanded: (key: string) => void;
   daemonRunning?: boolean;
   onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
   onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
@@ -166,7 +166,7 @@ type ContentSearchHit = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false, hideRail = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, selection, expandedKeys, onSelectionChange, onToggleExpanded, daemonRunning, onOpen, onNewChat, onSessionsChanged, onSessionsDeleted, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false, hideRail = false }: Props) {
   // Keeps the "Xm ago" labels current without a data refresh — and, since the
   // activity bands are computed from the same clock, keeps a session that ages
   // out of "Today" from sitting under the wrong header until the list reloads.
@@ -227,11 +227,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [activeId, setActiveId] = useState<string | null>(null);
   // Toolbar group-by (none / project / date), persisted as a plain string.
   const [groupBy, setGroupBy] = useState<ChatSessionGroupBy>("none");
-  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  const [selection, setSelection] = useState<ProjectSelection>("all");
-  const [sidebarHydrated, setSidebarHydrated] = useState(false);
-  const sidebarPrefsLoadedRef = useRef(false);
-  const sidebarDefaultExpandedRef = useRef(false);
+  const [listPrefsHydrated, setListPrefsHydrated] = useState(false);
+  const listPrefsLoadedRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const sortAnchorRef = useRef<HTMLButtonElement>(null);
   const keys = useKeySymbols();
@@ -335,66 +332,30 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Sidebar state loads after mount (not in initializers) so SSR markup and
-  // first client render agree; persistence is gated until that load lands.
+  // List preferences load after mount so SSR markup and the first client
+  // render agree; persistence is gated until that load lands.
   useEffect(() => {
-    if (sidebarPrefsLoadedRef.current) return;
+    if (listPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
-    sidebarPrefsLoadedRef.current = true;
+    listPrefsLoadedRef.current = true;
     try {
       setGroupBy(normalizeChatGroupBy(window.localStorage.getItem(CHAT_GROUP_BY_KEY)));
       setSessionSort(normalizeChatSessionSort(window.localStorage.getItem(CHAT_SESSION_SORT_KEY)));
     } catch {
       // storage unavailable — default grouping and sort stand
     }
-    const hasStoredExpanded =
-      typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
-    sidebarDefaultExpandedRef.current = !hasStoredExpanded;
-    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
-    setExpandedKeys(
-      Array.isArray(storedExpanded)
-        ? storedExpanded.filter((k): k is string => typeof k === "string")
-        : projectSelectionKeys(sidebarGroups),
-    );
-    const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
-    setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSessionOrder(readSessionOrder());
-    setSidebarHydrated(true);
-  }, [sessionsLoaded, sidebarGroups]);
+    setListPrefsHydrated(true);
+  }, [sessionsLoaded]);
   useEffect(() => {
-    if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
-    const nextExpandedKeys = projectSelectionKeys(sidebarGroups);
-    setExpandedKeys((currentExpandedKeys) =>
-      currentExpandedKeys.length === nextExpandedKeys.length &&
-      currentExpandedKeys.every((key, index) => key === nextExpandedKeys[index])
-        ? currentExpandedKeys
-        : nextExpandedKeys,
-    );
-  }, [sidebarHydrated, sidebarGroups]);
-  useEffect(() => {
-    if (!sidebarHydrated) return;
+    if (!listPrefsHydrated) return;
     try {
       window.localStorage.setItem(CHAT_GROUP_BY_KEY, groupBy);
       window.localStorage.setItem(CHAT_SESSION_SORT_KEY, sessionSort);
     } catch {
       // persistence is best-effort
     }
-  }, [sidebarHydrated, groupBy, sessionSort]);
-  useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
-  }, [sidebarHydrated, expandedKeys]);
-  useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
-  }, [sidebarHydrated, selection]);
-  // First chat in a fresh project folder (or this surface's just-started
-  // chat) must not hide inside a collapsed group (cave-mllp).
-  useAutoExpandNewGroups({
-    hydrated: sidebarHydrated,
-    sessions,
-    groups: sidebarGroups,
-    activeSessionId: activeId,
-    setExpandedKeys,
-  });
+  }, [listPrefsHydrated, groupBy, sessionSort]);
 
   // Archived sessions only load while the toggle is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change.
@@ -779,13 +740,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         selection={effectiveSelection}
         expandedKeys={expandedKeys}
         activeSessionId={activeId}
-        onSelect={setSelection}
-        onToggleExpanded={(key) => {
-          sidebarDefaultExpandedRef.current = false;
-          setExpandedKeys((prev) =>
-            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-          );
-        }}
+        onSelect={onSelectionChange}
+        onToggleExpanded={onToggleExpanded}
         onOpenSession={(s) => {
           setActiveId(s.id);
           onOpen(s.id, s.familiarId);
@@ -1162,7 +1118,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             </p>
             <button
               type="button"
-              onClick={() => { setSearch(""); setStatusFilter("all"); setSelection("all"); }}
+              onClick={() => { setSearch(""); setStatusFilter("all"); onSelectionChange("all"); }}
               className="text-[length:var(--text-sm)] text-[var(--accent-presence)] hover:underline"
             >
               Clear filters
