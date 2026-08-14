@@ -15,6 +15,7 @@ limits:
 permissions:
   - file.read
   - file.write
+  - command.run
 visibility:
   public: true
   coven_cave: true
@@ -40,8 +41,8 @@ steps:
   - id: validate
     kind: tool
     name: Deterministic validation
-    uses: cave.output
-    summary: Record already-run deterministic schema, weighted-length, hash, and hard-gate results; cave.output does not execute code.
+    uses: cave.exec
+    summary: Run `node marketplace/plugins/tweet-thread-lab/bin/tweet-thread-validate.mjs validate candidates/<candidate-id>.json brief.json`; save strict JSON stdout to deterministic/<candidate-id>.json; exit 1 blocks the candidate and exit 2 logs a contract error before any cave.output materialization.
     requires:
       - candidates
   - id: judge

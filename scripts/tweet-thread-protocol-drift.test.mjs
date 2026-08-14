@@ -14,7 +14,9 @@ import {
   ThreadCandidateSchema,
   ThreadRunManifestSchema,
   ThreadScorecardSchema,
+  ThreadValidationRecordSchema,
 } from "../src/lib/tweet-thread-protocol.ts";
+import { Value } from "typebox/value";
 import {
   checkProtocolSchemas,
   serializeProtocolSchema,
@@ -24,6 +26,7 @@ import {
 const schemaFiles = new Map([
   ["thread-brief.schema.json", ThreadBriefSchema],
   ["thread-candidate.schema.json", ThreadCandidateSchema],
+  ["thread-validation-record.schema.json", ThreadValidationRecordSchema],
   ["thread-scorecard.schema.json", ThreadScorecardSchema],
   ["thread-run-manifest.schema.json", ThreadRunManifestSchema],
 ]);
@@ -32,6 +35,24 @@ const outputDirectory = new URL(
   "../marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/",
   import.meta.url,
 );
+const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+const gitAttributes = readFileSync(new URL("../.gitattributes", import.meta.url), "utf8");
+
+assert.equal(
+  packageJson.dependencies?.canonicalize,
+  "3.0.0",
+  "candidate hashing must pin the maintained RFC 8785/JCS implementation",
+);
+for (const rule of [
+  "marketplace/plugins/tweet-thread-lab/bin/tweet-thread-validate.mjs text eol=lf",
+  "marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/SKILL.md text eol=lf",
+  "marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/*.md text eol=lf",
+  "marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/*.json text eol=lf",
+  "workflows/optimize-tweet-thread.yaml text eol=lf",
+  "workflows/optimize-tweet-thread.cave.json text eol=lf",
+]) {
+  assert.ok(gitAttributes.split(/\r?\n/u).includes(rule), `.gitattributes must include: ${rule}`);
+}
 
 function sortJsonKeys(value) {
   if (Array.isArray(value)) return value.map(sortJsonKeys);
@@ -260,3 +281,32 @@ for (const [filename, schema] of schemaFiles) {
     `${filename} must use standards-compatible JSON Schema URI formats.`,
   );
 }
+
+const generatedBriefSchema = JSON.parse(
+  readFileSync(new URL("thread-brief.schema.json", outputDirectory), "utf8"),
+);
+assert.equal(
+  Value.Check(generatedBriefSchema, {
+    protocolVersion: "opencoven.tweet-thread.v1",
+    briefId: "brief-zero-weights",
+    topic: "Zero weights",
+    audience: "Schema reviewers",
+    objectiveWeights: {
+      factuality: 0,
+      provenance: 0,
+      accessibility: 0,
+      voice: 0,
+      coherence: 0,
+      engagement: 0,
+    },
+    constraints: {
+      minPosts: 1,
+      maxPosts: 1,
+      requiredClaimIds: [],
+      bannedPhrases: [],
+      requireAltText: false,
+    },
+  }),
+  false,
+  "the checked-in JSON Schema requires at least one positive objective weight",
+);

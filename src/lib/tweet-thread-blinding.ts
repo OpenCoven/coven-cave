@@ -1,5 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
+import canonicalize from "canonicalize";
 import {
   assertValidThreadCandidate,
   compareOrdinalStrings,
@@ -41,6 +43,7 @@ export type TweetThreadBlindingErrorCode =
   | "TOO_MANY_ARMS"
   | "DUPLICATE_CANDIDATE_ID"
   | "DUPLICATE_CANDIDATE_SHA"
+  | "MIXED_JUDGE_CONTEXT"
   | "TOKEN_COLLISION"
   | "INVALID_PUBLIC_TRIAL"
   | "INVALID_BLINDING_ENVELOPE"
@@ -95,10 +98,36 @@ export interface PublicBlindedTweetThreadArm {
   content: PublicThreadArmContent;
 }
 
+export interface TweetThreadJudgeContext {
+  topic: string;
+  audience: string;
+  objectiveWeights: {
+    factuality: number;
+    provenance: number;
+    accessibility: number;
+    voice: number;
+    coherence: number;
+    engagement: number;
+  };
+  constraints: {
+    minPosts: number;
+    maxPosts: number;
+    requiredClaimIds: string[];
+    bannedPhrases: string[];
+    requireAltText: boolean;
+  };
+  voice: {
+    tone: string;
+    do: string[];
+    dont: string[];
+  };
+}
+
 export interface PublicBlindedTweetThreadTrial {
   protocolVersion: typeof TWEET_THREAD_BLINDING_PROTOCOL_VERSION;
   trialId: string;
   seedHash: string;
+  judgeContext: TweetThreadJudgeContext;
   revealCommitment: string;
   stoppingRule: TweetThreadTrialStoppingRule;
   arms: PublicBlindedTweetThreadArm[];
@@ -532,14 +561,12 @@ function validateStoppingRule(
   }
 }
 
-function canonicalizeJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalizeJson);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort(compareOrdinalStrings)
-      .map((key) => [key, canonicalizeJson(value[key])]),
-  );
+function serializeCommittedJson(value: unknown): string {
+  const serialized = canonicalize(value);
+  if (serialized === undefined) {
+    throw new TypeError("Blinding commitment input is not valid RFC 8785 JSON.");
+  }
+  return serialized;
 }
 
 function publicTrialCommitment(publicTrial: PublicBlindedTweetThreadTrial): string {
@@ -549,7 +576,7 @@ function publicTrialCommitment(publicTrial: PublicBlindedTweetThreadTrial): stri
     "The public trial commitment input must be plain JSON data.",
   );
   return createHash("sha256")
-    .update(JSON.stringify(canonicalizeJson(snapshot)), "utf8")
+    .update(serializeCommittedJson(snapshot), "utf8")
     .digest("hex");
 }
 
@@ -570,7 +597,7 @@ function revealCommitment(
   );
   return createHmac("sha256", secret)
     .update(
-      `tweet-thread-reveal\u0000${JSON.stringify(canonicalizeJson(snapshot))}`,
+      `tweet-thread-reveal\u0000${serializeCommittedJson(snapshot)}`,
       "utf8",
     )
     .digest("hex");
@@ -627,6 +654,33 @@ function publicContent(candidate: ThreadCandidate): PublicThreadArmContent {
   return {
     posts: candidate.posts.map(publicPost),
     evidence: candidate.evidence.map(publicEvidenceItem),
+  };
+}
+
+function publicJudgeContext(candidate: ThreadCandidate): TweetThreadJudgeContext {
+  return {
+    topic: candidate.brief.topic,
+    audience: candidate.brief.audience,
+    objectiveWeights: {
+      factuality: candidate.brief.objectiveWeights.factuality,
+      provenance: candidate.brief.objectiveWeights.provenance,
+      accessibility: candidate.brief.objectiveWeights.accessibility,
+      voice: candidate.brief.objectiveWeights.voice,
+      coherence: candidate.brief.objectiveWeights.coherence,
+      engagement: candidate.brief.objectiveWeights.engagement,
+    },
+    constraints: {
+      minPosts: candidate.brief.constraints.minPosts,
+      maxPosts: candidate.brief.constraints.maxPosts,
+      requiredClaimIds: [...candidate.brief.constraints.requiredClaimIds],
+      bannedPhrases: [...candidate.brief.constraints.bannedPhrases],
+      requireAltText: candidate.brief.constraints.requireAltText,
+    },
+    voice: {
+      tone: candidate.voiceProfile.tone,
+      do: [...candidate.voiceProfile.do],
+      dont: [...candidate.voiceProfile.dont],
+    },
   };
 }
 
@@ -708,6 +762,78 @@ function assertValidPublicEvidence(value: unknown): asserts value is PublicThrea
   }
 }
 
+function assertValidJudgeContext(value: unknown): asserts value is TweetThreadJudgeContext {
+  if (
+    !isRecord(value)
+    || !hasExactKeys(
+      value,
+      ["topic", "audience", "objectiveWeights", "constraints", "voice"],
+    )
+    || !isBoundedNonWhitespaceString(value.topic, 500)
+    || !isBoundedNonWhitespaceString(value.audience, 500)
+    || !isRecord(value.objectiveWeights)
+    || !hasExactKeys(
+      value.objectiveWeights,
+      ["factuality", "provenance", "accessibility", "voice", "coherence", "engagement"],
+    )
+    || !isRecord(value.constraints)
+    || !hasExactKeys(
+      value.constraints,
+      ["minPosts", "maxPosts", "requiredClaimIds", "bannedPhrases", "requireAltText"],
+    )
+    || !isRecord(value.voice)
+    || !hasExactKeys(value.voice, ["tone", "do", "dont"])
+  ) {
+    fail("INVALID_PUBLIC_TRIAL", "The public judge context is malformed.");
+  }
+
+  const objectiveWeights = Object.values(value.objectiveWeights);
+  if (
+    objectiveWeights.some((weight) =>
+      typeof weight !== "number" || !Number.isFinite(weight) || weight < 0 || weight > 1
+    )
+    || !objectiveWeights.some((weight) => (weight as number) > 0)
+  ) {
+    fail("INVALID_PUBLIC_TRIAL", "The public judge objective weights are malformed.");
+  }
+
+  const constraints = value.constraints;
+  if (
+    !Number.isInteger(constraints.minPosts)
+    || !Number.isInteger(constraints.maxPosts)
+    || (constraints.minPosts as number) < 1
+    || (constraints.maxPosts as number) > 50
+    || (constraints.minPosts as number) > (constraints.maxPosts as number)
+    || !Array.isArray(constraints.requiredClaimIds)
+    || constraints.requiredClaimIds.length > 128
+    || !constraints.requiredClaimIds.every(isCanonicalClaimId)
+    || new Set(constraints.requiredClaimIds).size !== constraints.requiredClaimIds.length
+    || !Array.isArray(constraints.bannedPhrases)
+    || constraints.bannedPhrases.length > 128
+    || !constraints.bannedPhrases.every((phrase) =>
+      isBoundedNonWhitespaceString(phrase, 200)
+    )
+    || new Set(constraints.bannedPhrases).size !== constraints.bannedPhrases.length
+    || typeof constraints.requireAltText !== "boolean"
+  ) {
+    fail("INVALID_PUBLIC_TRIAL", "The public judge constraints are malformed.");
+  }
+
+  if (
+    !isBoundedNonWhitespaceString(value.voice.tone, 500)
+    || !Array.isArray(value.voice.do)
+    || value.voice.do.length > 32
+    || !value.voice.do.every((entry) => isBoundedNonWhitespaceString(entry, 200))
+    || new Set(value.voice.do).size !== value.voice.do.length
+    || !Array.isArray(value.voice.dont)
+    || value.voice.dont.length > 32
+    || !value.voice.dont.every((entry) => isBoundedNonWhitespaceString(entry, 200))
+    || new Set(value.voice.dont).size !== value.voice.dont.length
+  ) {
+    fail("INVALID_PUBLIC_TRIAL", "The public judge voice context is malformed.");
+  }
+}
+
 function assertValidPublicTrial(
   value: unknown,
 ): asserts value is PublicBlindedTweetThreadTrial {
@@ -715,7 +841,15 @@ function assertValidPublicTrial(
     !isRecord(value)
     || !hasExactKeys(
       value,
-      ["protocolVersion", "trialId", "seedHash", "revealCommitment", "stoppingRule", "arms"],
+      [
+        "protocolVersion",
+        "trialId",
+        "seedHash",
+        "judgeContext",
+        "revealCommitment",
+        "stoppingRule",
+        "arms",
+      ],
     )
     || value.protocolVersion !== TWEET_THREAD_BLINDING_PROTOCOL_VERSION
     || typeof value.trialId !== "string"
@@ -729,6 +863,7 @@ function assertValidPublicTrial(
   ) {
     fail("INVALID_PUBLIC_TRIAL", "The public trial is malformed.");
   }
+  assertValidJudgeContext(value.judgeContext);
   assertBoundedArmCount(value.arms.length);
   try {
     validateStoppingRule(value.stoppingRule, "INVALID_PUBLIC_TRIAL");
@@ -892,6 +1027,11 @@ const PUBLIC_TRIAL_FIELDS = [
     message: "The public seed hash must be an own data property.",
   },
   {
+    key: "judgeContext",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public judge context must be plain JSON data.",
+  },
+  {
     key: "revealCommitment",
     code: "INVALID_PUBLIC_TRIAL",
     message: "The public reveal commitment must be an own data property.",
@@ -1000,13 +1140,17 @@ function snapshotPublicTrialControls(
       captured,
       PUBLIC_TRIAL_FIELDS[2],
     ),
-    revealCommitment: snapshotter.snapshotCapturedField(
+    judgeContext: snapshotter.snapshotCapturedField(
       captured,
       PUBLIC_TRIAL_FIELDS[3],
     ),
-    stoppingRule: snapshotter.snapshotCapturedField(
+    revealCommitment: snapshotter.snapshotCapturedField(
       captured,
       PUBLIC_TRIAL_FIELDS[4],
+    ),
+    stoppingRule: snapshotter.snapshotCapturedField(
+      captured,
+      PUBLIC_TRIAL_FIELDS[5],
     ),
   };
 }
@@ -1121,6 +1265,17 @@ export function createBlindedTweetThreadTrial(
     candidateIds.add(validated.candidateId);
     candidates.push(validated);
   }
+  const sharedBrief = candidates[0]!.brief;
+  const sharedVoiceProfile = candidates[0]!.voiceProfile;
+  if (candidates.some((candidate) =>
+    !isDeepStrictEqual(candidate.brief, sharedBrief)
+    || !isDeepStrictEqual(candidate.voiceProfile, sharedVoiceProfile)
+  )) {
+    fail(
+      "MIXED_JUDGE_CONTEXT",
+      "All blinded trial candidates must share deeply identical brief and voice profile content.",
+    );
+  }
 
   const prepared = candidates
     .sort((left, right) =>
@@ -1163,6 +1318,7 @@ export function createBlindedTweetThreadTrial(
     protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
     trialId,
     seedHash: createHash("sha256").update(seed, "utf8").digest("hex"),
+    judgeContext: publicJudgeContext(candidates[0]!),
     stoppingRule: committedStoppingRule,
     arms: prepared.map(({ candidate, armToken }) => ({
       armToken,
@@ -1249,7 +1405,7 @@ export function revealBlindedTweetThreadTrial(
     ...publicTrialControls,
     arms: snapshotter.snapshotCapturedField(
       publicTrialCaptured,
-      PUBLIC_TRIAL_FIELDS[5],
+      PUBLIC_TRIAL_FIELDS[6],
     ),
   };
   const envelope: BlindingEnvelope = {

@@ -600,6 +600,9 @@ export function rankThreadCandidates(
   inputs: readonly ThreadCandidateRankingInput[],
   weights: ObjectiveWeights,
 ): ThreadRankingResult {
+  if (DIMENSIONS.every((dimension) => weights[dimension] === 0)) {
+    throw new RangeError("Ranking requires at least one positive objective weight.");
+  }
   if (!Value.Check(ObjectiveWeightsSchema, weights)) {
     throw new TypeError("Objective weights must match ObjectiveWeightsSchema.");
   }

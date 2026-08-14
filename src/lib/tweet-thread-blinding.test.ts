@@ -51,23 +51,23 @@ function candidate(
       constraints: {
         minPosts: 1,
         maxPosts: 4,
-        requiredClaimIds: [`claim-${label}`],
+        requiredClaimIds: ["claim-shared"],
         bannedPhrases: [],
         requireAltText: true,
       },
     },
     voiceProfile: {
       protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
-      voiceProfileId: `voice-${label}`,
-      displayName: `model-${label}`,
-      tone: `strategy-${label}`,
-      do: [`Use the ${label} harness`],
+      voiceProfileId: "voice-blinded-trial",
+      displayName: "Blinded trial voice",
+      tone: "Grounded, concise, and evidence-led",
+      do: ["Name the evidence"],
       dont: ["Leak identities"],
     },
     evidence: [{
       protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
       evidenceId: `evidence-${label}`,
-      claimId: `claim-${label}`,
+      claimId: "claim-shared",
       summary: `${label} provenance summary`,
       sourceLabel: `${label} source`,
       sourceUrl: `https://example.com/${label}`,
@@ -76,7 +76,7 @@ function candidate(
     posts: Array.from({ length: postCount }, (_, index) => ({
       postId: `post-${index + 1}`,
       text: `${label} reviewable post ${index + 1}`,
-      claimIds: [`claim-${label}`],
+      claimIds: ["claim-shared"],
       ...(index === 0
         ? {
             media: [{
@@ -133,7 +133,7 @@ function candidateWithEvidenceCount(
     evidence: Array.from({ length: evidenceCount }, (_, index) => ({
       ...value.evidence[0]!,
       evidenceId: `evidence-${label}-${index}`,
-      claimId: index === 0 ? `claim-${label}` : `claim-${label}-${index}`,
+      claimId: index === 0 ? "claim-shared" : `claim-${label}-${index}`,
     })),
   };
   delete (content as Partial<ThreadCandidate>).candidateSha256;
@@ -252,6 +252,30 @@ function expectInvalidPublicMutation(
     minimumVotes: 12,
     closesAt: CLOSES_AT,
   });
+  assert.deepEqual(publicTrial.judgeContext, {
+    topic: "Portable blinded thread comparison",
+    audience: "Protocol reviewers",
+    objectiveWeights: {
+      factuality: 1,
+      provenance: 1,
+      accessibility: 1,
+      voice: 1,
+      coherence: 1,
+      engagement: 1,
+    },
+    constraints: {
+      minPosts: 1,
+      maxPosts: 4,
+      requiredClaimIds: ["claim-shared"],
+      bannedPhrases: [],
+      requireAltText: true,
+    },
+    voice: {
+      tone: "Grounded, concise, and evidence-led",
+      do: ["Name the evidence"],
+      dont: ["Leak identities"],
+    },
+  });
   assert.deepEqual(publicTrial.arms.map((arm) => arm.armToken), expectedOrder(SEED));
   assert.deepEqual(Object.keys(envelope.mapping), publicTrial.arms.map((arm) => arm.armToken));
   assert.deepEqual(envelope.revealThresholds, publicTrial.stoppingRule);
@@ -297,7 +321,6 @@ function expectInvalidPublicMutation(
       entry.brief.briefId,
       entry.voiceProfile.voiceProfileId,
       entry.voiceProfile.displayName,
-      entry.voiceProfile.tone,
       entry.evidence[0]!.evidenceId,
       entry.evidence[0]!.retrievedAt,
       entry.posts[0]!.postId,
@@ -309,6 +332,14 @@ function expectInvalidPublicMutation(
   }
   assert.equal(JSON.stringify(envelope).includes(SECRET), false);
   assert.equal(JSON.stringify(envelope).includes(SEED), false);
+  assert.deepEqual(
+    Object.keys(publicTrial.judgeContext),
+    ["topic", "audience", "objectiveWeights", "constraints", "voice"],
+  );
+  assert.deepEqual(
+    Object.keys(publicTrial.judgeContext.voice),
+    ["tone", "do", "dont"],
+  );
 
   for (const arm of publicTrial.arms) {
     assert.deepEqual(Object.keys(arm), ["armToken", "content"]);
@@ -327,6 +358,31 @@ function expectInvalidPublicMutation(
     alphaArm?.content.posts.map((post) => post.text),
     ["alpha reviewable post 1", "alpha reviewable post 2", "alpha reviewable post 3"],
   );
+}
+
+{
+  for (const mutate of [
+    (value: ThreadCandidate) => {
+      value.brief.briefId = "brief-mixed-context";
+    },
+    (value: ThreadCandidate) => {
+      value.brief.topic = "A different trial topic";
+    },
+    (value: ThreadCandidate) => {
+      value.voiceProfile.voiceProfileId = "voice-mixed-context";
+    },
+    (value: ThreadCandidate) => {
+      value.voiceProfile.displayName = "A different identifying display name";
+    },
+  ]) {
+    const mixed = structuredClone(CANDIDATES) as unknown as ThreadCandidate[];
+    mutate(mixed[1]!);
+    mixed[1]!.candidateSha256 = computeThreadCandidateSha256(mixed[1]!);
+    expectCode(
+      () => createTrial({ candidates: mixed }),
+      "MIXED_JUDGE_CONTEXT",
+    );
+  }
 }
 
 {
@@ -358,6 +414,15 @@ function expectInvalidPublicMutation(
   alteredContentEnvelope.publicTrialSha256 = publicTrialSha256(alteredContentTrial);
   expectCode(
     () => reveal(alteredContentTrial, alteredContentEnvelope, 12),
+    "REVEAL_COMMITMENT_MISMATCH",
+  );
+
+  const alteredJudgeContextTrial = structuredClone(publicTrial);
+  const alteredJudgeContextEnvelope = structuredClone(envelope);
+  alteredJudgeContextTrial.judgeContext.topic = "Tampered judge topic";
+  alteredJudgeContextEnvelope.publicTrialSha256 = publicTrialSha256(alteredJudgeContextTrial);
+  expectCode(
+    () => reveal(alteredJudgeContextTrial, alteredJudgeContextEnvelope, 12),
     "REVEAL_COMMITMENT_MISMATCH",
   );
 
@@ -498,6 +563,28 @@ function expectInvalidPublicMutation(
     expectInvalidPublicMutation((trial) => {
       trial.arms[0]!.content.posts[0]!.claimIds = ["claim-orphan"];
     });
+    expectInvalidPublicMutation((trial) => {
+      trial.judgeContext.topic = "";
+    });
+    expectInvalidPublicMutation((trial) => {
+      for (const key of Object.keys(trial.judgeContext.objectiveWeights) as Array<
+        keyof typeof trial.judgeContext.objectiveWeights
+      >) {
+        trial.judgeContext.objectiveWeights[key] = 0;
+      }
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.judgeContext.constraints.requiredClaimIds = Array.from(
+        { length: 129 },
+        (_, index) => `claim-context-${index}`,
+      );
+    });
+    expectInvalidPublicMutation((trial) => {
+      trial.judgeContext.voice.do = Array.from(
+        { length: 33 },
+        (_, index) => `Voice instruction ${index}`,
+      );
+    });
 
     const unknownKeyMutations: Array<
       (trial: PublicBlindedTweetThreadTrial) => void
@@ -507,6 +594,12 @@ function expectInvalidPublicMutation(
       },
       (trial) => {
         (trial.stoppingRule as unknown as Record<string, unknown>).unknown = true;
+      },
+      (trial) => {
+        (trial.judgeContext as unknown as Record<string, unknown>).unknown = true;
+      },
+      (trial) => {
+        (trial.judgeContext.voice as unknown as Record<string, unknown>).unknown = true;
       },
       (trial) => {
         (trial.arms[0] as unknown as Record<string, unknown>).unknown = true;
@@ -1010,6 +1103,7 @@ function expectInvalidPublicMutation(
     protocolVersion: original.protocolVersion,
     trialId: original.trialId,
     seedHash: original.seedHash,
+    judgeContext: original.judgeContext,
     revealCommitment: original.revealCommitment,
     stoppingRule: original.stoppingRule,
   };

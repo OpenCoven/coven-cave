@@ -67,6 +67,74 @@
     },
     "objectiveWeights": {
       "additionalProperties": false,
+      "anyOf": [
+        {
+          "properties": {
+            "factuality": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "factuality"
+          ]
+        },
+        {
+          "properties": {
+            "provenance": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "provenance"
+          ]
+        },
+        {
+          "properties": {
+            "accessibility": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "accessibility"
+          ]
+        },
+        {
+          "properties": {
+            "voice": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "voice"
+          ]
+        },
+        {
+          "properties": {
+            "coherence": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "coherence"
+          ]
+        },
+        {
+          "properties": {
+            "engagement": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "engagement"
+          ]
+        }
+      ],
       "properties": {
         "accessibility": {
           "maximum": 1,

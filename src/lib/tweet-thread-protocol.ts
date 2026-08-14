@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
+import canonicalize from "canonicalize";
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { Value } from "typebox/value";
@@ -24,6 +25,38 @@ const THREAD_OBSERVATION_METRIC_NAMES = [
   "quotes",
   "bookmarks",
 ] as const;
+const OBJECTIVE_WEIGHT_KEYS = [
+  "factuality",
+  "provenance",
+  "accessibility",
+  "voice",
+  "coherence",
+  "engagement",
+] as const;
+const JCS_JSON_VALUE_SCHEMA = Type.Unsafe({
+  $defs: {
+    value: {
+      anyOf: [
+        { type: "null" },
+        { type: "boolean" },
+        { type: "number" },
+        {
+          type: "string",
+          pattern: "^(?:(?:[^\\uD800-\\uDFFF])|(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]))*$",
+        },
+        {
+          type: "array",
+          items: { $ref: "#/$defs/value" },
+        },
+        {
+          type: "object",
+          additionalProperties: { $ref: "#/$defs/value" },
+        },
+      ],
+    },
+  },
+  $ref: "#/$defs/value",
+});
 
 const boundedNonWhitespaceString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength, pattern: "\\S" });
@@ -62,7 +95,18 @@ export const ObjectiveWeightsSchema = Type.Object({
   voice: Type.Number({ minimum: 0, maximum: 1 }),
   coherence: Type.Number({ minimum: 0, maximum: 1 }),
   engagement: Type.Number({ minimum: 0, maximum: 1 }),
-}, { additionalProperties: false });
+}, {
+  additionalProperties: false,
+  anyOf: OBJECTIVE_WEIGHT_KEYS.map((key) => ({
+    required: [key],
+    properties: {
+      [key]: {
+        type: "number",
+        exclusiveMinimum: 0,
+      },
+    },
+  })),
+});
 export type ObjectiveWeights = Static<typeof ObjectiveWeightsSchema>;
 
 export const ThreadConstraintsSchema = Type.Object({
@@ -131,6 +175,10 @@ export const ThreadCandidateSchema = Type.Object({
   generatedAt: timestampString(),
 }, { additionalProperties: false });
 export type ThreadCandidate = Static<typeof ThreadCandidateSchema>;
+export const ThreadCandidateCanonicalContentSchema = Type.Omit(
+  ThreadCandidateSchema,
+  ["candidateSha256"],
+);
 export type ThreadCandidateCanonicalContent = Omit<ThreadCandidate, "candidateSha256">;
 
 const DeterministicFindingSchemaInternal = Type.Object({
@@ -143,6 +191,35 @@ const DeterministicFindingSchemaInternal = Type.Object({
 }, { additionalProperties: false });
 export const DeterministicFindingSchema = DeterministicFindingSchemaInternal;
 export type DeterministicFinding = Static<typeof DeterministicFindingSchemaInternal>;
+
+export const ThreadPostMeasurementSchema = Type.Object({
+  postId: postIdSchema(),
+  weightedLength: Type.Integer({ minimum: 0 }),
+  urlCount: Type.Integer({ minimum: 0 }),
+  hashtagCount: Type.Integer({ minimum: 0 }),
+  repeatedHashtagCount: Type.Integer({ minimum: 0 }),
+  repeatedEmojiRuns: Type.Integer({ minimum: 0 }),
+  linkDensity: Type.Number({ minimum: 0 }),
+}, { additionalProperties: false });
+export type ThreadPostMeasurement = Static<typeof ThreadPostMeasurementSchema>;
+
+export interface ThreadValidationResult {
+  candidateSha256: string | null;
+  accepted: boolean;
+  findings: DeterministicFinding[];
+  measurements: ThreadPostMeasurement[];
+}
+
+export const ThreadValidationRecordSchema = Type.Object({
+  protocolVersion: protocolVersionLiteral(),
+  validationId: stableId("validation"),
+  candidateSha256: sha256Schema(),
+  validatedAt: timestampString(),
+  accepted: Type.Boolean(),
+  findings: Type.Array(DeterministicFindingSchemaInternal, { maxItems: 1_024 }),
+  measurements: Type.Array(ThreadPostMeasurementSchema, { maxItems: 50 }),
+}, { additionalProperties: false });
+export type ThreadValidationRecord = Static<typeof ThreadValidationRecordSchema>;
 
 const DimensionScoreSchemaInternal = (dimension: DeterministicDimension) => Type.Object({
   dimension: Type.Literal(dimension),
@@ -292,6 +369,7 @@ export const ThreadRunManifestSchema = Type.Object({
   brief: ThreadBriefSchema,
   voiceProfile: VoiceProfileSchema,
   candidates: Type.Array(ThreadCandidateSchema, { minItems: 1, maxItems: 32 }),
+  validations: Type.Array(ThreadValidationRecordSchema, { maxItems: 64 }),
   scorecards: Type.Array(ThreadScorecardSchema, { maxItems: 64 }),
   approvals: Type.Array(ApprovalRecordSchema, { maxItems: 64 }),
   publishReceipts: Type.Array(PublishReceiptSchema, { maxItems: 64 }),
@@ -309,20 +387,37 @@ export class TweetThreadProtocolValidationError extends Error {
   }
 }
 
+export function createThreadValidationRecord(
+  result: ThreadValidationResult,
+  validationId: string,
+  validatedAt: string,
+): ThreadValidationRecord {
+  const record = {
+    protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+    validationId,
+    candidateSha256: result.candidateSha256,
+    validatedAt,
+    accepted: result.accepted,
+    findings: result.findings.map((finding) => ({ ...finding })),
+    measurements: result.measurements.map((measurement) => ({ ...measurement })),
+  };
+  const issues: string[] = [];
+  if (!Value.Check(ThreadValidationRecordSchema, record)) {
+    issues.push("ThreadValidationRecord does not match ThreadValidationRecordSchema.");
+  }
+  const hasFailFinding = record.findings.some((finding) => finding.severity === "fail");
+  if (record.accepted === hasFailFinding) {
+    issues.push("ThreadValidationRecord.accepted must be true exactly when findings contain no fail severity.");
+  }
+  issues.push(...collectTimestampIssues(record.validatedAt, "ThreadValidationRecord.validatedAt"));
+  if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
+  return record as ThreadValidationRecord;
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function canonicalizeJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalizeJsonValue);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, canonicalizeJsonValue(value[key])]),
-  );
 }
 
 export function compareOrdinalStrings(left: string, right: string): number {
@@ -336,7 +431,16 @@ export function serializeCanonicalThreadCandidate(
 ): string {
   const content: UnknownRecord = { ...candidate };
   delete content.candidateSha256;
-  return JSON.stringify(canonicalizeJsonValue(content));
+  if (!Value.Check(JCS_JSON_VALUE_SCHEMA, content)) {
+    throw new TypeError(
+      "Thread candidate content must contain only finite JSON values and well-formed Unicode before JCS serialization.",
+    );
+  }
+  const serialized = canonicalize(content);
+  if (serialized === undefined) {
+    throw new TypeError("Thread candidate content could not be serialized as RFC 8785 JCS.");
+  }
+  return serialized;
 }
 
 export function computeThreadCandidateSha256(
@@ -388,11 +492,17 @@ export function containsBannedPhrase(text: string, phrase: string): boolean {
 function collectObjectiveWeightIssues(value: unknown, path: string): string[] {
   if (!isRecord(value)) return [`${path} must be an object with exact objective weight keys.`];
   const issues: string[] = [];
-  for (const key of ["factuality", "provenance", "accessibility", "voice", "coherence", "engagement"] as const) {
+  let hasPositiveWeight = false;
+  for (const key of OBJECTIVE_WEIGHT_KEYS) {
     const current = value[key];
     if (typeof current !== "number" || current < 0 || current > 1) {
       issues.push(`${path}.${key} must be a number in 0..1.`);
+    } else if (current > 0) {
+      hasPositiveWeight = true;
     }
+  }
+  if (!hasPositiveWeight) {
+    issues.push(`${path} must include at least one positive objective weight.`);
   }
   return issues;
 }
@@ -656,6 +766,104 @@ function candidateReferencesFromScorecard(scorecard: ThreadScorecard, candidate:
   return issues;
 }
 
+function candidateReferencesFromValidation(
+  validation: ThreadValidationRecord,
+  candidate: ThreadCandidate,
+  path: string,
+): string[] {
+  const issues: string[] = [];
+  const postIds = new Set(candidate.posts.map((post) => post.postId));
+  const claimIds = new Set(candidate.evidence.map((item) => item.claimId));
+  const measuredPostIds = new Set<string>();
+  for (const [index, measurement] of validation.measurements.entries()) {
+    if (!postIds.has(measurement.postId)) {
+      issues.push(`${path}.measurements[${index}].postId references missing post "${measurement.postId}".`);
+    }
+    pushDuplicateIssue(
+      measuredPostIds,
+      measurement.postId,
+      `${path}.measurements[${index}].postId`,
+      issues,
+    );
+  }
+  for (const postId of postIds) {
+    if (!measuredPostIds.has(postId)) {
+      issues.push(`${path}.measurements must include candidate post "${postId}".`);
+    }
+  }
+  for (const [index, finding] of validation.findings.entries()) {
+    if (finding.postId && !postIds.has(finding.postId)) {
+      issues.push(`${path}.findings[${index}].postId references missing post "${finding.postId}".`);
+    }
+    if (finding.claimId && !claimIds.has(finding.claimId)) {
+      issues.push(`${path}.findings[${index}].claimId references missing claim "${finding.claimId}".`);
+    }
+  }
+  return issues;
+}
+
+function scorecardHasFailFinding(scorecard: ThreadScorecard): boolean {
+  return Object.values(scorecard.dimensions).some((dimension) =>
+    dimension.findings.some((finding) => finding.severity === "fail")
+  );
+}
+
+function collectGateEvidenceIssues(
+  manifest: ThreadRunManifest,
+  candidateSha256: string,
+  boundaryAt: string,
+  boundaryPath: string,
+  boundaryKind: "approved" | "publication",
+): string[] {
+  const issues: string[] = [];
+  const validations = manifest.validations
+    .map((validation, index) => ({ validation, index }))
+    .filter(({ validation }) => validation.candidateSha256 === candidateSha256);
+  if (validations.length !== 1) {
+    issues.push(
+      `${boundaryPath} for an ${boundaryKind === "approved" ? "approved" : "publishing"} candidate requires exactly one current validation record.`,
+    );
+  } else {
+    const [{ validation, index }] = validations;
+    if (
+      validation.accepted !== true
+      || validation.findings.some((finding) => finding.severity === "fail")
+    ) {
+      issues.push(`${boundaryPath} requires an accepted validation record with no fail finding.`);
+    }
+    if (Date.parse(boundaryAt) < Date.parse(validation.validatedAt)) {
+      issues.push(
+        `${boundaryPath}.${boundaryKind === "approved" ? "decidedAt" : "attemptedAt"} must be greater than or equal to ThreadRunManifest.validations[${index}].validatedAt.`,
+      );
+    }
+  }
+
+  const cleanScorecards = manifest.scorecards
+    .map((scorecard, index) => ({ scorecard, index }))
+    .filter(({ scorecard }) =>
+      scorecard.candidateSha256 === candidateSha256
+      && !scorecardHasFailFinding(scorecard)
+    );
+  const eligibleScorecard = cleanScorecards.some(({ scorecard }) =>
+    Date.parse(scorecard.scoredAt) <= Date.parse(boundaryAt)
+  );
+  if (!eligibleScorecard) {
+    const later = cleanScorecards.find(({ scorecard }) =>
+      Date.parse(scorecard.scoredAt) > Date.parse(boundaryAt)
+    );
+    if (later) {
+      issues.push(
+        `${boundaryPath}.${boundaryKind === "approved" ? "decidedAt" : "attemptedAt"} must be greater than or equal to ThreadRunManifest.scorecards[${later.index}].scoredAt.`,
+      );
+    } else {
+      issues.push(
+        `${boundaryPath} for an ${boundaryKind === "approved" ? "approved" : "publishing"} candidate requires at least one bound scorecard with no fail finding.`,
+      );
+    }
+  }
+  return issues;
+}
+
 export function normalizeThreadBrief(input: unknown): ThreadBrief {
   if (!isRecord(input)) {
     throw new TweetThreadProtocolValidationError(["ThreadBrief must be an object."]);
@@ -709,6 +917,16 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
         issues.push(...collectTimestampIssues(scorecard.scoredAt, `ThreadRunManifest.scorecards[${index}].scoredAt`));
       }
     }
+    if (Array.isArray(input.validations)) {
+      for (const [index, validation] of input.validations.entries()) {
+        if (isRecord(validation)) {
+          issues.push(...collectTimestampIssues(
+            validation.validatedAt,
+            `ThreadRunManifest.validations[${index}].validatedAt`,
+          ));
+        }
+      }
+    }
   }
   if (Array.isArray(input.approvals)) {
     for (const [index, approval] of input.approvals.entries()) {
@@ -739,17 +957,29 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
 
   const manifest = input as ThreadRunManifest;
   collectStableIdIssues(manifest.candidates, "candidateId", "ThreadRunManifest.candidates", issues);
+  collectStableIdIssues(manifest.validations, "validationId", "ThreadRunManifest.validations", issues);
   collectStableIdIssues(manifest.scorecards, "scorecardId", "ThreadRunManifest.scorecards", issues);
   collectStableIdIssues(manifest.approvals, "approvalId", "ThreadRunManifest.approvals", issues);
   collectStableIdIssues(manifest.publishReceipts, "receiptId", "ThreadRunManifest.publishReceipts", issues);
   collectStableIdIssues(manifest.observations, "observationId", "ThreadRunManifest.observations", issues);
 
-  const findingIds = new Set<string>();
+  const validationFindingIds = new Set<string>();
+  for (const [validationIndex, validation] of manifest.validations.entries()) {
+    for (const [findingIndex, finding] of validation.findings.entries()) {
+      pushDuplicateIssue(
+        validationFindingIds,
+        finding.findingId,
+        `ThreadRunManifest.validations[${validationIndex}].findings[${findingIndex}].findingId`,
+        issues,
+      );
+    }
+  }
+  const scorecardFindingIds = new Set<string>();
   for (const [scorecardIndex, scorecard] of manifest.scorecards.entries()) {
     for (const [dimensionName, dimension] of Object.entries(scorecard.dimensions)) {
       for (const [findingIndex, finding] of dimension.findings.entries()) {
         pushDuplicateIssue(
-          findingIds,
+          scorecardFindingIds,
           finding.findingId,
           `ThreadRunManifest.scorecards[${scorecardIndex}].dimensions.${dimensionName}.findings[${findingIndex}].findingId`,
           issues,
@@ -771,6 +1001,28 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       continue;
     }
     candidateBySha.set(candidate.candidateSha256, candidate);
+  }
+
+  for (const [index, validation] of manifest.validations.entries()) {
+    const validationPath = `ThreadRunManifest.validations[${index}]`;
+    const hasFailFinding = validation.findings.some((finding) => finding.severity === "fail");
+    if (validation.accepted === hasFailFinding) {
+      issues.push(`${validationPath}.accepted must be true exactly when findings contain no fail severity.`);
+    }
+    const candidate = candidateBySha.get(validation.candidateSha256);
+    if (!candidate) {
+      issues.push(`${validationPath} candidate sha "${validation.candidateSha256}" does not match any candidate.`);
+      continue;
+    }
+    const candidateIndex = manifest.candidates.indexOf(candidate);
+    issues.push(...collectTimestampOrderIssues(
+      validation.validatedAt,
+      candidate.generatedAt,
+      `${validationPath}.validatedAt`,
+      `ThreadRunManifest.candidates[${candidateIndex}].generatedAt`,
+      "at-or-after",
+    ));
+    issues.push(...candidateReferencesFromValidation(validation, candidate, validationPath));
   }
 
   for (const [index, scorecard] of manifest.scorecards.entries()) {
@@ -802,6 +1054,15 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
         `ThreadRunManifest.approvals[${index}].decidedAt must be greater than or equal to ThreadRunManifest.candidates[${candidateIndex}].generatedAt.`,
       );
     }
+    if (approval.decision === "approved") {
+      issues.push(...collectGateEvidenceIssues(
+        manifest,
+        approval.candidateSha256,
+        approval.decidedAt,
+        `ThreadRunManifest.approvals[${index}]`,
+        "approved",
+      ));
+    }
   }
 
   const receiptById = new Map<string, PublishReceipt>();
@@ -828,6 +1089,13 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
       if (latestApproval?.decision !== "approved") {
         issues.push(`${receiptPath} requires the candidate's latest approval at or before attemptedAt to be approved.`);
       }
+      issues.push(...collectGateEvidenceIssues(
+        manifest,
+        receipt.candidateSha256,
+        receipt.attemptedAt,
+        receiptPath,
+        "publication",
+      ));
     }
     if (hasKnownRemoteEvidence(receipt)) {
       const threadStatusId = receipt.threadUrl.slice(receipt.threadUrl.lastIndexOf("/") + 1);

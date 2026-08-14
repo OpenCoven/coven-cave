@@ -503,15 +503,19 @@ await (async () => {
       timeout_s: 1800,
       cost_ceiling_usd: 6,
     });
-    assert.deepEqual(threadManifest.permissions, ["file.read", "file.write"]);
+    assert.deepEqual(threadManifest.permissions, ["file.read", "file.write", "command.run"]);
     const evidenceStep = threadManifest.steps.find((step: { id: string }) => step.id === "evidence");
     assert.ok(evidenceStep);
     assert.match(evidenceStep.summary, /supplied or local evidence/i);
     assert.match(evidenceStep.summary, /without network retrieval/i);
     const validateStep = threadManifest.steps.find((step: { id: string }) => step.id === "validate");
     assert.ok(validateStep);
-    assert.match(validateStep.summary, /already-run deterministic schema, weighted-length, hash, and hard-gate results/i);
-    assert.match(validateStep.summary, /cave\.output does not execute code/i);
+    assert.match(
+      validateStep.summary,
+      /node marketplace\/plugins\/tweet-thread-lab\/bin\/tweet-thread-validate\.mjs validate candidates\/<candidate-id>\.json brief\.json/i,
+    );
+    assert.match(validateStep.summary, /strict JSON stdout.*deterministic\/<candidate-id>\.json/i);
+    assert.match(validateStep.summary, /exit 1 blocks.*exit 2/i);
     assert.deepEqual(
       threadManifest.steps.map(
         (step: { id: string; kind: string; uses?: string; requires?: string[] }) => ({
@@ -525,7 +529,7 @@ await (async () => {
         { id: "input", kind: "input", uses: undefined, requires: undefined },
         { id: "evidence", kind: "agent", uses: "research", requires: ["input"] },
         { id: "candidates", kind: "skill", uses: "tweet-thread-lab", requires: ["evidence"] },
-        { id: "validate", kind: "tool", uses: "cave.output", requires: ["candidates"] },
+        { id: "validate", kind: "tool", uses: "cave.exec", requires: ["candidates"] },
         { id: "judge", kind: "agent", uses: "reviewer", requires: ["validate"] },
         { id: "revise", kind: "skill", uses: "tweet-thread-lab", requires: ["judge"] },
         { id: "approval", kind: "human-gate", uses: "valentina", requires: ["revise"] },

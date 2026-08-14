@@ -392,13 +392,20 @@ assert.match(threadLabSkill, /^## Artifacts$/m);
 assert.match(threadLabSkill, /^## Verification$/m);
 assert.match(
   threadLabSkill,
-  /execute the checked-in deterministic schema, weighted-length, hash, and hard-gate modules before writing their results/i,
+  /node bin\/tweet-thread-validate\.mjs validate <candidate\.json> \[brief\.json\]/i,
 );
-assert.match(threadLabSkill, /`cave\.output` records those already-run results and does not execute code/i);
+assert.match(threadLabSkill, /materialize the canonical validation record before the manifest or approval/i);
+assert.match(threadLabSkill, /only after the bundled command succeeds may `cave\.output` record/i);
 for (const document of [threadLabSkill, threadLabProtocol]) {
   assert.match(document, /`strategies\.json`/);
   assert.match(document, /`execution-log\.jsonl`/);
+  assert.match(document, /`validations`/);
+  assert.match(document, /tweet-thread-validate\.mjs/);
 }
+assert.ok(
+  existsSync(path.join(productionThreadLabRoot, "bin", "tweet-thread-validate.mjs")),
+  "the dependency-free validator bundle is shipped with the plugin",
+);
 assert.doesNotMatch(threadLabSkill, /candidate with its strategy/i);
 assert.doesNotMatch(threadLabSkill, /manifest .*exposes failures or partial state/i);
 assert.doesNotMatch(
@@ -413,6 +420,7 @@ for (const schema of [
   "thread-candidate.schema.json",
   "thread-run-manifest.schema.json",
   "thread-scorecard.schema.json",
+  "thread-validation-record.schema.json",
 ]) {
   assert.ok(
     existsSync(path.join(threadLabSkillRoot, "references", "schemas", schema)),

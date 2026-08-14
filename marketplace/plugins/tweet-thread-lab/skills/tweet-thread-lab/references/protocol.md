@@ -15,6 +15,7 @@ runs/<run-id>/
   execution-log.jsonl
   candidates/<candidate-id>.json
   deterministic/<candidate-id>.json
+  validations/<validation-id>.json
   judge/<scorecard-id>.json
   manifest.json
   approval.json
@@ -63,7 +64,7 @@ Required fields are `protocolVersion`, `runId`, `eventId`, positive monotonic `s
 - Use stable lowercase IDs with the schema prefixes: `run-`, `brief-`, `candidate-`, `scorecard-`, and `approval-`.
 - Keep `post-1`, `post-2`, and later post IDs ordered within a candidate.
 - Compute `candidateSha256` from canonical candidate content excluding the hash field.
-- Canonicalize JSON with UTF-8 encoding, sorted object keys, preserved array order, and no insignificant whitespace.
+- Canonicalize with RFC 8785 JSON Canonicalization Scheme (JCS), encode the resulting text as UTF-8, then compute SHA-256. JCS preserves array order, sorts object properties by UTF-16 code units, applies ECMAScript number serialization, and emits no insignificant whitespace.
 - Recompute the hash after every content change. Bind scorecards and approvals to the exact candidate SHA-256.
 
 ## Normalization
@@ -80,21 +81,21 @@ Required fields are `protocolVersion`, `runId`, `eventId`, positive monotonic `s
 2. Generate three candidates from declared strategies unless the brief specifies another bounded count.
 3. Give every candidate a stable ID, canonicalize and hash it, and write only fields accepted by `thread-candidate.schema.json`.
 4. Write or update `strategies.json` so each successful candidate ID maps to its exact SHA-256 and declared strategy. Log failed generations or writes instead of inventing candidate fields.
-5. Run deterministic validation and save results separately from judge scorecards. Append failures, partial materialization, missing paths, and uncertainty to the execution log.
+5. From the plugin root run `node bin/tweet-thread-validate.mjs validate <candidate.json> [brief.json]`. Save its strict JSON stdout to `deterministic/<candidate-id>.json`. Exit `0` accepts, exit `1` rejects through deterministic hard gates, and exit `2` is a safe usage/read/parse/runtime contract error. Before any manifest or approval, convert the raw result into one strict `validation-` record containing `protocolVersion`, stable `validationId`, `candidateSha256`, caller-supplied `validatedAt`, `accepted`, `findings`, and `measurements`; save it under `validations/`. Append failures, partial materialization, missing paths, and uncertainty to the execution log.
 6. Blind candidates for judging. Keep `strategies.json`, its private extensions, and the private arm mapping outside judge context.
 7. Save scorecards, rank eligible candidates, perform bounded revisions, and append every stopping decision.
-8. Write `manifest.json` with only the strict schema fields: `protocolVersion`, `manifestId`, `runId`, `createdAt`, `brief`, `voiceProfile`, `candidates`, `scorecards`, `approvals`, `publishReceipts`, and `observations`. Use the candidate IDs, candidate SHA-256 values, scorecard IDs, approval IDs, receipt IDs, and observation IDs already supported by those artifacts; do not add strategy, generation-context, failure, partial-state, path, or sidecar fields.
+8. Write `manifest.json` with only the strict schema fields: `protocolVersion`, `manifestId`, `runId`, `createdAt`, `brief`, `voiceProfile`, `candidates`, `validations`, `scorecards`, `approvals`, `publishReceipts`, and `observations`. Use the candidate IDs, candidate SHA-256 values, validation IDs, scorecard IDs, approval IDs, receipt IDs, and observation IDs already supported by those artifacts; do not add strategy, generation-context, failure, partial-state, path, or sidecar fields.
 9. Write `approval.json` only from an exact human decision bound to the selected candidate hash.
 
 ## Deterministic validation and scoring
 
-Validate schema conformance, canonical hash, required-claim coverage, X weighted length, media descriptions and alt text, banned phrases, provenance, chronology, and scorecard bindings. A deterministic failure makes a candidate ineligible; engagement cannot override it.
+Validate schema conformance, canonical hash, required-claim coverage, X weighted length, media descriptions and alt text, banned phrases, provenance, chronology, and scorecard bindings. A deterministic failure makes a candidate ineligible; engagement cannot override it. A validation record is internally consistent only when `accepted` is true exactly when it has no `fail` finding.
 
 Evaluate the six rubric dimensions separately on `0..1`. Remove hard-gate failures, identify Pareto-dominated candidates, then rank the non-dominated set by the brief's normalized weighted mean. Break equal totals by factuality, provenance, accessibility, coherence, voice, then ordinal candidate ID.
 
 ## Blinding
 
-Use opaque arm tokens and a committed private mapping when the harness supports the repository blinding primitives. Give judges only public trial data. Use a separate judge context or harness when available. Never knowingly reveal strategy, candidate ID, author, model, harness, file path, or ordering metadata that identifies an arm.
+Use opaque arm tokens and a committed private mapping when the harness supports the repository blinding primitives. Every candidate in one trial must carry deeply identical brief and voice-profile content. Give judges one committed non-identifying context containing topic, audience, objective weights, constraints, and voice tone/do/dont, plus public arm data. Omit brief and voice IDs, voice display name, candidate IDs and hashes, timestamps, strategy, author, model, harness, file path, and ordering metadata. Use a separate judge context or harness when available.
 
 If full blinding is unavailable, record the limitation before judging. Do not describe an unblinded comparison as blinded.
 
@@ -104,8 +105,8 @@ Declare iteration, agent, time, and cost bounds before revision. Continue only f
 
 ## Approval boundary
 
-Approval is the terminal action in this package. Require an exact human decision naming the selected candidate SHA-256. Do not publish, schedule, authenticate to X, or create a publication receipt. A later publisher must independently verify the approval and protocol version.
+Approval is the terminal action in this package. Require an exact human decision naming the selected candidate SHA-256. Before approval, require exactly one current accepted validation record bound to that hash, no `fail` validation finding, and at least one bound scorecard with no `fail` finding. Validation and scoring must be at or after candidate generation; approval must be at or after both. Do not publish, schedule, authenticate to X, or create a publication receipt. A later publisher must independently verify the same gate evidence, approval, and protocol version.
 
 ## Compatibility
 
-Artifacts are harness-neutral JSON, JSONL, and Markdown. Canonical candidates, scorecards, and manifests remain closed schemas: consumers must not add strategy, generation-context, execution, failure, partial-state, or sidecar fields to them. Consumers may add files and may extend the two sidecars only under an owned key inside `extensions`; unknown namespaced extensions must remain ignorable. Sidecars bind back to canonical artifacts through existing run IDs, candidate IDs, and candidate SHA-256 values, not new manifest fields. Consumers must not change v1 field meaning, accepted IDs, normalization, hash input, hard gates, or approval semantics. Cite the run ID and protocol version whenever artifacts move between harnesses.
+Artifacts are harness-neutral JSON, JSONL, and Markdown. Canonical candidates, validations, scorecards, and manifests remain closed schemas: consumers must not add strategy, generation-context, execution, failure, partial-state, or sidecar fields to them. Consumers may add files and may extend the two sidecars only under an owned key inside `extensions`; unknown namespaced extensions must remain ignorable. Sidecars bind back to canonical artifacts through existing run IDs, candidate IDs, and candidate SHA-256 values, not new manifest fields. Consumers must not change v1 field meaning, accepted IDs, normalization, JCS hash input, hard gates, or approval semantics. Cite the run ID and protocol version whenever artifacts move between harnesses.

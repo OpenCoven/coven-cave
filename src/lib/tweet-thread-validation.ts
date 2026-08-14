@@ -15,6 +15,13 @@ import type {
   DeterministicFinding,
   ThreadBrief,
   ThreadCandidate,
+  ThreadPostMeasurement,
+  ThreadValidationResult,
+} from "./tweet-thread-protocol.ts";
+
+export type {
+  ThreadPostMeasurement,
+  ThreadValidationResult,
 } from "./tweet-thread-protocol.ts";
 
 const { extractUrls, parseTweet } = twitterText;
@@ -27,23 +34,6 @@ const IMAGE_DEPENDENT_RE = /\b(?:(?:only\s+)?(?:shown|visible|available|provided
 const GENERIC_ALT_TEXT = new Set(["image", "chart", "screenshot", "graphic", "photo", "diagram"]);
 const FINDING_MESSAGE_MAX_LENGTH = 2_000;
 const FINDING_MESSAGE_TRUNCATION_MARKER = "… [truncated]";
-
-export interface ThreadPostMeasurement {
-  postId: string;
-  weightedLength: number;
-  urlCount: number;
-  hashtagCount: number;
-  repeatedHashtagCount: number;
-  repeatedEmojiRuns: number;
-  linkDensity: number;
-}
-
-export interface ThreadValidationResult {
-  candidateSha256: string | null;
-  accepted: boolean;
-  findings: DeterministicFinding[];
-  measurements: ThreadPostMeasurement[];
-}
 
 type UnknownRecord = Record<string, unknown>;
 

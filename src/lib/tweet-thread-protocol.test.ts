@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import canonicalize from "canonicalize";
 import { Value } from "typebox/value";
 
 import * as protocolApi from "./tweet-thread-protocol.ts";
@@ -23,11 +24,35 @@ import {
   normalizeThreadBrief,
   serializeCanonicalThreadCandidate,
 } from "./tweet-thread-protocol.ts";
-import type { PublishReceipt } from "./tweet-thread-protocol.ts";
+import type { DeterministicFinding, PublishReceipt } from "./tweet-thread-protocol.ts";
 
 const TIMESTAMP = "2026-08-14T12:00:00.000Z";
 const OTHER_TIMESTAMP = "2026-08-14T12:05:00.000Z";
 type PublishedReceipt = Extract<PublishReceipt, { status: "published" }>;
+
+assert.equal(
+  canonicalize([333333333.33333329, 1e30, 4.50, 2e-3, 1e-7, -0]),
+  "[333333333.3333333,1e+30,4.5,0.002,1e-7,0]",
+  "RFC 8785 number serialization follows ECMAScript, including 1e-7 and negative zero",
+);
+assert.equal(
+  canonicalize({
+    "\u20ac": "Euro Sign",
+    "\r": "Carriage Return",
+    "\ufb33": "Hebrew Letter Dalet With Dagesh",
+    "1": "One",
+    "\ud83d\ude00": "Emoji: Grinning Face",
+    "\u0080": "Control",
+    "\u00f6": "Latin Small Letter O With Diaeresis",
+  }),
+  '{"\\r":"Carriage Return","1":"One","\u0080":"Control","\u00f6":"Latin Small Letter O With Diaeresis","\u20ac":"Euro Sign","\ud83d\ude00":"Emoji: Grinning Face","\ufb33":"Hebrew Letter Dalet With Dagesh"}',
+  "RFC 8785 sorts object keys by UTF-16 code units independently of insertion order",
+);
+assert.equal(
+  canonicalize({ text: "\b\t\n\f\r\"\\\u0000" }),
+  '{"text":"\\b\\t\\n\\f\\r\\"\\\\\\u0000"}',
+  "RFC 8785 uses the required JSON escape forms",
+);
 
 function validBrief() {
   return {
@@ -230,6 +255,37 @@ function validScorecard(candidateSha256 = SHA_A) {
   };
 }
 
+function validValidationRecord(candidateSha256 = SHA_A) {
+  return {
+    protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
+    validationId: "validation-portable-launch",
+    candidateSha256,
+    validatedAt: OTHER_TIMESTAMP,
+    accepted: true,
+    findings: [],
+    measurements: [
+      {
+        postId: "post-1",
+        weightedLength: 73,
+        urlCount: 0,
+        hashtagCount: 0,
+        repeatedHashtagCount: 0,
+        repeatedEmojiRuns: 0,
+        linkDensity: 0,
+      },
+      {
+        postId: "post-2",
+        weightedLength: 67,
+        urlCount: 0,
+        hashtagCount: 0,
+        repeatedHashtagCount: 0,
+        repeatedEmojiRuns: 0,
+        linkDensity: 0,
+      },
+    ],
+  };
+}
+
 function validApproval(candidateSha256 = SHA_A) {
   return {
     protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
@@ -315,6 +371,7 @@ function validManifest() {
     brief: validBrief(),
     voiceProfile: validVoiceProfile(),
     candidates: [validCandidate()],
+    validations: [validValidationRecord()],
     scorecards: [validScorecard()],
     approvals: [validApproval()],
     publishReceipts: [validPublishReceipt()],
@@ -332,11 +389,73 @@ function expectValidationError(fn: () => unknown): TweetThreadProtocolValidation
   assert.fail("Expected TweetThreadProtocolValidationError");
 }
 
+const validationProtocolApi = protocolApi as unknown as {
+  ThreadPostMeasurementSchema?: Parameters<typeof Value.Check>[0];
+  ThreadValidationRecordSchema?: Parameters<typeof Value.Check>[0];
+  createThreadValidationRecord?: (
+    result: {
+      candidateSha256: string | null;
+      accepted: boolean;
+      findings: DeterministicFinding[];
+      measurements: ReturnType<typeof validValidationRecord>["measurements"];
+    },
+    validationId: string,
+    validatedAt: string,
+  ) => ReturnType<typeof validValidationRecord>;
+};
+assert.ok(
+  validationProtocolApi.ThreadPostMeasurementSchema,
+  "the protocol exports the canonical post measurement schema",
+);
+assert.ok(
+  validationProtocolApi.ThreadValidationRecordSchema,
+  "the protocol exports the canonical validation record schema",
+);
+assert.equal(
+  typeof validationProtocolApi.createThreadValidationRecord,
+  "function",
+  "the protocol exports a pure validation-record constructor",
+);
+
 assert.ok(Value.Check(ObjectiveWeightsSchema, validBrief().objectiveWeights));
 assert.equal(
   Value.Check(ObjectiveWeightsSchema, { ...validBrief().objectiveWeights, factuality: 1.1 }),
   false,
   "objective weights must stay within 0..1",
+);
+const zeroObjectiveWeights = {
+  factuality: 0,
+  provenance: 0,
+  accessibility: 0,
+  voice: 0,
+  coherence: 0,
+  engagement: 0,
+};
+assert.equal(
+  Value.Check(ObjectiveWeightsSchema, zeroObjectiveWeights),
+  false,
+  "objective weights require at least one positive dimension",
+);
+assert.throws(
+  () => normalizeThreadBrief({
+    ...validBrief(),
+    objectiveWeights: zeroObjectiveWeights,
+  }),
+  (error) =>
+    error instanceof TweetThreadProtocolValidationError
+    && error.issues.some((issue) => /objectiveWeights.*positive/i.test(issue)),
+  "brief normalization rejects an all-zero objective",
+);
+assert.equal(
+  Value.Check(ThreadCandidateSchema, {
+    ...validCandidate(),
+    brief: {
+      ...validBrief(),
+      objectiveWeights: zeroObjectiveWeights,
+    },
+  }),
+  false,
+  "candidate schemas reject an all-zero objective",
 );
 
 const briefWithUnknownKey = { ...validBrief(), unexpected: true };
@@ -566,6 +685,78 @@ assert.equal(
 
 assert.ok(Value.Check(ThreadCandidateSchema, validCandidate()));
 assert.doesNotThrow(() => assertValidThreadCandidate(validCandidate()));
+assert.ok(Value.Check(
+  validationProtocolApi.ThreadPostMeasurementSchema!,
+  validValidationRecord().measurements[0],
+));
+assert.equal(
+  Value.Check(validationProtocolApi.ThreadPostMeasurementSchema!, {
+    ...validValidationRecord().measurements[0],
+    linkDensity: 2,
+  }),
+  true,
+  "measurement schema admits validator ratios above one when multiple URLs occur in one text token",
+);
+assert.ok(Value.Check(
+  validationProtocolApi.ThreadValidationRecordSchema!,
+  validValidationRecord(),
+));
+const validationResultInput = {
+  candidateSha256: SHA_A,
+  accepted: true,
+  findings: [],
+  measurements: validValidationRecord().measurements,
+};
+const constructedValidation = validationProtocolApi.createThreadValidationRecord!(
+  validationResultInput,
+  "validation-constructed",
+  OTHER_TIMESTAMP,
+);
+assert.deepEqual(constructedValidation, {
+  ...validValidationRecord(),
+  validationId: "validation-constructed",
+});
+assert.notEqual(
+  constructedValidation.measurements,
+  validationResultInput.measurements,
+  "validation record construction does not retain the caller's mutable measurement array",
+);
+assert.throws(
+  () => validationProtocolApi.createThreadValidationRecord!(
+    { ...validationResultInput, candidateSha256: null },
+    "validation-missing-sha",
+    OTHER_TIMESTAMP,
+  ),
+  TweetThreadProtocolValidationError,
+  "a validation record requires a candidate hash",
+);
+for (const result of [
+  {
+    ...validationResultInput,
+    accepted: true,
+    findings: [{
+      findingId: "finding-accepted-fail",
+      code: "hard-failure",
+      severity: "fail" as const,
+      message: "A hard gate failed.",
+    }],
+  },
+  {
+    ...validationResultInput,
+    accepted: false,
+    findings: [],
+  },
+]) {
+  assert.throws(
+    () => validationProtocolApi.createThreadValidationRecord!(
+      result,
+      "validation-contradictory",
+      OTHER_TIMESTAMP,
+    ),
+    TweetThreadProtocolValidationError,
+    "accepted must exactly agree with the absence of fail findings",
+  );
+}
 assert.equal(
   serializeCanonicalThreadCandidate(validCandidate()),
   EXPECTED_CANONICAL_CANDIDATE,
@@ -639,6 +830,53 @@ assert.equal(
   KNOWN_CANDIDATE_SHA256,
   "candidate hashing is independent of object property insertion order while preserving array order",
 );
+const jcsNumberCandidate = validCandidateContent("candidate-jcs-numbers");
+jcsNumberCandidate.brief.objectiveWeights = {
+  factuality: 1e-7,
+  provenance: -0,
+  accessibility: 0,
+  voice: 0,
+  coherence: 0,
+  engagement: 0,
+};
+jcsNumberCandidate.voiceProfile = {
+  ...jcsNumberCandidate.voiceProfile,
+  tone: "Escapes: \b\t\n\f\r\"\\",
+};
+const jcsNumberText = serializeCanonicalThreadCandidate(jcsNumberCandidate);
+assert.match(jcsNumberText, /"factuality":1e-7/);
+assert.match(jcsNumberText, /"provenance":0/);
+assert.match(jcsNumberText, /"tone":"Escapes: \\b\\t\\n\\f\\r\\"\\\\"/);
+assert.equal(
+  jcsNumberText.includes('"provenance":-0'),
+  false,
+  "JCS serializes negative zero as zero",
+);
+assert.throws(
+  () => serializeCanonicalThreadCandidate({
+    ...jcsNumberCandidate,
+    brief: {
+      ...jcsNumberCandidate.brief,
+      objectiveWeights: {
+        ...jcsNumberCandidate.brief.objectiveWeights,
+        factuality: Number.NaN,
+      },
+    },
+  }),
+  /schema|json|jcs|canonical/i,
+  "canonical serialization rejects non-JSON numeric values through the candidate schema",
+);
+assert.throws(
+  () => serializeCanonicalThreadCandidate({
+    ...jcsNumberCandidate,
+    voiceProfile: {
+      ...jcsNumberCandidate.voiceProfile,
+      tone: "Unpaired surrogate \ud800",
+    },
+  }),
+  /schema|json|jcs|canonical/i,
+  "canonical serialization rejects strings outside the Unicode scalar-value domain required by JCS",
+);
 
 const mutatedPostCandidateError = expectValidationError(
   () => assertValidThreadCandidate({
@@ -664,10 +902,7 @@ for (const field of ["summary", "sourceLabel"] as const) {
   );
   const candidate = { ...validCandidate(), evidence };
   const whitespaceEvidenceError = expectValidationError(
-    () => assertValidThreadCandidate({
-      ...candidate,
-      candidateSha256: computeThreadCandidateSha256(candidate),
-    }),
+    () => assertValidThreadCandidate(candidate),
   );
   assert.match(
     whitespaceEvidenceError.issues.join("\n"),
@@ -1242,6 +1477,28 @@ function validBoundManifest() {
   };
 }
 
+function failFinding(findingId: string) {
+  return {
+    findingId,
+    code: "hard-gate-failed",
+    severity: "fail" as const,
+    message: "A deterministic hard gate failed.",
+  };
+}
+
+function scorecardWithFail(candidateSha256 = SHA_A) {
+  return {
+    ...validScorecard(candidateSha256),
+    dimensions: {
+      ...validScorecard(candidateSha256).dimensions,
+      factuality: {
+        ...validScorecard(candidateSha256).dimensions.factuality,
+        findings: [failFinding("finding-scorecard-hard-fail")],
+      },
+    },
+  };
+}
+
 function uncertainReceiptWithKnownPrefix(candidateSha256 = SHA_A) {
   return {
     ...receiptWithoutOutcome("uncertain", "reply-dispatch-ambiguous"),
@@ -1307,6 +1564,133 @@ checkInvariant("publication requires an approval at or before the attempt", () =
     observations: [],
   }));
   assert.match(laterApprovalError.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+});
+
+checkInvariant("approved candidates require exactly one accepted current validation", () => {
+  for (const validations of [
+    [],
+    [validValidationRecord(), {
+      ...validValidationRecord(),
+      validationId: "validation-duplicate-current",
+    }],
+  ]) {
+    const error = expectValidationError(() => assertValidThreadRunManifest({
+      ...validManifest(),
+      validations,
+      publishReceipts: [],
+      observations: [],
+    }));
+    assert.match(error.issues.join("\n"), /approved.*exactly one.*validation|validation.*exactly one.*approved/i);
+  }
+});
+
+checkInvariant("validation records bind to a manifest candidate hash", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validManifest(),
+    validations: [validValidationRecord(SHA_B)],
+    approvals: [],
+    publishReceipts: [],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /validations\[0\].*candidate sha.*does not match any candidate/i);
+});
+
+checkInvariant("validation accepted state cannot contradict fail findings", () => {
+  for (const validation of [
+    {
+      ...validValidationRecord(),
+      findings: [failFinding("finding-validation-accepted-fail")],
+    },
+    {
+      ...validValidationRecord(),
+      accepted: false,
+    },
+  ]) {
+    const error = expectValidationError(() => assertValidThreadRunManifest({
+      ...validManifest(),
+      validations: [validation],
+      approvals: [],
+      publishReceipts: [],
+      observations: [],
+    }));
+    assert.match(error.issues.join("\n"), /validations\[0\]\.accepted.*fail/i);
+  }
+});
+
+checkInvariant("validation and scorecard findings may share one stable warning identity", () => {
+  const sharedWarning = {
+    findingId: "finding-shared-warning",
+    code: "shared-warning",
+    severity: "warn" as const,
+    message: "The same warning is preserved across deterministic and judged evidence.",
+  };
+  assert.doesNotThrow(() => assertValidThreadRunManifest({
+    ...validManifest(),
+    validations: [{
+      ...validValidationRecord(),
+      findings: [sharedWarning],
+    }],
+    scorecards: [{
+      ...validScorecard(),
+      dimensions: {
+        ...validScorecard().dimensions,
+        factuality: {
+          ...validScorecard().dimensions.factuality,
+          findings: [sharedWarning],
+        },
+      },
+    }],
+  }));
+});
+
+checkInvariant("validation records cannot predate candidate generation", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validManifest(),
+    validations: [{
+      ...validValidationRecord(),
+      validatedAt: BEFORE_GENERATION_TIMESTAMP,
+    }],
+    approvals: [],
+    publishReceipts: [],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /validations\[0\]\.validatedAt.*candidates\[0\]\.generatedAt/i);
+});
+
+checkInvariant("approval follows its accepted validation and clean scorecard", () => {
+  const validationAfterApproval = expectValidationError(() => assertValidThreadRunManifest({
+    ...validManifest(),
+    validations: [{
+      ...validValidationRecord(),
+      validatedAt: LATER_TIMESTAMP,
+    }],
+    publishReceipts: [],
+    observations: [],
+  }));
+  assert.match(validationAfterApproval.issues.join("\n"), /approvals\[0\]\.decidedAt.*validations\[0\]\.validatedAt/i);
+
+  const scorecardAfterApproval = expectValidationError(() => assertValidThreadRunManifest({
+    ...validManifest(),
+    scorecards: [{
+      ...validScorecard(),
+      scoredAt: LATER_TIMESTAMP,
+    }],
+    publishReceipts: [],
+    observations: [],
+  }));
+  assert.match(scorecardAfterApproval.issues.join("\n"), /approvals\[0\]\.decidedAt.*scorecards\[0\]\.scoredAt/i);
+});
+
+checkInvariant("approval requires a bound scorecard with no fail finding", () => {
+  for (const scorecards of [[], [scorecardWithFail()]]) {
+    const error = expectValidationError(() => assertValidThreadRunManifest({
+      ...validManifest(),
+      scorecards,
+      publishReceipts: [],
+      observations: [],
+    }));
+    assert.match(error.issues.join("\n"), /approved.*scorecard.*no fail|scorecard.*no fail.*approved/i);
+  }
 });
 
 checkInvariant("approval decisions cannot predate candidate generation", () => {
@@ -1390,6 +1774,24 @@ checkInvariant("all active publication states require approval", () => {
       observations: [],
     }));
     assert.match(error.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+  }
+});
+
+checkInvariant("all active publication states require current deterministic gate evidence", () => {
+  for (const receipt of [
+    receiptWithoutOutcome("publishing"),
+    validPublishReceipt(),
+    validPartialPublishReceipt(),
+    uncertainReceiptWithKnownPrefix(),
+    receiptWithoutOutcome("uncertain", "dispatch-ambiguous"),
+  ]) {
+    const error = expectValidationError(() => assertValidThreadRunManifest({
+      ...validBoundManifest(),
+      validations: [],
+      publishReceipts: [receipt],
+      observations: [],
+    }));
+    assert.match(error.issues.join("\n"), /publishReceipts\[0\].*exactly one.*validation|validation.*publishReceipts\[0\]/i);
   }
 });
 

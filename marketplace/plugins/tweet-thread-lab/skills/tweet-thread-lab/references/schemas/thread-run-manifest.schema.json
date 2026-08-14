@@ -133,6 +133,74 @@
         },
         "objectiveWeights": {
           "additionalProperties": false,
+          "anyOf": [
+            {
+              "properties": {
+                "factuality": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "factuality"
+              ]
+            },
+            {
+              "properties": {
+                "provenance": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "provenance"
+              ]
+            },
+            {
+              "properties": {
+                "accessibility": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "accessibility"
+              ]
+            },
+            {
+              "properties": {
+                "voice": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "voice"
+              ]
+            },
+            {
+              "properties": {
+                "coherence": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "coherence"
+              ]
+            },
+            {
+              "properties": {
+                "engagement": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "engagement"
+              ]
+            }
+          ],
           "properties": {
             "accessibility": {
               "maximum": 1,
@@ -269,6 +337,74 @@
               },
               "objectiveWeights": {
                 "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "properties": {
+                      "factuality": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "factuality"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "provenance": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "provenance"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "accessibility": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "accessibility"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "voice": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "voice"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "coherence": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "coherence"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "engagement": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "engagement"
+                    ]
+                  }
+                ],
                 "properties": {
                   "accessibility": {
                     "maximum": 1,
@@ -1702,6 +1838,162 @@
       "maxItems": 64,
       "type": "array"
     },
+    "validations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "candidateSha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "claimId": {
+                  "maxLength": 128,
+                  "minLength": 7,
+                  "pattern": "^claim-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "code": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "findingId": {
+                  "maxLength": 128,
+                  "minLength": 9,
+                  "pattern": "^finding-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "message": {
+                  "maxLength": 2000,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "postId": {
+                  "maxLength": 32,
+                  "minLength": 6,
+                  "pattern": "^post-[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "severity": {
+                  "anyOf": [
+                    {
+                      "const": "info",
+                      "type": "string"
+                    },
+                    {
+                      "const": "warn",
+                      "type": "string"
+                    },
+                    {
+                      "const": "fail",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "findingId",
+                "code",
+                "severity",
+                "message"
+              ],
+              "type": "object"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          },
+          "measurements": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hashtagCount": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "linkDensity": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "postId": {
+                  "maxLength": 32,
+                  "minLength": 6,
+                  "pattern": "^post-[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "repeatedEmojiRuns": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "repeatedHashtagCount": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "urlCount": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "weightedLength": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "postId",
+                "weightedLength",
+                "urlCount",
+                "hashtagCount",
+                "repeatedHashtagCount",
+                "repeatedEmojiRuns",
+                "linkDensity"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "protocolVersion": {
+            "const": "opencoven.tweet-thread.v1",
+            "type": "string"
+          },
+          "validatedAt": {
+            "format": "date-time",
+            "maxLength": 24,
+            "minLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          },
+          "validationId": {
+            "maxLength": 128,
+            "minLength": 12,
+            "pattern": "^validation-[a-z0-9-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "validationId",
+          "candidateSha256",
+          "validatedAt",
+          "accepted",
+          "findings",
+          "measurements"
+        ],
+        "type": "object"
+      },
+      "maxItems": 64,
+      "type": "array"
+    },
     "voiceProfile": {
       "additionalProperties": false,
       "properties": {
@@ -1769,6 +2061,7 @@
     "brief",
     "voiceProfile",
     "candidates",
+    "validations",
     "scorecards",
     "approvals",
     "publishReceipts",

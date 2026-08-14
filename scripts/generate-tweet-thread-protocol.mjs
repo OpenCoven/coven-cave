@@ -14,11 +14,13 @@ import {
   ThreadCandidateSchema,
   ThreadRunManifestSchema,
   ThreadScorecardSchema,
+  ThreadValidationRecordSchema,
 } from "../src/lib/tweet-thread-protocol.ts";
 
 export const PROTOCOL_SCHEMA_FILES = new Map([
   ["thread-brief.schema.json", ThreadBriefSchema],
   ["thread-candidate.schema.json", ThreadCandidateSchema],
+  ["thread-validation-record.schema.json", ThreadValidationRecordSchema],
   ["thread-scorecard.schema.json", ThreadScorecardSchema],
   ["thread-run-manifest.schema.json", ThreadRunManifestSchema],
 ]);
