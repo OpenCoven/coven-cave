@@ -161,6 +161,7 @@ import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
+import { RightChatPanel } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -291,6 +292,7 @@ export function Workspace() {
   useSurfaceWarmup();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
+  const [rightChatOpen, setRightChatOpen] = useState(false);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
   // (declared above startFamiliarChat) can call it without a TDZ, and without
   // workspace self-dispatching a chat-nav event. Assigned in an effect below.
@@ -349,6 +351,7 @@ export function Workspace() {
   } = useProjects({ familiarId: projectGateCandidateFamiliarId });
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsScopeFamiliarId, setSessionsScopeFamiliarId] = useState<string | null | undefined>(undefined);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -1525,6 +1528,7 @@ export function Workspace() {
         // reference when nothing changed so an unchanged list doesn't re-render
         // every sessions consumer (chat list, rails, badges) for nothing.
         setSessions((prev) => (sameSessionList(prev, visibleSessions) ? prev : visibleSessions));
+        setSessionsScopeFamiliarId(capturedActiveId);
         setSessionsLoaded(true);
         baseSessionsApplied = true;
       } catch {
@@ -3738,6 +3742,31 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
+  const rightChat = (
+    <RightChatPanel
+      open={rightChatOpen}
+      familiars={familiars}
+      activeFamiliar={active}
+      sessions={sessions}
+      sessionsLoaded={sessionsLoaded}
+      sessionsError={sessionsError}
+      sessionsScopeFamiliarId={sessionsScopeFamiliarId}
+      familiarsLoaded={familiarsLoaded}
+      familiarsError={familiarsError}
+      daemonRunning={daemonRunning}
+      onClose={() => shellRef.current?.closeRightChat()}
+      onSetActiveFamiliar={setActiveId}
+      onRetryFamiliars={() => void loadFamiliars()}
+      onRetrySessions={() => void loadSessions()}
+      onSessionStarted={loadSessions}
+      onSessionsChanged={loadSessions}
+      onSessionsDeleted={handleSessionsDeleted}
+      onSlashFromChat={handleSlashIntent}
+      onOpenOnboarding={openOnboarding}
+      onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+      onOpenUrl={openUrlInApp}
+    />
+  );
   // The standalone "Manage familiars" drawer is gone — Chat → Familiar →
   // Settings is the single source of truth. `redirectToChat` routes every
   // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
@@ -3778,6 +3807,8 @@ export function Workspace() {
         onDropSplitPage={openSplitPage}
         navPolicy={mode === "chat" ? "chat-contextual" : "remembered"}
         onNavOpenChange={setNavOpen}
+        rightChat={rightChat}
+        onRightChatOpenChange={setRightChatOpen}
         topBar={({ navDrawerOpen }) => (
           <>
             <FamiliarMenuBar

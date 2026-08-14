@@ -418,6 +418,13 @@ assert.match(
   /<FocusTrapOwnerHiddenContext\.Provider value=\{!open\}>\s*\n\s*\{transientErrorHeadline/,
   "the fully resolved aside — the branch that actually mounts ChatRouter — wraps its content in the same owner-hidden boundary",
 );
+
+const workspaceSource = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+assert.match(workspaceSource, /const \[rightChatOpen, setRightChatOpen\] = useState\(false\)/, "Workspace receives shell visibility for first-open resolution");
+assert.match(workspaceSource, /const rightChat = \([\s\S]*?<RightChatPanel/, "Workspace creates one persistent auxiliary controller");
+assert.match(workspaceSource, /rightChat=\{rightChat\}/, "the controller is supplied independently of the active surface");
+assert.match(workspaceSource, /onRightChatOpenChange=\{setRightChatOpen\}/, "Shell visibility reaches the controller");
+assert.doesNotMatch(workspaceSource, /mode === "chat" \? rightChat/, "the auxiliary panel is not limited to the Chat destination");
 assert.match(
   source,
   /<\/ChatRouter>|\/>\s*\n\s*<\/div>\s*\n\s*<\/FocusTrapOwnerHiddenContext\.Provider>/,
