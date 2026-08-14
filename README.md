@@ -169,7 +169,10 @@ integration.
 | `marketplace/`  | Seeded OpenCoven marketplace catalog data                               |
 | `workflows/`    | OpenCoven workflow definitions                                          |
 
-For deeper design context, start with [`docs/golden-paths.md`](docs/golden-paths.md),
+[`docs/README.md`](docs/README.md) indexes every document there and marks each
+one living, program, historical, or tombstone — read that before trusting a doc
+to describe current behavior. For deeper design context, start with
+[`docs/golden-paths.md`](docs/golden-paths.md),
 [`docs/coven-design-language.md`](docs/coven-design-language.md), and
 [`docs/multi-session-coordination.md`](docs/multi-session-coordination.md).
 
