@@ -17,20 +17,23 @@ runtime that has bound an unexpired capability to its selected Cave
 conversation may invoke the audit. There is deliberately no browser endpoint
 that accepts familiar/session IDs and starts a host process.
 
-The desktop app resolves the helper and Windows PowerShell paths from the
-installer-owned, ACL-protected `coven-host-audit.manifest.json` located beside
-the Cave executable. This supports all-user installations on non-`C:` drives
-without trusting PATH, environment variables, the working directory, registry,
-or a browser request. The manifest names the separately deployed helper and
-the native PowerShell executable; both are validated as absolute Windows
-executables before use. The helper accepts one fixed operation:
-`hyperv-inventory --format json`. Before every invocation Windows
-must report an Authenticode `Valid` chain and the expected `CN=CompleteTech`
-publisher subject; any
-missing, altered, expired, or differently signed helper fails closed. The
-helper is responsible for requesting UAC only when that inventory needs
-elevation. It may return host, VM, switch, checkpoint, VHD-chain, and
-integration-service inventory. It must reject arbitrary PowerShell, scripts,
+## Future activation-release requirements
+
+The future activation release must package a real helper and an
+installer-owned, ACL-protected `coven-host-audit.manifest.json` beside the Cave
+executable. It must prove containment, ownership, ACL, and reparse-point safety
+for both manifest and helper, while supporting all-user installations on
+non-`C:` drives without trusting PATH, environment variables, the working
+directory, registry, or a browser request. The manifest must name the helper
+and native PowerShell executable and validate both as absolute Windows
+executables before use.
+
+That release must restrict the helper to `hyperv-inventory --format json` and,
+before every invocation, require an Authenticode `Valid` chain and the expected
+`CN=CompleteTech` publisher subject. Missing, altered, expired, or differently
+signed helpers must fail closed. The helper must request UAC only when that
+inventory needs elevation, return only host, VM, switch, checkpoint, VHD-chain,
+and integration-service inventory, and reject arbitrary PowerShell, scripts,
 VM lifecycle actions, checkpoint changes, disk writes, network changes, and
 credential access.
 
