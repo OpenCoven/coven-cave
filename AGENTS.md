@@ -97,6 +97,25 @@
   in-flight edits from a worktree **wedged** in an abandoned merge or rebase —
   a state that otherwise reads as ordinary dirtiness and gets stepped around
   indefinitely. See the `pnpm wt:status` section of [`CLAUDE.md`](CLAUDE.md).
+- **If a branch you pushed disappears from `origin`, there are exactly two
+  causes — neither of them lost your work.** Nothing local explains either, which
+  is why they are named here (`cave-iy3l7`).
+  1. **The PR merged.** `delete_branch_on_merge` is on, so GitHub drops the head
+     branch. A squash merge lands a *different* commit on `main`, so the branch's
+     own tip is then on no remote ref — retire the worktree through the
+     archive-tag route, and expect the guard to block until a tag exists.
+  2. **The 40-branch cap rolled it back.** `.github/workflows/branch-cap.yml`
+     deletes a *newly created* branch when the repository exceeds 40
+     (`scripts/enforce-branch-cap.mjs`). The deletion is **remote-only** — your
+     local branch and worktree still hold every commit — and the workflow run
+     now says so in its error and its run summary. Push again after freeing
+     capacity; a `retention/<branch>-<sha>` tag may already hold the head, and
+     tags are exempt from the cap.
+
+  Tell them apart with `gh pr list --head <branch> --state all`: a merged PR is
+  cause 1, no PR at all is cause 2. Check the headroom before it bites with
+  `git ls-remote --heads origin | wc -l` — the workflow warns from three
+  creations out, but only on the run page.
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
