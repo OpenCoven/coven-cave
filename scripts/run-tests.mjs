@@ -1647,6 +1647,8 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/research-studio-providers.test.ts",
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
+  // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
+  "src/lib/use-auto-expand-new-groups.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
