@@ -50,6 +50,22 @@ test("inline-code and fenced-code marker examples stay literal and create no res
   assert.deepEqual(result.results, []);
 });
 
+test("backticks inside complete marker attributes cannot hide later result markers", () => {
+  const text = [
+    "Checks complete.",
+    '<coven:result id="tests" state="passed" label="`" />',
+    '<coven:result id="lint" state="running" label="Lint running" />',
+  ].join("\n");
+
+  const result = extractChatResultMarkers(text);
+
+  assert.equal(result.visible, "Checks complete.\n\n");
+  assert.deepEqual(result.results, [
+    { id: "tests", state: "passed", label: "`", source: "familiar" },
+    { id: "lint", state: "running", label: "Lint running", source: "familiar" },
+  ]);
+});
+
 test("partial trailing result markers stay hidden while pending and after settlement", () => {
   const text = 'Checks complete.\n<coven:result id="tests" state="passed" label="Focused';
 

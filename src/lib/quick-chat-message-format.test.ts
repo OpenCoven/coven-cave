@@ -367,3 +367,25 @@ test("quick-chat strips result markers and exposes familiar-authored results", (
     formatted.pieces.every((piece) => piece.kind !== "text" || !piece.text.includes("coven:result")),
   );
 });
+
+test("quick-chat keeps later authored results after backticks inside prior markers", () => {
+  const formatted = formatQuickChatAssistantMessage(
+    [
+      "Checks complete.",
+      '<coven:result id="tests" state="passed" label="`" />',
+      '<coven:result id="lint" state="running" label="Lint running" />',
+    ].join("\n"),
+    false,
+  );
+
+  assert.equal(formatted.copyText, "Checks complete.");
+  assert.deepEqual(formatted.pieces, [{ kind: "text", text: "Checks complete." }]);
+  assert.deepEqual(formatted.authoredResults, [
+    { id: "tests", state: "passed", label: "`", source: "familiar" },
+    { id: "lint", state: "running", label: "Lint running", source: "familiar" },
+  ]);
+  assert.doesNotMatch(formatted.copyText, /coven:result/);
+  assert.ok(
+    formatted.pieces.every((piece) => piece.kind !== "text" || !piece.text.includes("coven:result")),
+  );
+});

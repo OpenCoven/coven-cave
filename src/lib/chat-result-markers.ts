@@ -31,7 +31,7 @@ export function extractChatResultMarkers(
   if (!text || !text.includes("<coven:r")) return { visible: text, results: [] };
 
   const byId = new Map<string, TurnResult>();
-  const codeRanges = markdownCodeRanges(text);
+  const codeRanges = resultMarkerAwareCodeRanges(text);
   MARKER_RE.lastIndex = 0;
 
   let visible = text.replace(MARKER_RE, (marker, rawAttrs: string, index: number) => {
@@ -74,7 +74,7 @@ function parseResultMarker(rawAttrs: string): TurnResult | null {
 }
 
 function stripIncompleteResultTail(text: string): string {
-  const codeRanges = markdownCodeRanges(text);
+  const codeRanges = resultMarkerAwareCodeRanges(text);
   const tail = lastIndexOutsideRanges(text, "<coven:r", codeRanges);
   if (tail === -1) return text;
 
@@ -96,6 +96,19 @@ function hasUnquotedGt(text: string): boolean {
 
 function isResultAttrName(name: string): name is ResultAttrName {
   return name === "id" || name === "state" || name === "label";
+}
+
+function resultMarkerAwareCodeRanges(text: string): Array<[number, number]> {
+  return markdownCodeRanges(maskCompleteResultMarkers(text));
+}
+
+function maskCompleteResultMarkers(text: string): string {
+  MARKER_RE.lastIndex = 0;
+  return text.replace(MARKER_RE, (marker) => maskMarker(marker));
+}
+
+function maskMarker(text: string): string {
+  return text.replace(/[^\r\n]/g, " ");
 }
 
 function inRanges(ranges: Array<[number, number]>, index: number): boolean {
