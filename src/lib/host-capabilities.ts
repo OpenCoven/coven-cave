@@ -11,9 +11,8 @@ export const HOST_CAPABILITY_CATALOG = [
     platform: "win32",
     label: "Hyper-V audit",
     description: "Read VM, switch, checkpoint, VHD-chain, and integration-service inventory.",
-    // The broker ships in the follow-on platform PR. This foundation must not
-    // allow a capability merely because its future adapter has a name.
-    adapter: null,
+    // Registered by the concrete Windows broker in this stacked platform PR.
+    adapter: "windows-hyperv-broker",
   },
   {
     id: "linux.system.audit.read",
