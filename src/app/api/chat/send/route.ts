@@ -5718,4 +5718,6 @@ export async function executeChatSend(req: Request) {
   });
 }
 
-export { executeChatSend as POST };
+export async function POST(req: Request): Promise<Response> {
+  return executeChatSend(req);
+}
