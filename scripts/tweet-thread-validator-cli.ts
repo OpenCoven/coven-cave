@@ -19,7 +19,7 @@ class CliContractError extends Error {
 }
 
 function readJsonFile(label: "candidate" | "brief", filename: string): unknown {
-  let handle: number;
+  let handle: number | undefined;
   try {
     handle = openSync(filename, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch {
@@ -60,7 +60,7 @@ function readJsonFile(label: "candidate" | "brief", filename: string): unknown {
       throw new CliContractError(`${label} JSON could not be parsed.`);
     }
   } finally {
-    closeSync(handle);
+    if (handle !== undefined) closeSync(handle);
   }
 }
 
