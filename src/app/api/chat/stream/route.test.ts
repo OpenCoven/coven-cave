@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { GET } from "./route.ts";
+import { wireRunDetachCleanup } from "@/lib/server/chat-detach-cleanup";
 import {
   canonicalizeAndRecordRunStreamEvent,
   openRunBuffer,
   resetRunBuffersForTest,
   RUN_STREAM_EVENT_MAX_BYTES,
+  subscribeRunStream,
 } from "@/lib/server/chat-stream-buffer";
 import { chatSse } from "../send/chat-send-sse.ts";
 
@@ -189,48 +191,65 @@ test("send route tees both harness stream paths through the run buffer", () => {
   assert.ok((finishes?.length ?? 0) >= 3, "every stream exit (error + close paths) finishes the buffer");
 });
 
-test("re-attach disarms the detach-cap kill; the last tail re-arms only after the original abort", () => {
-  assert.match(
-    send,
-    /attach: \(\) => \{\s*if \(detachKillTimer != null\) \{\s*clearTimeout\(detachKillTimer\);\s*detachKillTimer = null;/,
-    "attach hook cancels the pending kill",
-  );
-  const rearms = send.match(/detach: \(\) => \{\s*if \((?:args\.)?req\.signal\.aborted\) armDetachKill\(\);/g);
-  assert.equal(rearms?.length, 3, "detach hooks re-arm only when the original request is gone — a resume tail closing can't kill a still-attached turn");
+test("detach cleanup reconciles pre-abort, reattach, and completion through real buffer hooks", (t) => {
+  resetRunBuffersForTest();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+
+  const abort = new AbortController();
+  abort.abort();
+  const run = openRunBuffer(["run-detach-lifecycle"]);
+  const firstTail = subscribeRunStream("run-detach-lifecycle", 0, () => {}, () => {});
+  assert.ok(firstTail && !firstTail.done, "the tail attaches before cleanup hooks are installed");
+
+  let kills = 0;
+  const complete = wireRunDetachCleanup({
+    runBuffer: run,
+    signal: abort.signal,
+    isStopRequested: () => false,
+    timeoutMs: 100,
+    onTimeout: () => { kills += 1; },
+  });
+  t.mock.timers.tick(100);
+  assert.equal(kills, 0, "a pre-aborted request never arms a kill while the existing tail is live");
+
+  firstTail.unsubscribe();
+  const reattachedTail = subscribeRunStream("run-detach-lifecycle", 0, () => {}, () => {});
+  assert.ok(reattachedTail && !reattachedTail.done, "the replacement tail attaches after a detach");
+  t.mock.timers.tick(100);
+  assert.equal(kills, 0, "reattach clears the timer armed by the last detach");
+
+  reattachedTail!.unsubscribe();
+  complete();
+  t.mock.timers.tick(100);
+  assert.equal(kills, 0, "completion clears pending cleanup and disables later tail transitions");
+  resetRunBuffersForTest();
 });
 
-test("a pre-aborted Gateway request arms one detach kill and completion clears it", () => {
-  const gatewayStart = send.indexOf('if (gatewayDispatch.kind === "accepted")');
-  const gatewayEnd = send.indexOf("const openclawLaunch = openClawLaunchCommand()", gatewayStart);
-  assert.ok(gatewayStart >= 0 && gatewayEnd > gatewayStart);
-  const gateway = send.slice(gatewayStart, gatewayEnd);
+test("a pre-aborted request with no live tail arms exactly one detach cleanup", (t) => {
+  resetRunBuffersForTest();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
 
-  assert.match(
-    gateway,
-    /const armDetachKill = \(\) => \{\s*if \(runHandle\.stopRequested \|\| detachKillTimer != null\) return;[\s\S]*?runBuffer\.setHooks\([\s\S]*?const onAbort = \(\) => armDetachKill\(\);\s*args\.req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\);[\s\S]*?if \(args\.req\.signal\.aborted\) onAbort\(\);/,
-    "the Gateway path checks a pre-aborted signal only after installing its hook and one-shot listener; the timer guard makes that arm idempotent",
-  );
-  assert.match(
-    gateway,
-    /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?args\.req\.signal\.removeEventListener\("abort", onAbort\);\s*if \(detachKillTimer != null\) clearTimeout\(detachKillTimer\);/,
-    "an actively completed Gateway turn removes the listener and clears its detach kill",
-  );
-});
+  const abort = new AbortController();
+  abort.abort();
+  const run = openRunBuffer(["run-detach-zero-tail"]);
+  let kills = 0;
+  const complete = wireRunDetachCleanup({
+    runBuffer: run,
+    signal: abort.signal,
+    isStopRequested: () => false,
+    timeoutMs: 100,
+    onTimeout: () => { kills += 1; },
+  });
 
-test("a pre-aborted CLI fallback request arms one detach kill and completion clears it", () => {
-  const fallbackStart = send.indexOf("const openclawLaunch = openClawLaunchCommand()");
-  const fallbackEnd = send.indexOf("const failChild =", fallbackStart);
-  assert.ok(fallbackStart >= 0 && fallbackEnd > fallbackStart);
-  const fallback = send.slice(fallbackStart, fallbackEnd);
-
-  assert.match(
-    fallback,
-    /const armDetachKill = \(\) => \{\s*if \(runHandle\.stopRequested \|\| detachKillTimer != null\) return;[\s\S]*?runBuffer\.setHooks\([\s\S]*?const onAbort = \(\) => armDetachKill\(\);\s*args\.req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\);[\s\S]*?if \(args\.req\.signal\.aborted\) onAbort\(\);/,
-    "the CLI fallback checks a pre-aborted signal only after installing its hook and one-shot listener; the timer guard makes that arm idempotent",
-  );
-  assert.match(
-    send.slice(fallbackStart),
-    /const onAbort = \(\) => armDetachKill\(\);\s*args\.req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\);[\s\S]*?args\.req\.signal\.removeEventListener\("abort", onAbort\);\s*if \(detachKillTimer != null\) clearTimeout\(detachKillTimer\);/,
-    "an actively completed CLI fallback turn removes the listener and clears its detach kill",
-  );
+  t.mock.timers.tick(100);
+  assert.equal(kills, 1, "the zero-tail pre-abort cleanup fires once");
+  const lateTail = subscribeRunStream("run-detach-zero-tail", 0, () => {}, () => {});
+  assert.ok(lateTail && !lateTail.done, "a late tail can still attach after the timeout fires");
+  lateTail!.unsubscribe();
+  t.mock.timers.tick(100);
+  assert.equal(kills, 1, "a fired cleanup cannot be re-armed by later tail transitions");
+  complete();
+  t.mock.timers.tick(100);
+  assert.equal(kills, 1, "completion remains idempotent after the timeout");
+  resetRunBuffersForTest();
 });

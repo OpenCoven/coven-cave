@@ -168,6 +168,7 @@ import {
   openRunBuffer,
   type RunBufferHandle,
 } from "@/lib/server/chat-stream-buffer";
+import { wireRunDetachCleanup } from "@/lib/server/chat-detach-cleanup";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
@@ -1099,31 +1100,17 @@ function openClawChatResponse(args: {
         const stopGateway = () => abortGateway("[tool cancelled by user]");
         const stopDetachedGateway = () => abortGateway("[tool did not settle before the Gateway turn ended]");
         const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
-        let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
         let detachTimeoutFired = false;
-        const armDetachKill = () => {
-          if (runHandle.stopRequested || detachKillTimer != null) return;
-          detachKillTimer = setTimeout(() => {
+        const disposeDetachCleanup = wireRunDetachCleanup({
+          runBuffer,
+          signal: args.req.signal,
+          isStopRequested: () => runHandle.stopRequested,
+          timeoutMs: CHAT_DETACH_MAX_MS,
+          onTimeout: () => {
             detachTimeoutFired = true;
             stopDetachedGateway();
-          }, CHAT_DETACH_MAX_MS);
-        };
-        runBuffer.setHooks({
-          attach: () => {
-            if (detachKillTimer != null) {
-              clearTimeout(detachKillTimer);
-              detachKillTimer = null;
-            }
-          },
-          detach: () => {
-            if (args.req.signal.aborted) armDetachKill();
           },
         });
-        const onAbort = () => armDetachKill();
-        args.req.signal.addEventListener("abort", onAbort, { once: true });
-        // AbortSignal does not replay an abort that happened before this
-        // Gateway branch finished installing its detach cleanup.
-        if (args.req.signal.aborted) onAbort();
         pushProgress("openclaw-response", "Waiting for OpenClaw Gateway response", "running");
         const gatewayResult = await gatewayDispatch.done;
         markChatRunTransportSettled(runHandle);
@@ -1132,8 +1119,7 @@ function openClawChatResponse(args: {
             ? "[tool cancelled by user]"
             : "[tool did not settle before the Gateway turn ended]",
         );
-        args.req.signal.removeEventListener("abort", onAbort);
-        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        disposeDetachCleanup();
         const durationMs = Date.now() - startedAt;
         const gatewayOutcome = resolveOpenClawGatewayOutcome(
           gatewayResult,
@@ -1331,30 +1317,13 @@ function openClawChatResponse(args: {
       // the turn finish server-side so resync recovers the full reply, bounded
       // by the detach cap in case nothing ever comes back for it.
       const runHandle = registerChatRun([args.body.runId, conversationId], killChild);
-      let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
-      const armDetachKill = () => {
-        if (runHandle.stopRequested || detachKillTimer != null) return;
-        detachKillTimer = setTimeout(killChild, CHAT_DETACH_MAX_MS);
-      };
-      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
-      // tail dropping re-arms it — but only once the ORIGINAL request is
-      // gone, so a resume tail closing can't kill a still-attached turn.
-      runBuffer.setHooks({
-        attach: () => {
-          if (detachKillTimer != null) {
-            clearTimeout(detachKillTimer);
-            detachKillTimer = null;
-          }
-        },
-        detach: () => {
-          if (args.req.signal.aborted) armDetachKill();
-        },
+      const disposeDetachCleanup = wireRunDetachCleanup({
+        runBuffer,
+        signal: args.req.signal,
+        isStopRequested: () => runHandle.stopRequested,
+        timeoutMs: CHAT_DETACH_MAX_MS,
+        onTimeout: killChild,
       });
-      const onAbort = () => armDetachKill();
-      args.req.signal.addEventListener("abort", onAbort, { once: true });
-      // AbortSignal does not replay an abort that happened before the CLI
-      // fallback installed its detach cleanup.
-      if (args.req.signal.aborted) onAbort();
 
       // First-turn visibility (cave-0g2x): the OpenClaw path knows its
       // conversation id up front, so persist the stub (and the default title)
@@ -1402,8 +1371,7 @@ function openClawChatResponse(args: {
           isError: true,
           responseMetadata,
         });
-        args.req.signal.removeEventListener("abort", onAbort);
-        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        disposeDetachCleanup();
         markChatRunProjectionSettled(runHandle);
         unregisterChatRun(runHandle);
         runBuffer.finish();
@@ -1452,8 +1420,7 @@ function openClawChatResponse(args: {
         }
         terminal = true;
         markChatRunTransportSettled(runHandle);
-        args.req.signal.removeEventListener("abort", onAbort);
-        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        disposeDetachCleanup();
         const durationMs = Date.now() - startedAt;
         // Identity stays cave-owned: the gateway's internal session id is
         // surfaced as diagnostics only, never adopted as the conversation
