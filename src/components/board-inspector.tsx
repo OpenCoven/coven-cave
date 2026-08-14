@@ -8,6 +8,7 @@ import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { assignedDisclosure, isPartial, type AssignedSourcesMeta } from "@/lib/github-assigned-meta";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
@@ -25,23 +26,31 @@ import {
   taskAsanaLinkFromAsanaItem,
 } from "@/lib/task-asana";
 import { Icon } from "@/lib/icon";
-import { useCopy } from "@/lib/use-copy";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
 import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
-import { openExternalUrl } from "@/lib/open-external";
+import {
+  cancelSystemBrowserUrlWindow,
+  openExternalUrl,
+  openSystemBrowserUrl,
+  reserveSystemBrowserUrlWindow,
+} from "@/lib/open-external";
 import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
 import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
 import type { CardPatch } from "@/lib/board-card-ops";
 import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 import { BoardInspectorDebug } from "@/components/board-inspector-debug";
+import { useProjectFamiliars } from "@/lib/use-project-familiars";
+import { useProjects } from "@/lib/use-projects";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -52,7 +61,7 @@ function formatAttachmentSize(size?: number): string {
   if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
   return `${(kb / 1024).toFixed(1)} MB`;
 }
-const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
+const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,read:org,repo,notifications&description=Cave+local";
 
 type LifecycleMove = { to: CardLifecycle; label: string; retry?: boolean };
 const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
@@ -81,7 +90,7 @@ type Props = {
   sessions: SessionRow[];
   projects: CaveProject[];
   onClose: () => void;
-  onPatch: (id: string, patch: CardPatch) => void;
+  onPatch: (id: string, patch: CardPatch) => void | boolean | Promise<boolean>;
   onMoveStatus: (id: string, status: CardStatus) => void;
   onDelete: (id: string) => Promise<void>;
   onCardReplaced: (card: Card) => void;
@@ -212,6 +221,11 @@ function GitHubAttachSection({
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [patRejected, setPatRejected] = useState(false);
+  // Completeness disclosure (cave-amx2m): the endpoint's per-source metadata,
+  // rendered as one quiet line so a capped or half-loaded list never wears a
+  // definitive "nothing assigned to you".
+  const [disclosure, setDisclosure] = useState<string | null>(null);
+  const [partial, setPartial] = useState(false);
   const [fetchKey, setFetchKey] = useState(0);
   const coarse = useIsCoarsePointer();
 
@@ -222,21 +236,27 @@ function GitHubAttachSection({
     setErr(null);
     fetch("/api/github/assigned", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean }) => {
+      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean; sources?: AssignedSourcesMeta }) => {
         // Drop a superseded/post-close response (open toggled or PAT re-saved).
         if (cancelled) return;
         if (d.ok) {
           setItems(d.items ?? []);
           setConfigured(d.configured ?? true);
           setPatRejected(false);
+          setDisclosure(d.sources ? assignedDisclosure(d.sources, (d.items ?? []).length) : null);
+          setPartial(d.sources ? isPartial(d.sources) : false);
         } else if (d.patInvalid) {
           // Rejected token: reopen the connect form (it was gated on
           // configured===false, unreachable with a stored-but-dead PAT).
           setItems([]);
           setConfigured(false);
           setPatRejected(true);
+          setDisclosure(null);
+          setPartial(false);
         } else {
           setErr(d.error ?? "failed");
+          setDisclosure(null);
+          setPartial(false);
         }
       })
       .catch(() => { if (!cancelled) setErr("fetch failed"); })
@@ -276,7 +296,9 @@ function GitHubAttachSection({
     const fam = familiars.find(
       (f) => f.display_name?.toLowerCase() === item.repo?.toLowerCase()
     );
-    if (fam) onPatch(card.id, { familiarId: fam.id });
+    // A session carries the prior familiar's harness/runtime context. Do not
+    // relabel it as this familiar merely because a GitHub assignment matched.
+    if (fam) onPatch(card.id, { familiarId: fam.id, sessionId: null });
   }
 
   const iconName = (k: string) => (KIND_ICON[k] ?? "ph:link") as IconName;
@@ -362,13 +384,28 @@ function GitHubAttachSection({
                 <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setPatRejected(false); setFetchKey((k) => k + 1); }} />
               </>
             )}
+            {/* cave-amx2m: the definitive empty claim is earned only by a
+                complete response — a half-loaded list says so instead. */}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
-                No open issues, PRs, or review requests assigned to you.
+                {partial
+                  ? "Couldn’t load all GitHub sources — there may be work this list can’t see."
+                  : "No open issues, PRs, or review requests assigned to you."}
+                {partial && (
+                  <button
+                    type="button"
+                    className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:2px_var(--space-2)]! [margin-left:6px]!"
+                    onClick={() => setFetchKey((k) => k + 1)}
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             )}
             {!loading && !err && configured !== false && items.length > 0 && filtered.length === 0 && (
-              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">No matches.</div>
+              <div className="[padding:var(--space-3)_10px]! [font-size:var(--text-xs)]! [color:var(--text-muted)]! [text-align:center]!">
+                {disclosure ? `No matches in what loaded — ${disclosure}` : "No matches."}
+              </div>
             )}
             {filtered.map((item) => {
               const attached = attachedUrls.has(item.url);
@@ -422,6 +459,27 @@ function GitHubAttachSection({
                 </div>
               );
             })}
+            {/* Completeness footer (cave-amx2m): rides under a non-empty list
+                whenever a source was capped or down, so partial never reads as
+                complete. */}
+            {!loading && !err && filtered.length > 0 && disclosure && (
+              <div
+                role="note"
+                className="[padding:6px_10px]! [font-size:var(--text-2xs)]! [color:var(--text-muted)]! [border-top:1px_solid_var(--border-hairline)]! [display:flex]! [align-items:center]! [gap:6px]!"
+              >
+                <Icon name={partial ? "ph:warning-circle" : "ph:info"} width={11} className="shrink-0" />
+                <span className="[flex:1]! [min-width:0]!">{disclosure}</span>
+                {partial && (
+                  <button
+                    type="button"
+                    className="board-toolbar-btn [font-size:var(--text-2xs)]! [padding:1px_6px]!"
+                    onClick={() => setFetchKey((k) => k + 1)}
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1120,8 +1178,120 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
+  const modelHarness = canonicalHarnessId(
+    currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
+  );
+  const runtimeModelInventory = useRuntimeModelInventory(modelHarness, currentFamiliar?.id ?? null);
+  const runtimeModelOptions = runtimeModelInventory.models;
+  const allowCustomModel = runtimeModelInventory.allowCustom;
+  const [modelCustomMode, setModelCustomMode] = useState(false);
+  const [customModelDraft, setCustomModelDraft] = useState(card.modelOverride ?? "");
+  const taskModelIsCustom = Boolean(
+    card.modelOverride && !runtimeModelOptions.some((option) => option.id === card.modelOverride),
+  );
+  // OpenCode and Grok discover model catalogs asynchronously. Keep a custom
+  // input mounted while it contains an unsaved edit, otherwise a late catalog
+  // response can replace the input with a select and discard what was typed.
+  const hasUnsavedCustomModelDraft = customModelDraft !== (card.modelOverride ?? "");
+  // Starting a task creates its session from the persisted card. Keep a model
+  // save queue in flight until it settles so selecting a model and immediately
+  // pressing Start work cannot create the session with the prior default. The
+  // queue also preserves intent when an input blur and a familiar change fire
+  // back-to-back: the familiar's clearing patch must win over the old custom id.
+  const pendingModelSaveRef = useRef<Promise<boolean> | null>(null);
+  const taskModelPatch = (modelOverride: string | null): CardPatch => ({
+    modelOverride,
+    modelOverrideHarness: modelOverride ? modelHarness || null : null,
+  });
+  const persistTaskModelPatch = (patch: CardPatch) => {
+    const previous = pendingModelSaveRef.current ?? Promise.resolve(true);
+    const pending = previous
+      .catch(() => false)
+      .then(() => Promise.resolve(onPatch(card.id, patch)))
+      .then((saved) => saved !== false)
+      .catch(() => false);
+    pendingModelSaveRef.current = pending;
+    void pending.finally(() => {
+      if (pendingModelSaveRef.current === pending) pendingModelSaveRef.current = null;
+    });
+  };
+  const openTaskWorkAfterModelSave = async () => {
+    const saved = await (pendingModelSaveRef.current ?? Promise.resolve(true));
+    if (saved) await onOpenTaskWork?.(card.id);
+  };
+  useEffect(() => {
+    setCustomModelDraft(card.modelOverride ?? "");
+  }, [card.modelOverride]);
+  const taskModelOptions = [
+    { value: "", label: "Familiar default" },
+    ...(taskModelIsCustom && card.modelOverride && !allowCustomModel
+      ? [{
+          value: card.modelOverride,
+          label: `${card.modelOverride} (not offered)`,
+          disabled: true,
+        }]
+      : []),
+    ...runtimeModelOptions.map((option) => ({ value: option.id, label: option.label })),
+    ...(allowCustomModel && runtimeModelOptions.length > 0
+      ? [{ value: "__custom__", label: "Custom…" }]
+      : []),
+  ];
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
+  const {
+    familiars: eligibleFamiliars,
+    loading: eligibleFamiliarsLoading,
+    loadedSuccessfully: eligibleFamiliarsLoaded,
+  } = useProjectFamiliars({ projectId: card.projectId ?? null });
+  // Cards can already have a familiar before their project is chosen (for
+  // example after an inline familiar assignment). In that direction, only
+  // expose projects the familiar can actually use for session launch.
+  const {
+    projects: accessibleProjects,
+    loading: accessibleProjectsLoading,
+    loadedSuccessfully: accessibleProjectsLoaded,
+  } = useProjects({ familiarId: card.familiarId, enabled: Boolean(card.familiarId) });
+  const projectPickerReady = !card.familiarId || (accessibleProjectsLoaded && !accessibleProjectsLoading);
+  const projectOptions = !card.familiarId
+    ? [
+        { value: "", label: "No project" },
+        ...projects.map((project) => ({ value: project.id, label: project.name })),
+      ]
+    : accessibleProjectsLoading
+      ? [{ value: "", label: "Loading accessible projects…", disabled: true }]
+      : !accessibleProjectsLoaded
+        ? [{ value: "", label: "Could not load accessible projects", disabled: true }]
+        : [
+            { value: "", label: "No project" },
+            ...accessibleProjects.map((project) => ({ value: project.id, label: project.name })),
+          ];
+
+  // Preserve an assignment that remains authorized, but fail closed if a
+  // project edit makes the card's familiar ineligible for its task launch.
+  useEffect(() => {
+    if (!card.projectId || !card.familiarId || !eligibleFamiliarsLoaded) return;
+    if (!eligibleFamiliars.some((familiar) => familiar.id === card.familiarId)) {
+      // A linked session belongs to the prior familiar/project context. Keep
+      // it from being reopened after the task is reassigned to an authorized
+      // familiar, which can use a different runtime or harness.
+      onPatch(card.id, { familiarId: null, sessionId: null });
+    }
+  }, [card.familiarId, card.id, card.projectId, eligibleFamiliars, eligibleFamiliarsLoaded, onPatch]);
+
+  const familiarPickerReady = !card.projectId || (eligibleFamiliarsLoaded && !eligibleFamiliarsLoading);
+  const familiarOptions = !card.projectId
+    ? [
+        { value: "", label: "Unassigned" },
+        ...familiars.map((familiar) => ({ value: familiar.id, label: familiar.display_name })),
+      ]
+    : eligibleFamiliarsLoading
+      ? [{ value: "", label: "Loading authorized familiars…", disabled: true }]
+      : !eligibleFamiliarsLoaded
+        ? [{ value: "", label: "Could not load authorized familiars", disabled: true }]
+        : [
+            { value: "", label: "Unassigned" },
+            ...eligibleFamiliars.map((familiar) => ({ value: familiar.id, label: familiar.display_name })),
+          ];
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
 
@@ -1227,6 +1397,58 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             </div>
 
             <div className="board-drawer-field">
+              <div className="board-drawer-field-label board-drawer-field-label--split">
+                <span>Project</span>
+                <button
+                  type="button"
+                  className="board-drawer-inline-link"
+                  onClick={openProjectsSurface}
+                  title="Open Projects"
+                >
+                  <Icon name="ph:folder-open" width={11} />
+                  Open Projects
+                </button>
+              </div>
+              <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
+                <span className="board-drawer-project-icon" aria-hidden>
+                  <Icon name="ph:folder" width={12} className="text-[var(--text-muted)]" />
+                </span>
+                <StandardSelect
+                  label="Project"
+                  className="board-drawer-field-select board-drawer-field-select--styled"
+                  value={projectPickerReady ? card.projectId ?? "" : ""}
+                  onChange={(next) => {
+                    const selectedProject = (card.familiarId ? accessibleProjects : projects)
+                      .find((project) => project.id === next) ?? null;
+                    // A familiar-first project list is server-scoped to that
+                    // familiar's session-launch access, so keep the valid
+                    // assignment. Its linked session may use another project.
+                    onPatch(card.id, {
+                      projectId: selectedProject?.id ?? null,
+                      cwd: selectedProject?.root ?? null,
+                      sessionId: null,
+                    });
+                  }}
+                  options={projectOptions}
+                  disabled={!projectPickerReady}
+                  showCaret={false}
+                />
+                <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+              </div>
+              {projects.length === 0 ? (
+                <p className="board-drawer-field-hint">
+                  No projects yet. Open Projects to add one, then choose it here.
+                </p>
+              ) : null}
+              {projects.length > 0 && !card.projectId && !card.cwd ? (
+                <p className="board-drawer-field-hint board-drawer-field-hint--nudge">
+                  No project set — task work can't start, and linked sessions won't open in the
+                  right project, until you pick one.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="board-drawer-field">
               <div className="board-drawer-field-label">Familiar</div>
               <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                 <span className="board-drawer-familiar-avatar" aria-hidden>
@@ -1239,16 +1461,81 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <StandardSelect
                   label="Familiar"
                   className="board-drawer-field-select board-drawer-field-select--styled"
-                  value={card.familiarId ?? ""}
-                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
-                  options={[
-                    { value: "", label: "Unassigned" },
-                    ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
-                  ]}
+                  value={familiarPickerReady ? card.familiarId ?? "" : ""}
+                  onChange={(next) => {
+                    setModelCustomMode(false);
+                    // Rebinding changes the runtime context; its linked session and
+                    // task-specific model cannot safely follow the new familiar.
+                    persistTaskModelPatch({
+                      familiarId: next || null,
+                      sessionId: null,
+                      ...taskModelPatch(null),
+                    });
+                  }}
+                  options={familiarOptions}
+                  disabled={!familiarPickerReady}
                   showCaret={false}
                 />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>
+            </div>
+
+            <div className="board-drawer-field">
+              <div className="board-drawer-field-label">Model · {inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}</div>
+              {runtimeModelInventory.loading ? (
+                <p className="board-drawer-field-hint" role="status">Loading model inventory…</p>
+              ) : (runtimeModelOptions.length > 0 || (taskModelIsCustom && !allowCustomModel)) &&
+                !modelCustomMode &&
+                (!taskModelIsCustom || !allowCustomModel) &&
+                (!hasUnsavedCustomModelDraft || !allowCustomModel) ? (
+                <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
+                  <span className="board-drawer-project-icon" aria-hidden>
+                    <Icon name="ph:brain" width={12} className="text-[var(--text-muted)]" />
+                  </span>
+                  <StandardSelect
+                    label="Model"
+                    className="board-drawer-field-select board-drawer-field-select--styled"
+                    value={card.modelOverride ?? ""}
+                    onChange={(next) => {
+                      if (next === "__custom__") {
+                        setModelCustomMode(true);
+                        setCustomModelDraft("");
+                        return;
+                      }
+                      persistTaskModelPatch(taskModelPatch(next || null));
+                    }}
+                    options={taskModelOptions}
+                    disabled={!currentFamiliar || Boolean(card.sessionId)}
+                    title={card.sessionId ? "Unlink work before changing the task model" : undefined}
+                    showCaret={false}
+                  />
+                  <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+                </div>
+              ) : allowCustomModel ? (
+                <input
+                  className="board-drawer-field-input"
+                  value={customModelDraft}
+                  onChange={(event) => setCustomModelDraft(event.target.value)}
+                  onBlur={() => {
+                    setModelCustomMode(false);
+                    persistTaskModelPatch(taskModelPatch(customModelDraft || null));
+                  }}
+                  placeholder={currentFamiliar ? "provider/model (optional)" : "Assign a familiar first"}
+                  disabled={!currentFamiliar || Boolean(card.sessionId)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              ) : (
+                <p className="board-drawer-field-hint" role="status">
+                  No selectable models are available.
+                </p>
+              )}
+              <p className="board-drawer-field-hint">
+                {card.sessionId
+                  ? "This task's linked work session keeps its current model."
+                  : "Leave blank to use the familiar's configured default."}
+              </p>
             </div>
 
             <div className="board-drawer-grid-2">
@@ -1272,51 +1559,6 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
               </div>
             </div>
 
-            <div className="board-drawer-field">
-              <div className="board-drawer-field-label board-drawer-field-label--split">
-                <span>Project</span>
-                <button
-                  type="button"
-                  className="board-drawer-inline-link"
-                  onClick={openProjectsSurface}
-                  title="Open Projects"
-                >
-                  <Icon name="ph:folder-open" width={11} />
-                  Open Projects
-                </button>
-              </div>
-              <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
-                <span className="board-drawer-project-icon" aria-hidden>
-                  <Icon name="ph:folder" width={12} className="text-[var(--text-muted)]" />
-                </span>
-                <StandardSelect
-                  label="Project"
-                  className="board-drawer-field-select board-drawer-field-select--styled"
-                  value={card.projectId ?? ""}
-                  onChange={(next) => {
-                    const selectedProject = projects.find((project) => project.id === next) ?? null;
-                    onPatch(card.id, { projectId: selectedProject?.id ?? null, cwd: selectedProject?.root ?? null });
-                  }}
-                  options={[
-                    { value: "", label: "No project" },
-                    ...projects.map((project) => ({ value: project.id, label: project.name })),
-                  ]}
-                  showCaret={false}
-                />
-                <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
-              </div>
-              {projects.length === 0 ? (
-                <p className="board-drawer-field-hint">
-                  No projects yet. Open Projects to add one, then choose it here.
-                </p>
-              ) : null}
-              {projects.length > 0 && !card.projectId && !card.cwd ? (
-                <p className="board-drawer-field-hint board-drawer-field-hint--nudge">
-                  No project set — task work can't start, and linked sessions won't open in the
-                  right project, until you pick one.
-                </p>
-              ) : null}
-            </div>
           </div>
 
           <div className="board-drawer-field">
@@ -1388,7 +1630,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                     className="board-drawer-chat-cta"
                     disabled={chatLinking}
                     title="Start work"
-                    onClick={() => void onOpenTaskWork?.(card.id)}
+                    onClick={() => void openTaskWorkAfterModelSave()}
                   >
                     {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start work"}
                     <Icon name="ph:arrow-right-bold" width={11} />
@@ -1399,21 +1641,29 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       className="board-drawer-chat-cta"
                       title="Run on Omnigent fleet"
                       onClick={() => {
+                        const systemBrowserReservation = reserveSystemBrowserUrlWindow();
                         void (async () => {
-                          const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
-                          const { openExternalUrl } = await import("@/lib/open-external");
-                          const result = await startOmnigentRunFromBrowser({
-                            prompt: card.title,
-                            familiarId: card.familiarId ?? undefined,
-                            boardCardId: card.id,
-                            title: card.title,
-                            source: "cave-board",
-                          });
-                          if (!result.ok) {
-                            window.alert(result.error);
-                            return;
+                          let systemBrowserReservationConsumed = false;
+                          try {
+                            const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
+                            const result = await startOmnigentRunFromBrowser({
+                              prompt: card.title,
+                              familiarId: card.familiarId ?? undefined,
+                              boardCardId: card.id,
+                              title: card.title,
+                              source: "cave-board",
+                            });
+                            if (!result.ok) {
+                              window.alert(result.error);
+                              return;
+                            }
+                            systemBrowserReservationConsumed = true;
+                            void openSystemBrowserUrl(result.webUrl, { reservation: systemBrowserReservation });
+                          } finally {
+                            if (!systemBrowserReservationConsumed) {
+                              cancelSystemBrowserUrlWindow(systemBrowserReservation);
+                            }
                           }
-                          void openExternalUrl(result.webUrl);
                         })();
                       }}
                     >

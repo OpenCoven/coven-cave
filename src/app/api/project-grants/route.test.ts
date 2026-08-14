@@ -7,6 +7,14 @@ const proposalsRoute = await readFile(new URL("../grant-proposals/route.ts", imp
 const proposalItemRoute = await readFile(new URL("../grant-proposals/[id]/route.ts", import.meta.url), "utf8");
 const permissions = await readFile(new URL("../../../lib/project-permissions.ts", import.meta.url), "utf8");
 const targets = await readFile(new URL("../../../lib/server/project-grant-targets.ts", import.meta.url), "utf8");
+const trustedGate = await readFile(
+  new URL("../../../lib/server/trusted-grant-mutation.ts", import.meta.url),
+  "utf8",
+);
+const mobilePermissionsRoute = await readFile(
+  new URL("../mobile-permissions/route.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   permissions,
@@ -75,8 +83,37 @@ assert.match(grantsRoute, /export async function POST\(/, "project grants route 
 assert.match(grantsRoute, /export async function DELETE\(/, "project grants route should revoke human grants");
 assert.match(
   grantsRoute,
-  /requireLocalHumanGrantMutation\(req\)/,
-  "direct grant mutations should require a local human request",
+  /await requireTrustedHumanGrantMutation\(req\)/,
+  "direct grant mutations should require a trusted human request (desktop, or opted-in paired phone)",
+);
+// The trusted-human gate itself: desktop loopback always passes; a verified
+// mobile request passes ONLY behind the desktop opt-in; everything else 403s.
+assert.match(
+  trustedGate,
+  /if \(isLocalOrigin\(req\)\) return null;/,
+  "trusted-human gate should always admit the local desktop",
+);
+assert.match(
+  trustedGate,
+  /isVerifiedMobileRequest\(req\)[\s\S]*loadMobileWriteAccess\(\)[\s\S]*if \(allowMobileGrantMutations\) return null;/,
+  "trusted-human gate should admit the paired phone only behind the allowMobileGrantMutations opt-in",
+);
+assert.match(
+  trustedGate,
+  /req\.headers\.get\(MOBILE_ACCESS_HEADER\) === "1"/,
+  "verified-mobile detection must rely on the proxy-validated marker header",
+);
+assert.match(
+  trustedGate,
+  /status: 403/,
+  "trusted-human gate must reject untrusted origins with 403",
+);
+// The opt-in toggles themselves are desktop-only: the phone must never be able
+// to enable its own write access.
+assert.match(
+  mobilePermissionsRoute,
+  /export async function PATCH\(req: Request\) \{\s*if \(!isLocalOrigin\(req\)\)/,
+  "mobile write-access toggles must be mutable only from the local desktop",
 );
 assert.match(
   grantsRoute,
@@ -90,7 +127,7 @@ assert.match(
 );
 assert.match(
   grantsRoute,
-  /grantProjectToFamiliar\(\{ familiarId: target\.familiarId, projectId: target\.projectId, source: "human", access \}\)/,
+  /grantProjectToFamiliar\(\{[\s\S]*?familiarId: target\.familiarId,[\s\S]*?projectId: target\.projectId,[\s\S]*?source: "human",[\s\S]*?access,/,
   "direct grants should always be recorded with source=human against the validated target ids",
 );
 assert.match(
@@ -98,10 +135,29 @@ assert.match(
   /revokeProjectFromFamiliar/,
   "direct grants route should call the revocation primitive",
 );
+// The grant-change log distinguishes a desktop change from a phone one
+// (grants are mobile-mutable behind allowMobileGrantMutations), so the actor
+// must come from the verified request, never from the payload.
+assert.match(
+  grantsRoute,
+  /actor: isVerifiedMobileRequest\(req\) \? "mobile" : "loopback"/,
+  "grant mutations should record the actor from the verified request",
+);
+assert.equal(
+  (grantsRoute.match(/actor: isVerifiedMobileRequest\(req\)/g) ?? []).length,
+  2,
+  "both the grant and the revoke path should record their actor",
+);
 assert.match(
   grantsRoute,
   /listAccessGroups/,
   "grants GET should ride access groups along so one fetch renders effective access",
+);
+assert.match(grantsRoute, /inspectProjectPermissionIntegrity/, "grants GET exposes orphan-grant integrity for operator remediation");
+assert.match(
+  grantsRoute,
+  /payload\.repairOrphans === true[\s\S]*repairOrphanProjectPermissions/,
+  "a trusted human may explicitly repair orphan grants without granting access",
 );
 assert.match(
   grantsRoute,
@@ -135,8 +191,8 @@ assert.match(
 assert.match(proposalItemRoute, /export async function PATCH\(/, "proposal item route should resolve proposals");
 assert.match(
   proposalItemRoute,
-  /isLocalOrigin\(req\)/,
-  "proposal resolution should require a local human request",
+  /await requireTrustedHumanGrantMutation\(req\)/,
+  "proposal resolution should require a trusted human request (desktop, or opted-in paired phone)",
 );
 assert.match(
   proposalItemRoute,

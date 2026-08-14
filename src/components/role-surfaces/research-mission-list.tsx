@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import type { ResearchMission } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { nextRovingId, resolveRovingId, type RovingKey } from "@/lib/roving-list";
+import {
+  filterResearchMissionsByText,
+  groupResearchMissions,
+  matchesResearchMissionScope,
+  type ResearchMissionGroup,
+  type ResearchMissionScope,
+} from "./research-desk-view";
 
 type Props = {
   missions: ResearchMission[];
@@ -14,10 +22,18 @@ type Props = {
   /** Live query from the desk command bar (plain text or "/find …") — rows
    *  whose title/intent do not match are hidden; empty means no filtering. */
   filter?: string;
+  scope: ResearchMissionScope;
+  onClearFilters(): void;
+  /** Collapse the queue to its spine. Absent means the queue is not
+   *  collapsible in this host, so no control renders. */
+  onCollapse?(): void;
 };
 
 const STATUS_TONE: Partial<Record<ResearchMission["status"], string>> = {
   running: "busy",
+  // Planning is an active working state — it presents like running/queued,
+  // never like the muted idle dot.
+  planning: "busy",
   queued: "busy",
   checkpoint: "warn",
   paused: "warn",
@@ -27,24 +43,34 @@ const STATUS_TONE: Partial<Record<ResearchMission["status"], string>> = {
 
 const ROVING_KEYS = new Set<string>(["ArrowDown", "ArrowUp", "Home", "End"]);
 
-export function ResearchMissionList({ missions, selectedId, loading, onSelect, filter }: Props) {
-  const query = (filter ?? "").trim().toLowerCase();
-  const filteredMissions = useMemo(() => {
-    if (!query) return missions;
-    return missions.filter((mission) =>
-      `${mission.title} ${mission.intent}`.toLowerCase().includes(query));
-  }, [missions, query]);
+export function ResearchMissionList({
+  missions,
+  selectedId,
+  loading,
+  onSelect,
+  filter,
+  scope,
+  onClearFilters,
+  onCollapse,
+}: Props) {
+  const filteredMissions = useMemo(
+    () => filterResearchMissionsByText(missions, filter).filter((mission) =>
+      matchesResearchMissionScope(mission, scope)),
+    [missions, filter, scope],
+  );
 
-  // Archived missions leave the working ledger and collapse into a disclosure
-  // group at the bottom so finished noise never buries active work.
-  const { activeMissions, archivedMissions } = useMemo(() => {
-    const active: ResearchMission[] = [];
-    const archived: ResearchMission[] = [];
-    for (const mission of filteredMissions) {
-      (mission.status === "archived" ? archived : active).push(mission);
-    }
-    return { activeMissions: active, archivedMissions: archived };
-  }, [filteredMissions]);
+  const groups = useMemo(
+    () => groupResearchMissions(filteredMissions),
+    [filteredMissions],
+  );
+  const nonArchivedGroups = groups.filter((group) => group.id !== "archived");
+  const archivedMissions = groups.find(
+    (group) => group.id === "archived",
+  )?.missions ?? [];
+  const nonArchivedCount = nonArchivedGroups.reduce(
+    (count, group) => count + group.missions.length,
+    0,
+  );
   const [archivedOpen, setArchivedOpen] = useState(false);
 
   // The amber attention line derives from the full mission set — a rail
@@ -69,10 +95,13 @@ export function ResearchMissionList({ missions, selectedId, loading, onSelect, f
 
   // Keyboard roving covers exactly the rendered rows: active rows always,
   // archived rows only while the group is expanded.
-  const visibleIds = useMemo(() => [
-    ...activeMissions.map((mission) => mission.id),
-    ...(archivedOpen ? archivedMissions.map((mission) => mission.id) : []),
-  ], [activeMissions, archivedMissions, archivedOpen]);
+  const visibleIds = useMemo(
+    () => groups.flatMap((group) =>
+      group.id === "archived" && !archivedOpen
+        ? []
+        : group.missions.map((mission) => mission.id)),
+    [groups, archivedOpen],
+  );
   const [rovingId, setRovingId] = useState<string | null>(() => resolveRovingId(visibleIds, selectedId, selectedId));
   const buttonRefs = useRef(new Map<string, HTMLButtonElement>());
 
@@ -131,11 +160,41 @@ export function ResearchMissionList({ missions, selectedId, loading, onSelect, f
     );
   };
 
+  const renderGroup = (group: ResearchMissionGroup) => (
+    <section
+      key={group.id}
+      className="research-mission-nav__section"
+      aria-labelledby={`research-mission-group-${group.id}`}
+    >
+      <div
+        id={`research-mission-group-${group.id}`}
+        className="research-mission-nav__section-title"
+      >
+        <span>{group.label}</span>
+        <span>{group.missions.length}</span>
+      </div>
+      <ul className="research-mission-nav__list" onKeyDown={onListKeyDown}>
+        {group.missions.map(renderRow)}
+      </ul>
+    </section>
+  );
+
   return (
     <nav className="research-mission-nav" aria-label="Research missions">
       <div className="research-mission-nav__head">
         <span>Runs</span>
-        <span>{activeMissions.length}</span>
+        <span className="research-mission-nav__count">{nonArchivedCount}</span>
+        {onCollapse ? (
+          <button
+            type="button"
+            className="research-mission-nav__collapse focus-ring"
+            aria-label="Collapse the run queue"
+            title="Collapse the run queue"
+            onClick={onCollapse}
+          >
+            <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+          </button>
+        ) : null}
       </div>
       {checkpointMissions.length > 0 ? (
         <p className="research-mission-nav__waiting" role="status">
@@ -158,16 +217,19 @@ export function ResearchMissionList({ missions, selectedId, loading, onSelect, f
           <p>No research missions yet.</p>
           <span>Describe an investigation to start the first one.</span>
         </div>
-      ) : query && filteredMissions.length === 0 ? (
-        <p className="research-mission-nav__empty">No runs match “{filter?.trim()}”.</p>
+      ) : filteredMissions.length === 0 ? (
+        <div className="research-mission-nav__empty">
+          <p>No runs match the current filters.</p>
+          <Button size="xs" variant="ghost" onClick={onClearFilters}>
+            Clear filters
+          </Button>
+        </div>
       ) : (
         <>
-          {activeMissions.length === 0 ? (
+          {nonArchivedGroups.length === 0 ? (
             <p className="research-mission-nav__empty">No active missions.</p>
           ) : (
-            <ul className="research-mission-nav__list" onKeyDown={onListKeyDown}>
-              {activeMissions.map(renderRow)}
-            </ul>
+            nonArchivedGroups.map(renderGroup)
           )}
           {archivedMissions.length > 0 ? (
             <div className="research-mission-nav__group">

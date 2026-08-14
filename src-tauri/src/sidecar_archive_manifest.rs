@@ -6,7 +6,22 @@ pub(super) const MANIFEST_SCHEMA_VERSION: u32 = 3;
 pub(super) const ARCHIVE_FORMAT: &str = "tar.zst";
 pub(super) const MAX_ARCHIVE_BYTES: u64 = 80 * 1024 * 1024;
 pub(super) const MAX_UNPACKED_BYTES: u64 = 200 * 1024 * 1024 - 1;
-pub(super) const MAX_FILE_COUNT: u64 = 5_596;
+// MAX_FILE_COUNT is GENERATED, not written here.
+//
+// build.rs reads scripts/sidecar-runtime-budget.json — the single source for
+// the sidecar file-count budget — and emits the const into OUT_DIR. Change the
+// number there; this file needs no edit and must not carry a literal again.
+//
+// It is generated because it drifted while it was hand-copied: #4249 reverted
+// this const downward on its own, citing an older peak, while the JS closure
+// gate stayed where it was. The number also has to come from the GOVERNING
+// platform — Windows measures a few files above Ubuntu, and a budget derived
+// from an Ubuntu-only figure has reddened windows-latest more than once — which
+// is a judgement the JSON records rather than something each copy re-derives.
+//
+// Reasoning history lives beside SIDECAR_RUNTIME_BUDGETS in
+// scripts/sidecar-runtime-closure.mjs (cave-0ia8h).
+include!(concat!(env!("OUT_DIR"), "/sidecar_file_count_budget.rs"));
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

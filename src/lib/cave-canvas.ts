@@ -8,6 +8,7 @@ import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { corruptAsidePath } from "./server/corrupt-aside.ts";
 
 import type { CanvasPosition, CanvasPositions } from "@/lib/canvas-layout";
 import {
@@ -85,8 +86,9 @@ export async function loadCanvas(): Promise<CanvasFile> {
     // The file holds bytes that aren't a canvas store (torn write, foreign
     // content). This store now carries user sketches with no undo — reading
     // it as empty made the NEXT save silently destroy all of them. Move the
-    // bad file aside (bytes preserved for recovery) and start fresh.
-    const aside = `${CANVAS_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    // bad file aside (bytes preserved for recovery, collision-safe name —
+    // see corruptAsidePath) and start fresh.
+    const aside = corruptAsidePath(CANVAS_PATH);
     try {
       await rename(CANVAS_PATH, aside);
       console.error(`cave-canvas: unreadable store moved aside to ${aside}`);

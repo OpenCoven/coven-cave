@@ -25,7 +25,7 @@ func caveParseISO(_ iso: String?) -> Date? {
 
 struct TasksView: View {
     @Environment(AppModel.self) private var app
-    @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.status.rawValue
+    @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.familiar.rawValue
     @AppStorage("cave.tasks.sortBy") private var sortByRaw = SortBy.priority.rawValue
     @AppStorage("cave.tasks.viewMode") private var viewModeRaw = ViewMode.list.rawValue
     @State private var query = ""
@@ -43,6 +43,7 @@ struct TasksView: View {
     /// A task awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: BoardCard?
     @State private var showReminders = false
+    @State private var collapsedSections: Set<String> = []
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// How the task list is partitioned into sections.
@@ -72,7 +73,7 @@ struct TasksView: View {
         var systemImage: String { self == .list ? "list.bullet" : "rectangle.split.3x1" }
     }
 
-    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
+    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .familiar }
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .priority }
     private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .list }
     private var anyFilterActive: Bool {
@@ -86,11 +87,11 @@ struct TasksView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $query, prompt: "Search tasks")
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showReminders = true } label: {
-                            Image(systemName: "bell")
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { app.navigationDrawerOpen = true } label: {
+                            Image(systemName: "line.3.horizontal")
                         }
-                        .accessibilityLabel("Reminders")
+                        .accessibilityLabel("Open navigation")
                     }
                     ToolbarItem(placement: .topBarTrailing) { filterMenu }
                     ToolbarItem(placement: .topBarTrailing) {
@@ -126,14 +127,9 @@ struct TasksView: View {
                     Button("Delete", role: .destructive) { Task { await app.deleteTask(card) } }
                     Button("Cancel", role: .cancel) {}
                 } message: { card in Text(card.title) }
-                .sheet(isPresented: $showReminders) { RemindersView() }
                 .sheet(item: $boardDetail) { card in
                     NavigationStack { TaskDetailView(card: card) }
                 }
-                // A widget deep link (covencave://reminders) lands on this tab;
-                // open the reminders sheet, then clear the pending link.
-                .onChange(of: app.deepLink) { _, link in consumeDeepLink(link) }
-                .onAppear { consumeDeepLink(app.deepLink) }
                 .sidebarColumn()
         } detail: {
             if let selection {
@@ -161,7 +157,7 @@ struct TasksView: View {
         Menu {
             ForEach(CardStatus.allCases, id: \.self) { status in
                 Button {
-                    Task { await app.setTaskStatus(card, status) }
+                    app.requestTaskStatus(card, status)
                 } label: {
                     Label(status.label, systemImage: card.status == status ? "checkmark" : status.systemImage)
                 }
@@ -234,18 +230,17 @@ struct TasksView: View {
         statusFilter = []; priorityFilter = []; familiarFilter = []
     }
 
-    /// Consume a cross-tab "open this task" intent set by `requestOpenTask`.
+    /// Consume a cross-destination "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard let card = app.cardToOpen else { return }
-        if selection?.id != card.id { selection = card }
+        if horizontalSizeClass == .regular {
+            if selection?.id != card.id { selection = card }
+        } else {
+            boardDetail = card
+        }
         app.cardToOpen = nil
     }
 
-    private func consumeDeepLink(_ link: AppModel.DeepLink?) {
-        guard let link else { return }
-        if link == .reminders { showReminders = true }
-        app.deepLink = nil
-    }
 
     private var groupBar: some View {
         Picker("Group by", selection: $groupByRaw) {
@@ -346,40 +341,63 @@ struct TasksView: View {
         List(selection: $selection) {
             ForEach(sections) { section in
                 Section {
-                    ForEach(section.cards) { card in
-                        TaskRow(card: card)
-                            .tag(card)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 12))
-                            .contextMenu { taskMenu(card) }
+                    if !collapsedSections.contains(section.id) {
+                        ForEach(section.cards) { card in
+                            TaskRow(card: card)
+                                .tag(card)
+                                .padding(12)
+                                .glass(.raised, cornerRadius: 14)
+                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                                .listRowBackground(Color.clear)
+                                .contextMenu { taskMenu(card) }
                             // Trailing = destructive (delete); leading = the
                             // positive quick-action (done/reopen), full-swipe to
-                            // complete — matching RemindersView + iOS convention.
+                            // complete — matching standard iOS selection behavior.
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) { pendingDelete = card } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                Button { Task { await app.setTaskStatus(card, card.status == .done ? .running : .done) } } label: {
+                                Button { app.requestTaskStatus(card, card.status == .done ? .running : .done) } label: {
                                     Label(card.status == .done ? "Reopen" : "Done",
                                           systemImage: card.status == .done ? "arrow.uturn.backward" : "checkmark")
                                 }
                                 .tint(card.status == .done ? .orange : .green)
                             }
+                        }
                     }
                 } header: {
-                    HStack(spacing: 6) {
-                        if let image = section.systemImage { Image(systemName: image).accessibilityHidden(true) }
-                        Text(section.title)
-                        Spacer()
-                        Text("\(section.cards.count)").monospacedDigit()
+                    Button {
+                        Haptics.tap()
+                        if collapsedSections.contains(section.id) {
+                            collapsedSections.remove(section.id)
+                        } else {
+                            collapsedSections.insert(section.id)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: collapsedSections.contains(section.id) ? "chevron.right" : "chevron.down")
+                                .font(.caption.weight(.bold))
+                            Circle().fill(section.tint ?? .secondary).frame(width: 8, height: 8)
+                            Text(section.title)
+                            Spacer()
+                            Text("\(section.cards.count)")
+                                .font(.caption.weight(.semibold).monospacedDigit())
+                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.14), in: Capsule())
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(section.tint ?? .secondary)
+                    .accessibilityLabel("\(section.title), \(section.cards.count) tasks")
+                    .accessibilityValue(collapsedSections.contains(section.id) ? "Collapsed" : "Expanded")
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .themedListBackground()
     }
 
@@ -507,59 +525,41 @@ struct TaskRow: View {
     let card: BoardCard
 
     private var familiar: Familiar? { card.familiarId.flatMap(app.familiar) }
+    private var project: ProjectInfo? { card.projectId.flatMap(app.project) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Capsule()
-                .fill(Theme.color(for: card.status))
-                .frame(width: 3)
-                .frame(maxHeight: .infinity)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    if card.priority == .urgent || card.priority == .high {
-                        Image(systemName: "flag.fill")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.color(for: card.priority))
-                            .accessibilityLabel("\(card.priority.label) priority")
-                    }
-                    Text(card.title)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
+        VStack(alignment: .leading, spacing: 10) {
+            Text(card.title)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            HStack(spacing: 7) {
+                TaskMetadataPill(text: card.priority.label, color: Theme.color(for: card.priority))
+                if let project {
+                    TaskMetadataPill(text: project.name, color: .secondary)
                 }
-
-                HStack(spacing: 8) {
-                    if card.needsHuman == true { NeedsYouBadge() }
-                    if card.hasSteps {
-                        Label("\(card.doneStepCount)/\(card.stepCount)", systemImage: "checklist")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    if app.hasLinkedChat(card) {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.tint)
-                            .accessibilityLabel("Has linked chat")
-                    }
-                    ForEach(card.labelList.prefix(2), id: \.self) { LabelChip(text: $0) }
-                    if let updated = caveParseISO(card.updatedAt) {
-                        Text(updated, format: .relative(presentation: .numeric))
-                            .font(.caption2).foregroundStyle(.tertiary)
-                    }
+                if let familiar {
+                    TaskMetadataPill(text: familiar.displayName, color: .secondary)
                 }
-            }
-
-            Spacer(minLength: 0)
-
-            if let familiar {
-                AvatarView(familiar: familiar,
-                           url: app.client?.avatarURL(for: familiar),
-                           size: 30)
+                Spacer(minLength: 0)
             }
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
+    }
+}
+
+private struct TaskMetadataPill: View {
+    let text: String
+    let color: Color
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(color.opacity(0.14), in: Capsule())
+            .overlay(Capsule().stroke(color.opacity(0.38), lineWidth: 1))
+            .foregroundStyle(color)
     }
 }
 

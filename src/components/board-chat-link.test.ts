@@ -6,6 +6,8 @@ const boardView = await readFile(new URL("./board-view.tsx", import.meta.url), "
 const boardInspector = await readFile(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/board/[id]/chat/route.ts", import.meta.url), "utf8");
 const chatSendRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
+const taskWorkCockpit = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
+const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.match(
   boardView,
@@ -16,6 +18,11 @@ assert.match(
   boardView,
   /fetch\(`\/api\/board\/\$\{id\}\/chat`, \{[\s\S]*method: "POST"/,
   "Task chat action should POST to the board chat link endpoint",
+);
+assert.match(
+  boardView,
+  /if \(card\?\.projectId && !card\.familiarId\) \{[\s\S]{0,260}Choose an authorized familiar before starting work in this project\.[\s\S]{0,180}return null;[\s\S]{0,260}const fallbackFamiliarId = card\?\.familiarId \?\? activeFamiliarId/,
+  "project-backed task work must not fall back to an unrelated active familiar when no authorized familiar is assigned",
 );
 assert.doesNotMatch(
   boardView,
@@ -31,6 +38,11 @@ assert.match(
   boardView,
   /const openTaskWork = async \(id: string\) =>/,
   "BoardView should expose one task-scoped work entry path",
+);
+assert.match(
+  boardView,
+  /if \(card\.sessionId && !card\.projectId\)/,
+  "project-backed task sessions must revisit the board endpoint for current authorization before opening",
 );
 assert.match(
   boardView,
@@ -79,13 +91,18 @@ assert.match(
 );
 assert.match(
   route,
-  /normalizeProjectRoot\(rawProjectRoot\)|projectRoot = normalizeProjectRoot\(assignedProject\.root\)/,
+  /normalizeProjectRoot\(rawProjectRoot\)|assignedProjectRoot = normalizeProjectRoot\(assignedProject\.root\)/,
   "Board chat endpoint normalizes the resolved project root",
 );
 assert.match(
   route,
-  /projectById\(card\.projectId, await loadProjects\(\)\)[\s\S]{0,900}assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
-  "Board chat endpoint should resolve assigned project roots server-side and authorize the familiar",
+  /projectById\(card\.projectId, projects\)[\s\S]*await authorizeChatProjectLaunch/,
+  "Board chat endpoint should resolve assigned project roots server-side and use the shared launch gate",
+);
+assert.match(
+  route,
+  /await authorizeChatProjectLaunch[\s\S]*if \(card\.sessionId\) \{[\s\S]{0,300}reused: true/,
+  "a project-linked session is reused only after its root, registration, and current familiar access pass authorization",
 );
 assert.match(
   route,
@@ -104,6 +121,80 @@ assert.match(
 );
 assert.match(
   route,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]{0,1400}initialPrompt: buildInitialTaskChatPrompt\(card\),/,
+  "OpenClaw task cards reserve a bridge conversation before the daemon-only path",
+);
+assert.match(
+  route,
+  /if \(binding\.harness === "openclaw"\) \{[\s\S]{0,500}isSshRuntime\(binding\.runtime\)[\s\S]{0,500}return reserveNativeChatTask\(\);/,
+  "OpenClaw bridge handling must reject unsupported SSH bindings before reserving a local native Chat task",
+);
+assert.ok(
+  route.indexOf('if (binding.harness === "openclaw") {') < route.indexOf("const res = await callDaemon"),
+  "OpenClaw task cards must reserve the native Chat task before the daemon path",
+);
+assert.match(
+  route,
+  /const reserveNativeChatTask = async \(\) => \{[\s\S]{0,700}worktree\s*\?\s*\{ cwd: sessionRoot \}/,
+  "OpenClaw task cards preserve Board worktree isolation before launching the bridge",
+);
+assert.match(
+  route,
+  /UNSUPPORTED_HARNESS_RE\.test\(daemonMsg\)[\s\S]{0,500}isTrustedChatHarness\(binding\.harness\)[\s\S]{0,100}reserveNativeChatTask\(\)/,
+  "Any trusted runtime rejected by the daemon falls back to its native Chat launch path",
+);
+assert.match(
+  boardView,
+  /started\.bridge === "native-chat"[\s\S]{0,300}setPendingBridgeStart/,
+  "Board keeps the first native Chat task prompt until its local conversation appears",
+);
+assert.match(
+  boardView,
+  /if \(isMobile && started\.bridge !== "native-chat"\)/,
+  "Mobile native Chat task launches stay in the cockpit until the bridge sends its first prompt",
+);
+assert.match(
+  taskWorkCockpit,
+  /initialPrompt\s*\?\s*\{[\s\S]{0,400}autoSend: true/,
+  "Task cockpit sends a reserved bridge task through ChatView rather than waiting for a daemon row",
+);
+assert.match(
+  chatView,
+  /sessionId && !autoSendInitialPrompt/,
+  "ChatView only auto-sends into an existing session for the explicit task-bridge handoff",
+);
+assert.match(
+  chatView,
+  /const stagedInitialModelOverride = initialModelOverride !== undefined[\s\S]{0,900}?const initialSendOptions = stagedInitialModelOverride !== undefined[\s\S]{0,700}?sendRaw\([\s\S]{0,180}initialSendOptions,[\s\S]{0,220}runtimeHost: initialControls\?\.runtimeHost \}/,
+  "an auto-sent Board prompt passes its model through ChatSendOptions, not the typed controls payload",
+);
+assert.match(
+  chatView,
+  /const shouldRefreshSessions = shouldCreationRefresh \|\| shouldReplacementRefresh \|\| \(startNewConversation && !!ev\.sessionId && !ev\.isError\)/,
+  "Board condition requires !ev.isError so a successful first reply refreshes the sidebar but an errored one does not",
+);
+assert.doesNotMatch(
+  chatView,
+  /startNewConversation && !!ev\.sessionId(?! && !ev\.isError)/,
+  "Board condition must not fire on a failed first reply — !ev.isError guard is required",
+);
+assert.match(
+  chatView,
+  /if \(shouldRefreshSessions\) onSessionsChangedRef\.current\?\.\(\)/,
+  "The consolidated shouldRefreshSessions boolean causes exactly one onSessionsChangedRef.current() call at done completion",
+);
+assert.match(
+  taskWorkCockpit,
+  /autoSendInitialPrompt=\{conversation\.autoSend\}\s*\n\s*startNewConversation=\{conversation\.autoSend\}/,
+  "A reserved Board conversation marks its first ChatView send as a fresh native session",
+);
+assert.match(
+  chatSendRoute,
+  /body\.startNewConversation && !existingConversation[\s\S]{0,160}\? null/,
+  "A reserved Board id must not be passed as a resume token to direct or registry runtimes",
+);
+assert.match(
+  route,
   /updateCard\(card\.id, \{\s*sessionId/,
   "Board chat endpoint should persist the relation on the board card",
 );
@@ -114,8 +205,8 @@ assert.match(
 );
 assert.match(
   chatSendRoute,
-  /taskContextForSession\(body\.sessionId/,
-  "Chat send should look up task context for task-linked sessions",
+  /taskCardForSession\(body\.sessionId\)[\s\S]*buildTaskContext\(taskCard\)/,
+  "Chat send should reuse the server-owned task card for task-linked prompt context",
 );
 assert.match(
   chatSendRoute,

@@ -1,4 +1,5 @@
 import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+import type { RuntimeAvailabilitySummary } from "./runtime-availability.ts";
 
 export type CompatibilityAdapter = {
   id: string;
@@ -38,6 +39,12 @@ export type AdapterReport = {
   installHint: string;
   source: string;
   manifestPath: string | null;
+  /** Runtime-discovered model choices, when the local CLI exposes them. */
+  models?: Array<{ id: string; label: string }>;
+  defaultModel?: string | null;
+  /** Chat launch-vehicle availability (#3856): whether the send route could
+   * actually spawn this adapter's launch command right now. */
+  availability?: RuntimeAvailabilitySummary;
 };
 
 export type AdapterSetupState =
@@ -48,6 +55,38 @@ export type AdapterManifestScaffold = {
   filename: string;
   contents: string;
 };
+
+type AdapterManifestDocument = {
+  adapters?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+// Exact Cave scaffold emitted from the accepted Hermes 1.0.2 registry entry.
+// Keep this immutable so Windows can migrate only that known POSIX-shim file
+// after the registry's native prompt-flag recipe superseded it in 1.0.3.
+const LEGACY_WINDOWS_HERMES_SHIM_MANIFEST = {
+  adapters: [
+    {
+      id: "hermes",
+      label: "Hermes Agent",
+      executable: "hermes-coven",
+      interactive_prompt_prefix_args: ["chat", "--source", "coven"],
+      non_interactive_prompt_prefix_args: ["chat", "--source", "coven", "-Q"],
+      install_hint:
+        "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+      model_flag: "--model",
+      capabilities: {
+        stream: false,
+        preassigned_session_id: false,
+        think: false,
+        speed: false,
+      },
+      version: "1.0.2",
+      description:
+        "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments.",
+    },
+  ],
+} satisfies AdapterManifestDocument;
 
 // The hand-curated seed: Cave-specific labels, install copy, and probe args.
 // Curated entries win over registry entries with the same id.
@@ -92,6 +131,18 @@ const CURATED_ADAPTERS: CompatibilityAdapter[] = [
     source: "bundled",
   },
   {
+    id: "grok",
+    label: "Grok Build",
+    binary: "grok",
+    chatSupported: true,
+    versionArgs: ["--version"],
+    installHint:
+      "Install Grok Build from xAI, run `grok` to sign in, then verify with `grok models`. Cave uses Grok's native streaming headless mode directly.",
+    // Cave owns the native streaming integration; the accepted registry entry
+    // supplies shared launch metadata and adapter scaffolding.
+    source: "bundled",
+  },
+  {
     id: "openclaw",
     label: "OpenClaw",
     binary: "openclaw",
@@ -132,6 +183,7 @@ export const SUMMONABLE_LOCAL_HARNESS_IDS = [
   "claude",
   "copilot",
   "hermes",
+  "grok",
 ] as const;
 
 const SUMMONABLE_LOCAL_HARNESSES = new Set<string>(SUMMONABLE_LOCAL_HARNESS_IDS);
@@ -184,6 +236,20 @@ export function isTrustedChatHarness(harness: string): boolean {
 
 export function isSummonableLocalHarness(harness: string): boolean {
   return SUMMONABLE_LOCAL_HARNESSES.has(canonicalHarnessId(harness));
+}
+
+// Coven Code is an app/tool install the daemon still reports through
+// `coven adapter list`, not a per-familiar runtime — COMPATIBILITY_ADAPTERS
+// already policy-excludes it, but the daemon merge path re-introduces it into
+// /api/harnesses. Hidden from the runtime BINDING pickers (Studio Brain tab,
+// Familiar tab hero) for now; the adapters/settings surfaces still list it as
+// an installable tool.
+const BINDING_PICKER_EXCLUDED_HARNESSES = new Set(["coven-code"]);
+
+export function isBindableRuntimeChoice(harness: string): boolean {
+  // canonicalHarnessId echoes unknown ids in their original casing — the
+  // exclusion must still catch "Coven-Code" however the daemon spells it.
+  return !BINDING_PICKER_EXCLUDED_HARNESSES.has(canonicalHarnessId(harness).trim().toLowerCase());
 }
 
 // The single display-label authority for runtime/harness ids: curated Cave
@@ -259,6 +325,8 @@ export function mergeAdapterReports(
       installed: boolean;
       path: string | null;
       version: string | null;
+      models?: Array<{ id: string; label: string }>;
+      defaultModel?: string | null;
     }
   >,
   covenReports: CovenAdapterSummary[],
@@ -277,11 +345,19 @@ export function mergeAdapterReports(
       installHint: local.installHint ?? "",
       source: local.source ?? "bundled",
       manifestPath: local.manifestPath ?? null,
+      ...(local.models ? { models: local.models } : {}),
+      ...(local.defaultModel ? { defaultModel: local.defaultModel } : {}),
+      ...(local.availability ? { availability: local.availability } : {}),
     });
   }
 
   for (const coven of covenReports) {
     const existing = merged.get(coven.id);
+    // A runner-specific launch probe is stricter than the broad adapter list:
+    // do not let a report produced under another spawn environment turn a
+    // known-unlaunchable local chat runner back into an "installed" UI row.
+    const launchUnavailable = existing?.availability?.state !== undefined
+      && existing.availability.state !== "ready";
     merged.set(coven.id, {
       id: coven.id,
       // Cave's curated label wins over the daemon manifest's — otherwise a
@@ -290,12 +366,15 @@ export function mergeAdapterReports(
       label: existing?.label ?? coven.label,
       binary: coven.executable,
       chatSupported: existing?.chatSupported ?? isTrustedChatHarness(coven.id),
-      installed: coven.available || existing?.installed === true,
+      installed: launchUnavailable ? false : coven.available || existing?.installed === true,
       path: existing?.path ?? null,
       version: existing?.version ?? null,
       installHint: coven.install_hint || existing?.installHint || "",
       source: coven.source || existing?.source || "manifest",
       manifestPath: coven.manifest_path ?? existing?.manifestPath ?? null,
+      ...(existing?.models ? { models: existing.models } : {}),
+      ...(existing?.defaultModel ? { defaultModel: existing.defaultModel } : {}),
+      ...(existing?.availability ? { availability: existing.availability } : {}),
     });
   }
 
@@ -344,13 +423,33 @@ export function runtimeSourceSetupState(
 // Cave copies were retired in favor of the registry versions, cave-laxg).
 export function adapterManifestScaffoldForHarness(
   harnessId: string,
+  _platform = process.platform,
 ): AdapterManifestScaffold | null {
   const registry = REGISTRY_RUNTIMES.find(
     (runtime) => runtime.id === canonicalHarnessId(harnessId),
   );
   if (!registry) return null;
+
+  const manifest = registry.adapterManifest as AdapterManifestDocument;
   return {
     filename: `${registry.id}.json`,
-    contents: `${JSON.stringify(registry.adapterManifest, null, 2)}\n`,
+    contents: `${JSON.stringify(manifest, null, 2)}\n`,
   };
+}
+
+/**
+ * A Cave-generated Hermes manifest from before the Windows prompt-flag route
+ * always invokes the POSIX-only `hermes-coven` shim. It is safe to replace
+ * that known shape, but never a user-authored manifest with another command.
+ */
+export function isLegacyWindowsHermesManifest(
+  contents: string,
+  platform = process.platform,
+): boolean {
+  if (platform !== "win32") return false;
+  // Only the byte-for-byte document Cave emitted can be safely migrated.
+  // Parsing and comparing JSON values would also replace a user's equivalent
+  // hand-authored document just because they chose another key order or
+  // formatting style.
+  return contents === `${JSON.stringify(LEGACY_WINDOWS_HERMES_SHIM_MANIFEST, null, 2)}\n`;
 }

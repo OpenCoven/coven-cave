@@ -1,7 +1,42 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** The one place the file-count budget is written down. */
+export const SIDECAR_RUNTIME_BUDGET_FILE = fileURLToPath(
+  new URL("./sidecar-runtime-budget.json", import.meta.url),
+);
+
+/**
+ * Read the budget from its single source, or refuse to run.
+ *
+ * Validation is not ceremony here. The gate compares a measured count against
+ * this number, so a missing key or a malformed file yielding `undefined`/`NaN`
+ * would make every comparison false and the gate would PASS silently — worse
+ * than the six hand-synced copies this replaced, because nothing would ever go
+ * red to reveal it. Fail loudly instead.
+ */
+function readSidecarFileCountBudget() {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(SIDECAR_RUNTIME_BUDGET_FILE, "utf8"));
+  } catch (cause) {
+    throw new Error(
+      `sidecar runtime budget is unreadable at ${SIDECAR_RUNTIME_BUDGET_FILE}: ${cause.message}`,
+      { cause },
+    );
+  }
+  const fileCount = parsed?.fileCount;
+  if (!Number.isSafeInteger(fileCount) || fileCount <= 0) {
+    throw new Error(
+      `sidecar runtime budget "fileCount" must be a positive integer, received ${JSON.stringify(fileCount)} ` +
+        `from ${SIDECAR_RUNTIME_BUDGET_FILE}`,
+    );
+  }
+  return fileCount;
+}
 
 export const SIDECAR_RUNTIME_ROOTS = Object.freeze([
   ".agents/skills",
@@ -33,6 +68,15 @@ export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
   "node-pty",
   "sharp",
   "ws",
+]);
+
+// Next's server config loader resolves these files dynamically at startup.
+// NFT does not retain them in the sparse standalone dependency tree, so keep
+// the small compiled webpack bootstrap explicitly in the sidecar closure.
+export const SIDECAR_NEXT_RUNTIME_FILES = Object.freeze([
+  "dist/compiled/webpack/webpack-lib.js",
+  "dist/compiled/webpack/webpack.js",
+  "dist/compiled/webpack/bundle5.js",
 ]);
 
 export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
@@ -95,7 +139,136 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Ubuntu and 5,576 on Windows before the later Group, Sessions, and Task
   // cockpit chunks landed. Retain ten files of cross-platform headroom for the
   // combined tree without relaxing the expanded-byte ceiling.
-  fileCount: 5_596,
+  // 2026-07-21 (Tailscale hub sync): the two new API routes
+  // (tailscale/devices, daemon/probe) plus their tailscale-devices /
+  // daemon-probe libs add traced files; CI measured 5,608 on Windows and
+  // 5,606 on Ubuntu. Keep the exact cross-platform maximum with the same
+  // ten-file headroom convention.
+  // 2026-07-22 (/image command): the images/generate route chunk adds eight
+  // traced files (CI measured 5,602 Windows on the pre-Tailscale base and
+  // 5,616 Windows on the combined tree). Pin the combined exact maximum
+  // without relaxing the expanded-byte ceiling.
+  // 2026-07-22 (mobile write access): the mobile-permissions route plus the
+  // shared trusted-grant-mutation lib add traced files; CI measured 5,621 on
+  // Ubuntu and 5,623 on Windows, then hermes (#3636) landed one more traced
+  // file on Windows (5,624) — about seven traced files over the pre-branch
+  // base.
+  // 2026-07-22 (composer add menu): the unified "+" menu splits the composer
+  // into composer-add-menu / composer-add-menu-data / submenu-position chunks;
+  // CI traced 5,618–5,619 on Windows across runs. The merged tree lands
+  // around 5,644 on Ubuntu after the OpenCode direct-run, model-inventory,
+  // event-decoder, composer-add-menu, and subsequent alias/mobile fixes
+  // land. Retain ten files of headroom over that measured maximum without
+  // relaxing the byte ceiling.
+  // 2026-07-23 (MCP doctor): the /api/mcp/health route traces the mcp-doctor
+  // and endpoint-validators chunks; CI measured 5,655 on Ubuntu and 5,657 on
+  // Windows. Retain ten files of headroom over the measured maximum without
+  // relaxing the byte ceiling.
+  // 2026-07-24 (Queue project readiness): the selected-project readiness
+  // route and its server helpers trace four more files. Native Windows
+  // packaging measured 5,671 files; retain the established ten-file buffer.
+  // 2026-07-24 (research final artifacts): the mission files route
+  // ([id]/files/[key]) traces two more chunks; the PR merge tree measured
+  // 5,683 on Windows. Retain the ten-file buffer without relaxing the byte
+  // ceiling.
+  // 2026-07-24 (local Whisper STT): the local-origin transcription endpoint
+  // and its sidecar runner trace at 5,694 on Linux and 5,696 on Windows.
+  // Retain the established ten-file cross-platform buffer.
+  // 2026-07-26 (scheduled backup sync): the /backup/sync (+/run) routes and
+  // the backup-sync scheduler trace at 5,718 on Linux and 5,720 on Windows.
+  // Retain the established ten-file cross-platform buffer.
+  // 2026-07-27 (canonical Coven Memory): path-free list/overview/detail routes
+  // and their browser readers/resources traced the packaged runtime at 5,769
+  // on Linux and 5,772 on Windows. Retain the established ten-file buffer.
+  // 2026-07-29 (typed chat follow-ups): the reusable Reply/Task/Action
+  // components trace two additional Windows runtime files (5,784). Preserve
+  // the established ten-file cross-platform headroom without relaxing bytes.
+  // 2026-07-29 (daemon launch cleanup): Windows packaging of the owned
+  // readiness-timeout path measured 5,789 files. Retain the established ten
+  // files of cross-platform headroom without relaxing the byte ceiling.
+  // 2026-07-29 (Node 24 LTS dependency refresh): the Windows runtime measured
+  // 5,801 files. Retain the same ten-file headroom without relaxing the byte
+  // ceiling.
+  // 2026-07-29 (Chat Familiar settings): the nested Familiar settings
+  // writers trace 5,804 files on Windows. Retain the established ten files
+  // of cross-platform headroom without relaxing the byte ceiling.
+  // 2026-08-01 (Memory document reader): the shared reader traces 5,817 files
+  // on Windows. Retain the established ten-file cross-platform headroom.
+  // 2026-08-01 (main integration tree): CI measures 5,828 files on Ubuntu
+  // and 5,831 on Windows after maps, declarations, nested dependencies, and
+  // non-runtime roots are excluded. Preserve the established ten-file
+  // cross-platform headroom.
+  // 2026-08-03 (src/app/api/x/ route handlers, #4235): CI measures 5,874 on
+  // Ubuntu and 5,877 on Windows. Set from the HIGHER figure plus the same
+  // ten-file headroom.
+  //
+  // This number was reverted to 5_841 once already, by a local merge of a
+  // superseded branch citing the stale 5,831 line above (#4249). The routes
+  // needing this headroom are still present, so it must not move DOWN while
+  // they exist — and any bump belongs here, beside the measurement that
+  // justifies it, or the next reader reverts it again.
+  // 2026-08-03 (research infographic renderer, cave-ga0t5): the
+  // /api/research/generations/infographic route plus the SVG/PNG renderer
+  // chunk traced at 5,888 on Ubuntu and 5,891 on Windows. Set from the
+  // HIGHER figure plus the same ten-file headroom.
+  // +1 (2026-08-03, cave-xailn): POST /api/chat/rewrite backs the reader's
+  // Rewrite control. One new route handler, one new file in the closure —
+  // measured at 5,902 on Ubuntu CI. Nothing else in that change reaches the
+  // sidecar: the shared one-shot runner it adds replaces code that was already
+  // inside enrich-steps' route.
+  // 2026-08-03 (live call transcript, cave-zr9dx): src/lib/voice/call-transcript.ts
+  // joins the closure through the call overlay. On the tree carrying BOTH that
+  // file and the rewrite route above, CI measured 5,902 on Ubuntu and 5,905 on
+  // Windows — so 5,902 was the Ubuntu figure with no headroom at all, and the
+  // Windows leg was still red at it. Set from the HIGHER figure plus the same
+  // ten-file cross-platform headroom the entries above use.
+  // 2026-08-04 (image carousel, #4315): src/components/image-carousel.tsx and the
+  // chat-view wiring that renders it join the closure. CI measured 5,913 on Ubuntu
+  // and 5,916 on Windows — the ten-file headroom above was fully consumed and the
+  // Windows leg went one over while Ubuntu still passed, which is why only that
+  // leg was red. Set from the HIGHER figure plus the same ten-file cross-platform
+  // headroom every entry above uses.
+  // 2026-08-04 (headroom rate, cave-k5n56): worth recording that the entry
+  // above is a rate problem, not a one-feature one. main's Windows leg measured
+  // 5,914 at ab27ef62d8 and 5,915 at 39eadf26eb — sitting exactly ON the budget,
+  // reporting green with zero headroom — before #4315 added the single file that
+  // crossed it. Growth is roughly a file per merge, diffuse across many PRs, and
+  // Windows governs at a consistent +3 over Ubuntu (5914/5911, 5915/5912,
+  // 5916/5913). So read a red here as the headroom running out rather than as the
+  // last merge misbehaving, and check the previous runs' measured counts before
+  // attributing it. Ten files is about ten merges at this rate, so this will
+  // recur; the durable fix is to size the headroom to the growth rate or stop the
+  // closure growing, not to keep adding ten.
+  // 2026-08-06 (cave-oqawv): taking the advice directly above rather than adding
+  // ten for the third time. CI measured 5,957 on Ubuntu and 5,959 on Windows,
+  // which governs — that is +43 on the 5,916 the entry above was set from, over
+  // roughly two days, so ~21 files/day. A ten-file headroom is therefore worth
+  // about eleven hours, which is exactly why this gate went red again within a
+  // day of being raised.
+  //
+  // Set from the governing Windows figure plus 150, which is about one week of
+  // drift at the measured rate (main took 869 commits in the last 7 days at
+  // ~0.3 closure files per commit). State the trade plainly: at this headroom
+  // the gate no longer notices organic drift, and it is not meant to — what it
+  // still catches is a single change dragging a whole subtree in, which is
+  // hundreds of files at once and the failure worth having a gate for. If this
+  // needs to detect drift again, the fix is to stop the closure growing, not a
+  // smaller number here.
+  //
+  // 2026-08-06 (cave-0ia8h): the VALUE now lives in sidecar-runtime-budget.json
+  // and is read from there. It used to be hand-copied into six places — this
+  // file, sidecar-runtime-smoke.mjs, the Rust MAX_FILE_COUNT const, and three
+  // test pins — so every raise was a six-file sync performed under a red CI,
+  // and one of them was reverted independently once (#4249). The history above
+  // is kept here because it is the reasoning; the number is data.
+  //
+  // Investigation for that bead also settled where the growth comes from: over
+  // the two days that added 43 closure files, the first-party runtime roots
+  // above grew by ONE file and no runtime dependency was added. The rest is
+  // Next's traced output following new routes, at roughly two to four files
+  // each. There is no subtree to prune — the closure grows because the app
+  // does — which is why this is a tracked budget rather than a fixed one.
+  fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
@@ -105,6 +278,45 @@ const PLATFORM_OPTIONAL_PACKAGE_RE = /^(?:@img\/sharp-|@next\/swc-)/;
 function isInside(root, candidate) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+}
+
+/**
+ * Containment against a set of allowed roots, tolerant of path aliases.
+ *
+ * `isInside` is lexical, so it only answers correctly when both sides are
+ * spelled the same way. The roots here are built with `path.resolve`, which
+ * normalizes but does NOT resolve symlinks, while a candidate that has been
+ * through `realpath` is fully canonical. On macOS that difference is routine
+ * rather than exotic — `/var` is a symlink to `/private/var` and `/tmp` to
+ * `/private/tmp`, so every temp-dir path has two spellings — and comparing one
+ * against the other rejected links that were plainly inside an allowed root.
+ *
+ * The lexical check runs first and answers almost every call. Only when it says
+ * "outside" do we canonicalize the roots and ask again, so the extra syscalls
+ * land on the path that was about to throw anyway. This narrows what is
+ * rejected, never widens it: containment is still required, just measured
+ * between two spellings of the same filesystem location.
+ */
+export async function isInsideAllowedRoots(roots, candidate) {
+  if (roots.some((root) => isInside(root, candidate))) return true;
+  // Canonicalize BOTH sides before the second opinion. Canonicalizing only one
+  // of them just moves the mismatch: an aliased root against a canonical
+  // candidate fails exactly as an aliased candidate against a canonical root
+  // does. A path that cannot be resolved keeps its lexical spelling, which is
+  // the best available answer for something that does not exist yet.
+  const canonicalCandidate = await canonicalize(candidate);
+  for (const root of roots) {
+    if (isInside(await canonicalize(root), canonicalCandidate)) return true;
+  }
+  return false;
+}
+
+async function canonicalize(target) {
+  try {
+    return await realpath(target);
+  } catch {
+    return path.resolve(target);
+  }
 }
 
 function packageParts(relativePath) {
@@ -139,7 +351,7 @@ function shouldSkipPackageEntry(relativePath, entryName, _isDirectory) {
 }
 
 async function copyResolvedEntry(source, destination, options, relativePath = "") {
-  if (!options.allowedLinkRoots.some((root) => isInside(root, source))) {
+  if (!(await isInsideAllowedRoots(options.allowedLinkRoots, source))) {
     throw new Error(`sidecar runtime input escapes its allowed roots: ${source}`);
   }
   const metadata = await lstat(source);
@@ -151,7 +363,7 @@ async function copyResolvedEntry(source, destination, options, relativePath = ""
       throw new Error(`sidecar runtime input must not contain links: ${source}`);
     }
     resolvedSource = await realpath(source);
-    if (!options.allowedLinkRoots.some((root) => isInside(root, resolvedSource))) {
+    if (!(await isInsideAllowedRoots(options.allowedLinkRoots, resolvedSource))) {
       throw new Error(`sidecar dependency link escapes its allowed roots: ${source} -> ${resolvedSource}`);
     }
     resolvedMetadata = await stat(resolvedSource);
@@ -332,6 +544,60 @@ async function copyNextAliases(standaloneRoot, destination, allowedLinkRoots) {
   }
 }
 
+async function copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination) {
+  const nextRoots = [
+    path.join(standaloneRoot, "node_modules", "next"),
+    path.join(dependencyRoot, "next"),
+  ];
+  // A required file can be beneath a symlinked `next` package directory, so
+  // checking only the final directory entry is not enough to enforce the
+  // package boundary. Resolve the package root and candidate before copying,
+  // while still letting copyResolvedEntry apply its existing final-entry link
+  // checks. A required entry may only resolve within its own `next` package;
+  // allowing the broader project or node_modules roots could copy unrelated
+  // dependency trees into the sidecar.
+  const resolvedPackageRoots = await Promise.all(
+    [standaloneRoot, path.join(projectRoot, "node_modules"), dependencyRoot].map((root) => realpath(root)),
+  );
+
+  for (const relativePath of SIDECAR_NEXT_RUNTIME_FILES) {
+    let source = null;
+    for (const root of nextRoots) {
+      const candidate = path.join(root, relativePath);
+      try {
+        const resolvedNextRoot = await realpath(root);
+        if (!(await isInsideAllowedRoots(resolvedPackageRoots, resolvedNextRoot))) {
+          throw new Error(`sidecar dependency link escapes its allowed roots: ${root} -> ${resolvedNextRoot}`);
+        }
+        const nextPackage = JSON.parse(await readFile(path.join(resolvedNextRoot, "package.json"), "utf8"));
+        if (nextPackage.name !== "next") {
+          throw new Error(`sidecar Next package root is not the Next package: ${root} -> ${resolvedNextRoot}`);
+        }
+        const resolvedCandidate = await realpath(candidate);
+        if (!isInside(resolvedNextRoot, resolvedCandidate)) {
+          throw new Error(`sidecar dependency link escapes its allowed roots: ${candidate} -> ${resolvedCandidate}`);
+        }
+        const metadata = await stat(resolvedCandidate);
+        if (!metadata.isFile()) {
+          throw new Error(`required Next sidecar runtime file is not a regular file: ${relativePath}`);
+        }
+        source = { path: resolvedCandidate, root: resolvedNextRoot };
+        break;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    if (!source) {
+      throw new Error(`required Next sidecar runtime file is missing: ${relativePath}`);
+    }
+    await copyResolvedEntry(
+      source.path,
+      path.join(destination, "node_modules", "next", relativePath),
+      { followLinks: true, allowedLinkRoots: [source.root] },
+    );
+  }
+}
+
 export async function assembleSidecarRuntime(projectRoot, standaloneRoot, dependencyRoot, destination) {
   const roots = [projectRoot, standaloneRoot, dependencyRoot].map((root) => path.resolve(root));
   [projectRoot, standaloneRoot, dependencyRoot, destination] = [
@@ -419,6 +685,7 @@ export async function assembleSidecarRuntime(projectRoot, standaloneRoot, depend
   for (const packageName of SIDECAR_DYNAMIC_PACKAGES) {
     await copyDynamicPackage(packageName, dependencyRoot, destination, roots);
   }
+  await copyNextRuntimeFiles(projectRoot, standaloneRoot, dependencyRoot, destination);
   await copyDynamicNativePackages(dependencyRoot, destination, roots);
   await copyNextAliases(standaloneRoot, destination, roots);
 
@@ -466,13 +733,26 @@ export async function verifySidecarRuntime(root) {
     "node_modules/react-dom/package.json",
     "node_modules/sharp/package.json",
     "node_modules/ws/package.json",
+    ...SIDECAR_NEXT_RUNTIME_FILES.map((relativePath) => path.join("node_modules/next", relativePath)),
     "package.json",
     "public/sandbox/react-runtime.js",
     "server.js",
     "server.mjs",
     "vault.yaml",
   ];
-  for (const relativePath of required) await stat(path.join(root, relativePath));
+  for (const relativePath of required) {
+    try {
+      const metadata = await stat(path.join(root, relativePath));
+      if (!metadata.isFile()) {
+        throw new Error(`required sidecar runtime file is not a regular file: ${relativePath}`);
+      }
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new Error(`required sidecar runtime file is missing: ${relativePath}`);
+      }
+      throw error;
+    }
+  }
   for (const forbiddenRoot of SIDECAR_FORBIDDEN_ROOTS) {
     try {
       await stat(path.join(root, forbiddenRoot));

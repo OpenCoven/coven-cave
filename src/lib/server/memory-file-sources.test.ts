@@ -21,12 +21,6 @@ assert.deepEqual(
   })),
   [
     {
-      id: "coven-origin",
-      kind: "coven-origin",
-      label: "Coven native memory",
-      rootPath: path.join(home, ".coven", "memory"),
-    },
-    {
       id: "openclaw-workspace",
       kind: "external-harness",
       label: "OpenClaw runtime memory",
@@ -45,14 +39,11 @@ assert.deepEqual(
       rootPath: path.join(home, ".codex", "memories"),
     },
   ],
-  "memory file sources should separate native Coven origin memory from external runtime and runtime roots",
+  "canonical Coven memory should not be exposed as a mutable filesystem source",
 );
 
 const native = classifyMemoryFilePath(path.join(home, ".coven", "memory", "nova.md"), home);
-assert.equal(native?.kind, "coven-origin");
-assert.equal(native?.origin, "coven");
-assert.equal(native?.root, "coven-origin");
-assert.equal(native?.rootLabel, "Coven native memory");
+assert.equal(native, null, "canonical Coven memory should not classify as a mutable file source");
 
 const familiar = classifyMemoryFilePath(
   path.join(home, ".openclaw", "workspace", "echo", "memory", "failure.md"),
@@ -76,8 +67,9 @@ assert.equal(
   "unrelated local files should not be treated as memory API sources",
 );
 
-const tempRoot = await mkdtemp(path.join(tmpdir(), "coven-memory-paths-"));
+const tempRoot = await mkdtemp(path.join(tmpdir(), "memory-file-sources-"));
 try {
+  const canonicalMemory = path.join(tempRoot, ".coven", "memory", "sage", "canonical.md");
   const familiarMemory = path.join(tempRoot, ".openclaw", "workspace", "echo", "memory");
   const secretOutside = path.join(tempRoot, "secret-outside.md");
   const outsideDir = path.join(tempRoot, "outside-dir");
@@ -86,13 +78,20 @@ try {
   const linkedDir = path.join(familiarMemory, "linked-dir");
   const nestedLeak = path.join(linkedDir, "nested-leak.md");
   await mkdir(familiarMemory, { recursive: true });
+  await mkdir(path.dirname(canonicalMemory), { recursive: true });
   await mkdir(outsideDir, { recursive: true });
+  await writeFile(canonicalMemory, "canonical memory");
   await writeFile(safeMemory, "safe memory");
   await writeFile(secretOutside, "outside secret");
   await writeFile(path.join(outsideDir, "nested-leak.md"), "nested outside secret");
   await symlink(secretOutside, leak);
   await symlink(outsideDir, linkedDir);
 
+  assert.equal(
+    await resolveAllowedMemoryFileReadPath(canonicalMemory, tempRoot),
+    null,
+    "canonical Coven memory files must not resolve through the mutable file API",
+  );
   assert.equal(
     await resolveAllowedMemoryFileReadPath(safeMemory, tempRoot),
     await realpath(safeMemory),

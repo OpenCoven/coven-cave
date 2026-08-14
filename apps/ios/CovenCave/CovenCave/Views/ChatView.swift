@@ -17,13 +17,20 @@ struct ResponseReaderItem: Identifiable {
     let markdown: String
 }
 
+private struct EmptyChatSuggestion: Identifiable {
+    var id: String { label }
+    let icon: String
+    let label: String
+    let hint: String
+}
+
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var thread: ChatThread
-    @AppStorage("cave.dev.section") private var devSectionRaw = DevSection.code.rawValue
     @State private var draft: String = ""
     /// The message being quoted in the next send, if any (swipe-to-reply).
     @State private var replyingTo: DisplayMessage?
@@ -34,7 +41,28 @@ struct ChatView: View {
     @State private var showModelPicker = false
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
+    @State private var modelPickerAllowsRuntimeDefault = false
+    @State private var modelPickerProvenance: String?
+    @State private var sessionModelState: ChatModelState?
+    @State private var modelControlCapabilities: [ChatModelControlCapability] = []
+    @State private var modelControlValues: [String: String] = [:]
+    @State private var modelBindingScope: String?
+    @State private var modelPresentationScope = ChatModelPresentationScope()
+    @State private var modelRequests = ChatModelRequestCoordinator()
+    @State private var modelMutationQueue = ChatModelMutationQueue()
     @State private var showTasks = false
+    @State private var permissionsFamiliar: Familiar?
+    @State private var showPermissionFamiliarPicker = false
+    @State private var showSessionDetails = false
+    @State private var showSessionPicker = false
+    @State private var showVoiceCall = false
+    /// Inert navigation path handed to the session picker to satisfy its
+    /// binding. The picker runs in `onSelect` mode, so it never pushes — a
+    /// chosen session is switched to via `switchToSession` instead. Pushing
+    /// here would strand the selection: this sheet's `NavigationStack` is not
+    /// bound to it.
+    @State private var pickerPath: [ChatRoute] = []
+    @Namespace private var pickerZoomNamespace
     @State private var atBottom = true
     /// Coalesces streaming auto-scroll: several text flushes can land inside
     /// one display frame (group fan-out, resume replay) — issue one scrollTo.
@@ -43,6 +71,19 @@ struct ChatView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [PendingImage] = []
     @State private var draftPersistenceTask: Task<Void, Never>?
+    /// "New Messages" divider: computed once per visit, *before*
+    /// `markFamiliarViewed` moves the seen boundary, then left in place for
+    /// the whole visit (re-appears from pushes must not dissolve it).
+    @State private var unreadDividerId: String?
+    @State private var unreadRunLength = 0
+    @State private var unreadComputed = false
+    /// Day dates whose separators have scrolled above the viewport top —
+    /// max() names the day the reader is currently inside.
+    @State private var daysAboveTop: Set<Date> = []
+    /// Floating day chip shows only while the transcript is actively
+    /// scrolling (Telegram behaviour), fading shortly after it settles.
+    @State private var dayChipActive = false
+    @State private var dayChipIdleTask: Task<Void, Never>?
     /// How many images one message can carry.
     private let maxAttachments = 4
     private let draftPersistenceDelay: UInt64 = 250_000_000
@@ -51,13 +92,15 @@ struct ChatView: View {
     @State private var showPhotosPicker = false
     @State private var showCamera = false
     @State private var showFileImporter = false
+    @State private var showPlugins = false
     @State private var responseReader: ResponseReaderItem?
+    @State private var projectResolved = false
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
 
     /// Per-thread key for the persisted unsent draft.
-    private var draftKey: String { "cave.chat.draft.\(thread.id)" }
+    private var draftKey: String { AppModel.draftKey(thread.id) }
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -78,11 +121,29 @@ struct ChatView: View {
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
 
+    // A voice call targets a single familiar, so the call button only appears
+    // on one-to-one threads whose familiar is known. Group threads have no
+    // single callee.
+    private var voiceCallFamiliar: Familiar? {
+        guard !thread.isGroup, let id = thread.familiarIds.first else { return nil }
+        return app.familiar(id)
+    }
+
+    // The server session for the callee, when the thread already has one.
+    // Empty for a brand-new chat; the call engine treats that as a fresh
+    // session for the familiar.
+    private var voiceCallSessionId: String {
+        guard let id = thread.familiarIds.first else { return "" }
+        return thread.sessionIds[id] ?? ""
+    }
+
     private func writeDraftPersistence(_ value: String, key: String) {
         if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             UserDefaults.standard.removeObject(forKey: key)
+            app.setThreadDraft(thread.id, text: nil)
         } else {
             UserDefaults.standard.set(value, forKey: key)
+            app.setThreadDraft(thread.id, text: value)
         }
     }
 
@@ -101,8 +162,23 @@ struct ChatView: View {
         writeDraftPersistence(draft, key: draftKey)
     }
 
+    /// Compute the divider once per visit against the pre-visit seen boundary.
+    /// Idempotent: both the scroll reader's onAppear (which needs it first for
+    /// the initial scroll target) and the view's onAppear call it.
+    private func computeUnreadDividerIfNeeded() {
+        guard !unreadComputed else { return }
+        unreadComputed = true
+        unreadDividerId = UnreadMarker.firstUnseenId(messages: thread.messages,
+                                                     seenBoundary: app.seenBoundary(for: thread))
+        unreadRunLength = UnreadMarker.unseenRunLength(messages: thread.messages,
+                                                       firstUnseenId: unreadDividerId)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            if !app.linkedTasks(for: thread).isEmpty {
+                linkedContextStrip
+            }
             messageScroll
                 // While the "+" menu is up, the transcript becomes its scrim:
                 // a light dim signals the mode and any outside tap dismisses.
@@ -115,6 +191,7 @@ struct ChatView: View {
                             .accessibilityAddTraits(.isButton)
                     }
                 }
+            projectContext
             // Model access moved into the header's agent pill (and /model), so
             // the composer anchors the screen with nothing between it and the
             // transcript.
@@ -131,62 +208,68 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                // Agent pill: who you're talking to, and (direct chats) the door
-                // to the model/agent picker. Groups keep a static pill — the
-                // fan-out has no single model to switch.
-                if thread.isGroup {
-                    PillSelector(label: thread.title,
-                                 sublabel: "\(thread.familiarIds.count) familiars",
-                                 chevron: false,
-                                 accessibilityHint: nil,
-                                 action: {}) {
-                        AvatarView(familiar: nil, size: 22,
-                                   fallbackName: thread.title)
+                HStack(spacing: 9) {
+                    Circle()
+                        .fill(chatPresence.color)
+                        .frame(width: 7, height: 7)
+                    Text(thread.title)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(thread.title), \(chatPresence.label)")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if let familiar = voiceCallFamiliar {
+                    Button {
+                        Haptics.tap()
+                        showVoiceCall = true
+                    } label: {
+                        Image(systemName: "phone.fill")
                     }
-                    .disabled(true)
-                } else {
-                    let familiar = app.familiar(thread.familiarIds.first ?? "")
-                    PillSelector(label: thread.title,
-                                 sublabel: familiar?.role,
-                                 accessibilityHint: "Opens the model and agent picker",
-                                 action: { Task { await switchModel("") } }) {
-                        AvatarView(familiar: familiar,
-                                   url: familiar.flatMap { app.client?.avatarURL(for: $0) },
-                                   size: 22)
-                    }
+                    .accessibilityLabel("Call \(familiar.displayName)")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showTasks = true } label: {
-                    let count = app.linkedTasks(for: thread).count
-                    Image(systemName: count > 0 ? "checklist.checked" : "checklist")
-                        .overlay(alignment: .topTrailing) {
-                            if count > 0 {
-                                Text("\(count)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(3)
-                                    .background(Color.accentColor, in: Circle())
-                                    .offset(x: 8, y: -8)
-                            }
-                        }
+                Button {
+                    Haptics.tap()
+                    showSessionDetails.toggle()
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
                 }
-                .accessibilityLabel({
-                    let n = app.linkedTasks(for: thread).count
-                    return n > 0 ? "Linked tasks, \(n)" : "Linked tasks"
-                }())
+                .accessibilityLabel("Session controls")
+                .accessibilityValue(showSessionDetails ? "Expanded" : "Collapsed")
             }
             // The header stays lean (sim review, cave feedback): Commands lives
             // in the composer's + menu (same sheet), and Markdown export stays
             // on the thread list's flows — neither earns a toolbar slot here.
         }
+        .overlay(alignment: .top) {
+            if showSessionDetails {
+                sessionDetailsCard
+                    .padding(.horizontal, 24)
+                    .padding(.top, 6)
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                    .zIndex(20)
+            }
+        }
         .sheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
         }
+        .fullScreenCover(isPresented: $showPlugins) {
+            PluginsPanel { plugin in
+                prefillPlugin(plugin)
+            }
+        }
         .sheet(isPresented: $showModelPicker) {
-            ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent, onSelect: { id in
+            ModelPickerSheet(
+                options: presentedModelPickerOptions,
+                current: modelPresentationIsCurrent ? modelPickerCurrent : "",
+                allowsRuntimeDefault: presentedModelPickerAllowsRuntimeDefault,
+                provenance: presentedModelPickerProvenance,
+                onSelect: { id in
                 guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return }
-                Task { await applyModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId)) }
+                _ = selectModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId))
             }, onSwitchFamiliar: { showFamiliarPicker = true })
         }
         .sheet(isPresented: $showFamiliarPicker) {
@@ -204,8 +287,29 @@ struct ChatView: View {
         .sheet(isPresented: $showTasks) {
             LinkedTasksSheet(thread: thread)
         }
+        .sheet(item: $permissionsFamiliar) { familiar in
+            FamiliarPermissionsSheet(familiar: familiar)
+        }
+        .sheet(isPresented: $showPermissionFamiliarPicker) {
+            FamiliarPickerSheet(
+                title: "Choose a familiar",
+                familiarIds: thread.familiarIds
+            ) { familiar in
+                showPermissionFamiliarPicker = false
+                permissionsFamiliar = familiar
+            }
+        }
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
+        }
+        .fullScreenCover(isPresented: $showVoiceCall) {
+            if let familiar = voiceCallFamiliar {
+                LiveVoiceCallView(
+                    familiar: familiar,
+                    sessionId: voiceCallSessionId,
+                    client: app.client
+                )
+            }
         }
         // A new chat linked to a task acquires its server session only after the
         // first reply; once streaming stops, push that sessionId onto the card.
@@ -218,7 +322,10 @@ struct ChatView: View {
                    !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Haptics.success()
                 }
-                Task { await app.reconcileCardLinks(for: thread) }
+                Task {
+                    await app.reconcileCardLinks(for: thread)
+                    _ = await loadSessionModelState()
+                }
             }
         }
         // Restore an unsent draft for this thread (typed earlier, then the view
@@ -228,8 +335,19 @@ struct ChatView: View {
             if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
                 draft = saved
             }
-            // Opening the chat clears the unread badge for its familiar(s).
+            // Place the "New Messages" divider from the seen boundary BEFORE
+            // marking viewed moves it.
+            computeUnreadDividerIfNeeded()
+            // Opening the chat clears the unread badge for its familiar(s) and
+            // any delivered reply banner for this thread.
             app.markFamiliarViewed(thread.familiarIds)
+            ChatNotifications.removeDelivered(threadId: thread.id)
+        }
+        .task(id: modelStateLoadKey) {
+            await loadSessionModelState()
+        }
+        .task {
+            if !app.tasksLoaded { await app.loadTasks() }
         }
         // Persist every edit per-thread; send() clears the draft, which removes
         // the stored copy here so a sent message leaves nothing behind. Debounce
@@ -249,6 +367,409 @@ struct ChatView: View {
         .fullScreenCover(item: $zoomTarget) { target in
             ZoomableContentView(target: target)
         }
+        .sheet(isPresented: $showSessionPicker) {
+            if let familiarId = thread.familiarIds.first,
+               let familiar = app.familiar(familiarId) {
+                NavigationStack {
+                    FamiliarThreadsView(familiar: familiar,
+                                        path: $pickerPath,
+                                        zoomNamespace: pickerZoomNamespace,
+                                        onSelect: { chosen in switchToSession(chosen) },
+                                        currentThreadId: thread.id)
+                }
+            } else {
+                // Group threads and any thread whose familiar no longer
+                // resolves have no per-familiar session list to show. Say so
+                // rather than presenting an empty sheet.
+                ContentUnavailableView {
+                    Label("No sessions to pick", systemImage: "bubble.left.and.bubble.right")
+                } description: {
+                    Text("This conversation isn't scoped to a single familiar.")
+                }
+            }
+        }
+    }
+
+    /// Switch the chat to a session chosen in the picker: close the picker,
+    /// then hand the thread to the chat list, which makes it the detail
+    /// column's conversation and clears any pushed navigation. The chosen
+    /// session then stays put until something asks for another one.
+    ///
+    /// Re-picking the session already open only closes the sheet — routing it
+    /// through `requestOpen` would rebuild the very chat being looked at.
+    private func switchToSession(_ chosen: ChatThread) {
+        showSessionPicker = false
+        guard chosen.id != thread.id else { return }
+        // Persist the composer draft before the detail column swaps away.
+        flushDraftPersistence()
+        Haptics.tap()
+        app.switchConversation(to: chosen, currentThreadId: thread.id)
+    }
+
+    private var sessionDetailsCard: some View {
+        VStack(spacing: 0) {
+            Button {
+                showSessionDetails = false
+                Task { await switchModel("") }
+            } label: {
+                sessionDetailRow("Model", value: sessionModelLabel, systemImage: "cpu", showsChevron: true)
+            }
+            .buttonStyle(.plain)
+            .disabled(thread.isGroup)
+
+            Divider()
+            HStack(spacing: 10) {
+                Image(systemName: "desktopcomputer")
+                    .foregroundStyle(chrome.accent)
+                    .frame(width: 22)
+                Text("Runtime")
+                Spacer()
+                Text(sessionRuntimeLabel)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .font(.callout)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            Divider()
+            sessionDetailRow(
+                "Inventory",
+                value: ChatModelInventoryProvenancePresentation.label(for: presentedModelPickerProvenance),
+                systemImage: "info.circle"
+            )
+            Divider()
+            Button {
+                showSessionDetails = false
+                showSessionPicker = true
+            } label: {
+                sessionDetailRow(
+                    "Session",
+                    value: thread.title,
+                    systemImage: "bubble.left.and.bubble.right",
+                    showsChevron: true
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("Switch session")
+            .accessibilityLabel("Session")
+            .accessibilityValue(thread.title)
+            .disabled(thread.isGroup)
+            ForEach(presentedModelControlCapabilities) { capability in
+                Divider()
+                sessionControlRow(systemImage: capability.family == "reasoning" ? "brain" : "slider.horizontal.3") {
+                    Picker(capability.delivery == "prompt-only" ? "\(capability.label) (Prompt guidance)" : "\(capability.label) (Native)",
+                           selection: Binding(
+                            get: { modelControlValues[capability.family] ?? "" },
+                            set: { modelControlValues[capability.family] = $0 }
+                           )) {
+                        ForEach(capability.values) { option in
+                            Text(option.label).tag(option.value)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: 420)
+        .glass(.raised, cornerRadius: 16)
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+    }
+
+    @ViewBuilder
+    private var projectContext: some View {
+        if thread.canChangeProject && (thread.needsProjectSelection || !thread.canSendMessages) {
+            ChatProjectPicker(
+                familiarIds: thread.familiarIds,
+                recentRoots: app.recentProjectRoots,
+                selectedRoot: $thread.projectRoot,
+                isResolved: $projectResolved,
+                refreshToken: 0,
+                requiresExplicitSelection: thread.needsProjectSelection,
+                onResolved: {
+                    thread.needsProjectSelection = false
+                    app.touch(thread)
+                }
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(chrome.bgRaised)
+        }
+    }
+
+    private func sessionControlRow<Control: View>(
+        systemImage: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(chrome.accent)
+                .frame(width: 22)
+            control()
+                .pickerStyle(.segmented)
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(minHeight: 52)
+    }
+
+    private var sessionModelLabel: String {
+        if let pendingModelOverride = thread.pendingModelOverride {
+            if pendingModelOverride.isEmpty { return "Runtime default" }
+            return presentedModelPickerOptions.first(where: { $0.id == pendingModelOverride })?.label
+                ?? conciseModelName(pendingModelOverride)
+        }
+        guard let state = presentedSessionModelState else {
+            return thread.isGroup ? "Per familiar" : "Loading…"
+        }
+        if state.effectiveModel.isEmpty { return "Runtime default" }
+        return presentedModelPickerOptions.first(where: { $0.id == state.effectiveModel })?.label
+            ?? conciseModelName(state.effectiveModel)
+    }
+
+    private var chatPresence: (color: Color, label: String) {
+        if thread.isStreaming { return (Color.orange, "responding") }
+        switch app.connectionState {
+        case .connected: return (Color.green, "ready")
+        case .checking: return (Color.orange, "reconnecting")
+        case .unreachable: return (chrome.textSecondary, "offline")
+        case .unconfigured, .needsAuth: return (chrome.textSecondary, "offline")
+        }
+    }
+
+    private var sessionRuntimeLabel: String {
+        if thread.isGroup { return "Per familiar" }
+        guard let state = presentedSessionModelState else { return "Unavailable" }
+        return state.runtime?.isEmpty == false ? state.runtime! : state.harness
+    }
+
+    private var modelStateLoadKey: ChatModelRequestTarget? { currentModelLoadTarget }
+
+    private var currentModelLoadTarget: ChatModelRequestTarget? {
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return nil }
+        return makeModelRequestTarget(
+            familiarId: familiarId,
+            sessionId: modelSessionId(familiarId)
+        )
+    }
+
+    private var currentModelRequestTarget: ChatModelRequestTarget? {
+        currentModelLoadTarget?.withBindingScope(modelBindingScope)
+    }
+
+    private func makeModelRequestTarget(
+        familiarId: String,
+        sessionId: String?
+    ) -> ChatModelRequestTarget {
+        let session = sessionId.flatMap { id in
+            app.serverSessions.first(where: { $0.id == id })
+        }
+        let harness = (session?.harness ?? app.familiar(familiarId)?.harness)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let runtime = session?.runtime?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var identity: [String] = []
+        if let harness, !harness.isEmpty { identity.append("harness:\(harness)") }
+        if let runtime, !runtime.isEmpty { identity.append("runtime:\(runtime)") }
+        return ChatModelRequestTarget(
+            familiarId: familiarId,
+            sessionId: sessionId,
+            runtimeIdentity: identity.isEmpty ? nil : identity.joined(separator: "|")
+        )
+    }
+
+    private var modelPresentationIsCurrent: Bool {
+        modelPresentationScope.isCurrent(for: currentModelRequestTarget)
+    }
+
+    private var presentedModelPickerOptions: [ChatModelOption] {
+        modelPresentationIsCurrent ? modelPickerOptions : []
+    }
+
+    private var presentedModelPickerAllowsRuntimeDefault: Bool {
+        // A Cave-owned default still needs an explicit clear action after a
+        // session model has been selected; runtime ownership only controls
+        // whether the unselected state is the normal initial default.
+        modelPresentationIsCurrent && (modelPickerAllowsRuntimeDefault || sessionModelState != nil)
+    }
+
+    private var presentedModelPickerProvenance: String? {
+        modelPresentationIsCurrent ? modelPickerProvenance : nil
+    }
+
+    private var presentedModelControlCapabilities: [ChatModelControlCapability] {
+        modelPresentationIsCurrent ? modelControlCapabilities : []
+    }
+
+    private var presentedSessionModelState: ChatModelState? {
+        modelPresentationIsCurrent ? sessionModelState : nil
+    }
+
+    private func prepareModelStateLoad(for target: ChatModelRequestTarget?) {
+        guard modelPresentationScope.beginLoading(for: target) else { return }
+        sessionModelState = nil
+        modelPickerOptions = []
+        modelPickerCurrent = ""
+        modelPickerAllowsRuntimeDefault = false
+        modelPickerProvenance = nil
+        modelControlCapabilities = []
+        modelControlValues = [:]
+    }
+
+    private func rekeyModelPresentation(
+        for target: ChatModelRequestTarget,
+        response: ChatModelStateResponse
+    ) -> Bool {
+        guard let responseTarget = modelPresentationScope.rekeyForResponse(
+            for: target,
+            currentTarget: currentModelRequestTarget,
+            bindingScope: response.presentationBindingScope
+        ) else { return false }
+        modelBindingScope = response.presentationBindingScope
+        return currentModelRequestTarget == responseTarget
+    }
+
+    private var turnModelBinding: ChatModelTurnBinding {
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else {
+            return ChatModelTurnBinding(modelOverride: nil, scope: nil)
+        }
+        return ChatModelTurnBinding.resolve(
+            pendingModel: thread.pendingModelOverride,
+            confirmedState: presentedSessionModelState,
+            hasSession: modelSessionId(familiarId) != nil
+        )
+    }
+
+    private func conciseModelName(_ id: String) -> String {
+        id.split(separator: "/").last.map(String.init) ?? id
+    }
+
+    private var linkedGitHubContext: (link: CardGitHubLink, url: URL)? {
+        app.linkedTasks(for: thread)
+            .flatMap(\.githubLinks)
+            .compactMap { link in
+                validGitHubURL(for: link).map { (link, $0) }
+            }
+            .first
+    }
+
+    private func validGitHubURL(for link: CardGitHubLink) -> URL? {
+        let kind = link.kind.lowercased()
+        guard ["pr", "review_request", "issue"].contains(kind),
+              let number = link.number,
+              let url = URL(string: link.url),
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "github.com",
+              url.user == nil,
+              url.password == nil,
+              url.port == nil
+        else { return nil }
+
+        let repo = link.repo.split(separator: "/", omittingEmptySubsequences: true)
+        let path = url.pathComponents.filter { $0 != "/" }
+        let expectedKind = kind == "issue" ? "issues" : "pull"
+        guard repo.count == 2,
+              path.count >= 4,
+              path[0].caseInsensitiveCompare(String(repo[0])) == .orderedSame,
+              path[1].caseInsensitiveCompare(String(repo[1])) == .orderedSame,
+              path[2].lowercased() == expectedKind,
+              path[3] == String(number)
+        else { return nil }
+        return url
+    }
+
+    private func githubContextLabel(_ link: CardGitHubLink) -> String {
+        let kind = link.kind.lowercased() == "issue" ? "Issue" : "PR"
+        guard let number = link.number else { return kind }
+        return "\(kind) #\(number)"
+    }
+
+    private var linkedContextStrip: some View {
+        let cards = app.linkedTasks(for: thread)
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            if let context = linkedGitHubContext {
+                Link(destination: context.url) {
+                    HStack(spacing: 6) {
+                        Image(systemName: context.link.kind.lowercased() == "issue"
+                              ? "smallcircle.filled.circle" : "arrow.triangle.branch")
+                        Text(githubContextLabel(context.link))
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(chrome.accent)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 36)
+                    .background(chrome.accent.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(chrome.accent.opacity(0.35), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(githubContextLabel(context.link)) on GitHub")
+            }
+
+            Button {
+                showTasks = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "checklist")
+                        .foregroundStyle(chrome.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cards.count == 1 ? "Linked task" : "\(cards.count) linked tasks")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(cards.first?.title ?? "Open Tasks")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityHint("Opens tasks linked to this conversation")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
+        .padding(.top, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 16 : 0)
+        .frame(minHeight: 52)
+        .background(chrome.bgRaised)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(chrome.border).frame(height: 1)
+        }
+    }
+
+    private func sessionDetailRow(
+        _ label: String, value: String, systemImage: String, showsChevron: Bool = false
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(chrome.accent)
+                .frame(width: 22)
+            Text(label).foregroundStyle(.primary)
+            Spacer()
+            Text(value).foregroundStyle(.secondary)
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 
     private var messageScroll: some View {
@@ -263,7 +784,22 @@ struct ChatView: View {
                         switch row {
                         case .day(_, let date):
                             DaySeparator(date: date)
+                                // Track which day sections have scrolled past
+                                // the top edge: the transform runs per frame
+                                // but the action (a state write) only fires on
+                                // the Bool transition, keeping the hot scroll
+                                // path allocation-free.
+                                .onGeometryChange(for: Bool.self) { proxy in
+                                    proxy.frame(in: .scrollView).maxY < 0
+                                } action: { above in
+                                    if above { daysAboveTop.insert(date) }
+                                    else { daysAboveTop.remove(date) }
+                                }
                         case .message(let message):
+                            if message.id == unreadDividerId {
+                                UnreadDividerView()
+                                    .id("unread-divider")
+                            }
                             MessageBubble(message: message,
                                           isGroup: thread.isGroup,
                                           familiar: message.familiarId.flatMap(app.familiar),
@@ -280,10 +816,14 @@ struct ChatView: View {
                             .id(message.id)
                             // New bubbles settle in with a soft rise-and-fade
                             // (native Messages behaviour) instead of popping;
+                            // queued-offline sends enter subdued (opacity
+                            // only) so they read as parked, not sent;
                             // deletions fade out. Driven by the count-keyed
                             // animation below; Reduce Motion turns it off.
                             .transition(.asymmetric(
-                                insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
+                                insertion: message.isQueued
+                                    ? .opacity
+                                    : .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
                                 removal: .opacity))
                         }
                     }
@@ -336,6 +876,8 @@ struct ChatView: View {
                             .overlay(Circle().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
                             .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
                     }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.glassPress)
                     .padding(.trailing, 14)
                     .padding(.bottom, 10)
@@ -344,6 +886,29 @@ struct ChatView: View {
                 }
             }
             .animation(.snappy(duration: 0.2), value: atBottom)
+            // Floating day chip (Telegram-style): while scrolling, name the
+            // day the reader is inside — the newest day whose separator has
+            // passed the top edge. Fades out shortly after scrolling settles.
+            .overlay(alignment: .top) {
+                if dayChipActive, let day = daysAboveTop.max() {
+                    DayChip(date: day)
+                        .padding(.top, 8)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: dayChipActive)
+            .onScrollPhaseChange { _, newPhase in
+                dayChipIdleTask?.cancel()
+                if newPhase == .idle {
+                    dayChipIdleTask = Task {
+                        try? await Task.sleep(nanoseconds: 900_000_000)
+                        guard !Task.isCancelled else { return }
+                        dayChipActive = false
+                    }
+                } else if !dayChipActive {
+                    dayChipActive = true
+                }
+            }
             // Follow the stream only while the reader is parked at the bottom.
             // Scrolling up to reread must never be yanked back down by each
             // arriving token — the native Messages contract; returning to the
@@ -367,51 +932,182 @@ struct ChatView: View {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onAppear {
+                computeUnreadDividerIfNeeded()
+                // A long unseen run lands the reader on the divider so nothing
+                // is skipped; short runs keep the familiar bottom landing
+                // (the divider sits within the first screenful anyway).
+                if unreadDividerId != nil && unreadRunLength >= 6 {
+                    proxy.scrollTo("unread-divider", anchor: .center)
+                } else {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
         }
     }
 
     // MARK: - Empty state
 
-    /// Spacious cold-start state: a quiet greeting up top, and a short stack of
-    /// starter rows in the lower half. Rows FILL the composer (focused, ready
-    /// to tweak) rather than firing a send — same convention as the desktop
-    /// quick-chat suggestions.
+    /// Cold-start state per the design's "Start a new session" screen: a
+    /// rotated-square sigil with a soft glow, serif headline, a short warded
+    /// line, and "Conjure something" starter cards. Cards FILL the composer
+    /// (focused, ready to tweak) rather than firing a send — same convention
+    /// as the desktop quick-chat suggestions.
     private var emptyState: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            VStack(spacing: 10) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text(thread.isGroup
-                     ? "Message all \(thread.familiarIds.count) familiars"
-                     : "Message \(app.familiar(thread.familiarIds.first ?? "")?.displayName ?? "your familiar")")
-                    .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.horizontal, 24)
-            Spacer()
+        VStack(spacing: 18) {
+            sigil
             VStack(spacing: 8) {
-                ForEach(emptySuggestions, id: \.label) { suggestion in
-                    EmptyChatSuggestionRow(systemImage: suggestion.icon, label: suggestion.label) {
+                Text("Start a new session")
+                    .font(.system(size: 26, weight: .medium, design: .serif))
+                    .italic()
+                    .foregroundStyle(.primary)
+                Button {
+                    if thread.isGroup {
+                        showPermissionFamiliarPicker = true
+                        return
+                    }
+                    guard let familiar = permissionsTarget else { return }
+                    permissionsFamiliar = familiar
+                } label: {
+                    (
+                        Text("Speak your intent — a familiar answers from the desktop. Repo access follows \(wardScope) active ")
+                            .foregroundStyle(.secondary)
+                        + Text("ward.")
+                            .foregroundStyle(chrome.accent)
+                            .underline()
+                    )
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .frame(maxWidth: 270)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canInspectWard)
+                .accessibilityHint("Opens project and tool permissions")
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Conjure something")
+                    .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
+                    .kerning(0.6)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+                ForEach(emptySuggestions) { suggestion in
+                    EmptyChatSuggestionRow(systemImage: suggestion.icon,
+                                           label: suggestion.label,
+                                           hint: suggestion.hint) {
                         draft = suggestion.label
                         composerFocused = true
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 18)
         }
+        .padding(.horizontal, 30)
+        .padding(.vertical, 24)
     }
 
-    private var emptySuggestions: [(icon: String, label: String)] {
-        [
-            ("sparkles", "What can you help me with?"),
-            ("checklist", "Summarize my open tasks"),
-            ("calendar", "What's on my calendar today?"),
-            ("doc.text", "Draft a short status update"),
+    /// Rotated-square moon-stars mark with a radial accent glow (design's
+    /// empty-session sigil).
+    private var sigil: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [chrome.accent.opacity(0.28), .clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 48
+                    )
+                )
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(chrome.bgElevated)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [chrome.accent.opacity(0.32), .clear],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(chrome.accent.opacity(0.5), lineWidth: 1)
+                }
+                .frame(width: 74, height: 74)
+                .rotationEffect(.degrees(45))
+                .shadow(color: chrome.accent.opacity(0.45), radius: 24, y: 8)
+            Image(systemName: "moon.stars.fill")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(chrome.accent)
+        }
+        .frame(width: 96, height: 96)
+        .accessibilityHidden(true)
+    }
+
+    private var emptySuggestions: [EmptyChatSuggestion] {
+        let openPullRequestURLs = Set(app.tasks.flatMap(\.githubLinks)
+            .filter {
+                ($0.kind == "pr" || $0.kind == "review_request")
+                    && $0.state?.lowercased() == "open"
+            }
+            .map { $0.url.lowercased() })
+        let active = app.tasks.filter { $0.status.isActive }
+        let running = active.filter { $0.status == .running }.count
+        let blocked = active.filter { $0.status == .blocked }.count
+        let next = active.sorted {
+            if $0.priority.rank != $1.priority.rank { return $0.priority.rank < $1.priority.rank }
+            return (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast)
+        }.first
+        let nextLabel = next.map { "Chase the \($0.title)" } ?? "Chase the next priority"
+        let nextHint = next.map {
+            [$0.projectId, $0.githubLinks.first?.number.map { "#\($0)" }]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+        }.flatMap { $0.isEmpty ? nil : $0 } ?? "Ask your familiar to choose"
+        let boardHint = app.tasksError != nil
+            ? "Board unavailable"
+            : app.tasksLoaded
+                ? "\(running) running · \(blocked) blocked"
+                : "Load the live board"
+        let priorityHint = app.tasksError != nil && !app.tasks.isEmpty
+            ? "Cached · \(nextHint)"
+            : nextHint
+
+        return [
+            EmptyChatSuggestion(
+                icon: "arrow.triangle.branch",
+                label: "Review my open PRs",
+                hint: openPullRequestURLs.isEmpty
+                    ? "Ask GitHub through your familiar"
+                    : "\(openPullRequestURLs.count) open"),
+            EmptyChatSuggestion(
+                icon: "checkmark.square",
+                label: "What's on the board?",
+                hint: boardHint),
+            EmptyChatSuggestion(
+                icon: "scope",
+                label: nextLabel,
+                hint: priorityHint),
         ]
+    }
+
+    private var permissionsTarget: Familiar? {
+        guard !thread.isGroup else { return nil }
+        return thread.familiarIds.first.flatMap { app.familiar($0) }
+    }
+
+    private var canInspectWard: Bool {
+        if thread.isGroup {
+            return thread.familiarIds.contains { app.familiar($0) != nil }
+        }
+        return permissionsTarget != nil
+    }
+
+    private var wardScope: String {
+        thread.isGroup ? "each familiar’s" : "the familiar’s"
     }
 
     // MARK: - Composer
@@ -451,7 +1147,7 @@ struct ChatView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
-        .glassBar()
+        .background(chrome.bgBase)
         // Live dictation streams its running transcript into the draft.
         .onAppear { dictation.onUpdate = { draft = $0 } }
         .onChange(of: photoItems) { _, items in
@@ -489,6 +1185,9 @@ struct ChatView: View {
             FloatingAction(id: "camera", systemImage: "camera", label: "Camera") { showCamera = true },
             FloatingAction(id: "photos", systemImage: "photo.on.rectangle", label: "Photos") { showPhotosPicker = true },
             FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
+            FloatingAction(id: "tasks", systemImage: "checklist", label: "Link a task") { showTasks = true },
+            FloatingAction(id: "plugins", systemImage: "puzzlepiece.extension", label: "Plugins") { showPlugins = true },
+            FloatingAction(id: "dictation", systemImage: "mic.fill", label: "Dictate") { startDictation() },
             FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
         ]
     }
@@ -565,95 +1264,122 @@ struct ChatView: View {
     }
 
     private var composerBar: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            // "+" opens the floating attach/tools menu (Camera · Photos ·
-            // Files · Commands) instead of jumping straight into one picker.
-            CircularIconButton(systemImage: showActionMenu ? "xmark" : "plus",
-                               active: showActionMenu,
-                               label: showActionMenu ? "Close attach menu" : "Attach or run a tool") {
+        let isEmptyThread = thread.messages.isEmpty
+        let controlSize: CGFloat = isEmptyThread ? 40 : 36
+        return HStack(alignment: .center, spacing: 8) {
+            // The authored composer keeps every control inside one elevated
+            // panel. The plus well remains accent-tinted so attachment/tools
+            // discovery does not depend on text being present.
+            Button {
                 composerFocused = false
                 showActionMenu.toggle()
+            } label: {
+                Image(systemName: showActionMenu ? "xmark" : "plus")
+                    .font(.system(size: isEmptyThread ? 18 : 16, weight: .medium))
+                    .foregroundStyle(chrome.accent)
+                    .frame(width: controlSize, height: controlSize)
+                    .background(
+                        chrome.accent.opacity(showActionMenu ? 0.22 : 0.14),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
             }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+            .buttonStyle(.glassPress)
+            .accessibilityLabel(showActionMenu ? "Close attach menu" : "Attach or run a tool")
 
-            // Hairline capsule with the field and a trailing control inside it:
-            // a mic when empty, a filled send/run button once there's text.
-            HStack(alignment: .bottom, spacing: 4) {
-                TextField("Message", text: $draft, axis: .vertical)
-                    .lineLimit(1...6)
-                    .padding(.leading, 14)
-                    .padding(.vertical, 7)
-                    .focused($composerFocused)
-                    // Hardware-keyboard ergonomics (iPad / Mac over Tailscale):
-                    // plain Return sends, Shift+Return inserts a newline. The
-                    // software keyboard's return still inserts a newline as usual
-                    // (a vertical-axis field doesn't fire onSubmit), so multi-line
-                    // composing on-device is untouched.
-                    .onKeyPress(keys: [.return]) { press in
-                        guard !press.modifiers.contains(.shift) else { return .ignored }
-                        guard canSend else { return .ignored }
-                        send()
-                        return .handled
-                    }
-                    // Hardware Escape closes the "+" menu (outside tap and row
-                    // selection are the touch paths).
-                    .onKeyPress(keys: [.escape]) { _ in
-                        guard showActionMenu else { return .ignored }
-                        showActionMenu = false
-                        return .handled
-                    }
+            TextField("Ask something…", text: $draft, axis: .vertical)
+                .font(isEmptyThread ? .body : .callout)
+                .lineLimit(1...6)
+                .padding(.vertical, isEmptyThread ? 8 : 6)
+                .focused($composerFocused)
+                // Hardware-keyboard ergonomics (iPad / Mac over Tailscale):
+                // plain Return sends, Shift+Return inserts a newline. The
+                // software keyboard's return still inserts a newline as usual
+                // (a vertical-axis field doesn't fire onSubmit), so multi-line
+                // composing on-device is untouched.
+                .onKeyPress(keys: [.return]) { press in
+                    guard !press.modifiers.contains(.shift) else { return .ignored }
+                    guard canSend else { return .ignored }
+                    send()
+                    return .handled
+                }
+                // Hardware Escape closes the "+" menu (outside tap and row
+                // selection are the touch paths).
+                .onKeyPress(keys: [.escape]) { _ in
+                    guard showActionMenu else { return .ignored }
+                    showActionMenu = false
+                    return .handled
+                }
 
-                Group {
-                    if dictation.isRecording {
-                        Button { dictation.stop() } label: {
-                            Image(systemName: "stop.circle.fill")
-                                .font(.system(size: 29))
-                                .foregroundStyle(.red)
-                                .symbolEffect(.pulse, isActive: true)
-                                .background(Circle().fill(.white).padding(3))
-                        }
-                        .padding(.trailing, 3)
-                        .padding(.bottom, 2)
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel("Stop dictation")
-                    } else if canSend {
-                        Button(action: send) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 29))
-                                .foregroundStyle(isCommand ? Color.green : Color.accentColor)
-                                .background(Circle().fill(.white).padding(3))
-                        }
-                        .padding(.trailing, 3)
-                        .padding(.bottom, 2)
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel(isCommand ? "Run command" : "Send")
-                    } else {
-                        Button { startDictation() } label: {
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 17))
-                                .foregroundStyle(.secondary)
-                                .padding(.trailing, 12)
-                                .padding(.bottom, 8)
-                        }
-                        .accessibilityLabel("Dictate")
+            Group {
+                if dictation.isRecording {
+                    Button { dictation.stop() } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: controlSize, height: controlSize)
+                            .background(Color.red, in: Circle())
+                            .symbolEffect(.pulse, isActive: true)
                     }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .buttonStyle(.glassPress)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("Stop dictation")
+                } else {
+                    Button(action: send) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: isEmptyThread ? 18 : 16, weight: .bold))
+                            .foregroundStyle(
+                                canSend
+                                    ? (isCommand ? Color.white : chrome.accentForeground)
+                                    : chrome.textMuted
+                            )
+                            .frame(width: controlSize, height: controlSize)
+                            .background(
+                                canSend
+                                    ? (isCommand ? Color.green : chrome.accent)
+                                    : chrome.bgRaised,
+                                in: Circle()
+                            )
+                    }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .buttonStyle(.glassPress)
+                    .disabled(!canSend)
+                    .accessibilityLabel(isCommand ? "Run command" : "Send")
                 }
             }
-            .glassFill(.control, in: Capsule())
-            .overlay(Capsule().strokeBorder(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1))
-            // The focused field earns the accent halo — the design language's
-            // one "active" cue — matching the drawer's search treatment.
-            .accentGlow(active: composerFocused || dictation.isRecording)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
+        .padding(.leading, isEmptyThread ? 12 : 8)
+        .padding(.trailing, isEmptyThread ? 9 : 6)
+        .padding(.vertical, isEmptyThread ? 9 : 6)
+        .background(
+            chrome.bgElevated,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(isEmptyThread ? 0.32 : 0.24),
+                radius: isEmptyThread ? 22 : 16, y: 8)
+        // The focused field earns the accent halo — the design language's
+        // one "active" cue — matching the drawer's search treatment.
+        .accentGlow(active: composerFocused || dictation.isRecording)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, isEmptyThread ? 12 : 8)
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
+        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !pendingImages.isEmpty
+        return hasContent && (isCommand || thread.canSendMessages)
     }
 
     /// True when the draft is a recognised command — tints the send affordance
@@ -674,6 +1400,11 @@ struct ChatView: View {
         let raw = draft
         switch SlashInput.parse(raw) {
         case .command(let command, let args):
+            if case .sendAsPrompt = command.action,
+               !thread.canSendMessages {
+                thread.needsProjectSelection = true
+                return
+            }
             draft = ""
             dispatch(command, args: args)
         case .unknown(let token):
@@ -683,6 +1414,10 @@ struct ChatView: View {
             app.touch(thread)
         case .prose(let text):
             guard let client = app.client else { return }
+            guard thread.canSendMessages else {
+                thread.needsProjectSelection = true
+                return
+            }
             let attachments = pendingImages.map {
                 CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl)
             }
@@ -694,29 +1429,47 @@ struct ChatView: View {
             pendingImages = []
             replyingTo = nil
             Haptics.tap()
+            let modelBinding = turnModelBinding
             // Offline compose: park the message on the thread instead of
             // dead-ending in a transport error — it sends automatically on
             // the next reconnect (AppModel.flushQueuedMessages).
             if app.connectionState != .connected {
-                thread.enqueue(outgoing, attachments: attachments)
+                thread.enqueue(outgoing, attachments: attachments,
+                               modelControls: modelControlValues,
+                               modelOverride: modelBinding.modelOverride,
+                               modelOverrideScope: modelBinding.scope)
                 app.touch(thread)
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
             }
-            thread.send(outgoing, attachments: attachments, client: client) { app.touch(thread) }
+            thread.send(outgoing, attachments: attachments,
+                        modelControls: modelControlValues,
+                        modelOverride: modelBinding.modelOverride,
+                        modelOverrideScope: modelBinding.scope,
+                        client: client) { app.touch(thread) }
         }
     }
 
     /// Tap a follow-up suggestion chip → send it as the next message.
     private func sendSuggestion(_ text: String) {
         guard let client = app.client else { return }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
+        let modelBinding = turnModelBinding
         if app.connectionState != .connected {
-            thread.enqueue(text)
+            thread.enqueue(text, modelControls: modelControlValues,
+                           modelOverride: modelBinding.modelOverride,
+                           modelOverrideScope: modelBinding.scope)
             app.touch(thread)
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
-        thread.send(text, client: client) { app.touch(thread) }
+        thread.send(text, modelControls: modelControlValues,
+                    modelOverride: modelBinding.modelOverride,
+                    modelOverrideScope: modelBinding.scope,
+                    client: client) { app.touch(thread) }
     }
 
     /// Retry is offered on a failed reply (any time — a flaky network shouldn't
@@ -733,6 +1486,10 @@ struct ChatView: View {
     /// Re-run a reply in place (re-stream its familiar with the original prompt).
     private func retryAssistant(_ assistant: DisplayMessage) {
         guard let client = app.client else { return }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
         Haptics.tap()
         thread.retry(assistant.id, client: client) { app.touch(thread) }
     }
@@ -756,6 +1513,13 @@ struct ChatView: View {
         composerFocused = true
     }
 
+    private func prefillPlugin(_ plugin: MarketplacePlugin) {
+        let prompt = "Use \(plugin.displayName) to "
+        draft = draft.isEmpty ? prompt : "\(draft)\n\(prompt)"
+        showPlugins = false
+        composerFocused = true
+    }
+
     private func dispatch(_ command: SlashCommand, args: String) {
         switch command.action {
         case .help:
@@ -768,7 +1532,8 @@ struct ChatView: View {
             dismiss()
         case .newChat:
             let fresh = app.startFreshThread(familiarIds: thread.familiarIds,
-                                             title: thread.isGroup ? thread.title : nil)
+                                             title: thread.isGroup ? thread.title : nil,
+                                             projectRoot: thread.projectRoot)
             app.requestOpen(fresh)
             app.showToast("Started a new chat", systemImage: "square.and.pencil", style: .info)
         case .familiarPicker:
@@ -787,16 +1552,10 @@ struct ChatView: View {
         case .openBoard:
             app.selectedTab = .tasks
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
-        case .openCalendar:
-            app.selectedTab = .calendar
-            app.showToast("Opened Rituals", systemImage: "calendar", style: .info)
-        case .openDeveloper(let section):
-            devSectionRaw = section
-            app.selectedTab = .dev
+        case .openTerminal:
+            app.selectedTab = .terminal
             dismiss()
-            app.showToast(section == "terminal" ? "Opened Terminal" : "Opened Code",
-                          systemImage: section == "terminal" ? "terminal" : "folder",
-                          style: .info)
+            app.showToast("Opened Terminal", systemImage: "terminal", style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
         case .daemonStatus:
@@ -834,10 +1593,36 @@ struct ChatView: View {
             return
         }
         let sessionId = modelSessionId(familiarId)
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
+        prepareModelStateLoad(for: target)
+        guard let request = modelRequests.beginLoad(for: target) else { return }
         let resp: ChatModelStateResponse
         do {
             resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  rekeyModelPresentation(for: target, response: resp) else { return }
+            sessionModelState = resp.state
+            modelPickerOptions = resp.options ?? []
+            modelPickerAllowsRuntimeDefault =
+                resp.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = resp.inventory?.provenance ?? "unavailable"
+            if ChatModelTurnBinding.shouldClearPending(
+                thread.pendingModelOverride,
+                confirmedState: resp.state,
+                hasSession: sessionId != nil
+            ) {
+                thread.pendingModelOverride = nil
+                app.touch(thread)
+            }
+            modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
         } catch {
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  modelPresentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: currentModelRequestTarget
+                  ) else { return }
+            if sessionModelState == nil { modelPickerProvenance = "unavailable" }
             thread.appendSystem("Couldn't load the model list. Is the desktop reachable?", isError: true)
             app.touch(thread)
             return
@@ -846,14 +1631,21 @@ struct ChatView: View {
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmed.isEmpty {
-            guard !options.isEmpty else {
+            guard modelPickerAllowsRuntimeDefault || !options.isEmpty else {
                 thread.appendSystem("This runtime has no model menu — type /model <id> to set one.")
                 app.touch(thread)
                 return
             }
             modelPickerOptions = options
-            modelPickerCurrent = resp.state.effectiveModel
+            modelPickerCurrent = thread.pendingModelOverride ?? resp.state.effectiveModel
             showModelPicker = true
+            return
+        }
+
+        if ["default", "runtime-default"].contains(trimmed.lowercased()) {
+            if let task = selectModel(nil, familiarId: familiarId, sessionId: sessionId) {
+                await task.value
+            }
             return
         }
 
@@ -867,25 +1659,236 @@ struct ChatView: View {
             app.touch(thread)
             return
         }
-        await applyModel(modelId, familiarId: familiarId, sessionId: sessionId)
+        if let task = selectModel(modelId, familiarId: familiarId, sessionId: sessionId) {
+            await task.value
+        }
     }
 
-    /// PATCH the chosen model (session scope when the chat has a server session,
-    /// else the familiar default) and confirm inline.
-    private func applyModel(_ model: String, familiarId: String, sessionId: String?) async {
-        guard let client = app.client else { return }
-        let scope = sessionId != nil ? "session" : "familiar-default"
+    /// Stage model intent synchronously so a sheet dismissal followed by an
+    /// immediate Send cannot outrun the session PATCH. Existing-session writes
+    /// are serialized in tap order; the pending intent also rides that next
+    /// turn as a one-message override until GET confirms durable session state.
+    @discardableResult
+    private func selectModel(
+        _ model: String?,
+        familiarId: String,
+        sessionId: String?
+    ) -> Task<Void, Never>? {
+        let stagedModel = model ?? ""
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
+        modelRequests.beginIntent(for: target)
+        thread.pendingModelOverride = stagedModel
+        modelPickerCurrent = stagedModel
+        modelControlCapabilities = []
+        modelControlValues = [:]
+        app.touch(thread)
+        Haptics.tap()
+
+        guard sessionId != nil || model == nil else {
+            // A new chat has no session PATCH to reconcile. Still resolve the
+            // selected model's capabilities immediately so the first Send
+            // cannot inherit controls from the previously selected model (or
+            // appear to support none simply because the thread is new).
+            guard let client = app.client,
+                  let request = modelRequests.beginLoad(for: target) else {
+                app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
+                return nil
+            }
+            app.showToast("Model set for this chat", systemImage: "cpu", style: .info)
+            return modelMutationQueue.enqueue {
+                await self.loadPendingModelCapabilities(
+                    model: stagedModel,
+                    familiarId: familiarId,
+                    sessionId: sessionId,
+                    target: target,
+                    request: request,
+                    client: client
+                )
+            }
+        }
+        guard let client = app.client else {
+            app.showToast("Model queued for this chat", systemImage: "cpu", style: .warning)
+            return nil
+        }
+        let mutation = modelRequests.beginMutation(for: target)
+        return modelMutationQueue.enqueue {
+            var mutationFailed = false
+            do {
+                _ = try await client.setChatModel(
+                    familiarId: familiarId,
+                    sessionId: sessionId,
+                    model: model,
+                    scope: sessionId == nil ? "familiar-default" : "session")
+            } catch {
+                mutationFailed = true
+            }
+            await finishModelMutation(
+                mutation,
+                model: stagedModel,
+                mutationFailed: mutationFailed
+            )
+        }
+    }
+
+    /// Resolve controls for a staged model before a new chat owns a session.
+    /// The server treats `model` on GET as a read-only next-message preview, so
+    /// this cannot mutate familiar/session intent or race the eventual Send.
+    private func loadPendingModelCapabilities(
+        model: String,
+        familiarId: String,
+        sessionId: String?,
+        target: ChatModelRequestTarget,
+        request: ChatModelRequest,
+        client: CaveClient
+    ) async {
         do {
-            let resp = try await client.setChatModel(
-                familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
-            let label = (resp.options ?? []).first { $0.id == resp.state.effectiveModel }?.label
-                ?? resp.state.effectiveModel
-            thread.appendSystem("Model set to \(label).")
+            let response = try await client.chatModelState(
+                familiarId: familiarId,
+                sessionId: sessionId,
+                previewModel: model
+            )
+            guard modelRequests.canApplyLoad(request, for: currentModelRequestTarget),
+                  thread.pendingModelOverride == model,
+                  rekeyModelPresentation(for: target, response: response) else { return }
+            sessionModelState = response.state
+            modelControlCapabilities = response.controls ?? []
+            let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
+                ($0.family, Set($0.values.map(\.value)))
+            })
+            modelControlValues = modelControlValues.filter {
+                allowed[$0.key]?.contains($0.value) == true
+            }
+            modelPickerOptions = response.options ?? []
+            modelPickerAllowsRuntimeDefault = response.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = response.inventory?.provenance ?? "unavailable"
+            modelPickerCurrent = model
+            app.touch(thread)
+        } catch {
+            // The model selection remains staged and will still ride the first
+            // turn. Keep controls empty rather than inventing legacy globals.
+        }
+    }
+
+    private func finishModelMutation(
+        _ mutation: ChatModelRequest,
+        model: String,
+        mutationFailed: Bool
+    ) async {
+        guard let reconciliationTarget = modelRequests.finishMutation(mutation) else { return }
+        let reconciliation = await loadSessionModelState(reconciling: reconciliationTarget)
+        switch reconciliation.outcome.messageDisposition {
+        case .none:
+            return
+        case .failure:
+            thread.appendSystem("Couldn't confirm the model change.", isError: true)
+            app.touch(thread)
+            return
+        case .success:
+            break
+        }
+        guard let finalState = reconciliation.response else {
+            thread.appendSystem(
+                mutationFailed
+                    ? "Couldn't switch the model."
+                    : "Couldn't confirm the model change.",
+                isError: true
+            )
+            app.touch(thread)
+            return
+        }
+        let confirmed = model.isEmpty
+            ? finalState.state.source == "runtime-default"
+                && finalState.state.effectiveModel.isEmpty
+            : finalState.state.source == "session"
+                && finalState.state.effectiveModel == model
+        guard confirmed else {
+            thread.appendSystem(
+                mutationFailed
+                    ? "Couldn't switch the model."
+                    : "Couldn't confirm the model change.",
+                isError: true
+            )
+            app.touch(thread)
+            return
+        }
+        if model.isEmpty {
+            thread.pendingModelOverride = nil
+            thread.appendSystem("Model reset to runtime default.")
             app.touch(thread)
             Haptics.tap()
+            return
+        }
+        let label = finalState.options?.first { $0.id == finalState.state.effectiveModel }?.label
+            ?? finalState.state.effectiveModel
+        thread.appendSystem("Model set to \(label).")
+        app.touch(thread)
+        Haptics.tap()
+    }
+
+    @discardableResult
+    private func loadSessionModelState(
+        reconciling expectedTarget: ChatModelRequestTarget? = nil
+    ) async -> (outcome: ChatModelReconciliationOutcome, response: ChatModelStateResponse?) {
+        guard !thread.isGroup,
+              let familiarId = thread.familiarIds.first else {
+            prepareModelStateLoad(for: nil)
+            return expectedTarget == nil ? (.failed, nil) : (.superseded, nil)
+        }
+        let sessionId = modelSessionId(familiarId)
+        let target = makeModelRequestTarget(familiarId: familiarId, sessionId: sessionId)
+            .withBindingScope(modelBindingScope)
+        prepareModelStateLoad(for: target)
+        guard expectedTarget == nil || expectedTarget == target else { return (.superseded, nil) }
+        guard let client = app.client else {
+            if modelPresentationScope.canApplyResponse(
+                for: target,
+                currentTarget: currentModelRequestTarget
+            ) {
+                modelPickerProvenance = "unavailable"
+            }
+            return (.failed, nil)
+        }
+        guard let request = modelRequests.beginLoad(for: target) else { return (.superseded, nil) }
+        do {
+            let response = try await client.chatModelState(
+                familiarId: familiarId,
+                sessionId: sessionId)
+            let outcome = modelRequests.reconciliationOutcome(
+                for: request, currentTarget: currentModelRequestTarget, failed: false)
+            guard outcome == .applied,
+                  rekeyModelPresentation(for: target, response: response)
+            else { return (outcome, nil) }
+            sessionModelState = response.state
+            modelControlCapabilities = response.controls ?? []
+            let allowed = Dictionary(uniqueKeysWithValues: modelControlCapabilities.map {
+                ($0.family, Set($0.values.map(\.value)))
+            })
+            modelControlValues = modelControlValues.filter { allowed[$0.key]?.contains($0.value) == true }
+            modelPickerOptions = response.options ?? []
+            modelPickerAllowsRuntimeDefault =
+                response.inventory?.allowsRuntimeDefault ?? false
+            modelPickerProvenance = response.inventory?.provenance ?? "unavailable"
+            if ChatModelTurnBinding.shouldClearPending(
+                thread.pendingModelOverride,
+                confirmedState: response.state,
+                hasSession: sessionId != nil
+            ) {
+                thread.pendingModelOverride = nil
+                app.touch(thread)
+            }
+            modelPickerCurrent = thread.pendingModelOverride ?? response.state.effectiveModel
+            return (.applied, response)
         } catch {
-            thread.appendSystem("Couldn't switch the model.", isError: true)
-            app.touch(thread)
+            let outcome = modelRequests.reconciliationOutcome(
+                for: request, currentTarget: currentModelRequestTarget, failed: true)
+            guard outcome == .failed,
+                  modelPresentationScope.canApplyResponse(
+                    for: target,
+                    currentTarget: currentModelRequestTarget
+                  ) else { return (outcome, nil) }
+            if sessionModelState == nil { modelPickerProvenance = "unavailable" }
+            return (.failed, nil)
         }
     }
 
@@ -903,7 +1906,15 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
-        thread.send(trimmed, client: client) { app.touch(thread) }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
+        let modelBinding = turnModelBinding
+        thread.send(trimmed, modelControls: modelControlValues,
+                    modelOverride: modelBinding.modelOverride,
+                    modelOverrideScope: modelBinding.scope,
+                    client: client) { app.touch(thread) }
     }
 
     private func runDaemonStatus() async {
@@ -1016,9 +2027,55 @@ struct ChatView: View {
         let destination = app.directThread(for: familiar.id)
         let prompt = forwardPrompt(for: message, to: familiar)
         let displayText = forwardDisplayText(for: message)
-        destination.send(prompt, displayText: displayText, client: client) { app.touch(destination) }
-        app.requestOpen(destination)
-        app.showToast("Forwarded to \(familiar.displayName)", systemImage: "arrowshape.turn.up.right")
+        Task { @MainActor in
+            if !destination.canSendMessages {
+                do {
+                    let accessible = try await client.projects(familiarIds: [familiar.id])
+                    let preferred = [thread.projectRoot].compactMap { $0 }
+                        + app.recentProjectRoots
+                    destination.projectRoot = ChatProjectSelection.resolvedRoot(
+                        current: destination.projectRoot,
+                        recent: preferred,
+                        projects: accessible
+                    )
+                    app.touch(destination)
+                } catch {
+                    destination.needsProjectSelection = true
+                }
+            }
+
+            guard destination.canSendMessages else {
+                destination.needsProjectSelection = true
+                app.requestOpen(destination)
+                app.showToast(
+                    "Choose a project before forwarding",
+                    systemImage: "folder.badge.questionmark",
+                    style: .warning
+                )
+                return
+            }
+
+            let destinationModelBinding = ChatModelTurnBinding.resolve(
+                pendingModel: destination.pendingModelOverride,
+                confirmedState: nil,
+                hasSession: destination.sessionIds[familiar.id]?.isEmpty == false
+            )
+            destination.send(
+                prompt,
+                displayText: displayText,
+                modelControls: [:],
+                modelOverride: destinationModelBinding.modelOverride,
+                modelOverrideScope: destinationModelBinding.scope,
+                client: client
+            ) {
+                app.touch(destination)
+            }
+            app.requestOpen(destination)
+            app.showToast(
+                "Forwarded to \(familiar.displayName)",
+                systemImage: "arrowshape.turn.up.right"
+            )
+        }
     }
 
     private func forwardSenderName(for message: DisplayMessage) -> String {
@@ -1089,7 +2146,7 @@ final class ScrollCoalescer {
 private struct DaySeparator: View {
     let date: Date
 
-    private var label: String {
+    static func label(for date: Date) -> String {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return "Today" }
         if cal.isDateInYesterday(date) { return "Yesterday" }
@@ -1101,13 +2158,53 @@ private struct DaySeparator: View {
     }
 
     var body: some View {
-        Text(label)
+        Text(Self.label(for: date))
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12).padding(.vertical, 4)
             .glass(.control, in: Capsule())
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
+    }
+}
+
+/// The floating "current day" pill shown at the top of the transcript while
+/// it scrolls — same label rules as `DaySeparator`, lifted with a shadow so
+/// it reads as chrome above the messages rather than a row among them.
+private struct DayChip: View {
+    let date: Date
+
+    var body: some View {
+        Text(DaySeparator.label(for: date))
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12).padding(.vertical, 4)
+            .glassFill(.control, in: Capsule())
+            .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+            .accessibilityLabel("Viewing \(DaySeparator.label(for: date))")
+    }
+}
+
+/// iMessage/Telegram-style marker above the first reply that arrived since
+/// the operator last viewed this familiar's chats.
+private struct UnreadDividerView: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            hairline
+            Text("New Messages")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .fixedSize()
+            hairline
+        }
+        .padding(.vertical, 2)
+        .accessibilityLabel("New messages below")
+    }
+
+    private var hairline: some View {
+        Rectangle()
+            .fill(Color.accentColor.opacity(0.35))
+            .frame(height: 1)
     }
 }
 
@@ -1201,17 +2298,33 @@ struct ResponseReaderView: View {
 struct FamiliarPickerSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    var title: String = "Switch familiar"
+    let title: String
+    let familiarIds: [String]?
     let onPick: (Familiar) -> Void
+
+    init(
+        title: String = "Switch familiar",
+        familiarIds: [String]? = nil,
+        onPick: @escaping (Familiar) -> Void
+    ) {
+        self.title = title
+        self.familiarIds = familiarIds
+        self.onPick = onPick
+    }
+
+    private var familiars: [Familiar] {
+        guard let familiarIds else { return app.familiars }
+        return familiarIds.compactMap { app.familiar($0) }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if app.familiars.isEmpty {
+                if familiars.isEmpty {
                     Text("No familiars found. Pull to refresh on the Chats screen.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                ForEach(app.familiars) { familiar in
+                ForEach(familiars) { familiar in
                     Button { onPick(familiar) } label: {
                         HStack(spacing: 12) {
                             AvatarView(familiar: familiar,

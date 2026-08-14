@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from "react";
 import { Icon } from "@/lib/icon";
-import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { withNativeBrowserSequence } from "@/lib/native-browser-lifecycle";
@@ -15,9 +14,9 @@ import {
   BROWSER_MOTION_WINDOW_MS,
   BROWSER_RECONCILE_INTERVAL_MS,
   nodeContainsNativeWebviewCover,
+  nativeBrowserBounds,
   recordBrowserReconcile,
   surfaceIsCovered,
-  WEBVIEW_OFFSCREEN,
 } from "@/lib/browser-native-overlay";
 import {
   createExpectedBrowserNavigation,
@@ -25,6 +24,7 @@ import {
   type BrowserNavigationRequest,
   type ExpectedBrowserNavigation,
 } from "@/lib/browser-navigation-queue";
+import { registerSurfaceHistoryDelegate } from "@/lib/surface-history";
 import { TabFavicon } from "./browser-tab-favicon";
 import {
   HOME_URL,
@@ -75,7 +75,7 @@ export type BrowserPaneHandle = {
 // The imperative handle rides a regular `handleRef` prop (not an element ref):
 // BrowserPane loads through next/dynamic (lazy-surfaces), whose wrapper does
 // not forward element refs — a plain prop crosses the boundary losslessly.
-export function BrowserPane({ label = "default", activeFamiliarId = null, active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; activeFamiliarId?: string | null; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
+export function BrowserPane({ label = "default", active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBrowserBridge | null>(null);
@@ -370,10 +370,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
           hideAll();
         }
       } else {
-        const next = {
-          x: Math.round(rect.left), y: Math.round(rect.top),
-          w: Math.round(rect.width), h: Math.round(rect.height),
-        };
+        const next = nativeBrowserBounds(rect);
         if (
           hidden ||
           next.x !== last.x || next.y !== last.y ||
@@ -450,6 +447,18 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     // state rather than a body portal. The rAF runs after the DOM commit.
     const onInteraction = () => scheduleImmediateReconcile();
     const onShellLayout = () => startMotionWindow();
+    // A per-monitor DPI transition can preserve the CSS layout viewport, so
+    // neither ResizeObserver nor window.resize is guaranteed to run. Re-arm a
+    // resolution query after every change; the next reconcile recalculates the
+    // physical child-WebView bounds with the new device-pixel ratio.
+    let dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const onDprChange = () => {
+      dprQuery.removeEventListener("change", onDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dprQuery.addEventListener("change", onDprChange);
+      scheduleImmediateReconcile();
+    };
+    dprQuery.addEventListener("change", onDprChange);
     window.addEventListener("resize", scheduleImmediateReconcile);
     window.addEventListener("scroll", scheduleImmediateReconcile, true);
     window.addEventListener("cave:native-webview-layout", onShellLayout);
@@ -472,6 +481,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       clearTimeout(motionTimer);
       resizeObserver.disconnect();
       portalObserver.disconnect();
+      dprQuery.removeEventListener("change", onDprChange);
       window.removeEventListener("resize", scheduleImmediateReconcile);
       window.removeEventListener("scroll", scheduleImmediateReconcile, true);
       window.removeEventListener("cave:native-webview-layout", onShellLayout);
@@ -510,9 +520,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
       const navigationArgs = withNativeBrowserSequence({
         label: tabLabel(activeTab.id),
         url: activeTab.url,
-        x: covered ? WEBVIEW_OFFSCREEN : rect.left,
-        y: covered ? WEBVIEW_OFFSCREEN : rect.top,
-        w: rect.width, h: rect.height,
+        ...nativeBrowserBounds(rect, covered),
       });
       expectedPageLoadRef.current[activeTab.id] = createExpectedBrowserNavigation(
         activeTab.url,
@@ -669,6 +677,33 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     setTabs((t) => t.map((tab) => tab.id === activeTabId ? { ...tab, url: next } : tab));
     commitAddress(next);
   };
+
+  // The shell's Back reaches the embedded pages before anything else. Inside
+  // this surface "back" means the page you were just on — those pages are their
+  // own axis, the way an iframe's history is — and the press falls through to
+  // the workspace journal only once the pane sits at the root of its stack.
+  const paneNavRef = useRef({ canBack, canForward, goBack, goForward });
+  paneNavRef.current = { canBack, canForward, goBack, goForward };
+  useEffect(
+    () =>
+      registerSurfaceHistoryDelegate({
+        id: "browser:page",
+        canMove: (direction) =>
+          direction === -1 ? paneNavRef.current.canBack : paneNavRef.current.canForward,
+        move: (direction) => {
+          const nav = paneNavRef.current;
+          if (direction === -1) {
+            if (!nav.canBack) return false;
+            nav.goBack();
+            return true;
+          }
+          if (!nav.canForward) return false;
+          nav.goForward();
+          return true;
+        },
+      }),
+    [],
+  );
 
   // Cmd+K / Ctrl+K → open quick-open palette.
   // Uses capture phase + paneRef containment check so the global workspace

@@ -16,6 +16,8 @@ type MigrationDetail = {
   canonicalHash?: string;
   legacyMtimeMs?: number;
   canonicalMtimeMs?: number;
+  legacySize?: number;
+  canonicalSize?: number;
   state: "pending" | "unresolved" | "managed";
   summary: string;
   differences: string[];
@@ -38,6 +40,14 @@ type RunPayload = StatusPayload & {
     moved?: string[];
     resolved?: string[];
     errors?: Array<{ legacy: string; error: string }>;
+    confirmationRequired?: Array<{
+      legacy: string;
+      action: MigrationAction;
+      keptBytes: number;
+      discardedBytes: number;
+      discardToken: string;
+      summary: string;
+    }>;
   };
 };
 
@@ -74,6 +84,13 @@ function formatTime(value?: number): string {
   return new Date(value).toLocaleString();
 }
 
+function formatSize(value?: number): string {
+  if (typeof value !== "number") return "";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function actionLabel(action: MigrationAction): string {
   if (action === "merge") return "Merge safely";
   if (action === "keep-canonical") return "Keep current";
@@ -98,6 +115,7 @@ export function CaveHomeMigrationBannerTrigger() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<{ legacy: string; action: MigrationAction; summary: string; discardToken: string } | null>(null);
 
   const publish = useCallback((next: MigrationStatus) => {
     setStatus(next);
@@ -132,7 +150,7 @@ export function CaveHomeMigrationBannerTrigger() {
   // without requiring an app restart. 5 minutes: the endpoint scans the legacy
   // home on every hit and the drift it watches for is rare and non-urgent, so
   // a tighter cadence is pure overhead (cave-v8hh).
-  usePausablePoll(() => void refresh(), 5 * 60_000, { pauseWhileInputActive: true });
+  usePausablePoll(refresh, 5 * 60_000, { pauseWhileInputActive: true });
 
   useEffect(() => {
     let cancelled = false;
@@ -148,18 +166,29 @@ export function CaveHomeMigrationBannerTrigger() {
     };
   }, [dismissBanner, publish]);
 
-  const runAction = async (detail: MigrationDetail, action: MigrationAction) => {
+  const runAction = async (detail: MigrationDetail, action: MigrationAction, confirmToken?: string) => {
     setWorking(`${detail.legacy}:${action}`);
     setNotice(null);
     try {
       const response = await fetch("/api/cave-home-migration", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ legacy: detail.legacy, action }),
+        body: JSON.stringify(confirmToken
+          ? { legacy: detail.legacy, action, confirm: confirmToken }
+          : { legacy: detail.legacy, action }),
       });
       const payload = await response.json() as RunPayload;
       if (!response.ok || !payload.status) throw new Error(payload.error ?? "Migration request failed");
       publish(payload.status);
+      const guard = payload.result?.confirmationRequired?.find((entry) => entry.legacy === detail.legacy);
+      if (guard) {
+        // A re-blocked confirm carries a fresh token/summary (the copy changed
+        // after the user reviewed it); always adopt the latest.
+        setConfirmRequest({ legacy: guard.legacy, action: guard.action, summary: guard.summary, discardToken: guard.discardToken });
+        setNotice(guard.summary);
+        return;
+      }
+      setConfirmRequest((current) => current?.legacy === detail.legacy ? null : current);
       const firstError = payload.result?.errors?.[0];
       setNotice(firstError ? `${firstError.legacy}: ${firstError.error}` : `${detail.legacy}: ${actionLabel(action)} complete.`);
     } catch (error) {
@@ -197,10 +226,27 @@ export function CaveHomeMigrationBannerTrigger() {
                 {detail.differences.map((difference) => <li key={difference}>{difference}</li>)}
               </ul>
               <dl>
-                <div><dt>Legacy</dt><dd>{formatTime(detail.legacyMtimeMs)}</dd></div>
-                <div><dt>Canonical</dt><dd>{formatTime(detail.canonicalMtimeMs)}</dd></div>
+                <div><dt>Legacy</dt><dd>{formatTime(detail.legacyMtimeMs)}{detail.legacySize !== undefined ? ` · ${formatSize(detail.legacySize)}` : ""}</dd></div>
+                <div><dt>Canonical</dt><dd>{formatTime(detail.canonicalMtimeMs)}{detail.canonicalSize !== undefined ? ` · ${formatSize(detail.canonicalSize)}` : ""}</dd></div>
               </dl>
               {detail.backupPath ? <p className="cave-migration-file__backup">Recovery bundle: {detail.backupPath}</p> : null}
+              {confirmRequest?.legacy === detail.legacy ? (
+                <div className="cave-migration-file__confirm" role="alert">
+                  <p>{confirmRequest.summary}</p>
+                  <div className="cave-migration-file__actions">
+                    <button
+                      type="button"
+                      disabled={working !== null}
+                      onClick={() => void runAction(detail, confirmRequest.action, confirmRequest.discardToken)}
+                    >
+                      {working === `${detail.legacy}:${confirmRequest.action}` ? "Working…" : "Discard larger copy anyway"}
+                    </button>
+                    <button type="button" disabled={working !== null} onClick={() => setConfirmRequest(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <div className="cave-migration-file__actions">
                 {detail.actions.map((action) => (
                   <button

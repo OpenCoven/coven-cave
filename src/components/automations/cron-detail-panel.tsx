@@ -12,6 +12,7 @@ import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
 import { RRULE_DAY_LABEL, RRULE_DAY_ORDER, buildCodexRrule, parseCodexRrule, composeAutomationPrompt, splitAutomationPrompt } from "@/lib/codex-automation-form";
 import { commaInput, listInput, parseListInput } from "@/lib/automations/list-input";
+import { relativeTimeSigned } from "@/lib/relative-time";
 import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 import { CronDetailSection, CronSummaryTile, FieldLabel } from "@/components/automations/cron-detail-primitives";
 
@@ -26,13 +27,10 @@ const selectClass = `${fieldBaseClass} h-8 px-2 text-[length:var(--text-sm)]`;
 const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[length:var(--text-sm)] leading-relaxed`;
 const monoTextareaClass = `${textareaClass} font-mono text-[length:var(--text-xs)]`;
 
+// Same relative formatting the list rows use (schedule-list.tsx), so a run
+// never reads "3d ago" in the list but "Jul 20, 2:15 PM" in this panel.
 function relTime(iso: string | undefined | null): string {
-  if (!iso) return "—";
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const minutes = Math.round((then - now) / 60_000);
-  if (Math.abs(minutes) < 60) return `${Math.abs(minutes)}m ${minutes < 0 ? "ago" : "from now"}`;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+  return iso ? relativeTimeSigned(iso) : "—";
 }
 
 export function CodexDetailPanel({
@@ -260,7 +258,7 @@ export function CodexDetailPanel({
             aria-pressed={scheduleMode === mode}
             className="rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--text-xs)]"
             style={{
-              background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
+              background: scheduleMode === mode ? "color-mix(in oklch, var(--foreground) 8%, transparent)" : "transparent",
               color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
             }}
           >
@@ -319,10 +317,10 @@ export function CodexDetailPanel({
         <p className="mt-2 text-[length:var(--text-xs)] [color:var(--text-muted)]!">
           {scheduleMode === "daily"
             ? `Runs every day at ${scheduleTime}`
-            : `Runs weekly on ${scheduleDays.map((d) => RRULE_DAY_LABEL[d]).join(", ")} at ${scheduleTime}`}
+            : `Runs weekly on ${RRULE_DAY_ORDER.filter((d) => scheduleDays.includes(d)).map((d) => RRULE_DAY_LABEL[d]).join(", ")} at ${scheduleTime}`}
         </p>
       ) : (
-        <p className="mt-2 break-all font-mono text-[length:var(--text-2xs)]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
+        <p className="mt-2 break-all font-mono text-[length:var(--text-2xs)]" style={{ color: invalidSchedule ? "var(--color-warning)" : "var(--text-muted)" }}>
           {nextRrule || "RRULE required"}
         </p>
       )}
@@ -444,10 +442,10 @@ export function CodexDetailPanel({
               style={{
                 borderColor: isActive ? "color-mix(in oklch, var(--accent-presence) 45%, transparent)" : "var(--border-hairline)",
                 background: isActive ? "color-mix(in oklch, var(--accent-presence) 14%, transparent)" : "var(--bg-base)",
-                color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)",
+                color: isActive ? "var(--color-success)" : "var(--text-muted)",
               }}
             >
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }} />
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: isActive ? "var(--color-success)" : "var(--text-muted)" }} />
               {isActive ? "Active" : "Paused"}
             </span>
             <Button
@@ -510,7 +508,7 @@ export function CodexDetailPanel({
       <div className="cron-detail-actions border-t px-5 py-4 [border-color:var(--border-hairline)]!">
         <div className={`space-y-3${expanded ? " mx-auto w-full max-w-xl" : ""}`}>
         {saveBlockedReason ? (
-          <p className="text-[length:var(--text-xs)] [color:oklch(0.7_0.16_35)]!" role="alert">
+          <p className="text-[length:var(--text-xs)] [color:var(--color-warning)]!" role="alert">
             {saveBlockedReason}
           </p>
         ) : null}

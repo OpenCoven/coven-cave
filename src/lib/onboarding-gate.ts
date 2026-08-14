@@ -13,6 +13,12 @@ export type OnboardingStatusPayload = {
   steps?: Record<string, { ok?: boolean }>;
 };
 
+export type OnboardingBootstrapStatusPayload = {
+  complete?: boolean;
+  needsSetup?: boolean;
+  confirmed?: boolean;
+};
+
 export type StartupOnboardingStatusDecision = {
   status: OnboardingStatusPayload;
   cancelled: boolean;
@@ -46,7 +52,8 @@ export type OnboardingAutoFinishGateDecision = {
  * reachable, any remaining incompleteness (a missing tool or runtime) is
  * genuine setup work, so the wizard opens. A machine with no familiars is NOT
  * unfinished — the status route reports familiars/binding as advisory since
- * creation moved to the in-app Summoning Circle.
+ * creation moved to the in-app Summoning Circle. The Queue project is not a
+ * setup step either: its selection lives on the Tasks page's Queue tab.
  */
 export function shouldAutoOpenOnboarding(payload: OnboardingStatusPayload): boolean {
   if (payload.complete) return false;
@@ -63,6 +70,29 @@ export function shouldApplyStartupOnboardingStatus({
   manuallyOpened,
 }: StartupOnboardingStatusDecision): boolean {
   return !cancelled && !manuallyOpened && shouldAutoOpenOnboarding(status);
+}
+
+export function shouldAutoOpenOnboardingBootstrap(
+  payload: OnboardingBootstrapStatusPayload,
+): boolean {
+  if (payload.complete) return false;
+  return payload.confirmed === true || payload.needsSetup === true;
+}
+
+export function shouldApplyStartupOnboardingBootstrap({
+  status,
+  cancelled,
+  manuallyOpened,
+}: {
+  status: OnboardingBootstrapStatusPayload;
+  cancelled: boolean;
+  manuallyOpened: boolean;
+}): boolean {
+  return (
+    !cancelled &&
+    !manuallyOpened &&
+    shouldAutoOpenOnboardingBootstrap(status)
+  );
 }
 
 export function isLatestOnboardingStatusRequest({

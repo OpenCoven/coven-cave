@@ -3,7 +3,7 @@
 // registry error, which bricked every `coven run` (chat surfaced it as codex
 // turns ending "No assistant text returned").
 import assert from "node:assert/strict";
-import { mkdtemp, readFile as readFileFs, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile as readFileFs, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -14,15 +14,38 @@ import {
   shadowedMarkerPath,
   SHADOWED_MANIFEST_SUFFIX,
 } from "./adapter-conflict-heal.ts";
+import { ensureAdapterManifestScaffold } from "./adapter-manifest-scaffold.ts";
 
 const CLI_ERROR =
-  "Error: external harness adapter `copilot` in /Users/buns/.coven/adapters/copilot.json conflicts with a built-in harness";
+  "Error: external harness adapter `copilot` in /home/test/.coven/adapters/copilot.json conflicts with a built-in harness";
+
+function legacyHermesShimManifest(): string {
+  return `${JSON.stringify({
+    adapters: [{
+      id: "hermes",
+      label: "Hermes Agent",
+      executable: "hermes-coven",
+      interactive_prompt_prefix_args: ["chat", "--source", "coven"],
+      non_interactive_prompt_prefix_args: ["chat", "--source", "coven", "-Q"],
+      install_hint: "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+      model_flag: "--model",
+      capabilities: {
+        stream: false,
+        preassigned_session_id: false,
+        think: false,
+        speed: false,
+      },
+      version: "1.0.2",
+      description: "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments.",
+    }],
+  }, null, 2)}\n`;
+}
 
 test("detectBuiltinAdapterConflict parses the released CLI error line", () => {
   const conflict = detectBuiltinAdapterConflict(CLI_ERROR);
   assert.deepEqual(conflict, {
     id: "copilot",
-    manifestPath: "/Users/buns/.coven/adapters/copilot.json",
+    manifestPath: "/home/test/.coven/adapters/copilot.json",
   });
 });
 
@@ -102,9 +125,59 @@ test("marker suffix keeps quarantined files off the CLI's .json dir scan", () =>
   assert.ok(SHADOWED_MANIFEST_SUFFIX.startsWith("."));
 });
 
+test("Hermes manifest repair uses the active COVEN_HOME adapters directory", async () => {
+  const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
+  const manifestPath = path.join(covenHome, "adapters", "hermes.json");
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, legacyHermesShimManifest(), "utf8");
+  const previous = process.env.COVEN_HOME;
+  process.env.COVEN_HOME = covenHome;
+  try {
+    assert.equal(
+      await ensureAdapterManifestScaffold("hermes", { platform: "win32" }),
+      true,
+    );
+    const manifest = JSON.parse(await readFileFs(manifestPath, "utf8"));
+    assert.equal(manifest.adapters[0].executable, "hermes");
+    assert.equal(manifest.adapters[0].prompt_flag, "--query");
+  } finally {
+    if (previous === undefined) delete process.env.COVEN_HOME;
+    else process.env.COVEN_HOME = previous;
+  }
+});
+
+test("Hermes manifest repair preserves a formatting-only user manifest", async () => {
+  const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
+  const manifestPath = path.join(covenHome, "adapters", "hermes.json");
+  const userContents = JSON.stringify(JSON.parse(legacyHermesShimManifest()));
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, userContents, "utf8");
+
+  assert.equal(
+    await ensureAdapterManifestScaffold("hermes", { adaptersDir: path.dirname(manifestPath), platform: "win32" }),
+    false,
+  );
+  assert.equal(await readFileFs(manifestPath, "utf8"), userContents);
+});
+
+test("adapter scaffolding preserves a user-managed non-file manifest path", async () => {
+  const covenHome = await mkdtemp(path.join(tmpdir(), "coven-home-"));
+  const manifestPath = path.join(covenHome, "adapters", "hermes.json");
+  await mkdir(manifestPath, { recursive: true });
+
+  assert.equal(
+    await ensureAdapterManifestScaffold("hermes", {
+      adaptersDir: path.dirname(manifestPath),
+      platform: "win32",
+    }),
+    false,
+  );
+  assert.equal((await lstat(manifestPath)).isDirectory(), true);
+});
+
 // Wiring pins: the chat send route must detect the conflict from harness
-// stderr and heal+retry; both scaffold sites must refuse to resurrect a
-// quarantined manifest.
+// stderr and heal+retry; every scaffold site must route through the shared
+// writer, which refuses to resurrect a quarantined manifest.
 test("chat send route wires conflict detection and heal-retry", async () => {
   const source = await readFileFs(
     path.join(process.cwd(), "src/app/api/chat/send/route.ts"),
@@ -116,16 +189,22 @@ test("chat send route wires conflict detection and heal-retry", async () => {
   assert.match(source, /pushProgress\(\s*"adapter-heal"/);
 });
 
-test("scaffold sites refuse to resurrect quarantined manifests", async () => {
+test("scaffold sites use the shared quarantine-aware manifest writer", async () => {
+  const helper = await readFileFs(
+    path.join(process.cwd(), "src/lib/server/adapter-manifest-scaffold.ts"),
+    "utf8",
+  );
+  assert.match(helper, /isManifestShadowedByBuiltin\(manifestPath\)/);
   for (const file of [
     "src/app/api/config/route.ts",
+    "src/app/api/familiars/route.ts",
     "src/app/api/onboarding/setup/route.ts",
   ]) {
     const source = await readFileFs(path.join(process.cwd(), file), "utf8");
     assert.match(
       source,
-      /isManifestShadowedByBuiltin\(manifestPath\)/,
-      `${file} must check the shadowed marker before scaffolding`,
+      /ensureAdapterManifestScaffold/,
+      `${file} must use the shared manifest writer`,
     );
   }
 });

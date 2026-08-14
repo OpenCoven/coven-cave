@@ -10,12 +10,14 @@
 import { parseConversationRuntime } from "./chat-hosts.ts";
 
 /**
- * Minimum measured transcript content-box width (px) before the panel shows.
- * The reading column caps at --cave-chat-measure (64rem = 1024px) and centers;
- * at 1200px+ of content box the panel's overlay footprint sits mostly in the
- * spare margin instead of on top of the conversation.
+ * Minimum measured transcript content-box width (px) before the panel shows —
+ * matches Tailwind's 2xl breakpoint. The reading column caps at
+ * --cave-chat-measure (64rem = 1024px) and centers, so each side margin is
+ * (paneWidth − 1024) / 2. The card is 240px wide: at 1536px+ the margin is
+ * ≥256px and the panel sits ENTIRELY in the spare margin — it must never
+ * overlap conversation content (suggestion chips reach the column edge).
  */
-export const ENV_PANEL_MIN_WIDTH = 1200;
+export const ENV_PANEL_MIN_WIDTH = 1536;
 
 export type EnvPanelSignals = {
   /** Measured transcript content-box width; null before the first measure. */

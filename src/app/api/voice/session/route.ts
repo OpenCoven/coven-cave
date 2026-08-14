@@ -6,38 +6,15 @@ import { caveHome } from "../../../../lib/coven-paths.ts";
 import { resolveSecret } from "../../../../lib/vault.ts";
 import { getVoiceProvider } from "../../../../lib/voice/registry.ts";
 import { hydrateForVoiceCall } from "../../../../lib/voice/hydrate-instructions.ts";
-import {
-  DEFAULT_ELEVENLABS_MODEL_ID,
-  DEFAULT_ELEVENLABS_VOICE_ID,
-} from "../../../../lib/voice/elevenlabs-shared.ts";
+import { getVoiceProviderDefinition } from "../../../../lib/voice/provider-catalog.ts";
 import { isSafeConversationSessionId } from "../../../../lib/cave-conversations.ts";
+import {
+  isVoiceKeyErrorMessage,
+  voiceRecoveryVaultKey,
+} from "../../../../lib/voice/vault-key-recovery.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
-  openai: "OPENAI_API_KEY",
-  gemini: "GOOGLE_API_KEY",
-  elevenlabs: "ELEVENLABS_API_KEY",
-};
-
-// Providers whose brain lives on this machine (or behind our own chat bridge)
-// and therefore mint without any vault secret.
-const KEYLESS_PROVIDERS = new Set(["local", "familiar"]);
-
-const DEFAULTS: Record<string, { model: string; voice: string }> = {
-  openai: { model: "gpt-realtime", voice: "alloy" },
-  gemini: { model: "gemini-2.0-flash-exp", voice: "Puck" },
-  // Model = the loopback LLM (Ollama/LM Studio) model name; voice = a system
-  // synthesizer voice name, empty for the platform default.
-  local: { model: "llama3.2", voice: "" },
-  // The familiar's own harness is the brain — there is no voice model to pick,
-  // and the voice is a system synthesizer voice name.
-  familiar: { model: "", voice: "" },
-  // Brain = the familiar's harness (like `familiar`); voice = an ElevenLabs
-  // voice id and model = an ElevenLabs model id, spoken through our TTS proxy.
-  elevenlabs: { model: DEFAULT_ELEVENLABS_MODEL_ID, voice: DEFAULT_ELEVENLABS_VOICE_ID },
-};
 
 type FamiliarRecord = {
   display_name?: string;
@@ -95,20 +72,15 @@ export async function POST(req: Request) {
     }, { status: 400 });
   }
 
+  const definition = getVoiceProviderDefinition(familiar.voiceProvider);
   const provider = getVoiceProvider(familiar.voiceProvider);
-  if (!provider) {
+  if (!definition || !provider) {
     return NextResponse.json({ ok: false, error: "unknown_provider" }, { status: 400 });
   }
 
-  // Keyless providers have no secret — their brain is a loopback server or the
-  // familiar's own harness, reached through our own routes. Everything else
-  // needs a vault key.
   let apiKey = "";
-  if (!KEYLESS_PROVIDERS.has(provider.id)) {
-    const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
-    if (!vaultKey) {
-      return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
-    }
+  if (definition.vaultKey !== null) {
+    const vaultKey = definition.vaultKey;
     const resolved = resolveSecret(vaultKey);
     if (!resolved) {
       return NextResponse.json({
@@ -126,9 +98,8 @@ export async function POST(req: Request) {
     { seedTurns: 12 },
   );
 
-  const defaults = DEFAULTS[familiar.voiceProvider] ?? { model: "", voice: "" };
-  const model = familiar.voiceModel || defaults.model;
-  const voice = familiar.voiceName || defaults.voice;
+  const model = familiar.voiceModel || definition.defaults.model;
+  const voice = familiar.voiceName || definition.defaults.voice;
 
   let grant;
   try {
@@ -142,10 +113,24 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    // Providers throw `machine_code: human detail` for known failures
+    // (elevenlabs_key_invalid, not_implemented, …). Surface the code so the
+    // overlay can map it to actionable copy instead of a generic mint
+    // failure, and name the vault key when the failure is key-shaped so the
+    // error card can offer an in-place fix. (cave-xz57)
+    const structured = /^([a-z][a-z0-9_]*):\s*([\s\S]+)$/.exec(msg);
+    const code = structured ? structured[1] : "provider_mint_failed";
+    const vaultKey = definition.vaultKey;
+    const keyFixable = Boolean(vaultKey) && (
+      voiceRecoveryVaultKey({ errorCode: code, providerId: provider.id }) !== null ||
+      isVoiceKeyErrorMessage(msg)
+    );
     return NextResponse.json({
       ok: false,
-      error: "provider_mint_failed",
+      error: code,
       providerMessage: msg,
+      ...(structured ? { hint: structured[2] } : {}),
+      ...(keyFixable ? { missingKey: vaultKey } : {}),
     }, { status: 502 });
   }
 

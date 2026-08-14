@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/huggingface",
   "x-coven": {
     "displayName": "Hugging Face",

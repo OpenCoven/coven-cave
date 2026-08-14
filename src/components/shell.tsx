@@ -11,16 +11,19 @@ import {
   type GroupImperativeHandle,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
-import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
+import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
 import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
+import { ShellPeelReveal } from "@/components/shell-peel-reveal";
 import {
+  eventKey,
   getPanelShortcutBindings,
   labelPanelShortcut,
   matchesPanelShortcut,
@@ -31,6 +34,11 @@ import {
   resolveShellDestinationLayout,
   resolveShellLayoutPersistence,
   resolveShellNavOpenPreference,
+  resolveShellNavPolicyHandoff,
+  SHELL_NAV_DEFAULT_PX,
+  SHELL_NAV_MAX_PX,
+  SHELL_NAV_MIN_PX,
+  resolveShellNavWidth,
   type ShellPanelLayout,
 } from "./shell-layout";
 
@@ -94,6 +102,18 @@ const shellStorage = {
   },
 };
 
+// SSR and the first client render must see the same panel snapshot. Reading
+// localStorage during hydration makes react-resizable-panels emit different
+// inline flex values from the server markup. The real store is swapped in
+// after mount; the existing layout effect then restores the saved group before
+// enabling transitions.
+const hydrationShellStorage = {
+  getItem(_key: string): null {
+    return null;
+  },
+  setItem(_key: string, _value: string): void {},
+};
+
 function togglePanel(panel: PanelImperativeHandle | null) {
   if (!panel) return;
   if (panel.isCollapsed()) panel.expand();
@@ -139,6 +159,14 @@ function markShellMinimizeApplied(id: string): void {
 // preference; only user-driven resizes write it (the code-rail auto
 // collapse/restore coupling and programmatic group-swap layout churn don't).
 const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
+const NAV_WIDTH_PREF_KEY = "cave:shell:nav-width";
+// Who wrote NAV_OPEN_PREF_KEY. The key alone can't distinguish "the user
+// collapsed the sidebar" from "first-run minimization guessed collapsed", and
+// those must be treated differently on a policy handoff — only the former is a
+// choice worth preserving. A missing value reads as "seed", which is the safe
+// direction for installs that predate this key (worst case a sidebar stays
+// open).
+const NAV_OPEN_SOURCE_KEY = "cave:shell:nav-open:source";
 function readNavOpenPref(): boolean | null {
   if (typeof window === "undefined") return null;
   try {
@@ -148,18 +176,43 @@ function readNavOpenPref(): boolean | null {
     return null;
   }
 }
-function writeNavOpenPref(open: boolean): void {
+function readNavOpenFromUser(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(NAV_OPEN_SOURCE_KEY) === "user";
+  } catch {
+    return false;
+  }
+}
+function writeNavOpenPref(open: boolean, source: "user" | "seed" = "seed"): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(NAV_OPEN_PREF_KEY, open ? "1" : "0");
+    window.localStorage.setItem(NAV_OPEN_SOURCE_KEY, source);
   } catch {
     /* ignore — strict privacy mode or quota */
   }
 }
 function seedNavOpenPref(defaultOpen: boolean): boolean {
   const resolved = resolveShellNavOpenPreference(readNavOpenPref(), defaultOpen);
-  if (resolved.shouldPersist) writeNavOpenPref(resolved.open);
+  if (resolved.shouldPersist) writeNavOpenPref(resolved.open, "seed");
   return resolved.open;
+}
+function readNavWidthPref(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(NAV_WIDTH_PREF_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeNavWidthPref(width: number): void {
+  if (typeof window === "undefined" || !Number.isFinite(width)) return;
+  try {
+    window.localStorage.setItem(NAV_WIDTH_PREF_KEY, String(width));
+  } catch {
+    /* ignore — strict privacy mode or quota */
+  }
 }
 
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
@@ -168,7 +221,7 @@ const NAV_RAIL_PX = 56;
 // The nav Panel's open width (its defaultSize) — the ⌘B / hover-peek expand
 // target, and the basis for the minimized-by-default layout injection (the rail
 // is NAV_RAIL_PX/NAV_OPEN_PX of the open width).
-const NAV_OPEN_PX = 240;
+const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
 export type ShellHandle = {
@@ -212,6 +265,7 @@ function ShellInner({
   navPolicy = "remembered",
   listPolicy = "collapsible",
   panelShortcutOverrides,
+  historyNavigation,
 }: {
   nav: ReactNode;
   list?: ReactNode;
@@ -225,14 +279,19 @@ function ShellInner({
   onCloseSplitTile?: (id: string) => void;
   onPromoteSplitTile?: (id: string) => void;
   onDropSplitPage?: (mode: string, side: "left" | "right") => void;
-  /** Mobile/tablet-only bottom tab bar. Rendered after `.shell-body`
-   *  inside `.shell-frame`, but only when the viewport matches the
-   *  mobile breakpoint (≤1023px). */
+  /** Mobile/tablet-only bottom tab bar. Kept in hydration-stable markup after
+   *  `.shell-body`; CSS displays it only at the mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
   navPolicy?: ShellNavPolicy;
   listPolicy?: ShellListPolicy;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
+  historyNavigation?: {
+    canGoBack: boolean;
+    canGoForward: boolean;
+    goBack: () => void;
+    goForward: () => void;
+  };
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
@@ -244,8 +303,12 @@ function ShellInner({
   // their intent wins and we leave the nav alone.
   const railAutoCollapsedNavRef = useRef(false);
   const userOverrodeNavRef = useRef(false);
+  const [preferredNavWidth, setPreferredNavWidth] = useState(() =>
+    resolveShellNavWidth(readNavWidthPref()),
+  );
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useLayoutEffect(() => setMounted(true), []);
+  const layoutStorage = mounted ? shellStorage : hydrationShellStorage;
 
   // Mobile drawer: which of the nav/list/agent panels is currently slid in
   // as a full-height overlay. On desktop this stays null and react-resizable-
@@ -367,25 +430,32 @@ function ShellInner({
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
     panelIds,
-    storage: shellStorage,
+    storage: layoutStorage,
   });
 
   const groupRef = useRef<GroupImperativeHandle | null>(null);
   const groupElementRef = useRef<HTMLDivElement | null>(null);
 
-  const [navOpen, setNavOpen] = useState(() => {
-    // Mobile keeps its drawer. On desktop, start closed so the rail content paints
-    // from the first frame on a fresh minimize; onResize settles it to the real
-    // width once the library (or the minimize effect) has applied the layout.
-    if (isMobile) return true;
-    return shellMinimizeApplied(groupId);
-  });
+  // Non-contextual navigation defaults to its icon rail, so SSR and hydration
+  // match the Cave's minimized default. The mounted layout effects restore a
+  // remembered open panel before the first post-hydration paint.
+  const [navOpen, setNavOpen] = useState(chatContextual);
+  // Mirror of navOpen for effects that need the CURRENT visible state without
+  // taking navOpen as a dependency (the policy handoff must fire on the policy
+  // change, not on every sidebar toggle).
+  const navOpenRef = useRef(navOpen);
+  navOpenRef.current = navOpen;
+  const defaultNavSize =
+    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
 
   // Hover-to-peek: when the desktop nav is collapsed to its icon rail, hovering
   // floats it open as an overlay (navPeeking) without changing the collapse
   // state. Reset whenever the rail goes away (expanded or mobile).
   const [navPeeking, setNavPeeking] = useState(false);
-  const navPeekEnabled = navPolicy === "remembered" && !isMobile && !navOpen;
+  // Every desktop policy now collapses to the rail, so peek applies to all of
+  // them. It used to be remembered-only because Chat collapsed to zero width,
+  // leaving nothing to hover.
+  const navPeekEnabled = !isMobile && !navOpen;
   const navPeekVisible = navPeekEnabled && navPeeking;
   useEffect(() => {
     if (!navPeekEnabled) setNavPeeking(false);
@@ -519,13 +589,43 @@ function ShellInner({
     const cur = group.getLayout();
     const nav = cur.nav;
     if (typeof nav !== "number" || typeof cur.detail !== "number") return;
-    const railPct = nav * (NAV_RAIL_PX / NAV_OPEN_PX);
+    const railPct = nav * (NAV_RAIL_PX / preferredNavWidth);
     if (railPct >= nav) return; // already at/under the rail
     minimizedGroupsRef.current.add(groupId);
     seedNavOpenPref(false);
     markShellMinimizeApplied(groupId);
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
-  }, [settled, isMobile, groupId, chatContextual]);
+  }, [settled, isMobile, groupId, chatContextual, preferredNavWidth]);
+
+  // Policy handoff — MUST stay declared above the destination-layout effect
+  // below, because useLayoutEffects run in declaration order and that one reads
+  // the preference this one repairs.
+  //
+  // Leaving Chat swaps `chat-contextual` for `remembered` AND changes groupId,
+  // so the restore effect re-reads `cave:shell:nav-open`. Chat never maintains
+  // that key (its persistence branch is gated on the remembered policy) while
+  // first-run minimization seeds it to `false` — so the sidebar the user was
+  // looking at, and had just clicked "Home" inside, collapsed to the rail. Carry
+  // the visible state across instead. An explicit user collapse still wins; see
+  // resolveShellNavPolicyHandoff.
+  const navHandoffPolicyRef = useRef<ShellNavPolicy | null>(null);
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const fromPolicy = navHandoffPolicyRef.current;
+    navHandoffPolicyRef.current = navPolicy;
+    if (isMobile) return;
+    const handoff = resolveShellNavPolicyHandoff({
+      fromPolicy,
+      toPolicy: navPolicy,
+      visibleNavOpen: navOpenRef.current,
+      persistedOpen: readNavOpenPref(),
+      persistedFromUser: readNavOpenFromUser(),
+    });
+    if (!handoff) return;
+    // Seed, not "user": carrying state forward is not the user expressing a
+    // preference, so a later genuine toggle still outranks it.
+    if (handoff.persist) writeNavOpenPref(handoff.open, "seed");
+  }, [mounted, isMobile, navPolicy]);
 
   // The library retains an in-memory layout by panel-id set when Group's id
   // changes. Restore the destination group's complete saved/default layout
@@ -562,6 +662,10 @@ function ShellInner({
           : 0),
       0,
     );
+    // Still gated on !chatContextual: Chat must never write the REMEMBERED
+    // preference (cave:shell:nav-open). Chat collapsing to a rail changes what
+    // the panel looks like, not who owns that preference — the handoff added in
+    // #4404 depends on Chat leaving it alone.
     if (
       !chatContextual &&
       isShellNavCollapsedLayout({
@@ -579,8 +683,11 @@ function ShellInner({
       panelIds,
       savedLayout: defaultLayout,
       groupSize,
-      defaultPanelPixels: { nav: chatContextual ? 260 : NAV_OPEN_PX, ...(!twoPane && { list: 260 }) },
-      collapsedNavPixels: chatContextual ? 0 : NAV_RAIL_PX,
+      defaultPanelPixels: { ...(!twoPane && { list: 260 }) },
+      preferredNavPixels: preferredNavWidth,
+      // Matches the Panel's collapsedSize below — Chat collapses to the rail
+      // now, not to zero, so the restored layout must describe the same width.
+      collapsedNavPixels: isMobile ? 0 : NAV_RAIL_PX,
       isMobile,
     });
     if (!destinationLayout) return;
@@ -601,7 +708,16 @@ function ShellInner({
       minimizedGroupsRef.current.add(groupId);
       markShellMinimizeApplied(groupId);
     }
-  }, [mounted, isMobile, groupId, chatContextual, defaultLayout, twoPane, navPolicy]);
+  }, [
+    mounted,
+    isMobile,
+    groupId,
+    chatContextual,
+    defaultLayout,
+    twoPane,
+    navPolicy,
+    preferredNavWidth,
+  ]);
 
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
   const visitCollapsedGroupRef = useRef<string | null>(null);
@@ -674,14 +790,30 @@ function ShellInner({
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
       setMobileDrawer((curr) => (curr === slot ? null : slot));
     };
+    const toggleDesktopNav = () => {
+      const panel = navRef.current;
+      if (!panel) return;
+
+      if (panel.isCollapsed()) {
+        panel.expand();
+        setNavOpen(true);
+      } else {
+        panel.collapse();
+        setNavOpen(false);
+      }
+    };
     const handler = (e: KeyboardEvent) => {
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("nav");
-        else togglePanel(navRef.current);
+        else toggleDesktopNav();
         return;
       }
-      const key = e.key.toLowerCase();
+      // Same guard as matchesPanelShortcut above: an event with no readable key
+      // is ignored rather than thrown on. Guarding only the call above would
+      // just move the crash down to this line (cave-lryhx).
+      const key = eventKey(e);
+      if (key === null) return;
       const meta = e.metaKey || e.ctrlKey;
       if (meta && key === "\\" && !twoPane) {
         e.preventDefault();
@@ -702,7 +834,7 @@ function ShellInner({
     // without owning its panel ref.
     const onToggleLeft = () => {
       if (isMobile) toggleDrawerSlot("nav");
-      else togglePanel(navRef.current);
+      else toggleDesktopNav();
     };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
@@ -773,20 +905,6 @@ function ShellInner({
     }
   }, [isMobile]);
 
-  if (!mounted) {
-    return (
-      <div className="shell-frame flex h-full w-full flex-col">
-        <div className="shell-top" data-tauri-drag-region="deep">
-          <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
-          <div className="shell-top__bar" data-tauri-drag-region="deep">{renderedTopBar}</div>
-        </div>
-        <div className="shell-body flex flex-1 min-h-0">
-          <div className="shell-root flex-1 min-h-0" />
-        </div>
-      </div>
-    );
-  }
-
   const horizontalGroup = (
     <Group
       className="shell-root flex-1 min-h-0"
@@ -794,7 +912,7 @@ function ShellInner({
       groupRef={groupRef}
       elementRef={groupElementRef}
       defaultLayout={isMobile ? undefined : defaultLayout}
-      onLayoutChanged={(layout, detail) => {
+      onLayoutChanged={(layout, meta) => {
         if (layoutPersistenceGroupRef.current !== groupId) return;
         const navCollapsed = navRef.current?.isCollapsed() ?? true;
         const persistedLayout = resolveShellLayoutPersistence({
@@ -813,7 +931,23 @@ function ShellInner({
         if (!persistedLayout) return;
         collapsedLayoutRef.current = navCollapsed ? { groupId, layout } : null;
         expandedLayoutRef.current = { groupId, layout: persistedLayout };
-        onLayoutChanged(persistedLayout, detail);
+        onLayoutChanged(persistedLayout, meta);
+
+        // Unlike Panel.onResize, Group.onLayoutChanged identifies a completed
+        // direct separator interaction. This excludes observer, window-resize,
+        // mount, and imperative-layout notifications.
+        const pixelWidth = navRef.current?.getSize().inPixels;
+        if (
+          !isMobile &&
+          meta.isUserInteraction &&
+          !navCollapsed &&
+          Number.isFinite(pixelWidth) &&
+          !railAutoCollapsedNavRef.current
+        ) {
+          const normalizedWidth = resolveShellNavWidth(String(pixelWidth));
+          writeNavWidthPref(normalizedWidth);
+          setPreferredNavWidth(normalizedWidth);
+        }
       }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >
@@ -822,13 +956,18 @@ function ShellInner({
         className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
         // Chat uses list-like sizing for contextual workspace/session content.
         // Normal navigation keeps NAV_OPEN_PX as the ⌘B / hover-peek target.
-        defaultSize={chatContextual ? "260px" : "240px"}
-        minSize={chatContextual ? "220px" : "200px"}
-        maxSize="420px"
+        defaultSize={defaultNavSize}
+        minSize={`${SHELL_NAV_MIN_PX}px`}
+        maxSize={`${SHELL_NAV_MAX_PX}px`}
         collapsible
         // Contextual Chat and mobile drawers close fully; normal desktop
         // navigation collapses to its icons-only rail.
-        collapsedSize={isMobile || chatContextual ? 0 : NAV_RAIL_PX}
+        // Mobile drawers close fully (they overlay the content). Every desktop
+        // surface — Chat included — collapses to the icons-only rail instead,
+        // so the destinations stay reachable. Chat used to collapse to zero,
+        // which left no rail, no peek target, and no visible way to reach any
+        // other surface.
+        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
           const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
@@ -843,14 +982,17 @@ function ShellInner({
             navPrefArmedGroupRef.current === groupId &&
             !railAutoCollapsedNavRef.current
           ) {
-            writeNavOpenPref(open);
+            // The ONE user-authored write — everything else that touches this
+            // key is seeding, and the policy handoff must be able to tell them
+            // apart.
+            writeNavOpenPref(open, "user");
           }
         }}
       >
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !chatContextual && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className={`shell-nav${!isMobile && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
           onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
           onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}
@@ -878,20 +1020,26 @@ function ShellInner({
       )}
       <Panel id="detail" className="shell-detail-panel">
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
-          <UpdateBannerTrigger />
-          <OpenCovenToolsBannerTrigger />
-          <CaveHomeMigrationBannerTrigger />
-          <ShellBannerStrip />
-          <DetailSplitHost
-            primary={detail}
-            secondaryTiles={splitTiles}
-            secondarySide={splitSide}
-            onClose={() => onCloseSplit?.()}
-            onCloseTile={(id) => onCloseSplitTile?.(id)}
-            onPromoteTile={(id) => onPromoteSplitTile?.(id)}
-            onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
-            enableDrop={!isMobile}
-          />
+          {/* Peel-reveal (cave-3vgd): decorative page-curl toward the collapsed
+              rail on HTML-in-canvas browsers; a bare Fragment everywhere else
+              (no wrapper elements, so the `.shell-detail > .cave-mode-fade`
+              chains keep matching). The interactive reveal stays the hover-peek. */}
+          <ShellPeelReveal active={navPeekEnabled} under={nav}>
+            <UpdateBannerTrigger />
+            <OpenCovenToolsBannerTrigger />
+            <CaveHomeMigrationBannerTrigger />
+            <ShellBannerStrip />
+            <DetailSplitHost
+              primary={detail}
+              secondaryTiles={splitTiles}
+              secondarySide={splitSide}
+              onClose={() => onCloseSplit?.()}
+              onCloseTile={(id) => onCloseSplitTile?.(id)}
+              onPromoteTile={(id) => onPromoteSplitTile?.(id)}
+              onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
+              enableDrop={!isMobile}
+            />
+          </ShellPeelReveal>
         </main>
       </Panel>
     </Group>
@@ -923,7 +1071,7 @@ function ShellInner({
     if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
     else { panel.collapse(); setNavOpen(false); }
   };
-  const navToggle = !isMobile ? (
+  const navToggle = (
     <button
       type="button"
       className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
@@ -946,32 +1094,34 @@ function ShellInner({
     >
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
-  ) : null;
-  // Codex-style history controls beside the nav toggle: browser Back/Forward
-  // drive the app's own history entries (chat hashes and surface deep links
-  // already push state and handle popstate in workspace.tsx).
-  const historyNav = !isMobile ? (
-    <div className="shell-top-history" role="group" aria-label="History">
-      <button
-        type="button"
-        className="shell-top-toggle focus-ring"
-        aria-label="Go back"
-        title="Back"
-        onClick={() => window.history.back()}
-      >
-        <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-      <button
-        type="button"
-        className="shell-top-toggle focus-ring"
-        aria-label="Go forward"
-        title="Forward"
-        onClick={() => window.history.forward()}
-      >
-        <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-    </div>
-  ) : null;
+  );
+  // Workspace owns its destination stack, while the other shell surfaces use
+  // browser history. Keep the app-scoped boundary controls intact there and
+  // reuse the shared browser controls everywhere else.
+  const historyNav = historyNavigation ? (
+      <div className="shell-top-history" role="group" aria-label="History">
+        <button
+          type="button"
+          className="shell-top-toggle focus-ring"
+          aria-label="Go back"
+          title={historyNavigation.canGoBack ? "Back" : "No previous destination"}
+          disabled={!historyNavigation?.canGoBack}
+          onClick={historyNavigation.goBack}
+        >
+          <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+        </button>
+        <button
+          type="button"
+          className="shell-top-toggle focus-ring"
+          aria-label="Go forward"
+          title={historyNavigation.canGoForward ? "Forward" : "No next destination"}
+          disabled={!historyNavigation?.canGoForward}
+          onClick={historyNavigation.goForward}
+        >
+          <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+        </button>
+      </div>
+    ) : <DesktopHistoryNav />;
 
   return (
     <div
@@ -1021,7 +1171,7 @@ function ShellInner({
           horizontalGroup
         )}
       </div>
-      {isMobile && mobileTabs ? mobileTabs : null}
+      {mobileTabs ?? null}
       <MobileDrawer
         open={isMobile ? mobileDrawer : null}
         onClose={() => setMobileDrawer(null)}

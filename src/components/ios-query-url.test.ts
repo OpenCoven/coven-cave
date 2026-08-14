@@ -2,7 +2,8 @@
 // Regression guard for the iOS reader-view 404 ("Couldn't load this entry —
 // Server returned status 404"). CaveClient.request() used
 // `base.appendingPathComponent(path)`, which percent-encodes "?" to "%3F" — so
-// "api/journal?date=…" became the bogus path "/api/journal%3Fdate=…" that the
+// a query-bearing path like "api/chat/model-state?familiarId=…" became a bogus
+// percent-encoded path segment ("…%3FfamiliarId=…") that the
 // server 404s on. The builder must split the query off the path and reattach it
 // as a real query string. iOS isn't compiled in CI, so this source-text test is
 // the guard.
@@ -42,11 +43,12 @@ assert.doesNotMatch(
   "request() must not append the raw query-bearing path (the 404 cause)",
 );
 
-// The journal reader still requests the query-string form that this fix repairs.
+// A live caller still requests the query-string form that this fix repairs.
+// (Journal was removed in the iOS purge; chat model-state is the surviving guard.)
 assert.match(
   client,
-  /request\("api\/journal\?date=\\\(urlQuery\(date\)\)"\)/,
-  "journalDay still builds api/journal?date=…",
+  /"api\/chat\/model-state\?familiarId=\\\(urlQuery\(familiarId\)\)"/,
+  "chatModelState still builds api/chat/model-state?familiarId=…",
 );
 
 console.log("ios-query-url.test.ts: ok");

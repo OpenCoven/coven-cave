@@ -14,11 +14,12 @@ import {
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import {
-  COMMAND_CONTROL_DEFAULTS,
-  type CommandResponseSpeed,
-  type CommandThinkingEffort,
-} from "@/lib/command-controls";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type {
+  ModelControlCapability,
+  ModelControlFamily,
+  ModelControlValues,
+} from "@/lib/model-control-capabilities";
 import { resolveQuickChatTarget, type QuickChatTarget } from "@/lib/quick-chat";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import type { Familiar } from "@/lib/types";
@@ -62,6 +63,8 @@ export type QuickChatMessage = {
    *  turn but never sent to the daemon, never a regenerate anchor, and never
    *  a reply-recommendation trigger. */
   local?: boolean;
+  /** Honest model/control outcome returned with the completed assistant turn. */
+  responseMetadata?: ChatResponseMetadata;
 };
 
 /** A message parked while a reply streams — auto-sent (in order) when the
@@ -70,6 +73,14 @@ export type QueuedQuickChatMessage = {
   id: string;
   text: string;
   attachments?: ChatAttachment[];
+  /** Queue-time intent; later composer changes must not rewrite this turn. */
+  modelOverride?: string | null;
+  modelControls?: ModelControlValues;
+};
+
+type QuickChatSendIntent = {
+  modelOverride: string | null;
+  modelControls: ModelControlValues;
 };
 
 export type UseQuickChat = {
@@ -79,6 +90,8 @@ export type UseQuickChat = {
   selectedFamiliar: Familiar | null;
   projects: CaveProject[];
   projectsLoading: boolean;
+  projectsError: string | null;
+  projectLaunchReady: boolean;
   selectedProjectRoot: string | null;
   setSelectedProjectRoot: (root: string | null) => void;
   draft: string;
@@ -91,17 +104,13 @@ export type UseQuickChat = {
   sessionId: string | null;
   sendState: QuickChatSendState;
   loading: boolean;
-  thinkingEffort: CommandThinkingEffort;
-  setThinkingEffort: (value: CommandThinkingEffort) => void;
-  responseSpeed: CommandResponseSpeed;
-  setResponseSpeed: (value: CommandResponseSpeed) => void;
   /** Send the draft (plus any staged attachments). While a reply is already
    *  streaming the message is QUEUED instead of dropped, and auto-sends when
    *  the turn settles naturally. */
   send: (attachments?: ChatAttachment[]) => Promise<void>;
   /** Send an explicit text through the same pipeline as `send` (slash-command
    *  dispatch — e.g. a resolved skill invocation). Clears the draft. */
-  sendText: (raw: string, attachments?: ChatAttachment[]) => Promise<void>;
+  sendText: (raw: string, attachments?: ChatAttachment[], intent?: QuickChatSendIntent) => Promise<void>;
   /** Messages waiting behind the in-flight turn, in send order. */
   queued: QueuedQuickChatMessage[];
   removeQueued: (id: string) => void;
@@ -114,6 +123,11 @@ export type UseQuickChat = {
    *  the thread's familiar changes. */
   modelOverride: string | null;
   setModelOverride: (id: string | null) => void;
+  /** Capabilities and values negotiated for the currently selected model. */
+  modelCapabilities: readonly ModelControlCapability[];
+  modelControls: ModelControlValues;
+  modelControlsLoading: boolean;
+  setModelControl: (family: ModelControlFamily, value: string) => void;
   cancel: () => void;
   /** Clear the conversation (keeps the familiar + control choices). */
   newThread: () => void;
@@ -145,12 +159,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sendState, setSendState] = useState<QuickChatSendState>("idle");
   const [loading, setLoading] = useState(true);
-  const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
-    COMMAND_CONTROL_DEFAULTS.thinkingEffort,
-  );
-  const [responseSpeed, setResponseSpeed] = useState<CommandResponseSpeed>(
-    COMMAND_CONTROL_DEFAULTS.responseSpeed,
-  );
 
   const abortRef = useRef<AbortController | null>(null);
   // The daemon session backing the visible thread (for context resume + the
@@ -182,16 +190,68 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const rosterLoadedRef = useRef(false);
 
   const nextId = useCallback((prefix: string) => `${prefix}-${msgSeqRef.current++}`, []);
-  const { projects, loading: projectsLoading } = useProjects({ familiarId: selectedFamiliarId });
+  const {
+    projects: scopedProjects,
+    loading: projectsLoading,
+    error: projectsError,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+  } = useProjects({
+    enabled: Boolean(selectedFamiliarId),
+    familiarId: selectedFamiliarId,
+  });
+  const projects = useMemo(
+    () => scopedProjects.filter((project) => project.access !== undefined),
+    [scopedProjects],
+  );
+  const selectedProject = useMemo(
+    () =>
+      selectedProjectRoot
+        ? projects.find((project) => project.root === selectedProjectRoot) ?? null
+        : null,
+    [projects, selectedProjectRoot],
+  );
+  const projectLaunchReady =
+    projectsLoadedSuccessfully &&
+    !projectsLoading &&
+    !projectsError &&
+    selectedProject?.access !== undefined &&
+    Boolean(selectedProjectRoot);
+  const projectLaunchMessage = projectsLoading
+    ? "Checking project access…"
+    : projectsError
+      ? "Projects are unavailable. Retry before starting chat."
+      : !projectsLoadedSuccessfully
+        ? "Checking project access…"
+        : projects.length === 0
+          ? "No accessible projects are available for this familiar."
+          : "Choose a project this familiar can access before starting chat.";
 
   // Per-thread /model override — ref-mirrored so deliver() reads the latest
   // without re-identity, cleared whenever the thread resets or swaps familiar
   // (the override belongs to this thread's harness).
   const [modelOverride, setModelOverrideState] = useState<string | null>(null);
   const modelOverrideRef = useRef<string | null>(null);
+  const [modelCapabilities, setModelCapabilities] = useState<readonly ModelControlCapability[]>([]);
+  const [modelControls, setModelControls] = useState<ModelControlValues>({});
+  const [modelControlsLoading, setModelControlsLoading] = useState(false);
+  const modelControlsRef = useRef<ModelControlValues>({});
+  const lastUserIntentRef = useRef<QuickChatSendIntent>({ modelOverride: null, modelControls: {} });
   const setModelOverride = useCallback((id: string | null) => {
     modelOverrideRef.current = id;
+    // A model mutation is synchronous from the composer's point of view. Do
+    // not let a first send race a late capability response for the previous
+    // model and forward controls that the new model cannot accept.
+    modelControlsRef.current = {};
+    setModelControls({});
     setModelOverrideState(id);
+  }, []);
+
+  const setModelControl = useCallback((family: ModelControlFamily, value: string) => {
+    const next = { ...modelControlsRef.current };
+    if (value) next[family] = value;
+    else delete next[family];
+    modelControlsRef.current = next;
+    setModelControls(modelControlsRef.current);
   }, []);
 
   // Local assistant-styled note (slash-command output like /help). Marked
@@ -207,7 +267,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // inside the send chain, where state would be stale).
   const [queued, setQueued] = useState<QueuedQuickChatMessage[]>([]);
   const queuedRef = useRef<QueuedQuickChatMessage[]>([]);
-  const sendTextRef = useRef<(raw: string, attachments?: ChatAttachment[]) => Promise<void>>(
+  const sendTextRef = useRef<(
+    raw: string,
+    attachments?: ChatAttachment[],
+    intent?: QuickChatSendIntent,
+  ) => Promise<void>>(
     async () => {},
   );
   const removeQueued = useCallback((id: string) => {
@@ -229,7 +293,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     // Idle/stopped: steering also resumes delivery immediately.
     queuedRef.current = rest;
     setQueued(rest);
-    void sendTextRef.current(next.text, next.attachments ?? []);
+    void sendTextRef.current(next.text, next.attachments ?? [], {
+      modelOverride: next.modelOverride ?? null,
+      modelControls: next.modelControls ?? {},
+    });
   }, []);
   // Files that rode with the last user turn, so regenerate() re-sends them.
   const lastUserAttachmentsRef = useRef<ChatAttachment[]>([]);
@@ -242,10 +309,14 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     threadFamiliarRef.current = null;
     lastUserPromptRef.current = "";
     lastUserAttachmentsRef.current = [];
+    lastUserIntentRef.current = { modelOverride: null, modelControls: {} };
     modelOverrideRef.current = null;
+    modelControlsRef.current = {};
     queuedRef.current = [];
     setQueued([]);
     setModelOverrideState(null);
+    setModelCapabilities([]);
+    setModelControls({});
     setSessionId(null);
     setMessages([]);
     setError(null);
@@ -331,6 +402,60 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? familiars[0] ?? null,
     [familiars, selectedFamiliarId],
   );
+
+  // Quick Chat uses the same model-state endpoint as full Chat. A model pick
+  // is sent as a read-only preview so native versus prompt-only controls are
+  // negotiated before the next turn, while stale familiar/model responses are
+  // discarded by the scoped key.
+  useEffect(() => {
+    const familiarId = selectedFamiliarId;
+    if (!familiarId) {
+      setModelCapabilities([]);
+      setModelControls({});
+      modelControlsRef.current = {};
+      setModelControlsLoading(false);
+      return;
+    }
+    const selectedModel = modelOverrideRef.current;
+    const requestKey = `${familiarId}\u0000${selectedModel ?? "<familiar>"}\u0000${sessionId ?? ""}`;
+    const controller = new AbortController();
+    setModelCapabilities([]);
+    modelControlsRef.current = {};
+    setModelControls({});
+    setModelControlsLoading(true);
+    const params = new URLSearchParams({ familiarId });
+    if (sessionId) params.set("sessionId", sessionId);
+    if (selectedModel !== null) params.set("model", selectedModel);
+    void fetch(`/api/chat/model-state?${params.toString()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { controls?: unknown } | null) => {
+        if (controller.signal.aborted) return;
+        const currentKey = `${selectedFamiliarId}\u0000${modelOverrideRef.current ?? "<familiar>"}\u0000${sessionId ?? ""}`;
+        if (currentKey !== requestKey) return;
+        const controls = Array.isArray(json?.controls)
+          ? json.controls.filter((value): value is ModelControlCapability => Boolean(
+              value && typeof value === "object" &&
+              typeof (value as ModelControlCapability).family === "string" &&
+              typeof (value as ModelControlCapability).label === "string" &&
+              Array.isArray((value as ModelControlCapability).values),
+            ))
+          : [];
+        setModelCapabilities(controls);
+        setModelControlsLoading(false);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setModelCapabilities([]);
+        modelControlsRef.current = {};
+        setModelControls({});
+        setModelControlsLoading(false);
+      });
+    return () => controller.abort();
+  }, [selectedFamiliarId, selectedFamiliar?.harness, selectedFamiliar?.model, modelOverride, sessionId]);
+
   useEffect(() => {
     if (!selectedProjectRootRef.current) return;
     if (projects.some((project) => project.root === selectedProjectRootRef.current)) return;
@@ -348,8 +473,16 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       target: QuickChatTarget,
       resume: boolean,
       attachments: ChatAttachment[] = [],
+      intent: QuickChatSendIntent = {
+        modelOverride: modelOverrideRef.current,
+        modelControls: modelControlsRef.current,
+      },
     ): Promise<"done" | "stopped"> => {
       if (!target.familiarId) return "stopped";
+      if (!projectLaunchReady) {
+        setError(projectLaunchMessage);
+        return "stopped";
+      }
       const assistantId = nextId("a");
       const controller = new AbortController();
       abortRef.current = controller;
@@ -372,12 +505,16 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
             ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(attachments) }
             : {}),
           sessionId: resume ? sessionIdRef.current ?? undefined : undefined,
-          reasoningEffort: thinkingEffort,
-          responseSpeed,
           // /model pick — session-scoped so the resumed thread stays on the
           // chosen model (re-sent per turn; idempotent on the bridge).
-          ...(modelOverrideRef.current
-            ? { modelOverride: modelOverrideRef.current, modelOverrideScope: "session" as const }
+          ...(intent.modelOverride !== null
+            ? {
+                modelOverride: intent.modelOverride,
+                modelOverrideScope: intent.modelOverride === "" ? "runtime-default" as const : "session" as const,
+              }
+            : {}),
+          ...(Object.keys(intent.modelControls).length
+            ? { modelControls: intent.modelControls }
             : {}),
           signal: controller.signal,
           // Capture the backing session the moment the bridge announces it —
@@ -392,6 +529,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           onText: (t) =>
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, text: t } : m)),
+            ),
+          onResponseMetadata: (metadata) =>
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, responseMetadata: metadata } : m)),
             ),
         });
       } catch (err) {
@@ -421,7 +562,12 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       setSendState("done");
       return "done";
     },
-    [nextId, responseSpeed, selectedProjectRoot, thinkingEffort],
+    [
+      nextId,
+      projectLaunchMessage,
+      projectLaunchReady,
+      selectedProjectRoot,
+    ],
   );
 
   // Full send pipeline for an explicit text — `send()` feeds it the draft;
@@ -429,23 +575,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // Self-reference (assigned below) so the queue drain re-enters the pipeline
   // without a stale closure.
   const sendText = useCallback(
-    async (raw: string, attachments: ChatAttachment[] = []) => {
-      // A turn is already streaming: QUEUE the message instead of dropping it
-      // (the old behavior) — it auto-sends, in order, when the reply settles
-      // naturally. Stop parks the queue, so a cancel never fires a surprise
-      // follow-up; the next manual send resumes draining.
-      if (abortRef.current) {
-        if (!raw.trim() && attachments.length === 0) return;
-        const item: QueuedQuickChatMessage = {
-          id: nextId("q"),
-          text: raw,
-          ...(attachments.length ? { attachments } : {}),
-        };
-        queuedRef.current = [...queuedRef.current, item];
-        setQueued(queuedRef.current);
-        setDraft("");
-        return;
-      }
+    async (
+      raw: string,
+      attachments: ChatAttachment[] = [],
+      requestedIntent?: QuickChatSendIntent,
+    ) => {
       const target = resolveQuickChatTarget(raw, familiars, selectedFamiliarId);
       // Attachment-only sends are legal — the bridge builds a "review the
       // attached files" prompt server-side. Only the empty-prompt error is
@@ -454,6 +588,53 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         target.error && !(target.familiarId && attachments.length > 0) ? target.error : null;
       setError(blocking);
       if (blocking || !target.familiarId) return;
+
+      // A leading @mention can switch familiars, but the selected project was
+      // authorized for the previous one. Change scope and preserve the draft;
+      // the user must choose from the new familiar's freshly filtered list
+      // before any optimistic turn or server request exists.
+      if (target.familiarId !== selectedFamiliarId && !abortRef.current) {
+        userPickedRef.current = true;
+        newThread();
+        selectedIdRef.current = target.familiarId;
+        setSelectedFamiliarId(target.familiarId);
+        selectedProjectRootRef.current = null;
+        setSelectedProjectRoot(null);
+        writeLastFamiliar(target.familiarId);
+        setDraft(raw);
+        setError("Choose a project this familiar can access before starting chat.");
+        return;
+      }
+
+      if (!projectLaunchReady) {
+        setError(projectLaunchMessage);
+        return;
+      }
+      const intent = requestedIntent ?? {
+        modelOverride: modelOverrideRef.current,
+        modelControls: { ...modelControlsRef.current },
+      };
+      // A turn is already streaming: QUEUE the message instead of dropping it
+      // (the old behavior) — it auto-sends, in order, when the reply settles
+      // naturally. Stop parks the queue, so a cancel never fires a surprise
+      // follow-up; the next manual send resumes draining. A queued @mention
+      // switches scope only when it reaches this pipeline again while idle.
+      if (abortRef.current) {
+        if (!raw.trim() && attachments.length === 0) return;
+        const item: QueuedQuickChatMessage = {
+          id: nextId("q"),
+          text: raw,
+          ...(attachments.length ? { attachments } : {}),
+          modelOverride: intent.modelOverride,
+          ...(Object.keys(intent.modelControls).length
+            ? { modelControls: { ...intent.modelControls } }
+            : {}),
+        };
+        queuedRef.current = [...queuedRef.current, item];
+        setQueued(queuedRef.current);
+        setDraft("");
+        return;
+      }
 
       // A leading @mention (or picker change) that swaps familiar starts a fresh
       // thread — a resumed session belongs to the previous familiar.
@@ -475,6 +656,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       const userText = raw.trim();
       lastUserPromptRef.current = raw;
       lastUserAttachmentsRef.current = attachments;
+      lastUserIntentRef.current = {
+        modelOverride: intent.modelOverride,
+        modelControls: { ...intent.modelControls },
+      };
       setDraft("");
       setSelectedFamiliarId(target.familiarId);
       writeLastFamiliar(target.familiarId);
@@ -488,7 +673,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         },
       ]);
 
-      const status = await deliver(target, resume, attachments);
+      const status = await deliver(target, resume, attachments, intent);
       // Natural completion drains the next queued message; a Stop or a failed
       // turn parks the queue (its chips stay visible for remove-or-resume).
       if (status === "done") {
@@ -496,11 +681,22 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         if (next) {
           queuedRef.current = rest;
           setQueued(rest);
-          await sendTextRef.current(next.text, next.attachments ?? []);
+          await sendTextRef.current(next.text, next.attachments ?? [], {
+            modelOverride: next.modelOverride ?? null,
+            modelControls: next.modelControls ?? {},
+          });
         }
       }
     },
-    [deliver, familiars, nextId, selectedFamiliarId],
+    [
+      deliver,
+      familiars,
+      newThread,
+      nextId,
+      projectLaunchMessage,
+      projectLaunchReady,
+      selectedFamiliarId,
+    ],
   );
   sendTextRef.current = sendText;
 
@@ -514,6 +710,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const regenerate = useCallback(() => {
     const prompt = lastUserPromptRef.current;
     if (!prompt || sendState === "sending" || abortRef.current) return;
+    if (!projectLaunchReady) {
+      setError(projectLaunchMessage);
+      return;
+    }
     const target = resolveQuickChatTarget(prompt, familiars, selectedFamiliarId);
     if (target.error || !target.familiarId) return;
     // Drop the trailing assistant turn(s) after the last user turn, then re-run.
@@ -528,8 +728,18 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       return prev.slice(0, cut);
     });
     const resume = threadFamiliarRef.current === target.familiarId && sessionIdRef.current != null;
-    void deliver(target, resume, lastUserAttachmentsRef.current);
-  }, [deliver, familiars, selectedFamiliarId, sendState]);
+    void deliver(target, resume, lastUserAttachmentsRef.current, {
+      modelOverride: lastUserIntentRef.current.modelOverride,
+      modelControls: { ...lastUserIntentRef.current.modelControls },
+    });
+  }, [
+    deliver,
+    familiars,
+    projectLaunchMessage,
+    projectLaunchReady,
+    selectedFamiliarId,
+    sendState,
+  ]);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
@@ -544,7 +754,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const pickFamiliar = useCallback(
     (id: string | null) => {
       userPickedRef.current = true;
-      if (selectedIdRef.current !== id) newThread();
+      if (selectedIdRef.current !== id) {
+        newThread();
+        selectedProjectRootRef.current = null;
+        setSelectedProjectRoot(null);
+      }
       selectedIdRef.current = id;
       setSelectedFamiliarId(id);
     },
@@ -566,20 +780,18 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     selectedFamiliar,
     projects,
     projectsLoading,
+    projectsError,
+    projectLaunchReady,
     selectedProjectRoot,
     setSelectedProjectRoot: pickProjectRoot,
     draft,
     setDraft,
     messages,
     hasThread: messages.length > 0,
-    error,
+    error: error ?? (projectsError ? "Projects are unavailable. Retry before starting chat." : null),
     sessionId,
     sendState,
     loading,
-    thinkingEffort,
-    setThinkingEffort,
-    responseSpeed,
-    setResponseSpeed,
     send,
     sendText,
     queued,
@@ -588,6 +800,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     note,
     modelOverride,
     setModelOverride,
+    modelCapabilities,
+    modelControls,
+    modelControlsLoading,
+    setModelControl,
     cancel,
     newThread,
     regenerate,

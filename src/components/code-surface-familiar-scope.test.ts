@@ -61,10 +61,12 @@ assert.match(
 
 // 6. WorkspaceSidebar scopes the sessions that drive its project list + per-project
 //    counts/rows to the active familiar (null = count everything), then derives
-//    the project tiles and rows from that scoped set.
+//    the project tiles and rows from that scoped set. (`includeArchived` is its
+//    own Show-archived toggle — familiar scoping applies either way; see
+//    chat-siderail-hide-archived.test.ts.)
 assert.match(
   workspaceSidebar,
-  /filterVisibleChatSessions\(sessions, activeFamiliarId \?\? null\)/,
+  /filterVisibleChatSessions\(rows, activeFamiliarId \?\? null, \{ includeArchived: showArchived \}\)/,
   "WorkspaceSidebar must derive visibleSessions from the active familiar",
 );
 assert.match(

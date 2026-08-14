@@ -18,6 +18,12 @@ src-tauri/resources/server-archive/*
 !src-tauri/resources/server-archive/placeholder.txt
 src-tauri/resources/node/*
 !src-tauri/resources/node/placeholder.txt
+src-tauri/resources/whisper/*
+!src-tauri/resources/whisper/placeholder.txt
+src-tauri/resources/piper/*
+!src-tauri/resources/piper/placeholder.txt
+src-tauri/resources/kokoro/*
+!src-tauri/resources/kokoro/placeholder.txt
 
 # Notarized release artifacts
 release/
@@ -46,6 +52,14 @@ ehthumbs.db
 *.swo
 *~
 .zed/
+
+# Python bytecode from one-off migration scripts. A committed .pyc is not just
+# noise: CPython bakes the absolute compile-time path into the code object's
+# co_filename, so `scripts/__pycache__/split-cave-chat-css.cpython-314.pyc`
+# shipped a contributor's home directory and worktree name to every clone
+# (cave-04qf9).
+__pycache__/
+*.pyc
 
 # Agent / tool scratch state (local automation, not for sharing)
 .claude/*
@@ -98,12 +112,23 @@ package-lock.json
 /.playwright-cli
 /graphify-out
 /artifacts
-/docs/superpowers
+# NOT ignored: /docs/superpowers. Beads cite specs and plans there as the
+# authoritative approved design, so ignoring it meant `git add` silently
+# dropped them and the design died with the authoring machine — four approved
+# designs were lost that way before anyone noticed (cave-8zjr5). The directory
+# is 100% markdown; `/.superpowers` above is the tool's scratch dir and stays
+# ignored.
 
 # Generated Canvas Sketch sandbox runtime (built in prebuild)
 /public/sandbox/
 /docs/audits
 test-results/
+# Agent skill installs are machine-local by default. Skills that every familiar
+# must load are the exception and ARE tracked (`.agents/skills/beads`,
+# `branch-curator`, `branch-to-merge`, …) — because this rule ignores the whole
+# directory, adding one needs an explicit `git add -f .agents/skills/<name>/`.
+# Without the `-f` the file is silently dropped and the skill reaches nobody
+# else, which is exactly how a "shared" skill ends up existing on one machine.
 /.agents
 
 # design-sync machine state
@@ -114,3 +139,11 @@ ds-bundle/
 .design-sync/node_modules
 /.worktrees
 /.cave-trash
+/.opencode
+/.copilot
+/.codex-tmp
+__verify-chat-detail.mjs
+/.worktree-lifecycle-fixture-*
+.psyche*
+/.xcode-source-packages
+/.demo

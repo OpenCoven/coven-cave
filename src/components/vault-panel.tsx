@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 
@@ -18,6 +19,7 @@ type Mapping = {
   key: string;
   ref: string | null;
   storage: "1password" | "encrypted" | "dashlane" | null;
+  scope: "shared" | string[];
   description: string | null;
   required: boolean;
   status: VaultStatus;
@@ -31,7 +33,7 @@ const STATUS_META: Record<VaultStatus, { label: string; color: string; icon: str
   resolved:   { label: "1Password",   color: "var(--color-success)", icon: "ph:vault" },
   encrypted:  { label: "encrypted",   color: "var(--accent-presence)", icon: "ph:lock-key" },
   "env-only": { label: "env only",    color: "oklch(0.75 0.15 80)", icon: "ph:file-text" },
-  unresolved: { label: "unresolved",  color: "var(--color-danger)", icon: "ph:warning" },
+  unresolved: { label: "unresolved",  color: "var(--color-warning)", icon: "ph:warning" },
   error:      { label: "error",       color: "var(--color-danger)", icon: "ph:x-circle" },
   "no-ref":   { label: "no ref",      color: "var(--text-muted)", icon: "ph:minus" },
 };
@@ -57,10 +59,12 @@ function StatusBadge({ status, storage }: { status: VaultStatus; storage?: Mappi
 
 function AddMappingForm({
   initial,
+  familiarId,
   onSaved,
   onCancel,
 }: {
   initial?: Mapping;
+  familiarId?: string;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -87,8 +91,21 @@ function AddMappingForm({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(storage === "encrypted"
-          ? { key, storage: "encrypted", value: secret, description: desc || undefined, required }
-          : { key, ref, description: desc || undefined, required }),
+          ? {
+              key,
+              storage: "encrypted",
+              value: secret,
+              description: desc || undefined,
+              required,
+              scope: initial?.scope ?? (familiarId ? [familiarId] : undefined),
+            }
+          : {
+              key,
+              ref,
+              description: desc || undefined,
+              required,
+              scope: initial?.scope ?? (familiarId ? [familiarId] : undefined),
+            }),
       });
       const j = await res.json() as { ok: boolean; error?: string };
       if (!j.ok) throw new Error(j.error ?? "Failed to save");
@@ -201,7 +218,7 @@ function AddMappingForm({
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function VaultPanel() {
+export function VaultPanel({ familiarId }: { familiarId?: string }) {
   // Deferred + undoable delete: the row hides immediately, the DELETE fires only
   // after the undo window, and Undo restores it (recoverable, unlike a confirm).
   const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<Mapping>();
@@ -212,6 +229,9 @@ export function VaultPanel() {
   const [adding, setAdding]         = useState(false);
   const [editing, setEditing]       = useState<Mapping | null>(null);
   const [copiedKey, setCopiedKey]   = useState<string | null>(null);
+  const [grantBusyKey, setGrantBusyKey] = useState<string | null>(null);
+  const [grantError, setGrantError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
 
   async function handleCopyRef(key: string, ref: string) {
     try {
@@ -258,8 +278,44 @@ export function VaultPanel() {
     });
   }
 
+  async function updateFamiliarGrant(mapping: Mapping, granted: boolean) {
+    if (!familiarId || mapping.scope === "shared") return;
+    setGrantBusyKey(mapping.key);
+    setGrantError(null);
+    try {
+      const response = await fetch("/api/vault", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          key: mapping.key,
+          familiarId,
+          action: granted ? "revoke" : "grant",
+        }),
+      });
+      const payload = await response.json() as {
+        ok?: boolean;
+        scope?: Mapping["scope"];
+        error?: string;
+      };
+      if (!response.ok || !payload.ok || !payload.scope) {
+        throw new Error(payload.error || "Couldn't update the familiar grant.");
+      }
+      setMappings((current) => current.map((item) =>
+        item.key === mapping.key ? { ...item, scope: payload.scope! } : item));
+      announce(
+        `${granted ? "Revoked" : "Granted"} ${mapping.key} ${granted ? "from" : "to"} ${familiarId}.`,
+      );
+    } catch (cause) {
+      setGrantError(
+        cause instanceof Error ? cause.message : "Couldn't update the familiar grant.",
+      );
+    } finally {
+      setGrantBusyKey(null);
+    }
+  }
+
   // Hide the row pending an undoable delete, then apply the text filter
-  // (key / 1Password reference / description, case-insensitive).
+  // (key / provider reference / description, case-insensitive).
   const visibleMappings = useMemo(() => {
     const afterPending = deletePending
       ? mappings.filter((m) => m.key !== deletePending.item.key)
@@ -278,7 +334,11 @@ export function VaultPanel() {
           <Icon name="ph:vault" width={14} />
           Secret Vault
         </div>
-        <span className="vault-header-sub">env vars → encrypted local secrets, 1Password, or Dashlane references</span>
+        <span className="vault-header-sub">
+          {familiarId
+            ? `shared, granted, and available keys for ${familiarId}`
+            : "env vars → encrypted local secrets, 1Password, or Dashlane references"}
+        </span>
         <button
           type="button"
           className="vault-btn vault-btn--primary [margin-left:auto]!"
@@ -303,6 +363,7 @@ export function VaultPanel() {
         <div className="vault-add-wrapper">
           <AddMappingForm
             initial={editing ?? undefined}
+            familiarId={familiarId}
             onSaved={() => { setAdding(false); setEditing(null); void load(); }}
             onCancel={() => { setAdding(false); setEditing(null); }}
           />
@@ -327,8 +388,10 @@ export function VaultPanel() {
         <EmptyState
           compact
           icon="ph:vault"
-          headline="No mappings yet"
-          subtitle="Add one to store a local encrypted secret or pull from 1Password."
+          headline={familiarId ? "No secrets available" : "No mappings yet"}
+          subtitle={familiarId
+            ? "Add a secret scoped to this familiar."
+            : "Add one to store a local encrypted secret or pull from 1Password."}
           actions={
             <Button
               size="xs"
@@ -356,12 +419,24 @@ export function VaultPanel() {
             <div className="vault-footer-note">No secrets match “{query.trim()}”.</div>
           ) : (
         <div className="vault-list">
-          {visibleMappings.map((m) => (
-            <div key={m.key} className={`vault-row${m.status === "error" || m.status === "unresolved" ? " vault-row--warn" : ""}`}>
+          {visibleMappings.map((m) => {
+            const granted = m.scope === "shared" ||
+              m.scope.includes(familiarId?.trim().toLowerCase() ?? "");
+            return (
+            <div
+              key={m.key}
+              className={`vault-row${m.status === "error" || m.status === "unresolved" ? " vault-row--warn" : ""}`}
+              data-granted={familiarId ? granted : undefined}
+            >
               <div className="vault-row-main">
                 <code className="vault-row-key">{m.key}</code>
                 <StatusBadge status={m.status} storage={m.storage} />
                 {m.required && <span className="vault-required-pill">required</span>}
+                {familiarId ? (
+                  <span className="vault-required-pill">
+                    {m.scope === "shared" ? "shared" : granted ? "granted" : "not granted"}
+                  </span>
+                ) : null}
               </div>
               {m.ref && (
                 <div className="vault-row-ref">{m.ref}</div>
@@ -387,25 +462,46 @@ export function VaultPanel() {
                     <Icon name={copiedKey === m.key ? "ph:check" : "ph:copy"} width={11} />
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="vault-action-btn"
-                  title="Edit"
-                  onClick={() => { setEditing(m); setAdding(false); }}
-                >
-                  <Icon name="ph:pencil-simple" width={11} />
-                </button>
-                <button
-                  type="button"
-                  className="vault-action-btn vault-action-btn--danger"
-                  title="Remove mapping"
-                  onClick={() => handleDelete(m.key)}
-                >
-                  <Icon name="ph:trash" width={11} />
-                </button>
+                {familiarId ? (
+                  m.scope === "shared" ? null : (
+                    <button
+                      type="button"
+                      className="vault-action-btn"
+                      title={granted ? "Revoke from familiar" : "Grant to familiar"}
+                      aria-label={`${granted ? "Revoke" : "Grant"} ${m.key} ${granted ? "from" : "to"} ${familiarId}`}
+                      disabled={grantBusyKey === m.key}
+                      onClick={() => void updateFamiliarGrant(m, granted)}
+                    >
+                      <Icon
+                        name={granted ? "ph:minus-circle" : "ph:key"}
+                        width={11}
+                      />
+                    </button>
+                  )
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="vault-action-btn"
+                      title="Edit"
+                      onClick={() => { setEditing(m); setAdding(false); }}
+                    >
+                      <Icon name="ph:pencil-simple" width={11} />
+                    </button>
+                    <button
+                      type="button"
+                      className="vault-action-btn vault-action-btn--danger"
+                      title="Remove mapping"
+                      onClick={() => handleDelete(m.key)}
+                    >
+                      <Icon name="ph:trash" width={11} />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
           )}
         </>
@@ -416,6 +512,9 @@ export function VaultPanel() {
         Local secrets are encrypted on disk with a machine-local Cave key. 1Password
         entries are resolved live via <code>op read</code> and cached in process memory.
       </div>
+      {grantError ? (
+        <div className="vault-row-error" role="alert">{grantError}</div>
+      ) : null}
 
       {deletePending ? (
         <UndoToast

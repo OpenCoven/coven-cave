@@ -6,7 +6,7 @@ const source = [
   await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./calendar-view-primitives.tsx", import.meta.url), "utf8"),
 ].join("\n");
-const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const calendarCss = await readFile(new URL("../styles/globals/calendar-agenda.css", import.meta.url), "utf8");
 
 // ───────── Task 1: AM/PM hour labels ─────────
 assert.match(
@@ -37,6 +37,11 @@ assert.match(
   source,
   /function DayView\([\s\S]*?return \(\s*<div className="flex flex-col flex-1 overflow-hidden">[\s\S]*?<TimeGrid columns=\{columns\}/,
   "DayView must always render TimeGrid (no conditional EmptyScheduleState swap)",
+);
+assert.doesNotMatch(
+  source,
+  /function EmptyScheduleState\(/,
+  "the retired standalone calendar empty state stays deleted",
 );
 // (2026-06-11) The floating empty-state Add-event overlays were removed on
 // Val's instruction — the toolbar button is the single entry point. The old
@@ -179,12 +184,12 @@ assert.match(source, /calendar-toolbar-button/, "Calendar toolbar buttons should
 assert.match(source, /calendar-heading-button/, "Calendar heading button should expose a mobile hook");
 assert.match(source, /calendar-empty-action/, "Calendar empty-state actions should expose a mobile hook");
 assert.match(
-  globals,
+  calendarCss,
   /@media \(max-width: 767px\) \{[\s\S]*\.calendar-toolbar-icon,[\s\S]*\.calendar-toolbar-button,[\s\S]*\.calendar-heading-button,[\s\S]*\.calendar-empty-action\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile calendar toolbar and empty-state controls should meet the shared touch target",
 );
 assert.match(
-  globals,
+  calendarCss,
   /@media \(max-width: 767px\) \{[\s\S]*\.calendar-toolbar-icon\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile calendar icon buttons should be square touch targets",
 );
@@ -247,7 +252,7 @@ function fnRegion(name) {
 }
 
 // No raw <button> survives in the standardized control clusters.
-for (const name of ["EmptyScheduleState", "AgendaView", "ItemDetailPanel"]) {
+for (const name of ["AgendaView", "ItemDetailPanel"]) {
   assert.doesNotMatch(
     fnRegion(name),
     /<button\b/,
@@ -261,12 +266,7 @@ assert.match(detail, /<Button\b[\s\S]*?variant="primary"/, "detail panel Open is
 assert.match(detail, /<Button\b[\s\S]*?variant="secondary"[\s\S]*?Done/, "detail panel Done is a secondary Button");
 assert.match(detail, /<IconButton\b[\s\S]*?aria-label="Dismiss"/, "detail panel Dismiss is an IconButton");
 
-// The empty-state / agenda actions keep their mobile hook while using the primitive.
-assert.match(
-  fnRegion("EmptyScheduleState"),
-  /<Button\b[\s\S]*?className="calendar-empty-action"/,
-  "empty-schedule Add action is a Button that keeps the mobile hook",
-);
+// The agenda empty action keeps its mobile hook while using the primitive.
 assert.match(
   fnRegion("AgendaView"),
   /<Button\b[\s\S]*?className="calendar-empty-action"/,
@@ -295,6 +295,35 @@ assert.doesNotMatch(
   source,
   /grid h-6 w-6 place-items-center rounded-md/,
   "no hand-rolled mini-month nav-arrow markup remains",
+);
+
+// ── Rituals UI/UX debug pass (cave-v1x6) ─────────────────────────────────────
+// 1. View-switch shortcuts must not swallow browser/OS chords: Cmd+M, Ctrl+D
+//    etc. previously ALSO switched the calendar view.
+assert.equal(
+  (source.match(/if \(e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey\) break;/g) ?? []).length,
+  6,
+  "every single-letter calendar shortcut ignores modified keypresses",
+);
+// 2. Month paging steps from day 1 and clamps back, so Jan 31 → Feb 28
+//    instead of overflowing into March.
+assert.match(
+  source,
+  /const d = new Date\(prev\.getFullYear\(\), prev\.getMonth\(\) \+ dir, 1\);\s*\n\s*const lastDay = new Date\(d\.getFullYear\(\), d\.getMonth\(\) \+ 1, 0\)\.getDate\(\);\s*\n\s*d\.setDate\(Math\.min\(prev\.getDate\(\), lastDay\)\);/,
+  "month navigation clamps the day instead of overflowing short months",
+);
+// 3. Agenda: past items stay reachable when upcoming groups exist (the toggle
+//    lived only in the empty state), and revealing them keeps chronological
+//    order instead of flipping the agenda to future-first.
+assert.match(
+  source,
+  /\) : pastCount > 0 \? \([\s\S]{0,400}Show \{pastCount\} past item/,
+  "the Show-past toggle renders alongside populated agenda groups too",
+);
+assert.doesNotMatch(
+  source,
+  /\.sort\(\(a, b\) => showPast\s*\n?\s*\? b\.date\.getTime\(\) - a\.date\.getTime\(\)/,
+  "showPast no longer reverses the agenda sort",
 );
 
 console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours + cave-4op control primitives ok");

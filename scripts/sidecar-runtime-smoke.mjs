@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+// The file-count ceiling is read from sidecar-runtime-budget.json through this
+// module rather than repeated here — see cave-0ia8h.
+import { SIDECAR_RUNTIME_BUDGETS } from "./sidecar-runtime-closure.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stagedSidecarRoot = path.join(root, "src-tauri", "resources", "server");
@@ -17,6 +20,27 @@ const bundledNode = path.join(
   "node",
   "bin",
   process.platform === "win32" ? "node.exe" : "node",
+);
+const bundledWhisper = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "whisper",
+  process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli",
+);
+const bundledPiper = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "piper",
+  process.platform === "win32" ? "piper.exe" : "piper",
+);
+const bundledKokoro = path.join(
+  root,
+  "src-tauri",
+  "resources",
+  "kokoro",
+  process.platform === "win32" ? "sherpa-onnx-offline-tts.exe" : "sherpa-onnx-offline-tts",
 );
 const token = "sidecar-runtime-smoke-token";
 
@@ -93,7 +117,7 @@ function attachOutput(child) {
   };
 }
 
-function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
+function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port, environment = {} }) {
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(bundledNode, [sidecarServer], {
     cwd: sidecarRoot,
@@ -104,9 +128,13 @@ function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
       COVEN_CAVE_BUNDLE: "1",
+      COVEN_WHISPER_CPP_BIN: bundledWhisper,
+      COVEN_PIPER_BIN: bundledPiper,
+      COVEN_KOKORO_BIN: bundledKokoro,
       COVEN_CAVE_AUTH_TOKEN: token,
       COVEN_HOME: covenHome,
       NEXT_TELEMETRY_DISABLED: "1",
+      ...environment,
     },
   });
   return { baseUrl, child, output: attachOutput(child) };
@@ -136,6 +164,95 @@ function authenticatedHeaders(baseUrl, contentType) {
   };
 }
 
+/** Verify that a staged or extracted runtime actually retained a behavioral
+ * guard. This complements the live HTTP assertions below: the archive must not
+ * silently omit the compiled project gate. */
+async function runtimeContainsText(rootDir, expectedText) {
+  const pending = [rootDir];
+  while (pending.length) {
+    const current = pending.pop();
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !/\.(?:js|mjs|json)$/i.test(entry.name)) continue;
+      const contents = await readFile(fullPath, "utf8").catch(() => "");
+      if (contents.includes(expectedText)) return true;
+    }
+  }
+  return false;
+}
+
+async function waitForText(file, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await readFile(file, "utf8").catch(() => "");
+    if (value.trim()) return value.trim();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for fixture output: ${path.basename(file)}`);
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== "ESRCH";
+  }
+}
+
+async function waitForProcessExit(pid, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processAlive(pid)) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.fail(`daemon timeout fixture child ${pid} survived owned-tree cleanup`);
+}
+
+async function writeHangingDaemonFixture(rootDir, marker) {
+  const fixture = path.join(rootDir, process.platform === "win32" ? "hanging-coven.cmd" : "hanging-coven.sh");
+  const daemonScript = path.join(rootDir, "hanging-daemon-child.cjs");
+  // The harness spawn boundary deliberately removes Cave-internal env before
+  // it launches a daemon. Embed this smoke-only marker and bundled Node path
+  // into the fixture instead of weakening that production scrubber.
+  const nodeExpression = `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},String(process.pid));setInterval(()=>{},1000)`;
+  await writeFile(daemonScript, nodeExpression, "utf8");
+  if (process.platform === "win32") {
+    await writeFile(
+      fixture,
+      [
+        "@ECHO off",
+        "SETLOCAL",
+        "CALL :find_dp0",
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\hanging-daemon-child.cjs" %*',
+        "",
+      ].join("\r\n"),
+      "utf8",
+    );
+  } else {
+    await writeFile(
+      fixture,
+      `#!/bin/sh\nexec "${bundledNode}" "${daemonScript}"\n`,
+      "utf8",
+    );
+    await chmod(fixture, 0o755);
+  }
+  return {
+    fixture,
+    environment: {
+      COVEN_BIN: fixture,
+      COVEN_SOCKET: process.platform === "win32"
+        ? `coven-cave-smoke-unready-${process.pid}-${Date.now()}`
+        : path.join(rootDir, "unready.sock"),
+    },
+  };
+}
+
 async function main() {
   let extractedSidecarRoot = null;
   let sidecarRoot = stagedSidecarRoot;
@@ -148,7 +265,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_596);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= SIDECAR_RUNTIME_BUDGETS.fileCount);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
@@ -170,6 +287,9 @@ async function main() {
     "marketplace/plugins/prompt-pack-essentials/plugin.json",
     "public/sandbox/react-runtime.js",
     "public/sandbox/tailwind.js",
+    "node_modules/next/dist/compiled/webpack/webpack-lib.js",
+    "node_modules/next/dist/compiled/webpack/webpack.js",
+    "node_modules/next/dist/compiled/webpack/bundle5.js",
     "vault.yaml",
     "workflows/release-review.yaml",
   ]) {
@@ -190,6 +310,46 @@ async function main() {
   }
   await access(sidecarServer);
   await access(bundledNode);
+  await access(bundledWhisper);
+  await access(bundledPiper);
+  if (process.platform === "win32") {
+    for (const runtimeDll of ["MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "VCOMP140.dll"]) {
+      await access(path.join(path.dirname(bundledWhisper), runtimeDll));
+    }
+  }
+
+  const whisperVersion = spawnSync(bundledWhisper, ["--version"], {
+    encoding: "utf8",
+    env: process.platform === "linux"
+      ? { ...process.env, LD_LIBRARY_PATH: path.dirname(bundledWhisper) }
+      : process.env,
+  });
+  assert.equal(
+    whisperVersion.status,
+    0,
+    `packaged Whisper CLI must launch from resources: ${whisperVersion.stderr || whisperVersion.error}`,
+  );
+
+  const piperHelp = spawnSync(bundledPiper, ["--help"], {
+    encoding: "utf8",
+  });
+  assert.equal(
+    piperHelp.status,
+    0,
+    `packaged Piper runtime must launch from resources: ${piperHelp.stderr || piperHelp.error}`,
+  );
+
+  const kokoroHelp = spawnSync(bundledKokoro, ["--help"], {
+    encoding: "utf8",
+  });
+  assert.equal(
+    kokoroHelp.status,
+    0,
+    `packaged Kokoro (sherpa-onnx) runtime must launch from resources: ${kokoroHelp.stderr || kokoroHelp.error}`,
+  );
+  // espeak-ng-data must ride beside the Kokoro executable: the Node runner
+  // passes --kokoro-data-dir=<dir-of-executable>/espeak-ng-data.
+  await access(path.join(path.dirname(bundledKokoro), "espeak-ng-data", "phontab"));
 
   const nativeModules = spawnSync(
     bundledNode,
@@ -203,8 +363,23 @@ async function main() {
   );
 
   const covenHome = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-smoke-"));
+  const daemonMarker = path.join(covenHome, "daemon-timeout-child.pid");
+  const hangingDaemon = await writeHangingDaemonFixture(covenHome, daemonMarker);
   const avatarDir = path.join(covenHome, "workspaces", "familiars", "smoke", "avatars");
   await mkdir(avatarDir, { recursive: true });
+  await mkdir(path.join(covenHome, "cave"), { recursive: true });
+  // This familiar makes the project boundary test reach authorization rather
+  // than fail earlier as an unknown familiar. No project is registered or
+  // granted: a projectless launch must fail closed without creating a session.
+  await writeFile(
+    path.join(covenHome, "cave", "config.json"),
+    JSON.stringify({
+      version: 1,
+      defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
+      familiars: { smoke: { harness: "codex", model: "openai/gpt-5.6-sol" } },
+    }),
+    "utf8",
+  );
   await sharp({
     create: {
       width: 640,
@@ -222,6 +397,7 @@ async function main() {
     sidecarRoot,
     covenHome,
     port: firstPort,
+    environment: hangingDaemon.environment,
   });
 
   try {
@@ -240,12 +416,89 @@ async function main() {
     assert.equal(meta.width, 256, "avatar should be downscaled to the packaged route max dimension");
     assert.equal(meta.height, 128, "avatar should preserve aspect ratio during sidecar transcode");
 
+    const buildInfoResponse = await fetch(`${baseUrl}/api/app/build-info`, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(buildInfoResponse.status, 200, "packaged sidecar must expose its artifact identity");
+    const buildInfo = await buildInfoResponse.json();
+    assert.match(buildInfo.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+    assert.match(buildInfo.revision, /^(?:development|[a-f0-9]{7,64})$/);
+    assert.equal(
+      buildInfo.identity,
+      `v${buildInfo.version}+${buildInfo.revision}`,
+      "packaged sidecar build identity must be internally consistent",
+    );
+
+    const projectlessConversation = await fetch(`${baseUrl}/api/chat/conversation`, {
+      method: "POST",
+      headers: authenticatedHeaders(baseUrl, "application/json"),
+      body: JSON.stringify({ familiarId: "smoke" }),
+    });
+    assert.equal(
+      projectlessConversation.status,
+      400,
+      "packaged sidecar must reject a projectless conversation before session creation",
+    );
+    const projectlessBody = await projectlessConversation.json();
+    assert.equal(projectlessBody.code, "project_root_required");
+    await assert.rejects(
+      access(path.join(covenHome, "cave", "conversations")),
+      { code: "ENOENT" },
+      "projectless packaged launches must not persist a conversation",
+    );
+    assert.equal(
+      await runtimeContainsText(sidecarRoot, "project_root_required"),
+      true,
+      "packaged runtime must retain the project-root refusal gate",
+    );
+
+    const daemonStartResponse = await fetch(`${baseUrl}/api/daemon/start`, {
+      method: "POST",
+      headers: authenticatedHeaders(baseUrl, "application/json"),
+      body: JSON.stringify({ restart: true }),
+    });
+    const daemonStart = await daemonStartResponse.json();
+    assert.equal(
+      daemonStartResponse.status,
+      504,
+      `an unready packaged daemon launch must return a structured timeout: ${JSON.stringify(daemonStart)}`,
+    );
+    assert.equal(daemonStart.code, "readiness_timeout");
+    assert.deepEqual(
+      daemonStart.cleanup,
+      {
+        attempted: true,
+        completed: true,
+        mode: process.platform === "win32" ? "windows-tree" : "process-group",
+      },
+      "the packaged timeout must report completed cleanup of Cave's owned launch tree",
+    );
+    const daemonChildPid = Number(await waitForText(daemonMarker));
+    assert.ok(Number.isSafeInteger(daemonChildPid) && daemonChildPid > 0, "fixture must report its actual daemon descendant PID");
+    await waitForProcessExit(daemonChildPid);
+
+    const enginesResponse = await fetch(`${baseUrl}/api/voice/engines`, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(enginesResponse.status, 200, "packaged sidecar must expose local voice readiness");
+    const engines = await enginesResponse.json();
+    assert.equal(
+      engines.runtimes?.piper?.available,
+      true,
+      "the sidecar must execute the managed Piper resource, not fall back to PATH",
+    );
+    assert.equal(
+      engines.runtimes?.kokoro?.available,
+      true,
+      "the sidecar must execute the managed Kokoro (sherpa-onnx) resource, not fall back to PATH",
+    );
+
     const marketplaceResponse = await fetch(`${baseUrl}/api/marketplace`, {
       headers: { "x-coven-cave-token": token },
     });
     assert.equal(marketplaceResponse.status, 200, "packaged marketplace API must load its bundled catalog");
     const marketplace = await marketplaceResponse.json();
-    assert.ok(marketplace.ok && marketplace.plugins.length > 0, "packaged marketplace catalog must not be empty");
+    assert.ok(marketplace.ok && Array.isArray(marketplace.plugins), "packaged marketplace owned inventory must be an array");
 
     const promptPackResponse = await fetch(`${baseUrl}/api/marketplace/pack-prompts?id=prompt-pack-essentials`, {
       headers: { "x-coven-cave-token": token },
@@ -317,8 +570,13 @@ async function main() {
           accentSeed: { L: 0.63, a: 0.12, b: -0.08 },
         },
       },
-      general: { newsHeadlines: false, stopPhrase: "halt", celebrations: false },
+      general: { stopPhrase: "halt", celebrations: false },
       phone: { mobileMode: false },
+      voice: {
+        defaultProvider: "elevenlabs",
+        defaultModel: "eleven_turbo_v2_5",
+        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
+      },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
       method: "PATCH",
@@ -382,6 +640,7 @@ async function main() {
     assert.equal(restored.appearance.backdrop.image.mime, "image/png");
     assert.deepEqual(restored.general, preferencePatch.general);
     assert.deepEqual(restored.phone, preferencePatch.phone);
+    assert.deepEqual(restored.voice, preferencePatch.voice);
 
     const documentResponse = await fetch(baseUrl, {
       headers: authenticatedHeaders(baseUrl),

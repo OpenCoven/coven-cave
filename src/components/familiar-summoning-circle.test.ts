@@ -28,22 +28,37 @@ assert.match(
   /fetch\("\/api\/familiars",\s*\{[\s\S]*?method:\s*"POST"/,
   "the circle should POST to /api/familiars",
 );
+assert.match(
+  source,
+  /vessel !== "local" \|\| h\.availability\?\.state === undefined \|\| h\.availability\.state === "ready"/,
+  "Local runtime choices must exclude installed runners the shared preflight says are not launchable",
+);
 assert.doesNotMatch(
   source,
   /onboarding\/setup/,
   "the circle must not call the onboarding setup route",
 );
 
-// ── All three vessels (connection paths) ────────────────────────────────────
+// ── All vessels (connection paths) ──────────────────────────────────────────
 assert.match(
   source,
-  /type VesselKind = "local" \| "ssh" \| "openclaw"/,
-  "the vessel choice covers local, SSH, and OpenClaw",
+  /type VesselKind = "local" \| "ssh" \| "openclaw" \| "hermes"/,
+  "the vessel choice covers local, SSH, OpenClaw, and Hermes profiles",
 );
 assert.match(
   source,
   /fetch\("\/api\/harnesses"/,
   "local/SSH vessels list installed runtimes from /api/harnesses",
+);
+assert.match(
+  source,
+  /h\.installed &&[\s\S]{0,120}\(h\.availability\?\.state \?\? "ready"\) === "ready"/,
+  "the familiar picker excludes runners that the shared availability contract cannot launch",
+);
+assert.match(
+  source,
+  /const unavailableHarness = \(harnesses \?\? \[\]\)\.find\([\s\S]*?h\.availability !== undefined[\s\S]*?h\.availability\.state !== "ready"[\s\S]*?const unavailableAvailability = unavailableHarness\?\.availability;[\s\S]*?unavailableAvailability\.message/,
+  "the familiar picker surfaces shared availability remediation for both missing and unlaunchable runtimes",
 );
 assert.match(
   harnessesRoute,
@@ -75,6 +90,21 @@ assert.match(
   /fetch\("\/api\/openclaw-agents"/,
   "the OpenClaw vessel discovers agents from /api/openclaw-agents",
 );
+assert.match(source, /fetch\("\/api\/hermes-profiles"/, "the Hermes vessel discovers profiles from /api/hermes-profiles");
+assert.match(source, /hermesReady=\{\(harnesses \?\? \[\]\)\.some\(/, "Hermes profiles are offered only when the local Hermes runtime is ready");
+assert.match(source, /if \(!description\.trim\(\)\) setDescription\(profile\.description\)/, "Hermes identity seeding preserves an entered description");
+assert.match(source, /hermesProfile: \{ id: selectedHermesProfile\.id, homePath: selectedHermesProfile\.homePath \}/, "Hermes selection posts an explicit profile binding");
+assert.match(source, /No saved Hermes profiles found\. You can still summon bare local Hermes\./, "empty Hermes profiles preserve bare-runtime fallback copy");
+assert.match(
+  source,
+  /role="radiogroup" aria-label="Hermes profile"[\s\S]*?tabIndex=\{hermesProfileId === profile\.id \|\| \(!hermesProfileId && index === 0\) \? 0 : -1\}[\s\S]*?onKeyDown=\{\(event\) => handleHermesProfileKeyDown\(event, index\)\}/,
+  "Hermes profile radios use roving tabindex and keyboard navigation",
+);
+assert.match(
+  source,
+  /case "ArrowDown":[\s\S]*?case "ArrowRight":[\s\S]*?case "ArrowUp":[\s\S]*?case "ArrowLeft":[\s\S]*?case "Home":[\s\S]*?case "End":/,
+  "Hermes profile radios support standard arrow, Home, and End keys",
+);
 assert.match(
   source,
   /fetch\("\/api\/onboarding\/ssh-check"/,
@@ -87,8 +117,18 @@ assert.match(
 );
 assert.match(
   source,
-  /vessel === "local"\s*\n\s*\? \{ runtime: \{ kind: "local" \} \}/,
-  "summoning a local familiar explicitly binds it to the Cave host",
+  /v\.kind === "ssh" && harness === "grok"\) setHarness\(null\)/,
+  "switching a selected local Grok runtime to SSH clears the unsupported selection",
+);
+assert.match(
+  source,
+  /harness !== null &&\s*harness !== "grok" &&\s*sshHost\.trim\(\)\.length > 0/,
+  "a persisted SSH draft cannot submit an unsupported Grok runtime",
+);
+assert.match(
+  source,
+  /vessel === "local" \|\| vessel === "hermes"\s*\n\s*\? \{ runtime: \{ kind: "local" \} \}/,
+  "summoning a local or profile-bound Hermes familiar explicitly binds it to the Cave host",
 );
 assert.match(
   source,
@@ -259,18 +299,10 @@ assert.match(
 // ── The circle is the only creation path (dialog fully replaced) ────────────
 const familiarsView = await readFile(new URL("./familiars-view.tsx", import.meta.url), "utf8");
 const settingsShell = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
-for (const [name, consumer] of [["familiars-view", familiarsView], ["settings-shell", settingsShell]]) {
-  assert.match(
-    consumer,
-    /FamiliarSummoningCircle/,
-    `${name} opens the summoning circle`,
-  );
-  assert.doesNotMatch(
-    consumer,
-    /CreateFamiliarDialog/,
-    `${name} no longer references the retired CreateFamiliarDialog`,
-  );
-}
+assert.match(familiarsView, /FamiliarSummoningCircle/, "the Chat familiars view opens the summoning circle");
+assert.doesNotMatch(familiarsView, /CreateFamiliarDialog/, "the Chat familiars view no longer references the retired CreateFamiliarDialog");
+assert.doesNotMatch(settingsShell, /FamiliarSummoningCircle/, "the retired Settings Familiars section no longer opens the summoning circle");
+assert.doesNotMatch(settingsShell, /CreateFamiliarDialog/, "Settings no longer references the retired CreateFamiliarDialog");
 assert.match(
   familiarsView,
   /onEnhance=\{\(\) => setEnhanceTarget\(selectedFamiliar\)\}/,

@@ -128,20 +128,44 @@ assert.match(
   /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
   "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
 );
+// The running-processes control is workspace-owned (it needs the sessions
+// state and chat navigation): the bar renders it as the `runningStatus` slot
+// in the right status cluster, exactly like the bell — no hand-rolled markup.
 assert.match(
   source,
-  /typeof runningCount === "number" && runningCount > 0 \? \(\s*<span\s+className="menu-bar__status"[^>]*role="status"[^>]*aria-label=\{`\$\{runningCount\} session\$\{runningCount === 1 \? "" : "s"\} running`\}[^>]*title=\{`\$\{runningCount\} session\$\{runningCount === 1 \? "" : "s"\} running`\}[^>]*>[\s\S]{0,260}?<Icon name="ph:waveform"[\s\S]{0,250}?<span className="menu-bar__badge" aria-hidden>\s*\{fmtBadge\(runningCount\)\}\s*<\/span>[\s\S]{0,120}?\)\s*:\s*null/,
-  "running sessions render as a compact status control that hides at zero and carries the exact label",
+  /<div className="menu-bar__group menu-bar__group--status">\s*\{runningStatus\}\s*\{bell\}\s*<\/div>/,
+  "the status cluster hosts the workspace-owned running-processes control beside the bell",
+);
+assert.doesNotMatch(
+  source,
+  /menu-bar__status|runningCount|ph:waveform/,
+  "the bar no longer hand-rolls the running-status markup (it lives in RunningSessionsPopover)",
 );
 assert.doesNotMatch(
   source,
   /menu-bar__running-dot/,
   "the running status no longer uses a presence dot",
 );
-assert.doesNotMatch(
-  source,
-  /\{runningCount\} running/,
-  "the running status no longer renders the literal running pill text",
+// Clicking the waveform trigger must SHOW the running processes: the workspace
+// feeds the popover the live running-session rows and the chat-open handler.
+const runningSessionsPopover = readFileSync(
+  new URL("./running-sessions-popover.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  workspace,
+  /runningStatus=\{\s*<RunningSessionsPopover\s+sessions=\{runningSessions\}\s+familiars=\{familiars\}\s+onOpenSession=\{openFamiliarSession\}\s*\/>\s*\}/,
+  "workspace mounts RunningSessionsPopover in the menu bar's runningStatus slot, fed live running sessions and the session-open handler",
+);
+assert.match(
+  workspace,
+  /runningSessions = useMemo\(\s*\(\) => sessions\.filter\(\(s\) => !s\.archived_at && sessionStatusTone\(s\.status\) === "running"\)/,
+  "running rows use the shared sessionStatusTone vocabulary and exclude archived sessions",
+);
+assert.match(
+  runningSessionsPopover,
+  /className="menu-bar__status focus-ring"[\s\S]{0,200}?aria-haspopup="dialog"[\s\S]{0,120}?aria-expanded=\{open\}/,
+  "the popover trigger keeps the menu-bar status chrome and announces the popover",
 );
 assert.match(
   notificationBell,
@@ -160,8 +184,13 @@ assert.match(
 );
 assert.match(
   desktopChrome,
-  /\.notification-bell__badge \{[^}]*background:\s*var\(--color-danger\);/,
-  "notification badges use the danger background",
+  /\.notification-bell__badge \{[^}]*background:\s*color-mix\(in oklch, var\(--color-warning\) 14%, var\(--bg-raised\)\);/,
+  "notification badges tint from the bell's warning hue over an opaque surface (the chip overlaps the glyph)",
+);
+assert.match(
+  desktopChrome,
+  /\.notification-bell__badge \{[^}]*border:\s*1px solid color-mix\(in oklch, var\(--color-warning\) 40%, var\(--bg-raised\)\);/,
+  "the count chip is the bordered element — fill vs outline separates it from the solid glyph",
 );
 assert.match(
   foundations,
@@ -175,8 +204,13 @@ assert.match(
 );
 assert.match(
   desktopChrome,
-  /\.notification-bell__badge \{[^}]*color:\s*var\(--color-danger-foreground\);/,
-  "notification badges use the semantic danger foreground",
+  /\.notification-bell__badge \{[^}]*color:\s*var\(--color-warning\);/,
+  "the count is solid warning text — same hue as the unread bell icon, per the one-token tint recipe",
+);
+assert.match(
+  notificationBell,
+  /name=\{displayBadgeCount > 0 \? "ph:bell-fill" : "ph:bell"\}/,
+  "unread solidifies the bell glyph; idle keeps the outline — fill, not a second hue, is the unread channel",
 );
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the
@@ -198,13 +232,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<FamiliarMenuBar[\s\S]*searchQuery=\{topSearchQuery\}[\s\S]*onSearchQueryChange=\{\(query\) => \{[\s\S]*setTopSearchQuery\(query\);[\s\S]*setPaletteOpen\(true\);/,
+  /<FamiliarMenuBar[\s\S]*searchQuery=\{topSearchQuery\}[\s\S]*onSearchQueryChange=\{\(query\) => \{[\s\S]*setTopSearchQuery\(query\);[\s\S]*openPalette\(\);/,
   "desktop menu bar search shares the same palette query/open wiring as mobile top bar",
 );
 assert.match(
   workspace,
-  /<SalemChatPanel\s+familiarId=\{[\s\S]*?model=\{/,
-  "Salem should remain available — re-homed into the drag-to-split pane",
+  /<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
+  "Salem should remain available as a registered page in the drag-to-split pane",
 );
 assert.doesNotMatch(
   workspace,

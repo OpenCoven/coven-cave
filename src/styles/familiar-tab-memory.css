@@ -1,0 +1,255 @@
+/* Familiar tab — Memory section (design-handoff rebuild).
+   Two-card grid: collapsible file-list card | preview/edit card.
+   BEM prefix: familiar-memory-tab__ (distinct from .familiar-tab__ owned by
+   chat-familiar-capabilities and from the familiars-memory-* view classes). */
+
+.familiar-memory-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.familiar-memory-tab--empty {
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 25%, transparent);
+  padding: var(--space-6) var(--space-4);
+}
+
+/* Grid animates 260px ↔ 56px as the file list collapses. */
+.familiar-memory-tab__grid {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.familiar-memory-tab__grid--collapsed {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+
+.familiar-memory-tab__card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  min-width: 0;
+}
+
+.familiar-memory-tab__list-card {
+  padding: var(--space-2);
+}
+
+.familiar-memory-tab__list-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-2);
+}
+
+.familiar-memory-tab__list-head--collapsed {
+  justify-content: center;
+}
+
+/* The sidebar toggle scales up slightly when the list is collapsed. */
+.familiar-memory-tab__toggle {
+  display: inline-flex;
+  transform-origin: center;
+}
+
+.familiar-memory-tab__toggle--scaled {
+  transform: scale(1.25);
+}
+
+.familiar-memory-tab__list-label {
+  flex: 1;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.familiar-memory-tab__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.familiar-memory-tab__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.familiar-memory-tab__row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-control);
+  text-align: left;
+  cursor: pointer;
+}
+
+.familiar-memory-tab__row:hover {
+  background: var(--bg-hover, color-mix(in oklch, var(--foreground) 8%, transparent));
+}
+
+/* Selected row: quiet accent tint — presence, not CTA. */
+.familiar-memory-tab__row--selected {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.familiar-memory-tab__row-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.familiar-memory-tab__row--selected .familiar-memory-tab__row-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.familiar-memory-tab__row-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.familiar-memory-tab__preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.familiar-memory-tab__preview-id {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.familiar-memory-tab__preview-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.familiar-memory-tab__preview-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.familiar-memory-tab__preview {
+  padding: var(--space-4) var(--space-5);
+  cursor: text;
+  min-height: 180px;
+  max-height: calc(100vh - 400px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.familiar-memory-tab__empty-file {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.familiar-memory-tab__edit {
+  padding: var(--space-3) var(--space-4);
+}
+
+.familiar-memory-tab__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  height: calc(100vh - 440px);
+  min-height: 220px;
+  resize: vertical;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.familiar-memory-tab__hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.familiar-memory-tab__hint--guard {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+}
+
+.familiar-memory-tab__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 35%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.familiar-memory-tab__error--pane {
+  margin: var(--space-3) var(--space-4);
+}
+
+.familiar-memory-tab__error > .iconify,
+.familiar-memory-tab__error svg {
+  flex-shrink: 0;
+  color: var(--color-warning);
+}
+
+.familiar-memory-tab__error-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.familiar-memory-tab__skeleton {
+  padding: var(--space-3);
+}
+
+/* Motion is opt-in: collapse/expand and hover transitions only run for users
+   who have not asked for reduced motion; everyone else gets an instant snap. */
+@media (prefers-reduced-motion: no-preference) {
+  .familiar-memory-tab__grid {
+    transition: grid-template-columns var(--duration-base) var(--ease-standard);
+  }
+
+  .familiar-memory-tab__toggle {
+    transition: transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .familiar-memory-tab__row {
+    transition: background-color var(--duration-fast) var(--ease-standard);
+  }
+}

@@ -3,6 +3,13 @@ use std::path::Component;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
 pub(super) fn tree_metrics(root: &Path) -> Result<(u64, u64, u64, String), String> {
+    // INVARIANT (cave-7kay): file_count here counts materialized regular
+    // files on disk — the same definition the manifest uses
+    // (scripts/sidecar-archive-manifest.mjs). extract_archive()'s per-entry
+    // tally additionally counts hardlink ENTRIES as files; both stay equal
+    // only while archives contain no hardlinks (sidecar-bundle.sh
+    // materializes links via `cp -aL`). If that ever changes, the metrics
+    // gates in extract_archive() fail closed rather than mis-measure.
     let mut pending = vec![root.to_path_buf()];
     let mut paths = Vec::new();
     let mut file_count = 0_u64;
@@ -143,6 +150,15 @@ pub(super) fn extract_archive(
         }
 
         let entry_type = entry.header().entry_type();
+        // INVARIANT (cave-7kay): this tally treats hardlink entries as files,
+        // while the manifest's file_count (scripts/sidecar-archive-manifest.mjs)
+        // and tree_metrics() above count materialized regular files. The
+        // tallies agree only while archives carry no hardlink entries — which
+        // holds today because scripts/sidecar-bundle.sh materializes every
+        // link via `cp -aL` before packing. A future bundle that encodes
+        // hardlinks fails the metrics gates below (fail-closed, by design):
+        // teach the bundler, the manifest walk, and both counters together
+        // before shipping such an archive.
         if entry_type.is_file() || entry_type.is_hard_link() {
             archive_file_count = archive_file_count
                 .checked_add(1)

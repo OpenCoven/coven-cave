@@ -25,12 +25,15 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  margin-top: 5px;
+  margin-top: var(--space-2);
   opacity: 0;
   transition: opacity var(--duration-fast, 120ms) var(--ease-standard, ease);
 }
 .group:hover .cave-bubble-actions,
 .group:focus-within .cave-bubble-actions {
+  opacity: 1;
+}
+.cave-bubble-assistant[data-state="error"] .cave-bubble-actions {
   opacity: 1;
 }
 /* The row owns the reveal; its buttons stay in flow and fully opaque. */
@@ -39,6 +42,22 @@
   top: auto;
   right: auto;
   opacity: 1;
+}
+.cave-response-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--space-8);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+}
+.cave-response-action:hover,
+.cave-response-action:focus-visible {
+  color: var(--text-primary);
+}
+.cave-response-more {
+  color: var(--text-secondary);
 }
 
 /* Touch devices have no hover (CHAT-D6-04) — keep per-message actions
@@ -55,14 +74,24 @@
     position: static;
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: var(--space-2);
     margin-top: var(--space-2);
   }
 
   .cave-bubble-actions .cave-copy-btn-bubble {
     min-width: 44px;
-    min-height: 36px;
+    min-height: 44px;
     border-radius: var(--radius-control);
+  }
+
+  .cave-response-more {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .cave-bubble-assistant .cave-bubble-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -929,4 +958,134 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
 /* Assistant bubble — transparent, full width */
 .cave-bubble-assistant {
   width: 100%;
+  --response-measure: min(48rem, 768px);
+  --response-font-size: var(--text-lg);
+  --response-leading: 1.65;
+  --response-block-gap: var(--space-4);
+  --response-section-gap: var(--space-6);
+}
+
+.cave-response-frame {
+  position: relative;
+  width: min(100%, var(--response-measure));
+  padding-left: var(--space-4);
+  color: var(--text-primary);
+}
+
+.cave-response-frame::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--border-hairline);
+  content: "";
+}
+
+.cave-response-frame[data-state="streaming"]::before {
+  background: var(--accent-presence);
+  animation: cave-response-presence var(--duration-slow) var(--ease-standard) infinite alternate;
+}
+
+.cave-response-frame[data-state="error"]::before {
+  background: var(--color-danger);
+}
+
+.cave-response-body {
+  min-width: 0;
+}
+
+.cave-response-body .cave-md {
+  max-width: none;
+  font-size: var(--response-font-size);
+  line-height: var(--response-leading);
+}
+
+.cave-response-body .cave-md > * + * {
+  margin-top: var(--response-block-gap);
+}
+
+.cave-response-body .cave-md h1,
+.cave-response-body .cave-md h2,
+.cave-response-body .cave-md h3,
+.cave-response-body .cave-md h4 {
+  margin-top: var(--response-section-gap);
+}
+
+.cave-response-body .cave-md > p:first-child:not(:last-child) {
+  color: var(--text-primary);
+  font-weight: 450;
+}
+
+.cave-response-collapsed {
+  min-height: var(--space-6);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--space-6);
+}
+
+.cave-response-error {
+  margin-top: var(--space-3);
+  color: var(--danger-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.cave-response-rendering,
+.cave-response-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.cave-response-typing {
+  margin-top: var(--space-3);
+}
+
+.cave-response-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cave-response-typing-dots i {
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  animation: cave-response-dot var(--duration-slow) var(--ease-standard) infinite alternate;
+}
+
+.cave-response-typing-dots i:nth-child(2) {
+  animation-delay: calc(var(--duration-fast) * -1);
+}
+
+.cave-response-typing-dots i:nth-child(3) {
+  animation-delay: calc(var(--duration-fast) * -2);
+}
+
+@keyframes cave-response-presence {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+@keyframes cave-response-dot {
+  from { opacity: 0.35; }
+  to { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-response-frame[data-state="streaming"]::before,
+  .cave-response-typing-dots i {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .cave-response-frame {
+    width: 100%;
+    padding-left: var(--space-3);
+  }
 }

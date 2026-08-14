@@ -8,8 +8,18 @@ const destinations = await readFile(new URL("./home/home-destinations.ts", impor
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
   destinations,
-  /const PLACEHOLDERS: Record<Destination, string> = \{[\s\S]*?chat:[\s\S]*?board:[\s\S]*?\}/,
-  "PLACEHOLDERS must be a Record<Destination, string> with chat/board keys",
+  /export function placeholderFor\([\s\S]*?familiarName: string \| null[\s\S]*?\): string/,
+  "placeholderFor must be a template fn taking (destination, familiarName)",
+);
+assert.doesNotMatch(
+  destinations,
+  /Nova/,
+  "Task placeholder must not hardcode a seed familiar name (#3962)",
+);
+assert.match(
+  destinations,
+  /familiarName\?\.trim\(\) \|\| "a familiar"/,
+  "Empty familiar state falls back to neutral copy, not a name",
 );
 assert.doesNotMatch(
   source,
@@ -18,8 +28,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /placeholder=\{PLACEHOLDERS\[destination\]\}/,
-  "textarea must use placeholder={PLACEHOLDERS[destination]}",
+  /placeholder=\{placeholderFor\(destination, selectedFamiliar\?\.display_name \?\? null\)\}/,
+  "textarea must wire placeholderFor(destination, selectedFamiliar name)",
 );
 assert.doesNotMatch(
   source,
@@ -41,7 +51,6 @@ const css = (
     [
       "../styles/home-composer/landing-composer.css",
       "../styles/home-composer/feed-menus.css",
-      "../styles/home-composer/digest.css",
       "../styles/home-composer/hearth-continuations.css",
     ].map((sheet) => readFile(new URL(sheet, import.meta.url), "utf8")),
   )
@@ -65,8 +74,8 @@ assert.match(
 // ───────── Command-bar hierarchy ─────────
 // Chat revamp 1d + 2026-07-21 home parity pass: one "+" menu (attach ·
 // dictation · call · enhance · Model & tuning) leads the utility row, then the
-// Chat/Task pills; the circular send hugs the right. The context pill
-// (Project · Model) anchors the footer band beneath — matching the chat
+// Chat/Task pills; the circular send hugs the right. The context chips
+// (Project · Model) anchor the footer band beneath — matching the chat
 // composer's grammar.
 assert.match(
   source,
@@ -75,7 +84,7 @@ assert.match(
 );
 assert.match(
   source,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
   "the context pill anchors the footer band beneath the control row",
 );
 assert.match(
@@ -98,10 +107,10 @@ assert.doesNotMatch(
   /hc-footer-band/,
   "the legacy hc- footer band stays retired — the shared cave-composer-footer-band carries the context pill",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /HomeSelect|Choose chat agent/,
-  "the home familiar selector is removed (selection lives in the side panel)",
+  /<FamiliarQuickSwitch[\s\S]*labeled[\s\S]*singleRequired/,
+  "the home familiar selector is labeled and constrained to one launch target",
 );
 assert.doesNotMatch(
   source,
@@ -122,8 +131,8 @@ assert.match(
 assert.doesNotMatch(css, /\.hc-action-bar\b/, "the bespoke action-bar CSS is gone (chat composer footer styles apply)");
 assert.doesNotMatch(
   css,
-  /\.hc-familiar-selector|\.hc-home-select/,
-  "the familiar-selector / home-select CSS is removed with the selector",
+  /\.hc-home-select/,
+  "home reuses the shared familiar picker instead of custom select CSS",
 );
 assert.doesNotMatch(
   css,
@@ -177,21 +186,28 @@ assert.doesNotMatch(
   "the solid accent-filled active pill treatment is retired",
 );
 
-// ── "Jump back in" recent-chats strip REMOVED ──
-// The standalone recents strip was dropped from the home surface; resume now
-// lives in the hearth card's Continue section.
-assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the Continue section)");
+// ── Below-composer stack REMOVED (ultra-minimal home) ──
+// The home surface is now the composer, full stop — ChatGPT/Claude-grade
+// minimal. The Continue / Open work / Prompt snippets sections and the
+// Ask Salem doorway were pulled off home (they live in the sidebar / their
+// own surfaces). Only the starter suggestion pills remain, and only on a
+// blank draft. HomeComposer still accepts the resume handler prop for
+// callers/other surfaces even though home no longer renders Continue.
+assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler");
 assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo is gone");
 assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
 assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
-// Chat revamp 1a: the digest carousel is HIDDEN from the default home (the
-// component file survives); its signal folds into Continue + Open work.
+// Chat revamp 1a: the digest carousel is HIDDEN from the default home.
 assert.doesNotMatch(source, /<HomeDigestCarousel/, "the digest carousel no longer renders on home");
-assert.match(
-  source,
-  /<HomeContinue[\s\S]*?sessions=\{sessions\}[\s\S]*?familiarNameById=\{familiarNameById\}[\s\S]*?onOpenSession=\{onOpenSession\}/,
-  "the Continue section receives the resume handler",
-);
+// Minimal pass: the stacked sections and the Ask Salem doorway are gone.
+// HomeContinue re-added in reference parity pass (2026-07-22): assert.doesNotMatch(source, /<HomeContinue/, "...");
+assert.match(source, /<HomeContinue/, "Continue cards present (reference parity pass 2026-07-22)");
+assert.doesNotMatch(source, /<HomeOpenWork/, "the Open work section no longer renders on the minimal home");
+assert.doesNotMatch(source, /<HomeSnippets/, "the Prompt snippets section no longer renders on the minimal home");
+assert.doesNotMatch(source, /home-ask-salem/, "the Ask Salem doorway no longer renders on the minimal home");
+// Cards-only home (2026-07-22): the cold-start pills are gone too — below
+// the composer there is nothing but the centered Continue cards.
+assert.doesNotMatch(source, /<HomeSuggestionPills/, "the starter suggestion pills are removed (cards-only home)");
 
 console.log("home-composer-polish.test.ts: ok");

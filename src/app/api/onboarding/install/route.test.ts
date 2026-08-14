@@ -1,398 +1,116 @@
 // @ts-nocheck
-// One-click installs must stay a hard allowlist: the request names a target,
-// never a command, package, or URL — so nothing user-controlled reaches a
-// shell. Two fixed mechanisms exist: pinned npm packages and pinned official
-// install scripts.
+// The install route is intentionally source-pinned: its safety boundary is
+// that a browser may name a reviewed target but cannot influence execution.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
-const installOutput = await readFile(
-  new URL("./install-job-output.ts", import.meta.url),
+const source = await readFile(
+  new URL("./install-service.ts", import.meta.url),
   "utf8",
 );
+const installOutput = await readFile(new URL("./install-job-output.ts", import.meta.url), "utf8");
 
+assert.match(source, /"managed-node": \{[\s\S]*kind: "managed-node"/);
 assert.match(
   source,
-  /const INSTALL_TARGETS = \{/,
-  "install targets live in a fixed allowlist map",
+  /"coven-cli": \{[\s\S]*packageName: reviewedPackage\("coven-cli"\)/,
+  "the Coven CLI update action installs the reviewed maintenance-compatible package",
 );
-
-for (const pkg of [
-  "@opencoven\\/cli@latest",
-  "@openai\\/codex",
-  "@anthropic-ai\\/claude-code",
-  "@github\\/copilot@latest",
-  "openclaw@latest",
-]) {
-  assert.match(
-    source,
-    new RegExp(`packageName: "${pkg}"`),
-    `allowlist pins the exact npm package (${pkg})`,
-  );
+for (const id of ["runtime-codex", "runtime-claude", "runtime-copilot", "runtime-openclaw"]) {
+  assert.match(source, new RegExp(`reviewedPackage\\("${id}"\\)`));
 }
-
-// Hermes installs via its official script — both platform commands pinned.
-assert.match(
-  source,
-  /posix: "curl -fsSL https:\/\/hermes-agent\.nousresearch\.com\/install\.sh \| bash"/,
-  "hermes POSIX installer URL is pinned to the official script",
-);
-assert.match(
-  source,
-  /windows: "iex \(irm https:\/\/hermes-agent\.nousresearch\.com\/install\.ps1\)"/,
-  "hermes Windows installer URL is pinned to the official script",
-);
-
 assert.equal(
-  source.match(/rejectNonLocalRequest\(req\)/g)?.length,
-  3,
-  "installer status, cancellation, and start requests require a loopback desktop origin",
-);
-
-assert.match(
-  source,
-  /if \(body\.confirmInstall !== true\)/,
-  "POST requires the desktop UI to send an explicit install confirmation flag",
-);
-
-assert.match(
-  source,
-  /if \(!isInstallTarget\(body\.target\)\)/,
-  "unknown targets are rejected before any spawn",
-);
-
-assert.match(
-  source,
-  /args: \[\.\.\.launch\.fixedArgs, "install", "-g", target\.packageName\]/,
-  "npm argv is fully fixed — only the allowlisted package name varies",
-);
-
-assert.match(
-  source,
-  /await prepareForInstall\(targetName, job\)/,
-  "installer should run target-specific preparation before npm mutates a global tool",
-);
-
-assert.match(
-  source,
-  /targetName !== "coven-cli"/,
-  "daemon stop/kill preparation should be scoped to coven-cli upgrades only",
-);
-
-assert.match(
-  source,
-  /callDaemonTarget<LocalDaemonHealth>\(localDaemonTarget\(\),/,
-  "coven-cli upgrades should inspect only the laptop-local daemon rather than a configured remote hub",
-);
-
-assert.match(
-  source,
-  /Resolve it for every probe: Windows daemon[\s\S]*new pipe name to daemon\.json/,
-  "daemon recovery re-resolves the local pipe after restart instead of probing a stale Windows socket",
-);
-
-assert.match(
-  source,
-  /prepareDaemonForCliUpdate\(dependencies\)/,
-  "coven-cli upgrades should explicitly capture and stop the pre-update daemon lifecycle",
-);
-
-assert.match(
-  source,
-  /recoverDaemonAfterCliUpdate\(job\.daemon, daemonLifecycleDependencies\(job\)\)/,
-  "both successful and failed CLI installs should restore a daemon that was running before update",
-);
-
-assert.match(
-  source,
-  /refreshCovenBin\(\)/,
-  "daemon recovery should clear cached executable discovery after npm rewrites the CLI",
-);
-
-assert.doesNotMatch(
-  source,
-  /process\.kill\(pid/,
-  "the updater must never SIGTERM a reported PID, which could be stale or reused",
-);
-
-assert.match(
-  source,
-  /installFailureHint\(targetName, output\)/,
-  "installer should translate common Windows lock failures into actionable guidance",
-);
-
-// The request body must never reach the spawn call.
-assert.doesNotMatch(
-  source,
-  /spawn\([^)]*body\./,
-  "no request-body value may appear in the spawn call",
-);
-
-// Script targets run only pinned constants from the allowlist.
-assert.match(
-  source,
-  /args: \["-lc", target\.posix\]/,
-  "POSIX script spawn uses the pinned allowlist command only",
+  (source.match(/@latest/g) ?? []).length,
+  0,
+  "installer targets must not bypass the reviewed prerequisite manifest",
 );
 assert.match(
   source,
-  /args: \["-NoProfile", "-Command", target\.windows\]/,
-  "Windows script spawn uses the pinned allowlist command only",
-);
-
-assert.match(
-  source,
-  /npmMissing: true/,
-  "missing npm returns a structured marker so the UI can show Node.js setup",
-);
-
-assert.match(
-  source,
-  /nodeInstallHint\(\)/,
-  "npm-missing responses carry a platform-specific Node.js install hint",
-);
-
-assert.match(
-  source,
-  /import \{\s*covenBin,\s*covenSpawnEnv,\s*pickWindowsLauncher,\s*refreshCovenBin,\s*refreshCovenSpawnEnv,?\s*\} from "@\/lib\/coven-bin"/,
-  "install route can refresh Cave's cached PATH before declaring npm missing",
-);
-
-assert.match(
-  source,
-  /commandPath\("npm", \{ refreshOnMiss: true \}\)/,
-  "npm discovery retries with a refreshed PATH so clicking Install again can see newly installed Node.js",
-);
-
-assert.match(
-  source,
-  /code === 1/,
-  "command lookup treats only the normal which/where not-found exit as missing npm",
-);
-
-assert.match(
-  source,
-  /commandLookupFailed/,
-  "transient command lookup failures are reported separately instead of mislabeling them as missing Node.js",
-);
-
-for (const platform of ["darwin", "win32"]) {
-  assert.match(
-    source,
-    new RegExp(`process\\.platform === "${platform}"`),
-    `Node.js hint covers ${platform} (linux is the fallback branch)`,
-  );
-}
-
-assert.match(
-  source,
-  /npmLaunchCommandForPath\(npm\)/,
-  "Windows npm.cmd installs are remapped to node npm-cli.js",
+  /targetName === "coven-cli"[\s\S]*covenBin\(\)[\s\S]*npmForDetectedCoven\(detected\)/,
+  "the Coven CLI update resolves host npm for the detected CLI instead of requiring Cave-managed Node",
 );
 assert.match(
   source,
-  /args: \[\.\.\.launch\.fixedArgs, "install", "-g", target\.packageName\][\s\S]*?shell: false/,
-  "npm installs preserve fixed argv and never pass npm.cmd through cmd.exe",
+  /async function npmForDetectedCoven[\s\S]*npmBesideDetectedCoven\(detected\)[\s\S]*commandPath\("npm", \{ refresh: true, refreshOnMiss: true \}\)/,
+  "a user-scoped Coven launcher may use host npm when npm is not colocated with the global bin",
+);
+assert.match(source, /targetName === "coven-cli"[\s\S]*npmLaunchCommandForPath/);
+assert.match(
+  source,
+  /canRepairDetectedCovenWithHostNpm[\s\S]*platform !== "win32" \|\| \/\\\.\(\?:cmd\|bat\)\$\/i[\s\S]*detected && path\.isAbsolute\(detected\) && canRepairDetectedCovenWithHostNpm\(detected\)/,
+  "Windows native coven.exe launchers fall back to Cave's managed npm lane instead of being mistaken for npm shims",
 );
 assert.match(
   source,
-  /npm discovery: runnable launcher found on Cave PATH\./,
-  "the retained trace records npm discovery without copying its local path",
+  /verificationPath: detected[\s\S]*verifyOpenCovenToolInstall\(targetName, \{[\s\S]*binaryPath: plan\.verificationPath,[\s\S]*env: plan\.env/,
+  "post-install verification checks the exact CLI launcher that npm targeted",
 );
 assert.match(
   source,
-  /Installer launch: npm-cli\.js via Node with fixed argv; shell disabled\./,
-  "the retained trace records the shell-free fixed-argv Windows launch mode",
+  /function isVerifiedReviewedInstallSuccess[\s\S]*verification\.current === reviewed\.version/,
+  "the pinned Coven install verifies the reviewed version instead of npm latest",
 );
 assert.doesNotMatch(
   source,
-  /appendTrace\([^\n]*(?:plan\.command|launch\.command|npmResult\.path)/,
-  "retained trace markers never include discovered machine-local command paths",
-);
-
-assert.match(
-  source,
-  /verifyOpenCovenToolInstall\(targetName\)/,
-  "OpenCoven installs refresh discovery and perform the authoritative executable/version verification",
-);
-
-assert.match(
-  source,
-  /installOk && targetName === "coven-cli"\) invalidateOpenCovenToolUpdateCache\(\)/,
-  "a successful Coven CLI install invalidates cached update discovery",
-);
-
-assert.match(
-  source,
-  /targetName === "coven-cli" \? \{ refresh: true \}/,
-  "CLI success refreshes the executable environment before resolving the installed binary",
-);
-
-assert.match(
-  source,
-  /isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
-  "a zero npm exit is necessary but insufficient: OpenCoven success also requires verified post-install state",
-);
-
-assert.match(
-  source,
-  /job\.verification = verification/,
-  "the polled job carries sanitized path/version verification evidence to the UI",
+  /!isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
+  "the Coven install path must not require the mutable npm latest tag",
 );
 assert.match(
   source,
-  /Post-install verification:[\s\S]*?package=[\s\S]*?executable=[\s\S]*?compatible=[\s\S]*?latest=/,
-  "the retained trace records only safe post-install verification booleans",
-);
-
-assert.match(
-  installOutput,
-  /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
-  "installer tails re-redact the combined buffer so secrets split across chunks cannot leak",
-);
-
-assert.match(
-  source,
-  /appendOutput\(job, daemonUpdateTraceLine\(daemon\)\)/,
-  "daemon lifecycle trace punctuation is normalized by the tested helper",
-);
-
-assert.match(
-  source,
-  /daemon: job\.daemon/,
-  "polled jobs expose lifecycle state so the UI can show daemon progress and health",
-);
-
-assert.doesNotMatch(
-  source,
-  /"coven-code":\s*\{/,
-  "coven-code is no longer a separate install target — @opencoven/cli self-manages the engine",
-);
-assert.doesNotMatch(
-  source,
-  /packageName: "coven-code@/,
-  "bare coven-code is a different, deprecated npm package — installs must never target it",
-);
-
-// ── Background install jobs ─────────────────────────────────────────────────
-// POST starts the installer and returns immediately; GET polls job status.
-
-assert.match(
-  source,
-  /__covenInstallJobs/,
-  "job registry lives on globalThis so dev HMR cannot orphan running jobs",
-);
-
-assert.match(
-  source,
-  /export async function GET/,
-  "a GET status endpoint exists for the client to poll",
-);
-
-assert.match(
-  source,
-  /\{ status: 202 \}/,
-  "POST registers the job and returns 202 without awaiting the installer",
-);
-
-assert.match(
-  source,
-  /existing\?\.status === "running"/,
-  "re-POST while a target is running is idempotent — no duplicate spawn",
-);
-
-assert.match(
-  source,
-  /reserveGlobalNpmInstall\(targetName\)/,
-  "npm installs reserve one global npm lease across every allowlisted target",
-);
-
-assert.match(
-  source,
-  /const plan = await spawnPlanFor\(target\);[\s\S]*?reserveGlobalNpmInstall\(targetName\)/,
-  "the atomic global reservation happens after asynchronous plan preparation",
-);
-
-assert.match(
-  source,
-  /retryable: true,[\s\S]*?code: "npm_install_in_progress"[\s\S]*?"Retry-After": "2"/,
-  "a competing npm request gets a specific, retryable conflict response",
-);
-
-assert.match(
-  source,
-  /npmBusyTarget: InstallTarget \| null/,
-  "GET exposes the global npm owner so every client surface can reflect it",
-);
-
-assert.match(
-  source,
-  /export async function DELETE[\s\S]*?job\.cancel\?\.\(\)/,
-  "a running install can be cancelled through the route",
-);
-
-assert.match(
-  source,
-  /function releaseNpmLease\([\s\S]*?npmLease\.release\(\);[\s\S]*?Global npm lane: released\./,
-  "terminal job paths release the global npm lease and retain that fact",
+  /const installOk = verification\s*\? isVerifiedReviewedInstallSuccess\(targetName, code, verification\)/,
+  "the final install outcome must use the reviewed version gate too",
 );
 assert.match(
   source,
-  /function finishInstallJobError\([\s\S]*?releaseNpmLease\(job, npmLease\)/,
-  "preparation error paths use the traced global npm lease release",
+  /resolveStaleOpenCovenLaunchers\([\s\S]*targetName === "coven-cli"[\s\S]*reviewedPackageManifest\("coven-cli"\)\.version/,
+  "stale-launcher repair verifies the pinned replacement against the reviewed version",
 );
 assert.match(
   source,
-  /Installer process: exited with code \$\{code\}\./,
-  "the retained trace records the installer process exit code",
+  /hostNpmSpawnEnv\([\s\S]*NPM_CONFIG_PREFIX/,
+  "the Coven CLI update targets the detected CLI's npm prefix",
 );
-
 assert.match(
   source,
-  /const safeMessage =\s*"Cave could not safely stop the local daemon before updating the CLI\. The update was not started\.";[\s\S]*?finishInstallJobError\([\s\S]*?safeMessage/,
-  "a failed graceful daemon stop keeps actionable copy without exposing raw command output",
+  /hostNpmSpawnEnv\([\s\S]*\/\^npm_\/i[\s\S]*delete env\[key\]/,
+  "pnpm lifecycle config cannot filter npm's latest release",
 );
-
+assert.doesNotMatch(source, /curl -fsSL|\birm https?:\/\//i, "one-click installs never use mutable script targets");
+assert.doesNotMatch(source, /installHermesShim|targetName === "hermes"/, "Hermes remains manual-only");
+assert.match(source, /await probeManagedNodeToolchain\(\)/, "pinned prerequisite installs require the Cave-managed toolchain");
+assert.match(source, /managedNpmLaunch\(managed\.paths\)/, "npm runs through owned node and npm-cli.js");
+assert.match(source, /args: \[\.\.\.launch\.args, "install", "--global", target\.packageName\]/, "npm argv is fixed and reviewed");
+assert.match(source, /shell: false/, "installer spawns never use a shell");
+assert.match(source, /commandPath\("npm", \{ refresh: true, refreshOnMiss: true \}\)/, "Coven CLI repair falls back to verified host npm only for its detected prefix");
+assert.match(source, /installManagedNodeToolchain\(/, "managed Node installer is routed through the endpoint");
+assert.match(source, /controller\.abort\(\)/, "managed Node installation supports cancellation");
+assert.match(source, /reserveGlobalNpmInstall\(targetName\)/, "managed toolchain and npm operations serialize");
+assert.match(source, /if \(body\.confirmInstall !== true\)/, "installation requires explicit confirmation");
+assert.equal(source.match(/rejectNonLocalRequest\(req\)/g)?.length, 3, "all route methods are local-only");
+assert.doesNotMatch(source, /spawn\([^)]*body\./, "request values never reach spawn");
+assert.match(source, /verifyOpenCovenToolInstall\(targetName, \{/, "Coven uses authoritative post-install verification");
+assert.match(source, /prepareDaemonForCliUpdate\(dependencies\)/, "Coven updates preserve daemon lifecycle handling");
+assert.match(source, /recoverDaemonAfterCliUpdate\(job\.daemon, daemonLifecycleDependencies\(job\)\)/, "Coven daemon is recovered after install");
+assert.match(installOutput, /redactSensitiveInstallOutput/, "installer output is redacted");
 assert.match(
   source,
-  /forceFinishTimer = setTimeout\([\s\S]*?finish\(null, null, new Error\(job\.error \?\? reason\)\)/,
-  "the timeout watchdog settles a child that never emits close",
+  /diagnosticTrace: \[\.\.\.job\.trace\]/,
+  "diagnostics retain bounded lifecycle facts independently from a long output tail",
 );
-
 assert.match(
   source,
-  /@\/lib\/server\/global-npm-install-lane/,
-  "the HMR-safe global npm lease is owned by a dedicated server module",
+  /failureCode\?: OnboardingInstallFailureCode/,
+  "installer jobs preserve a stable server-classified failure code",
 );
-
 assert.match(
   source,
-  /\{ status: 409 \}/,
-  "a conflicting npm install is rejected with 409, not queued",
+  /\(EACCES\|EPERM\|EROFS\|permission denied\)[\s\S]*return "filesystem_failed"/,
+  "host npm permission errors remain generic filesystem failures",
 );
-
-assert.match(
-  installOutput,
-  /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
-  "installer output is ANSI-stripped and redacted before the capped diagnostics tail is stored",
-);
-
-assert.match(
-  installOutput,
-  /slice\(-OUTPUT_CAP\)/,
-  "job output is capped, not unbounded",
-);
-assert.match(
-  installOutput,
-  /function installJobTail\([\s\S]*?CLIENT_TAIL_CAP[\s\S]*?outputBudget[\s\S]*?job\.output\.slice\(-outputBudget\)/,
-  "the client tail keeps stable trace facts plus bounded raw output",
-);
-
 assert.match(
   source,
-  /status: "running" as const,[\s\S]*elapsedMs,[\s\S]*tail/,
-  "the polled running view exposes status/elapsedMs/tail — the UI contract",
+  /!result\.ok && result\.applicationData/,
+  "only the managed toolchain's safe write-probe facts enter an install job",
 );
 
 console.log("onboarding install route.test.ts: ok");

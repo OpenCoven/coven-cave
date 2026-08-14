@@ -16,12 +16,20 @@
   --pfc-dim: #8f9098;
   --pfc-faint: #5d5e66;
   --pfc-glow: 0 0 14px rgba(255, 255, 255, 0.38);
+  --pfc-mint-0: #17171b;
   --pfc-mint-1: #1c3a30;
   --pfc-mint-2: #2c5f4b;
   --pfc-mint-3: #47a077;
   --pfc-mint-4: #83e3b4;
+  --pfc-amber-border: #4d3a1e;
+  --pfc-amber-bg: #201a10;
+  --pfc-amber-ink: #d8b06a;
+  --pfc-wordmark: #d7d7dc;
+  --pfc-footer-bg: #0c0c0e;
 
   min-height: 100%;
+  display: flex;
+  flex-direction: column;
   padding: clamp(12px, 3vw, 40px);
   background: var(--pfc-bg);
   color: var(--pfc-text);
@@ -47,8 +55,7 @@
 .pfc-topnav {
   display: flex;
   justify-content: space-between;
-  max-width: 1200px;
-  margin: 0 auto 10px;
+  margin: 0 0 10px;
 }
 
 .pfc-topnav-link {
@@ -66,13 +73,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: 1200px;
-  margin: 0 auto 10px;
+  margin: 0 0 10px;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid #4d3a1e;
+  border: 1px solid var(--pfc-amber-border);
   border-radius: 10px;
-  background: #201a10;
-  color: #d8b06a;
+  background: var(--pfc-amber-bg);
+  color: var(--pfc-amber-ink);
   font-size: var(--text-sm);
 }
 
@@ -81,11 +87,14 @@
 .pfc-card {
   display: grid;
   grid-template-columns: minmax(220px, 280px) 1fr;
+  /* Fill the page: the rail/main row absorbs the height, the footer pins to
+     the card's bottom edge (max h + w, matching the human profile treatment). */
+  grid-template-rows: 1fr auto;
   grid-template-areas:
     "rail main"
     "foot foot";
-  max-width: 1200px;
-  margin: 0 auto;
+  flex: 1;
+  width: 100%;
   border: 1px solid var(--pfc-border);
   border-radius: 18px;
   background: var(--pfc-card);
@@ -110,7 +119,7 @@
   font-size: clamp(24px, 2.6vw, 34px);
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #d7d7dc;
+  color: var(--pfc-wordmark);
   text-shadow: var(--pfc-glow);
   /* Reference card's checkerboard behind the category wordmark. */
   background:
@@ -287,7 +296,7 @@
   border-radius: 2px;
   background: var(--pfc-tile);
 }
-.pfc-cell[data-level="0"] { background: #17171b; }
+.pfc-cell[data-level="0"] { background: var(--pfc-mint-0); }
 .pfc-cell[data-level="1"] { background: var(--pfc-mint-1); }
 .pfc-cell[data-level="2"] { background: var(--pfc-mint-2); }
 .pfc-cell[data-level="3"] { background: var(--pfc-mint-3); }
@@ -312,6 +321,8 @@
 .pfc-panels {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  /* Absorb the card's vertical stretch; sparklines sink via margin-top: auto. */
+  flex: 1;
   border-bottom: 1px solid var(--pfc-border-soft);
 }
 .pfc-panel {
@@ -425,7 +436,7 @@
   justify-content: space-between;
   padding: 10px 18px;
   border-top: 1px solid var(--pfc-border);
-  background: #0c0c0e;
+  background: var(--pfc-footer-bg);
   color: var(--pfc-dim);
   font-size: var(--text-xs);
   letter-spacing: 0.06em;
@@ -443,6 +454,7 @@
 @media (max-width: 840px) {
   .pfc-card {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
     grid-template-areas:
       "rail"
       "main"

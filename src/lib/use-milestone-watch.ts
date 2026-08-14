@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { canonicalMemoryCountsForMilestones } from "@/lib/canonical-memory-milestones";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { covenStreak, deriveRenown } from "@/lib/familiar-renown";
 import {
   dueCovenMilestones,
@@ -8,6 +10,7 @@ import {
   type MilestoneAward,
   type TierAscension,
 } from "@/lib/milestone-defs";
+import { dueMissionAwards, missionSignals } from "@/lib/mission-defs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
@@ -37,8 +40,6 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-type MemoryEntryLite = { familiar_id?: string };
-
 export function useMilestoneWatch(enabled = true) {
   const busyRef = useRef(false);
 
@@ -53,17 +54,13 @@ export function useMilestoneWatch(enabled = true) {
       const [familiarsRes, sessionsRes, memoryRes] = await Promise.all([
         getJson<{ ok?: boolean; familiars?: Familiar[] }>("/api/familiars"),
         getJson<{ ok?: boolean; sessions?: SessionRow[] }>("/api/sessions/list"),
-        getJson<{ ok?: boolean; entries?: MemoryEntryLite[] }>("/api/coven-memory"),
+        loadCanonicalMemoryList(),
       ]);
       const familiars = familiarsRes?.ok ? (familiarsRes.familiars ?? []) : [];
       const sessions = sessionsRes?.ok ? (sessionsRes.sessions ?? []) : [];
       if (familiars.length === 0) return;
 
-      const memoryCounts = new Map<string, number>();
-      for (const entry of memoryRes?.entries ?? []) {
-        if (typeof entry?.familiar_id !== "string") continue;
-        memoryCounts.set(entry.familiar_id, (memoryCounts.get(entry.familiar_id) ?? 0) + 1);
-      }
+      const memoryCounts = canonicalMemoryCountsForMilestones(memoryRes);
       const live = sessions.filter((s) => !s.archived_at);
       const bySessions = new Map<string, number>();
       for (const s of live) {
@@ -73,7 +70,7 @@ export function useMilestoneWatch(enabled = true) {
       const tierRows: TierAscension[] = familiars.map((f) => {
         const renown = deriveRenown({
           sessionsTotal: bySessions.get(f.id) ?? 0,
-          memoryCount: memoryCounts.get(f.id) ?? 0,
+          memoryCount: memoryCounts?.get(f.id) ?? 0,
         });
         return {
           familiarId: f.id,
@@ -92,7 +89,19 @@ export function useMilestoneWatch(enabled = true) {
           },
           awarded,
         ),
-        ...dueTierMilestones(tierRows, awarded),
+        ...(memoryCounts === null ? [] : dueTierMilestones(tierRows, awarded)),
+        // Missions ride the same ledger. When memory is unavailable its counts
+        // read 0, so a memory mission can pay out late but never early.
+        ...dueMissionAwards(
+          missionSignals(
+            familiars.map((f) => f.id),
+            bySessions,
+            memoryCounts,
+            covenStreak(sessions, Date.now()),
+            live.length,
+          ),
+          awarded,
+        ),
       ];
       if (due.length === 0) return;
       await fetch("/api/milestones", {

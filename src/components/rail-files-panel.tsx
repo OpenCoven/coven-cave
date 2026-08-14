@@ -2,13 +2,15 @@
 
 import "@/styles/cave-chat.css";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Icon } from "@/lib/icon";
 import { ProjectTree } from "@/components/project-tree";
 import { RailFilePreview } from "@/components/rail-file-preview";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useSurfacePreference } from "@/lib/surface-preferences";
 
 /**
  * Files tab of the code rail: a scrollable project tree stacked over a
@@ -32,7 +34,23 @@ export function RailFilesPanel({
   focusLine?: number;
   focusNonce?: number;
 }) {
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedPath, setSelectedPathState] = useState<string | null>(null);
+
+  // The rail unmounts between edit batches (use-code-rail dismissal), which
+  // would drop the open file right before a reopen or fullscreen expansion.
+  // Persist the last selection per project root and restore it on mount.
+  const [storedSelection, setStoredSelection] = useSurfacePreference(surfacePreferenceSpecs.codeRail.selectedFile);
+  const restoredRootRef = useRef<string | null>(null);
+
+  // Every selection (tree click, launchpad, focus event) writes through so the
+  // restore above always reopens the most recent file.
+  const setSelectedPath = useCallback(
+    (path: string | null) => {
+      setSelectedPathState(path);
+      if (path && projectRoot) setStoredSelection({ root: projectRoot, path });
+    },
+    [projectRoot, setStoredSelection],
+  );
 
   // The fullscreen IDE split (tree / editor / diffs) persists across sessions —
   // same react-resizable-panels persistence the chat split uses.
@@ -60,8 +78,19 @@ export function RailFilesPanel({
   // A new project resets the selection so a stale file from the previous repo
   // doesn't linger in the preview.
   useEffect(() => {
-    setSelectedPath(null);
+    setSelectedPathState(null);
+    restoredRootRef.current = null;
   }, [projectRoot]);
+
+  // Restore the persisted selection for this root once hydrated (once per
+  // root per mount); a selection already made — e.g. by a focus event racing
+  // hydration — always wins over the restored one.
+  useEffect(() => {
+    if (!projectRoot || restoredRootRef.current === projectRoot) return;
+    if (!storedSelection || storedSelection.root !== projectRoot) return;
+    restoredRootRef.current = projectRoot;
+    setSelectedPathState((current) => current ?? storedSelection.path);
+  }, [projectRoot, storedSelection]);
 
   useEffect(() => {
     if (!focusPath) return;

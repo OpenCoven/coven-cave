@@ -1,0 +1,182 @@
+/* ══ Siderail shared header — familiar scope + New chat ═══════════════════════
+   ONE declaration of the chrome both rail sections show in the same place.
+
+   Home (.sidebar-minimal) and Chat (.cnav) are separate components with
+   separate stylesheets; each used to re-declare these two controls by hand,
+   and the copies drifted — a hardcoded 10px radius against
+   var(--radius-control), --text-sm against --text-base, 32px against 34px —
+   so toggling sections visibly restyled controls that never move. Every one of
+   those values was token-legal, so no gate caught it.
+
+   Rule for this file: both sections read these rules and neither overrides
+   them. Section-specific chrome belongs in that section's sheet.
+   See docs/specs/2026-08-06-sidebar-rail-parity-design.md. */
+
+.rail-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  /* Both sections inherit the rail's one inset. --rail-pad is declared on the
+     shared nav panel so neither sidebar can set its own. */
+  padding: 0 var(--rail-pad);
+  /* The header owns the space beneath it in BOTH rooms. Leaving it to each
+     container's own column gap is what made the rail shift vertically on the
+     Home/Chat toggle. */
+  margin-bottom: var(--space-2);
+}
+
+.rail-header__scope {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+/* The scope trigger and the New-chat button are deliberately the same box:
+   full width, --rail-control tall, control radius, --rail-lead before the
+   glyph. They stack, so any mismatch reads as a misalignment rather than a
+   style choice — and --rail-lead is what keeps their glyphs on the same icon
+   column as the nav rows below AND as their own collapsed-rail forms (issue 4351). */
+.rail-header__scope .familiar-switcher__trigger--labeled {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: var(--rail-control);
+  gap: 10px;
+  /* Border-compensated: this control is the only 2px-bordered box on the
+     column, and its edge plus the odd width of the scope glyph would otherwise
+     carry the avatar off the icon column that the (border-less) nav rows below
+     establish. Measured against the rendered box, not derived from the border. */
+  padding: 0 calc(var(--rail-lead) - 1px);
+  justify-content: flex-start;
+  border-radius: var(--radius-control);
+  border: 2px solid var(--accent-presence);
+  background: transparent;
+}
+
+.rail-header__scope .familiar-switcher__trigger--labeled:hover {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  border-color: var(--accent-presence);
+}
+
+.rail-header__scope .familiar-switcher__trigger-label {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.rail-header__actions {
+  display: flex;
+  flex-shrink: 0;
+}
+
+/* Quiet primary: New chat reads as the panel's one button — full width,
+   bordered, its own surface — without a solid accent fill. The tint derives
+   from --accent-presence so the brand hue is present while the ink stays
+   --text-primary, which holds on a near-transparent surface in every palette
+   (a solid fill would need --accent-presence-foreground for exactly that). */
+.rail-header__new {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 10px;
+  min-height: var(--rail-control);
+  /* Border-compensated, same reason as the scope trigger above (1px here). */
+  padding: 0 calc(var(--rail-lead) - 1px);
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 560;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.rail-header__new:hover {
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+}
+
+.rail-header__new-icon {
+  flex-shrink: 0;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  color: var(--text-secondary);
+}
+
+.rail-header__new:hover .rail-header__new-icon {
+  color: var(--text-primary);
+}
+
+.rail-header__new-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chat's ⌘N hint rides the shared button through the trailing slot instead of
+   forking it — the fork is what let the two drift. */
+.rail-header__new-kbd {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Collapsed 56px icon rail ─────────────────────────────────────────────── */
+/* The header survives the collapse as two centered --rail-control squares: the
+   scope trigger keeps its avatar (label and caret drop) and New chat keeps its
+   glyph. Collapsing changes the WIDTH of a control and nothing else — same box
+   height, same skin, same glyph size, same icon column — so hovering the rail
+   open reveals labels instead of relocating buttons (issue 4351).
+   New chat used to invert to a solid --accent-presence fill here, which made
+   the one control that changed the most on peek also the loudest thing in the
+   rail; it now keeps the quiet-primary tint it wears in the panel. */
+
+.shell-nav--rail .rail-header {
+  padding-left: 0;
+  padding-right: 0;
+  align-items: center;
+}
+
+.shell-nav--rail .rail-header__scope {
+  padding: 0;
+  justify-content: center;
+}
+
+.shell-nav--rail .rail-header__scope .familiar-switcher__trigger-label,
+.shell-nav--rail .rail-header__scope .familiar-switcher__trigger-caret,
+.shell-nav--rail .rail-header__new-label,
+.shell-nav--rail .rail-header__new-kbd {
+  display: none;
+}
+
+.shell-nav--rail .rail-header__scope .familiar-switcher__trigger,
+.shell-nav--rail .rail-header__scope .familiar-switcher__trigger--labeled,
+.shell-nav--rail .rail-header__new {
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 0;
+  width: var(--rail-control);
+  min-width: var(--rail-control);
+  height: var(--rail-control);
+  min-height: var(--rail-control);
+  padding: 0;
+  margin-inline: auto;
+}
+
+/* Touch targets on the mobile drawer, same as every other rail control. There
+   is no icon rail below 1024px, so this never fights the square above. */
+@media (max-width: 1023px) {
+  .rail-header__new,
+  .rail-header__scope .familiar-switcher__trigger--labeled {
+    min-height: var(--touch-target);
+  }
+}

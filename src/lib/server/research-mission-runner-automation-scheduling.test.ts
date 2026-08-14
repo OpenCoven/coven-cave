@@ -1,14 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ConversationFile } from "../cave-conversations.ts";
 import type { AutomationRunRecord } from "../automation-runs.ts";
 import type { FlowRunRecord } from "../flows.ts";
-import { allowedResearchActions, type ResearchMission } from "../research-missions.ts";
+import type { ResearchMission } from "../research-missions.ts";
 import {
   makeResearchMissionRunner,
-  parseResearchSourcesFile,
-  sessionAlreadyGone,
-  withinStartupGrace,
   type ResearchMissionRunnerDeps,
 } from "./research-mission-runner.ts";
 
@@ -24,28 +20,16 @@ const RUN: FlowRunRecord = {
   sessionId: "session-1",
 };
 
-const INPUT = {
-  familiarId: "sage",
-  title: "Storage decision",
-  intent: "Compare SQLite and Postgres",
-  mode: "brief" as const,
-  modeSource: "user" as const,
-  deliverable: "brief",
-  constraints: [],
-  bounds: {
-    wallClockMinutes: 20,
-    maxIterations: 1,
-    sourceTarget: 6,
-    checkpointEvery: 1,
-    stopWhenCostUnavailable: false,
-  },
-};
-
 function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissionRunnerDeps {
+  let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
     loadMission: async () => null,
     saveMission: async () => {},
+    loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
+    recordSessionOwner: async (owner) => { sessionOwner = structuredClone(owner); },
+    clearSessionOwner: async () => { sessionOwner = null; },
+    assertSessionOwnerPrivate: async () => {},
     startFlow: async () => ({
       ok: true,
       run: RUN,
@@ -77,6 +61,8 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     fingerprintMission: async () => "checkpoint-before",
     missionWorkspacePath: (id) => `/tmp/research-missions/${id}`,
     resolveProjectRoot: async (root) => root,
+    ensureResearchAccess: async () => {},
+    checkFamiliarRootAccess: async () => null,
     now: () => NOW,
     randomId: () => "mission-1",
     ...overrides,
@@ -415,4 +401,290 @@ test("terminal actions pause Automation truth even when mission metadata is stal
   const result = await runner.act(stored.id, { action: "finish" });
   assert.equal(result.automation?.status, "PAUSED");
   assert.deepEqual(updates, ["automation-1:PAUSED"]);
+});
+
+test("a consumed automation run with an unchanged checkpoint file is a no-op on the next poll", async () => {
+  // The workspace checkpoint file is rewritten by every run, so the observed
+  // token must be persisted when the run is consumed — otherwise the stale
+  // stored token re-triggers the synthetic-run branch on every 2s poll.
+  const run: AutomationRunRecord = {
+    id: "automation-run-real",
+    automationId: "automation-1",
+    automationName: "Research mission",
+    startedAt: NOW.toISOString(),
+    finishedAt: NOW.toISOString(),
+    status: "succeeded",
+  };
+  let stored = checkpointMission({
+    bounds: { ...checkpointMission().bounds, maxIterations: 3, checkpointEvery: 3 },
+    automation: {
+      id: "automation-1",
+      rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      status: "ACTIVE",
+      checkpointFingerprint: "checkpoint-before",
+      checkpointToken: "token-0",
+    },
+  });
+  let saves = 0;
+  const updates: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async (mission) => { saves += 1; stored = structuredClone(mission); },
+    latestAutomationRun: async () => run,
+    readAutomationTranscript: async () => [
+      "@@research-control",
+      '{"decision":"continue","reason":"More remains","confidence":0.8}',
+      "@@research-artifacts-written",
+    ].join("\n"),
+    // The run rewrote the checkpoint file: the observed token differs from
+    // the stored "token-0" from here on.
+    readAutomationCheckpoint: async () => ({ transcript: "", token: "token-1", at: NOW.toISOString() }),
+    fingerprintMission: async () => "checkpoint-after",
+    readMissionFile: async () => "# Bounded evidence\n",
+    updateAutomation: async (id, patch) => {
+      updates.push(`${id}:${patch.status}`);
+      return { id, status: patch.status ?? "PAUSED", rrule: null };
+    },
+  }));
+  const first = await runner.reconcileAutomation(stored);
+  assert.equal(first.iterations.length, 2);
+  assert.equal(first.automation?.checkpointToken, "token-1", "the observed token is persisted with the run");
+  assert.equal(first.automation?.status, "ACTIVE", "no stop reason applies at 2 of 3 iterations");
+  assert.equal(saves, 1);
+  assert.deepEqual(updates, []);
+  const second = await runner.reconcileAutomation(first);
+  assert.equal(second.iterations.length, 2);
+  assert.equal(saves, 1, "an unchanged checkpoint file must not save again");
+  assert.deepEqual(updates, [], "an unchanged checkpoint file must not pause anything");
+});
+
+test("the automation pause path persists the observed checkpoint token", async () => {
+  const run: AutomationRunRecord = {
+    id: "automation-run-pause",
+    automationId: "automation-1",
+    automationName: "Research mission",
+    startedAt: NOW.toISOString(),
+    finishedAt: NOW.toISOString(),
+    status: "succeeded",
+  };
+  let stored = checkpointMission({
+    automation: {
+      id: "automation-1",
+      rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      status: "ACTIVE",
+      checkpointFingerprint: "checkpoint-before",
+      checkpointToken: "token-0",
+    },
+  });
+  let saves = 0;
+  const updates: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async (mission) => { saves += 1; stored = structuredClone(mission); },
+    latestAutomationRun: async () => run,
+    readAutomationTranscript: async () => "run completed without control output",
+    readAutomationCheckpoint: async () => ({ transcript: "", token: "token-2", at: NOW.toISOString() }),
+    fingerprintMission: async () => "checkpoint-after",
+    updateAutomation: async (id, patch) => {
+      updates.push(`${id}:${patch.status}`);
+      return { id, status: patch.status ?? "PAUSED", rrule: null };
+    },
+  }));
+  const first = await runner.reconcileAutomation(stored);
+  assert.equal(first.automation?.status, "PAUSED");
+  assert.equal(first.automation?.checkpointToken, "token-2", "pause must record the observed token");
+  assert.equal(saves, 1);
+  assert.deepEqual(updates, ["automation-1:PAUSED"]);
+  const second = await runner.reconcileAutomation(first);
+  assert.equal(second.iterations.length, first.iterations.length);
+  assert.equal(saves, 1, "the consumed run must not re-trigger a save");
+  assert.deepEqual(updates, ["automation-1:PAUSED"], "the consumed run must not re-pause");
+});
+
+test("a late automation run cannot resurrect a terminal mission", async () => {
+  const run: AutomationRunRecord = {
+    id: "late-run",
+    automationId: "automation-1",
+    automationName: "Research mission",
+    startedAt: NOW.toISOString(),
+    finishedAt: NOW.toISOString(),
+    status: "succeeded",
+  };
+  const cancelledAt = "2026-07-12T11:00:00.000Z";
+  let stored = checkpointMission({
+    status: "cancelled",
+    finishedAt: cancelledAt,
+    automation: {
+      id: "automation-1",
+      rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      status: "ACTIVE",
+      checkpointFingerprint: "checkpoint-before",
+      checkpointToken: "token-0",
+    },
+  });
+  let saves = 0;
+  const updates: string[] = [];
+  const published: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async (mission) => { saves += 1; stored = structuredClone(mission); },
+    latestAutomationRun: async () => run,
+    readAutomationTranscript: async () => [
+      "@@research-control",
+      '{"decision":"complete","reason":"Late landing","confidence":0.9}',
+      "@@research-artifacts-written",
+    ].join("\n"),
+    readAutomationCheckpoint: async () => ({ transcript: "", token: "token-9", at: NOW.toISOString() }),
+    fingerprintMission: async () => "checkpoint-after",
+    readMissionFile: async () => "# Late evidence\n",
+    publishKnowledge: async (entry) => { published.push(entry.body); return entry; },
+    updateAutomation: async (id, patch) => {
+      updates.push(`${id}:${patch.status}`);
+      return { id, status: patch.status ?? "PAUSED", rrule: null };
+    },
+  }));
+  const first = await runner.reconcileAutomation(stored);
+  assert.equal(first.status, "cancelled", "a terminal mission must stay terminal");
+  assert.equal(first.iterations.length, 1, "no iteration may be appended");
+  assert.equal(first.finishedAt, cancelledAt, "finishedAt must not be rewritten");
+  assert.equal(first.automation?.lastRunId, "late-run", "the run is still recorded as consumed");
+  assert.equal(first.automation?.checkpointToken, "token-9");
+  assert.deepEqual(published, []);
+  assert.deepEqual(updates, []);
+  assert.equal(saves, 1);
+  const second = await runner.reconcileAutomation(first);
+  assert.equal(second.status, "cancelled");
+  assert.equal(saves, 1, "consumed bookkeeping must not save again");
+});
+
+test("schedule is rejected on terminal and archived missions", async () => {
+  for (const status of ["completed", "failed", "cancelled", "archived"] as const) {
+    const stored = checkpointMission({ status });
+    const runner = makeResearchMissionRunner(deps({
+      loadMission: async () => structuredClone(stored),
+    }));
+    await assert.rejects(
+      runner.schedule(stored.id, { rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0" }),
+      new RegExp(`cannot schedule a ${status} research mission`),
+      status,
+    );
+  }
+});
+
+test("an unreadable automation checkpoint file reads as no change instead of throwing", async () => {
+  const stored = checkpointMission({
+    automation: {
+      id: "automation-1",
+      rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      status: "ACTIVE",
+      checkpointFingerprint: "checkpoint-before",
+      checkpointToken: "token-0",
+    },
+  });
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async () => { saves += 1; },
+    readAutomationCheckpoint: async () => { throw new Error("research file is too large"); },
+  }));
+  const result = await runner.reconcileAutomation(structuredClone(stored));
+  assert.equal(result.status, stored.status);
+  assert.equal(result.iterations.length, 1);
+  assert.equal(saves, 0, "an unreadable checkpoint must not churn the mission file");
+});
+
+test("automation reconciliation preserves an unknown-owner running projection without persisting it", async () => {
+  let stored = checkpointMission({
+    status: "cancelled",
+    finishedAt: NOW.toISOString(),
+    automation: {
+      id: "automation-1",
+      rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      status: "PAUSED",
+      checkpointFingerprint: "checkpoint-before",
+      checkpointToken: "token-before",
+    },
+  });
+  const owner = {
+    missionId: stored.id,
+    iteration: 1,
+    sessionId: "owned-session-1",
+    ownerKind: "owner-local-daemon" as const,
+    authority: {
+      kind: "owner-local-daemon" as const,
+      socketPath: "/tmp/coven-owned-session.sock",
+    },
+    recordedAt: NOW.toISOString(),
+  };
+  let saves = 0;
+  let automationReads = 0;
+  let automationUpdates = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => {
+      saves += 1;
+      stored = structuredClone(mission);
+    },
+    loadSessionOwner: async () => structuredClone(owner),
+    sessionState: async () => "unknown",
+    getAutomation: async () => {
+      automationReads += 1;
+      return { id: "automation-1", status: "ACTIVE", rrule: "RRULE:FREQ=HOURLY" };
+    },
+    updateAutomation: async (id, patch) => {
+      automationUpdates += 1;
+      return { id, status: patch.status ?? "PAUSED", rrule: null };
+    },
+    latestAutomationRun: async () => ({
+      id: "late-run",
+      automationId: "automation-1",
+      automationName: "Research mission",
+      startedAt: NOW.toISOString(),
+      finishedAt: NOW.toISOString(),
+      status: "succeeded",
+    }),
+    readAutomationCheckpoint: async () => ({
+      transcript: "late automation output",
+      token: "token-after",
+      at: NOW.toISOString(),
+    }),
+  }));
+
+  const flowProjection = await runner.reconcile(structuredClone(stored));
+  assert.equal(flowProjection.status, "running");
+  const result = await runner.reconcileAutomation(flowProjection);
+  assert.equal(result.status, "running", "the owner-aware Cancel projection stays visible");
+  assert.equal(stored.status, "cancelled", "durable terminal truth remains untouched");
+  assert.equal(saves, 0);
+  assert.equal(automationReads, 0);
+  assert.equal(automationUpdates, 0);
+});
+
+test("an unreadable mission fingerprint consumes the run as unchanged instead of throwing", async () => {
+  const run: AutomationRunRecord = {
+    id: "automation-run-fingerprint",
+    automationId: "automation-1",
+    automationName: "Research mission",
+    startedAt: NOW.toISOString(),
+    finishedAt: NOW.toISOString(),
+    status: "succeeded",
+  };
+  let stored = checkpointMission({
+    automation: {
+      id: "automation-1",
+      rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      status: "ACTIVE",
+      checkpointFingerprint: "checkpoint-before",
+    },
+  });
+  const runner = makeResearchMissionRunner(deps({
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    latestAutomationRun: async () => run,
+    readAutomationTranscript: async () => [
+      "@@research-control",
+      '{"decision":"continue","reason":"More remains","confidence":0.8}',
+      "@@research-artifacts-written",
+    ].join("\n"),
+    fingerprintMission: async () => { throw new Error("research file is too large"); },
+  }));
+  const result = await runner.reconcileAutomation(stored);
+  assert.equal(result.automation?.status, "PAUSED");
+  assert.match(result.automation?.stopReason ?? "", /did not change the mission checkpoint/);
+  assert.equal(result.iterations.length, 1, "no iteration may be built on unreadable evidence");
 });

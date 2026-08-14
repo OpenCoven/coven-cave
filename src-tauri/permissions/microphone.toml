@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-microphone-permission-request"
+description = "Allows prompting for native macOS microphone access before a voice call."
+commands.allow = ["microphone_permission_request"]
+
+[[permission]]
+identifier = "allow-microphone-settings-open"
+description = "Allows opening the macOS microphone privacy settings pane."
+commands.allow = ["microphone_settings_open"]

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -14,17 +15,22 @@ import { extractNextPaths } from "@/lib/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
+import { DEFAULT_JOURNAL_PROMPT, readStoredJournalPrompt, splitPromptSegments, writeStoredJournalPrompt } from "@/lib/journal-prompt";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { JournalConstellation } from "@/components/journal/journal-constellation";
 import { familiarInScope } from "@/lib/familiar-multiselect";
-import { publishBoardChanged } from "@/lib/board-cache-events";
 import { invalidateIfDefined } from "@/lib/surface-warm-cache";
 import type { Familiar } from "@/lib/types";
 
 // Stable empty-scope fallback so the filteredDays memo's identity is steady
 // when no scope set is supplied.
 const EMPTY_SCOPE: ReadonlySet<string> = new Set();
+const JOURNAL_RAIL_COLLAPSED_KEY = "cave:journal:rail-collapsed:v1";
 
 type JournalSummary = { date: string; preview: string; reflectedBy: string | null; modified: string | null };
 type JournalStats = { covenOrigin: number; externalRuntimes: number; runtimeMemory: number };
+/** A memory file touched on the entry's day (server-attributed by mtime). */
+type JournalSource = { relPath: string; fullPath: string; rootLabel: string };
 type JournalDay = {
   date: string;
   exists: boolean;
@@ -33,217 +39,28 @@ type JournalDay = {
   /** Inventory-derived block; null until the non-blocking ?stats=1 fetch lands. */
   stats: JournalStats | null;
   context: string | null;
+  sources: JournalSource[] | null;
 };
 
-type NoticeAction = { label: string; mode: string };
-type NoticeFn = (text: string, action?: NoticeAction) => void;
-
-/** One-click "automate" actions for a suggested next step. Each turns the
- *  familiar's suggestion into a real action with no typing:
- *   • Run now    → opens a chat that acts on it immediately (cave:agents-new-chat)
- *   • Add task   → files it on the task board (POST /api/board)
- *   • Remind me  → schedules a reminder for tomorrow 9am (POST /api/inbox)
- *  All self-contained — no prop threading through the workspace shell. */
-const AUTOMATIONS = [
-  { action: "run", icon: "ph:play", label: "Run now", doneLabel: "Started" },
-  { action: "task", icon: "ph:kanban", label: "Add task", doneLabel: "Added" },
-  { action: "remind", icon: "ph:bell", label: "Remind me", doneLabel: "Reminder set" },
-] as const;
-type AutoAction = (typeof AUTOMATIONS)[number]["action"];
-
-function NextPaths({
-  suggestions,
-  familiarId,
-  onNotice,
-  onError,
-  standalone,
-}: {
-  suggestions: string[];
-  familiarId: string | null;
-  onNotice: NoticeFn;
-  onError: (text: string) => void;
-  /** When true (Settings host), filter out actions that require the workspace
-   *  event bus. "Run now" dispatches cave:agents-new-chat which has no listener
-   *  on /settings, so it is hidden; "Add task" and "Remind me" are plain fetches
-   *  and remain available. */
-  standalone?: boolean;
-}) {
-  // The recommended (first) step is expanded by default so the automate
-  // affordances are discoverable without a hunt.
-  const [open, setOpen] = useState<number | null>(0);
-  const [pending, setPending] = useState<string | null>(null); // `${i}:${action}`
-  const [done, setDone] = useState<string | null>(null);
-  const doneTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(doneTimer.current), []);
-
-  // Collapse back to the first step whenever the day's suggestions change.
-  useEffect(() => { setOpen(suggestions.length ? 0 : null); }, [suggestions]);
-
-  const flashDone = useCallback((key: string) => {
-    setDone(key);
-    window.clearTimeout(doneTimer.current);
-    doneTimer.current = window.setTimeout(() => setDone((d) => (d === key ? null : d)), 1800);
-  }, []);
-
-  const automate = useCallback(
-    async (i: number, action: AutoAction, text: string) => {
-      const key = `${i}:${action}`;
-      if (action === "run") {
-        if (!familiarId) {
-          onError("Pick a familiar first — actions run as a familiar.");
-          return;
-        }
-        window.dispatchEvent(
-          new CustomEvent("cave:agents-new-chat", { detail: { familiarId, initialPrompt: text } }),
-        );
-        flashDone(key);
-        onNotice("Opened a chat to act on this step.");
-        return;
-      }
-      setPending(key);
-      try {
-        if (action === "task") {
-          const res = await fetch("/api/board", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ title: text, familiarId: familiarId ?? null }),
-          });
-          const json = await res.json().catch(() => ({ ok: false }));
-          if (!res.ok || !json.ok) throw new Error();
-          publishBoardChanged();
-          flashDone(key);
-          onNotice("Added to Tasks.", { label: "View tasks", mode: "board" });
-        } else {
-          // Reminder: default to tomorrow 9:00am local; the user can retime it
-          // from Automations. One click should never demand a date picker.
-          const when = new Date();
-          when.setDate(when.getDate() + 1);
-          when.setHours(9, 0, 0, 0);
-          const res = await fetch("/api/inbox", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              kind: "reminder",
-              title: text,
-              fireAt: when.toISOString(),
-              recurrence: { type: "none" },
-              familiarId: familiarId ?? null,
-              source: "user",
-            }),
-          });
-          const json = await res.json().catch(() => ({ ok: false }));
-          if (!res.ok || !json.ok) throw new Error();
-          flashDone(key);
-          onNotice("Reminder set for tomorrow, 9:00 AM.", { label: "View automations", mode: "inbox" });
-        }
-      } catch {
-        onError(action === "task" ? "Couldn't add the task." : "Couldn't set the reminder.");
-      } finally {
-        setPending((p) => (p === key ? null : p));
-      }
-    },
-    [familiarId, flashDone, onNotice, onError],
-  );
-
-  const actions = standalone ? AUTOMATIONS.filter((a) => a.action !== "run") : AUTOMATIONS;
-  if (suggestions.length === 0) return null;
-  return (
-    <div className="journal-entry__next">
-      <span className="journal-entry__next-label">
-        <Icon name="ph:lightning-fill" width={11} aria-hidden /> Suggested next steps
-        <span className="journal-next__hint">click to automate</span>
-      </span>
-      <ul className="journal-next__list">
-        {suggestions.map((s, i) => {
-          const isOpen = open === i;
-          const recommended = i === 0;
-          return (
-            <li key={i} className="journal-next__item">
-              <button
-                type="button"
-                className={`journal-next__chip${recommended ? " journal-next__chip--rec" : ""}${isOpen ? " is-open" : ""}`}
-                aria-expanded={isOpen}
-                onClick={() => setOpen(isOpen ? null : i)}
-              >
-                <Icon name="ph:sparkle" width={13} className="journal-next__chip-icon" aria-hidden />
-                <span className="journal-next__chip-text">{s}</span>
-                <Icon name="ph:caret-down" width={11} className="journal-next__caret" aria-hidden />
-              </button>
-              {isOpen ? (
-                <div className="journal-next__tray" role="group" aria-label={`Automate: ${s}`}>
-                  {actions.map((a) => {
-                    const key = `${i}:${a.action}`;
-                    const isPending = pending === key;
-                    const isDone = done === key;
-                    return (
-                      <button
-                        key={a.action}
-                        type="button"
-                        className={`journal-next__act journal-next__act--${a.action}${isDone ? " is-done" : ""}`}
-                        disabled={isPending}
-                        aria-label={`${a.label}: ${s}`}
-                        onClick={() => void automate(i, a.action, s)}
-                      >
-                        <Icon name={isDone ? "ph:check" : a.icon} width={12} aria-hidden />
-                        <span>{isPending ? "Working…" : isDone ? a.doneLabel : a.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
 /** Render a journal reflection. The reflection is generated through the chat
- *  pipeline, which appends a `<coven:next-paths>` suggestions block; lift it out
- *  (as chat-view does) so the tags don't leak into the markdown, and surface the
- *  suggestions as one-click "automate" steps below the reflection. */
-function JournalReflection({
-  text,
-  familiarId,
-  onNotice,
-  onError,
-  standalone,
-}: {
-  text: string;
-  familiarId: string | null;
-  onNotice: NoticeFn;
-  onError: (text: string) => void;
-  standalone?: boolean;
-}) {
-  // Memoize so `suggestions` keeps a stable identity across parent re-renders
-  // (e.g. the notice toast updating) — otherwise NextPaths' open-step effect
-  // would reset the expanded step on every render.
-  const { visible, suggestions } = useMemo(() => extractNextPaths(text), [text]);
-  return (
-    <>
-      <MarkdownBlock text={visible} className="journal-entry__reflection" />
-      <NextPaths suggestions={suggestions} familiarId={familiarId} onNotice={onNotice} onError={onError} standalone={standalone} />
-    </>
-  );
+ *  pipeline, which appends a `<coven:next-paths>` control block. Journal is a
+ *  read-only reflection surface, so it strips that block without routing any
+ *  suggestion into a task, action, or follow-up prompt. */
+function JournalReflection({ text }: { text: string }) {
+  const { visible } = useMemo(() => extractNextPaths(text), [text]);
+  return <MarkdownBlock text={visible} className="journal-entry__reflection" />;
 }
 
 export function JournalEntries({
   familiars,
   activeFamiliarId,
   scopeFamiliarIds,
-  standalone,
 }: {
   familiars: Familiar[];
   activeFamiliarId: string | null;
   /** Multiselect scope (empty = All) — the reflections list filters to days
    *  whose `reflectedBy` is in this set. */
   scopeFamiliarIds?: ReadonlySet<string>;
-  /** True when rendered outside the Workspace (Settings → Familiars studio tab).
-   *  The workspace event bus has no listeners there: "Run now" is hidden (its
-   *  chat handoff can't happen) and toast actions become real navigations via
-   *  the `?mode=` deep link. */
-  standalone?: boolean;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   // One clock read per render — reused for `today`, list labels, and the detail
@@ -252,8 +69,10 @@ export function JournalEntries({
   const today = dateSlug(now);
   const [days, setDays] = useState<JournalSummary[]>([]);
   const [daysLoaded, setDaysLoaded] = useState(false);
+  const [daysError, setDaysError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>(today);
   const [day, setDay] = useState<JournalDay | null>(null);
+  const [dayError, setDayError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftReflection, setDraftReflection] = useState("");
@@ -263,22 +82,54 @@ export function JournalEntries({
   const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string>();
   const { announce } = useAnnouncer();
   const [error, setError] = useState<string | null>(null);
-  // Transient confirmation toast for one-click "automate" actions on the
-  // suggested next steps (Add task / Remind me / Run now).
-  const [notice, setNotice] = useState<{ text: string; action?: { label: string; mode: string } } | null>(null);
-  const noticeTimer = useRef<number | undefined>(undefined);
-  const showNotice = useCallback((text: string, action?: { label: string; mode: string }) => {
-    setNotice({ text, action });
-    window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => setNotice(null), 6000);
-  }, []);
-  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [filter, setFilter] = useState("");
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setRailCollapsed(window.localStorage.getItem(JOURNAL_RAIL_COLLAPSED_KEY) === "true");
+    } catch {
+      // Storage can be unavailable in strict privacy modes; collapse remains session-only.
+    }
+  }, []);
+  const toggleRail = useCallback(() => {
+    setRailCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(JOURNAL_RAIL_COLLAPSED_KEY, String(next));
+      } catch {
+        // Keep the in-memory preference when persistence is unavailable.
+      }
+      return next;
+    });
+  }, []);
+  // Editable Generation-prompt template ("Memories Prototype" entry pane).
+  // Starts at the default for SSR/hydration parity; the stored override loads
+  // on mount. Edits persist immediately; Reset returns to the default.
+  const [journalPrompt, setJournalPrompt] = useState(DEFAULT_JOURNAL_PROMPT);
+  const promptHlRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const stored = readStoredJournalPrompt();
+    if (stored) setJournalPrompt(stored);
+  }, []);
+  const changePrompt = useCallback((value: string) => {
+    setJournalPrompt(value);
+    writeStoredJournalPrompt(value);
+  }, []);
+  const resetPrompt = useCallback(() => {
+    setJournalPrompt(DEFAULT_JOURNAL_PROMPT);
+    writeStoredJournalPrompt(null);
+  }, []);
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? null;
   // Guard async setState after unmount, and ignore a stale day fetch when the
   // selection changed before its response arrived (rapid day switching).
   const mountedRef = useRef(true);
+  const loadDaysReqRef = useRef(0);
   const loadDayReqRef = useRef(0);
+  const selectedRef = useRef(selected);
+  const selectDay = useCallback((slug: string) => {
+    selectedRef.current = slug;
+    setSelected(slug);
+  }, []);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -324,46 +175,68 @@ export function JournalEntries({
   // Fetch the full day list once; the familiar multiselect scope is applied
   // client-side in `filteredDays` so switching scope never needs a refetch.
   const loadDays = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const reqId = ++loadDaysReqRef.current;
+    setDaysError(null);
+    setDaysLoaded(false);
     try {
       const res = await fetch(`/api/journal`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
-      if (!mountedRef.current) return;
-      if (json.ok) setDays(Array.isArray(json.days) ? json.days : []);
-    } catch {
-      /* keep prior */
+      if (reqId !== loadDaysReqRef.current || !mountedRef.current) return;
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Couldn't load journal entries.");
+      setDays(Array.isArray(json.days) ? json.days : []);
+    } catch (err) {
+      if (reqId === loadDaysReqRef.current && mountedRef.current) {
+        setDaysError(err instanceof Error ? err.message : "Couldn't load journal entries.");
+      }
     } finally {
-      if (mountedRef.current) setDaysLoaded(true);
+      if (reqId === loadDaysReqRef.current && mountedRef.current) setDaysLoaded(true);
     }
   }, []);
 
-  // Scope the day's memory stats to the single active familiar; with 0 or
-  // ≥ 2 selected (activeFamiliarId null) the record + stats are unscoped.
-  const dayQuery = useCallback((slug: string) => (
-    activeFamiliarId
-      ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(activeFamiliarId)}`
+  // Entries are coven-wide: every visible row must open regardless of which
+  // familiar is currently active. Stats/context remain scoped to the familiar
+  // that will generate the next reflection.
+  const entryQuery = useCallback((slug: string) => `date=${encodeURIComponent(slug)}`, []);
+  const statsQuery = useCallback((slug: string) => (
+    selectedFamiliarId
+      ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(selectedFamiliarId)}`
       : `date=${encodeURIComponent(slug)}`
-  ), [activeFamiliarId]);
+  ), [selectedFamiliarId]);
 
-  const fetchDayStats = useCallback(async (slug: string): Promise<{ stats: JournalStats; context: string } | null> => {
+  const fetchDayStats = useCallback(async (slug: string): Promise<{ stats: JournalStats; context: string; sources: JournalSource[] } | null> => {
     try {
-      const res = await fetch(`/api/journal?${dayQuery(slug)}&stats=1`, { cache: "no-store" });
+      const res = await fetch(`/api/journal?${statsQuery(slug)}&stats=1`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
-      return json.ok ? { stats: json.stats as JournalStats, context: String(json.context ?? "") } : null;
+      return json.ok
+        ? {
+            stats: json.stats as JournalStats,
+            context: String(json.context ?? ""),
+            sources: Array.isArray(json.sources) ? (json.sources as JournalSource[]) : [],
+          }
+        : null;
     } catch {
       return null;
     }
-  }, [dayQuery]);
+  }, [statsQuery]);
 
   const loadDay = useCallback(async (slug: string) => {
+    if (!mountedRef.current) return;
     const reqId = ++loadDayReqRef.current;
+    setDay(null);
+    setDayError(null);
     try {
-      const res = await fetch(`/api/journal?${dayQuery(slug)}`, { cache: "no-store" });
+      const res = await fetch(`/api/journal?${entryQuery(slug)}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       // Drop a stale response: a newer loadDay (different day) superseded it.
       if (reqId !== loadDayReqRef.current || !mountedRef.current) return;
-      if (json.ok) setDay({ ...(json as Omit<JournalDay, "stats" | "context">), stats: null, context: null });
-    } catch {
-      if (reqId === loadDayReqRef.current && mountedRef.current) setDay(null);
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "Couldn't load journal entry.");
+      setDay({ ...(json as Omit<JournalDay, "stats" | "context" | "sources">), stats: null, context: null, sources: null });
+    } catch (err) {
+      if (reqId === loadDayReqRef.current && mountedRef.current) {
+        setDay(null);
+        setDayError(err instanceof Error ? err.message : "Couldn't load journal entry.");
+      }
       return;
     }
     // The stats block rides a separate request AFTER the entry paints — it
@@ -372,7 +245,7 @@ export function JournalEntries({
     const block = await fetchDayStats(slug);
     if (!block || reqId !== loadDayReqRef.current || !mountedRef.current) return;
     setDay((prev) => (prev && prev.date === slug ? { ...prev, ...block } : prev));
-  }, [dayQuery, fetchDayStats]);
+  }, [entryQuery, fetchDayStats]);
 
   useEffect(() => {
     void loadDays();
@@ -383,8 +256,8 @@ export function JournalEntries({
     setDraftReflection("");
   }, [selected, loadDay]);
   useEffect(() => {
-    setSelected(today);
-  }, [selectedFamiliarId, today]);
+    selectDay(today);
+  }, [selectedFamiliarId, today, selectDay]);
 
   // Derive scope / overwrite-safety values early so they can appear in the
   // `generate` useCallback's dependency array (avoids temporal dead zone).
@@ -411,42 +284,57 @@ export function JournalEntries({
     if (outOfScopeBy) return; // never overwrite another familiar's entry from a scoped surface
     setError(null);
     setGenerating(true);
-    // Context normally arrives with the non-blocking stats fetch; if the user
-    // beats it (or it failed), fetch it inline — generation needs the scope note.
-    const context = day.context ?? (await fetchDayStats(day.date))?.context ?? "";
-    if (!mountedRef.current) return;
-    const result = await generateReflection({ familiarId, context });
-    if (!mountedRef.current) return;
-    if (result.error || !result.text) {
-      setGenerating(false);
-      setError(result.error ?? "No reflection was returned.");
-      return;
+    try {
+      // Context normally arrives with the non-blocking stats fetch; if the user
+      // beats it (or it failed), fetch it inline — generation needs the scope note.
+      const context = day.context ?? (await fetchDayStats(day.date))?.context ?? "";
+      if (!mountedRef.current) return;
+      const dateObj = parseDateSlug(day.date);
+      const result = await generateReflection({
+        familiarId,
+        context,
+        promptTemplate: journalPrompt,
+        familiarName: familiarName(familiarId) ?? undefined,
+        dateLabel: dateObj ? longDateLabel(dateObj) : day.date,
+      });
+      if (!mountedRef.current) return;
+      if (result.error || !result.text) {
+        throw new Error(result.error ?? "No reflection was returned.");
+      }
+      // A real generation stamps generatedAt (only the generate flow does); the
+      // expectedModified baseline refuses to clobber a concurrent edit that landed
+      // since this day was loaded (the store is one entry per date).
+      const saveRes = await fetch("/api/journal", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          date: day.date,
+          reflection: result.text,
+          reflectedBy: familiarId,
+          generatedAt: new Date().toISOString(),
+          expectedModified: day.modified,
+        }),
+      });
+      const saveJson = await saveRes.json().catch(() => ({}));
+      if (saveRes && saveRes.status === 409) {
+        if (selectedRef.current === day.date) await loadDay(day.date);
+        await loadDays();
+        throw new Error("This day's entry changed while the reflection was being written — reloaded the latest instead of overwriting it.");
+      }
+      if (!saveRes.ok || !saveJson.ok) throw new Error(saveJson.error ?? "Couldn't save the generated reflection.");
+      invalidateIfDefined("grimoire:journal");
+      if (!mountedRef.current) return;
+      if (selectedRef.current === day.date) await loadDay(day.date);
+      await loadDays();
+      announce("Reflection generated.");
+    } catch (err) {
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : "Couldn't generate the reflection.");
+      }
+    } finally {
+      if (mountedRef.current) setGenerating(false);
     }
-    // A real generation stamps generatedAt (only the generate flow does); the
-    // expectedModified baseline refuses to clobber a concurrent edit that landed
-    // since this day was loaded (the store is one entry per date).
-    const saveRes = await fetch("/api/journal", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        date: day.date,
-        reflection: result.text,
-        reflectedBy: familiarId,
-        generatedAt: new Date().toISOString(),
-        expectedModified: day.modified,
-      }),
-    }).catch(() => null);
-    if (!mountedRef.current) return;
-    setGenerating(false);
-    if (saveRes?.ok) invalidateIfDefined("grimoire:journal");
-    if (saveRes && saveRes.status === 409) {
-      setError("This day's entry changed while the reflection was being written — reloaded the latest instead of overwriting it.");
-    }
-    await loadDay(day.date);
-    await loadDays();
-    // The reflection appearing is the only visual confirmation — say it too.
-    announce("Reflection generated.");
-  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce, fetchDayStats]);
+  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce, fetchDayStats, journalPrompt, familiarName]);
 
   function startEdit() {
     if (!day) return;
@@ -537,8 +425,8 @@ export function JournalEntries({
   const hasOlder = dayIndex >= 0 && dayIndex < filteredDays.length - 1;
   const goToDay = useCallback((index: number) => {
     const target = filteredDays[index];
-    if (target) setSelected(target.date);
-  }, [filteredDays]);
+    if (target) selectDay(target.date);
+  }, [filteredDays, selectDay]);
   // ↑/↓ + Home/End move selection through the day rail (selection follows focus).
   const onRailKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
@@ -553,93 +441,127 @@ export function JournalEntries({
       : btns.length - 1;
     btns[ni]?.focus();
     const date = filteredDays[ni]?.date;
-    if (date) setSelected(date);
+    if (date) selectDay(date);
   };
 
   return (
     <div className="journal-list">
-      <aside className="journal-list__rail">
-        <button
-          type="button"
-          className={`journal-entry-gen${generating ? " is-generating" : ""}`}
-          aria-busy={generating}
-          disabled={!canGenerate || generating || selected !== today || Boolean(outOfScopeBy)}
-          onClick={generate}
-          title={
-            !canGenerate
-              ? "Summon a familiar first — the journal is written by one of your familiars"
-              : Boolean(outOfScopeBy)
-                ? `Today's entry was written by ${outOfScopeBy}`
-                : selected !== today
-                  ? "Select today to generate"
-                  : undefined
-          }
-        >
-          <Icon name="ph:sparkle" aria-hidden />
-          {generating ? "Reflecting…" : "Generate today's entry"}
-          {/* The disabled reason lived only in title= (hover-only) — AT and
-              keyboard users get it in the accessible name too (cave-t1ou).
-              The zero-familiar case had NO reason anywhere: the cold-start
-              empty state pointed at a button that was silently inert (cave-7jzq). */}
-          {!generating && !canGenerate ? (
-            <span className="sr-only">, unavailable — summon a familiar first</span>
-          ) : !generating && Boolean(outOfScopeBy) ? (
-            <span className="sr-only">, unavailable — today's entry was written by {outOfScopeBy}</span>
-          ) : !generating && selected !== today ? (
-            <span className="sr-only">, unavailable — select today to generate</span>
+      <aside className="journal-list__rail" data-collapsed={railCollapsed ? "true" : undefined}>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="journal-list__rail-toggle"
+          leadingIcon={railCollapsed ? "ph:caret-right" : "ph:caret-left"}
+          aria-expanded={!railCollapsed}
+          aria-controls="journal-day-rail-content"
+          aria-label={railCollapsed ? "Expand journal entries" : "Collapse journal entries"}
+          title={railCollapsed ? "Expand journal entries" : "Collapse journal entries"}
+          onClick={toggleRail}
+        />
+        <div id="journal-day-rail-content" className="journal-list__rail-content" hidden={railCollapsed}>
+          <button
+            type="button"
+            className={`journal-entry-gen${generating ? " is-generating" : ""}`}
+            aria-busy={generating}
+            disabled={!canGenerate || generating || selected !== today || Boolean(outOfScopeBy)}
+            onClick={generate}
+            title={
+              !canGenerate
+                ? "Summon a familiar first — the journal is written by one of your familiars"
+                : Boolean(outOfScopeBy)
+                  ? `Today's entry was written by ${outOfScopeBy}`
+                  : selected !== today
+                    ? "Select today to generate"
+                    : undefined
+            }
+          >
+            <Icon name="ph:sparkle" aria-hidden />
+            {generating ? "Reflecting…" : "Generate today's entry"}
+            {/* The disabled reason lived only in title= (hover-only) — AT and
+                keyboard users get it in the accessible name too (cave-t1ou).
+                The zero-familiar case had NO reason anywhere: the cold-start
+                empty state pointed at a button that was silently inert (cave-7jzq). */}
+            {!generating && !canGenerate ? (
+              <span className="sr-only">, unavailable — summon a familiar first</span>
+            ) : !generating && Boolean(outOfScopeBy) ? (
+              <span className="sr-only">, unavailable — today's entry was written by {outOfScopeBy}</span>
+            ) : !generating && selected !== today ? (
+              <span className="sr-only">, unavailable — select today to generate</span>
+            ) : null}
+          </button>
+          <div className="journal-list__cap">Your days</div>
+          {days.length > 0 ? (
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter entries…"
+              aria-label="Filter journal entries"
+              className="journal-list__filter focus-ring-inset"
+            />
           ) : null}
-        </button>
+          {daysError ? (
+            <ErrorState
+              compact
+              headline="Couldn't load journal entries"
+              subtitle={daysError}
+              actions={
+                <Button size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => { void loadDays(); }}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : !daysLoaded && days.length === 0 ? (
+            <SkeletonRows count={4} className="journal-list__loading" />
+          ) : days.length === 0 ? (
+            <div className="journal-empty">
+              {canGenerate
+                ? "No journal entries yet. Generate today's above."
+                : "No journal entries yet. The journal is written by a familiar — summon one first, then generate today's entry above."}
+            </div>
+          ) : filteredDays.length === 0 ? (
+            <div className="journal-empty">No entries match “{filter.trim()}”.</div>
+          ) : (
+            <ul className="journal-list__items" onKeyDown={onRailKeyDown}>
+              {filteredDays.map((d) => (
+                <li key={d.date}>
+                  <button
+                    type="button"
+                    className={`journal-day${d.date === selected ? " is-selected" : ""}`}
+                    aria-current={d.date === selected ? "true" : undefined}
+                    onClick={() => selectDay(d.date)}
+                  >
+                    <span className="journal-day__top">
+                      <span className="journal-day__date">
+                        {relativeDayLabel(parseDateSlug(d.date) ?? now, now)}
+                      </span>
+                      {d.reflectedBy ? <span className="journal-day__by">{familiarName(d.reflectedBy)}</span> : null}
+                    </span>
+                    <span className="journal-day__prev" title={d.preview || undefined}>{d.preview || "—"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </aside>
+      <section className="journal-detail" aria-label="Journal entry">
         {error ? (
           <div className="journal-list__error" role="alert">
             {error}
           </div>
         ) : null}
-        <div className="journal-list__cap">Your days</div>
-        {days.length > 0 ? (
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter entries…"
-            aria-label="Filter journal entries"
-            className="journal-list__filter focus-ring-inset"
+        {dayError ? (
+          <ErrorState
+            headline="Couldn't load this journal entry"
+            subtitle={dayError}
+            actions={
+              <Button size="sm" leadingIcon="ph:arrow-clockwise" onClick={() => { void loadDay(selected); }}>
+                Retry
+              </Button>
+            }
           />
-        ) : null}
-        {!daysLoaded && days.length === 0 ? (
-          <SkeletonRows count={4} className="journal-list__loading" />
-        ) : days.length === 0 ? (
-          <div className="journal-empty">
-            {canGenerate
-              ? "No journal entries yet. Generate today's above."
-              : "No journal entries yet. The journal is written by a familiar — summon one first, then generate today's entry above."}
-          </div>
-        ) : filteredDays.length === 0 ? (
-          <div className="journal-empty">No entries match “{filter.trim()}”.</div>
-        ) : (
-          <ul className="journal-list__items" onKeyDown={onRailKeyDown}>
-            {filteredDays.map((d) => (
-              <li key={d.date}>
-                <button
-                  type="button"
-                  className={`journal-day${d.date === selected ? " is-selected" : ""}`}
-                  aria-current={d.date === selected ? "true" : undefined}
-                  onClick={() => setSelected(d.date)}
-                >
-                  <span className="journal-day__top">
-                    <span className="journal-day__date">
-                      {relativeDayLabel(parseDateSlug(d.date) ?? now, now)}
-                    </span>
-                    {d.reflectedBy ? <span className="journal-day__by">{familiarName(d.reflectedBy)}</span> : null}
-                  </span>
-                  <span className="journal-day__prev" title={d.preview || undefined}>{d.preview || "—"}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
-      <section className="journal-detail" aria-label="Journal entry">
-        {day ? (
+        ) : day ? (
           <>
             <div className="journal-entry__sec journal-entry__sec--nav">
               <h3 className="journal-entry__sec-heading">What happened · {longDateLabel(parseDateSlug(day.date) ?? now)}</h3>
@@ -744,10 +666,6 @@ export function JournalEntries({
                 ) : (
                   <JournalReflection
                     text={day.entry.reflection}
-                    familiarId={selectedFamiliarId}
-                    onNotice={showNotice}
-                    onError={setError}
-                    standalone={standalone}
                   />
                 )}
                 <div className="journal-entry__by">
@@ -755,6 +673,29 @@ export function JournalEntries({
                   Reflected by <b>{familiarName(day.entry.reflectedBy) ?? "a familiar"}</b>
                   {day.entry.generatedAt ? ` · ${relativeTime(day.entry.generatedAt)}` : ""}
                 </div>
+                {day.sources?.length ? (
+                  <div className="journal-sources">
+                    <h4 className="journal-entry__sec journal-entry__sec-heading">Sources</h4>
+                    <div className="journal-sources__chips">
+                      {day.sources.map((s) => (
+                        <button
+                          key={s.fullPath}
+                          type="button"
+                          className="journal-sources__chip focus-ring"
+                          title={`${s.rootLabel} · ${s.relPath}`}
+                          onClick={() => openGrimoireDoc("memory", s.fullPath)}
+                        >
+                          <Icon name="ph:file-text" width={11} aria-hidden />
+                          <span className="journal-sources__name">{s.relPath.split("/").pop() || s.relPath}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <JournalConstellation
+                  date={day.date}
+                  caption={`Memory constellation — the day's sources orbiting ${familiarName(day.entry.reflectedBy) ?? "the familiar"}.`}
+                />
               </>
             ) : (
               <EmptyState
@@ -787,36 +728,60 @@ export function JournalEntries({
                 }
               />
             )}
+            {!outOfScopeBy && (hasEntry || day.date === today) ? (
+              <div className="journal-prompt">
+                <div className="journal-prompt__head">
+                  <h4 className="journal-entry__sec journal-entry__sec-heading">Generation prompt</h4>
+                  {journalPrompt !== DEFAULT_JOURNAL_PROMPT ? (
+                    <button type="button" className="journal-prompt__reset focus-ring" onClick={resetPrompt}>
+                      Reset to default
+                    </button>
+                  ) : null}
+                </div>
+                <div className="journal-prompt__editor">
+                  <div ref={promptHlRef} className="journal-prompt__hl" aria-hidden>
+                    {splitPromptSegments(journalPrompt).map((seg, i) =>
+                      seg.placeholder ? (
+                        <mark key={i} className="journal-prompt__ph">{seg.text}</mark>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      ),
+                    )}
+                    {"\n"}
+                  </div>
+                  <textarea
+                    className="journal-prompt__ta focus-ring"
+                    value={journalPrompt}
+                    rows={6}
+                    spellCheck={false}
+                    aria-label="Generation prompt template"
+                    onChange={(e) => changePrompt(e.target.value)}
+                    onScroll={(e) => {
+                      if (promptHlRef.current) promptHlRef.current.scrollTop = e.currentTarget.scrollTop;
+                    }}
+                  />
+                </div>
+                <div className="journal-prompt__foot">
+                  <span className="journal-prompt__hint">
+                    {"{familiar}, {date} and {context} are filled in at generation time."}
+                  </span>
+                  {hasEntry && day.date === today ? (
+                    <Button
+                      leadingIcon="ph:arrows-clockwise"
+                      onClick={generate}
+                      disabled={!canGenerate || generating || saving}
+                    >
+                      {generating ? "Reflecting…" : "Regenerate entry"}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </>
         ) : (
           <div className="journal-empty journal-empty--pane"><SkeletonRows count={5} /></div>
         )}
       </section>
-      {notice ? (
-        <div className="journal-notice" role="status" aria-live="polite" aria-atomic="true">
-          <Icon name="ph:check-circle" width={16} aria-hidden className="journal-notice__icon" />
-          <span className="journal-notice__text">{notice.text}</span>
-          {notice.action ? (
-            <button
-              type="button"
-              className="journal-notice__act"
-              onClick={() => {
-                if (standalone) {
-                  // No workspace on /settings — deep-link back into it.
-                  window.location.assign(`/?mode=${encodeURIComponent(notice.action!.mode)}`);
-                } else {
-                  window.dispatchEvent(
-                    new CustomEvent("cave:navigate-mode", { detail: { mode: notice.action!.mode } }),
-                  );
-                }
-                setNotice(null);
-              }}
-            >
-              {notice.action.label}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       {deletePending ? (
         <UndoToast
           key={deletePending.id}

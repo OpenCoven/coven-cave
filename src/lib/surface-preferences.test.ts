@@ -44,6 +44,15 @@ test("legacy fields migrate without replacing a new preference", () => {
   assert.equal({ ...legacy, ...newValues }["board.viewMode"], "gantt");
 });
 
+test("navigation written before hydration wins over an older stored preference", () => {
+  const source = readFileSync(new URL("./surface-preferences.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /setValues\(\(pending\) => \(\{ \.\.\.readLegacySurfacePreferences\(window\.localStorage\), \.\.\.current, \.\.\.pending \}\)\)/,
+    "provider hydration merges pending navigation last instead of replacing it",
+  );
+});
+
 test("specs normalize allowed values and discard stale enum values", () => {
   assert.equal(surfacePreferenceSpecs.github.sortDir.parse("asc"), "asc");
   assert.equal(surfacePreferenceSpecs.github.sortDir.parse("sideways"), undefined);
@@ -51,6 +60,13 @@ test("specs normalize allowed values and discard stale enum values", () => {
   assert.equal(surfacePreferenceSpecs.calendar.viewMode.parse("year"), undefined);
   assert.equal(surfacePreferenceSpecs.familiarMemory.staleOnly.parse(true), true);
   assert.equal(surfacePreferenceSpecs.familiarMemory.staleOnly.parse("true"), undefined);
+  assert.deepEqual(
+    surfacePreferenceSpecs.codeRail.selectedFile.parse({ root: "/repo", path: "/repo/src/a.ts" }),
+    { root: "/repo", path: "/repo/src/a.ts" },
+  );
+  assert.equal(surfacePreferenceSpecs.codeRail.selectedFile.parse({ root: "", path: "/repo/src/a.ts" }), undefined);
+  assert.equal(surfacePreferenceSpecs.codeRail.selectedFile.parse("stray-string"), undefined);
+  assert.equal(surfacePreferenceSpecs.codeRail.selectedFile.parse(null), null);
 });
 
 test("every remounting surface opts into the registry while searches remain transient", () => {
@@ -65,6 +81,7 @@ test("every remounting surface opts into the registry while searches remain tran
     marketplace: read("../components/marketplace-view.tsx"),
     browser: read("../components/browser-pane.tsx"),
     grimoire: read("../components/grimoire-view.tsx"),
+    codeRail: read("../components/rail-files-panel.tsx"),
     workspace: read("../app/page.tsx"),
     workspaceShell: read("../components/workspace.tsx"),
   };
@@ -74,7 +91,14 @@ test("every remounting surface opts into the registry while searches remain tran
   assert.match(sources.github, /const \[query, setQuery\] = useState\(""\)/, "GitHub search stays transient");
   assert.match(sources.memory, /const \[query, setQuery\] = useState\(""\)/, "Memory search stays transient");
   assert.match(sources.marketplace, /const \[query, setQuery\] = useState\(""\)/, "Marketplace search stays transient");
-  assert.match(sources.github, /\(\) => deepLinkItem \?\? sorted\.find/, "an explicit GitHub deep link wins over restored selection");
+  // Pins the precedence, not the formatting: deepLinkItem has to be the FIRST
+  // branch of the selection chain, ahead of the restored target and the
+  // fall-back to the first visible row.
+  assert.match(
+    sources.github,
+    /const selectedItem = useMemo\(\s*\(\) =>\s*deepLinkItem\s*\?\?\s*sorted\.find\(sameSelectedTarget\)/,
+    "an explicit GitHub deep link wins over restored selection",
+  );
   assert.match(sources.board, /const activeTab = deepLinkTab \?\? storedActiveTab/, "an explicit Board deep link wins without replacing the saved tab");
   assert.match(sources.browser, /if \(transientNavigationUrlRef\.current\) return;/, "a queued Browser URL wins when preferences hydrate after its navigation request");
   assert.match(sources.browser, /if \(restored\.restoredTabExists && storedAddress\)/, "Browser only restores an address when its saved tab still exists");
@@ -86,4 +110,8 @@ test("every remounting surface opts into the registry while searches remain tran
   assert.match(sources.grimoire, /if \(deepLinkActiveRef\.current\) \{\s*deepLinkActiveRef\.current = false;/, "a one-visit Grimoire deep link yields to later user selections");
   assert.match(sources.grimoire, /restoredSelectionPendingRef\.current = true;/, "Grimoire marks a restored selection before persistence runs");
   assert.match(sources.grimoire, /if \(restoredSelectionPendingRef\.current\)/, "Grimoire waits to persist until a restored selection has been applied");
+  assert.match(sources.codeRail, /useSurfacePreference\(surfacePreferenceSpecs\.codeRail\.selectedFile\)/, "the code rail restores its open file through the registry");
+  assert.match(sources.codeRail, /if \(path && projectRoot\) setStoredSelection\(\{ root: projectRoot, path \}\)/, "code-rail selections write through with their project root");
+  assert.match(sources.codeRail, /storedSelection\.root !== projectRoot\) return;/, "a saved file from another project is never restored");
+  assert.match(sources.codeRail, /setSelectedPathState\(\(current\) => current \?\? storedSelection\.path\)/, "a selection made before hydration (focus events) wins over the restored one");
 });

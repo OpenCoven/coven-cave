@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Familiar } from "@/lib/types";
-import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { Card } from "@/lib/cave-board-types";
+import type { ActivityCollections } from "@/lib/github-activity";
 import type { GitHubItem } from "@/lib/github-tasks";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 
@@ -9,17 +10,21 @@ export type ActivityResult = {
   authed: boolean;
   patInvalid?: boolean;
   login: string | null;
+  organizations: string[];
+  collections: ActivityCollections;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
+  warning?: string;
+  retryAfterSeconds?: number;
 };
-export type PatStatus = { hasPat: boolean; login: string | null };
+export type PatStatus = { hasPat: boolean; login: string | null; canRemoveStoredPat?: boolean };
 export type Filter = "all" | "pr" | "review_request" | "issue";
 export type SortKey = "kind" | "repo" | "title" | "tasks" | "updatedAt";
 export type SortDir = "asc" | "desc";
 export type GroupBy = "none" | "org" | "repo";
 
 export const GITHUB_PAT_URL =
-  "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
+  "https://github.com/settings/tokens/new?scopes=read:user,read:org,repo,notifications&description=Cave+local";
 
 export function orgOf(repo: string): string {
   const i = repo.indexOf("/");
@@ -116,15 +121,6 @@ export const KIND_ORDER: Record<string, number> = {
   issue: 2,
   notification: 3,
 };
-export const STATUS_DOT_COLOR: Record<CardStatus, string> = {
-  backlog: "var(--text-muted)",
-  inbox: "var(--accent-presence)",
-  running: "var(--color-warning)",
-  review: "var(--color-warning)",
-  blocked: "var(--color-danger)",
-  done: "var(--color-success)",
-};
-
 export function linkedCardsForItem(cards: Card[], item: GitHubItem): Card[] {
   const url = item.url.trim().toLowerCase();
   const id = item.id.trim().toLowerCase();

@@ -23,8 +23,9 @@ assert.match(view, /<UndoToast/, "board renders the shared UndoToast for deletes
 // Select mode is threaded into BOTH the kanban and the table.
 assert.match(view, /<BoardKanban[\s\S]*?selectMode=\{cardSelect\.selectMode\}/, "kanban receives select mode");
 assert.match(view, /<BoardTable[\s\S]*?selectMode=\{cardSelect\.selectMode\}/, "table receives select mode");
-// The Select entry button only shows for kanban/table, desktop, with cards.
-assert.match(view, /viewMode === "kanban" \|\| viewMode === "table"[\s\S]*?cardSelect\.setSelectMode\(true\)/, "a Select button enters select mode for kanban/table");
+// The Select entry button only shows for kanban/table on desktop. Redesign:
+// it's a visible toolbar verb that TOGGLES select mode (enter/exit).
+assert.match(view, /viewMode === "kanban" \|\| viewMode === "table"[\s\S]*?cardSelect\.setSelectMode\(!cardSelect\.selectMode\)/, "a Select button toggles select mode for kanban/table");
 
 // Kanban cards become checkboxes and stop being draggable in select mode.
 assert.match(kanban, /<li draggable=\{!selectMode\}/, "kanban cards aren't draggable while selecting");
@@ -44,17 +45,24 @@ assert.match(view, /<StandardSelect<CardPriority \| "">[\s\S]*?onChange=\{\(next
 assert.match(view, /list="board-bulk-label-options"/, "label input is backed by a datalist of existing labels");
 assert.match(view, /void bulkAddLabel\(labelDraft\)/, "label form submits bulkAddLabel");
 
-// §8 chrome budget: entering select mode is an occasional verb — it lives in
-// the shared overflow menu rather than as an always-visible toolbar button.
-assert.match(
+// Redesign: Select-multiple and the trash are first-class toolbar verbs
+// (visible icon buttons). The trash owns BOTH destructive flows — delete the
+// selection in select mode, clear done otherwise — so the tasks header no
+// longer carries an overflow menu.
+assert.doesNotMatch(
   view,
-  /<OverflowMenu ariaLabel="More task actions">/,
-  "board header renders the shared overflow menu",
+  /<OverflowMenu/,
+  "the tasks header overflow menu is gone — the trash button owns clear-done",
 );
 assert.match(
   view,
-  /<PopoverItem\s*icon="ph:check-square"\s*onSelect=\{\(\) => cardSelect\.setSelectMode\(true\)\}/,
-  "Select multiple is an overflow-menu item",
+  /className=\{`board-icon-btn\$\{cardSelect\.selectMode \? " board-icon-btn--active" : ""\}`\}/,
+  "Select multiple is a visible toolbar icon button",
+);
+assert.match(
+  view,
+  /if \(cardSelect\.selectMode\) \{\s*if \(hasSelection\) setToolbarDeleteConfirm\(true\);\s*\} else if \(doneCards\.length > 0\) \{\s*setClearConfirm\(true\);\s*\}/,
+  "the trash button routes to delete-selected in select mode and clear-done otherwise",
 );
 
 console.log("board-bulk-select.test.ts: ok");

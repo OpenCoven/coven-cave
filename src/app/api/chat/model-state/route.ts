@@ -1,8 +1,21 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
-import { loadConversation, saveConversation } from "@/lib/cave-conversations";
+import {
+  isSafeConversationSessionId,
+  loadConversation,
+  saveConversation,
+  withConversationLock,
+} from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
-import { catalogForRuntime } from "@/lib/runtime-models";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
+import { modelControlCapabilities } from "@/lib/model-control-capabilities";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { hermesApiConfig } from "@/lib/hermes-responses-stream";
+import { isSshRuntime } from "@/lib/familiar-runtime";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,6 +45,29 @@ function runtimeForBinding(binding: ReturnType<typeof bindingFor>): string | nul
   return null;
 }
 
+function modelBindingScope(
+  binding: ReturnType<typeof bindingFor>,
+  runtime: string | null,
+): string {
+  const harness = canonicalHarnessId(binding.harness);
+  const hermesScope = harness === "hermes"
+    ? binding.hasInvalidHermesProfileBinding
+      ? "invalid-profile"
+      : binding.hermesProfile
+        ? `profile:${binding.hermesProfile.id}`
+        : "bare"
+    : "default";
+  // This is a non-secret presentation identity: it intentionally excludes
+  // credentials and profile home paths while still changing across local,
+  // SSH, and Hermes profile bindings.
+  return JSON.stringify([
+    harness,
+    runtimeForBinding(binding),
+    runtime,
+    hermesScope,
+  ]);
+}
+
 function lastResponseModel(
   conversation: Awaited<ReturnType<typeof loadConversation>>,
 ): string | null {
@@ -50,9 +86,16 @@ async function currentState(
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
   const conversation = sessionId ? await loadConversation(sessionId) : null;
+  const conversationHarness = conversation?.harness
+    ? canonicalHarnessId(conversation.harness)
+    : null;
   return resolveChatModelState({
     familiarId,
-    harness: binding.harness,
+    // Chat/send treats a persisted conversation harness as the execution
+    // contract. Model state must resolve against the same harness or a
+    // familiar rebind can render Hermes controls while the next turn still
+    // launches the old Claude conversation (and vice versa).
+    harness: conversationHarness ?? canonicalHarnessId(binding.harness),
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
     familiarModel: config.familiars[familiarId]?.model ?? null,
@@ -66,18 +109,82 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const familiarId = cleanText(url.searchParams.get("familiarId"));
   const sessionId = cleanText(url.searchParams.get("sessionId"));
+  const rawPreviewModel = url.searchParams.get("model");
+  // A model preview is intentionally read-only. Clients use it after staging
+  // a pre-first-send selection so the response controls are resolved for that
+  // pending model rather than for the familiar/session model that was visible
+  // before the selection.
+  const previewModel = rawPreviewModel === null
+    ? undefined
+    : rawPreviewModel === ""
+      ? ""
+      : cleanModelId(rawPreviewModel);
   if (!familiarId) return jsonError("familiarId is required", 400);
+  if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
+  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+    return jsonError("invalid session id", 400);
+  }
+  if (rawPreviewModel !== null && previewModel === null) {
+    return jsonError("invalid model", 400);
+  }
 
-  const state = await currentState(familiarId, sessionId);
+  if (sessionId) {
+    const conversation = await loadConversation(sessionId);
+    if (conversation && conversation.familiarId !== familiarId) {
+      return jsonError("not found", 404);
+    }
+  }
+
+  const state = await currentState(familiarId, sessionId, previewModel);
+  const config = await loadConfig();
+  const binding = bindingFor(config, familiarId);
   // Also hand back the pickable model menu for this chat's runtime so non-web
-  // clients (the iOS app) don't have to mirror the catalog. Web ignores it and
-  // reads the catalog directly. `allowCustom` means a free-typed id is valid.
-  const catalog = catalogForRuntime(state.harness);
+  // clients (the iOS app) don't have to mirror runtime capability rules.
+  // `allowCustom` means a free-typed id is valid.
+  // OpenCode and bare Hermes inventories are derived from local authenticated
+  // providers. Keep those discovery calls local-only without denying this
+  // aggregate state endpoint to iOS, which still needs the selected model and
+  // may free-type a model id.
+  const localInventoryRequest = rejectNonLocalRequest(req) === null;
+  const canReadOpenCodeInventory =
+    state.harness === "opencode" && localInventoryRequest;
+  const bareLocalHermes =
+    state.harness === "hermes" &&
+    canonicalHarnessId(binding.harness) === "hermes" &&
+    !binding.hermesProfile &&
+    !binding.hasInvalidHermesProfileBinding &&
+    !isSshRuntime(binding.runtime) &&
+    !state.runtime?.startsWith("ssh:");
+  const canReadHermesInventory = bareLocalHermes && localInventoryRequest;
+  const inventory = await listRuntimeModelInventory(
+    state.harness,
+    familiarId,
+    {
+      allowOpenCodeInventory: canReadOpenCodeInventory,
+      allowHermesInventory: canReadHermesInventory,
+    },
+  );
+  // Native Hermes controls are available only through its configured Responses
+  // API transport. Keep the state response aligned with the send boundary so
+  // a client never renders a provider setting that would be rejected later.
+  const hermesEnvironment = bareLocalHermes ? harnessSpawnEnv(familiarId) : null;
+  const hermesApi = hermesEnvironment
+    ? hermesApiConfig({
+        HERMES_API_URL: hermesEnvironment.HERMES_API_URL,
+        HERMES_API_KEY: hermesEnvironment.HERMES_API_KEY,
+      })
+    : null;
+  const hermesDirect = bareLocalHermes;
+  const controls = modelControlCapabilities(state.harness, state.effectiveModel)
+    .filter((capability) => capability.delivery !== "native-provider" || (hermesDirect && hermesApi !== null));
   return NextResponse.json({
     ok: true,
     state,
-    options: catalog?.models ?? [],
-    allowCustom: catalog?.allowCustom ?? true,
+    bindingScope: modelBindingScope(binding, state.runtime),
+    controls,
+    options: inventory.models,
+    inventory,
+    allowCustom: inventory.allowCustom,
   });
 }
 
@@ -94,11 +201,21 @@ export async function PATCH(req: Request) {
 
   const familiarId = cleanText(body.familiarId);
   const sessionId = cleanText(body.sessionId);
-  const model = cleanModelId(body.model);
+  // Both null (older clients) and the empty string (new clients that need to
+  // preserve the sentinel through JSON/config merges) mean explicit runtime
+  // default intent. Whitespace is still rejected as an invalid model id.
+  const clearModel = body.model === null || body.model === "";
+  const model = clearModel ? null : cleanModelId(body.model);
   const scope = body.scope;
 
   if (!familiarId) return jsonError("familiarId is required", 400);
-  if (!model) return jsonError("invalid model", 400);
+  if (!isValidFamiliarId(familiarId)) return jsonError("invalid familiar id", 400);
+  if (sessionId && !isSafeConversationSessionId(sessionId)) {
+    return jsonError("invalid session id", 400);
+  }
+  if (!clearModel && !model) return jsonError("invalid model", 400);
+  const config = await loadConfig();
+  const binding = bindingFor(config, familiarId);
   if (scope === "next-message") {
     return jsonError("next-message scope is composer-local", 400);
   }
@@ -106,13 +223,29 @@ export async function PATCH(req: Request) {
     return jsonError("unsupported scope", 400);
   }
 
+  const sessionConversation = scope === "session" && sessionId
+    ? await loadConversation(sessionId)
+    : null;
+  if (scope === "session" && sessionId &&
+      (!sessionConversation || sessionConversation.familiarId !== familiarId)) {
+    return jsonError("not found", 404);
+  }
+  const modelValidationHarness = scope === "session"
+    ? canonicalHarnessId(sessionConversation?.harness ?? binding.harness)
+    : canonicalHarnessId(binding.harness);
+  if (model && !isModelAllowedByRuntime(modelValidationHarness, model)) {
+    return jsonError("model is not allowed by this runtime", 400);
+  }
+
   if (scope === "familiar-default") {
-    const config = await loadConfig();
     await saveConfig({
       familiars: {
         [familiarId]: {
           ...(config.familiars[familiarId] ?? {}),
-          model,
+          // Empty model is a durable Runtime-default intent. A null patch
+          // remains accepted for old clients, but must not erase the intent
+          // and expose a stale familiar/global fallback on the next send.
+          model: clearModel ? "" : model,
         },
       },
     });
@@ -121,16 +254,30 @@ export async function PATCH(req: Request) {
   }
 
   if (!sessionId) return jsonError("sessionId is required for session scope", 400);
-  const conversation = await loadConversation(sessionId);
-  if (!conversation) return jsonError("not found", 404);
-  if (conversation.familiarId !== familiarId) return jsonError("not found", 404);
-  conversation.modelIntent = {
-    model,
-    source: "session",
-    applicationState: "saved",
-    reason: "Saved for this chat.",
-  };
-  await saveConversation(conversation);
+  const updated = await withConversationLock(sessionId, async () => {
+    const conversation = await loadConversation(sessionId);
+    if (!conversation || conversation.familiarId !== familiarId) return false;
+    if (clearModel) {
+      // Keep an explicit empty session intent. Deleting it would immediately
+      // re-expose a familiar/global model and makes clear → send race-prone.
+      conversation.modelIntent = {
+        model: "",
+        source: "session",
+        applicationState: "saved",
+        reason: "Using the runtime's configured default model.",
+      };
+    } else if (model) {
+      conversation.modelIntent = {
+        model,
+        source: "session",
+        applicationState: "saved",
+        reason: "Saved for this chat.",
+      };
+    }
+    await saveConversation(conversation);
+    return true;
+  });
+  if (!updated) return jsonError("not found", 404);
   const state = await currentState(familiarId, sessionId);
   return NextResponse.json({ ok: true, state });
 }

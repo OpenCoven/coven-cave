@@ -9,8 +9,20 @@ const source = readFileSync(
 
 assert.match(
   source,
-  /adapterManifestScaffoldForHarness/,
-  "config PATCH should use adapter scaffold metadata when harness bindings change",
+  /ensureAdapterManifestScaffold/,
+  "config PATCH should use the shared adapter scaffold writer when harness bindings change",
+);
+
+assert.match(
+  source,
+  /import \{ covenWorkspaceRoot \} from "@\/lib\/coven-paths"/,
+  "config GET should source the workspace root from the shared Cave path helper",
+);
+
+assert.match(
+  source,
+  /const config = await loadConfig\(\);[\s\S]*const workspacePath = covenWorkspaceRoot\(\);[\s\S]*return NextResponse\.json\(\{ ok: true, config, workspacePath \}\);/,
+  "config GET should return workspacePath alongside the config payload",
 );
 
 assert.match(

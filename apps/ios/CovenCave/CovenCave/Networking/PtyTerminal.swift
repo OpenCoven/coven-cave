@@ -11,6 +11,12 @@ import Observation
 /// xterm.js emulator in `XtermWebView` renders them — colours, cursor moves,
 /// alternate-screen TUIs), and `onReset` fires on each (re)connect so the view
 /// can clear before the server replays scrollback.
+///
+/// Reliability: every failure path — receive, send, keepalive ping — funnels
+/// into `fail`, which coalesces the burst into a single backoff retry. An idle
+/// link is probed with periodic pings so a silent drop is caught before it
+/// eats a keystroke, and `verifyLiveness` re-probes on foregrounding since iOS
+/// kills sockets during suspension without flipping any local state.
 @Observable
 @MainActor
 final class PtyTerminal {
@@ -41,7 +47,19 @@ final class PtyTerminal {
     private var lastRows = 24
     private var reconnectAttempt = 0
     private var reconnectTask: Task<Void, Never>?
+    /// True while a backoff retry is queued — extra failures (a dead socket
+    /// usually errors on receive, send, *and* ping at once) must coalesce into
+    /// the one pending retry instead of each burning an attempt.
+    private var reconnectPending = false
+    /// Bumped whenever a pending retry is invalidated (`disconnect`, a fresh
+    /// schedule); a superseded retry body sees the mismatch and stands down.
+    private var reconnectEpoch = 0
+    private var pingTask: Task<Void, Never>?
     private static let maxAutoReconnects = 3
+    private static let pingInterval: Duration = .seconds(20)
+    /// Handshake deadline — the URLSession default (60s) leaves the terminal
+    /// looking alive for a minute when the desktop is unreachable.
+    private static let handshakeTimeout: TimeInterval = 15
 
     func connect(wsBase: URL, threadId: String, projectRoot: String?, cols: Int, rows: Int) {
         lastWsBase = wsBase
@@ -76,7 +94,15 @@ final class PtyTerminal {
         // Same credential as the REST client — the pty-ws upgrade passes
         // through the token gate too on a paired desktop.
         var wsRequest = URLRequest(url: url)
-        if let token = CaveConnection.accessToken {
+        wsRequest.timeoutInterval = Self.handshakeTimeout
+        let credential: String?
+        do {
+            credential = try CaveConnection.credentialForRequest(to: url)
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
+        if let token = credential {
             wsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         let ws = Self.wsSession.webSocketTask(with: wsRequest)
@@ -85,16 +111,46 @@ final class PtyTerminal {
         connected = true
         sendResize(cols: lastCols, rows: lastRows)
         startReceiving()
+        startPinging(ws)
     }
 
     func disconnect() {
+        reconnectEpoch += 1
+        reconnectPending = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        pingTask?.cancel()
+        pingTask = nil
         receiveLoop?.cancel()
         receiveLoop = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         connected = false
+    }
+
+    /// Foreground probe: iOS quietly kills sockets while the app is suspended,
+    /// but `connected` can still read true afterwards, so a scene-active
+    /// "reconnect only if disconnected" check never fires. Ping the link and,
+    /// if it's gone, reconnect with a fresh retry budget.
+    func verifyLiveness() {
+        guard connected, !exited, let ws = task else { return }
+        ws.sendPing { [weak self] error in
+            guard let error else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.task === ws else { return }
+                self.reconnectAttempt = 0
+                self.fail(error)
+            }
+        }
+    }
+
+    /// Recovery path for a renderer that lost all client state (WKWebView
+    /// content-process death): reopen the socket with a fresh retry budget so
+    /// the server's scrollback replay repaints the fresh emulator.
+    func reattach() {
+        guard lastWsBase != nil, !exited else { return }
+        reconnectAttempt = 0
+        open()
     }
 
     // MARK: - Sending
@@ -103,7 +159,7 @@ final class PtyTerminal {
         guard let task else { return }
         var frame = Data([0x03])
         frame.append(Data(string.utf8))
-        task.send(.data(frame)) { _ in }
+        send(frame, over: task)
     }
 
     func sendResize(cols: Int, rows: Int) {
@@ -115,7 +171,45 @@ final class PtyTerminal {
         var r = UInt16(min(rows, 0xFFFF)).littleEndian
         withUnsafeBytes(of: &c) { frame.append(contentsOf: $0) }
         withUnsafeBytes(of: &r) { frame.append(contentsOf: $0) }
-        task.send(.data(frame)) { _ in }
+        send(frame, over: task)
+    }
+
+    /// A failed send proves the socket is dead even when the receive loop
+    /// hasn't noticed yet (half-open link after a network handoff). Swallowing
+    /// the error — the old behaviour — let keystrokes vanish forever; routing
+    /// it into `fail` triggers the same auto-reconnect as a receive error.
+    private func send(_ frame: Data, over ws: URLSessionWebSocketTask) {
+        ws.send(.data(frame)) { [weak self] error in
+            guard let error else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.task === ws else { return }
+                self.fail(error)
+            }
+        }
+    }
+
+    // MARK: - Keepalive
+
+    /// Periodic protocol-level pings. An idle terminal (user just reading
+    /// output) exchanges no frames, so a silently dropped link — NAT timeout,
+    /// Wi-Fi → LTE handoff, desktop sleep — would otherwise go unnoticed until
+    /// the next keystroke was eaten. The loop is pinned to one socket and
+    /// stands down once it's replaced.
+    private func startPinging(_ ws: URLSessionWebSocketTask) {
+        pingTask?.cancel()
+        pingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.pingInterval)
+                guard let self, !Task.isCancelled, self.task === ws else { return }
+                ws.sendPing { [weak self] error in
+                    guard let error else { return }
+                    Task { @MainActor [weak self] in
+                        guard let self, self.task === ws else { return }
+                        self.fail(error)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Receiving
@@ -166,6 +260,10 @@ final class PtyTerminal {
             }
             exited = true
             connected = false
+            // The server closes the socket after an exit frame; without this
+            // the keepalive would keep pinging the corpse every interval.
+            pingTask?.cancel()
+            pingTask = nil
         default:
             break
         }
@@ -175,6 +273,12 @@ final class PtyTerminal {
         // A clean close after exit is not an error worth surfacing.
         if exited { return }
         connected = false
+        // A dead socket typically errors on receive, send, and ping together;
+        // stop the ping loop (open() starts a fresh one) and coalesce the
+        // burst into one queued retry instead of burning an attempt each.
+        pingTask?.cancel()
+        pingTask = nil
+        if reconnectPending { return }
         // Transient drop (network handoff, backgrounding, desktop blip):
         // retry with backoff before asking the user — the server's detach
         // grace keeps the shell alive and replays scrollback on reattach.
@@ -182,10 +286,15 @@ final class PtyTerminal {
             reconnectAttempt += 1
             self.error = "Connection lost — reconnecting…"
             let delay = 1 << (reconnectAttempt - 1)   // 1s, 2s, 4s
+            reconnectEpoch += 1
+            let epoch = reconnectEpoch
+            reconnectPending = true
             reconnectTask?.cancel()
             reconnectTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(delay))
-                guard let self, !Task.isCancelled, !self.connected, !self.exited else { return }
+                guard let self, self.reconnectEpoch == epoch else { return }
+                self.reconnectPending = false
+                guard !self.connected, !self.exited else { return }
                 self.open()
             }
             return

@@ -11,10 +11,17 @@
  * Both issues and PRs are fetched through the `/issues/{number}` endpoint —
  * on GitHub a PR *is* an issue, and that endpoint returns body/user/labels/
  * assignees/created_at for both, in one call.
+ *
+ * `?pull=1` opts into two extra round-trips (`/pulls/{number}` and its
+ * reviews) that the PR composer needs — branch names, diffstat, mergeability,
+ * review tally. It is opt-in because every existing caller renders fine
+ * without them and would otherwise pay triple the rate-limit cost per card.
+ * Both extras are fault-isolated: a secondary failure degrades the `pull`
+ * block, it never turns a working card into an error.
  */
 
 import { NextResponse } from "next/server";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,6 +33,23 @@ const GH = "https://api.github.com";
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
 type Person = { login: string; avatarUrl: string | null; url: string | null };
+
+type ReviewTally = { approved: number; changesRequested: number; commented: number };
+
+/** The `?pull=1` extras — present only for pull requests, else null. */
+type PullSummary = {
+  headRef: string;
+  baseRef: string;
+  headSha: string;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  // GitHub returns null while it is still computing the merge commit.
+  mergeable: boolean | null;
+  mergeableState: string;
+  reviews: ReviewTally;
+};
 
 type ItemDetail = {
   ok: true;
@@ -43,7 +67,29 @@ type ItemDetail = {
   updatedAt: string | null;
   htmlUrl: string | null;
   comments: number;
+  /**
+   * Per-content reaction counts, straight from the issue payload GitHub
+   * already returns — no extra request. Deliberately counts-only: the issue
+   * payload has no viewer-reaction ids, so "mine" state and removal still
+   * require the reactions route, which the card fetches lazily on first
+   * interaction (cave-6p628).
+   */
+  reactionCounts: Record<string, number>;
 };
+
+/** GitHub's eight reaction contents, in the order its own UI shows them. */
+const REACTION_CONTENTS = ["+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"] as const;
+
+function reactionCounts(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object") return {};
+  const source = raw as Record<string, unknown>;
+  const counts: Record<string, number> = {};
+  for (const content of REACTION_CONTENTS) {
+    const count = source[content];
+    if (typeof count === "number" && Number.isFinite(count) && count > 0) counts[content] = count;
+  }
+  return counts;
+}
 
 function person(raw: unknown): Person | null {
   if (!raw || typeof raw !== "object") return null;
@@ -57,6 +103,10 @@ function person(raw: unknown): Person | null {
   };
 }
 
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 async function ghFetch(path: string, token: string | null) {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -68,11 +118,70 @@ async function ghFetch(path: string, token: string | null) {
   return { res, data };
 }
 
+const EMPTY_TALLY: ReviewTally = { approved: 0, changesRequested: 0, commented: 0 };
+
+const REVIEW_BUCKET: Record<string, keyof ReviewTally> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changesRequested",
+  COMMENTED: "commented",
+};
+
+/**
+ * Only an author's LATEST review counts on GitHub — someone who approved and
+ * then commented is no longer an approval, so a naive per-row tally overstates
+ * approvals. The endpoint returns rows in submission order, so overwriting per
+ * author lands on the latest. PENDING (never submitted) and DISMISSED (standing
+ * revoked) confer nothing and are skipped rather than counted.
+ */
+async function fetchReviewTally(repo: string, number: number, token: string | null): Promise<ReviewTally> {
+  const { res, data } = await ghFetch(`/repos/${repo}/pulls/${number}/reviews?per_page=100`, token);
+  if (!res.ok || !Array.isArray(data)) return { ...EMPTY_TALLY };
+  const latest = new Map<string, keyof ReviewTally>();
+  for (const raw of data as Array<Record<string, unknown>>) {
+    const login = person(raw.user)?.login;
+    const bucket = REVIEW_BUCKET[String(raw.state ?? "")];
+    if (!login || !bucket) continue;
+    latest.set(login, bucket);
+  }
+  const tally: ReviewTally = { ...EMPTY_TALLY };
+  for (const bucket of latest.values()) tally[bucket] += 1;
+  return tally;
+}
+
+/**
+ * The two `?pull=1` round-trips, run together. A reviews failure degrades to a
+ * zeroed tally; a `/pulls/{number}` failure gives up on the whole block. Either
+ * way the caller still gets the base item.
+ */
+async function fetchPullSummary(repo: string, number: number, token: string | null): Promise<PullSummary | null> {
+  const [head, reviews] = await Promise.all([
+    ghFetch(`/repos/${repo}/pulls/${number}`, token).catch(() => null),
+    fetchReviewTally(repo, number, token).catch(() => ({ ...EMPTY_TALLY })),
+  ]);
+  if (!head || !head.res.ok || !head.data || typeof head.data !== "object") return null;
+  const p = head.data as Record<string, unknown>;
+  const headRaw = p.head as Record<string, unknown> | undefined;
+  const baseRaw = p.base as Record<string, unknown> | undefined;
+  return {
+    headRef: typeof headRaw?.ref === "string" ? headRaw.ref : "",
+    baseRef: typeof baseRaw?.ref === "string" ? baseRaw.ref : "",
+    headSha: typeof headRaw?.sha === "string" ? headRaw.sha : "",
+    commits: num(p.commits),
+    additions: num(p.additions),
+    deletions: num(p.deletions),
+    changedFiles: num(p.changed_files),
+    mergeable: typeof p.mergeable === "boolean" ? p.mergeable : null,
+    mergeableState: typeof p.mergeable_state === "string" ? p.mergeable_state : "unknown",
+    reviews,
+  };
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const repo = (url.searchParams.get("repo") ?? "").trim();
   const numberRaw = (url.searchParams.get("number") ?? "").trim();
   const number = Number.parseInt(numberRaw, 10);
+  const wantPull = url.searchParams.get("pull") === "1";
 
   if (!REPO_RE.test(repo)) {
     return NextResponse.json({ ok: false, error: "invalid repo" }, { status: 400 });
@@ -81,7 +190,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid number" }, { status: 400 });
   }
 
-  const token = resolveSecret("GITHUB_PAT") ?? null;
+  const token = resolveGitHubToken();
 
   try {
     // repo passed REPO_RE and number is a positive integer — both safe to interpolate.
@@ -125,9 +234,14 @@ export async function GET(req: Request) {
       updatedAt: typeof d.updated_at === "string" ? d.updated_at : null,
       htmlUrl: typeof d.html_url === "string" ? d.html_url : null,
       comments: Number(d.comments ?? 0),
+      reactionCounts: reactionCounts(d.reactions),
     };
 
-    return NextResponse.json(detail);
+    // Absent `pull=1` the payload stays byte-identical to what every existing
+    // caller already parses — the key is not even present.
+    if (!wantPull) return NextResponse.json(detail);
+    const pullSummary = detail.isPull ? await fetchPullSummary(repo, number, token).catch(() => null) : null;
+    return NextResponse.json({ ...detail, pull: pullSummary });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "failed to load item" },

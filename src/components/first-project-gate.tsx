@@ -31,6 +31,8 @@ type FirstProjectGateProps = {
   onPendingGrantChange: (snapshot: PendingFirstProjectAccessSnapshot | null) => void;
   loadingProjects: boolean;
   projectsError: string | null;
+  /** The operator-visible registry. Existing entries are grantable without a duplicate create. */
+  registeredProjects: CaveProject[];
   createProjectOrThrow: (
     name: string,
     root: string,
@@ -51,6 +53,7 @@ export function FirstProjectGate({
   onPendingGrantChange,
   loadingProjects,
   projectsError,
+  registeredProjects: availableProjects,
   createProjectOrThrow,
   reloadProjects,
 }: FirstProjectGateProps) {
@@ -60,18 +63,31 @@ export function FirstProjectGate({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedExistingProjectId, setSelectedExistingProjectId] = useState("");
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasVisibleRef = useRef(false);
+  // An empty select value is the explicit "Add a different project…" path,
+  // not an uninitialized choice. Only apply the convenient default once.
+  const existingProjectSelectionInitializedRef = useRef(false);
   const titleId = useId();
   const copyId = useId();
   const rootHintId = useId();
   const registeredProject = pendingGrant?.project ?? null;
+  const selectedExistingProject = availableProjects.find(
+    (project) => project.id === selectedExistingProjectId,
+  ) ?? null;
   const submitFamiliarId = pendingGrant?.familiarId ?? familiarId;
-  const lockedProject = registeredProject;
+  const lockedProject = registeredProject ?? selectedExistingProject;
   const submitName = lockedProject?.name ?? nameDraft.trim();
   const submitRoot = lockedProject?.root ?? rootDraft.trim();
   const canSubmit = lockedProject ? true : Boolean(nameDraft.trim() && rootDraft.trim() && isAbsolutePath(rootDraft));
+
+  useEffect(() => {
+    if (registeredProject || availableProjects.length === 0 || existingProjectSelectionInitializedRef.current) return;
+    existingProjectSelectionInitializedRef.current = true;
+    setSelectedExistingProjectId(availableProjects[0]!.id);
+  }, [availableProjects, registeredProject]);
 
   useEffect(() => {
     if (!open) {
@@ -81,12 +97,12 @@ export function FirstProjectGate({
     if (wasVisibleRef.current) return;
 
     wasVisibleRef.current = true;
-    const initialFocusTarget = registeredProject ? submitButtonRef.current : nameInputRef.current;
+    const initialFocusTarget = lockedProject ? submitButtonRef.current : nameInputRef.current;
     const frame = window.requestAnimationFrame(() => {
       initialFocusTarget?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [open, registeredProject]);
+  }, [open, lockedProject]);
 
   const applyPickedRoot = useCallback((dir: string) => {
     const trimmed = dir.trim();
@@ -149,7 +165,7 @@ export function FirstProjectGate({
       setSubmitError("Project root must be an absolute path.");
       return;
     }
-    if (submitFamiliarId && !pendingGrant && !canPersistPendingFirstProjectAccessSnapshot()) {
+    if (submitFamiliarId && !pendingGrant && !lockedProject && !canPersistPendingFirstProjectAccessSnapshot()) {
       setSubmitError(STORAGE_REQUIRED_ERROR);
       return;
     }
@@ -165,15 +181,15 @@ export function FirstProjectGate({
         root: submitRoot,
         familiarId: submitFamiliarId,
         createProject: createProjectWithRegistration,
-        existingProjectId: pendingGrant?.project.id,
+        existingProjectId: lockedProject?.id,
         name: submitName,
       });
       if (result.ok) {
-        const createdProjectName = registeredProject?.name ?? submitName;
+        const createdProjectName = lockedProject?.name ?? submitName;
         clearPendingFirstProjectAccessSnapshot();
         onPendingGrantChange(null);
         setSubmitError(null);
-        announce(`Created project ${createdProjectName}. Chat is ready.`);
+        announce(`${lockedProject ? "Granted" : "Created"} project ${createdProjectName}. Chat is ready.`);
       } else {
         setSubmitError(result.error);
       }
@@ -182,7 +198,7 @@ export function FirstProjectGate({
     } finally {
       setSubmitting(false);
     }
-  }, [announce, createProjectWithRegistration, loadingProjects, pendingGrant, projectsError, registeredProject, submitFamiliarId, submitName, submitRoot, submitting, lockedProject, onPendingGrantChange]);
+  }, [announce, createProjectWithRegistration, loadingProjects, pendingGrant, projectsError, submitFamiliarId, submitName, submitRoot, submitting, lockedProject, onPendingGrantChange]);
 
   if (!open) return null;
 
@@ -202,7 +218,7 @@ export function FirstProjectGate({
                   Project required
                 </p>
                 <h2 id={titleId} className="mt-2 text-[length:var(--text-display)] font-semibold leading-tight text-[var(--text-primary)]">
-                  Create your first project
+                  {lockedProject ? "Give this familiar project access" : "Create your first project"}
                 </h2>
                 <p id={copyId} className="mt-2 max-w-2xl text-[length:var(--text-md)] leading-6 text-[var(--text-secondary)]">
                   {registeredProject ? (
@@ -213,6 +229,11 @@ export function FirstProjectGate({
                       <span className="font-mono text-[var(--text-primary)]">{registeredProject.root}</span>
                       {" "}
                       in chat.
+                    </>
+                  ) : selectedExistingProject ? (
+                    <>
+                      Project <span className="font-medium text-[var(--text-primary)]">{selectedExistingProject.name}</span> is
+                      already registered. Grant access so this familiar can use it in chat.
                     </>
                   ) : (
                     "Chat requires a project. Add the absolute root for the codebase you want this familiar to use before you start chatting."
@@ -255,7 +276,36 @@ export function FirstProjectGate({
                   </p>
                 ) : null}
 
-                <div className="space-y-2">
+                {!registeredProject && availableProjects.length > 0 ? (
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="first-project-gate-existing"
+                      className="block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
+                    >
+                      Registered project
+                    </label>
+                    <select
+                      id="first-project-gate-existing"
+                      value={selectedExistingProjectId}
+                      onChange={(event) => {
+                        setSelectedExistingProjectId(event.target.value);
+                        setSubmitError(null);
+                      }}
+                      disabled={submitting}
+                      className="focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 text-[length:var(--text-md)] text-[var(--text-primary)]"
+                    >
+                      <option value="">Add a different project…</option>
+                      {availableProjects.map((project) => (
+                        <option key={project.id} value={project.id}>{project.name}</option>
+                      ))}
+                    </select>
+                    <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                      Choose an existing project to grant access, or add a different project folder.
+                    </p>
+                  </div>
+                ) : null}
+
+                {!lockedProject ? <div className="space-y-2">
                   <label
                     htmlFor="first-project-gate-name"
                     className="block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
@@ -274,9 +324,9 @@ export function FirstProjectGate({
                     disabled={Boolean(registeredProject) || submitting}
                     className="focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[length:var(--text-md)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
                   />
-                </div>
+                </div> : null}
 
-                <div className="space-y-2">
+                {!lockedProject ? <div className="space-y-2">
                   <label
                     htmlFor="first-project-gate-root"
                     className="block text-[length:var(--text-xs)] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]"
@@ -302,7 +352,7 @@ export function FirstProjectGate({
                       size="sm"
                       onClick={() => void handleBrowse()}
                       disabled={Boolean(registeredProject) || submitting}
-                      className="h-10 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                      className="!h-10 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                       leadingIcon="ph:folder-open"
                     >
                       Browse
@@ -311,7 +361,7 @@ export function FirstProjectGate({
                   <p id={rootHintId} className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
                     Pick the repository root you want chat to run inside.
                   </p>
-                </div>
+                </div> : null}
 
                 <div className="flex items-center justify-end">
                   <Button
@@ -321,9 +371,9 @@ export function FirstProjectGate({
                     size="sm"
                     loading={submitting}
                     disabled={submitting || loadingProjects || Boolean(projectsError) || !canSubmit}
-                    className="h-10 rounded-[var(--radius-control)] px-4 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
+                    className="!h-10 rounded-[var(--radius-control)] px-4 text-[length:var(--text-sm)] font-medium disabled:opacity-50"
                   >
-                    {registeredProject ? "Retry access" : "Create"}
+                    {registeredProject ? "Retry access" : lockedProject ? "Grant access" : "Create"}
                   </Button>
                 </div>
               </form>

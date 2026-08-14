@@ -1,20 +1,46 @@
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+import type { ModelControlValues } from "./model-control-capabilities.ts";
+import type { ChatAttentionReason } from "./chat-attention-marker.ts";
 
 export type ChatResponseMetadata = {
   familiarId: string;
   harness: string;
   model: string;
   runtime: string;
+  /** Explicit user model intent, including the empty runtime-default sentinel. */
+  requestedModel?: string;
   desiredModel?: string;
+  /** Model id actually handed to the selected runtime boundary, after the
+   * registry-owned canonical-to-native transform. */
+  forwardedModel?: string;
   confirmedModel?: string;
+  /** Exact model safe to pin for a retry. Omitted for dynamic CLI defaults. */
+  retryModel?: string;
   modelSource?: ModelScope;
   modelApplicationState?: ModelApplicationState;
   modelApplicationReason?: string;
+  /** Controls the client asked Cave to apply for this selected model. */
+  requestedControls?: ModelControlValues;
+  /** Accepted controls delivered as native parameters, CLI arguments, or
+   * explicitly generated prompt guidance for this attempt. */
+  forwardedControls?: ModelControlValues;
+  /** Requested controls delivered only as explicit prompt guidance. */
+  promptGuidanceControls?: ModelControlValues;
+  /** Controls the provider/runtime accepted for this completed attempt. */
+  appliedControls?: ModelControlValues;
+  /** Capability families rejected before a runtime launch. */
+  rejectedControlFamilies?: string[];
   openclawAgentId?: string;
-  openclawAgentSource?: "explicit" | "id-match" | "name-match" | "fallback";
+  openclawAgentSource?: "explicit" | "id-match" | "name-match" | "default" | "fallback";
   caveSessionId?: string;
   gatewaySessionId?: string;
   sessionKey?: string;
+  attentionRequest?: {
+    sessionId: string;
+    turnId: string;
+    requestedAt: string;
+    reason: ChatAttentionReason;
+  };
 };
 
 /** Collapse a user home prefix to "~" so the directory reads as a location the

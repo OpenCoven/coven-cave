@@ -1,0 +1,74 @@
+id: optimize-tweet-thread
+version: 0.1.0
+name: Optimize Tweet Thread
+summary: Generate, validate, judge, and revise an evidence-backed X/Twitter thread, then stop for exact human approval.
+familiar: comms
+pattern: tournament
+tags:
+  - social
+  - thread
+  - evaluation
+limits:
+  max_agents: 6
+  timeout_s: 1800
+  cost_ceiling_usd: 6
+permissions:
+  - file.read
+  - file.write
+  - command.run
+visibility:
+  public: true
+  coven_cave: true
+steps:
+  - id: input
+    kind: input
+    name: Thread brief
+    summary: Accept the topic, audience, objective, evidence constraints, voice, and optional existing run directory.
+  - id: evidence
+    kind: agent
+    name: Evidence packet
+    uses: research
+    summary: Verify supplied or local evidence, record missing support and uncertainty, and note gaps without network retrieval.
+    requires:
+      - input
+  - id: candidates
+    kind: skill
+    name: Candidate tournament
+    uses: tweet-thread-lab
+    summary: Materialize three strategy-declared thread candidates and their canonical hashes, then resolve the absolute installed validator path relative to the loaded `SKILL.md` and record it in tooling.json.
+    requires:
+      - evidence
+  - id: validate
+    kind: tool
+    name: Deterministic validation
+    uses: cave.exec
+    summary: Read tooling.json, validate its validator absolute path, and run `node "<validatorPath>" validate candidates/<candidate-id>.json brief.json`; save strict JSON stdout to deterministic/<candidate-id>.json; exit 1 blocks the candidate and exit 2 logs a contract error before any cave.output materialization.
+    requires:
+      - candidates
+  - id: judge
+    kind: agent
+    name: Blinded review
+    uses: reviewer
+    summary: Judge eligible blinded candidates in a separate context, write six-dimension scorecards, then materialize and retain the candidate-free scorecard set commitment before identity reveal or stopping unlock.
+    requires:
+      - validate
+  - id: revise
+    kind: skill
+    name: Bounded revision
+    uses: tweet-thread-lab
+    summary: Rank, revise, and stop according to the declared threshold, meaningful-gain, regression, time, and cost bounds.
+    requires:
+      - judge
+  - id: approval
+    kind: human-gate
+    name: Exact thread approval
+    uses: valentina
+    summary: Stop until a human approves the exact selected candidate SHA-256; this workflow does not publish.
+    requires:
+      - revise
+  - id: output
+    kind: output
+    name: Portable thread run
+    summary: Return the run directory, manifest, selected candidate, scorecards, deterministic results, and approval state.
+    requires:
+      - approval

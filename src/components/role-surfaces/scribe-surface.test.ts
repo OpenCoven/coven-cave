@@ -74,10 +74,108 @@ test("source material comes from real memory and journal, published works from t
 });
 
 test("the desk exposes errors and state accessibly", () => {
-  assert.match(surface, /role="alert"/);
+  assert.doesNotMatch(
+    surface,
+    /<p role="alert" className="role-surface-hint">\s*\{publishError\}/,
+    "the global assertive announcer owns publish failures",
+  );
+  assert.match(surface, /<p className="role-surface-hint">\s*\{publishError\}/);
   assert.match(surface, /aria-current=\{draft\.id === state\.selectedId/);
   assert.match(surface, /aria-pressed=\{state\.scope === "familiar"\}/);
   assert.match(surface, /aria-label="Draft body"/);
+});
+
+test("source and vault failures stay retryable and distinct from empty data", () => {
+  assert.match(surface, /import[\s\S]*?\bSurfaceLoading\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /import[\s\S]*?\bSurfaceError\b[\s\S]*?from "\.\/surface-room"/);
+  assert.match(surface, /const \[sourcesError, setSourcesError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadSources = useCallback\(async \(\) =>/);
+  assert.match(surface, /const \[journalError, setJournalError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadJournal = useCallback\(async \(\) =>/);
+  assert.doesNotMatch(surface, /setJournalDays\(\[\]\)/);
+  assert.match(surface, /const \[worksError, setWorksError\] = useState<string \| null>\(null\)/);
+  assert.match(surface, /const loadWorks = useCallback\(async \(\) =>/);
+  assert.doesNotMatch(surface, /setWorks\(\[\]\)/);
+  assert.match(
+    surface,
+    /worksError\s*\?\s*\([\s\S]*?<SurfaceError[\s\S]*?onRetry=\{loadWorks\}[\s\S]*?\)\s*:\s*works == null\s*\?\s*\([\s\S]*?<SurfaceLoading/,
+  );
+  assert.match(surface, /works\.length === 0\s*\?\s*\([\s\S]*?<SurfaceEmpty/);
+});
+
+test("source retries ignore stale success and failure after a memory-context change", () => {
+  assert.match(surface, /import \{[^}]*\buseRef\b[^}]*\} from "react"/);
+  assert.match(surface, /const sourcesLoadSeq = useRef\(0\)/);
+  assert.match(
+    surface,
+    /const seq = \+\+sourcesLoadSeq\.current;\s*setSources\(null\)/,
+    "every source retry clears stale inventory while the fresh request is pending",
+  );
+  assert.match(
+    surface,
+    /const entries = await context\.memory\.listEntries\(\);\s*if \(seq !== sourcesLoadSeq\.current\) return;\s*setSources\(/,
+  );
+  assert.match(
+    surface,
+    /\} catch \{\s*if \(seq !== sourcesLoadSeq\.current\) return;\s*setSourcesError\("Couldn't load source material\."\)/,
+  );
+  assert.match(surface, /\}, \[context\.memory, familiarId\]\)/);
+  assert.match(
+    surface,
+    /useEffect\(\(\) => \{\s*setSources\(null\);\s*void loadSources\(\);\s*return \(\) => \{\s*sourcesLoadSeq\.current \+= 1;\s*\};\s*\}, \[loadSources\]\)/,
+  );
+});
+
+test("publishing announces outcomes and discard stays behind secondary disclosure", () => {
+  assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
+  assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /announce\(`\$\{verb\} "\$\{title\}" to the Knowledge Vault\.`\)/);
+  assert.match(surface, /setPublishError\(message\)[\s\S]*?announce\(message, "assertive"\)/);
+  assert.match(surface, /<OverflowMenu ariaLabel="Draft actions">/);
+  assert.match(surface, /<PopoverItem[\s\S]*?danger[\s\S]*?onSelect=\{discardSelected\}[\s\S]*?>[\s\S]*?Discard draft/);
+  assert.doesNotMatch(surface, /<button[^>]*onClick=\{discardSelected\}[^>]*>[\s\S]*?Discard draft/);
+});
+
+test("compact discard reopens Drafts before restoring focus", () => {
+  assert.match(surface, /const newDraftButtonRef = useRef<HTMLButtonElement \| null>\(null\)/);
+  assert.match(surface, /const restoreDraftFocusRef = useRef\(false\)/);
+  assert.match(surface, /const \[leftRailExpanded, setLeftRailExpanded\] = useState\(false\)/);
+  assert.match(
+    surface,
+    /const \[rightRailExpanded, setRightRailExpanded\] = useActiveSelectionRail\(state\.selectedId\)/,
+  );
+  assert.match(
+    surface,
+    /const setDraftsExpanded = \(next: boolean\) => \{\s*setLeftRailExpanded\(next\);\s*if \(next\) setRightRailExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /const setPublishingExpanded = \(next: boolean\) => \{\s*setRightRailExpanded\(next\);\s*if \(next\) setLeftRailExpanded\(false\);\s*\}/,
+  );
+  assert.match(
+    surface,
+    /patch\(\{ drafts: \[draft, \.\.\.state\.drafts\], selectedId: draft\.id \}\);\s*setPublishingExpanded\(true\)/,
+  );
+  assert.match(
+    surface,
+    /const discardSelected = \(\) => \{[\s\S]*?const title = selected\.title\.trim\(\) \|\| "Untitled";[\s\S]*?setPublishingExpanded\(false\);[\s\S]*?setDraftsExpanded\(true\);[\s\S]*?restoreDraftFocusRef\.current = true;[\s\S]*?patch\([\s\S]*?announce\(`Discarded draft "\$\{title\}"\.`\)/,
+  );
+  assert.match(
+    surface,
+    /useEffect\(\(\) => \{\s*if \(!restoreDraftFocusRef\.current\) return;\s*restoreDraftFocusRef\.current = false;\s*const focusFrame = requestAnimationFrame\(\(\) => newDraftButtonRef\.current\?\.focus\(\)\);\s*return \(\) => cancelAnimationFrame\(focusFrame\);\s*\}, \[state\.drafts\]\)/,
+  );
+  assert.match(
+    surface,
+    /<button\s+ref=\{newDraftButtonRef\}\s+type="button"\s+className="role-surface-chip focus-ring"\s+onClick=\{newDraft\}\s*>/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="left"\s+label="Drafts and sources"\s+expanded=\{leftRailExpanded\}\s+onExpandedChange=\{setDraftsExpanded\}/,
+  );
+  assert.match(
+    surface,
+    /<SurfaceRail\s+side="right"\s+label="Publishing"\s+expanded=\{rightRailExpanded\}\s+onExpandedChange=\{setPublishingExpanded\}/,
+  );
 });
 
 test("registration names the Writing Desk with its own accent and drawer chrome", () => {

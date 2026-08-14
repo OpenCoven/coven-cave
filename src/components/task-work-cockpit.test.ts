@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
 
 assert.match(source, /resolveTaskWorkTarget\([\s\S]{0,120}card\.sessionId[\s\S]{0,160}fallbackSession/);
-assert.match(source, /<ChatView[\s\S]*sessionId=\{target\.session\.id\}/);
+assert.match(source, /<ChatView[\s\S]*sessionId=\{conversation\.sessionId\}/);
+assert.match(source, /sessionId: target\.session\.id/, "a resumed task still drives ChatView from the resolved target session");
 assert.match(source, /onBack=\{onClose\}/);
 assert.match(source, /Preparing work session/);
 assert.match(source, /Work session unavailable/);
@@ -25,4 +26,101 @@ assert.match(
   source,
   /<Group\s*\n(?:\s*(?:className|orientation)=[^\n]*\n|\s*\/\/[^\n]*\n)*\s*key=\{railController\.showInline \? "conversation-rail" : "conversation"\}/,
   "cockpit Group is keyed by the visible pane set so a solo conversation fills the cockpit",
+);
+// ChatView's root carries no width of its own; inside the conversation
+// Panel (a horizontal flex row) it shrink-wrapped to content and the thread
+// sat left-crammed beside dead space. The cockpit CSS must stretch it.
+const cockpitCss = await readFile(new URL("../styles/task-work-cockpit.css", import.meta.url), "utf8");
+assert.match(
+  cockpitCss,
+  /\.task-work-cockpit__body > \.cave-chat-linear,\n\.task-work-cockpit__group \.cave-chat-linear \{[\s\S]{0,200}?flex: 1;[\s\S]{0,200}?min-width: 0;/,
+  "the cockpit conversation fills its row in BOTH branches (task-chat alignment)",
+);
+// Both entry paths go through ONE Group/Panel tree (cave-6une3). The bridge
+// handoff used to render a bare ChatView straight into the body, which is how
+// it ended up with no width (cave-itm75) and then no code rail at all. Exactly
+// one <ChatView> in the file is the structural guarantee.
+assert.equal(
+  source.match(/<ChatView/g)?.length,
+  1,
+  "both cockpit entry paths share a single ChatView inside the conversation Panel",
+);
+assert.match(
+  source,
+  /<div className="task-work-cockpit__body">\s*\{conversation && familiar \? \(\s*<Group/,
+  "the cockpit body opens straight into the resizable Group for both paths",
+);
+
+// The Group is keyed by the pane set, so toggling the rail REMOUNTS ChatView.
+// The auto-send guard is an instance ref, so without a remount-proof latch that
+// remount re-sent the task's first prompt. The handoff id is what survives it.
+assert.match(
+  source,
+  /initialPromptHandoffId=\{conversation\.handoffId\}/,
+  "the bridge handoff passes a remount-proof id so a rail toggle cannot re-send it",
+);
+assert.match(
+  source,
+  /initialPromptHandoffIdRef\.current \?\?= card\.sessionId \?\? card\.id/,
+  "the handoff id stays stable when the bridge replaces the card placeholder with its reserved session id",
+);
+assert.match(
+  source,
+  /handoffId: initialPromptHandoffIdRef\.current/,
+  "the bridge hands ChatView the stable first-handoff id across Group remounts",
+);
+assert.match(
+  source,
+  /handoffId: null/,
+  "a resumed task has no handoff to latch",
+);
+// The latch is module-scoped on purpose, so leaving the task must release it —
+// otherwise reopening the card sits on a claimed id and never sends. React's
+// development effect replay calls cleanup before immediately mounting again,
+// so the release is deferred one turn and cancelled by that remount.
+//
+// The generation counter is the belt-and-suspenders guard: if clearTimeout
+// loses the scheduler race (e.g. MessageChannel vs. setTimeout ordering in
+// React 19 Strict Mode), the callback checks whether a newer effect body has
+// run before releasing, so a stale timer can never fire a release.
+assert.match(
+  source,
+  /handoffReleaseTimerRef\.current = window\.setTimeout\(\(\) => \{/,
+  "the cockpit defers its handoff release so development effect replay cannot re-send the first prompt",
+);
+assert.match(
+  source,
+  /handoffReleaseGenRef\.current !== gen/,
+  "the deferred release is guarded by a generation counter that survives a clearTimeout race",
+);
+assert.match(
+  source,
+  /clearTimeout\(handoffReleaseTimerRef\.current\)/,
+  "the replayed cockpit mount cancels the deferred handoff release",
+);
+// The rail mounts for BOTH paths now; gating it on the ready branch is what
+// made the reopen strip a dead end during a bridge-start session.
+assert.match(
+  source,
+  /railController\.showInline && conversation\.railSessionId/,
+  "the code rail Panel mounts from the shared descriptor, not the resumed branch",
+);
+
+// The collapsed code rail is an in-flow flex child sized against a flex ROW
+// (44px wide, full height). The cockpit root is a flex COLUMN, so hosting it
+// there docked it as a stub in the bottom-left corner under the composer.
+// It belongs inside the body row, before the body closes.
+const bodyStart = source.indexOf('<div className="task-work-cockpit__body">');
+const railStart = source.indexOf('className="workspace-rail-reopen focus-ring"');
+const sheetStart = source.indexOf("<WorkspaceRailSheet");
+assert.ok(bodyStart > -1 && railStart > bodyStart, "the reopen rail renders after the cockpit body opens");
+// The `</div>` immediately before the rail sheet closes the body row, so the
+// rail button must fall on the inside of it.
+const bodyEnd = source.lastIndexOf("</div>", sheetStart);
+assert.ok(bodyEnd > bodyStart, "the cockpit body row closes before the rail sheet");
+assert.ok(railStart < bodyEnd, "the reopen rail renders inside the cockpit body row, not as a column child");
+assert.match(
+  cockpitCss,
+  /\.task-work-cockpit__body > \.workspace-rail-reopen \{[\s\S]{0,200}?flex: 0 0 44px;[\s\S]{0,200}?align-self: stretch;/,
+  "the reopen rail reserves a full-height 44px column beside the conversation",
 );

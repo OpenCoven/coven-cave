@@ -22,7 +22,7 @@ assert.doesNotMatch(source, /<ComposerPlusMenu/, "the plus menu should not own t
 // the controls — the control row itself stays pill-free.
 assert.doesNotMatch(
   source.match(/className="cave-composer-control-row">[\s\S]*?className="cave-composer-footer-band"/)?.[0] ?? "",
-  /<ComposerContextPill/,
+  /<ComposerContextChips/,
   "the context pill should not own the composer control row",
 );
 

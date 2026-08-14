@@ -7,6 +7,7 @@ import {
   buildPromptWithKnowledgeVault,
   deleteKnowledgeEntry,
   isValidKnowledgeId,
+  KNOWLEDGE_VAULT_BODY_BUDGET,
   listKnowledgeEntries,
   normalizeScope,
   parseKnowledgeFile,
@@ -122,6 +123,38 @@ assert.equal(
   assert.match(out, /Coven = a set of familiars\./);
   assert.doesNotMatch(out, /## Empty/, "empty-body entries are dropped");
   assert.ok(out.trimEnd().endsWith("USER PROMPT"), "user prompt stays at the end");
+}
+
+// ── body budget ──────────────────────────────────────────────────────────────
+// Regression: the vault was injected unbudgeted, so the 68 KB global "OpenCoven"
+// entry (five full repo READMEs) rode along on every prompt for every familiar.
+// Threads self-reported that as `excess` context pressure.
+{
+  const huge = "line of reference material\n".repeat(6000); // ~162 KB
+  const out = buildPromptWithKnowledgeVault("USER PROMPT", [
+    { id: "huge", title: "OpenCoven", tags: [], scope: "global", enabled: true, body: huge },
+  ]);
+  assert.ok(
+    out.length < KNOWLEDGE_VAULT_BODY_BUDGET * 1.5,
+    `oversized entry is clipped to the budget (got ${out.length})`,
+  );
+  assert.match(out, /## OpenCoven/, "the entry is still present and named");
+  assert.match(out, /more characters of "OpenCoven" omitted/, "clipping is disclosed, not silent");
+  assert.ok(out.trimEnd().endsWith("USER PROMPT"), "user prompt survives clipping");
+}
+{
+  // Small entries are never touched, and a big one does not starve them.
+  const small = { id: "s", title: "Glossary", tags: [], scope: "global" as const, enabled: true, body: "Coven = a set of familiars." };
+  const big = { id: "b", title: "Big", tags: [], scope: "global" as const, enabled: true, body: "z".repeat(80_000) };
+  const out = buildPromptWithKnowledgeVault("USER PROMPT", [small, big]);
+  assert.match(out, /Coven = a set of familiars\./, "small entries pass through whole");
+  assert.match(out, /more characters of "Big" omitted/, "only the oversized entry is clipped");
+
+  const under = buildPromptWithKnowledgeVault("USER PROMPT", [small]);
+  assert.doesNotMatch(under, /omitted to bound prompt size/, "under-budget vaults are untouched");
+
+  const unbounded = buildPromptWithKnowledgeVault("USER PROMPT", [big], [], { bodyBudget: Infinity });
+  assert.ok(unbounded.includes("z".repeat(80_000)), "callers can opt out of the budget");
 }
 
 // ── filesystem round-trip (temp dir via COVEN_KNOWLEDGE_DIR) ──────────────────

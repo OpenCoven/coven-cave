@@ -108,9 +108,28 @@ registered in `api-contracts.test.ts`, alphabetical):
 | `/api/github/merge` | POST | Squash/merge/rebase a PR; surfaces GitHub's own guard errors verbatim |
 | `/api/github/rerun` | POST | Re-run a check run / failed jobs of a run |
 | `/api/github/review` | POST | Submit review {repo, number, event: APPROVE\|REQUEST_CHANGES\|COMMENT, body} |
-| `/api/github/runs` | GET | List recent Actions runs {repo, branch?} |
+| `/api/github/runs` | GET | List recent Actions runs {repo, branch?} or one run {repo, id} |
+| `/api/github/labels` | GET | Repo label palette {repo} — the composer's label picker |
+| `/api/github/diff` | GET | PR changed files {repo, number}, hard-bounded for prompt use |
+| `/api/github/reactions` | GET, POST, DELETE | Reactions on an issue/PR — the card's resting chips |
 
 Existing `comment` and `resolve-thread` routes are reused unchanged.
+
+**Extended for the composer (cave-076kh), all additive:**
+
+- `item` takes an optional `pull=1`, which adds a `pull` block (head/base ref,
+  commit count, latest-review-per-author tally). Omitted by default so the
+  board and daily-report callers pay no extra rate limit.
+- `issue` PATCH takes `assignees` / `labels` alongside `state`, as replace-the-
+  whole-list writes, and now passes GitHub's error through verbatim (a 422
+  names the offending login).
+- `merge` takes an optional `deleteBranch`. It deliberately does NOT take a
+  branch name: the route reads `head.ref` back from GitHub's own PR object after
+  the merge. A request-supplied ref would both let a caller steer the route at an
+  arbitrary ref path (CodeQL `js/request-forgery` — an anchored regex is not a
+  sanitiser CodeQL recognises) and let a caller with a stale ref delete a branch
+  nobody asked about. A failed branch delete never fails the response — the
+  merge already happened and is irreversible.
 
 **Tier classification** lives in one pure function
 (`classifyGitHubAction(kind): "fire" | "confirm"` in `github-blocks.ts`) so
@@ -125,9 +144,56 @@ done | error`. The card states exactly what will fire (repo, number, method,
 body preview). On success it morphs into the result (e.g. merged state +
 squash sha link); on failure it shows the API error with a retry affordance.
 Agent-initiated proposals (`<coven:github-action>`) enter at `proposed` and
-require a user tap even for Tier-1 kinds.
+require a user tap even for Tier-1 kinds. The tier table above governs these
+proposals; `classifyGitHubAction` remains their single source of truth.
+
+### §3a The composer cockpit (2026-07-29, cave-076kh)
+
+USER-initiated writes on an issue/PR card no longer come from a flat action row
+with a tier-2 confirm strip. They come from one bottom-anchored composer
+(`github-card-composer.tsx`), per the Claude Design handoff
+`Final Card Components.dc.html`. Two invariants define it:
+
+1. **The card's footprint never changes.** `.ghc-slot` is a constant-height
+   reply row in every phase; each expanded phase paints into `.ghc-sheet`, a
+   sheet absolutely positioned against the card's bottom edge that grows
+   *upward* over the transcript. This is why the card root carries `relative` —
+   it is the sheet's containing block, not a cosmetic class. Opening a section
+   mid-conversation cannot reflow the chat below the card.
+2. **At most one section is open by construction** — a single state slot, not
+   cleanup after the fact.
+
+Phases: `rest | open | sending | error | merged`. Rest is a reply pill plus
+reaction chips and a gate chip — there is deliberately no bare `Merge` button to
+mis-tap.
+
+**Gating replaces confirmation.** The palette (`gh-card-commands.ts`) is built
+from live card state, so a command the card cannot fire is never offered: a
+merged PR gets no `/merge`, a PR with no open threads no `/thread`, no familiar
+no `/draft`. `parseCommand` re-checks the tree before producing an action, so
+even a hand-synthesised row cannot fire an ungated write. Merge — the one
+irreversible verb — additionally keeps its own arm field: the CTA is inert until
+the user types `merge`.
+
+**Only issue and PR kinds get the composer.** Commit, run and review-thread
+cards stay read-only; their head has to carry all the state on its own.
+
+**"Draft with `<familiar>`" never sends.** Generation rides the client lane
+(`streamFamiliarText`, `permissionMode: "read"`, `origin: "enhance"`) — there is
+no server-side LLM route, and a route would lose the familiar's own context. The
+draft lands in the textarea and only the user's own submit writes. Every scope
+the user opts into (changed files, open threads, failing checks) carries text an
+outside party controls, so all of it goes into one fenced untrusted-data block
+with the disclaimer ahead of the fence and attacker-supplied fences defused —
+see `gh-review-draft.ts` and its tests.
 
 ## §4 Stage header strip
+
+> **Removed 2026-07 (cave-ohcj):** the stage header strip and the §6
+> failing-checks rail badge were retired when the dedicated **Code surface**
+> took ownership of stage/PR context (per-session PR panel). `stage-model.ts`
+> lives on as the shared model behind the Code surface's PR panel and the
+> Beads work queue. The sections below are kept as historical design record.
 
 **`src/lib/stage-model.ts` (new, extracted):** the bead↔PR↔session join and
 lane resolution currently inside `src/lib/beads-work-queue.ts` (lanes:
@@ -163,6 +229,10 @@ leakage; the marker is the sanctioned channel and is extracted before
 filtering can touch it (same ordering as next-paths).
 
 ## §6 Code-rail GitHub awareness
+
+> **Removed 2026-07 (cave-ohcj):** see the §4 note — the failing-checks badge
+> died with its only publisher (the stage header). Checks visibility now lives
+> on the Code surface's PR panel.
 
 Minimal by design: the rail strip (and its collapsed `</>` form) shows a
 small failing-checks badge fed by `stage-model` when the session's PR has a
@@ -219,6 +289,42 @@ open, and verification evidence at close (MAP phase `cave-fpqx.3` is the
 standing discipline of keeping that triangle intact; `cave-fpqx.5` re-audits
 the capability map after the waves land).
 
+## §10 Image carousel (`src/lib/image-blocks.ts`)
+
+**Marker:** `<coven:image src="…" alt="…" caption="…" group="…" />` — the same
+streaming-safe scanner shape as every other `coven:` marker (quote-atomic
+attributes, fenced markers stay literal, partial tails hide mid-stream).
+
+**One deck, one card.** Markers that are ADJACENT (only whitespace between
+them) or that share a `group` id collapse into a single **ImageCarousel**
+(`src/components/image-carousel.tsx`) mounted at the first marker's position.
+Five renders become one browsable frame instead of five stacked pictures that
+push the answer off screen. A single image renders bounded with no carousel
+chrome. A deck is capped at `MAX_CAROUSEL_IMAGES` (24).
+
+**`src` is a security barrier, not a nicety.** Marker text is model output, so
+the allow-list is narrow: `https:`, `data:image/{png,jpeg,jpg,gif,webp,avif}`
+base64, `blob:`, and same-origin `/api/…` (fetched through `AuthedImage` so the
+packaged sidecar's auth gate is satisfied). `image/svg+xml` is excluded — an
+inline SVG is script-bearing markup. `javascript:`, `file:`, bare `http:`,
+protocol-relative `//host`, and anything carrying control characters are
+refused and the marker is dropped silently — never rendered as a raw tag.
+
+**One component for every picture in chat.** Image *attachments* route through
+the same carousel once there are two or more (`InlineImageAttachments`), so a
+batch of pasted screenshots and a batch of generated images look and behave
+identically.
+
+**A11y:** `aria-roledescription="carousel"` only when there is something to
+browse, labelled prev/next controls, a textual `n / total` (position is never
+color-only), a polite live region for slide changes, arrow-key navigation,
+`tabIndex={-1}` on off-screen slides, `prefers-reduced-motion` honored on the
+slide track, and a zoom overlay that portals out, traps focus, and returns it.
+
+**Familiar awareness:** `buildCovenMarkersDirective` teaches the marker on
+every turn, and `coven-marker-directive.test.ts` keeps the taught example
+parseable by the real extractor.
+
 ## Acceptance criteria (from the goal, restated testably)
 
 1. Pasting an issue/PR URL in chat renders a live card; comment/close from it
@@ -240,15 +346,14 @@ seven-gap summary is fully closed (see the postscript in
 [the capability map](specs/2026-07-14-chat-github-capability-map.md)).
 Residual gaps, filed as follow-up beads rather than blocking the epic:
 
-- **Commit/Run card hydration** — `/api/github/commit` and `/runs` exist
-  (W2a) but the cards still render attrs-only; hydrate them the way PR/issue
-  cards do.
 - **Review-thread reply** — thread cards resolve/unresolve but can't reply in
   place (needs the review-comment reply endpoint); agent `reply` proposals
   fall back to conversation comments.
-- **Marker adoption directive** — nothing teaches agents to emit
-  `<coven:github>` / `<coven:skill>` markers yet; a prompt directive à la
-  `buildNextPathsDirective` would drive organic usage.
+- ~~**Marker adoption directive**~~ — shipped (cave-kj6j):
+  `buildCovenMarkersDirective` (`src/lib/coven-marker-directive.ts`) rides
+  every chat turn beside the next-paths directive, teaching
+  `<coven:github>` / `<coven:github-action>` / `<coven:skill>`; its test
+  keeps the taught examples parseable by the real extractors.
 - **Failing-tint consistency** — the stage header's ✕ and the card checks
   strip use `--color-warning`; the W5 rail dot uses `--color-danger`; pick
   one failing tint.

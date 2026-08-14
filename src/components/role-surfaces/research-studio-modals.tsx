@@ -30,12 +30,23 @@ import {
   type ReactNode,
 } from "react";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
+import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { copyText } from "@/lib/clipboard";
 import {
   RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
+  RESEARCH_GENERATION_MEDIA_KINDS,
+  RESEARCH_THREAD_POST_MAX_CHARS,
+  isResearchGenerationKind,
   type ResearchGeneration,
+  type ResearchGenerationCreatableKind,
   type ResearchGenerationKind,
   type ResearchGenerationMediaKind,
+  type ResearchGenerationReadiness,
+  type ResearchMediaLength,
+  type ResearchMediaProvider,
+  type ResearchPodcastStyle,
 } from "@/lib/research-generations";
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -92,7 +103,7 @@ export const STUDIO_KIND_META: Record<ResearchGenerationKind, StudioKindMeta> = 
   },
 };
 
-/** Glyph/format for the disabled media cards. Labels and hints come from
+/** Glyph/format for media cards. Labels and blurbs come from
  *  RESEARCH_GENERATION_MEDIA_KINDS — the single source of truth — so this map
  *  carries presentation only. */
 export const STUDIO_MEDIA_PRESENTATION: Record<
@@ -104,6 +115,19 @@ export const STUDIO_MEDIA_PRESENTATION: Record<
   "long-video": { glyph: "▶", format: "video" },
 };
 
+export function studioMetaForKind(kind: ResearchGenerationCreatableKind): StudioKindMeta {
+  if (isResearchGenerationKind(kind)) return STUDIO_KIND_META[kind];
+  const media = RESEARCH_GENERATION_MEDIA_KINDS.find((entry) => entry.kind === kind);
+  const presentation = STUDIO_MEDIA_PRESENTATION[kind];
+  return {
+    glyph: presentation.glyph,
+    label: media?.label ?? kind,
+    format: presentation.format,
+    blurb: media?.hint ?? "Media generation is not ready.",
+    tags: [presentation.format],
+  };
+}
+
 // ── shared pure helpers ──────────────────────────────────────────────────────
 
 /**
@@ -111,7 +135,7 @@ export const STUDIO_MEDIA_PRESENTATION: Record<
  * pickSourceArtifact rule (server/research-generations.ts): a markdown
  * artifact that is published or still working — rejected never qualifies.
  * Creating against anything else earns the POST's 409, which we surface, but
- * the chips should not offer dead ends in the first place.
+ * the source dropdown should not offer dead ends in the first place.
  */
 export function missionHasMarkdownArtifact(
   mission: Pick<ResearchMission, "artifacts">,
@@ -125,6 +149,22 @@ export function missionHasMarkdownArtifact(
 
 export function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Rendered mermaid diagram — the exact pipeline chat messages use.
+ * MarkdownBlock renders the ```mermaid fence via @create-markdown/preview-mermaid
+ * (lazy singleton, app theme variables), and the shared post-render wiring
+ * (useWireCopyButtons → wireMermaidDiagrams) adds the expand affordance that
+ * opens the fullscreen zoom/pan viewer. Render failures fall back to the
+ * plugin's own error placeholder — never a blank box.
+ */
+export function StudioMermaidDiagram({ mermaid }: { mermaid: string }) {
+  return (
+    <div className="research-studio__diagram">
+      <MarkdownBlock text={`\`\`\`mermaid\n${mermaid}\n\`\`\``} />
+    </div>
+  );
 }
 
 /** Display title. Real data only: the blog draft's first heading, the slide
@@ -141,7 +181,7 @@ export function generationTitle(generation: ResearchGeneration): string {
   if (content?.kind === "slides" && content.slides.length > 0) {
     return content.slides[0].title;
   }
-  return `${STUDIO_KIND_META[generation.kind].label} — ${generation.sourceTitle}`;
+  return `${studioMetaForKind(generation.kind).label} — ${generation.sourceTitle}`;
 }
 
 /** Status line text — words carry the tone (color is reinforcement only),
@@ -151,8 +191,33 @@ export function generationStatusText(generation: ResearchGeneration): string {
     return `failed — ${generation.error ?? "no draft produced"}`;
   }
   if (generation.status === "cancelled") return "cancelled";
+  if (generation.status === "draft") return "draft ready · review before rendering";
+  if (generation.status === "queued") return "Waiting to render";
+  if (generation.status === "rendering") {
+    const stage =
+      generation.stage === "scripting"
+        ? "Scripting"
+        : generation.stage === "synthesizing"
+          ? "Synthesizing"
+          : generation.stage === "encoding"
+            ? "Encoding"
+            : "Rendering";
+    if (generation.progress) {
+      return `${stage} · Chapter ${generation.progress.current} of ${generation.progress.total}: ${generation.progress.label}`;
+    }
+    return stage;
+  }
   const content = generation.content;
   switch (content?.kind) {
+    case "podcast":
+      return content.audio?.durationMs
+        ? `ready · ${Math.round(content.audio.durationMs / 1_000)}s audio`
+        : "ready · audio";
+    case "short-video":
+    case "long-video":
+      return content.video?.durationMs
+        ? `ready · ${Math.round(content.video.durationMs / 1_000)}s video`
+        : "ready · video";
     case "slides":
       return `ready · ${content.slides.length} slide${content.slides.length === 1 ? "" : "s"}`;
     case "thread":
@@ -188,6 +253,33 @@ export function generationContentToMarkdown(generation: ResearchGeneration): str
       return `${content.posts.map((post) => `**${post.pre}** ${post.text}`).join("\n\n")}\n`;
     case "infographic":
       return `${content.stats.map((stat) => `- **${stat.value}** — ${stat.context}`).join("\n")}\n`;
+    case "podcast":
+      return `# ${generationTitle(generation)}\n\n${content.script
+        .map((segment) =>
+          segment.speaker
+            ? `**${segment.speaker === "host" ? "Host" : "Guest"}:** ${segment.text}`
+            : segment.text,
+        )
+        .join("\n\n")}\n`;
+    case "short-video":
+      return `# ${generationTitle(generation)}\n\n${content.storyboard
+        .map(
+          (scene, index) =>
+            `## ${index + 1}. ${scene.title}\n\n${scene.bullets.map((bullet) => `- ${bullet}`).join("\n")}\n\n${scene.narration}`,
+        )
+        .join("\n\n")}\n`;
+    case "long-video":
+      return `# ${generationTitle(generation)}\n\n${content.chapters
+        .map(
+          (chapter, chapterIndex) =>
+            `## ${chapterIndex + 1}. ${chapter.title}\n\n${chapter.scenes
+              .map(
+                (scene, sceneIndex) =>
+                  `### ${chapterIndex + 1}.${sceneIndex + 1} ${scene.title}\n\n${scene.bullets.map((bullet) => `- ${bullet}`).join("\n")}\n\n${scene.narration}`,
+              )
+              .join("\n\n")}`,
+        )
+        .join("\n\n")}\n`;
   }
 }
 
@@ -218,6 +310,30 @@ export function downloadGenerationMarkdown(
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Download an authenticated `/api/...` artifact via the patched `window.fetch`
+ * (which carries the sidecar auth token in the packaged app) instead of a
+ * native `<a href>` navigation, which would 401 against the fail-closed
+ * `/api/` gate. Mirrors `downloadGenerationMarkdown`'s blob-anchor flow.
+ */
+async function downloadGenerationArtifact(url: string, filename: string): Promise<void> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch {
+    // Network failure: leave the surface as-is; the action is retryable.
+  }
+}
+
 // ── copy flash (design genAct: ⧉ → ✓ for 1200ms) ────────────────────────────
 
 /** Flash duration from the design's genAct. The flash is a pure label swap —
@@ -242,9 +358,11 @@ export function useCopyFlash() {
 
   const copy = useCallback(
     async (key: string, text: string) => {
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch {
+      // copyText (lib/clipboard) falls back to execCommand where
+      // navigator.clipboard doesn't exist — the packaged Tauri webview and
+      // other non-secure contexts — and reports whether the copy landed.
+      const ok = await copyText(text);
+      if (!ok) {
         announce("Copy failed — clipboard unavailable", "assertive");
         return;
       }
@@ -270,14 +388,30 @@ type StudioModalProps = {
   variant: "config" | "viewer" | "editor";
   labelledBy: string;
   announceText: string;
+  /**
+   * False parks this dialog under a stacked one (viewer under editor):
+   * its focus trap AND Escape handling are disabled — one live trap at a
+   * time — and the subtree goes inert/aria-hidden so Tab and AT only see
+   * the top dialog. Escape therefore closes only the top dialog; closing
+   * it re-activates this one (default true).
+   */
+  active?: boolean;
   children: ReactNode;
 };
 
 /** Mounted only while open. Focus trap + Escape + focus restore come from
- *  useFocusTrap; backdrop click closes; open is announced to AT. */
-function StudioModal({ onClose, variant, labelledBy, announceText, children }: StudioModalProps) {
+ *  useFocusTrap, gated on `active`; backdrop click closes; open is announced
+ *  to AT. */
+function StudioModal({
+  onClose,
+  variant,
+  labelledBy,
+  announceText,
+  active = true,
+  children,
+}: StudioModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(true, dialogRef, { onEscape: onClose });
+  useFocusTrap(active, dialogRef, { onEscape: onClose });
   const { announce } = useAnnouncer();
   const announcedRef = useRef(false);
 
@@ -290,6 +424,8 @@ function StudioModal({ onClose, variant, labelledBy, announceText, children }: S
   return (
     <div
       className={`research-studio-modal__backdrop research-studio-modal__backdrop--${variant}`}
+      aria-hidden={active ? undefined : true}
+      inert={!active || undefined}
       onClick={onClose}
     >
       <div
@@ -311,6 +447,112 @@ function StudioModal({ onClose, variant, labelledBy, announceText, children }: S
 
 export type StudioSourceOption = { id: string; title: string };
 
+export function GenerationReviewModal({
+  generation,
+  onRender,
+  rendering,
+  error,
+  onClose,
+}: {
+  generation: ResearchGeneration;
+  onRender: () => void;
+  rendering: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const content = generation.content;
+  return (
+    <StudioModal
+      onClose={onClose}
+      variant="config"
+      labelledBy="research-studio-review-title"
+      announceText={`${studioMetaForKind(generation.kind).label} draft ready for review`}
+    >
+      <header className="research-studio-modal__head" data-kind={generation.kind}>
+        <span className="research-studio-modal__tile" aria-hidden>{studioMetaForKind(generation.kind).glyph}</span>
+        <div className="research-studio-modal__head-text">
+          <span className="research-studio__kicker">Studio · review draft</span>
+          <h4 id="research-studio-review-title">Review before rendering</h4>
+        </div>
+        <button type="button" className="research-studio-modal__close" onClick={onClose} aria-label="Close dialog">✕</button>
+      </header>
+      <div className="research-studio-modal__body">
+        <p className="research-studio-config__note">
+          This is the exact extractive source the renderer will use. Nothing is rendered until you choose Render.
+        </p>
+        {generation.renderConfig ? (
+          <dl className="research-studio-review__config">
+            <div>
+              <dt>Provider</dt>
+              <dd>
+                {generation.renderConfig.provider === "local"
+                  ? "Local"
+                  : "ElevenLabs"}
+              </dd>
+            </div>
+            <div>
+              <dt>Voice</dt>
+              <dd>{generation.renderConfig.voice}</dd>
+            </div>
+            {generation.renderConfig.voices ? (
+              <>
+                <div>
+                  <dt>Host voice</dt>
+                  <dd>{generation.renderConfig.voices.host}</dd>
+                </div>
+                <div>
+                  <dt>Guest voice</dt>
+                  <dd>{generation.renderConfig.voices.guest}</dd>
+                </div>
+              </>
+            ) : null}
+            {generation.renderConfig.style ? (
+              <div>
+                <dt>Style</dt>
+                <dd>{generation.renderConfig.style}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>Length</dt>
+              <dd>{generation.renderConfig.length}</dd>
+            </div>
+          </dl>
+        ) : null}
+        {content?.kind === "podcast" ? (
+          <PodcastTranscript
+            script={content.script}
+            voices={generation.renderConfig?.voices}
+            voice={generation.renderConfig?.voice}
+            density="compact"
+          />
+        ) : content?.kind === "short-video" ? (
+          <ol className="research-studio-review__list">
+            {content.storyboard.map((scene) => (
+              <li key={scene.id}><strong>{scene.title}</strong><span>{scene.narration}</span></li>
+            ))}
+          </ol>
+        ) : content?.kind === "long-video" ? (
+          <ol className="research-studio-review__list">
+            {content.chapters.map((chapter) => (
+              <li key={chapter.id}>
+                <strong>{chapter.title}</strong>
+                <span>{chapter.scenes.map((scene) => scene.narration).join(" ")}</span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+        {error ? <p role="alert" className="research-studio-config__error">{error}</p> : null}
+      </div>
+      <footer className="research-studio-modal__footer">
+        <button type="button" className="research-studio-act research-studio-act--ghost" onClick={onClose}>Keep draft</button>
+        <button type="button" className="research-studio-act research-studio-act--primary" onClick={onRender} disabled={rendering}>
+          {rendering ? "Queueing…" : "Render media"}
+        </button>
+      </footer>
+    </StudioModal>
+  );
+}
+
 export function GenerationConfigModal({
   kind,
   sources,
@@ -318,25 +560,91 @@ export function GenerationConfigModal({
   onSelectSource,
   directions,
   onDirectionsChange,
+  readiness,
+  mediaProvider,
+  onMediaProviderChange,
+  mediaVoice,
+  onMediaVoiceChange,
+  mediaGuestVoice,
+  onMediaGuestVoiceChange,
+  mediaStyle,
+  onMediaStyleChange,
+  mediaLength,
+  onMediaLengthChange,
   error,
   creating,
   onSubmit,
   onClose,
 }: {
-  kind: ResearchGenerationKind;
+  kind: ResearchGenerationCreatableKind;
   sources: StudioSourceOption[];
   selectedSourceId: string | null;
   onSelectSource: (id: string) => void;
   directions: string;
   onDirectionsChange: (value: string) => void;
+  readiness: ResearchGenerationReadiness | null;
+  mediaProvider: ResearchMediaProvider;
+  onMediaProviderChange: (provider: ResearchMediaProvider) => void;
+  mediaVoice: string;
+  onMediaVoiceChange: (voice: string) => void;
+  /** Podcast-only guest voice; empty string means one voice for both speakers. */
+  mediaGuestVoice: string;
+  onMediaGuestVoiceChange: (voice: string) => void;
+  /** Podcast-only drafting style; ignored for video kinds. */
+  mediaStyle: ResearchPodcastStyle;
+  onMediaStyleChange: (style: ResearchPodcastStyle) => void;
+  mediaLength: ResearchMediaLength;
+  onMediaLengthChange: (length: ResearchMediaLength) => void;
   /** Server-side create failure — e.g. the 409 "no markdown artifact" message. */
   error: string | null;
   creating: boolean;
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  const meta = STUDIO_KIND_META[kind];
+  const meta = studioMetaForKind(kind);
+  const isMedia = !isResearchGenerationKind(kind);
   const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH - 200;
+  const mediaConfigurationError = (() => {
+    if (!isMedia) return null;
+    if (!readiness) return "Media readiness is still loading.";
+    if (mediaProvider === "local") {
+      if (!readiness.providers.local.ready) {
+        return (
+          readiness.providers.local.hint ??
+          "Local voice rendering is not ready."
+        );
+      }
+      if (
+        !readiness.providers.local.voices.some(
+          (voice) => voice.id === mediaVoice,
+        )
+      ) {
+        return "Choose a ready local voice.";
+      }
+      if (
+        kind === "podcast" &&
+        mediaStyle !== "recap" &&
+        mediaGuestVoice &&
+        !readiness.providers.local.voices.some(
+          (voice) => voice.id === mediaGuestVoice,
+        )
+      ) {
+        return "Choose a ready local voice for the guest.";
+      }
+    } else {
+      if (!readiness.providers.elevenlabs.ready) {
+        return (
+          readiness.providers.elevenlabs.hint ??
+          "ElevenLabs voice rendering is not ready."
+        );
+      }
+      if (!mediaVoice.trim()) return "Enter an ElevenLabs voice ID.";
+    }
+    if (kind === "short-video" && mediaLength === "extended") {
+      return "Short video length must be brief or standard.";
+    }
+    return null;
+  })();
 
   return (
     <StudioModal
@@ -364,26 +672,27 @@ export function GenerationConfigModal({
       </header>
       <div className="research-studio-modal__body">
         <div className="research-studio-config__sources">
-          <span className="research-studio-config__label" id="research-studio-config-source-label">
-            Source
-          </span>
-          <div
-            className="research-studio__chips"
-            role="group"
-            aria-labelledby="research-studio-config-source-label"
+          <label
+            className="research-studio-config__label"
+            htmlFor="research-studio-config-source"
+          >
+            Research run
+          </label>
+          <select
+            id="research-studio-config-source"
+            className="research-studio__select"
+            value={selectedSourceId ?? ""}
+            onChange={(event) => onSelectSource(event.target.value)}
           >
             {sources.map((source) => (
-              <button
-                key={source.id}
-                type="button"
-                className="research-studio__chip"
-                aria-pressed={source.id === selectedSourceId}
-                onClick={() => onSelectSource(source.id)}
-              >
+              <option key={source.id} value={source.id}>
                 {source.title}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
+          <span className="research-studio-config__hint">
+          The draft extracts from this run&rsquo;s newest markdown artifact.
+          </span>
         </div>
         <div className="research-studio-config__field">
           <label className="research-studio-config__label" htmlFor="research-studio-directions">
@@ -403,9 +712,268 @@ export function GenerationConfigModal({
             </span>
           ) : null}
         </div>
+        {isMedia ? (
+          <div className="research-studio-config__media">
+            <div className="research-studio-config__field">
+              <label
+                className="research-studio-config__label"
+                htmlFor="research-studio-config-provider"
+              >
+                Voice provider
+              </label>
+              <select
+                id="research-studio-config-provider"
+                className="research-studio__select focus-ring"
+                value={mediaProvider}
+                aria-describedby="research-studio-config-provider-help"
+                aria-invalid={mediaConfigurationError ? true : undefined}
+                aria-errormessage={
+                  mediaConfigurationError
+                    ? "research-studio-config-media-error"
+                    : undefined
+                }
+                onChange={(event) => {
+                  const provider = event.target.value as ResearchMediaProvider;
+                  onMediaProviderChange(provider);
+                  onMediaVoiceChange(
+                    provider === "local"
+                      ? (readiness?.providers.local.voices[0]?.id ?? "")
+                      : (readiness?.providers.elevenlabs.defaultVoiceId ?? ""),
+                  );
+                }}
+              >
+                {readiness?.providers.local.ready ? (
+                  <option value="local">Local</option>
+                ) : null}
+                {readiness?.providers.elevenlabs.ready ? (
+                  <option value="elevenlabs">ElevenLabs</option>
+                ) : null}
+              </select>
+              <span
+                id="research-studio-config-provider-help"
+                className="research-studio-config__hint"
+              >
+                Uses only providers verified by current readiness checks.
+              </span>
+            </div>
+
+            {mediaProvider === "local" ? (
+              <div className="research-studio-config__field">
+                <label
+                  className="research-studio-config__label"
+                  htmlFor="research-studio-config-local-voice"
+                >
+                  Local voice
+                </label>
+                <select
+                  id="research-studio-config-local-voice"
+                  className="research-studio__select focus-ring"
+                  value={mediaVoice}
+                  aria-describedby="research-studio-config-voice-help"
+                  aria-invalid={mediaConfigurationError ? true : undefined}
+                  aria-errormessage={
+                    mediaConfigurationError
+                      ? "research-studio-config-media-error"
+                      : undefined
+                  }
+                  onChange={(event) => onMediaVoiceChange(event.target.value)}
+                >
+                  {readiness?.providers.local.voices.map((voice) => (
+                    <option key={voice.id} value={voice.id}>
+                      {voice.name} · {voice.engine}
+                    </option>
+                  ))}
+                </select>
+                <span
+                  id="research-studio-config-voice-help"
+                  className="research-studio-config__hint"
+                >
+                  Ready voices installed on this machine.
+                </span>
+              </div>
+            ) : (
+              <div className="research-studio-config__field">
+                <label
+                  className="research-studio-config__label"
+                  htmlFor="research-studio-config-elevenlabs-voice"
+                >
+                  ElevenLabs voice ID
+                </label>
+                <input
+                  id="research-studio-config-elevenlabs-voice"
+                  className="research-studio-config__input focus-ring"
+                  value={mediaVoice}
+                  placeholder={
+                    readiness?.providers.elevenlabs.defaultVoiceId ?? ""
+                  }
+                  aria-describedby="research-studio-config-voice-help"
+                  aria-invalid={mediaConfigurationError ? true : undefined}
+                  aria-errormessage={
+                    mediaConfigurationError
+                      ? "research-studio-config-media-error"
+                      : undefined
+                  }
+                  onChange={(event) => onMediaVoiceChange(event.target.value)}
+                />
+                <span
+                  id="research-studio-config-voice-help"
+                  className="research-studio-config__hint"
+                >
+                  The exact voice ID is frozen on this draft.
+                </span>
+              </div>
+            )}
+
+            {kind === "podcast" ? (
+              <div className="research-studio-config__field">
+                <label
+                  className="research-studio-config__label"
+                  htmlFor="research-studio-config-style"
+                >
+                  Style
+                </label>
+                <select
+                  id="research-studio-config-style"
+                  className="research-studio__select focus-ring"
+                  value={mediaStyle}
+                  aria-describedby="research-studio-config-style-help"
+                  onChange={(event) =>
+                    onMediaStyleChange(event.target.value as ResearchPodcastStyle)
+                  }
+                >
+                  <option value="breakdown">Breakdown</option>
+                  <option value="debate">Debate</option>
+                  <option value="interview">Interview</option>
+                  <option value="recap">Recap</option>
+                </select>
+                <span
+                  id="research-studio-config-style-help"
+                  className="research-studio-config__hint"
+                >
+                  {mediaStyle === "breakdown"
+                    ? "A host and guest walk the findings section by section."
+                    : mediaStyle === "debate"
+                      ? "Contested findings lead; the host pushes, the guest defends."
+                      : mediaStyle === "interview"
+                        ? "The host asks; the guest answers with the findings."
+                        : "One narrator reads the findings straight through."}
+                </span>
+              </div>
+            ) : null}
+
+            {kind === "podcast" && mediaStyle !== "recap" ? (
+              <div className="research-studio-config__field">
+                <label
+                  className="research-studio-config__label"
+                  htmlFor="research-studio-config-guest-voice"
+                >
+                  Guest voice (optional)
+                </label>
+                {mediaProvider === "local" ? (
+                  <select
+                    id="research-studio-config-guest-voice"
+                    className="research-studio__select focus-ring"
+                    value={mediaGuestVoice}
+                    aria-describedby="research-studio-config-guest-voice-help"
+                    aria-invalid={mediaConfigurationError ? true : undefined}
+                    aria-errormessage={
+                      mediaConfigurationError
+                        ? "research-studio-config-media-error"
+                        : undefined
+                    }
+                    onChange={(event) =>
+                      onMediaGuestVoiceChange(event.target.value)
+                    }
+                  >
+                    <option value="">Same as host voice</option>
+                    {readiness?.providers.local.voices.map((voice) => (
+                      <option key={voice.id} value={voice.id}>
+                        {voice.name} · {voice.engine}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="research-studio-config-guest-voice"
+                    className="research-studio-config__input focus-ring"
+                    value={mediaGuestVoice}
+                    placeholder="Same as host voice"
+                    aria-describedby="research-studio-config-guest-voice-help"
+                    aria-invalid={mediaConfigurationError ? true : undefined}
+                    aria-errormessage={
+                      mediaConfigurationError
+                        ? "research-studio-config-media-error"
+                        : undefined
+                    }
+                    onChange={(event) =>
+                      onMediaGuestVoiceChange(event.target.value)
+                    }
+                  />
+                )}
+                <span
+                  id="research-studio-config-guest-voice-help"
+                  className="research-studio-config__hint"
+                >
+                  A second voice makes the podcast a host/guest dialogue.
+                </span>
+              </div>
+            ) : null}
+
+            <div className="research-studio-config__field">
+              <label
+                className="research-studio-config__label"
+                htmlFor="research-studio-config-length"
+              >
+                Length
+              </label>
+              <select
+                id="research-studio-config-length"
+                className="research-studio__select focus-ring"
+                value={mediaLength}
+                aria-describedby="research-studio-config-length-help"
+                aria-invalid={mediaConfigurationError ? true : undefined}
+                aria-errormessage={
+                  mediaConfigurationError
+                    ? "research-studio-config-media-error"
+                    : undefined
+                }
+                onChange={(event) =>
+                  onMediaLengthChange(event.target.value as ResearchMediaLength)
+                }
+              >
+                <option value="brief">Brief</option>
+                <option value="standard">Standard</option>
+                {kind !== "short-video" ? (
+                  <option value="extended">Extended</option>
+                ) : null}
+              </select>
+              <span
+                id="research-studio-config-length-help"
+                className="research-studio-config__hint"
+              >
+                {kind === "podcast"
+                  ? "About 3, 8, or 15 minutes."
+                  : kind === "short-video"
+                    ? "Up to 30 or 60 seconds."
+                    : "Up to 5, 10, or 20 minutes."}
+              </span>
+            </div>
+
+            {mediaConfigurationError ? (
+              <p
+                id="research-studio-config-media-error"
+                role="alert"
+                className="research-studio-config__error"
+              >
+                {mediaConfigurationError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <p className="research-studio-config__note">
-          Content is drafted extractively from the run&rsquo;s artifact. Directions are stored
-          for future pipelines and do not alter the draft.
+          {isMedia
+            ? "A source script or storyboard is drafted from the artifact before media rendering."
+            : "Content is drafted extractively from the run’s artifact. Directions are stored for future pipelines and do not alter the draft."}
         </p>
         {error ? (
           <p role="alert" className="research-studio-config__error">
@@ -421,9 +989,13 @@ export function GenerationConfigModal({
           type="button"
           className="research-studio-act research-studio-act--primary"
           onClick={onSubmit}
-          disabled={creating || selectedSourceId === null}
+          disabled={
+            creating ||
+            selectedSourceId === null ||
+            mediaConfigurationError !== null
+          }
         >
-          {creating ? "Drafting…" : `✦ Generate ${meta.label}`}
+          {creating ? "Drafting…" : `✦ ${isMedia ? "Draft for review" : "Generate"} ${meta.label}`}
         </button>
       </footer>
     </StudioModal>
@@ -537,26 +1109,40 @@ export function GenerationViewerModal({
   generation,
   onClose,
   onOpenEditor,
+  active = true,
 }: {
   generation: ResearchGeneration;
   onClose: () => void;
   /** Blog only: open the markdown editor over the viewer. */
   onOpenEditor?: () => void;
+  /** False while the markdown editor is stacked on top — parks this dialog's
+   *  focus trap and Escape handling so only the editor responds. */
+  active?: boolean;
 }) {
-  const meta = STUDIO_KIND_META[generation.kind];
+  const meta = studioMetaForKind(generation.kind);
   const content = generation.content;
   const title = generationTitle(generation);
   const { flash, copy } = useCopyFlash();
 
   const points =
     content?.kind === "thread"
-      ? { label: "Thread", rows: content.posts.map((post) => ({ pre: post.pre, text: post.text })) }
+      ? {
+          label: "Thread",
+          rows: content.posts.map((post) => ({
+            pre: post.pre,
+            text: post.text,
+            // Post length against the social budget — honest posting aid, and
+            // the count is real data, not decoration.
+            note: `${post.text.length}/${RESEARCH_THREAD_POST_MAX_CHARS}`,
+          })),
+        }
       : content?.kind === "infographic"
         ? {
             label: "Stat sheet",
             rows: content.stats.map((stat) => ({
               pre: stat.value,
               text: stat.context,
+              note: null,
             })),
           }
         : null;
@@ -565,11 +1151,17 @@ export function GenerationViewerModal({
     content?.kind === "diagram" ? content.mermaid : generationContentToMarkdown(generation);
   const footerCopyLabel =
     content?.kind === "diagram" ? "Copy Mermaid" : content?.kind === "thread" ? "Copy thread" : "Copy";
+  const mediaUrl = `/api/research/generations/media?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`;
+  const infographicUrl =
+    content?.kind === "infographic" && content.stats.length > 0
+      ? `/api/research/generations/infographic?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`
+      : null;
 
   return (
     <StudioModal
       onClose={onClose}
       variant="viewer"
+      active={active}
       labelledBy="research-studio-viewer-title"
       announceText={`${meta.label} viewer opened: ${title}`}
     >
@@ -608,9 +1200,13 @@ export function GenerationViewerModal({
         {content?.kind === "slides" ? <SlidesViewer generation={generation} /> : null}
 
         {content?.kind === "diagram" ? (
-          <div className="research-studio-viewer__code-wrap">
-            <span className="research-studio-viewer__label">Mermaid source</span>
-            <pre className="research-studio__code">{content.mermaid}</pre>
+          <div className="research-studio-viewer__diagram">
+            <span className="research-studio-viewer__label">Diagram</span>
+            <StudioMermaidDiagram mermaid={content.mermaid} />
+            <details className="research-studio-viewer__code-details">
+              <summary>Mermaid source</summary>
+              <pre className="research-studio__code">{content.mermaid}</pre>
+            </details>
           </div>
         ) : null}
 
@@ -634,6 +1230,63 @@ export function GenerationViewerModal({
           </>
         ) : null}
 
+        {content?.kind === "podcast" && content.audio ? (
+          <div className="research-studio-viewer__media">
+            <span className="research-studio-viewer__label">Podcast audio</span>
+            <audio
+              className="research-studio-viewer__audio"
+              controls
+              preload="metadata"
+              src={mediaUrl}
+            >
+              Your browser cannot play this audio file.
+            </audio>
+          </div>
+        ) : null}
+
+        {/* The script rides under the player so the episode can be read along
+            with — or instead of — the audio, which is the only way a dialogue
+            is scannable. */}
+        {content?.kind === "podcast" ? (
+          <div className="research-studio-viewer__points">
+            <span className="research-studio-viewer__label">Transcript</span>
+            <PodcastTranscript
+              script={content.script}
+              voices={generation.renderConfig?.voices}
+              voice={generation.renderConfig?.voice}
+            />
+          </div>
+        ) : null}
+
+        {(content?.kind === "short-video" || content?.kind === "long-video") && content.video ? (
+          <div className="research-studio-viewer__media">
+            <span className="research-studio-viewer__label">Video preview</span>
+            <video
+              className="research-studio-viewer__video"
+              controls
+              preload="metadata"
+              src={mediaUrl}
+            >
+              Your browser cannot play this video file.
+            </video>
+          </div>
+        ) : null}
+
+        {infographicUrl ? (
+          <div className="research-studio-viewer__media">
+            <span className="research-studio-viewer__label">Infographic preview</span>
+            {/* SVG format keeps the preview crisp at any zoom; the PNG export
+                below rasterizes the same server-rendered poster. AuthedImage
+                fetches through the patched window.fetch so the packaged app's
+                /api auth gate doesn't 401 the native image load. */}
+            <AuthedImage
+              className="research-studio-viewer__infographic"
+              src={`${infographicUrl}&format=svg`}
+              alt={`Infographic poster with ${content?.kind === "infographic" ? content.stats.length : 0} extracted stats from ${generation.sourceTitle}`}
+            />
+          </div>
+        ) : null}
+
         {points ? (
           <div className="research-studio-viewer__points">
             <span className="research-studio-viewer__label">{points.label}</span>
@@ -641,7 +1294,12 @@ export function GenerationViewerModal({
               {points.rows.map((row, rowIndex) => (
                 <li key={rowIndex} className="research-studio-viewer__point">
                   <span className="research-studio-viewer__point-pre">{row.pre}</span>
-                  <span className="research-studio-viewer__point-text">{row.text}</span>
+                  <span className="research-studio-viewer__point-text">
+                    {row.text}
+                    {row.note ? (
+                      <span className="research-studio-viewer__point-note">{row.note}</span>
+                    ) : null}
+                  </span>
                   <button
                     type="button"
                     className="research-studio-act research-studio-act--tiny"
@@ -680,6 +1338,44 @@ export function GenerationViewerModal({
           >
             ⤓ Download .md
           </button>
+        ) : null}
+        {(content?.kind === "podcast" && content.audio) ||
+        ((content?.kind === "short-video" || content?.kind === "long-video") && content.video) ? (
+          <a
+            className="research-studio-act"
+            href={`${mediaUrl}&download=1`}
+            download
+          >
+            ⤓ Download media
+          </a>
+        ) : null}
+        {infographicUrl ? (
+          <>
+            <button
+              type="button"
+              className="research-studio-act"
+              onClick={() =>
+                void downloadGenerationArtifact(
+                  infographicUrl,
+                  `infographic-${slugify(generation.sourceTitle) || generation.id}.png`,
+                )
+              }
+            >
+              ⤓ Download .png
+            </button>
+            <button
+              type="button"
+              className="research-studio-act"
+              onClick={() =>
+                void downloadGenerationArtifact(
+                  `${infographicUrl}&format=svg`,
+                  `infographic-${slugify(generation.sourceTitle) || generation.id}.svg`,
+                )
+              }
+            >
+              ⤓ Download .svg
+            </button>
+          </>
         ) : null}
         <button
           type="button"

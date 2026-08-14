@@ -56,6 +56,16 @@ assert.match(
   /async function chatBridgeFailureMessage\(res: Response\): Promise<string>/,
   "ChatView should read non-OK chat bridge response bodies before reporting send failures",
 );
+assert.match(
+  source,
+  /const json = JSON\.parse\(raw\) as \{ error\?: unknown; message\?: unknown; code\?: unknown \}/,
+  "ChatView should retain stable server error codes while parsing failed chat launches",
+);
+assert.match(
+  source,
+  /typeof json\.code === "string"[\s\S]*?`\$\{json\.code\}: \$\{detail\}`/,
+  "ChatView should include a stable launch code in the failure text used by recovery routing",
+);
 
 assert.match(
   source,
@@ -177,16 +187,13 @@ assert.doesNotMatch(
   "ChatView should allow OpenClaw familiars through native chat send",
 );
 
-// REGRESSION (2026-07-01): a no-project chat boots the harness in the
-// familiar's own workspace and the daemon records that dir as the session's
-// project_root. Echoing the recorded cwd back to /api/chat/send as an
-// explicit projectRoot made the server fail closed on the next turn
-// ("unregistered project" → 403 project access denied). The send body must
-// only assert a root that maps to a registered project or an explicit pick.
+// Every outgoing root is now gated by a freshly loaded project carrying this
+// familiar's effective access. Historical unregistered cwd sessions remain
+// readable, but never ride a next-turn request until repaired.
 assert.match(
   source,
-  /const requestProjectRoot =[\s\S]{0,200}activeProjectRoot === session\?\.project_root &&[\s\S]{0,120}!projectIdForRoot\(activeProjectRoot, projects\)/,
-  "ChatView should drop a session-echoed cwd that maps to no registered project before sending",
+  /const requestProjectRoot = projectLaunchReady \? activeProjectRoot : ""/,
+  "ChatView should only submit the root of a current accessible project",
 );
 
 assert.match(
@@ -201,6 +208,14 @@ assert.doesNotMatch(
   "ChatView must not echo the raw activeProjectRoot (session cwd) as the send request's explicit projectRoot",
 );
 
+// A worktree executes from its checkout while the registered parent project
+// supplies the authorization and visible access level.
+assert.match(
+  source,
+  /const activeProjectRoot =\s*projectSelection\.unregisteredRoot \?\?\s*selectedProject\?\.root/,
+  "ChatView should keep an authorized worktree hand-off as the active root",
+);
+
 // ── #2618: a failed chat send keeps the user in-chat with the message preserved,
 // and the coven-CLI-missing case offers a soft "Open Setup" link (overlay, not a
 // hard navigation to the wizard). ──────────────────────────────────────────────
@@ -211,8 +226,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const covenMissing = useMemo\(\s*\(\) => \/Coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
-  "the error strip detects the coven-CLI-missing failure class",
+  /const runtimeMissing = useMemo\([\s\S]{0,500}?code === "runtime_missing"[\s\S]{0,500}?Coven CLI \(\?:not found on PATH\|was found as a Windows launcher shim\|is installed as a Windows command shim\)[\s\S]{0,500}?Windows PowerShell was not found at its system location, so Coven CLI cannot be launched[\s\S]{0,500}?code === "ENOENT"/,
+  "the error strip offers Setup for missing and known-unlaunchable Coven launchers",
 );
 assert.match(
   source,
@@ -224,3 +239,93 @@ assert.doesNotMatch(
   /router\.(push|replace)\([`"'][^`"']*onboard/i,
   "a send failure must never hard-navigate the router to onboarding",
 );
+
+// ── cave-yjnr: a 400 project_root_required (analytics-opened thread with no
+// root anywhere) must not dead-end at jargon + a Retry that can never work.
+// The strip swaps in plain copy and an inline project picker that adopts the
+// chosen project and re-sends the failed message explicitly rooted there. ────
+assert.match(
+  source,
+  /\(res\.status === 400 \|\| res\.status === 403\)[\s\S]{0,180}project_root_required\|project_not_registered\|project_access_denied\|projectRoot is required[\s\S]{0,180}setProjectRootRequired\(true\)/,
+  "repairable project launch rejections flip the inline-resolve state instead of surfacing server jargon",
+);
+assert.match(
+  source,
+  /project_root_required\|project_not_registered\|project_access_denied\|projectRoot is required/,
+  "every repairable project launch rejection routes to the accessible-project picker",
+);
+assert.match(
+  source,
+  /function handlePickProjectFix\(projectId: string\) \{[\s\S]*?setProjectIdDraft\(projectId\);[\s\S]*?void sendRaw\(\s*failed\.text,[\s\S]*?projectRoot: project\.root,[\s\S]*?\n  \}/,
+  "picking a project from the strip adopts it as the chat's selection and retries the failed send rooted there",
+);
+assert.match(
+  source,
+  /onPickProject=\{projectRootRequired \? handlePickProjectFix : undefined\}/,
+  "the inline project picker only renders for the projectRoot-required failure class",
+);
+assert.match(
+  source,
+  /projectRootRequired && projects\.length === 0\s*\? overflowAddProject\.beginAddProject/,
+  "with zero registered projects the strip offers the shared register-a-folder flow instead of a dead select",
+);
+
+// ── In-place project setup for ad-hoc chat homes (spec 2026-07-24) ──────────
+// Eligibility comes from the pure helper on the RESOLVED selection — so
+// registered projects, familiar workspaces (no unregisteredRoot), and
+// project worktrees never see the offer.
+assert.match(
+  source,
+  /projectSetupCandidateRoot\(projectSelection, projects\)/,
+  "the setup offer derives from the resolved selection via the pure helper",
+);
+// Banner dismissal persists per normalized root, so one folder never re-nags.
+assert.match(
+  source,
+  /projectSetupDismissKey\(setupCandidateRoot\)/,
+  "banner dismissal keys on the shared per-root helper",
+);
+assert.match(
+  source,
+  /Set up as project…/,
+  "the banner offers setup in one click",
+);
+// Success rescopes the chat to the new project — same contract as the shared
+// add flow (draft set + registry reload).
+assert.match(
+  source,
+  /<ProjectSetupModal[\s\S]*?onCreated=\{\(newProjectId\) => \{\s*setProjectIdDraft\(newProjectId\);\s*reloadProjects\(\);/,
+  "a created project becomes the chat's next-send selection",
+);
+// Both picker hosts (composer chips + session kebab) surface the register row.
+assert.match(
+  source,
+  /<ComposerContextChips[\s\S]*?registerCurrentRoot=\{setupCandidateRoot \?\? undefined\}/,
+  "composer chips carry the register-current-folder affordance",
+);
+assert.match(
+  source,
+  /<SessionOverflowMenu(?:(?!\/>)[\s\S])*?registerCurrentRoot=\{setupCandidateRoot \?\? undefined\}/,
+  "the session kebab picker carries it too",
+);
+assert.match(
+  source,
+  /<ProjectSetupModal[\s\S]*?createProject=\{createProjectOrThrow\}/,
+  "the setup modal gets the throwing create variant for real error messages",
+);
+assert.match(
+  source,
+  /const overflowAddProject = useAddProjectFlow\(\{[\s\S]*?createProject,[\s\S]*?createProjectOrThrow,/,
+  "the chat overflow add flow preserves local-only creation guidance",
+);
+assert.match(
+  source,
+  /<ComposerContextChips[\s\S]*?createProject=\{createProject\}[\s\S]*?createProjectOrThrow=\{createProjectOrThrow\}/,
+  "the primary chat composer picker receives the throwing creator",
+);
+assert.match(
+  source,
+  /<ChatEmptyState[\s\S]*?createProject=\{createProject\}[\s\S]*?createProjectOrThrow=\{createProjectOrThrow\}/,
+  "the chat empty-state picker receives the throwing creator",
+);
+assert.match(source, /\{overflowAddProject\.addError \? \(/, "the chat overflow picker renders add-project failures");

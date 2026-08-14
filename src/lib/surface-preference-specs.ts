@@ -34,6 +34,24 @@ function githubSelectionSpec(key: string): SurfacePreferenceSpec<GitHubSelection
   };
 }
 
+export type CodeRailFileSelection = { root: string; path: string };
+
+function codeRailFileSelectionSpec(key: string): SurfacePreferenceSpec<CodeRailFileSelection | null> {
+  return {
+    key,
+    defaultValue: null,
+    parse: (value) => {
+      if (value === null) return null;
+      if (!value || typeof value !== "object") return undefined;
+      const candidate = value as Partial<CodeRailFileSelection>;
+      return typeof candidate.root === "string" && candidate.root.length > 0 &&
+        typeof candidate.path === "string" && candidate.path.length > 0
+        ? { root: candidate.root, path: candidate.path }
+        : undefined;
+    },
+  };
+}
+
 export const surfacePreferenceSpecs = {
   github: {
     filter: enumSpec("github.filter", "all", ["all", "pr", "review_request", "issue"] as const),
@@ -77,7 +95,14 @@ export const surfacePreferenceSpecs = {
     section: enumSpec("marketplace.section", "browse", ["browse", "crafts", "skills", "build"] as const),
     category: stringSpec("marketplace.category", "All"),
     kind: enumSpec("marketplace.kind", "all", ["all", "mcp", "api", "skill", "prompt", "craft", "knowledge-pack"] as const),
+    // Yours setup filter. "installed" remains parseable for stored migration.
+    status: enumSpec("marketplace.status", "all", ["all", "installed", "needs-setup"] as const),
+    // Retired discovery value retained so older preferences parse safely.
+    topic: stringSpec("marketplace.topic", "all"),
     sort: enumSpec("marketplace.sort", "recommended", ["recommended", "name", "installed"] as const),
+    // Card layout toggle for the Explore grid.
+    view: enumSpec("marketplace.view", "grid", ["grid", "rows"] as const),
+    // Retired discovery value retained so older preferences parse safely.
     collection: nullableStringSpec("marketplace.collection"),
   },
   grimoire: {
@@ -87,5 +112,11 @@ export const surfacePreferenceSpecs = {
   browser: {
     activeTabId: stringSpec("browser.activeTabId", "home"),
     address: stringSpec("browser.address", ""),
+  },
+  codeRail: {
+    // The code rail unmounts between edit batches (use-code-rail dismissal),
+    // so the open file must outlive the component to survive a reopen or a
+    // fullscreen expansion. Root-scoped: restored only for the same project.
+    selectedFile: codeRailFileSelectionSpec("codeRail.selectedFile"),
   },
 } as const;

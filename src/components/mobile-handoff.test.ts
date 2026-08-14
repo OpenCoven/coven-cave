@@ -5,11 +5,22 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modal = await readFile(new URL("./mobile-handoff-modal.tsx", import.meta.url), "utf8");
-const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const settingsShell = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const settingsPhone = await readFile(new URL("./settings-phone.tsx", import.meta.url), "utf8");
+const settings = `${settingsShell}\n${settingsPhone}`;
+const stepsList = await readFile(new URL("./pairing-steps-list.tsx", import.meta.url), "utf8");
 const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+const tailscaleFailure = await readFile(new URL("../lib/tailscale-failure.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
-const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const desktopChromeCss = await readFile(
+  new URL("../styles/globals/desktop-chrome.css", import.meta.url),
+  "utf8",
+);
+const shellResponsiveCss = await readFile(
+  new URL("../styles/globals/shell-responsive.css", import.meta.url),
+  "utf8",
+);
 const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
 const tauriConfig = await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8");
 const tauriLib = await readFile(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
@@ -79,8 +90,37 @@ assert.match(modal, /Copy host/, "Modal should make the stable native app host c
 assert.match(modal, /action: "app-start"/, "Modal should refresh native app mode without requiring an invite");
 assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should prefer inviteUrl while supporting url fallback");
 assert.match(modal, /mobile-handoff__link[\s\S]*href=\{handoff\.inviteUrl \|\| handoff\.url\}/, "Modal should display the invite link as a clickable link");
-assert.match(css, /\.mobile-handoff__link/, "Invite link should have stable styling");
+assert.match(desktopChromeCss, /\.mobile-handoff__link/, "Invite link should have stable styling");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
+
+// ── Handoff modal renders the ladder too (pairing overhaul W6) ───────────────
+// The route already reported PairingStep[] on success and failure; the modal
+// used to discard it and show one opaque string.
+assert.match(modal, /steps\?: PairingStep\[\]/, "modal payload types carry the route's pairing ladder");
+assert.match(modal, /errorSteps \? \(/, "a failed handoff renders the ladder — which rung broke — not just an error string");
+assert.match(modal, /<PairingStepsList steps=\{errorSteps\}/, "the failure ladder uses the shared renderer");
+assert.match(modal, /<PairingStepsList steps=\{displaySteps\}/, "the success body shows the compact ladder with the live phone rung");
+assert.match(
+  modal,
+  /step\.id === "phone" \? \{ \.\.\.step, state: "ok" as const, detail: undefined \} : step/,
+  "the polled paired signal flips the phone rung to done without refetching the whole handoff",
+);
+assert.match(modal, /action: "status"/, "the phone-seen poll uses the cheap status action, not the Tailscale-spawning handoff");
+assert.match(
+  modal,
+  /usePausablePoll\(\(\) => void pollPhoneSeen\(\), 5000, \{ enabled: open && phoneRungPending \}\)/,
+  "the poll runs only while the modal is open and the phone rung is still pending, pausing in hidden tabs",
+);
+assert.match(
+  modal,
+  /Don’t type your Mac’s 127\.0\.0\.1 or Wi‑Fi LAN address/,
+  "the host card warns against typing loopback/LAN addresses into the phone (aligns with the iOS-side advice)",
+);
+assert.match(
+  handoffRoute,
+  /action === "status"[\s\S]{0,200}readMobileLastSeen\(\)/,
+  "the route exposes a cheap paired-signal read that never spawns tailscale",
+);
 // cave-i74f: the invite may carry a #chat-<id> fragment (Continue on phone),
 // so the canonical field is the fragment-aware inviteUrl.
 assert.match(handoffRoute, /const inviteUrl = withChatFragment\(invite\.url, chatId\);/, "the web invite rides the chat fragment when a handoff targets a conversation");
@@ -145,19 +185,43 @@ assert.match(
   /async function ensureNativeAppServe[\s\S]*?const access = resolveMobileAccessSecret\(\);[\s\S]*?if \(!access\) \{[\s\S]*?return mobileAccessUnavailableResponse\(\)/,
   "native app mobile-mode start must resolve (or self-provision) the mobile access secret before starting Tailscale Serve",
 );
-assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
+assert.match(settingsShell, /<PhoneSection onUseAsHub=/, "Settings should render the focused Phone section");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
-assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled && !autoRetryBlocked,?\s*\}\)/, "Settings should stop automatic polling after a known prerequisite 503");
+// The poll must keep ticking through prerequisite failures — the reconciler's
+// TTL breaker rate-limits real probes, and the card self-heals once Tailscale
+// comes up (a gated poll shipped a stale "Tailscale isn't running" over a
+// live connection).
+assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/, "Settings keeps polling; the shared TTL breaker owns retry pacing");
+assert.doesNotMatch(settings, /autoRetryBlocked/, "the poll-stopping latch is gone from Settings");
+{
+  const workspaceSrc = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+  assert.match(
+    workspaceSrc,
+    /usePausablePoll\(\(\) => void reconcileMobileMode\(mobileModeEnabled\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/,
+    "Workspace keeps polling too; both consumers rely on the shared TTL breaker",
+  );
+  assert.doesNotMatch(workspaceSrc, /mobileModeAutoRetryBlocked/, "the poll-stopping latch is gone from Workspace");
+}
+{
+  const reconciler = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+  assert.match(reconciler, /RETRY_BLOCK_TTL_MS = 45_000/, "the breaker half-opens on a TTL instead of latching forever");
+  assert.match(reconciler, /now\(\) - blocked\.at < RETRY_BLOCK_TTL_MS/, "cached failures expire so the status tracks reality");
+}
 assert.match(settings, /Mobile mode/, "Settings should label the one-click native iOS route switch");
 assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Settings should not require copying a terminal command for normal mobile mode");
 
 // ── The pairing card (cave-rkiw): one scan, plain language, jargon demoted ──
-assert.match(settings, /describeMobileHandoffError/, "Settings translates handoff failures into plain language");
+assert.match(settings, /classifyTailscaleFailure/, "Settings translates handoff failures into plain language");
 assert.match(
   settings,
   /Pairing secret unavailable/,
   "the access-rung failure explains the self-provisioned pairing secret instead of quoting pnpm incantations",
+);
+assert.match(
+  settings,
+  /Tailscale Serve needs permission[\s\S]{0,300}sudo tailscale set --operator=\$USER/,
+  "Linux Serve permission failures show the one-time operator fix instead of generic restart advice",
 );
 assert.match(settings, /Technical details/, "the raw handoff error stays available behind a disclosure");
 
@@ -184,21 +248,30 @@ assert.match(
   /phoneSeenAt: lastSeenAt,\s*\}\)/,
   "the success response carries the full ladder including the phone rung",
 );
-assert.match(settings, /aria-label="Pairing checklist"/, "the Phone card renders the ladder as a labelled checklist");
+// The ladder renderer is shared between the Settings Phone card and the
+// handoff modal (src/components/pairing-steps-list.tsx) so both surfaces tell
+// the same story about which rung broke.
+assert.match(stepsList, /aria-label="Pairing checklist"/, "the shared ladder renders as a labelled checklist");
 assert.match(
-  settings,
+  stepsList,
   /PAIRING_STEP_GLYPH: Record<PairingStep\["state"\], \{ icon: IconName; className: string; announce: string \}>/,
   "each checklist state pairs an icon with screen-reader text — never color alone",
 );
+assert.match(
+  settings,
+  /<PairingStepsList[\s\S]*steps=\{displaySteps\}[\s\S]*showAllDetails/,
+  "the Phone card renders the full ladder through the shared component",
+);
+assert.doesNotMatch(settings, /PAIRING_STEP_GLYPH/, "settings no longer owns a private glyph map — the shared component does");
 assert.match(
   settings,
   /mobileModeEnabled && friendly && error && !steps/,
   "the one-string friendly fallback only renders when the route couldn't report its ladder",
 );
 assert.match(
-  settings,
+  tailscaleFailure,
   /text\.includes\("signed out"\)/,
-  "the fallback vocabulary understands the signed-out failure the classifier can now surface",
+  "the shared fallback vocabulary understands signed-out failures",
 );
 assert.match(
   settings,
@@ -212,8 +285,12 @@ assert.doesNotMatch(
   /Enter the address in the app/,
   "the four-step type-the-host walkthrough is retired from the section body",
 );
-assert.match(css, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
-assert.match(css, /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/, "Phone handoff button should hide on mobile/tablet chrome");
+assert.match(desktopChromeCss, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
+assert.match(
+  shellResponsiveCss,
+  /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/,
+  "Phone handoff button should hide on mobile/tablet chrome",
+);
 assert.match(mobileStub, /Invite link or Tailscale URL/, "Mobile connection screen should label the real accepted input");
 assert.doesNotMatch(mobileStub, /opencoven:\/\/connect/, "Mobile connection screen should not accept custom-scheme app links");
 assert.doesNotMatch(mobileStub, /plugin:deep-link/, "Mobile connection screen should not consume native custom-scheme deep links");
@@ -259,24 +336,24 @@ assert.match(
 assert.doesNotMatch(tauriConfig, /"deep-link"[\s\S]*"scheme": \["opencoven"\]/, "iOS app should not register a custom app connect URL scheme");
 assert.doesNotMatch(tauriLib, /tauri_plugin_deep_link::init/, "iOS shell should not install the deep-link plugin");
 
-// Resilient handoff: when `tailscale serve --bg` fails (e.g. macOS "GUI failed
-// to start, CLIError 3"), the route must NOT hard-fail. It should fall back to
-// the MagicDNS host so the invite link + QR still generate, returning the serve
-// error as a non-fatal warning instead.
+// A failed `tailscale serve --bg` mutation (including macOS CLIError 3) never
+// promotes MagicDNS on its own. A matching route in readable Serve status is
+// independently proven by tailnetDiscoveryProof; an empty or mismatched status
+// must remain unavailable.
 assert.doesNotMatch(
   handoffRoute,
   /error: "failed to start tailscale serve"/,
-  "serve --bg failure must not short-circuit the whole handoff",
+  "route discovery remains centralized instead of treating a failed Serve mutation as a success",
 );
 assert.match(
   handoffRoute,
-  /tailnetDiscoveryProof\(\{\s*selfStatus,\s*serveStatus,\s*backendUrl: backend\s*\}\)/,
-  "route falls back through the shared Tailscale discovery proof when the serve config can't be read",
+  /tailnetDiscoveryProof\(\{[\s\S]{0,400}allowMagicDnsFallback: shouldAllowMagicDnsFallback\(\{[\s\S]{0,180}serveOk: serve\.ok,[\s\S]{0,100}statusOk: status\.ok/,
+  "MagicDNS fallback requires a successful Serve mutation and an unreadable status",
 );
 assert.match(
   handoffRoute,
-  /nativeAppDiscoveryProof\(\{\s*selfStatus,\s*serveStatus,\s*backendUrl: backend\s*\}\)/,
-  "native mobile mode should use a native-specific fallback when MagicDNS is unavailable",
+  /nativeAppDiscoveryProof\(\{[\s\S]{0,300}allowMagicDnsFallback: false/,
+  "the explicit native HTTP fallback must use its Tailscale IP instead of an unproven HTTPS hostname",
 );
 assert.match(
   handoffRoute,
@@ -303,6 +380,53 @@ assert.match(
   /handoff\.warning \?\s*\(\s*<p className="mobile-handoff__warning">\{handoff\.warning\}/,
   "modal shows the non-fatal warning while still rendering the link and QR",
 );
-assert.match(css, /\.mobile-handoff__warning/, "the non-fatal warning has stable styling");
+assert.match(desktopChromeCss, /\.mobile-handoff__warning/, "the non-fatal warning has stable styling");
 
 console.log("mobile-handoff.test.ts OK");
+
+// ─── Install-the-app QR (cave-jr4r.3, #3802) ─────────────────────────────────
+// The Phone card leads its Get-the-app group with an install QR — a phone
+// without the app can't act on the pairing code. Config-gated: the route only
+// reports a URL when a real TestFlight/App Store link is configured, so
+// nothing is ever invented.
+assert.match(
+  handoffRoute,
+  /if \(action === "install-info"\) \{[\s\S]{0,120}resolveIosInstallUrl\(\)/,
+  "the route answers install-info from the config-gated resolver",
+);
+assert.match(
+  handoffRoute,
+  /if \(!installUrl\) return NextResponse\.json\(\{ ok: true, configured: false \}\)/,
+  "an unconfigured install link reports configured:false — never an invented URL",
+);
+assert.match(settings, /action: "install-info"/, "the Phone card asks the route for the install link");
+assert.match(
+  settings,
+  /aria-label="Install code for your iPhone camera"[\s\S]{0,80}dangerouslySetInnerHTML=\{\{ __html: install\.qrSvg \}\}/,
+  "the Phone card renders the install QR when configured",
+);
+assert.match(
+  settings,
+  /\{install \? \(\s*<div[\s\S]*aria-label="Install code for your iPhone camera"/,
+  "without a configured link the optional install QR stays hidden",
+);
+assert.match(
+  settings,
+  /id=\{settingsGroupId\("Get the app"\)\}[\s\S]*Build it with Xcode[\s\S]*Setup guide/,
+  "the Get-the-app card keeps the source-build path when no install link is configured",
+);
+assert.match(
+  settings,
+  /className="settings-phone-control-grid"[\s\S]*id=\{settingsGroupId\("Pair"\)\}[\s\S]*className="settings-phone-side-stack"/,
+  "the control sheet keeps Pair beside its supporting card stack",
+);
+assert.match(
+  settings,
+  /className="settings-phone-side-stack">\s*<IosInstallCard \/>\s*<DesktopReachabilityCard \/>/,
+  "desktop reachability follows installation in the supporting stack",
+);
+assert.match(
+  settings,
+  /<\/div>\s*<\/div>\s*<MobileWriteAccessCard \/>/,
+  "Phone write access follows the two-column control sheet",
+);

@@ -1,7 +1,7 @@
 name: Release
 
-# Builds all three Cave artifacts and uploads them to the GitHub Release
-# matching the pushed tag:
+# Builds the Cave desktop artifacts, uploads them to the GitHub Release matching
+# the pushed tag, and publishes the native iOS app to TestFlight:
 #
 #   - macOS (DMG) — signed with the Soul Protocol LLC Developer ID and
 #     notarized via the App Store Connect API. The workflow refuses to
@@ -10,6 +10,8 @@ name: Release
 #   - Linux (AppImage) — unsigned.
 #   - Windows (MSI) — unsigned (users see SmartScreen on first run; we'll
 #     wire WINDOWS_CERTIFICATE secrets when we buy a code-signing cert).
+#   - iOS (IPA) — signed with Apple Distribution assets, validated and uploaded
+#     to App Store Connect, then held until Apple reports processing complete.
 #
 # Once artifacts + SHA256SUMS are attached, the `homebrew` job nudges
 # OpenCoven/homebrew-tap so `brew install --cask opencoven/tap/coven-cave`
@@ -39,6 +41,24 @@ name: Release
 #   APPLE_PASSWORD             app-specific password for APPLE_ID.
 #   APPLE_TEAM_ID              Developer Team ID.
 #
+# Additional required repository secrets for the iOS/TestFlight job:
+#   IOS_DISTRIBUTION_CERTIFICATE_BASE64
+#                                base64-encoded Apple Distribution .p12.
+#   IOS_DISTRIBUTION_CERTIFICATE_PASSWORD
+#                                password used to export the .p12.
+#   IOS_APP_PROVISIONING_PROFILE_BASE64
+#                                base64 App Store profile for ai.opencoven.cave.
+#   IOS_WIDGET_PROVISIONING_PROFILE_BASE64
+#                                base64 App Store profile for
+#                                ai.opencoven.cave.widgets.
+# Required repository variable:
+#   IOS_APP_STORE_ID             numeric App Store Connect app ID used to
+#                                resume processing instead of re-uploading the
+#                                same immutable build on a workflow retry.
+# Optional repository variable:
+#   APPLE_API_KEY_SUBJECT        set to "user" for an individual App Store
+#                                Connect key; omit for a team API key.
+#
 # The macOS leg intentionally uses scripts/release.sh instead of tauri-action
 # because it assembles + notarizes the DMG in a more reliable way for this
 # repository. Linux and Windows still ship via tauri-action on the tag-push.
@@ -62,96 +82,731 @@ on:
           - macos
           - linux
           - windows
+          - ios
+      allow_unconfigured_registries:
+        description: "EMERGENCY ONLY: skip the signed OpenCode/Grok schema-registry gates and ship with the built-in baseline parsers. Tag pushes always stay fail-closed."
+        required: false
+        default: false
+        type: boolean
+      allow_unconfigured_x_app:
+        description: "RECOVERY ONLY: ship with X integration disabled when its public client ID is unavailable. Tag pushes always stay fail-closed."
+        required: false
+        default: false
+        type: boolean
+      use_current_release_tooling:
+        description: "RECOVERY ONLY: build tag source with the audited release.sh and sidecar-bundle.sh from this workflow commit. Tag pushes always use tag tooling."
+        required: false
+        default: false
+        type: boolean
+      windows_diagnostics_only:
+        description: "RECOVERY ONLY: build and measure the selected Windows MSI without uploading artifacts or editing release metadata."
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   daemon-package:
-    name: Verify matching Coven daemon package
+    name: Verify available Coven daemon package
     runs-on: ubuntu-24.04
     steps:
+      - name: Validate Windows diagnostics mode
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_diagnostics_only }}
+        shell: bash
+        env:
+          SELECTED_PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          if [ "$SELECTED_PLATFORM" != "windows" ]; then
+            echo "::error::windows_diagnostics_only requires platform=windows"
+            exit 1
+          fi
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
 
       # Cave updates the user's local daemon through @opencoven/cli before
-      # replacing itself. Refuse to publish a Cave version until the matching
-      # daemon package exists, or the client could only reinstall an older
-      # daemon while presenting a successful desktop update.
-      - name: Require matching @opencoven/cli release
+      # replacing itself. Cave and the daemon have independent release lines:
+      # require a published package, but never compare its version to Cave's.
+      - name: Require published @opencoven/cli release
         shell: bash
-        env:
-          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          TAG="$RAW_RELEASE_TAG"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
+          if ! LATEST=$(npm view "@opencoven/cli@latest" version); then
+            echo "::error::@opencoven/cli@latest must resolve before publishing Coven Cave."
             exit 1
           fi
-          VERSION="${TAG#v}"
-          if ! PUBLISHED_JSON=$(npm view "@opencoven/cli@${VERSION}" version --json); then
-            echo "::error::Coven Cave $VERSION requires @opencoven/cli@$VERSION, but that package version is not published."
-            echo "::error::Publish the signed OpenCoven/coven v$VERSION release before retrying this Cave release."
-            exit 1
-          fi
-          PUBLISHED=$(printf '%s' "$PUBLISHED_JSON" | node -e '
-            let input = "";
-            process.stdin.on("data", chunk => input += chunk);
-            process.stdin.on("end", () => {
-              const value = JSON.parse(input);
-              process.stdout.write(Array.isArray(value) ? String(value.at(-1) ?? "") : String(value));
-            });
-          ')
-          if [ "$PUBLISHED" != "$VERSION" ]; then
-            echo "::error::Coven Cave $VERSION requires @opencoven/cli@$VERSION, but npm returned '${PUBLISHED:-nothing}'."
-            echo "::error::Publish the signed OpenCoven/coven v$VERSION release before retrying this Cave release."
-            exit 1
-          fi
-          LATEST=$(npm view "@opencoven/cli@latest" version)
-          if ! node - "$LATEST" "$VERSION" <<'NODE'
-          const parse = value => {
-            const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value);
-            return match && { core: match.slice(1, 4).map(Number), pre: match[4]?.split(".") ?? [] };
-          };
-          const compare = (left, right) => {
-            const a = parse(left);
-            const b = parse(right);
-            if (!a || !b) return null;
-            for (let index = 0; index < 3; index += 1) {
-              if (a.core[index] !== b.core[index]) return a.core[index] < b.core[index] ? -1 : 1;
-            }
-            if (!a.pre.length || !b.pre.length) return a.pre.length === b.pre.length ? 0 : a.pre.length ? -1 : 1;
-            for (let index = 0; index < Math.max(a.pre.length, b.pre.length); index += 1) {
-              const av = a.pre[index];
-              const bv = b.pre[index];
-              if (av === undefined || bv === undefined) return av === undefined ? -1 : 1;
-              if (av === bv) continue;
-              const an = /^\d+$/.test(av);
-              const bn = /^\d+$/.test(bv);
-              if (an && bn) return Number(av) < Number(bv) ? -1 : 1;
-              if (an !== bn) return an ? -1 : 1;
-              return av < bv ? -1 : 1;
-            }
-            return 0;
-          };
-          process.exit(compare(process.argv[2], process.argv[3]) >= 0 ? 0 : 1);
+          LATEST="$LATEST" node <<'NODE'
+          const version = process.env.LATEST ?? "";
+          const strictSemver = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+          if (version.includes("\n") || !strictSemver.test(version)) {
+            console.error(`::error::@opencoven/cli@latest resolved to an invalid version: ${JSON.stringify(version)}`);
+            process.exit(1);
+          }
           NODE
-          then
-            echo "::error::@opencoven/cli@$VERSION exists, but the updater installs npm latest '${LATEST:-nothing}', which is older."
-            echo "::error::Promote @opencoven/cli@$VERSION (or newer) to latest before retrying this Cave release."
+          echo "Verified @opencoven/cli@latest resolves to published daemon version $LATEST."
+
+  source-version:
+    name: Verify tag matches stamped source
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      release-commit: ${{ steps.tag.outputs.commit }}
+    steps:
+      - name: Resolve stable release tag
+        id: release
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WORKFLOW_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::Manual release recovery must be dispatched from the repository default branch."
             exit 1
           fi
-          echo "Verified @opencoven/cli@$PUBLISHED is the package installed by the Cave daemon update."
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid stable release tag. Expected vMAJOR.MINOR.PATCH; this workflow does not publish prereleases."
+            exit 1
+          fi
+          {
+            echo "tag=$TAG"
+            echo "version=${TAG#v}"
+            echo "ref=refs/tags/$TAG"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ steps.release.outputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Install release checker runtime dependency
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts
+
+      - name: Require a verified signed tag on main
+        id: tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          OBJECT_TYPE="$(git cat-file -t "refs/tags/$RELEASE_TAG" 2>/dev/null || true)"
+          if [ "$OBJECT_TYPE" != "tag" ]; then
+            echo "::error::$RELEASE_TAG must be an annotated signed tag, not a branch or lightweight tag."
+            exit 1
+          fi
+          TAG_OBJECT_SHA="$(git rev-parse "refs/tags/$RELEASE_TAG")"
+          TAGGED_COMMIT="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          CHECKED_OUT_COMMIT="$(git rev-parse --verify HEAD)"
+          if [ "$TAGGED_COMMIT" != "$CHECKED_OUT_COMMIT" ]; then
+            echo "::error::$RELEASE_TAG targets $TAGGED_COMMIT, but checkout resolved $CHECKED_OUT_COMMIT."
+            exit 1
+          fi
+          VERIFIED="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$TAG_OBJECT_SHA" --jq '.verification.verified')"
+          if [ "$VERIFIED" != "true" ]; then
+            echo "::error::$RELEASE_TAG is not reported as cryptographically verified by GitHub."
+            exit 1
+          fi
+          git fetch --no-tags origin "main:refs/remotes/origin/main"
+          if ! git merge-base --is-ancestor "$TAGGED_COMMIT" origin/main; then
+            echo "::error::$RELEASE_TAG targets a commit that is not contained in origin/main."
+            exit 1
+          fi
+          echo "commit=$TAGGED_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Verified signed $RELEASE_TAG at $TAGGED_COMMIT on origin/main."
+
+      - name: Load audited release-version checker
+        id: checker
+        shell: bash
+        env:
+          WORKFLOW_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$WORKFLOW_TOOLING_SHA"
+          if ! git merge-base --is-ancestor "$WORKFLOW_TOOLING_SHA" origin/main; then
+            echo "::error::Release-version checker tooling is not contained in origin/main."
+            exit 1
+          fi
+          CHECKER_DIR="$GITHUB_WORKSPACE/.release-version-tooling"
+          CHECKER_PATH="$CHECKER_DIR/check-release-version.mjs"
+          mkdir -p "$CHECKER_DIR"
+          for tooling_path in scripts/check-release-version.mjs scripts/release-yaml-settings.mjs; do
+            destination="$CHECKER_DIR/${tooling_path#scripts/}"
+            git show "${WORKFLOW_TOOLING_SHA}:${tooling_path}" > "$destination"
+            expected_blob="$(git rev-parse "${WORKFLOW_TOOLING_SHA}:${tooling_path}")"
+            actual_blob="$(git hash-object "$destination")"
+            if [ "$actual_blob" != "$expected_blob" ]; then
+              echo "::error::Release-version tooling blob mismatch for $tooling_path."
+              exit 1
+            fi
+            echo "$actual_blob  $destination"
+          done
+          echo "checker_path=$CHECKER_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Require tag/source version agreement
+        shell: bash
+        env:
+          CHECKER_PATH: ${{ steps.checker.outputs.checker_path }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          node "$CHECKER_PATH" \
+            --root "$GITHUB_WORKSPACE" \
+            --version "$RELEASE_VERSION" \
+            --require-final-changelog
+
+  release-web-validation:
+    name: Validate release web and E2E
+    needs:
+      - daemon-package
+      - source-version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-conflict-markers.mjs
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm check:tests-wired
+      - run: pnpm test:app
+      - run: pnpm test:api
+      - run: pnpm test:mobile
+      - name: Build release web bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if pnpm build; then
+              exit 0
+            fi
+            echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
+            rm -rf .next
+          done
+          exit 1
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm exec playwright test
+
+  release-platform-validation:
+    name: Validate release runtime (${{ matrix.os }})
+    needs:
+      - daemon-package
+      - source-version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-15]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - run: pnpm install --frozen-lockfile
+      - name: Run cross-environment conformance
+        run: pnpm test:conformance
+
+      - name: Overlay audited recovery sidecar tooling
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling }}
+        shell: bash
+        env:
+          RECOVERY_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tooling_path="scripts/sidecar-bundle.sh"
+          git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
+          git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
+          mv "${tooling_path}.recovery" "$tooling_path"
+          chmod +x "$tooling_path"
+          expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
+          actual_blob="$(git hash-object "$tooling_path")"
+          if [ "$actual_blob" != "$expected_blob" ]; then
+            echo "::error::Recovery sidecar tooling blob mismatch"
+            exit 1
+          fi
+
+      - name: Build packaged sidecar bundle
+        shell: bash
+        run: bash scripts/sidecar-bundle.sh
+
+      - run: pnpm test:sidecar-runtime
+      - run: pnpm test:daemon-faults
+
+      - name: Test Windows sidecar cache extraction
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked sidecar_archive
+
+  release-windows-native:
+    name: Validate release Windows native behavior
+    needs:
+      - daemon-package
+      - source-version
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+
+      - shell: bash
+        run: |
+          mkdir -p src-tauri/resources/server src-tauri/resources/node
+          touch src-tauri/resources/server/.cargo-test-placeholder
+          touch src-tauri/resources/node/.cargo-test-placeholder
+
+      - name: Test Windows native Browser lifecycle reducer
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib browser::lifecycle_tests -- --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. [1-9][0-9]* passed;') {
+            throw 'Browser lifecycle filter completed without running any tests.'
+          }
+
+      - name: Test Windows PTY callback isolation
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib pty::tests::pty_start_worker_returns_dependency_panics_as_errors -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'PTY callback-isolation filter did not run exactly one test.'
+          }
+
+      - name: Test Windows owned-process Job Object lifecycle
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib windows_process_job::tests -- --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. [1-9][0-9]* passed;') {
+            throw 'Job Object lifecycle filter completed without running any tests.'
+          }
+
+      - name: Test Windows raw main close fallback
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::raw_main_close_fallback_recognizes_only_native_close_messages -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Raw main close fallback filter did not run exactly one test.'
+          }
+
+      - name: Test Windows close hard deadline
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::close_hard_deadline_terminates_the_exact_stalled_process -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Close hard-deadline filter did not run exactly one test.'
+          }
+
+      - name: Test Windows idempotent sidecar cleanup
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Idempotent sidecar cleanup filter did not run exactly one test.'
+          }
+
+      - name: Test Windows sidecar descendant cleanup
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib app_lifecycle_tests::sidecar_state_terminates_root_and_descendant_within_deadline -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Sidecar descendant cleanup filter did not run exactly one test.'
+          }
+
+      - name: Test Windows upgrade diagnostics fixture
+        shell: powershell
+        run: .\scripts\windows-upgrade-diagnostics.test.ps1
+
+  release-ios-build:
+    name: Archive and upload release iOS build
+    needs:
+      - daemon-package
+      - source-version
+      - release-web-validation
+      - release-platform-validation
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Select Xcode 26.3 and verify App Store tooling
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          XCODE_PATH="/Applications/Xcode_26.3.app"
+          [ -d "$XCODE_PATH" ] || { echo "::error::$XCODE_PATH is unavailable on the macos-15 runner"; exit 1; }
+          sudo xcode-select --switch "$XCODE_PATH"
+          xcodebuild -version
+          xcrun altool --help 2>&1 | grep -q -- '--build-status'
+          xcrun altool --help 2>&1 | grep -q -- '--api-key-subject'
+
+      - run: pnpm install --frozen-lockfile
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+      - run: brew install xcodegen
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+      - run: bash scripts/ios-xcodegen.sh
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+
+      - name: Stage App Store Connect API key
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$APPLE_API_KEY" ] || { echo "::error::APPLE_API_KEY is required"; exit 1; }
+          [ -n "$APPLE_API_KEY_BASE64" ] || { echo "::error::APPLE_API_KEY_BASE64 is required"; exit 1; }
+          decode_base64() {
+            if base64 --decode </dev/null >/dev/null 2>&1; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+          KEY_DIR="$RUNNER_TEMP/app-store-connect-private-keys"
+          KEY_PATH="$KEY_DIR/AuthKey_${APPLE_API_KEY}.p8"
+          mkdir -p "$KEY_DIR"
+          printf '%s' "$APPLE_API_KEY_BASE64" | decode_base64 > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Resolve iOS release metadata
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios' }}
+        id: ios-metadata
+        working-directory: apps/ios/CovenCave
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_SUBJECT: ${{ vars.APPLE_API_KEY_SUBJECT }}
+          IOS_APP_STORE_ID: ${{ vars.IOS_APP_STORE_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$APPLE_API_KEY" ] || { echo "::error::APPLE_API_KEY is required"; exit 1; }
+          [ -n "$APPLE_API_ISSUER" ] || { echo "::error::APPLE_API_ISSUER is required"; exit 1; }
+          [ -n "$IOS_APP_STORE_ID" ] || { echo "::error::IOS_APP_STORE_ID repository variable is required"; exit 1; }
+          BUILD_SETTINGS="$(xcodebuild -project CovenCave.xcodeproj -scheme CovenCave -showBuildSettings)"
+          BUILD_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F ' = ' '/^[[:space:]]*CURRENT_PROJECT_VERSION = / { print $2; exit }')"
+          SHORT_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F ' = ' '/^[[:space:]]*MARKETING_VERSION = / { print $2; exit }')"
+          [ -n "$BUILD_VERSION" ] || { echo "::error::Could not resolve CURRENT_PROJECT_VERSION"; exit 1; }
+          [ -n "$SHORT_VERSION" ] || { echo "::error::Could not resolve MARKETING_VERSION"; exit 1; }
+          {
+            echo "build-version=$BUILD_VERSION"
+            echo "short-version=$SHORT_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+          set +e
+          pnpm --dir "$GITHUB_WORKSPACE" appstore:status \
+            --apple-id "$IOS_APP_STORE_ID" \
+            --bundle-version "$BUILD_VERSION" \
+            --short-version "$SHORT_VERSION" \
+            --wait \
+            --allow-missing
+          STATUS_EXIT=$?
+          set -e
+          case "$STATUS_EXIT" in
+            0)
+              echo "already-uploaded=true" >> "$GITHUB_OUTPUT"
+              echo "App Store Connect already has iOS $SHORT_VERSION ($BUILD_VERSION); processing is confirmed."
+              ;;
+            3)
+              echo "already-uploaded=false" >> "$GITHUB_OUTPUT"
+              echo "Apple explicitly reports no matching build; a new archive will be uploaded."
+              ;;
+            *)
+              echo "::error::App Store Connect preflight failed; refusing to treat an operational error as a missing build."
+              exit "$STATUS_EXIT"
+              ;;
+          esac
+
+      - name: Install iOS signing assets
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
+          steps.ios-metadata.outputs.already-uploaded != 'true'
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APP_PROVISIONING_PROFILE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_WIDGET_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          for required in \
+            APPLE_TEAM_ID \
+            IOS_APP_PROVISIONING_PROFILE_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD \
+            IOS_WIDGET_PROVISIONING_PROFILE_BASE64; do
+            [ -n "${!required:-}" ] || { echo "::error::$required is required"; exit 1; }
+          done
+          decode_base64() {
+            if base64 --decode </dev/null >/dev/null 2>&1; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+
+          CERT_PATH="$RUNNER_TEMP/ios-distribution.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/ios-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | decode_base64 > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep 'Apple Distribution'
+          echo "IOS_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILE_DIR"
+          install_profile() {
+            local encoded="$1"
+            local label="$2"
+            local expected_bundle="$3"
+            local source="$RUNNER_TEMP/${label}.mobileprovision"
+            local plist="$RUNNER_TEMP/${label}.plist"
+            printf '%s' "$encoded" | decode_base64 > "$source"
+            security cms -D -i "$source" > "$plist"
+            local uuid
+            local app_identifier
+            local get_task_allow
+            uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$plist")"
+            app_identifier="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$plist")"
+            get_task_allow="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$plist")"
+            [ "$app_identifier" = "${APPLE_TEAM_ID}.${expected_bundle}" ] || {
+              echo "::error::$label profile is for $app_identifier, expected ${APPLE_TEAM_ID}.${expected_bundle}"
+              exit 1
+            }
+            [ "$get_task_allow" = "false" ] || {
+              echo "::error::$label profile permits development debugging; an App Store profile is required"
+              exit 1
+            }
+            if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$plist" >/dev/null 2>&1; then
+              echo "::error::$label profile contains provisioned devices; an App Store profile is required"
+              exit 1
+            fi
+            cp "$source" "$PROFILE_DIR/${uuid}.mobileprovision"
+            local output_name
+            output_name="$(printf '%s' "$label" | tr '[:lower:]' '[:upper:]')"
+            echo "IOS_PROFILE_PATH_${output_name}=$PROFILE_DIR/${uuid}.mobileprovision" >> "$GITHUB_ENV"
+          }
+          install_profile "$IOS_APP_PROVISIONING_PROFILE_BASE64" app ai.opencoven.cave
+          install_profile "$IOS_WIDGET_PROVISIONING_PROFILE_BASE64" widget ai.opencoven.cave.widgets
+
+      - name: Archive and export the iOS app
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
+          steps.ios-metadata.outputs.already-uploaded != 'true'
+        working-directory: apps/ios/CovenCave
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$RUNNER_TEMP/CovenCave.xcarchive"
+          EXPORT_PATH="$RUNNER_TEMP/CovenCave-TestFlight"
+          EXPORT_OPTIONS_PATH="$RUNNER_TEMP/CovenCave-ExportOptions.plist"
+          cat > "$EXPORT_OPTIONS_PATH" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>
+            <string>export</string>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>$APPLE_TEAM_ID</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild \
+            -project CovenCave.xcodeproj \
+            -scheme CovenCave \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            archive
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS_PATH" \
+            -exportPath "$EXPORT_PATH"
+          IPA_COUNT="$(find "$EXPORT_PATH" -maxdepth 1 -type f -name '*.ipa' | wc -l | tr -d ' ')"
+          [ "$IPA_COUNT" -eq 1 ] || {
+            echo "::error::Expected exactly one exported IPA, found $IPA_COUNT"
+            exit 1
+          }
+          IPA_PATH="$(find "$EXPORT_PATH" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          echo "IOS_IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate, upload, and confirm TestFlight processing
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
+          steps.ios-metadata.outputs.already-uploaded != 'true'
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_SUBJECT: ${{ vars.APPLE_API_KEY_SUBJECT }}
+          IPA_PATH: ${{ env.IOS_IPA_PATH }}
+        run: |
+          set -euo pipefail
+          pnpm appstore:validate "$IPA_PATH"
+          pnpm appstore:upload "$IPA_PATH" --wait
+          {
+            echo "### TestFlight"
+            echo
+            echo "Uploaded and processed iOS ${{ steps.ios-metadata.outputs.short-version }} (${{ steps.ios-metadata.outputs.build-version }})."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up iOS signing material
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${IOS_KEYCHAIN_PATH:-}" ] && [ -e "$IOS_KEYCHAIN_PATH" ]; then
+            security delete-keychain "$IOS_KEYCHAIN_PATH"
+          fi
+          for profile in "${IOS_PROFILE_PATH_APP:-}" "${IOS_PROFILE_PATH_WIDGET:-}"; do
+            [ -z "$profile" ] || rm -f "$profile"
+          done
+          rm -rf "$RUNNER_TEMP/app-store-connect-private-keys"
 
   build:
     name: Build ${{ matrix.label }}
-    needs: daemon-package
+    needs:
+      - daemon-package
+      - source-version
+      - release-web-validation
+      - release-platform-validation
+      - release-windows-native
+    env:
+      COVEN_CAVE_X_PRODUCTION_CLIENT_ID: ${{ vars.COVEN_CAVE_X_PRODUCTION_CLIENT_ID }}
+      # Public Discord application ID, read by option_env! at compile time in
+      # src-tauri/src/discord_presence.rs. Without it every shipped binary
+      # compiles with DISCORD_APPLICATION_ID = None and Rich Presence is
+      # permanently disabled. Not a secret, so a repository variable is enough.
+      COVENCAVE_DISCORD_APPLICATION_ID: ${{ vars.COVENCAVE_DISCORD_APPLICATION_ID }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -184,7 +839,58 @@ jobs:
           # Build the exact tag whose release receives the artifacts. Keeping
           # checkout provenance tied to RELEASE_TAG prevents manual retries from
           # signing and publishing assets from an unrelated ref.
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - name: Overlay audited recovery release tooling
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_current_release_tooling }}
+        shell: bash
+        env:
+          RECOVERY_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
+          for tooling_path in scripts/release.sh scripts/sidecar-bundle.sh scripts/windows-msi-budget.ps1; do
+            git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
+            mv "${tooling_path}.recovery" "$tooling_path"
+            chmod +x "$tooling_path"
+            expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
+            actual_blob="$(git hash-object "$tooling_path")"
+            if [ "$actual_blob" != "$expected_blob" ]; then
+              echo "::error::Recovery tooling blob mismatch for $tooling_path"
+              exit 1
+            fi
+            echo "$actual_blob  $tooling_path"
+          done
+          git diff --check
+          echo "Using release tooling from reviewed workflow commit $RECOVERY_TOOLING_SHA against tag source."
+
+      - name: Overlay audited X release recovery guard
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RECOVERY_TOOLING_REF: ${{ github.ref }}
+          RECOVERY_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$RECOVERY_TOOLING_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::X release recovery must be dispatched from the repository default branch."
+            exit 1
+          fi
+          tooling_path="scripts/check-x-app-release.mjs"
+          git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
+          git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
+          mv "${tooling_path}.recovery" "$tooling_path"
+          expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
+          actual_blob="$(git hash-object "$tooling_path")"
+          if [ "$actual_blob" != "$expected_blob" ]; then
+            echo "::error::Recovery tooling blob mismatch for $tooling_path"
+            exit 1
+          fi
+          echo "$actual_blob  $tooling_path"
+          git diff --check
+          echo "Using the reviewed X release guard from workflow commit $RECOVERY_TOOLING_SHA against tag source."
 
       - name: Set release metadata
         shell: bash
@@ -197,8 +903,14 @@ jobs:
             echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
             exit 1
           fi
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
-          echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          {
+            echo "RELEASE_TAG=$TAG"
+            echo "RELEASE_VERSION=${TAG#v}"
+            # This public value is compiled into the desktop shell and its
+            # bundled sidecar, so support diagnostics can identify the exact
+            # source artifact that was packaged for a release.
+            echo "NEXT_PUBLIC_COVEN_CAVE_BUILD_REVISION=$(git rev-parse --verify HEAD)"
+          } >> "$GITHUB_ENV"
 
       - name: Install Linux dependencies
         if: >-
@@ -214,7 +926,8 @@ jobs:
             patchelf \
             libgtk-3-dev \
             libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+            libjavascriptcoregtk-4.1-dev \
+            libespeak-ng1
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
@@ -231,6 +944,90 @@ jobs:
           workspaces: "src-tauri -> target"
 
       - run: pnpm install --frozen-lockfile
+
+      # PR CI runs this same bounded fault harness on Linux and Windows.
+      # Release CI supplies the macOS host proof without restoring the costly
+      # full PR matrix.
+      - name: Test daemon connectivity fault recovery
+        shell: bash
+        run: |
+          if [ -f scripts/daemon-connectivity-faults.test.ts ]; then
+            pnpm test:daemon-faults
+          else
+            echo "Historical release source predates the daemon fault harness; skipping."
+          fi
+
+      - name: Require OpenCoven X app configuration
+        env:
+          COVEN_CAVE_X_RELEASE_DISABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app && '1' || '' }}
+        run: node scripts/check-x-app-release.mjs
+
+      - name: Require signed OpenCode compatibility registry
+        # Skippable only via manual workflow_dispatch with an explicit flag;
+        # tag-push releases remain fail-closed (docs/opencode-compatibility-registry.md).
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.allow_unconfigured_registries }}
+        shell: bash
+        env:
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_URL }}
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY }}
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS }}
+          NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT: ${{ secrets.OPENCODE_SCHEMA_REGISTRY_CHECKPOINT }}
+        run: |
+          node scripts/check-opencode-registry-release.mjs
+          {
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL=$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_URL"
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY<<COVEN_OPENCODE_KEY_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEY"
+            echo "COVEN_OPENCODE_KEY_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS<<COVEN_OPENCODE_KEYS_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_PUBLIC_KEYS"
+            echo "COVEN_OPENCODE_KEYS_EOF"
+            echo "NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_OPENCODE_SCHEMA_REGISTRY_CHECKPOINT"
+          } >> "$GITHUB_ENV"
+
+      - name: Require signed Grok compatibility registry
+        # Skippable only via manual workflow_dispatch with an explicit flag;
+        # tag-push releases remain fail-closed (docs/grok-compatibility-registry.md).
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.allow_unconfigured_registries }}
+        shell: bash
+        env:
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL: ${{ secrets.GROK_SCHEMA_REGISTRY_URL }}
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY: ${{ secrets.GROK_SCHEMA_REGISTRY_PUBLIC_KEY }}
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS: ${{ secrets.GROK_SCHEMA_REGISTRY_PUBLIC_KEYS }}
+          NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT: ${{ secrets.GROK_SCHEMA_REGISTRY_CHECKPOINT }}
+        run: |
+          node scripts/check-grok-registry-release.mjs
+          {
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL=$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_URL"
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY<<COVEN_GROK_KEY_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEY"
+            echo "COVEN_GROK_KEY_EOF"
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS<<COVEN_GROK_KEYS_EOF"
+            printf '%s\n' "$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS"
+            echo "COVEN_GROK_KEYS_EOF"
+            echo "NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT=$NEXT_PUBLIC_COVEN_GROK_SCHEMA_REGISTRY_CHECKPOINT"
+          } >> "$GITHUB_ENV"
+
+      # The escape hatch above is deliberately available for emergency manual
+      # runs, but using it must never be silent: v0.2.0 shipped with BOTH
+      # guards skipped and nobody noticed for four days, because the only
+      # evidence was a `skipped` line buried in the job steps (cave-yp21x).
+      # This is the inverse condition of the two guards, so it fires exactly
+      # when they did not.
+      - name: Record skipped compatibility guards
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
+        shell: bash
+        run: |
+          {
+            echo "### ⚠️ Compatibility registry guards SKIPPED"
+            echo
+            echo "This \`${{ matrix.platform }}\` build ran with \`allow_unconfigured_registries: true\`, so"
+            echo "**neither** the OpenCode nor the Grok signed schema-registry gate verified"
+            echo "anything. The build used the built-in baseline parsers."
+            echo
+            echo "Tag-push releases cannot do this — the hatch is manual-dispatch only."
+            echo "If this run publishes a release, its notes carry the same statement."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Decode the App Store Connect API key onto the runner for the custom
       # macOS release script. The path is exported into the env for later
@@ -361,7 +1158,8 @@ jobs:
       - name: Publish validated Windows MSI
         if: >-
           matrix.family == 'windows' &&
-          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
@@ -372,17 +1170,39 @@ jobs:
             throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
           }
 
-          gh release view $env:RELEASE_TAG *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $env:RELEASE_TAG `
-              --verify-tag `
-              --title "CovenCave $env:RELEASE_TAG" `
-              --notes "Release artifacts are still being assembled by the release workflow."
-            if ($LASTEXITCODE -ne 0) {
+          # Windows PowerShell promotes native stderr to an ErrorRecord. Probe
+          # failures are expected while the first matrix leg creates a release,
+          # so isolate that non-zero result from the step-wide Stop policy.
+          function Test-GitHubRelease {
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+              $ErrorActionPreference = "SilentlyContinue"
+              gh release view $env:RELEASE_TAG *> $null
+              return $LASTEXITCODE -eq 0
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+          }
+
+          if (-not (Test-GitHubRelease)) {
+            $createExitCode = 1
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+              # A concurrent matrix leg can win this create race. Preserve the
+              # exit code so the verified follow-up probe decides the outcome.
+              $ErrorActionPreference = "Continue"
+              gh release create $env:RELEASE_TAG `
+                --verify-tag `
+                --title "CovenCave $env:RELEASE_TAG" `
+                --notes "Release artifacts are still being assembled by the release workflow."
+              $createExitCode = $LASTEXITCODE
+            } finally {
+              $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if ($createExitCode -ne 0) {
               # Another matrix leg may have created the release concurrently.
               Start-Sleep -Seconds 5
-              gh release view $env:RELEASE_TAG *> $null
-              if ($LASTEXITCODE -ne 0) {
+              if (-not (Test-GitHubRelease)) {
                 throw "Could not create or find release $env:RELEASE_TAG"
               }
             }
@@ -401,7 +1221,8 @@ jobs:
           ) ||
           (
             matrix.family == 'windows' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+            (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
           )
         shell: bash
         env:
@@ -612,30 +1433,119 @@ jobs:
         if: >-
           matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            # Either macOS matrix leg may win this race. Keep checking the
+            # exact tag when create reports that the other leg got there first.
+            if ! gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "CovenCave $RELEASE_TAG" \
+              --notes "Release artifacts are still being assembled by the release workflow."; then
+              echo "::notice::Release creation did not succeed; checking for a concurrent creator"
+            fi
+            for attempt in 1 2 3; do
+              if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::Could not create or find release $RELEASE_TAG"
+                exit 1
+              fi
+              sleep 5
+            done
+          fi
+
+          UPLOAD_FILES=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.dmg")
+          if [ -f "release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz" ]; then
+            UPLOAD_FILES+=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz")
+            UPLOAD_FILES+=("release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz.sig")
+          fi
+          gh release upload "$RELEASE_TAG" "${UPLOAD_FILES[@]}" --clobber
+
+      - name: Attest Linux AppImage
+        if: >-
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: |
-            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.dmg
-            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.app.tar.gz
-            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.app.tar.gz.sig
+          subject-path: src-tauri/target/release/bundle/**/*.AppImage
+
+      - name: Attest Windows MSI
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') &&
+          (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only)
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: src-tauri/target/release/bundle/**/*.msi
+
+      - name: Attest macOS DMG
+        if: >-
+          matrix.family == 'macos' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.dmg
 
   checksums:
     name: Publish SHA256SUMS
-    needs: build
+    needs:
+      - build
+      - source-version
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-24.04
-    if: success()
+    if: ${{ success() && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           # Run release helper scripts from the same tag whose release metadata
           # is being updated, rather than from an operator-supplied ref.
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.source-version.outputs.release-commit }}
           # release-notes.sh resolves the previous tag for the compare link
           # via `git tag --sort=-version:refname`, so the checksums job needs
           # the full tag history (shallow defaults would only have HEAD).
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
+
+      - name: Overlay audited X release provenance renderer
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RECOVERY_TOOLING_REF: ${{ github.ref }}
+          RECOVERY_TOOLING_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$RECOVERY_TOOLING_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::X release recovery must be dispatched from the repository default branch."
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$RECOVERY_TOOLING_SHA"
+          for tooling_path in scripts/release-notes.sh scripts/release-notes.test.mjs; do
+            git show "${RECOVERY_TOOLING_SHA}:${tooling_path}" > "${tooling_path}.recovery"
+            mv "${tooling_path}.recovery" "$tooling_path"
+            if [[ "$tooling_path" == *.sh ]]; then
+              chmod +x "$tooling_path"
+            fi
+            expected_blob="$(git rev-parse "${RECOVERY_TOOLING_SHA}:${tooling_path}")"
+            actual_blob="$(git hash-object "$tooling_path")"
+            if [ "$actual_blob" != "$expected_blob" ]; then
+              echo "::error::Recovery tooling blob mismatch for $tooling_path"
+              exit 1
+            fi
+            echo "$actual_blob  $tooling_path"
+          done
+          git diff --check
+          echo "Using the reviewed X provenance renderer from workflow commit $RECOVERY_TOOLING_SHA against tag source."
 
       - name: Resolve release tag
         shell: bash
@@ -684,10 +1594,17 @@ jobs:
           cat SHA256SUMS
 
       - name: Upload SHA256SUMS to GitHub Release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" _release/SHA256SUMS --clobber
+
+      - name: Attest SHA256SUMS
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: _release/SHA256SUMS
+          subject-path: _release/SHA256SUMS
 
       # Render the standardized release body — CHANGELOG.md section for
       # the version, plus arch-aware install instructions, checksum verify
@@ -695,10 +1612,29 @@ jobs:
       # so the install instructions match what's actually attached. This is
       # the only step that sets the release body, so it stays the canonical
       # source for what users read on the release page.
+      # Verify the renderer before it writes anything user-facing. This is the
+      # only place in CI where release-notes.test.mjs can run: it needs live
+      # tag history for the no-CHANGELOG fallback case, which is why it is
+      # allowlisted out of the frontend suites — and this job already checks
+      # out with fetch-depth: 0 for exactly that reason.
+      #
+      # Placed BEFORE the notes are set so a broken renderer stops the body
+      # from being published rather than publishing a wrong one. Artifacts are
+      # already uploaded by this point, so a failure here costs a re-run or a
+      # local `gh release edit --notes-file`, not the release.
+      - name: Verify release-notes renderer
+        shell: bash
+        run: node --test scripts/release-notes.test.mjs
+
       - name: Set release notes
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          # Provenance for the body: true only on a manual run that skipped the
+          # signed-registry gates (cave-yp21x). `inputs` is readable from every
+          # job of a workflow_dispatch run, so this needs no job-output plumbing.
+          COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_registries }}
+          COVEN_RELEASE_X_GUARD_SKIPPED: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unconfigured_x_app }}
         run: |
           set -euo pipefail
           bash scripts/release-notes.sh "$RELEASE_TAG" > /tmp/release-body.md
@@ -714,7 +1650,11 @@ jobs:
   # manifest reflects all platforms that produced a signed artifact.
   updater-manifest:
     name: Publish updater manifest (latest.json)
-    needs: build
+    needs:
+      - build
+      - source-version
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     # cave-ef6f: `if: success()` skipped this job whenever ANY platform leg
     # flaked (3 of 4 cuts on 2026-07-08), publishing a release with NO
@@ -722,9 +1662,15 @@ jobs:
     # someone reruns the failed leg. Run whenever the build ran at all and
     # publish entries for the platforms that DID produce signed artifacts;
     # zero platforms stays fatal (see the verify step below).
-    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
+    # cave-updater: also guard against build being *skipped* (upstream job
+    # failure, e.g. daemon-package gate), which means no release was ever
+    # created — gh release view would return "release not found" in that case.
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
 
       - name: Resolve release tag
         shell: bash
@@ -766,10 +1712,12 @@ jobs:
           fi
 
       - name: Upload latest.json to GitHub Release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: latest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" latest.json --clobber
 
       # cave-ef6f: an honest release body — when the manifest ships partial,
       # say so on the release itself (and remove the note when a rerun heals

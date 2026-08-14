@@ -3,7 +3,7 @@
  *
  * A *coven* is a saved set of familiars you talk to together. Each Coven chooses
  * whether a prompt fans out to everyone in parallel (broadcast) or moves through
- * a rotating speaking order with peer-reply relay (round robin). Both modes use
+ * the selected speaking order with peer-reply relay (round robin). Both modes use
  * one `/api/chat/send` stream and resumable session per familiar because the
  * daemon/Coven CLI has no server-side "group session" concept.
  *
@@ -33,12 +33,18 @@ export type CovenGroup = {
   id: string;
   name: string;
   familiarIds: string[];
+  /**
+   * Members sitting out the next run. They keep membership, order and pinned
+   * session; they just do not receive the next message. Absent means everyone
+   * is in, which is what every coven saved before this field existed.
+   */
+  excludedFamiliarIds?: string[];
   /** Per-familiar resumed session ids so each thread survives reloads. */
   sessions: Record<string, string>;
+  /** Registered project every participant can access. Required before launch. */
+  projectId?: string;
   /** How a multi-recipient human turn is dispatched. */
   responseMode: CovenResponseMode;
-  /** Familiar that should lead the next multi-recipient round-robin turn. */
-  nextRoundRobinLeadId?: string;
   /** Optional one-line "what is this coven about?" (details drawer). */
   subject?: string;
   /** Optional short running summary of the conversation (details drawer). */
@@ -84,6 +90,24 @@ export type GroupReply = {
   status: GroupReplyStatus;
   /** Latest progress/tool label — the "thinking…" line while streaming. */
   activity?: string;
+  /**
+   * What produced {@link activity}. `status: "streaming"` with no text yet is
+   * three different things to a reader — thinking, running a tool, or relaying
+   * progress — and the run header has to name which. The stream already
+   * distinguishes them (`tool_use` vs `progress`); this keeps that distinction
+   * instead of flattening both into one label.
+   */
+  activityKind?: "progress" | "tool";
+  /** Tool names invoked this turn, in call order, from `tool_use` starts. */
+  toolCalls?: string[];
+  /**
+   * How a non-completing turn ended, when the operator ended it rather than the
+   * model failing. `stopped` kept whatever had streamed; `skipped` never
+   * started. Both are `status: "error"` on the wire — the distinction is the
+   * difference between "something broke" and "you ended it", and the run
+   * summary must not report the second as the first.
+   */
+  outcome?: "stopped" | "skipped";
   error?: string;
   durationMs?: number;
   costUsd?: number;
@@ -100,7 +124,8 @@ export type GroupStreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
-  | { kind: "progress"; label?: string; status?: "running" | "done" | "error" }
+  | { kind: "assistant_replace"; text: string }
+  | { kind: "progress"; label?: string; status?: "running" | "done" | "notice" | "error" }
   | { kind: "tool_use"; name?: string; status?: "running" | "ok" | "error" }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; costUsd?: number }
   | { kind: "error"; message: string; code?: string };
@@ -109,24 +134,51 @@ export type GroupStreamEvent =
 // Streaming reducers (pure)
 // ---------------------------------------------------------------------------
 
+/** Replace rendered text without changing terminal status, errors, or activity. */
+export function replaceGroupReplyText(reply: GroupReply, text: string): GroupReply {
+  return { ...reply, text };
+}
+
 /** Apply one stream event to a reply, returning the next immutable state. */
 export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupReply {
   switch (ev.kind) {
     case "session":
       return { ...reply, sessionId: ev.sessionId };
     case "assistant_chunk":
-      return { ...reply, status: "streaming", activity: undefined, text: reply.text + ev.text };
+      return {
+        ...reply,
+        status: "streaming",
+        activity: undefined,
+        activityKind: undefined,
+        text: reply.text + ev.text,
+      };
+    case "assistant_replace":
+      return {
+        ...reply,
+        status: "streaming",
+        activity: undefined,
+        activityKind: undefined,
+        text: ev.text,
+      };
     case "progress":
       return {
         ...reply,
         status: reply.status === "queued" ? "streaming" : reply.status,
         activity: ev.status === "done" ? reply.activity : ev.label ?? reply.activity,
+        activityKind: ev.status === "done" ? reply.activityKind : "progress",
       };
     case "tool_use":
       return {
         ...reply,
         status: reply.status === "queued" ? "streaming" : reply.status,
         activity: ev.name ? `${ev.name}…` : reply.activity,
+        activityKind: "tool",
+        // Count starts only: a single call reports `running` then `ok`/`error`,
+        // so counting every event would double every tool in the summary row.
+        toolCalls:
+          ev.name && (ev.status === undefined || ev.status === "running")
+            ? [...(reply.toolCalls ?? []), ev.name]
+            : reply.toolCalls,
       };
     case "done":
       return {
@@ -136,10 +188,17 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
         durationMs: ev.durationMs ?? reply.durationMs,
         costUsd: ev.costUsd ?? reply.costUsd,
         activity: undefined,
+        activityKind: undefined,
         error: ev.isError ? reply.error ?? "request failed" : reply.error,
       };
     case "error":
-      return { ...reply, status: "error", error: ev.message, activity: undefined };
+      return {
+        ...reply,
+        status: "error",
+        error: ev.message,
+        activity: undefined,
+        activityKind: undefined,
+      };
     default:
       return reply;
   }
@@ -148,6 +207,9 @@ export function applyGroupEvent(reply: GroupReply, ev: GroupStreamEvent): GroupR
 /**
  * Parse the rolling SSE buffer into complete `data:` events, returning the
  * leftover partial frame. Same `\n\n`-delimited framing as chat-view.tsx.
+ * Frames may carry `id:` lines ahead of the `data:` payload (/api/chat/send
+ * frames every event as "id: N\ndata: {json}" for stream resume) — requiring
+ * the frame to *start with* "data:" dropped every id-carrying event (cave-am2b).
  */
 export function parseSseBuffer(buffer: string): { events: GroupStreamEvent[]; rest: string } {
   const events: GroupStreamEvent[] = [];
@@ -156,8 +218,11 @@ export function parseSseBuffer(buffer: string): { events: GroupStreamEvent[]; re
   while ((idx = rest.indexOf("\n\n")) >= 0) {
     const frame = rest.slice(0, idx);
     rest = rest.slice(idx + 2);
-    if (!frame.startsWith("data:")) continue;
-    const payload = frame.slice(5).trim();
+    const data: string[] = [];
+    for (const line of frame.split(/\r?\n/)) {
+      if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+    }
+    const payload = data.join("\n").trim();
     if (!payload) continue;
     try {
       events.push(JSON.parse(payload) as GroupStreamEvent);
@@ -257,6 +322,39 @@ export function extractCovenDelegations(text: string): ExtractedCovenDelegations
   return { visible: visible.trimEnd(), delegations };
 }
 
+function normalizeDelegationTaskText(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+function delegationInstructionSegments(text: string): string[] {
+  const ignored = delegationIgnoredRanges(text).sort(([startA], [startB]) => startA - startB);
+  const segments: string[] = [];
+  let cursor = 0;
+  for (const [start, end] of ignored) {
+    if (end <= cursor) continue;
+    if (start > cursor) segments.push(text.slice(cursor, start));
+    cursor = end;
+  }
+  if (cursor < text.length) segments.push(text.slice(cursor));
+  return segments;
+}
+
+/**
+ * Delegation controls are model output, so the hidden routed task must be a
+ * verbatim visible task, modulo whitespace. This keeps the visible @mention as
+ * the operator-auditable source of truth and prevents a hidden trailer from
+ * smuggling a different instruction.
+ */
+export function isCovenDelegationTaskVisible(visible: string, delegation: CovenDelegation): boolean {
+  const task = normalizeDelegationTaskText(delegation.task);
+  return (
+    task.length > 0 &&
+    delegationInstructionSegments(visible).some((segment) =>
+      normalizeDelegationTaskText(segment).includes(task),
+    )
+  );
+}
+
 /** True for a char that may not abut the end of a matched `@name` (a word char,
  *  so `@Alpha` does not greedily match a participant named `Al`). */
 function isWordChar(ch: string | undefined): boolean {
@@ -313,14 +411,24 @@ export function resolveGroupMessageTargets(
   groupFamiliarIds: string[],
   participants: MentionableFamiliar[],
   explicitTargetFamiliarIds?: string[],
+  /**
+   * Who an *untargeted* message fans out to — the roster minus anyone sitting
+   * the next run out. Defaults to the whole coven.
+   *
+   * Deliberately not applied to the targeted branch: addressing a familiar by
+   * name is the explicit override of their sit-out, and silently dropping an
+   * @mention would be the surface disagreeing with what the user typed.
+   */
+  includedFamiliarIds?: string[],
 ): { targetIds: string[]; targeted: boolean } {
   const mentioned = explicitTargetFamiliarIds === undefined ? parseMentions(text, participants) : [];
   const requested = explicitTargetFamiliarIds ?? mentioned;
   const targeted = explicitTargetFamiliarIds !== undefined || mentioned.length > 0;
+  const included = includedFamiliarIds ?? groupFamiliarIds;
   return {
     targetIds: targeted
       ? groupFamiliarIds.filter((id) => requested.includes(id))
-      : [...groupFamiliarIds],
+      : groupFamiliarIds.filter((id) => included.includes(id)),
     targeted,
   };
 }
@@ -330,20 +438,103 @@ export function mentionSuggestionAuthor(suggestion: string, displayName: string)
   return `@${displayName.trim()} ${suggestion.trim()}`.trim();
 }
 
+/** A picker-confirmed mention token in the current composer draft. */
+export type MentionCompletion = {
+  start: number;
+  end: number;
+  name: string;
+};
+
+function isMentionCompletionValid(
+  text: string,
+  completion: MentionCompletion,
+): boolean {
+  const name = completion.name.trim();
+  return (
+    name.length > 0 &&
+    completion.start >= 0 &&
+    completion.end === completion.start + name.length + 1 &&
+    text.slice(completion.start, completion.end) === `@${name}` &&
+    isMentionBoundary(completion.start === 0 ? "" : text[completion.start - 1]) &&
+    !isWordChar(text[completion.end])
+  );
+}
+
+/**
+ * Carry picker-confirmed mention spans across one textarea edit. Spans after
+ * the edit shift with the text; a span is discarded only when the edit touches
+ * its token or makes that token cease to be a valid standalone mention.
+ */
+export function reconcileMentionCompletions(
+  previousText: string,
+  nextText: string,
+  completions: readonly MentionCompletion[],
+): MentionCompletion[] {
+  let changeStart = 0;
+  const sharedLength = Math.min(previousText.length, nextText.length);
+  while (
+    changeStart < sharedLength &&
+    previousText[changeStart] === nextText[changeStart]
+  ) {
+    changeStart++;
+  }
+
+  let previousEnd = previousText.length;
+  let nextEnd = nextText.length;
+  while (
+    previousEnd > changeStart &&
+    nextEnd > changeStart &&
+    previousText[previousEnd - 1] === nextText[nextEnd - 1]
+  ) {
+    previousEnd--;
+    nextEnd--;
+  }
+
+  const delta = nextText.length - previousText.length;
+  const reconciled: MentionCompletion[] = [];
+  for (const completion of completions) {
+    let nextCompletion = completion;
+    if (previousEnd <= completion.start) {
+      nextCompletion = {
+        ...completion,
+        start: completion.start + delta,
+        end: completion.end + delta,
+      };
+    } else if (changeStart < completion.end) {
+      continue;
+    }
+    if (isMentionCompletionValid(nextText, nextCompletion)) {
+      reconciled.push(nextCompletion);
+    }
+  }
+  return reconciled;
+}
+
 /**
  * Locate the `@mention` token the caret is currently editing, for autocomplete.
  * Returns the `@`'s index and the partial query typed after it, or `null` when
  * the caret is not inside a mention. The token starts at an `@` preceded by
- * whitespace/start and does not span an `@` or newline.
+ * whitespace/start and does not span an `@` or newline. Picker-confirmed token
+ * spans stay complete while ordinary prose around them changes.
  */
 export function findActiveMention(
   text: string,
   caret: number,
+  completions: readonly MentionCompletion[] = [],
 ): { start: number; query: string } | null {
   let i = caret - 1;
   while (i >= 0 && text[i] !== "@" && text[i] !== "\n") i--;
   if (i < 0 || text[i] !== "@") return null;
   if (!isMentionBoundary(i === 0 ? "" : text[i - 1])) return null;
+  if (
+    completions.some(
+      (completion) =>
+        completion.start === i &&
+        isMentionCompletionValid(text, completion),
+    )
+  ) {
+    return null;
+  }
   return { start: i, query: text.slice(i + 1, caret) };
 }
 
@@ -369,10 +560,19 @@ export function applyMention(
   start: number,
   query: string,
   name: string,
-): { text: string; caret: number } {
-  const insert = `@${name} `;
+): { text: string; caret: number; completion: MentionCompletion } {
+  const completedName = name.trim();
+  const insert = `@${completedName} `;
   const end = start + 1 + query.length;
-  return { text: text.slice(0, start) + insert + text.slice(end), caret: start + insert.length };
+  return {
+    text: text.slice(0, start) + insert + text.slice(end),
+    caret: start + insert.length,
+    completion: {
+      start,
+      end: start + completedName.length + 1,
+      name: completedName,
+    },
+  };
 }
 
 export function makeGroup(
@@ -387,7 +587,6 @@ export function makeGroup(
     familiarIds: dedupe(familiarIds),
     sessions: {},
     responseMode: "broadcast",
-    nextRoundRobinLeadId: dedupe(familiarIds)[0],
     createdAt: now,
     updatedAt: now,
   };
@@ -416,6 +615,26 @@ export function setGroupSession(
   return { ...group, sessions, updatedAt: now };
 }
 
+/**
+ * Change the group's project context. Existing harness session ids are
+ * cwd-scoped, so a project change must start fresh participant sessions rather
+ * than resuming those tokens in a different root.
+ */
+export function setGroupProject(
+  group: CovenGroup,
+  projectId: string | null,
+  now: string,
+): CovenGroup {
+  const nextProjectId = projectId?.trim() || undefined;
+  if (nextProjectId === group.projectId) return group;
+  return {
+    ...group,
+    projectId: nextProjectId,
+    sessions: {},
+    updatedAt: now,
+  };
+}
+
 /** Update a group's participant roster, dropping orphaned session pins. */
 export function setGroupParticipants(
   group: CovenGroup,
@@ -427,10 +646,68 @@ export function setGroupParticipants(
   for (const id of ids) {
     if (group.sessions[id]) sessions[id] = group.sessions[id];
   }
-  const nextRoundRobinLeadId = ids.includes(group.nextRoundRobinLeadId ?? "")
-    ? group.nextRoundRobinLeadId
-    : ids[0];
-  return { ...group, familiarIds: ids, sessions, nextRoundRobinLeadId, updatedAt: now };
+  // A familiar removed from the coven cannot stay on the sit-out list: it would
+  // silently sit the familiar out again if it were ever re-added.
+  const excludedFamiliarIds = (group.excludedFamiliarIds ?? []).filter((id) => ids.includes(id));
+  return {
+    ...group,
+    familiarIds: ids,
+    sessions,
+    ...(excludedFamiliarIds.length > 0 ? { excludedFamiliarIds } : { excludedFamiliarIds: undefined }),
+    updatedAt: now,
+  };
+}
+
+/**
+ * The familiars that take part in the next run, in the selected order.
+ *
+ * Sitting a familiar out is not removing it: it keeps its membership, its
+ * pinned session and its place in the order, and simply does not receive the
+ * next message.
+ */
+export function includedGroupParticipants(group: CovenGroup): string[] {
+  const excluded = new Set(group.excludedFamiliarIds ?? []);
+  return group.familiarIds.filter((id) => !excluded.has(id));
+}
+
+/** Toggle one familiar's "in the next run" switch. */
+export function setGroupParticipantIncluded(
+  group: CovenGroup,
+  familiarId: string,
+  included: boolean,
+  now: string,
+): CovenGroup {
+  if (!group.familiarIds.includes(familiarId)) return group;
+  const excluded = new Set(group.excludedFamiliarIds ?? []);
+  if (included === !excluded.has(familiarId)) return group;
+  if (included) excluded.delete(familiarId);
+  else excluded.add(familiarId);
+  const next = group.familiarIds.filter((id) => excluded.has(id));
+  return {
+    ...group,
+    excludedFamiliarIds: next.length > 0 ? next : undefined,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Move one familiar earlier (-1) or later (+1) in the selected order.
+ *
+ * Returns the SAME object at either end of the list, so a no-op arrow press
+ * does not bump `updatedAt` and reshuffle the rail.
+ */
+export function moveGroupParticipant(
+  group: CovenGroup,
+  familiarId: string,
+  delta: -1 | 1,
+  now: string,
+): CovenGroup {
+  const index = group.familiarIds.indexOf(familiarId);
+  const target = index + delta;
+  if (index === -1 || target < 0 || target >= group.familiarIds.length) return group;
+  const familiarIds = [...group.familiarIds];
+  [familiarIds[index], familiarIds[target]] = [familiarIds[target], familiarIds[index]];
+  return { ...group, familiarIds, updatedAt: now };
 }
 
 export function setGroupResponseMode(
@@ -441,10 +718,6 @@ export function setGroupResponseMode(
   return {
     ...group,
     responseMode,
-    nextRoundRobinLeadId:
-      group.nextRoundRobinLeadId && group.familiarIds.includes(group.nextRoundRobinLeadId)
-        ? group.nextRoundRobinLeadId
-        : group.familiarIds[0],
     updatedAt: now,
   };
 }
@@ -465,26 +738,15 @@ export function setGroupDetails(
   return { ...group, subject, summary, updatedAt: now };
 }
 
-/** Rotate selected recipients around the persisted Coven lead. */
+/** Filter recipients without changing the user-selected Coven order. */
 export function orderRoundRobinFamiliarIds(
   familiarIds: string[],
   targetIds: string[],
-  nextLeadId?: string,
 ): string[] {
   const roster = dedupe(familiarIds);
   const targets = new Set(dedupe(targetIds));
   if (roster.length === 0 || targets.size === 0) return [];
-  const start = Math.max(0, nextLeadId ? roster.indexOf(nextLeadId) : 0);
-  const rotated = [...roster.slice(start), ...roster.slice(0, start)];
-  return rotated.filter((id) => targets.has(id));
-}
-
-/** Advance the persisted lead one roster slot after the familiar that led. */
-export function nextRoundRobinLeadId(familiarIds: string[], leadId: string): string | undefined {
-  const roster = dedupe(familiarIds);
-  if (roster.length === 0) return undefined;
-  const leadIndex = roster.indexOf(leadId);
-  return roster[(leadIndex < 0 ? 0 : leadIndex + 1) % roster.length];
+  return roster.filter((id) => targets.has(id));
 }
 
 function dedupe(ids: string[]): string[] {
@@ -536,6 +798,7 @@ export function renderCovenRoster(
     'You are in a group chat ("coven") with these participants:',
     ...lines,
     "When asked who is present or how many are in this chat, count everyone listed above (including yourself and the human).",
+    "When addressing another familiar in this coven, tag them with @ followed by their exact display name as listed above.",
     "</coven_roster>",
   ].join("\n");
 }
@@ -607,6 +870,21 @@ export type CovenReplyRunner = (
   settledBefore: GroupReply[],
 ) => Promise<GroupReply>;
 
+/** What the operator decided about the next familiar in the ordered queue. */
+export type CovenTurnDecision = "run" | "stop";
+
+/**
+ * Consulted immediately before each round-robin turn starts, so Pause can hold
+ * the queue between turns. Resolving `"run"` (the default when no gate is
+ * supplied) is the previous behaviour exactly; a gate that never resolves is a
+ * paused queue, and resolving `"stop"` ends the run without starting the turn.
+ *
+ * Broadcast never consults it: every familiar in a broadcast has already
+ * started, so there is no "before the next turn" for a decision to land in —
+ * stopping one there is per-agent Stop, not a queue decision.
+ */
+export type CovenTurnGate = (reply: GroupReply) => Promise<CovenTurnDecision>;
+
 /**
  * Dispatch one Coven turn. Broadcast starts every reply together. Round robin
  * waits for each reply before starting the next and exposes the settled prefix
@@ -619,15 +897,39 @@ export async function runCovenReplySchedule(args: {
   signal: AbortSignal;
   runReply: CovenReplyRunner;
   onCancelled?: (reply: GroupReply) => void;
+  /** Round robin only — see {@link CovenTurnGate}. */
+  gate?: CovenTurnGate;
 }): Promise<GroupReply[]> {
   if (args.mode === "broadcast") {
     return Promise.all(args.replies.map((reply) => args.runReply(reply, [])));
   }
 
   const settled: GroupReply[] = [];
+  // Once the gate says stop, every remaining familiar is skipped rather than
+  // re-gated — asking again per familiar would prompt N times for one decision.
+  let stopped = false;
+  const cancel = (reply: GroupReply, outcome: "stopped" | "skipped"): GroupReply => ({
+    ...reply,
+    status: "error" as const,
+    error: "cancelled",
+    outcome,
+    activity: undefined,
+    activityKind: undefined,
+  });
   for (const reply of args.replies) {
-    if (args.signal.aborted) {
-      const cancelled = { ...reply, status: "error" as const, error: "cancelled", activity: undefined };
+    if (args.signal.aborted || stopped) {
+      const cancelled = cancel(reply, "skipped");
+      settled.push(cancelled);
+      args.onCancelled?.(cancelled);
+      continue;
+    }
+    const decision = args.gate ? await args.gate(reply) : "run";
+    // The gate can await an operator decision for as long as a pause lasts, so
+    // re-check abort on the way out — Stop during a pause must not then start
+    // the very turn the pause was holding.
+    if (decision === "stop" || args.signal.aborted) {
+      stopped = decision === "stop";
+      const cancelled = cancel(reply, "skipped");
       settled.push(cancelled);
       args.onCancelled?.(cancelled);
       continue;
@@ -810,16 +1112,19 @@ function normalizeCovenGroup(group: CovenGroup): CovenGroup {
   const responseMode: CovenResponseMode = COVEN_RESPONSE_MODES.includes(group.responseMode)
     ? group.responseMode
     : "broadcast";
-  const nextLead = group.nextRoundRobinLeadId;
+  const normalized = { ...group } as CovenGroup & { nextRoundRobinLeadId?: unknown };
+  delete normalized.nextRoundRobinLeadId;
   return {
-    ...group,
+    ...normalized,
     responseMode,
-    nextRoundRobinLeadId:
-      nextLead && group.familiarIds.includes(nextLead) ? nextLead : group.familiarIds[0],
     // Details fields are optional and later additions: absent on legacy groups
     // (stays undefined), and non-string garbage is dropped rather than crashing
     // the details drawer.
     subject: typeof group.subject === "string" ? group.subject : undefined,
     summary: typeof group.summary === "string" ? group.summary : undefined,
+    projectId:
+      typeof group.projectId === "string" && group.projectId.trim()
+        ? group.projectId.trim()
+        : undefined,
   };
 }

@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "sourceRevision": "2a74cc55325f8afb309d262614889f2b9d024a07",
+  "inventory": {
+    "reactTsxFiles": 433,
+    "nativeIosSwiftFiles": 105,
+    "tauriRustFiles": 36,
+    "reactPlaceholderAssignments": 230,
+    "sharedPrimitiveUses": {
+      "Button": 511,
+      "IconButton": 68,
+      "SearchInput": 19,
+      "StandardSelect": 66,
+      "EmptyState": 80,
+      "ErrorState": 38
+    }
+  },
+  "findings": [
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/chat-list.tsx",
+      "excerpt": "<select value={groupBy} onChange={(e) => setGroupBy(normalizeChatGroupBy(e.target.value))} aria-label=\"Group sessions by\" className=\"chat-list-group-select focus-ring h-7 shrink-0 cursor-pointer rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-transparent px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]\" >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/chat-view.tsx",
+      "excerpt": "<select className=\"focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/60 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)]\" defaultValue=\"\" disabled={busy} aria-label=\"Pick a project to run this chat in\" onChange={(event) => { if (event.target.value) onPickProject(event.target.value); }} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/first-project-gate.tsx",
+      "excerpt": "<select id=\"first-project-gate-existing\" value={selectedExistingProjectId} onChange={(event) => { setSelectedExistingProjectId(event.target.value); setSubmitError(null); }} disabled={submitting} className=\"focus-ring h-10 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-3 text-[length:var(--text-md)] text-[var(--text-primary)]\" >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/messenger-surface.tsx",
+      "excerpt": "<select value={selected.channel} onChange={(e) => updateSelected({ channel: e.target.value as MessageChannel })} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/messenger-surface.tsx",
+      "excerpt": "<select value={selected.tone} onChange={(e) => updateSelected({ tone: e.target.value })}>"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-evidence-ledger.tsx",
+      "excerpt": "<select value={source.status} disabled={busy} onChange={(event) => void act({ action: \"update-source\", sourceId: source.id, patch: { status: event.target.value as ResearchSourceRef[\"status\"] }, })} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-studio-modals.tsx",
+      "excerpt": "<select id=\"research-studio-config-guest-voice\" className=\"research-studio__select focus-ring\" value={mediaGuestVoice} aria-describedby=\"research-studio-config-guest-voice-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => onMediaGuestVoiceChange(event.target.value) } >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-studio-modals.tsx",
+      "excerpt": "<select id=\"research-studio-config-length\" className=\"research-studio__select focus-ring\" value={mediaLength} aria-describedby=\"research-studio-config-length-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => onMediaLengthChange(event.target.value as ResearchMediaLength) } >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-studio-modals.tsx",
+      "excerpt": "<select id=\"research-studio-config-local-voice\" className=\"research-studio__select focus-ring\" value={mediaVoice} aria-describedby=\"research-studio-config-voice-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => onMediaVoiceChange(event.target.value)} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-studio-modals.tsx",
+      "excerpt": "<select id=\"research-studio-config-provider\" className=\"research-studio__select focus-ring\" value={mediaProvider} aria-describedby=\"research-studio-config-provider-help\" aria-invalid={mediaConfigurationError ? true : undefined} aria-errormessage={ mediaConfigurationError ? \"research-studio-config-media-error\" : undefined } onChange={(event) => { const provider = event.target.value as ResearchMediaProvider; onMediaProviderChange(provider); onMediaVoiceChange( provider === \"local\" ? (readiness?.providers.local.voices[0]?.id ?? \"\") : (readiness?.providers.elevenlabs.defaultVoiceId ?? \"\"), ); }} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-studio-modals.tsx",
+      "excerpt": "<select id=\"research-studio-config-source\" className=\"research-studio__select\" value={selectedSourceId ?? \"\"} onChange={(event) => onSelectSource(event.target.value)} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-studio-modals.tsx",
+      "excerpt": "<select id=\"research-studio-config-style\" className=\"research-studio__select focus-ring\" value={mediaStyle} aria-describedby=\"research-studio-config-style-help\" onChange={(event) => onMediaStyleChange(event.target.value as ResearchPodcastStyle) } >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/role-surfaces/research-tab-studio.tsx",
+      "excerpt": "<select id=\"research-studio-source\" className=\"research-studio__select\" value={effectiveSourceId ?? \"\"} onChange={(event) => setSourceId(event.target.value)} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/salem/ask-salem-view.tsx",
+      "excerpt": "<select className=\"ask-salem__picker-select focus-ring\" aria-label=\"Familiar whose connected model writes the answers\" value={selectedFamiliar.id} onChange={(e) => setPickedFamiliarId(e.target.value)} >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/stitch-intake.tsx",
+      "excerpt": "<select value={collection} onChange={(e) => setCollection(e.target.value)} aria-label=\"Destination collection\" className=\"focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)]\" >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/stitch-intake.tsx",
+      "excerpt": "<select value={sessionId} onChange={(e) => setSessionId(e.target.value)} aria-label=\"Chat session to pin\" className=\"focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)]\" >"
+    },
+    {
+      "rule": "components/no-native-select",
+      "path": "src/components/weave-rail.tsx",
+      "excerpt": "<select className=\"wv-select focus-ring\" value={scope.familiar ?? \"\"} onChange={(e) => onScope({ ...scope, familiar: e.target.value === \"\" ? null : e.target.value }) } >"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "apps/ios/CovenCave/CovenCave/Views/ChatView.swift",
+      "excerpt": "let clipped = excerpt.count > 140 ? \"\\(excerpt.prefix(137))...\" : excerpt"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/automations/cron-detail-panel.tsx",
+      "excerpt": "{busy ? \"Saving...\" : \"Save changes\"}"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/board-view.tsx",
+      "excerpt": "label: \"Assign to...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/board-view.tsx",
+      "excerpt": "label: \"Move to...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/board-view.tsx",
+      "excerpt": "label: \"Priority...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/board-view.tsx",
+      "excerpt": "placeholder=\"Assign to...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/board-view.tsx",
+      "excerpt": "placeholder=\"Move to...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/board-view.tsx",
+      "excerpt": "placeholder=\"Priority...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/chat-canvas-view.tsx",
+      "excerpt": "headline=\"Loading saved sketches...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/chat-canvas-view.tsx",
+      "excerpt": "subtitle=\"Fetching saved sketches from the canvas store...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/command-palette.tsx",
+      "excerpt": "Asking Salem through salem.opencoven.ai..."
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/familiar-chatout-codex/FamiliarChatoutCodexSurface.tsx",
+      "excerpt": "create a Codex-style famil..."
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/familiar-chatout-codex/FamiliarChatoutCodexSurface.tsx",
+      "excerpt": "macOS Application Pri..."
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/familiar-menu-bar.tsx",
+      "excerpt": "placeholder=\"Search Cave...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/familiar-studio-brain-tab.tsx",
+      "excerpt": "label: \"Custom...\""
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/familiars-memory-view.tsx",
+      "excerpt": "placeholder={ lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory…` : \"Search memory...\" }"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/marketplace/craft-create-drawer.tsx",
+      "excerpt": "Loading roles..."
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/mobile-handoff-modal.tsx",
+      "excerpt": "{loading ? \"Starting...\" : \"No QR\"}"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/open-coven-tools-update.tsx",
+      "excerpt": "..."
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/settings-shell.tsx",
+      "excerpt": "{saving ? \"Saving...\" : \"Save Omnigent\"}"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/task-work-cockpit.tsx",
+      "excerpt": "{lookupState === \"error\" ? \"Couldn't check the work session\" : \"Preparing work session...\"}"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/task-work-cockpit.tsx",
+      "excerpt": "{unlinking ? \"Unlinking...\" : \"Unlink missing session\"}"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/task-work-github.tsx",
+      "excerpt": "{loading ? \"Refreshing...\" : \"Refresh\"}"
+    },
+    {
+      "rule": "copy/no-ascii-ellipsis",
+      "path": "src/components/top-bar.tsx",
+      "excerpt": "placeholder=\"Search or ask Salem...\""
+    },
+    {
+      "rule": "copy/no-generic-submit",
+      "path": "src/components/salem/salem-pathfinder-card.tsx",
+      "excerpt": "Submit"
+    }
+  ]
+}

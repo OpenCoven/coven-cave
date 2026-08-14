@@ -18,8 +18,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const baseSessions = filterDeletedSessions\(\(json\.sessions \?\? \[\]\) as SessionRow\[\], locallyDeletedSessionIdsRef\.current\)/,
-  "Workspace should filter every sessions/list response before it reaches shared state",
+  /const baseSessions = applyChatAttentionProjections\([\s\S]*?filterDeletedSessions\(\(json\.sessions \?\? \[\]\) as SessionRow\[\], locallyDeletedSessionIdsRef\.current\)[\s\S]*?reqId/,
+  "Workspace should filter every sessions/list response before projection reaches shared state",
 );
 
 assert.match(
@@ -80,9 +80,10 @@ const chatListDelete = chatList.match(/const deleteSession = async[\s\S]*?\n  \}
 assert.match(chatListDelete, /if \(!res\.ok \|\| !json\.ok\) \{[\s\S]*?return;[\s\S]*?onSessionsDeleted\(\[sessionId\]\)/);
 assert.doesNotMatch(chatListDelete, /invalidateConversation|onSessionsChanged/, "list delete delegates reconciliation only after success");
 
-assert.match(projectsView, /if \(await deleteOneSession\(sessionId\)\) onSessionsDeleted\(\[sessionId\]\)/);
+// The Projects access page no longer deletes sessions itself, but its props
+// contract still requires the shared boundary so a future caller can't omit
+// it; the delete FLOWS live in ChatView/ChatList/Workspace, asserted above.
 assert.doesNotMatch(projectsView, /invalidateConversation/, "Projects delegates cache invalidation to Workspace");
-assert.match(projectsView, /successfulSessionIds\([\s\S]*?if \(deletedIds\.length > 0\) onSessionsDeleted\(deletedIds\)/);
 assert.match(chatList, /successfulSessionIds\([\s\S]*?if \(deletedIds\.length > 0\) onSessionsDeleted\(deletedIds\)/);
 
 assert.match(

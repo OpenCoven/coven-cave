@@ -44,43 +44,64 @@ assert.match(
   /export function usePopoverInitialFocus\([\s\S]*?requestAnimationFrame[\s\S]*?querySelector<HTMLElement>\(panelSelector\)[\s\S]*?button:not\(:disabled\)[\s\S]*?\.focus\(\)[\s\S]*?cancelAnimationFrame/,
   "the shared focus helper scopes lookup to the panel, focuses an enabled control, and cancels stale work",
 );
-assert.match(actions, /ariaLabel\s*=\s*"Chat options"|aria-label="Chat options"/);
-assert.match(actions, /title=\{\`Chat options · \$\{context\.summary\}\`\}/);
+assert.match(actions, /triggerVariant\?: "icon" \| "tools"/);
+assert.match(actions, /aria-label=\{isToolsTrigger \? "Tools" : "Chat options"\}/);
+assert.match(actions, /ariaLabel=\{isToolsTrigger \? "Tools" : "Chat options"\}/);
+assert.match(actions, /title=\{\`\$\{isToolsTrigger \? "Tools" : "Chat options"\} · \$\{context\.summary\}\`\}/);
 assert.match(
   actions,
   /showIndicator\s*\?\s*<span className="composer-actions__indicator"/,
   "the trigger dot should be wired from the actual JSX branch",
 );
-assert.match(actions, /<PopoverLabel id="composer-actions-improve-label">Improve<\/PopoverLabel>[\s\S]*Prompt snippets[\s\S]*Smart enhance[\s\S]*Enhance options…/);
-assert.match(actions, /<ComposerResponseSections[\s\S]*onSaveAsTemplate=\{\(\) => \{[\s\S]*response\.onSaveAsTemplate\(\);[\s\S]*\}\}/);
+// The root menu is now the shared hierarchical cascade (composer-add-menu):
+// attach → Add to project › → Add from GitHub › → Skills › / Connectors › →
+// improve utilities → chat footer (Model & tuning / Branch / Response options).
+assert.match(actions, /<ComposerAddMenu\b/, "the chat menu renders the shared hierarchical add-menu");
 assert.match(
   actions,
-  /<ComposerLinkedWorkActions[\s\S]*<ComposerResponseSections|<ComposerResponseSections[\s\S]*<ComposerLinkedWorkActions/,
+  /attach=\{attach\}[\s\S]*?projects=\{\{[\s\S]*?github=\{\{[\s\S]*?skills=\{skills\}[\s\S]*?connectors[\s\S]*?legacy=\{\{[\s\S]*?footer=\{/,
+  "the cascade receives attach, projects, github, skills, connectors, legacy, and the chat footer in order",
+);
+assert.match(
+  actions,
+  /projects: context\.sortedProjects\.map\(\(p\) => \(\{[\s\S]*?id: p\.id,[\s\S]*?name: p\.name,[\s\S]*?access: p\.access,[\s\S]*?\}\)\)/,
+  "Add to project › lists sorted project options with effective access metadata",
+);
+assert.match(
+  actions,
+  /onStartNewProject: contextProps\.createProject\s*\n?\s*\? context\.addFlow\.beginAddProject/,
+  "Start a new project rides the shared add-project flow",
+);
+assert.match(
+  actions,
+  /github=\{\{\s*\n\s*submenu: \(\s*\n\s*<LinkedWorkActions/,
+  "Add from GitHub › hosts the linked-work rows as a flyout",
+);
+assert.match(
+  actions,
+  /legacy=\{\{[\s\S]*?dictation: improve\.dictation,[\s\S]*?promptSnippets: improve\.promptSnippets,[\s\S]*?enhance: improve\.enhance,/,
+  "the improve utilities ride the shared cascade's legacy group",
+);
+assert.match(actions, /<ResponseSections[\s\S]*onSaveAsTemplate=\{\(\) => \{[\s\S]*response\.onSaveAsTemplate\(\);[\s\S]*\}\}/);
+assert.match(
+  actions,
+  /<LinkedWorkActions[\s\S]*<ResponseSections|<ResponseSections[\s\S]*<LinkedWorkActions/,
   "ComposerActionsMenu should render both reusable section surfaces",
 );
 assert.match(
   actions,
-  /<PopoverLabel id="composer-actions-context-label">Context<\/PopoverLabel>[\s\S]*Linked Work[\s\S]*Improve[\s\S]*Response/,
-  "the grouped actions menu keeps Context / Linked Work / Improve / Response in order",
+  /label="Model & tuning…"[\s\S]*?openContextPicker\("model"\)/,
+  "Model & tuning chains to the existing context picker",
 );
-for (const [section, labelId] of [
-  ["context", "composer-actions-context-label"],
-  ["linked", "composer-actions-linked-work-label"],
-  ["improve", "composer-actions-improve-label"],
-  ["response", "composer-actions-response-label"],
-] as const) {
-  assert.match(
-    actions,
-    new RegExp(
-      `<section[^>]*className="composer-actions__section composer-actions__${section}"[^>]*role="group"[^>]*aria-labelledby="${labelId}"[^>]*>[\\s\\S]*?<PopoverLabel id="${labelId}"`,
-    ),
-    `${section} actions should be exposed as a group labelled by its visible heading`,
-  );
-}
 assert.match(
-  popover,
-  /export function PopoverLabel\(\{ children, id \}: \{ children: ReactNode; id\?: string \}\)[\s\S]*?<div id=\{id\} className="ui-popover-label"/,
-  "PopoverLabel should optionally expose a stable id without changing existing callers",
+  actions,
+  /context\.hasGit \? \([\s\S]*?label="Branch…"[\s\S]*?openContextPicker\("branch"\)/,
+  "the Branch row elides for git-less chats and chains to the branch picker",
+);
+assert.match(
+  actions,
+  /<PopoverSubmenu icon="ph:gear-six" label="Response options"/,
+  "Response options is a cascade flyout carrying host/access/model/thinking/speed",
 );
 assert.match(
   actions,
@@ -115,26 +136,21 @@ assert.match(styles, /\.composer-actions__panel[\s\S]*overscroll-behavior: conta
 
 assert.match(
   context,
-  /export\s+type\s+ComposerContextView\s*=\s*null\s*\|\s*"project"\s*\|\s*"model"\s*\|\s*"branch"/,
+  /export\s+type\s+ComposerContextView\s*=\s*null\s*\|\s*"project"\s*\|\s*"model"\s*\|\s*"branch"\s*\|\s*"worktree"/,
 );
 assert.match(context, /export\s+type\s+ComposerContextProps\s*=\s*\{/);
 assert.match(context, /export\s+function\s+useComposerContextActions/);
-assert.match(context, /export\s+function\s+ComposerContextActionRows/);
+assert.match(context, /export\s+function\s+ComposerContextChips/);
 assert.match(
   context,
-  /itemSemantic\?: PopoverItemSemantic/,
-  "reusable context rows accept an optional item semantic",
-);
-assert.match(
-  context,
-  /<PopoverItem\s+semantic=\{itemSemantic\}/,
-  "context rows forward the requested semantic to their PopoverItems",
+  /className="cave-context-chip focus-ring"/,
+  "the context controls are native chip buttons (the semantic-forwarding hub rows retired with the split, cave-g21f)",
 );
 assert.match(context, /export\s+function\s+ComposerContextPickers/);
-assert.match(context, /context\.hasGit && context\.branch \? \[context\.branch\] : \[\]/);
-assert.match(context, /title=\{summary\}/);
-assert.match(context, /icon="ph:git-branch"[\s\S]*title=\{`Branch: \$\{context\.branch\} · \$\{context\.dirtyLabel\}/);
-assert.match(context, /icon="ph:git-branch"[\s\S]*>\s*\{context\.branch\}/);
+assert.match(context, /\{context\.hasGit \? \(/);
+assert.match(context, /modelLabel \?\? runtimeName,\s*\n\s*\]\.join\(" · "\);/);
+assert.match(context, /title=\{`Branch: \$\{context\.branch\} · \$\{context\.dirtyLabel\}[\s\S]*?name="ph:git-branch"/);
+assert.match(context, /name="ph:git-branch"[\s\S]*?>\s*\{context\.branch\}/);
 
 assert.match(linkedWork, /createSmartTaskFromChat/);
 assert.match(linkedWork, /TaskLinkPicker/);
@@ -152,23 +168,18 @@ assert.match(
 
 assert.match(
   actions,
-  /<ComposerContextActionRows[\s\S]*?itemSemantic="button"/,
-  "the composite grouped dialog requests native-button semantics for context rows",
-);
-assert.match(
-  actions,
-  /<ComposerLinkedWorkActions[\s\S]*?itemSemantic="button"/,
-  "the composite grouped dialog requests native-button semantics for linked-work rows",
+  /<LinkedWorkActions[\s\S]*?embedded/,
+  "the GitHub flyout's linked-work rows render in embedded mode (picker inline)",
 );
 assert.doesNotMatch(
   actions,
   /<PopoverItem(?!\s+semantic="button")/,
-  "every PopoverItem owned directly by the composite grouped dialog uses native-button semantics",
+  "the cascade menu owns no raw PopoverItems — rows come from the shared AddMenuRow",
 );
-assert.doesNotMatch(
+assert.match(
   actions,
   /<PopoverBody[^>]*\srole="menu"/,
-  "the mixed grouped dialog body must not claim pure-menu semantics",
+  "the cascade root claims real menu semantics (every row is a menuitem now)",
 );
 assert.match(
   popover,
@@ -196,7 +207,7 @@ assert.match(
 );
 
 assert.match(home, /<ComposerPlusMenu/);
-assert.match(home, /<ComposerContextPill/);
+assert.match(home, /<ComposerContextChips/);
 assert.match(home, /<ComposerOptionsMenu/);
 assert.doesNotMatch(home, /<ComposerActionsMenu/);
 

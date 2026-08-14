@@ -41,6 +41,10 @@ async function denySymlink() {
   throw error;
 }
 
+const RETRY_TEST_TIMEOUT_MS = 500;
+const RETRY_TEST_STEP_MS = 100;
+const RETRY_TEST_ATTEMPTS = Math.ceil(RETRY_TEST_TIMEOUT_MS / RETRY_TEST_STEP_MS);
+
 const baseState = () => ({
   sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {},
   sessionKeep: {}, sessionArchiveExtendedUntil: {}, sessionOwned: {}, mergedPrAutoArchived: {},
@@ -535,19 +539,25 @@ try {
     const { cave } = await home("candidate-eperm-timeout");
     await mkdir(cave, { recursive: true });
     let renameAttempts = 0;
+    let retryClock = 0;
     const candidates = new Set<string>();
     const epermRename = async (candidate: string) => {
       renameAttempts += 1;
+      retryClock += RETRY_TEST_STEP_MS;
       candidates.add(candidate);
       const error = new Error("injected Windows candidate failure") as NodeJS.ErrnoException;
       error.code = "EPERM";
       throw error;
     };
     await assert.rejects(
-      migrateCaveHome({ lockTimeoutMs: 150, lockCandidateRename: epermRename }),
+      migrateCaveHome({
+        lockTimeoutMs: RETRY_TEST_TIMEOUT_MS,
+        lockNow: () => retryClock,
+        lockCandidateRename: epermRename,
+      }),
       (error) => error?.code === "ETIMEDOUT",
     );
-    assert.ok(renameAttempts >= 2, "candidate publication retries until the deadline");
+    assert.equal(renameAttempts, RETRY_TEST_ATTEMPTS, "candidate publication retries exactly until the injected deadline");
     assert.equal(candidates.size, 1, "candidate publication reuses one directory for every retry");
     assert.equal(
       (await readdir(cave)).some((name) => name.startsWith(".migration.lock.candidate-")),
@@ -569,17 +579,23 @@ try {
       releasedAt: new Date().toISOString(),
     }));
     let fenceAttempts = 0;
+    let retryClock = 0;
     const epermRename = async () => {
       fenceAttempts += 1;
+      retryClock += RETRY_TEST_STEP_MS;
       const error = new Error("injected Windows reclaim failure") as NodeJS.ErrnoException;
       error.code = "EPERM";
       throw error;
     };
     await assert.rejects(
-      migrateCaveHome({ lockTimeoutMs: 150, lockFenceRename: epermRename }),
+      migrateCaveHome({
+        lockTimeoutMs: RETRY_TEST_TIMEOUT_MS,
+        lockNow: () => retryClock,
+        lockFenceRename: epermRename,
+      }),
       (error) => error?.code === "ETIMEDOUT",
     );
-    assert.ok(fenceAttempts >= 2, "released-lock fencing retries until the deadline");
+    assert.equal(fenceAttempts, RETRY_TEST_ATTEMPTS, "released-lock fencing retries exactly until the injected deadline");
     assert.equal(await kind(lock), "dir", "failed fencing never removes the owned lock");
     assert.equal((await json(path.join(lock, "owner.json"))).token, "released-owner");
   }

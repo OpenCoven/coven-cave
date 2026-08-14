@@ -20,8 +20,12 @@ udid="$(xcrun simctl list devices available -j \
   exit 1
 }
 
+# Via the wrapper, never `xcodegen generate` directly: the web bundles are
+# gitignored, and a scan that runs before they exist produces a project without
+# them (cave-d8ma3).
+"$ROOT/scripts/ios-xcodegen.sh"
+
 cd "$IOS_ROOT"
-xcodegen generate
 xcodebuild \
   -project CovenCave.xcodeproj \
   -scheme CovenCave \

@@ -24,11 +24,29 @@ test("the pane is memory-only — the familiar section moved to its own surface"
   assert.doesNotMatch(chatSurface, /INSPECTOR_SECTIONS/, "the promoted right-panel section strip is gone");
 });
 
-test("InspectorEmpty helper is defined and used for the memory error state", () => {
+test("InspectorEmpty helper is defined and used for independent memory error states", () => {
   assert.match(src, /function InspectorEmpty\(/, "helper declared");
   const usages = src.match(/<InspectorEmpty\b/g) ?? [];
   assert.ok(usages.length >= 1, `expected >=1 usage, got ${usages.length}`);
-  assert.match(src, /icon="ph:warning"\s+title="Memory unavailable"/, "memory error state");
+  assert.match(
+    src,
+    /icon="ph:warning"\s+title="Couldn't load familiar memories"/,
+    "canonical error state is explicit",
+  );
+  assert.match(
+    src,
+    /icon="ph:warning"\s+title="Couldn't load memory files"/,
+    "file error state is explicit",
+  );
+  const inspectorEmptySource = src.slice(
+    src.indexOf("function InspectorEmpty"),
+    src.indexOf("function age("),
+  );
+  assert.match(
+    inspectorEmptySource,
+    /<div\s+role="alert"/,
+    "Inspector error states are announced",
+  );
   // The familiar lifecycle states live with the familiar surface now; a null
   // active familiar is no longer treated as a no-selection state.
   const familiarView = readFileSync(resolve(here, "./chat-familiar-capabilities.tsx"), "utf8");

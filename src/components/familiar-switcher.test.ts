@@ -30,6 +30,11 @@ assert.match(
 );
 assert.match(
   source,
+  /singleRequired\s*\? "Choose familiar"\s*: "All familiars"/,
+  "a required single-familiar picker never labels its empty state as All familiars",
+);
+assert.match(
+  source,
   /familiar-switcher__trigger-caret/,
   "the labeled trigger carries a dropdown caret (it reads as a selector)",
 );
@@ -58,7 +63,11 @@ assert.match(
   "the checkbox zone and ⌘/Ctrl-click both mean multi",
 );
 assert.match(source, /if \(!multi\) setOpen\(false\);/, "multi picks keep the menu open for more toggles");
-assert.match(source, /aria-multiselectable="true"/, "the listbox announces multiselect");
+assert.match(
+  source,
+  /aria-multiselectable=\{singleRequired \? undefined : true\}/,
+  "the listbox announces multiselect except on single-familiar surfaces",
+);
 assert.match(
   source,
   /className=\{`familiar-switcher__checkbox\$\{isActive \? " is-checked" : ""\}`\}/,
@@ -116,7 +125,7 @@ assert.match(
   /className="familiar-switcher__summon focus-ring"[\s\S]{0,200}ph:magic-wand-fill[\s\S]{0,100}Summon familiar/,
   "the footer leads with a full-width Summon familiar button wearing the circle's wand",
 );
-assert.match(source, /openFamiliarStudioListView\(\)/, "Manage opens the Studio list view");
+assert.match(source, /openFamiliarStudioListView\(\)/, "Manage opens the familiars manager (Settings → Familiars)");
 assert.match(source, /setReordering\(true\)/, "Reorder enables drag mode");
 assert.match(source, /setFamiliarOrder\(arrayMove\(/, "reorder persists the new familiar order");
 
@@ -124,7 +133,7 @@ assert.match(source, /setFamiliarOrder\(arrayMove\(/, "reorder persists the new 
 // fades in on hover/focus, when checked, or while a multiselect scope is live.
 assert.match(
   source,
-  /data-multi=\{multiScope \? "true" : undefined\}/,
+  /data-multi=\{!singleRequired && multiScope \? "true" : undefined\}/,
   "the list flags a live multiselect scope so CSS can keep all checkboxes visible",
 );
 assert.match(

@@ -3,9 +3,16 @@
   "bundle": {
     "resources": [
       "resources/server-archive/**/*",
-      "resources/node/**/*"
+      "resources/node/**/*",
+      "resources/whisper/**/*",
+      "resources/piper/**/*",
+      "resources/kokoro/**/*"
     ],
     "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
       "wix": {
         "fragmentPaths": [
           "./windows/fragments/sidecar-cache-cleanup.wxs"

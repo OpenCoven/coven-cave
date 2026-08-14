@@ -2,6 +2,14 @@ const HOOK_LINE_RE = /^hook:\s+/;
 const BANNER_LINE_RE = /^(?:--------|workdir:|model:|provider:|approval:|sandbox:|reasoning:|session id:|tokens used|\d[\d,]*\s*$)/;
 const CODEX_START_LINE = "codex";
 const CLAUDE_ASSISTANT_RE = /^claude(?:\s+code)?$/i;
+// Hermes may emit this compatibility diagnostic on stdout immediately before
+// (or on the same line as) its reply. The selected model is still applied, so
+// do not expose the runtime's internal provider normalization to the user.
+const OPENAI_CODEX_MODEL_NORMALIZATION_PREFIX_RE =
+  /^\s*(?:⚠(?:\uFE0F)?\s*)?Normalized model ['"][^'"\r\n]+['"] to ['"][^'"\r\n]+['"] for openai-codex\.\s*/i;
+const OPENAI_CODEX_MODEL_NORMALIZATION_START_RE =
+  /^\s*(?:⚠(?:\uFE0F)?\s*)?Normalized model ['"][^'"\r\n]+['"] to ['"][^'"\r\n]+['"] for\s*$/i;
+const OPENAI_CODEX_MODEL_NORMALIZATION_CONTINUATION_RE = /^\s*openai-codex\.\s*$/i;
 
 // Exec-echo blocks emitted by Codex into stdout — NOT structured JSON events.
 // Format:
@@ -112,6 +120,10 @@ export class AssistantFilter {
   // phase gate suppressed entire replies, and the banner heuristic ate
   // legitimate numeric answers. Those callers get verbatim passthrough.
   private passthrough = false;
+  // Hermes can hard-wrap its model-normalization diagnostic immediately before
+  // `openai-codex.`. Hold the first line until that exact continuation arrives
+  // so unrelated assistant text is never discarded.
+  private pendingOpenAiCodexNormalization: string | null = null;
 
   constructor(opts?: { passthrough?: boolean }) {
     this.passthrough = opts?.passthrough === true;
@@ -133,6 +145,10 @@ export class AssistantFilter {
     let remainder = "";
     if (this.buf) remainder = this.processLine(this.buf);
     this.buf = "";
+    if (this.pendingOpenAiCodexNormalization) {
+      remainder += this.pendingOpenAiCodexNormalization + "\n";
+      this.pendingOpenAiCodexNormalization = null;
+    }
     if (this.pendingSkillFrontmatterDelimiter) {
       this.pendingSkillFrontmatterDelimiter = false;
       return remainder + "---\n";
@@ -142,7 +158,20 @@ export class AssistantFilter {
 
   private processLine(rawLine: string): string {
     const line = rawLine.replace(/\r/g, "");
-    if (this.passthrough) return line + "\n";
+    if (this.passthrough) {
+      if (this.pendingOpenAiCodexNormalization) {
+        const pending = this.pendingOpenAiCodexNormalization;
+        this.pendingOpenAiCodexNormalization = null;
+        if (OPENAI_CODEX_MODEL_NORMALIZATION_CONTINUATION_RE.test(line)) return "";
+        return pending + "\n" + line + "\n";
+      }
+      const visibleLine = line.replace(OPENAI_CODEX_MODEL_NORMALIZATION_PREFIX_RE, "");
+      if (OPENAI_CODEX_MODEL_NORMALIZATION_START_RE.test(line)) {
+        this.pendingOpenAiCodexNormalization = line;
+        return "";
+      }
+      return visibleLine ? visibleLine + "\n" : "";
+    }
     const trimmed = line.trim();
 
     if (trimmed === CODEX_START_LINE || CLAUDE_ASSISTANT_RE.test(trimmed)) {

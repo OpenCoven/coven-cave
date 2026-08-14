@@ -157,25 +157,26 @@ for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick
     `${name} carries no bespoke enhance state — the hook owns the lifecycle`,
   );
 }
-// Chat options' Improve section preserves the smart-enhance + intent-list reachability.
+// Chat options routes enhance through the shared cascade menu's utility group.
+const addMenuShared = await readFile(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");
 assert.match(
   actionsMenu,
-  /<section[\s\S]*?className="composer-actions__section composer-actions__improve"[\s\S]*?aria-labelledby="composer-actions-improve-label"[\s\S]*?<PopoverLabel id="composer-actions-improve-label">Improve<\/PopoverLabel>/,
-  "Chat options exposes a dedicated Improve section with the stable Improve label id",
+  /legacy=\{\{[\s\S]*?enhance: improve\.enhance,/,
+  "Chat options forwards enhance into the shared cascade's utility group",
 );
 assert.match(
-  actionsMenu,
-  /closePanel\(\);\s*\n\s*improve\.enhance\.onEnhance\("auto"\)/,
-  "Improve → Smart enhance still fires the smart enhance intent",
+  addMenuShared,
+  /onClose\(\);\s*\n\s*legacy\.enhance!\.onEnhance\("auto"\)/,
+  "Enhance prompt still fires the one-click smart enhance intent",
 );
 assert.match(
-  actionsMenu,
-  /onSelect=\{\(\) => setEnhanceView\(true\)\}[\s\S]*?Enhance options…/,
-  "Improve offers an Enhance options entry that opens the intent list",
+  addMenuShared,
+  /<PopoverSubmenu[\s\S]{0,200}?label="Enhance options"/,
+  "Enhance options is a cascade flyout carrying the intent list",
 );
 assert.match(
-  actionsMenu,
-  /ENHANCE_INTENTS\.map\(\(intent\) => \([\s\S]*?improve\.enhance\.onEnhance\(intent\.id\)/,
+  addMenuShared,
+  /ENHANCE_INTENTS\.map\(\(intent\) => \([\s\S]*?legacy\.enhance!\.onEnhance\(intent\.id\)/,
   "Enhance options lists every shared enhance intent",
 );
 

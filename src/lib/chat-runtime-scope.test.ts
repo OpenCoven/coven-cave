@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   RuntimeScopeError,
+  buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   buildRuntimeScopePreamble,
   resolveLocalRuntimeCwd,
@@ -35,6 +36,44 @@ assert.equal(
   realpathSync(nested),
   "project roots inside home should resolve to their real directory",
 );
+
+{
+  const docs = path.join(home, "docs");
+  const skills = path.join(home, ".agents");
+  const first = buildRuntimeAccessFingerprint({
+    primaryRoot: repo,
+    grantedProjectRoots: [docs],
+    projectRootAccess: { [docs]: "read" },
+    additionalRoots: [skills],
+  });
+  const reordered = buildRuntimeAccessFingerprint({
+    primaryRoot: `${repo}/`,
+    grantedProjectRoots: [docs, docs],
+    projectRootAccess: { [docs]: "read" },
+    additionalRoots: [skills],
+  });
+  assert.equal(first, reordered, "equivalent grant sets have one stable fingerprint");
+  assert.notEqual(
+    first,
+    buildRuntimeAccessFingerprint({
+      primaryRoot: repo,
+      grantedProjectRoots: [docs],
+      projectRootAccess: { [docs]: "write" },
+      additionalRoots: [skills],
+    }),
+    "an access-level change invalidates the native sandbox fingerprint",
+  );
+  assert.notEqual(
+    first,
+    buildRuntimeAccessFingerprint({
+      primaryRoot: repo,
+      grantedProjectRoots: [docs, path.join(home, "newly-approved")],
+      projectRootAccess: { [docs]: "read" },
+      additionalRoots: [skills],
+    }),
+    "a newly approved root invalidates the native sandbox fingerprint",
+  );
+}
 
 await assert.rejects(
   () => resolveLocalRuntimeCwd(outside, { homeDir: home }),
@@ -99,6 +138,41 @@ await assert.rejects(
 }
 
 {
+  const codexSkills = path.join(home, ".codex", "skills");
+  const pluginCache = path.join(home, ".codex", "plugins", "cache");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    readOnlyResourceRoots: [codexSkills, pluginCache, codexSkills],
+  });
+  assert.match(preamble, /Read-only runtime resources:/);
+  assert.match(
+    preamble,
+    new RegExp(codexSkills.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    "installed skill roots should be declared readable even when no extra project is granted",
+  );
+  assert.match(
+    preamble,
+    new RegExp(pluginCache.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    "plugin skill roots should be declared readable",
+  );
+  assert.match(
+    preamble,
+    /Runtime resources are read-only — read their instructions and assets, but do not edit, create, delete, commit, push, or run commands inside them/,
+  );
+  assert.equal(
+    preamble.match(new RegExp(codexSkills.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length,
+    1,
+    "duplicate resource roots should be listed once",
+  );
+  assert.doesNotMatch(
+    preamble,
+    /ask the user to reopen/,
+    "a local scope with readable resources should use the grant-aware boundary wording",
+  );
+}
+
+{
   const preamble = buildRuntimeScopePreamble({
     kind: "ssh",
     host: "build-box",
@@ -106,6 +180,47 @@ await assert.rejects(
   });
   assert.match(preamble, /build-box:\/srv\/cave/);
   assert.match(preamble, /remote runtime boundary/);
+}
+
+{
+  const docs = path.join(home, "docs");
+  const readOnlyChild = path.join(home, "docs", "public");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    allowedProjectRoots: [repo, docs, readOnlyChild],
+    projectRootAccess: { [docs]: "write", [readOnlyChild]: "read" },
+  });
+  assert.match(
+    preamble,
+    new RegExp(`${docs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(read \\+ write\\)`),
+    "write-granted roots should render their level",
+  );
+  assert.match(
+    preamble,
+    new RegExp(`${readOnlyChild.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(read-only\\)`),
+    "read-only roots should be annotated so the familiar doesn't assume write access",
+  );
+  assert.match(
+    preamble,
+    /Roots marked \(read-only\) above permit reading, browsing, and chatting only/,
+    "a read-only root should trigger the caveat line",
+  );
+}
+
+{
+  const docs = path.join(home, "docs");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    allowedProjectRoots: [repo, docs],
+    projectRootAccess: { [docs]: "write" },
+  });
+  assert.doesNotMatch(
+    preamble,
+    /read-only/,
+    "an all-write grant set should not emit the read-only caveat line",
+  );
 }
 
 assert.equal(

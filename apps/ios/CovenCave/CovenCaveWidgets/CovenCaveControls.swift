@@ -7,18 +7,6 @@ import WidgetKit
 // app already routes (see CovenCaveApp.onOpenURL). The Tasks control also shows
 // a live "running" count read from the shared App Group snapshot.
 
-/// Open the reminders list.
-struct RemindersControl: ControlWidget {
-    var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "ai.opencoven.cave.control.reminders") {
-            ControlWidgetButton(action: OpenURLIntent(URL(string: "covencave://reminders")!)) {
-                Label("Reminders", systemImage: "bell.fill")
-            }
-        }
-        .displayName("Coven Reminders")
-        .description("Open your reminders in Coven Cave.")
-    }
-}
 
 /// Supplies the current "running tasks" count for the Tasks control.
 struct RunningTasksValueProvider: ControlValueProvider {
@@ -29,7 +17,7 @@ struct RunningTasksValueProvider: ControlValueProvider {
     }
 }
 
-/// Show how many tasks are running and open the Tasks tab.
+/// Show how many tasks are running and open the Tasks destination.
 struct TasksControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(
@@ -41,6 +29,6 @@ struct TasksControl: ControlWidget {
             }
         }
         .displayName("Coven Tasks")
-        .description("See running tasks and open the Tasks tab.")
+        .description("See running tasks and open the Tasks destination.")
     }
 }

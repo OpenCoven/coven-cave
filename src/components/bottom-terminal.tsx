@@ -2,7 +2,8 @@
 
 import "@xterm/xterm/css/xterm.css";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
+import type React from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -196,15 +197,23 @@ async function createXterm(
   return { term, fit, search };
 }
 
+/** Imperative handle for writing into a pane's PTY from outside it — the
+ *  Coding Desk's broadcast input (cave-98o51). Deliberately write-only: it
+ *  reuses the transport this pane already owns rather than adding a second PTY
+ *  API, and a write made through it does NOT re-fire `onUserInput`, so a
+ *  broadcast can never echo back into the pane that produced it. */
+export type TerminalWriterHandle = {
+  write: (data: string) => void;
+};
+
 export function BottomTerminal({
   threadId,
   active = true,
   visible = active,
   projectRoot,
-  paneId,
   label,
-  registerWriter,
   onUserInput,
+  writerRef,
 }: {
   threadId: string;
   /** This pane has keyboard focus (drives refit + refocus on activation). */
@@ -215,32 +224,31 @@ export function BottomTerminal({
    *  Defaults to `active` for single-pane hosts. */
   visible?: boolean;
   projectRoot?: string;
-  /** Stable id for comux's broadcast registry (defaults to threadId). */
-  paneId?: string;
-  /** Human-readable pane name (the comux tab/pane label) so AT can tell split
+  /** Human-readable pane name so AT can tell split
    *  panes apart — names the terminal region and its screen-reader mirror. */
   label?: string;
-  /** Register/unregister this pane's PTY writer so broadcast can fan input in. */
-  registerWriter?: (paneId: string, write: ((data: string) => void) | null) => void;
-  /** Called with every keystroke (post Ctrl-transform) so comux can mirror it
-   *  to sibling panes when broadcast mode is on. */
-  onUserInput?: (paneId: string, data: string) => void;
+  /** Keystrokes the USER typed here, after sticky-Ctrl folding — the source
+   *  side of broadcast input. Never fires for writes made via `writerRef`. */
+  onUserInput?: (data: string) => void;
+  /** Exposes {@link TerminalWriterHandle} so a split host can mirror input in. */
+  writerRef?: React.Ref<TerminalWriterHandle>;
 }) {
-  const broadcastPaneId = paneId ?? threadId;
   // Connection transitions are written into the terminal (and its polite
   // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
   // them to the shared assertive live region so AT interrupts with the status.
   const { announce: srAnnounce } = useAnnouncer();
-  // Writer set by whichever transport (Tauri / WS) is live; the registered
-  // wrapper reads this ref at call time so registration can precede attach.
-  const writerRef = useRef<((data: string) => void) | null>(null);
+  // The live transport's "send these bytes to the PTY" closure, republished by
+  // whichever path (Tauri command or WebSocket bridge) actually connected.
+  // Null while disconnected, so a broadcast write during a reconnect is a
+  // no-op rather than a crash.
+  const sendToPtyRef = useRef<((data: string) => void) | null>(null);
   const onUserInputRef = useRef(onUserInput);
   onUserInputRef.current = onUserInput;
-  useEffect(() => {
-    if (!registerWriter) return;
-    registerWriter(broadcastPaneId, (data: string) => writerRef.current?.(data));
-    return () => registerWriter(broadcastPaneId, null);
-  }, [registerWriter, broadcastPaneId]);
+  useImperativeHandle(
+    writerRef,
+    () => ({ write: (data: string) => sendToPtyRef.current?.(data) }),
+    [],
+  );
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
@@ -275,6 +283,22 @@ export function BottomTerminal({
   clearCtrlRef.current = () => {
     ctrlStickyRef.current = false;
     setCtrlActive(false);
+  };
+  // Sticky Ctrl (mobile key bar): fold the next single character into its C0
+  // control code (Ctrl-C, Ctrl-A, …), then drop back to normal input.
+  //
+  // Shared by BOTH transports on purpose. This used to live inline in the
+  // Tauri desktop handler only, which meant the key bar — a touch affordance —
+  // did nothing on the WS bridge, the transport iOS, Android and the browser
+  // actually use: Ctrl-C sent a literal "c". Folding once here also keeps the
+  // `onUserInput` contract honest, since broadcast must mirror the folded
+  // bytes so a sibling pane receives Ctrl-C as Ctrl-C.
+  const foldStickyCtrlRef = useRef<(data: string) => string>((data) => data);
+  foldStickyCtrlRef.current = (data: string) => {
+    if (!ctrlStickyRef.current || data.length !== 1) return data;
+    const code = data.toUpperCase().charCodeAt(0);
+    clearCtrlRef.current();
+    return code >= 0x40 && code <= 0x5f ? String.fromCharCode(code & 0x1f) : data;
   };
   const sendKey = useCallback((seq: string) => {
     const term = termRef.current;
@@ -533,27 +557,22 @@ export function BottomTerminal({
       // Tauri command parameters are camelCase on the JS side by default.
       // The nested pty_start options object below is a Rust struct, so its
       // fields intentionally stay snake_case for Serde.
-      const onDataDispose = term.onData((data) => {
+      const writeToPty = (out: string) => {
         if (stopped) return;
-        let out = data;
-        // Sticky Ctrl (mobile key bar): fold the next single character into its
-        // C0 control code (Ctrl-C, Ctrl-A, …), then drop back to normal input.
-        if (ctrlStickyRef.current && data.length === 1) {
-          const code = data.toUpperCase().charCodeAt(0);
-          if (code >= 0x40 && code <= 0x5f) out = String.fromCharCode(code & 0x1f);
-          clearCtrlRef.current();
-        }
         void bridge.invoke("pty_write", {
           threadId: threadId,
           bytes: Array.from(new TextEncoder().encode(out)),
         }).catch((err) => log("pty_write FAILED", err));
-        onUserInputRef.current?.(broadcastPaneId, out);
+      };
+      sendToPtyRef.current = writeToPty;
+      const onDataDispose = term.onData((data) => {
+        if (stopped) return;
+        const out = foldStickyCtrlRef.current(data);
+        writeToPty(out);
+        // Broadcast mirrors the FOLDED bytes, so a Ctrl-C typed on the mobile
+        // key bar reaches sibling panes as a Ctrl-C rather than a literal "c".
+        onUserInputRef.current?.(out);
       });
-      writerRef.current = (d) =>
-        void bridge.invoke("pty_write", {
-          threadId: threadId,
-          bytes: Array.from(new TextEncoder().encode(d)),
-        }).catch((err) => log("pty_write FAILED", err));
 
       if (!attachToRunning) {
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
@@ -607,6 +626,7 @@ export function BottomTerminal({
         ro.disconnect();
         resizer.dispose();
         onDataDispose.dispose();
+        sendToPtyRef.current = null;
         unlistenData();
         unlistenExit();
         if (flushTimerRef.current) {
@@ -676,6 +696,15 @@ export function BottomTerminal({
         term.write(bytes);
         pushToMirror(bytes);
       });
+      bridge.onReplayReset(() => {
+        // The server kept the PTY alive but its bounded retained-output window
+        // no longer reaches this client cursor. Reset immediately before its
+        // legacy-style full replay; otherwise the tail would be appended to a
+        // stale terminal state.
+        term.reset();
+        decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+        pendingMirrorRef.current = "";
+      });
       bridge.onExit((code) => {
         announce(
           `\r\n\x1b[2m[exit ${code} — press any key to start a new shell]\x1b[0m\r\n`,
@@ -700,14 +729,17 @@ export function BottomTerminal({
             }
             if (disposed) return;
             try {
-              // The server replays its scrollback ring on reattach; reset
-              // first so the replay paints a clean screen instead of
-              // appending a duplicate of what's already visible.
-              term.reset();
-              // Reset the streaming decoder (+ pending buffer) too: a mid-char
-              // socket drop left partial bytes that would corrupt the mirror.
-              decoderRef.current = new TextDecoder("utf-8", { fatal: false });
-              pendingMirrorRef.current = "";
+              // Cursor-aware servers replay only the bytes missed while this
+              // socket was down. Keeping xterm intact makes that replay
+              // byte-for-byte continuous; a retained-window gap is signalled
+              // through onReplayReset above and falls back to full replay.
+              // An older server does not understand the opt-in query and
+              // retains full replay, so preserve its historical reset path.
+              if (!bridge.hasReplayCursor) {
+                term.reset();
+                decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+                pendingMirrorRef.current = "";
+              }
               await bridge.reconnect();
               bridge.resize(term.cols, term.rows);
               return;
@@ -715,9 +747,6 @@ export function BottomTerminal({
               /* next delay */
             }
           }
-          announce(
-            "\r\n\x1b[2m[terminal reconnect failed — press any key to retry]\x1b[0m\r\n",
-          );
           srAnnounce("Terminal reconnect failed; press any key to retry", "assertive");
         } finally {
           reconnecting = false;
@@ -727,9 +756,6 @@ export function BottomTerminal({
       bridge.onClose((_code, reason) => {
         if (disposed) return;
         if (reason === "replaced") {
-          announce(
-            "\r\n\x1b[2m[this terminal was opened in another window — view detached]\x1b[0m\r\n",
-          );
           srAnnounce("This terminal was opened in another window; this view is detached", "assertive");
           return;
         }
@@ -737,7 +763,6 @@ export function BottomTerminal({
           // onExit already announced; a keypress starts a fresh shell.
           return;
         }
-        announce("\r\n\x1b[2m[terminal disconnected — reconnecting…]\x1b[0m\r\n");
         srAnnounce("Terminal disconnected, reconnecting", "assertive");
         void attemptReconnect();
       });
@@ -759,17 +784,23 @@ export function BottomTerminal({
       }
       setReady(true);
 
-      const onDataDispose = term.onData((data) => {
+      const writeToPty = (out: string) => {
         if (!bridge.isOpen) {
           // Dead socket (or exited shell): typing revives the terminal
           // instead of vanishing into a no-op write.
           void attemptReconnect();
           return;
         }
-        bridge.write(new TextEncoder().encode(data));
-        onUserInputRef.current?.(broadcastPaneId, data);
+        bridge.write(new TextEncoder().encode(out));
+      };
+      sendToPtyRef.current = writeToPty;
+      const onDataDispose = term.onData((data) => {
+        // The key bar's sticky Ctrl folds here too — this is the transport
+        // iOS, Android and the browser use, which is where that bar lives.
+        const out = foldStickyCtrlRef.current(data);
+        writeToPty(out);
+        onUserInputRef.current?.(out);
       });
-      writerRef.current = (d) => bridge.write(new TextEncoder().encode(d));
 
       const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
         try {
@@ -816,6 +847,7 @@ export function BottomTerminal({
         ro.disconnect();
         resizer.dispose();
         onDataDispose.dispose();
+        sendToPtyRef.current = null;
         if (typeof document !== "undefined") {
           document.removeEventListener("visibilitychange", onForeground);
         }

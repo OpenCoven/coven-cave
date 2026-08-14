@@ -27,14 +27,32 @@ assert.match(
 
 assert.match(
   source,
-  /const firstIncomplete = steps\.find\(\(s\) => !s\.optional && !s\.ok\)/,
-  "the spotlighted step is the first incomplete required step",
+  /const firstActionRequired = steps\.find\(\(step\) => !step\.optional && step\.state === "action-required"\)/,
+  "only the first confirmed required blocker is spotlighted",
 );
 
 assert.match(
   source,
-  /const openStepKey = expandedStep \?\? activeStepKey \?\? "daemon"/,
-  "users can expand any step manually; default follows the active step",
+  /const openStepKey = expandedStep \?\? activeStepKey/,
+  "users can expand any step manually; the default follows a confirmed blocker without inventing one",
+);
+
+assert.equal(
+  source.match(/state: onboardingStepState\(s\?\./g)?.length,
+  5,
+  "every guided step preserves the route's named readiness state",
+);
+
+assert.match(
+  source,
+  /optional: s\?\.git\?\.optional \?\? true/,
+  "Git remains optional when older status payloads omit its metadata",
+);
+
+assert.doesNotMatch(
+  source,
+  /const firstIncomplete = steps\.find\(\(s\) => !s\.optional && !s\.ok\)/,
+  "checking and unavailable steps are not treated as confirmed blockers",
 );
 
 assert.match(
@@ -52,10 +70,10 @@ for (const key of stepOrder) {
   assert.ok(at > -1, `guided step ${key} present and in order`);
   cursor = at;
 }
-for (const gone of ['key: "binding",', 'key: "familiars",']) {
+for (const gone of ['key: "binding",', 'key: "familiars",', 'key: "project",']) {
   assert.ok(
     !source.includes(gone),
-    `retired wizard step ${gone} must not return — creation lives in the summoning circle`,
+    `retired wizard step ${gone} must not return — creation lives in the summoning circle and Queue setup on the Tasks page's Queue tab`,
   );
 }
 
@@ -109,14 +127,23 @@ assert.match(
 
 assert.match(
   source,
-  /npmMissing/,
-  "a missing npm is detected and routed to Node.js setup guidance",
+  /managedNodeMissing/,
+  "a missing Cave-managed Node.js toolchain is detected and routed to setup guidance",
 );
 
 assert.match(
   source,
   /NodeSetupNotice/,
   "Node.js setup instructions render inline when npm is missing",
+);
+
+// Queue project selection retired from the wizard: its picker (and the
+// request-generation race guard) live in queue-project-setup.tsx on the
+// Tasks page's Queue tab, pinned by familiar-work-queue-view.test.ts.
+assert.doesNotMatch(
+  source,
+  /QueueProjectSetup|requestGeneration/,
+  "the wizard no longer embeds the Queue project picker",
 );
 
 // ── Cross-platform instructions ─────────────────────────────────────────────
@@ -237,14 +264,20 @@ assert.match(
 
 assert.match(
   source,
-  /step 1 below still works and is the usual fix/,
-  "the status-unreachable banner points at a concrete next action",
+  /Setup check unavailable/,
+  "the status warning names incomplete evidence without calling the route unreachable",
+);
+
+assert.doesNotMatch(
+  source,
+  /Setup status is unreachable|step 1 below still works and is the usual fix/,
+  "the old outage copy does not return now that partial checks can remain usable",
 );
 
 assert.match(
   source,
-  /or run it yourself:/,
-  "every one-click action keeps the manual command alongside",
+  /onClick=\{\(\) => onInstall\("managed-node"\)\}/,
+  "the startup tools step offers its Cave-managed Node.js prerequisite installer",
 );
 
 assert.match(
@@ -321,8 +354,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /tools=\{\(status\?\.tools \?\? \[\]\)[\s\S]{0,100}\.filter\(\(tool\) => tool\.id === "coven-cli"\)[\s\S]{0,100}onboardingToolWithUpdate\(tool, updateTools\)/,
-  "the startup CLI step keeps local readiness authoritative and merges update-only fields",
+  /tools=\{\s*Array\.isArray\(status\?\.tools\)\s*\? status\.tools[\s\S]{0,180}\.filter\(\(tool\) => tool\.id === "coven-cli"\)[\s\S]{0,180}onboardingToolWithUpdate\(tool, updateTools\)[\s\S]{0,120}: null\s*\}/,
+  "only an actual route tools array is authoritative; null evidence stays unknown while update-only fields merge in",
 );
 
 assert.match(
@@ -339,8 +372,8 @@ assert.match(
 
 assert.match(
   source,
-  /const needsAction = !tool\.installed \|\| tool\.outdated \|\| !tool\.compatible/,
-  "the startup tools step treats below-floor tools as actionable updates",
+  /const needsAction = actionTargets\.includes\(tool\.id\)/,
+  "the startup tools step uses reviewed action targets instead of npm freshness alone",
 );
 
 assert.match(
@@ -351,8 +384,8 @@ assert.match(
 
 assert.match(
   source,
-  /<CommandRow command=\{manualInstallCommand\}/,
-  "the startup tools step shows a manual command matching the needed OpenCoven tools",
+  /\{managedNodeBusy \? "Installing…" : "Install Node\/npm"\}/,
+  "the startup tools step names its managed Node.js prerequisite action",
 );
 
 assert.match(
@@ -372,8 +405,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /const setupComplete = status\?\.complete \?\? false/,
-  "server complete is the wizard's single source of truth for setup",
+  /const continuation = onboardingContinuationDecision\(status\?\.steps\);\s*const setupComplete = status\?\.complete \?\? continuation\.complete;\s*const mayContinue = status\?\.mayContinue \?\? continuation\.mayContinue;/,
+  "server decisions stay authoritative while legacy payloads use the shared named-state fallback",
 );
 
 assert.doesNotMatch(
@@ -476,6 +509,16 @@ assert.match(
   source,
   /<HermesSetupNext onCopy/,
   "a successful Hermes install surfaces the setup next-step at a render site",
+);
+assert.match(
+  source,
+  /const availabilityMessage =[\s\S]{0,160}adapter\.availability\.state !== "ready"/,
+  "runtime cards derive their unavailable state from the shared availability summary",
+);
+assert.match(
+  source,
+  /\{availabilityMessage\}/,
+  "runtime cards render the shared unavailable-runtime remediation",
 );
 
 assert.match(

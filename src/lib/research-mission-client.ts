@@ -1,8 +1,10 @@
 import type {
   CreateResearchMissionInput,
+  ResearchArtifactKind,
   ResearchMission,
   ResearchMissionActionInput,
 } from "./research-missions.ts";
+import { parseResearchMission } from "./research-missions.ts";
 import type { AutomationStatus } from "./codex-automations-types.ts";
 import type { ResearchAutomationScheduleInput } from "./server/research-mission-runner.ts";
 import { publishSchedulesChanged } from "./board-cache-events.ts";
@@ -19,8 +21,62 @@ export type ResearchMissionResponse = {
   error?: string;
 };
 
-async function readJson<T>(response: Response): Promise<T> {
-  return (await response.json()) as T;
+export type ResearchMissionFile = {
+  key: string;
+  kind: ResearchArtifactKind;
+  title: string;
+  fileName: string;
+  relativePath: string;
+  content: string | null;
+  workspacePath: string;
+  updatedAt: string;
+};
+
+export type ResearchMissionFileResponse =
+  | { ok: true; file: ResearchMissionFile }
+  | { ok: false; error?: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  return response.json();
+}
+
+function parseMissionResponse(value: unknown): ResearchMissionResponse {
+  if (!isRecord(value) || typeof value.ok !== "boolean") {
+    return { ok: false, error: "Research mission returned an invalid response" };
+  }
+  if (!value.ok) {
+    return {
+      ok: false,
+      ...(typeof value.error === "string" ? { error: value.error } : {}),
+    };
+  }
+  const mission = parseResearchMission(value.mission);
+  return mission
+    ? { ok: true, mission }
+    : { ok: false, error: "Research mission returned an invalid response" };
+}
+
+function parseMissionListResponse(value: unknown): ResearchMissionListResponse {
+  if (!isRecord(value) || typeof value.ok !== "boolean") {
+    return { ok: false, error: "Research missions returned an invalid response" };
+  }
+  if (!value.ok) {
+    return {
+      ok: false,
+      ...(typeof value.error === "string" ? { error: value.error } : {}),
+    };
+  }
+  if (!Array.isArray(value.missions)) {
+    return { ok: false, error: "Research missions returned an invalid response" };
+  }
+  const missions = value.missions.map(parseResearchMission);
+  return missions.some((mission) => mission === null)
+    ? { ok: false, error: "Research missions returned an invalid response" }
+    : { ok: true, missions: missions as ResearchMission[] };
 }
 
 export function isActiveResearchMission(mission: ResearchMission): boolean {
@@ -46,7 +102,7 @@ export async function listResearchMissions(
     `/api/research/missions?familiarId=${encodeURIComponent(familiarId)}`,
     { cache: "no-store", signal },
   );
-  return readJson<ResearchMissionListResponse>(response);
+  return parseMissionListResponse(await readJson(response));
 }
 
 export async function getResearchMission(
@@ -57,7 +113,21 @@ export async function getResearchMission(
     cache: "no-store",
     signal,
   });
-  return readJson<ResearchMissionResponse>(response);
+  return parseMissionResponse(await readJson(response));
+}
+
+export async function getResearchMissionFile(
+  missionId: string,
+  artifactKey: string,
+  signal?: AbortSignal,
+): Promise<ResearchMissionFile> {
+  const response = await fetch(
+    `/api/research/missions/${encodeURIComponent(missionId)}/files/${encodeURIComponent(artifactKey)}`,
+    { cache: "no-store", signal },
+  );
+  const data = await readJson(response) as ResearchMissionFileResponse;
+  if (!data.ok) throw new Error(data.error ?? "request failed");
+  return data.file;
 }
 
 export async function createResearchMission(
@@ -68,7 +138,7 @@ export async function createResearchMission(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  return readJson<ResearchMissionResponse>(response);
+  return parseMissionResponse(await readJson(response));
 }
 
 export async function actOnResearchMission(
@@ -80,7 +150,7 @@ export async function actOnResearchMission(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  return readJson<ResearchMissionResponse>(response);
+  return parseMissionResponse(await readJson(response));
 }
 
 export async function scheduleResearchMission(
@@ -92,7 +162,7 @@ export async function scheduleResearchMission(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  const result = await readJson<ResearchMissionResponse>(response);
+  const result = parseMissionResponse(await readJson(response));
   if (result.ok) publishSchedulesChanged();
   return result;
 }
@@ -106,7 +176,7 @@ export async function setResearchAutomationStatus(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ status }),
   });
-  const result = await readJson<{ ok: boolean; error?: string }>(response);
+  const result = await readJson(response) as { ok: boolean; error?: string };
   if (result.ok) publishSchedulesChanged();
   return result;
 }
@@ -117,5 +187,5 @@ export async function runResearchAutomationNow(
   const response = await fetch(`/api/codex-automations/${encodeURIComponent(id)}/run`, {
     method: "POST",
   });
-  return readJson<{ ok: boolean; error?: string }>(response);
+  return readJson(response) as Promise<{ ok: boolean; error?: string }>;
 }

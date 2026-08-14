@@ -42,7 +42,7 @@
   overflow: hidden;
 }
 .cave-linear-turn-avatar-btn:focus-visible {
-  outline: 2px solid var(--ring-focus, #7c93ff);
+  outline: 2px solid var(--ring-focus);
   outline-offset: 2px;
 }
 
@@ -55,9 +55,9 @@
   z-index: 40;
   width: min(320px, 78vw);
   padding: var(--space-3);
-  border: 1px solid var(--border-hairline, #2a2a2a);
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
-  background: var(--bg-elevated, #161616);
+  background: var(--bg-elevated);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
   display: flex;
   flex-direction: column;
@@ -79,20 +79,20 @@
   right: 8px;
   border: 0;
   background: transparent;
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 2px;
   border-radius: 6px;
 }
-.familiar-inline-card__close:hover { color: var(--text-primary, #fff); }
+.familiar-inline-card__close:hover { color: var(--text-primary); }
 
 .familiar-inline-card__identity { display: flex; gap: 10px; align-items: flex-start; }
-.familiar-inline-card__name { font-weight: 600; font-size: 14px; color: var(--text-primary, #fff); }
-.familiar-inline-card__role { font-size: 12px; color: var(--text-secondary, #aaa); }
-.familiar-inline-card__desc { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: var(--text-secondary, #bbb); }
+.familiar-inline-card__name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.familiar-inline-card__role { font-size: 12px; color: var(--text-secondary); }
+.familiar-inline-card__desc { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: var(--text-secondary); }
 
-.familiar-inline-card__status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary, #ddd); flex-wrap: wrap; }
-.familiar-inline-card__status-muted { color: var(--text-secondary, #888); }
+.familiar-inline-card__status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary); flex-wrap: wrap; }
+.familiar-inline-card__status-muted { color: var(--text-secondary); }
 .familiar-inline-card__dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
 .familiar-inline-card__dot[data-pulse="1"] { animation: familiar-card-pulse 1.6s ease-in-out infinite; }
 @keyframes familiar-card-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -104,30 +104,30 @@
 .familiar-inline-card__actions button {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: var(--text-sm); padding: 4px 8px;
-  border: 1px solid var(--border-hairline, #2a2a2a);
-  border-radius: var(--radius-control); background: var(--bg-base, #111);
-  color: var(--text-primary, #eee); cursor: pointer;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control); background: var(--bg-base);
+  color: var(--text-primary); cursor: pointer;
 }
-.familiar-inline-card__actions button:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__actions button:hover { background: var(--bg-hover); }
 .familiar-inline-card__actions button:focus-visible,
 .familiar-inline-card__workload-item:focus-visible,
 .familiar-inline-card__close:focus-visible {
-  outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff);
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
   outline-offset: var(--ring-offset, 2px);
 }
 
-.familiar-inline-card__memory-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
+.familiar-inline-card__memory-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .familiar-inline-card__view-all {
   border: 0; background: transparent; cursor: pointer; font-size: 12px;
   /* Brand accent (--accent-presence), NOT --accent — that's the shadcn
      surface token (near-black in dark themes), which rendered this link
      almost invisible. */
-  color: var(--accent-presence, #7c93ff);
+  color: var(--accent-presence);
   border-radius: var(--radius-control);
 }
-.familiar-inline-card__view-all:hover { text-decoration: underline; color: var(--text-primary, #fff); }
-.familiar-inline-card__view-all:focus-visible { outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff); outline-offset: var(--ring-offset, 2px); }
-.familiar-inline-card__memory-muted { font-size: 12px; color: var(--text-secondary, #888); }
+.familiar-inline-card__view-all:hover { text-decoration: underline; color: var(--text-primary); }
+.familiar-inline-card__view-all:focus-visible { outline: var(--ring-width, 2px) solid var(--ring-focus); outline-offset: var(--ring-offset, 2px); }
+.familiar-inline-card__memory-muted { font-size: 12px; color: var(--text-secondary); }
 .familiar-inline-card__memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 /* Peek rows are cards: the whole row is a button that opens the doc in the
    Grimoire. Quiet at rest; hairline + wash raise on hover/focus. */
@@ -153,9 +153,9 @@
 .familiar-inline-card__memory-open { opacity: 0; color: var(--text-muted); transition: opacity 120ms ease; }
 .familiar-inline-card__memory-item:hover .familiar-inline-card__memory-open,
 .familiar-inline-card__memory-item:focus-visible .familiar-inline-card__memory-open { opacity: 1; }
-.familiar-inline-card__memory-title { font-size: 12px; font-weight: 500; color: var(--text-primary, #ddd); }
-.familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary, #999); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary, #777); }
+.familiar-inline-card__memory-title { font-size: 12px; font-weight: 500; color: var(--text-primary); }
+.familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary); }
 .familiar-inline-card__memory-stale {
   margin-left: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
   padding: 1px var(--space-1); border-radius: var(--radius-control);
@@ -168,8 +168,8 @@
 .familiar-inline-card__insight {
   font-size: var(--text-sm); line-height: 1.4; padding: 6px 8px;
   border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline, #2a2a2a);
-  color: var(--text-primary, #ddd); background: var(--bg-base, #111);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-primary); background: var(--bg-base);
 }
 .familiar-inline-card__insight[data-tone="good"] {
   border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
@@ -187,37 +187,37 @@
 .familiar-inline-card__meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .familiar-inline-card__meta-item {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: var(--text-xs); color: var(--text-secondary, #999);
+  font-size: var(--text-xs); color: var(--text-secondary);
 }
 .familiar-inline-card__signal {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: var(--text-xs); padding: 1px 6px; border-radius: var(--radius-pill, 999px);
-  color: var(--text-secondary, #999); border: 1px solid var(--border-hairline, #2a2a2a);
+  color: var(--text-secondary); border: 1px solid var(--border-hairline);
 }
 .familiar-inline-card__signal[data-severity="warn"] { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 45%, transparent); }
 .familiar-inline-card__signal[data-severity="crit"] { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
 
-.familiar-inline-card__workload-head { font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
+.familiar-inline-card__workload-head { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .familiar-inline-card__workload-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .familiar-inline-card__workload-item {
   display: flex; align-items: center; gap: 6px; width: 100%;
   font-size: var(--text-sm); padding: 4px 6px; text-align: left;
-  border: 1px solid var(--border-hairline, #2a2a2a);
-  border-radius: var(--radius-control); background: var(--bg-base, #111);
-  color: var(--text-primary, #ddd); cursor: pointer;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control); background: var(--bg-base);
+  color: var(--text-primary); cursor: pointer;
 }
-.familiar-inline-card__workload-item:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__workload-item:hover { background: var(--bg-hover); }
 .familiar-inline-card__workload-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.familiar-inline-card__workload-time { font-size: 10px; color: var(--text-secondary, #777); flex-shrink: 0; }
+.familiar-inline-card__workload-time { font-size: 10px; color: var(--text-secondary); flex-shrink: 0; }
 
 .familiar-inline-card__actions button.familiar-inline-card__action-contextual {
   /* Brand accent, not the --accent surface token (see __view-all note). */
-  color: var(--accent-presence, #7c93ff);
-  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 40%, transparent);
+  color: var(--accent-presence);
+  border-color: color-mix(in srgb, var(--accent-presence) 40%, transparent);
 }
 .familiar-inline-card__actions button.familiar-inline-card__action-contextual:hover {
-  background: color-mix(in srgb, var(--accent-presence, #7c93ff) 12%, transparent);
-  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 60%, transparent);
+  background: color-mix(in srgb, var(--accent-presence) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-presence) 60%, transparent);
 }
 
 /* ── New-chat launch surface ───────────────────────────────────────────────
@@ -503,28 +503,6 @@
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-
-/* Failing-checks dot (cave-fpqx.12): a peripheral red cue on the rail's
-   Changes tab and the collapsed reopen strip when the session PR's rollup is
-   red. Sits on the opposite corner from the count badge so both can show. */
-.workspace-rail__badge--alert {
-  top: auto;
-  bottom: -3px;
-  right: -3px;
-  min-width: 9px;
-  width: 9px;
-  height: 9px;
-  padding: 0;
-  background: var(--color-danger);
-}
-
-/* On the full-height collapsed reopen strip the dot anchors to the icon area
-   instead of the strip's far corner. */
-.workspace-rail-reopen .workspace-rail__badge--alert {
-  top: 6px;
-  right: 8px;
-  bottom: auto;
 }
 
 .workspace-rail__body {
@@ -849,7 +827,7 @@
   gap: 3px;
   font-size: var(--text-2xs);
   font-family: var(--font-sans, inherit);
-  color: var(--color-success, #34d399);
+  color: var(--color-success);
 }
 
 .workspace-rail__preview-saveerr {
@@ -859,7 +837,7 @@
   white-space: nowrap;
   font-size: var(--text-2xs);
   font-family: var(--font-sans, inherit);
-  color: var(--color-danger, #f87171);
+  color: var(--color-danger);
 }
 
 .workspace-rail__preview-body {
@@ -887,11 +865,15 @@
    height. Lift SyntaxBlock's chat clamp (max-height: min(60vh, 520px)) so the
    block shrink-fits the body and scrolls internally — short files keep their
    natural height, long files fill the pane with the sticky header reachable.
-   Mirrors the --edit editor fill above. */
+   Mirrors the --edit editor fill above, including its flush --code-surface
+   fill: the pane IS the code surface, not a padded card sitting on the panel
+   background (read mode and edit mode share one look). */
 .workspace-rail__preview-body--code {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 0;
+  background: var(--code-surface);
 }
 .workspace-rail__preview-body--code .cave-syntax-block {
   display: flex;
@@ -903,6 +885,39 @@
   flex: 0 1 auto;
   min-height: 0;
   max-height: none;
+}
+/* Strip the transcript card chrome (border, radius, shadow, vertical margins)
+   so the block sits flush against the pane edges like the CodeMirror editor.
+   Three-class specificity: .cave-syntax-block .cave-code-wrap in
+   cave-md/interactions.css re-rounds corners at two classes, and the cave-md
+   vs cave-chat sheets load in component-import order. */
+.workspace-rail__preview-body--code .cave-syntax-block .cave-code-wrap {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Long lines wrap instead of horizontal-scrolling — the rail is narrow and the
+   CodeMirror edit mode already wraps (EditorView.lineWrapping). .cave-line
+   leaves its flex row (which would wrap whole token spans) for block flow. */
+.workspace-rail__preview-body--code .cave-code-wrap pre {
+  overflow-x: hidden;
+}
+.workspace-rail__preview-body--code .cave-line {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+/* Line-number gutter (renders >5 lines) becomes a hanging indent: the 3.4em
+   .cave-ln (2.6em + 0.8em padding-right) hangs left of wrapped continuation
+   lines so code columns stay aligned under the first character. */
+.workspace-rail__preview-body--code .cave-line:has(.cave-ln) {
+  padding-left: calc(1em + 3.4em);
+  text-indent: -3.4em;
+}
+.workspace-rail__preview-body--code .cave-ln {
+  display: inline-block;
 }
 /* With the clamp lifted there is nothing to expand — the footer would be a
    no-op button pinned over the last visible line. */
@@ -930,7 +945,7 @@
 }
 
 .workspace-rail__preview-error svg {
-  color: var(--color-danger, #f87171);
+  color: var(--color-danger);
   opacity: 0.8;
 }
 
@@ -975,7 +990,6 @@
   border-left: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
   backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
   color: var(--text-muted);
   cursor: pointer;
   transition:
@@ -990,12 +1004,10 @@
   .workspace-rail-reopen {
     background: var(--bg-raised);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
   .voice-call-overlay__dialog {
     background: var(--bg-raised);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 .workspace-rail-reopen:hover {

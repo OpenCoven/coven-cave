@@ -7,9 +7,11 @@ import {
   adapterSetupState,
   runtimeSourceSetupState,
   adapterManifestScaffoldForHarness,
+  isLegacyWindowsHermesManifest,
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
   covenRunSupportsAddDirFlag,
+  isBindableRuntimeChoice,
   isSummonableLocalHarness,
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
@@ -80,7 +82,7 @@ assert.equal(
   "A longer flag like --add-dir-recursive must not be mistaken for --add-dir",
 );
 
-const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
+const curatedIds = ["codex", "claude", "copilot", "hermes", "grok", "openclaw"];
 {
   const ids = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id);
   assert.deepEqual(ids.slice(0, curatedIds.length), curatedIds, "curated adapters keep their seed order first");
@@ -102,16 +104,26 @@ const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
 
 assert.deepEqual(
   SUMMONABLE_LOCAL_HARNESS_IDS,
-  ["codex", "claude", "copilot", "hermes"],
+  ["codex", "claude", "copilot", "hermes", "grok"],
   "the summoning circle's local/SSH runtime choices must only include creation-ready local runtimes",
 );
 assert.equal(isSummonableLocalHarness("codex"), true);
 assert.equal(isSummonableLocalHarness("claude"), true);
 assert.equal(isSummonableLocalHarness("copilot"), true);
 assert.equal(isSummonableLocalHarness("hermes"), true);
+assert.equal(isSummonableLocalHarness("grok"), true);
 assert.equal(isSummonableLocalHarness("openclaw"), false, "OpenClaw is summoned through the dedicated agent vessel");
 assert.equal(isSummonableLocalHarness("coven-code"), false, "Coven Code is an app/tool install, not a familiar runtime choice");
 assert.equal(isSummonableLocalHarness("opencode"), false, "registry runtimes stay hidden until the creation flow has explicit support");
+
+// Binding pickers (Studio Brain tab, Familiar tab hero) hide tool installs the
+// daemon's adapter list re-introduces past the COMPATIBILITY_ADAPTERS policy
+// exclusion. Everything else stays choosable, even not-yet-summonable runtimes.
+assert.equal(isBindableRuntimeChoice("coven-code"), false, "Coven Code never appears in runtime binding pickers");
+assert.equal(isBindableRuntimeChoice("Coven-Code"), false, "the exclusion is casing-proof against daemon spelling drift");
+assert.equal(isBindableRuntimeChoice("codex"), true);
+assert.equal(isBindableRuntimeChoice("openclaw"), true, "non-summonable runtimes remain bindable for existing familiars");
+assert.equal(isBindableRuntimeChoice("opencode"), true);
 
 assert.deepEqual(openClawAdapterReport(2), {
   id: "openclaw",
@@ -133,6 +145,85 @@ assert.equal(mergedOpenClaw.length, 1);
 assert.equal(mergedOpenClaw[0].id, "openclaw");
 assert.equal(mergedOpenClaw[0].installed, true);
 assert.equal(mergedOpenClaw[0].source, "openclaw");
+
+const mergedGrok = mergeAdapterReports(
+  [{
+    id: "grok",
+    label: "Grok Build",
+    binary: "grok",
+    installed: true,
+    path: "/usr/bin/grok",
+    version: "grok 0.2.106",
+    models: [{ id: "grok-4.5", label: "grok-4.5 (default)" }],
+    defaultModel: "grok-4.5",
+  }],
+  [],
+);
+assert.deepEqual(mergedGrok[0].models, [{ id: "grok-4.5", label: "grok-4.5 (default)" }]);
+assert.equal(mergedGrok[0].defaultModel, "grok-4.5");
+
+const mergedUnlaunchableHermes = mergeAdapterReports(
+  [{
+    id: "hermes",
+    label: "Hermes",
+    binary: "hermes",
+    installed: false,
+    path: null,
+    version: null,
+    availability: {
+      state: "unlaunchable",
+      code: "runtime_unlaunchable",
+      message: "Hermes CLI is installed as a Windows command shim that a direct launch cannot run.",
+    },
+  }],
+  [{
+    id: "hermes",
+    label: "Hermes Agent",
+    executable: "hermes",
+    available: true,
+    install_hint: "Install Hermes.",
+    source: "manifest",
+  }],
+);
+assert.equal(
+  mergedUnlaunchableHermes[0].installed,
+  false,
+  "a daemon's shim-only Hermes discovery cannot override Cave's unlaunchable direct-launch contract",
+);
+assert.equal(mergedUnlaunchableHermes[0].availability?.state, "unlaunchable");
+
+// A broad adapter list may have been generated under a different process
+// environment. The runner-specific availability gate is authoritative for
+// native-chat UI state and must not be overwritten by that broad row.
+const mergedUnavailableCodex = mergeAdapterReports(
+  [{
+    id: "codex",
+    label: "Codex",
+    binary: "codex",
+    installed: false,
+    path: null,
+    version: null,
+    availability: {
+      state: "missing",
+      code: "runtime_missing",
+      message: "Codex CLI is unavailable to Coven.",
+      component: "adapter" as const,
+    },
+  }],
+  [{
+    id: "codex",
+    label: "Codex",
+    executable: "codex",
+    available: true,
+    install_hint: "Install Codex.",
+    source: "bundled",
+  }],
+);
+assert.equal(
+  mergedUnavailableCodex[0].installed,
+  false,
+  "the familiar picker/runtime card keeps Codex unavailable when its exact launch environment failed",
+);
 
 const merged = mergeAdapterReports(
   [
@@ -279,16 +370,72 @@ assert.deepEqual(
 // Scaffolds come straight from the synced coven-runtimes registry — the exact
 // conformance-tested adapter documents (cave-laxg retired the hand-written
 // copilot/hermes copies).
-const hermesManifest = adapterManifestScaffoldForHarness("hermes");
+const hermesManifest = adapterManifestScaffoldForHarness("hermes", "linux");
 assert.equal(hermesManifest?.filename, "hermes.json");
 {
   const parsed = JSON.parse(hermesManifest?.contents ?? "{}");
   const adapter = parsed.adapters?.[0];
   assert.equal(adapter?.id, "hermes");
-  assert.equal(adapter?.executable, "hermes-coven", "hermes launches via the hermes-coven shim (hermes chat has no positional prompt slot)");
-  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven"], "hermes keeps the coven-source chat entry; the shim maps the prompt to -q");
+  assert.equal(adapter?.executable, "hermes", "Hermes 1.0.3 uses the native executable on every platform");
+  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven"]);
   assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["chat", "--source", "coven", "-Q"]);
+  assert.equal(adapter?.prompt_flag, "--query", "the accepted registry binds positional prompts natively");
+  assert.equal(adapter?.interactive_prompt_flag, "--query");
+  assert.equal(adapter?.model_id_transform, "preserve");
   assert.ok(typeof adapter?.install_hint === "string" && adapter.install_hint.length > 0);
+}
+{
+  const windowsManifest = adapterManifestScaffoldForHarness("hermes", "win32");
+  const adapter = JSON.parse(windowsManifest?.contents ?? "{}").adapters?.[0];
+  assert.equal(adapter?.executable, "hermes", "Windows consumes the same accepted native manifest");
+  assert.equal(adapter?.prompt_flag, "--query");
+  assert.equal(adapter?.interactive_prompt_flag, "--query");
+  assert.equal(
+    windowsManifest?.contents,
+    hermesManifest?.contents,
+    "registry scaffolds stay byte-current instead of applying a Cave platform rewrite",
+  );
+  const legacyManifest = `${JSON.stringify({
+    adapters: [{
+      id: "hermes",
+      label: "Hermes Agent",
+      executable: "hermes-coven",
+      interactive_prompt_prefix_args: ["chat", "--source", "coven"],
+      non_interactive_prompt_prefix_args: ["chat", "--source", "coven", "-Q"],
+      install_hint: "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+      model_flag: "--model",
+      capabilities: {
+        stream: false,
+        preassigned_session_id: false,
+        think: false,
+        speed: false,
+      },
+      version: "1.0.2",
+      description: "Hermes adapter with native model forwarding. Uses the hermes-coven shim so the harness trailing positional prompt is remapped to hermes chat -q/--query without changing model arguments.",
+    }],
+  }, null, 2)}\n`;
+  assert.ok(isLegacyWindowsHermesManifest(legacyManifest, "win32"));
+  assert.ok(!isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "win32"));
+  assert.ok(!isLegacyWindowsHermesManifest(hermesManifest?.contents ?? "", "linux"));
+  assert.ok(
+    !isLegacyWindowsHermesManifest(
+      JSON.stringify(JSON.parse(hermesManifest?.contents ?? "{}")),
+      "win32",
+    ),
+    "a formatting-only user-authored manifest is never replaced during migration",
+  );
+  assert.ok(
+    !isLegacyWindowsHermesManifest(
+      JSON.stringify({
+        adapters: [{
+          ...JSON.parse(hermesManifest?.contents ?? "{}").adapters?.[0],
+          environment: { HERMES_PROFILE: "custom" },
+        }],
+      }),
+      "win32",
+    ),
+    "a user-authored Hermes adapter with custom setup is never replaced during migration",
+  );
 }
 assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");
 

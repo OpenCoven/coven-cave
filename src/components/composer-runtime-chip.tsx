@@ -18,7 +18,11 @@ import {
   PopoverLabel,
   PopoverSeparator,
 } from "@/components/ui/popover";
-import { RUNTIME_MODEL_CATALOG, type RuntimeModelOption } from "@/lib/runtime-models";
+import {
+  RUNTIME_MODEL_CATALOG,
+  runtimeOwnsModelDefault,
+  type RuntimeModelOption,
+} from "@/lib/runtime-models";
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
 import "@/styles/composer-runtime-chip.css";
 
@@ -40,28 +44,42 @@ export function ComposerRuntimePopover({
   open,
   onOpenChange,
   anchorRef,
+  placement = "top-start",
   runtime,
   modelValue,
   modelOptions,
   onPickRuntime,
   onPickModel,
+  promotableModel = null,
+  onPromoteModelToDefault,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  placement?: "bottom-start" | "top-start";
   runtime: string;
   modelValue: string;
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
-  onPickModel: (id: string) => void;
+  onPickModel: (id: string | null) => void;
+  /** cave-pkapw: a session-scoped model id to offer promoting to the familiar
+   *  default. This component renders the row whenever the value is non-null and
+   *  cannot check it itself; the CALLER owes the "would actually change the
+   *  default" test (chat-view compares against `familiarDefaultModel`) and
+   *  passes null otherwise, which hides the row. */
+  promotableModel?: string | null;
+  onPromoteModelToDefault?: () => void;
 }) {
   const setOpen = onOpenChange;
+  const hasRuntimeDefault = runtimeOwnsModelDefault(runtime);
+  const modelIsOutsideInventory =
+    Boolean(modelValue) && !modelOptions.some((option) => option.id === modelValue);
   return (
     <Popover
       open={open}
       onOpenChange={onOpenChange}
       anchorRef={anchorRef}
-      placement="top-start"
+      placement={placement}
       minWidth={230}
       ariaLabel="Runtime and model"
     >
@@ -82,16 +100,40 @@ export function ComposerRuntimePopover({
                 // one visit — the Model group re-renders for the new runtime.
                 // Menu-less runtimes (hermes/openclaw) have no model step, so
                 // the pick is complete and the menu closes.
-                if (catalog.models.length === 0) setOpen(false);
+                // OpenCode discovers the user's configured provider inventory
+                // asynchronously. Keep this menu open while that request
+                // resolves instead of treating its intentionally-empty static
+                // catalog as a terminal runtime choice.
+                if (catalog.models.length === 0 && catalog.runtime !== "opencode") setOpen(false);
               }}
             >
               {runtimeDisplayName(catalog.runtime)}
             </PopoverItem>
           ))}
-          {modelOptions.length > 0 && (
+          {(hasRuntimeDefault || modelOptions.length > 0 || modelIsOutsideInventory) && (
             <>
               <PopoverSeparator />
               <PopoverLabel>Model</PopoverLabel>
+              {hasRuntimeDefault || modelOptions.length > 0 || modelIsOutsideInventory ? (
+                <PopoverItem
+                  checked={!modelValue}
+                  onSelect={() => {
+                    if (modelValue) onPickModel(null);
+                    setOpen(false);
+                  }}
+                >
+                  Runtime default
+                </PopoverItem>
+              ) : null}
+              {modelIsOutsideInventory ? (
+                <PopoverItem
+                  checked
+                  disabled
+                  title={modelValue}
+                >
+                  Current selection · {modelValue} (not in current inventory)
+                </PopoverItem>
+              ) : null}
               {modelOptions.map((m) => (
                 <PopoverItem
                   key={m.id}
@@ -105,6 +147,26 @@ export function ComposerRuntimePopover({
                   {m.label}
                 </PopoverItem>
               ))}
+              {/* cave-pkapw: inside a session a model pick is session-scoped,
+                  so the familiar's default is untouched. This promotes it
+                  using the same PATCH a brand-new chat's pick already sends
+                  (scope "familiar-default", no sessionId). Shown only when the
+                  session model differs from that default — otherwise the
+                  action is a no-op and the row is noise. */}
+              {promotableModel && onPromoteModelToDefault ? (
+                <>
+                  <PopoverSeparator />
+                  <PopoverItem
+                    title={`New chats with this familiar will start on ${promotableModel}`}
+                    onSelect={() => {
+                      onPromoteModelToDefault();
+                      setOpen(false);
+                    }}
+                  >
+                    Set as default for new chats
+                  </PopoverItem>
+                </>
+              ) : null}
             </>
           )}
         </PopoverBody>
@@ -127,7 +189,7 @@ export function ComposerRuntimeChip({
   /** Curated models for the active runtime (catalogForRuntime). */
   modelOptions: RuntimeModelOption[];
   onPickRuntime: (runtime: string) => void;
-  onPickModel: (id: string) => void;
+  onPickModel: (id: string | null) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -136,7 +198,10 @@ export function ComposerRuntimeChip({
   const runtimeName = runtimeDisplayName(runtime);
   // The chip shows the model when the runtime has one, else the runtime name
   // alone — hermes/openclaw run their own adapters without a curated menu.
-  const modelLabel = runtimeModelLabel(modelValue, modelOptions);
+  const modelLabel =
+    !modelValue && runtimeOwnsModelDefault(runtime)
+      ? "Runtime default"
+      : runtimeModelLabel(modelValue, modelOptions);
 
   return (
     <>

@@ -91,11 +91,11 @@
   padding: 0 var(--space-1);
 }
 .md-editor__conflict-key--mine {
-  background: color-mix(in oklch, var(--color-success, #3fb950) 18%, transparent);
+  background: color-mix(in oklch, var(--color-success) 18%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-key--theirs {
-  background: color-mix(in oklch, var(--color-danger, #f85149) 18%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 18%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-line {
@@ -112,15 +112,37 @@
   opacity: 0.7;
 }
 .md-editor__conflict-line--add {
-  background: color-mix(in oklch, var(--color-success, #3fb950) 14%, transparent);
+  background: color-mix(in oklch, var(--color-success) 14%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-line--del {
-  background: color-mix(in oklch, var(--color-danger, #f85149) 14%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
   color: var(--text-primary);
 }
 .md-editor__conflict-line--skip {
   padding: 2px var(--space-2);
   font-style: italic;
   opacity: 0.7;
+}
+
+/* One-shot memory-save flare (cave-q06w) — the summoning bloom (700ms,
+   decelerate, radiate + fade) in success green as a MANUAL save lands.
+   Shadow-only on the borderless editor root; autosaves never flare and a
+   global cooldown (src/lib/flare-cooldown.ts) keeps save-happy editing
+   quiet. The footer's role=status "Saved" flash is the real confirmation. */
+.md-editor--reward {
+  border-radius: var(--radius-md);
+  animation: md-editor-save-flare 700ms var(--ease-decelerate) forwards;
+}
+@keyframes md-editor-save-flare {
+  0% {
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-success) 45%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-success) 40%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent, 0 0 34px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-editor--reward { animation: none; }
 }

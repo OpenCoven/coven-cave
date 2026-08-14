@@ -1,9 +1,12 @@
 // @ts-nocheck
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getVoiceProviderDefinition } from "../../../../lib/voice/provider-catalog.ts";
+
+const routeSource = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 const TMP = mkdtempSync(join(tmpdir(), "voice-session-route-"));
 process.env.HOME = TMP;
@@ -53,6 +56,12 @@ let lastFetchCall: { url: string; init: RequestInit } | null = null;
 };
 
 const { POST } = await import("./route.ts");
+
+test("route uses the shared provider definition without local metadata tables", () => {
+  assert.match(routeSource, /getVoiceProviderDefinition/);
+  assert.doesNotMatch(routeSource, /\bconst\s+DEFAULTS\b/);
+  assert.doesNotMatch(routeSource, /\bconst\s+KEYLESS_PROVIDERS\b/);
+});
 
 beforeEach(() => {
   delete process.env.OPENAI_API_KEY;
@@ -120,6 +129,41 @@ test("502 provider_mint_failed surfaces provider message verbatim", async () => 
   assert.equal(res.status, 502);
   assert.equal(json.error, "provider_mint_failed");
   assert.match(json.providerMessage, /quota exhausted/);
+  // Not a credentials failure — the overlay must not offer a key editor.
+  assert.equal(json.missingKey, undefined);
+});
+
+test("502 surfaces the machine code + vault key when ElevenLabs rejects the key (cave-xz57)", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "elevenlabs" });
+  writeSession([]);
+  process.env.ELEVENLABS_API_KEY = "xi-bad";
+  nextFetchResponse = new Response("{}", { status: 401 });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  delete process.env.ELEVENLABS_API_KEY;
+  assert.equal(res.status, 502);
+  // The probe's `code: detail` shape splits into an overlay-mappable error
+  // plus a human hint, and names the key so the error card can fix it in
+  // place.
+  assert.equal(json.error, "elevenlabs_key_invalid");
+  assert.match(json.hint, /rejected the API key/);
+  assert.equal(json.missingKey, "ELEVENLABS_API_KEY");
+});
+
+test("502 names the vault key when OpenAI rejects credentials as free text (cave-xz57)", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "openai" });
+  writeSession([]);
+  process.env.OPENAI_API_KEY = "sk-bad";
+  nextFetchResponse = new Response(
+    JSON.stringify({ error: { message: "Incorrect API key provided: sk-bad" } }),
+    { status: 401 },
+  );
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 502);
+  assert.equal(json.error, "provider_mint_failed");
+  assert.match(json.providerMessage, /Incorrect API key/);
+  assert.equal(json.missingKey, "OPENAI_API_KEY");
 });
 
 test("200 happy path returns grant and ULID-shaped callId", async () => {
@@ -195,9 +239,10 @@ test("200 elevenlabs provider mints with defaults and binds the session id", asy
   assert.equal(json.grant.provider, "elevenlabs");
   assert.equal(json.grant.connection.kind, "elevenlabs-familiar");
   assert.equal(json.grant.connection.sessionId, SESSION_ID);
-  // Route DEFAULTS applied: Rachel + turbo, overridable per-familiar.
-  assert.equal(json.grant.connection.voiceId, "21m00Tcm4TlvDq8ikWAM");
-  assert.equal(json.grant.connection.modelId, "eleven_turbo_v2_5");
+  const defaults = getVoiceProviderDefinition("elevenlabs")?.defaults;
+  assert.ok(defaults);
+  assert.equal(json.grant.connection.voiceId, defaults.voice);
+  assert.equal(json.grant.connection.modelId, defaults.model);
   // The vault key must never reach the client.
   assert.equal(JSON.stringify(json).includes("xi-good"), false);
 });

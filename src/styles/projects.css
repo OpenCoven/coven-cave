@@ -1,547 +1,1139 @@
-/* Projects hub — master-detail styling. Imported directly by projects-view.tsx
-   so the surface is styled straight from Chat → Projects on first paint; this
-   file is the Projects surface's only stylesheet (it no longer leans on
-   board.css). The list pane rides the shared SurfaceRail primitive
-   (surface-rail.css owns the rail chrome; this file owns the rows and the
-   Projects-specific controls inside it). */
+/*
+ * projects.css — the Chat → Projects "Project access" surface.
+ *
+ * One familiar's access map: compact serif header, a quiet toolbar (familiar
+ * picker, search, grouping toggle, tally, reset), then project sections —
+ * grouped into WORKSPACES / REPOSITORIES or one flat ALL PROJECTS list —
+ * whose rows carry a tri-state pill — No access · Read · Full — that cycles
+ * on click. Secondary controls (per-section Set all, the row gear) stay
+ * invisible until hover or keyboard focus reaches them, keeping the resting
+ * page minimal. Every color routes through theme tokens so the page holds up
+ * in light mode and custom accents; the filled "Full" pill pairs
+ * --accent-presence with --accent-presence-foreground for contrast.
+ */
 
-/* container: projects — the narrow-layout rules below query the surface's own
-   width, not the viewport, so the single-pane collapse also fires when the
-   chat pane is dragged narrow (same pattern as .board-shell's
-   `container: board`). The container sits on the shell WRAPPER (the <main>
-   around the hub), not on the hub grid itself: an element's own @container
-   rules only match against an ANCESTOR container, so `.projects-hub { … }`
-   inside `@container projects` would silently never apply if the hub were the
-   container. */
-.projects-view {
-  container: projects-view / inline-size;
-}
-
-.projects-shell {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+.projects-access {
+  height: 100%;
   min-height: 0;
-  container: projects / inline-size;
+  overflow-y: auto;
+  background: var(--bg-base);
 }
 
-.projects-hub {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  flex: 1;
-  min-height: 0;
-}
-
-/* ── List pane (inside the SurfaceRail's scrollable content slot) ─────────── */
-.projects-hub__list {
+.projects-access-inner {
+  /* Full-width (2026-07-23): the access map spans the pane (was 920px). */
+  padding: clamp(16px, 3vh, 32px) clamp(16px, 4vw, 40px) calc(var(--space-8) * 2);
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  min-height: 0;
+  gap: var(--space-4);
 }
 
-/* Rail header controls: Refresh stays quiet, New project wears the accent
-   (presence of the primary create verb, not a CTA banner). */
-.projects-rail-action--new {
-  color: var(--accent-presence);
-}
-.projects-rail-action--new:hover {
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-}
+/* ── Header ─────────────────────────────────────────────────────────── */
 
-/* Filter input + All/Active + sort row, in the rail's search slot. */
-.projects-rail-controls {
+.projects-access-header {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-}
-.projects-rail-search {
-  position: relative;
-}
-.projects-rail-search__icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-muted);
-  pointer-events: none;
-}
-.projects-rail-search__input {
-  width: 100%;
-  height: 32px;
-  padding: 0 var(--space-6) 0 calc(var(--space-6) + var(--space-1));
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-}
-.projects-rail-search__input::placeholder {
-  color: var(--text-muted);
-}
-.projects-rail-search__kbd {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  padding: 0 var(--space-1);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-sm);
-  background: var(--bg-raised);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  line-height: 16px;
-}
-.projects-rail-filterrow {
-  display: flex;
-  align-items: center;
   gap: var(--space-1);
 }
 
-/* Motion audit: the only transitions on this surface are color-only (no
-   movement) plus the card chevron rotation below, and globals.css collapses
-   every transition/animation duration under prefers-reduced-motion; scrolling
-   goes through smoothScrollBehavior(). */
-.projects-list-row {
+.projects-access-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+
+.projects-access-title {
+  margin: 0;
+  font-family: var(--font-serif, ui-serif, serif);
+  /* Compact header (minimal pass): one type-scale step, not a display hero. */
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.projects-access-subtitle {
+  margin: 0;
+  max-width: 56ch;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* ── Panes (Access · Groups · Activity) ─────────────────────────────── */
+
+/* The three peers of the project-permissions protocol. Access groups used to
+   live two levels inside a familiar's settings; promoting them to a tab here
+   is the whole point of the tablist. */
+.projects-access-panes {
+  margin-top: calc(var(--space-1) * -1);
+}
+
+.projects-access-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* ── Toolbar ────────────────────────────────────────────────────────── */
+
+.projects-access-toolbar {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  width: 100%;
-  padding: 6px var(--space-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-secondary);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  flex-wrap: wrap;
 }
-.projects-list-row:hover { background: var(--bg-hover); color: var(--text-primary); }
-.projects-list-row[aria-selected="true"] {
-  background: var(--bg-hover);
-  border-color: var(--border-hairline);
-  box-shadow: inset 2px 0 0 var(--accent-presence);
+
+.projects-access-familiar {
+  flex: 0 0 auto;
+}
+
+.projects-access-search {
+  flex: 1 1 220px;
+  min-width: 160px;
+  max-width: 340px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  height: 30px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  transition: border-color 120ms ease;
+}
+
+.projects-access-search:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+}
+
+.projects-access-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-base);
   color: var(--text-primary);
 }
-/* Collapsed rail: avatar tiles only, centered. */
-.projects-list-row[data-rail-open="false"] {
-  justify-content: center;
-  padding: var(--space-1);
+
+.projects-access-search input::placeholder {
+  color: var(--text-muted);
 }
-.projects-list-row__body {
+
+.projects-access-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* Shared status dot — tinted by the enclosing .is-* state class. */
+.projects-access-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: currentcolor;
+  flex: 0 0 auto;
+}
+
+.projects-access-reset {
+  flex: 0 0 auto;
+}
+
+.projects-access-new {
+  flex: 0 0 auto;
+}
+
+/* ── Notes / errors ─────────────────────────────────────────────────── */
+
+.projects-access-supreme {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.projects-access-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--destructive) 40%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--destructive) 10%, transparent);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.projects-access-nomatch {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+}
+
+/* ── Sections ───────────────────────────────────────────────────────── */
+
+.projects-access-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.projects-access-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 24px;
+}
+
+.projects-access-section-title {
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.projects-access-section-count {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.projects-access-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+.projects-access-setall {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  /* Quiet chrome: invisible until the section head is hovered or a Set-all
+     button holds keyboard focus (opacity-only — reduced-motion safe). */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.projects-access-section-head:hover .projects-access-setall,
+.projects-access-section-head:focus-within .projects-access-setall {
+  opacity: 1;
+}
+
+/* No hover on touch — keep the controls always visible there. */
+@media (hover: none) {
+  .projects-access-setall {
+    opacity: 1;
+  }
+}
+
+.projects-access-setall-label {
+  margin-right: var(--space-1);
+  color: var(--text-muted);
+}
+
+.projects-access-setall-btn {
+  border: 0;
+  background: transparent;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.projects-access-setall-btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.projects-access-setall-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Access ledger ──────────────────────────────────────────────────────
+ * A proportional bar plus its key, replacing three loose numbers: the width
+ * of each segment IS the shape of the familiar's reach. */
+
+.projects-access-header {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.projects-access-headline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.projects-access-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: none;
+  min-width: 230px;
+}
+
+.projects-access-ledger-bar {
+  display: flex;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+}
+
+.projects-access-ledger-bar span {
+  transition: width 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.projects-access-ledger-key {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+}
+
+.projects-access-ledger-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* One colour vocabulary for every level, everywhere on the page. */
+
+.projects-access-ledger-bar .is-write,
+.projects-access-ledger-key .is-write,
+.projects-access-mix-chip.is-write,
+.projects-access-setall-btn.is-write,
+.projects-access-bulk-btn.is-write {
+  color: var(--accent-presence);
+}
+
+.projects-access-ledger-bar .is-read,
+.projects-access-ledger-key .is-read,
+.projects-access-mix-chip.is-read,
+.projects-access-setall-btn.is-read,
+.projects-access-bulk-btn.is-read {
+  color: var(--accent-presence-soft, var(--accent-presence));
+}
+
+.projects-access-ledger-bar .is-none,
+.projects-access-ledger-key .is-none,
+.projects-access-mix-chip.is-none,
+.projects-access-setall-btn.is-none,
+.projects-access-bulk-btn.is-none {
+  color: var(--text-muted);
+}
+
+.projects-access-ledger-bar .is-write,
+.projects-access-ledger-bar .is-read,
+.projects-access-ledger-bar .is-none {
+  background: currentColor;
+}
+
+.projects-access-ledger-bar .is-none {
+  background: transparent;
+}
+
+/* ── View switcher ──────────────────────────────────────────────────── */
+
+.projects-access-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+.projects-access-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--space-6);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.projects-access-view:hover {
+  color: var(--text-primary);
+}
+
+.projects-access-view.is-on {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text-primary) 14%, transparent);
+}
+
+/* ── Bulk band ──────────────────────────────────────────────────────── */
+
+.projects-access-bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: 0 var(--space-4);
+  min-height: 38px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.projects-access-bulk-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-presence);
+}
+
+.projects-access-bulk-sep {
+  width: 1px;
+  height: var(--space-4);
+  background: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+}
+
+.projects-access-bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--space-6);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.projects-access-bulk-btn:hover:not(:disabled) {
+  border-color: currentColor;
+}
+
+.projects-access-bulk-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.projects-access-bulk-done {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-bulk-done:hover {
+  color: var(--text-primary);
+}
+
+/* ── Section head extras ────────────────────────────────────────────── */
+
+.projects-access-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.projects-access-caret {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 140ms ease;
+}
+
+.projects-access-caret.is-closed {
+  transform: rotate(-90deg);
+}
+
+.projects-access-mix {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 0 var(--space-2);
+  height: 19px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+}
+
+.projects-access-mix-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+}
+
+.projects-access-peek {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ── Grid of cards ──────────────────────────────────────────────────── */
+
+.projects-access-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.projects-access-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-panel) 42%, transparent);
+  overflow: hidden;
+  transition:
+    border-color 140ms ease,
+    transform 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.projects-access-card.is-read,
+.projects-access-card.is-write {
+  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
+}
+
+.projects-access-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+
+.projects-access-card.is-checked {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+}
+
+.projects-access-card-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+}
+
+.projects-access-card.is-read .projects-access-card-bar,
+.projects-access-tr.is-read .projects-access-card-bar {
+  background: var(--accent-presence-soft, var(--accent-presence));
+}
+
+.projects-access-card.is-write .projects-access-card-bar,
+.projects-access-tr.is-write .projects-access-card-bar {
+  background: var(--accent-presence);
+}
+
+.projects-access-check {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.projects-access-check input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.projects-access-check svg {
+  /* ::before is absolutely positioned, so it paints above non-positioned
+     content — without a stacking bump the checked fill hides the tick. */
+  position: relative;
+  z-index: 1;
+  color: var(--accent-presence-foreground);
+  opacity: 0;
+  /* The tick and the box are painted over the (visually hidden) input; without
+     this they win hit-testing and swallow the click. */
+  pointer-events: none;
+}
+
+.projects-access-check::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border-strong, var(--border-hairline));
+  border-radius: 5px;
+  pointer-events: none;
+}
+
+.projects-access-check:has(input:checked)::before {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+}
+
+.projects-access-check:has(input:checked) svg {
+  opacity: 1;
+}
+
+.projects-access-check:has(input:focus-visible)::before {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.projects-access-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  padding-bottom: 0;
+}
+
+/* Kind is a category, not a state, so the two get distinct TREATMENTS rather
+   than distinct hues — this system has exactly one accent (--color-info is
+   aliased to it) and a second hue would have to survive 21 palettes × 2 modes.
+   Workspace is filled, repository is ringed: both read as deliberate, where
+   before a repo was encoded only by the ABSENCE of the workspace's accent. */
+.projects-access-kind {
+  display: grid;
+  place-items: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  flex: none;
+  border-radius: var(--radius-control);
+}
+
+/* Coven-native: solid accent fill. */
+.projects-access-kind.is-workspace {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
+
+/* Git-backed: a ring, not a fill — the outline reads as "linked elsewhere",
+   and the ink is a tier stronger than the old muted grey so the icon carries
+   as much weight as its filled sibling. */
+.projects-access-kind.is-repo {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-primary);
+}
+
+.projects-access-card-id {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 3px;
 }
-.projects-list-row__top {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-.projects-list-row__name {
-  flex: 1;
-  min-width: 0;
+
+.projects-access-card-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-base);
   font-weight: 500;
+  color: var(--text-primary);
+  cursor: text;
 }
-.projects-list-row__time {
-  margin-left: auto;
-  flex: none;
+
+.projects-access-card-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
-.projects-list-row__sub {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-.projects-list-row__meta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.projects-list-row__git {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-muted);
-}
-.projects-list-row__count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 15px;
-  padding: 0 5px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--text-secondary);
-  font-size: 9.5px;
-  font-weight: 600;
-}
 
-/* Status dot — color never carries the meaning alone; rows pair it with an
-   accessible label and the detail head repeats the status in words. */
-.projects-status-dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
-
-/* ── Detail pane ───────────────────────────────────────────────────────────── */
-.projects-hub__detail {
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-5) var(--space-6);
-}
-
-.projects-detail-head { display: flex; flex-direction: column; gap: 12px; }
-.projects-detail-head__row { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.projects-detail-head__title {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-xl);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.projects-head-divider {
-  width: 1px;
-  height: 20px;
-  flex: none;
-  margin: 0 var(--space-1);
-  background: var(--border-hairline);
-}
-
-/* "New chat": quiet at rest with a dashed inner ring (dashed = invitation);
-   hover firms up into a solid accent outline — same grammar as the canvas
-   toolbar's "New sketch". */
-.projects-newchat {
-  position: relative;
-  border: 1px solid transparent;
-  color: var(--text-primary);
-}
-.projects-newchat::before {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
-  border-radius: calc(var(--radius-control) - 3px);
-  pointer-events: none;
-}
-.projects-newchat:hover {
-  border-color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-}
-
-/* ── Chip row: status · git · path (999px pills, hairline-bordered) ────────── */
-.projects-detail-chips {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.projects-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-.projects-chip--action {
-  background: transparent;
-  cursor: pointer;
-}
-.projects-chip--action:hover {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
-  color: var(--text-primary);
-}
-.projects-chip__mono {
-  max-width: 16rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
-.projects-chip__sep { color: var(--text-muted); }
-.projects-chip__state { color: var(--text-muted); }
-.projects-chip__state--dirty { color: var(--color-warning); }
-.projects-chip__hint { font-size: var(--text-2xs); color: var(--text-muted); }
-
-/* ── Stat strip: 4 bordered cells over the translucent raised surface ─────── */
-.projects-stat-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
-  overflow: hidden;
-}
-.projects-stat-strip__cell {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-}
-.projects-stat-strip__cell + .projects-stat-strip__cell {
-  border-left: 1px solid var(--border-hairline);
-}
-.projects-stat-strip__value {
-  font-size: var(--text-lg);
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.projects-stat-strip__label {
-  font-size: var(--text-2xs);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-/* ── Collapsible cards (Tasks / Sessions / Access) ─────────────────────────── */
-.projects-detail-section { margin-top: var(--space-2); }
-.projects-card {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
-  overflow: hidden;
-}
-.projects-card__header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-}
-.projects-card__toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  margin: calc(var(--space-1) * -1);
-  padding: var(--space-1);
-  border: none;
+.projects-access-rename {
+  width: 100%;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--accent-presence);
   border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+  outline: none;
   font: inherit;
-  cursor: pointer;
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
 }
-.projects-card__toggle:hover { color: var(--text-primary); }
-.projects-card__chevron {
-  flex: none;
-  color: var(--text-muted);
-  transition: transform var(--duration-fast) var(--ease-standard);
+
+.projects-access-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-3);
 }
-.projects-card__toggle[aria-expanded="true"] .projects-card__chevron {
-  transform: rotate(90deg);
-}
-@media (prefers-reduced-motion: reduce) {
-  .projects-card__chevron { transition: none; }
-}
-.projects-card__title {
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
+
+.projects-access-card-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-.projects-card__summary {
-  margin-left: auto;
-  flex: none;
-  font-size: var(--text-xs);
+  text-align: right;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
-.projects-card__body {
+
+.projects-access-disclose,
+.projects-access-gear {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+
+.projects-access-card:hover .projects-access-disclose,
+.projects-access-card:hover .projects-access-gear,
+.projects-access-card:focus-within .projects-access-disclose,
+.projects-access-card:focus-within .projects-access-gear,
+.projects-access-tr:hover .projects-access-disclose,
+.projects-access-tr:focus-within .projects-access-disclose {
+  opacity: 1;
+}
+
+.projects-access-disclose:hover,
+.projects-access-gear:hover {
+  color: var(--text-primary);
+}
+
+.projects-access-disclose[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.projects-access-disclose[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+@media (hover: none) {
+  .projects-access-disclose,
+  .projects-access-gear {
+    opacity: 1;
+  }
+}
+
+/* ── Disclosed detail ───────────────────────────────────────────────── */
+
+.projects-access-detail {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  min-width: 0;
-  padding: 0 var(--space-2) var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
 }
-.projects-card__footer {
+
+.projects-access-facts {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+}
+
+.projects-access-facts > div {
+  display: flex;
+  align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+}
+
+.projects-access-facts dt {
+  width: 46px;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.projects-access-facts dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.projects-access-grants {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
   border-top: 1px solid var(--border-hairline);
 }
 
-/* Dashed accent show-more (dashed = invitation; hover firms up solid). */
-.projects-more-btn {
-  width: 100%;
-  justify-content: center;
-  padding: var(--space-1) var(--space-2);
-  border: 1px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
-  border-radius: var(--radius-control);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-}
-.projects-more-btn:hover {
-  border-style: solid;
-  border-color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-}
-
-/* Dashed = invitation (design language §3): empty sections invite the next
-   action instead of dead-ending. */
-.projects-detail-empty {
-  padding: 10px var(--space-3);
-  border: 1px dashed var(--border-hairline);
-  border-radius: 10px;
-  color: var(--text-muted);
-  font-size: 11.5px;
-}
-
-/* ── Access card: stacked avatars, selectable rows, binary segmented control ── */
-.projects-access-stack { display: inline-flex; align-items: center; }
-.projects-access-stack__item {
-  display: inline-flex;
-  border-radius: var(--radius-pill);
-  box-shadow: 0 0 0 1.5px var(--bg-base);
-}
-.projects-access-stack__item + .projects-access-stack__item { margin-left: -6px; }
-.projects-access-bulk {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin: 0 var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-}
-.projects-access-bulk__count { font-size: var(--text-xs); color: var(--text-primary); }
-.projects-access-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-control);
-}
-.projects-access-row:hover { background: var(--bg-hover); }
-.projects-access-row[data-selected="true"] {
-  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
-}
-.projects-access-row__check {
+.projects-access-grants li {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex: none;
-  padding: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--bg-base);
-  cursor: pointer;
-}
-.projects-access-row__check[data-checked="true"] {
-  border-color: var(--accent-presence);
-  background: var(--accent-presence);
-}
-/* Supreme-familiar rows keep the column alignment without a checkbox. */
-.projects-access-row__check[aria-hidden="true"] {
-  border-color: transparent;
-  cursor: default;
-}
-.projects-access-seg {
-  display: inline-flex;
-  flex: none;
+  gap: 5px;
+  height: 21px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-grants li .projects-access-dot {
+  background: currentColor;
+}
+
+.projects-access-grants.is-read li.is-on {
+  color: var(--accent-presence-soft, var(--accent-presence));
+  border-color: color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.projects-access-grants.is-write li.is-on {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 34%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+/* ── Rows view ──────────────────────────────────────────────────────── */
+
+.projects-access-table {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
-.projects-access-seg__btn {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-2xs);
-  padding: var(--space-1) var(--space-2);
-  cursor: pointer;
-}
-.projects-access-seg__btn + .projects-access-seg__btn {
-  border-left: 1px solid var(--border-hairline);
-}
-.projects-access-seg__btn[aria-pressed="true"] {
-  color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 38%, transparent);
-}
-.projects-access-seg__btn:disabled { opacity: 0.6; cursor: default; }
 
-/* ── Remove-project confirm: facts table ───────────────────────────────────── */
-.projects-remove-facts {
+.projects-access-thead,
+.projects-access-tr-main {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr) minmax(0, 132px) 100px var(--space-5);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.projects-access-thead {
+  height: var(--space-8);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--text-primary) 3%, transparent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.projects-access-thead span:nth-child(4) {
+  text-align: right;
+}
+
+.projects-access-tbody {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.projects-access-tr {
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.projects-access-tr:last-child {
+  border-bottom: none;
+}
+
+.projects-access-tr-main {
+  position: relative;
+  padding: var(--space-2) var(--space-4);
+}
+
+.projects-access-tr:hover {
+  background: color-mix(in oklch, var(--text-primary) 4%, transparent);
+}
+
+.projects-access-tr-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.projects-access-tr-name .projects-access-card-bar {
+  position: static;
+  width: 2px;
+  height: 15px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+/* The dense rows view shows the bare glyph, not the tile — so neither the
+   workspace fill nor the repository ring applies here. The icon itself still
+   differs, and the Scope column names the kind in words. */
+.projects-access-tr-name .projects-access-kind {
+  width: auto;
+  height: auto;
+  background: none;
+  box-shadow: none;
+}
+
+.projects-access-tr-path,
+.projects-access-tr-scope {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-tr-scope {
+  color: var(--text-secondary);
+}
+
+.projects-access-tr .projects-access-detail {
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* ── Tree view ──────────────────────────────────────────────────────── */
+
+.projects-access-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.projects-access-level {
+  border: 1px solid var(--border-hairline);
+  border-left: 2px solid var(--text-muted);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.projects-access-level.is-read {
+  border-left-color: var(--accent-presence-soft, var(--accent-presence));
+  background: color-mix(in oklch, var(--accent-presence) 5%, transparent);
+}
+
+.projects-access-level.is-write {
+  border-left-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+}
+
+.projects-access-level > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 34px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.projects-access-level h2 {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.projects-access-level.is-write h2 {
+  color: var(--accent-presence);
+}
+
+.projects-access-level-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.projects-access-chips {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.projects-access-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--space-6);
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 50%, transparent);
+  cursor: pointer;
+  font: inherit;
   font-size: var(--text-sm);
-}
-.projects-remove-facts__key { color: var(--text-muted); }
-.projects-remove-facts__value {
-  min-width: 0;
-  overflow-wrap: anywhere;
   color: var(--text-primary);
 }
 
-/* Back to the list — only exists under the narrow single-pane collapse. */
-.projects-detail-back { display: none; }
-
-/* ── Session chips (Tasks card header reuses the running treatment) ────────── */
-.projects-session-chip { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 1px 6px; border-radius: 999px; white-space: nowrap; background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-.projects-session-chip--running { color: var(--accent-presence); background: color-mix(in oklch, var(--accent-presence) 12%, transparent); font-weight: 600; }
-
-/* ── Narrow collapse: one pane at a time, driven by data-pane ───────────────
-   Deliberate choice (documented): the SurfaceRail stays mounted in narrow
-   panes — projects-view.tsx flips it into forceOpen (no collapse toggle, no
-   resize handle, no inline width), and these rules stretch it to the single
-   grid column. The existing data-pane paging (list ↔ detail) is unchanged. */
-@container projects (max-width: 640px) {
-  .projects-hub { grid-template-columns: minmax(0, 1fr); }
-  .projects-hub .surface-rail { width: auto; border-right: 0; }
-  .projects-hub[data-pane="detail"] .surface-rail { display: none; }
-  .projects-hub[data-pane="list"] .projects-hub__detail { display: none; }
-  .projects-detail-back { display: inline-flex; }
-  /* The head row wraps so the action cluster drops below the title instead of
-     crushing it or clipping off the pane's edge. The title keeps a readable
-     minimum — flex-1 + min-width:0 alone would shrink it to nothing and the
-     row would never wrap. */
-  .projects-detail-head__row { flex-wrap: wrap; }
-  .projects-detail-head__title { min-width: 10rem; }
+.projects-access-chip:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
 }
 
-/* Sidebar-band widths: the chat split can pinch this surface to ~200–480px.
-   Only one pane shows down here (the 640px collapse already fired), so give
-   its content the chrome's padding back, and let the stat strip wrap 2×2. */
-@container projects (max-width: 420px) {
-  .projects-hub__detail { padding: 12px 12px 20px; }
-  .projects-stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .projects-stat-strip__cell:nth-child(odd) { border-left: 0; }
-  .projects-stat-strip__cell:nth-child(n + 3) { border-top: 1px solid var(--border-hairline); }
+.projects-access-chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.projects-access-chip-meta {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Access pill (shared by every view) ─────────────────────────────── */
+
+.projects-access-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  height: var(--space-5);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.projects-access-pill.is-read {
+  color: var(--accent-presence-soft, var(--accent-presence));
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.projects-access-pill.is-write {
+  color: var(--accent-presence-foreground);
+  border-color: transparent;
+  background: var(--accent-presence);
+}
+
+.projects-access-pill:hover:not(:disabled) {
+  border-color: currentColor;
+}
+
+.projects-access-pill:disabled {
+  cursor: default;
+}
+
+.projects-access-pill.is-pending {
+  opacity: 0.6;
+}
+
+.projects-access-pill .projects-access-dot {
+  background: currentColor;
+}
+
+/* Command-palette focus flash. */
+
+.projects-access-card.is-flash,
+.projects-access-tr.is-flash,
+.projects-access-chip.is-flash {
+  animation: projects-access-flash 1.4s ease;
+}
+
+@keyframes projects-access-flash {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  20%,
+  60% {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .projects-access-card,
+  .projects-access-caret,
+  .projects-access-disclose,
+  .projects-access-gear,
+  .projects-access-ledger-bar span {
+    transition: none;
+  }
+
+  .projects-access-card.is-flash,
+  .projects-access-tr.is-flash,
+  .projects-access-chip.is-flash {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  }
+
+  .projects-access-card:hover {
+    transform: none;
+  }
 }

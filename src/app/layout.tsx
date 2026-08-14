@@ -19,6 +19,7 @@ import { LiveRegionProvider } from "@/components/ui/live-region";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { PwaRegister } from "@/components/pwa-register";
 import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
+import { DevShellRecovery } from "@/components/dev-shell-recovery";
 import { WebVitalsReporter } from "@/components/perf/web-vitals-reporter";
 import { PerfOverlay } from "@/components/perf/perf-overlay";
 import { PreferencesBootstrapController } from "@/components/preferences-bootstrap-controller";
@@ -82,6 +83,7 @@ export default function RootLayout({
       </head>
       <body className="h-full flex flex-col">
         <DevCacheResetScript />
+        <DevShellRecovery />
         <SidecarAuthBridge />
         <ShellBannersProvider>
           <DaemonReleaseAlignmentTrigger />

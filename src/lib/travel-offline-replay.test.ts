@@ -62,6 +62,53 @@ assert.match(
 
 assert.match(
   replay,
+  /import \{ chatSummaryTitle, defaultChatTitleForSession \} from "@\/lib\/cave-chat-titles"/,
+  "automatic replay titles should use the shared concise formatter",
+);
+assert.doesNotMatch(
+  replay,
+  /chatTitleFromPrompt/,
+  "automatic replay titles must not use the legacy 64-character prompt formatter",
+);
+assert.match(
+  replay,
+  /setSessionTitleAutoIfOwned/,
+  "automatic replay titles should use the shared atomic provenance setter",
+);
+// Chat replay uses auto provenance (setSessionTitleAutoIfOwned via titleOwnership: "auto");
+// workflow / flow replay use manual provenance (setSessionTitle, the default).
+// Both must be imported and dispatched correctly.
+assert.match(
+  replay,
+  /\bsetSessionTitle\b/,
+  "travel replay must use setSessionTitle for non-chat (manual-provenance) titles",
+);
+assert.match(
+  replay,
+  /titleOwnership:\s*["']auto["']/,
+  "chat replay must pass titleOwnership: 'auto' to the session spawn helper",
+);
+// Gap 2 fix: spawnHubSession's auto branch must use the atomic setSessionTitleAutoIfOwned
+// so a concurrent manual title written between daemon creation and this write is preserved.
+// The unconditional setSessionTitleAuto is no longer imported.
+assert.doesNotMatch(
+  replay,
+  /\bsetSessionTitleAuto\b(?!IfOwned)/,
+  "spawnHubSession auto branch must not use unconditional setSessionTitleAuto — use setSessionTitleAutoIfOwned",
+);
+assert.match(
+  replay,
+  /titleOwnership === "auto"[\s\S]{0,120}setSessionTitleAutoIfOwned\([\s\S]{0,200}defaultChatTitleForSession\(/,
+  "spawnHubSession auto branch must call setSessionTitleAutoIfOwned with defaultChatTitleForSession as an autoDefault",
+);
+assert.match(
+  replay,
+  /chatSummaryTitle\(\{ userText: prompt \}\)\s*\?\?\s*defaultChatTitleForSession/,
+  "chat replay should derive a concise title and retain the neutral fallback",
+);
+
+assert.match(
+  replay,
   /path: "\/api\/v1\/workflows\/run"/,
   "workflow replay should try the daemon workflow engine before session fallback",
 );
@@ -86,6 +133,56 @@ assert.match(
 
 assert.match(
   replay,
+  /queuedModelOverride\(payload\)[\s\S]*modelOverrideScope:[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
+  "travel replay extracts queued model and capability intent before the daemon boundary",
+);
+assert.match(
+  replay,
+  /const model = cleanModelId\(queuedModel\)[\s\S]*queued chat model id is not safe for launch/,
+  "travel replay rejects a malformed persisted model instead of silently using the runtime default",
+);
+assert.match(
+  replay,
+  /modelSource === "familiar-default"[\s\S]*metadata\.desiredModel \?\? metadata\.model/,
+  "travel replay preserves model intent from older queued items that predate the explicit override field",
+);
+assert.match(
+  replay,
+  /modelOverride && !isModelAllowedByRuntime\(binding\.harness, modelOverride\)[\s\S]*queued chat model id is not allowed by the selected runtime/,
+  "travel replay validates a queued model against the current runtime before spawning",
+);
+assert.match(
+  replay,
+  /const harness = canonicalHarnessId\(args\.harness\)[\s\S]*path: "\/api\/v1\/sessions"[\s\S]*body:[\s\S]*harness,/,
+  "travel replay canonicalizes runtime aliases before the hub launch boundary",
+);
+
+assert.match(
+  replay,
+  /export function daemonReplayControlFamilies\([\s\S]*?if \(stringValue\(payload\.reasoningEffort\)\)[\s\S]*?if \(stringValue\(payload\.responseSpeed\)\)/,
+  "travel replay identifies legacy and typed control intent before it reaches the daemon",
+);
+
+assert.match(
+  replay,
+  /const controlFamilies = daemonReplayControlFamilies\(payload\);[\s\S]*?queued model controls cannot be replayed through the current hub session contract/,
+  "travel replay must fail visibly instead of marking unsupported controls synced",
+);
+
+assert.match(
+  replay,
+  /queuedMetadata = record\(payload\.responseMetadata\)[\s\S]*canonicalHarnessId\(queuedHarness\) !== canonicalHarnessId\(binding\.harness\)/,
+  "travel replay must not silently move a queued turn onto a newly selected harness",
+);
+
+assert.match(
+  replay,
+  /runtime\?\.startsWith\("local:"\) && isSshRuntime\(binding\.runtime\)[\s\S]*queued local-runtime chat cannot be replayed after this familiar moved to SSH/,
+  "travel replay must fail closed across a local-to-SSH binding change",
+);
+
+assert.match(
+  replay,
   /const payloadProjectRoot = stringValue\(payload\.projectRoot\)[\s\S]*const projectRoot = payloadProjectRoot \?\? runtimeCwd \?\? process\.cwd\(\)/,
   "chat replay should derive projectRoot from queued local runtime when payload omits it",
 );
@@ -97,3 +194,17 @@ assert.match(
 );
 
 console.log("travel-offline-replay.test.ts: ok");
+
+assert.match(
+  replay,
+  /const placeholderRunId = stringValue\(payload\.placeholderRunId\);[\s\S]*?if \(placeholderRunId\) \{[\s\S]*?await updateFlowRun\(placeholderRunId, runFields\);[\s\S]*?if \(updated\) return;[\s\S]*?await recordFlowRun\(runFields\);/,
+  "flow replay must update the queued placeholder run in place (mission iterations keep its id), falling back to a fresh record only for legacy/evicted items",
+);
+
+assert.match(
+  replay,
+  /if \(isResearchMissionFlowSnapshot\(flow\)\)[\s\S]*?Queued Research work is not replayed[\s\S]*?const options = record\(payload\.options\)/,
+  "legacy Research queue entries are refused before replay can spawn a new session",
+);
+
+console.log("travel-offline-replay.test.ts: placeholder-run pin ok");

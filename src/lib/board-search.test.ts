@@ -89,7 +89,11 @@ assert.match(
 );
 
 const boardView = await readFile(new URL("../components/board-view.tsx", import.meta.url), "utf8");
-assert.match(boardView, /board-search-input/, "Tasks header should expose one search input");
+// The Tasks header search affordance is the tokenized <BoardTokenSearch>
+// (redesign) — the single search input now lives in that component.
+assert.match(boardView, /<BoardTokenSearch/, "Tasks header should mount the tokenized search");
+const boardTokenSearch = await readFile(new URL("../components/board-token-search.tsx", import.meta.url), "utf8");
+assert.match(boardTokenSearch, /board-token-input/, "Token search should expose one search input");
 assert.doesNotMatch(boardView, /label="Labels"/, "Tasks header should not show Labels as a separate filter control");
 assert.doesNotMatch(boardView, /allLabels/, "Tasks view should not build a dedicated labels filter row");
 
@@ -103,5 +107,14 @@ const boardInspector = await readFile(new URL("../components/board-inspector.tsx
 assert.match(boardInspector, /link-item-anchor/, "Task inspector should render task links");
 assert.match(boardInspector, /card\.sessionId/, "Task inspector should render task session context");
 assert.match(boardInspector, /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>/, "Task inspector should expose the task project selector");
-assert.match(boardInspector, /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/, "Task project changes should set the persisted cwd");
+assert.match(
+  boardInspector,
+  /onPatch\(card\.id, \{[\s\S]{0,160}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,160}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,160}sessionId: null,[\s\S]{0,160}\}\)/,
+  "Task project changes should set the persisted cwd and clear the prior session",
+);
+assert.doesNotMatch(
+  boardInspector,
+  /onPatch\(card\.id, \{[\s\S]{0,160}projectId: selectedProject\?\.id \?\? null,[\s\S]{0,160}cwd: selectedProject\?\.root \?\? null,[\s\S]{0,160}familiarId: null,[\s\S]{0,160}\}\)/,
+  "A familiar-scoped project change should preserve its authorized familiar",
+);
 assert.doesNotMatch(boardInspector, /function openCwdInExplorer|aria-label="Open CWD in directory explorer"/, "Task inspector should not expose a separate CWD open action");

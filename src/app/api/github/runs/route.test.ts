@@ -6,8 +6,8 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{ resolveSecret \} from "@\/lib\/vault";/,
-  "runs route should use the shared vault/env secret resolver",
+  /import \{ resolveGitHubToken \} from "@\/lib\/github-token";/,
+  "runs route should use the shared installation-agnostic token resolver",
 );
 
 assert.match(
@@ -32,6 +32,24 @@ assert.doesNotMatch(
   source,
   /:\s*token\b/,
   "runs route must not return token material",
+);
+
+assert.match(
+  source,
+  /\/\^\\d\{1,16\}\$\/\.test\(idParam\)/,
+  "run id is validated as a positive integer before path interpolation",
+);
+
+assert.match(
+  source,
+  /actions\/runs\/\$\{runId\}/,
+  "an id fetches that exact run instead of scanning the list page",
+);
+
+assert.match(
+  source,
+  /runId\s*\?\s*\[data as Record<string, unknown>\]/,
+  "by-id responses normalize through the same runs[] shape as the list",
 );
 
 console.log("github-runs-route.test.ts OK");

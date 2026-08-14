@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { loadConversation } from "@/lib/cave-conversations";
 import { callDaemon } from "@/lib/coven-daemon";
 import { isOwnedSession } from "@/lib/cave-config";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
@@ -33,6 +34,13 @@ export async function GET(
   if (!isValidSessionId(id) || !(await isOwnedSession(id))) {
     return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
+  // Cave conversations keep a stable display id while offline replay can
+  // attach them to a different daemon session. Ownership is checked against
+  // the public Cave id above; only then may we resolve its daemon event id.
+  const daemonSessionId = (await loadConversation(id))?.harnessSessionId ?? id;
+  if (!isValidSessionId(daemonSessionId)) {
+    return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
+  }
 
   const url = new URL(req.url);
   const afterSeq = intParam(url.searchParams.get("afterSeq"), 0, 0, Number.MAX_SAFE_INTEGER);
@@ -42,10 +50,18 @@ export async function GET(
   }
 
   const res = await callDaemon<{ events: CovenEvent[] }>({
-    path: `/api/v1/events?sessionId=${encodeURIComponent(id)}&afterSeq=${afterSeq}&limit=${limit}`,
+    path: `/api/v1/events?sessionId=${encodeURIComponent(daemonSessionId)}&afterSeq=${afterSeq}&limit=${limit}`,
     timeoutMs: 4000,
   });
 
+  // The daemon 404s sessions it has no event log for — Cave-local chats that
+  // never ran through the daemon, and rows lost on a daemon restart. That's an
+  // expected no-data state (cave-pfu8): surface it as a machine-readable 404
+  // so the trace overlay can render a calm empty state instead of parsing
+  // "daemon http 404" out of a 502.
+  if (!res.ok && res.status === 404) {
+    return NextResponse.json({ ok: false, error: "no_event_timeline" }, { status: 404 });
+  }
   if (!res.ok || !res.data) {
     return NextResponse.json(
       { ok: false, error: res.error ?? `daemon http ${res.status}` },

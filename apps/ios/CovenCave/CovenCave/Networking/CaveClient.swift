@@ -16,6 +16,73 @@ protocol CaveBootstrapClient: Sendable {
 /// is required for the Tailscale app path because it exposes the full API.
 struct CaveClient {
     var connection: CaveConnection
+    private let injectedSession: URLSession?
+
+    init(connection: CaveConnection, session: URLSession? = nil) {
+        self.connection = connection
+        self.injectedSession = session
+    }
+
+    /// `POST /api/voice/session` request. The desktop resolves the familiar's
+    /// provider and mints any provider credential server-side.
+    struct VoiceSessionRequest: Codable, Sendable {
+        var familiarId: String
+        var sessionId: String
+    }
+
+    /// A prior conversation turn supplied by provider grants that need local
+    /// context to continue the call.
+    struct VoiceSessionSeedTurn: Codable, Sendable {
+        var role: String
+        var content: String
+    }
+
+    /// Provider-specific connection details. Known fields stay explicit while
+    /// optional metadata lets later transports select their own connection
+    /// path without teaching this client about provider secrets.
+    struct VoiceSessionConnection: Codable, Sendable {
+        var kind: String
+        var url: String?
+        var model: String?
+        var voice: String?
+        var familiarId: String?
+        var sessionId: String?
+        var voiceId: String?
+        var modelId: String?
+        var instructions: String?
+        var conversationSeed: [VoiceSessionSeedTurn]?
+    }
+
+    /// A short-lived server-minted grant. This contains an ephemeral client
+    /// secret when one is needed; it is never the desktop's OPENAI_API_KEY.
+    struct VoiceSessionGrant: Codable, Sendable {
+        var provider: String
+        var clientSecret: String
+        var expiresAt: String
+        var connection: VoiceSessionConnection
+    }
+
+    /// Wire response from `POST /api/voice/session`.
+    struct VoiceSessionResponse: Codable, Sendable {
+        var ok: Bool
+        var grant: VoiceSessionGrant?
+        var callId: String?
+        var error: String?
+    }
+
+    private struct VoiceSessionErrorEnvelope: Decodable {
+        var error: String?
+        var hint: String?
+        var missingKey: String?
+        var providerMessage: String?
+
+        var message: String? {
+            guard let error, !error.isEmpty else { return nil }
+            let detail = hint ?? providerMessage
+                ?? missingKey.map { "Missing \($0)." }
+            return detail.map { "\(error): \($0)" } ?? error
+        }
+    }
 
     private var base: URL {
         get throws {
@@ -57,6 +124,7 @@ struct CaveClient {
         let retryDelays: [Duration] = ["GET", "HEAD"].contains(method)
             ? [.milliseconds(350), .seconds(1)]
             : []
+        let session = injectedSession ?? self.session
         for attempt in 0...retryDelays.count {
             do {
                 return try await session.data(for: req)
@@ -101,7 +169,7 @@ struct CaveClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = CaveConnection.accessToken {
+        if let token = try CaveConnection.credentialForRequest(to: url) {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         if let body {
@@ -165,6 +233,72 @@ struct CaveClient {
         return URL(string: path, relativeTo: base)?.absoluteURL
     }
 
+    // MARK: - Voice
+
+    /// Mint a voice-call grant through Cave. The desktop keeps provider API
+    /// keys in its vault; iOS receives only the short-lived response grant.
+    func mintVoiceSession(familiarId: String, sessionId: String) async throws -> VoiceSessionResponse {
+        let payload = try JSONEncoder().encode(
+            VoiceSessionRequest(familiarId: familiarId, sessionId: sessionId)
+        )
+        let req = try request("api/voice/session", method: "POST", body: payload)
+        let (data, resp) = try await data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if let envelope = try? JSONDecoder().decode(VoiceSessionErrorEnvelope.self, from: data),
+               let message = envelope.message {
+                throw CaveError.transport(message)
+            }
+            try Self.check(resp)
+        }
+        let decoded: VoiceSessionResponse
+        do {
+            decoded = try JSONDecoder().decode(VoiceSessionResponse.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+        try Self.check(resp)
+        guard decoded.ok, decoded.grant != nil, decoded.callId != nil else {
+            throw CaveError.transport(decoded.error ?? "Voice session was not granted.")
+        }
+        return decoded
+    }
+
+    // MARK: - Marketplace
+
+    func marketplacePlugins() async throws -> [MarketplacePlugin] {
+        let req = try request("api/marketplace")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(MarketplaceResponse.self, from: data).plugins
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    func installMarketplacePlugin(id: String) async throws {
+        try await mutateMarketplacePlugin(path: "api/marketplace/install", id: id)
+    }
+
+    func uninstallMarketplacePlugin(id: String) async throws {
+        try await mutateMarketplacePlugin(path: "api/marketplace/uninstall", id: id)
+    }
+
+    private func mutateMarketplacePlugin(path: String, id: String) async throws {
+        struct Body: Encodable { let id: String }
+        struct Response: Decodable { let ok: Bool; let error: String? }
+        let payload = try JSONEncoder().encode(Body(id: id))
+        let req = try request(path, method: "POST", body: payload)
+        let (data, resp) = try await data(for: req)
+        let decoded = try? JSONDecoder().decode(Response.self, from: data)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw CaveError.transport(decoded?.error ?? "The plugin change was not accepted.")
+        }
+        guard decoded?.ok == true else {
+            throw CaveError.transport(decoded?.error ?? "The plugin change was not accepted.")
+        }
+    }
+
     // MARK: - Operator profile
 
     /// The human operator's profile (name + avatar metadata) from
@@ -197,7 +331,7 @@ struct CaveClient {
         if let updatedAt, !updatedAt.isEmpty {
             items.append(URLQueryItem(name: "v", value: updatedAt))
         }
-        if let token = CaveConnection.accessToken {
+        if let token = try? CaveConnection.credentialForRequest(to: comps.url ?? base) {
             items.append(URLQueryItem(name: "coven_access_token", value: token))
         }
         if !items.isEmpty { comps.queryItems = items }
@@ -301,6 +435,45 @@ struct CaveClient {
         return try await patchTask(cardId: cardId, payload: payload)
     }
 
+    /// Server-side flags a session patch can carry.
+    ///
+    /// The contract is that an unset field is ABSENT from the body:
+    /// `/api/sessions/{id}` updates a flag only when its key is present, so
+    /// sending `false` for a flag the caller never touched would silently
+    /// unarchive a chat you only meant to pin. Synthesised `Encodable` already
+    /// omits nil optionals, so this encoder is not correcting it — it is
+    /// stating the requirement at the point it matters, so that adding a
+    /// non-optional field or a `?? false` default reads as the mistake it is.
+    struct SessionFlagsPatch: Encodable {
+        var archived: Bool?
+        var pinned: Bool?
+        enum CodingKeys: String, CodingKey { case archived, pinned }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if let archived { try c.encode(archived, forKey: .archived) }
+            if let pinned { try c.encode(pinned, forKey: .pinned) }
+        }
+    }
+
+    /// `PATCH /api/sessions/{id}` — archive/summon and pin/unpin. Both flags are
+    /// optional; pass only what changed.
+    func setSessionFlags(sessionId: String, archived: Bool? = nil, pinned: Bool? = nil) async throws {
+        let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        let payload = try JSONEncoder().encode(SessionFlagsPatch(archived: archived, pinned: pinned))
+        let req = try request("api/sessions/\(escaped)", method: "PATCH", body: payload)
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
+    /// `DELETE /api/sessions/{id}` — sacrifice a session (tombstoned in cave
+    /// state, so the call is idempotent and safe to retry).
+    func deleteSession(sessionId: String) async throws {
+        let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        let req = try request("api/sessions/\(escaped)", method: "DELETE")
+        let (_, resp) = try await data(for: req)
+        try Self.check(resp)
+    }
+
     /// `DELETE /api/board/{id}` — remove a task.
     func deleteTask(cardId: String) async throws {
         let req = try request("api/board/\(cardId)", method: "DELETE")
@@ -335,9 +508,16 @@ struct CaveClient {
     }
 
     /// The model this chat resolves to, plus the pickable menu for its runtime.
-    func chatModelState(familiarId: String, sessionId: String?) async throws -> ChatModelStateResponse {
+    /// `previewModel` is read-only and resolves controls for a staged model
+    /// before a new chat has a server session or durable model intent.
+    func chatModelState(
+        familiarId: String,
+        sessionId: String?,
+        previewModel: String? = nil
+    ) async throws -> ChatModelStateResponse {
         var path = "api/chat/model-state?familiarId=\(urlQuery(familiarId))"
         if let sessionId, !sessionId.isEmpty { path += "&sessionId=\(urlQuery(sessionId))" }
+        if let previewModel { path += "&model=\(urlQuery(previewModel))" }
         let req = try request(path)
         let (data, resp) = try await data(for: req)
         try Self.check(resp)
@@ -350,10 +530,31 @@ struct CaveClient {
 
     /// Set the model for this chat (`session` scope) or the familiar (`familiar-default`).
     @discardableResult
-    func setChatModel(familiarId: String, sessionId: String?, model: String, scope: String) async throws -> ChatModelStateResponse {
-        var body: [String: String] = ["familiarId": familiarId, "model": model, "scope": scope]
-        if let sessionId, !sessionId.isEmpty { body["sessionId"] = sessionId }
-        let payload = try JSONEncoder().encode(body)
+    func setChatModel(familiarId: String, sessionId: String?, model: String?, scope: String) async throws -> ChatModelStateResponse {
+        struct Body: Encodable {
+            let familiarId: String
+            let sessionId: String?
+            let model: String?
+            let scope: String
+
+            enum CodingKeys: String, CodingKey {
+                case familiarId, sessionId, model, scope
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(familiarId, forKey: .familiarId)
+                try container.encodeIfPresent(sessionId, forKey: .sessionId)
+                if let model {
+                    try container.encode(model, forKey: .model)
+                } else {
+                    try container.encodeNil(forKey: .model)
+                }
+                try container.encode(scope, forKey: .scope)
+            }
+        }
+        let payload = try JSONEncoder().encode(
+            Body(familiarId: familiarId, sessionId: sessionId, model: model, scope: scope))
         let req = try request("api/chat/model-state", method: "PATCH", body: payload)
         let (data, resp) = try await data(for: req)
         try Self.check(resp)
@@ -378,11 +579,23 @@ struct CaveClient {
         var familiarId: String
         var prompt: String
         var sessionId: String?
+        var projectRoot: String?
         var attachments: [ChatAttachment]?
         /// Per-send client token (cave-h40l): the server keys its resumable
         /// run buffer under this, so a NEW chat (no sessionId yet) is still
         /// re-attachable after a transport drop.
         var runId: String? = nil
+        /// Real per-send controls consumed by `/api/chat/send`.
+        /// Legacy fields remain decodable/encodable for older callers and
+        /// persisted turns, but new capability-aware sends leave them nil.
+        /// A nil value must not become an implicit prompt-only request.
+        var reasoningEffort: ChatThinkingEffort? = nil
+        var responseSpeed: ChatResponseSpeed? = nil
+        var modelControls: [String: String]? = nil
+        /// A model selected before the first server session exists travels with
+        /// the send instead of mutating the familiar's global default.
+        var modelOverride: String? = nil
+        var modelOverrideScope: ChatModelOverrideScope? = nil
     }
 
     /// One decoded SSE frame: the event plus the server's `id:` (the run
@@ -392,6 +605,48 @@ struct CaveClient {
         let event: StreamEvent
         /// Resume cursor as of this frame — nil until the server sends ids.
         let id: Int?
+    }
+
+    private struct ServerErrorEnvelope: Decodable {
+        var error: String?
+        var code: String?
+        var hint: String?
+    }
+
+    static let serverErrorBodyLimit = 65_536
+
+    static func serverResponseError(statusCode: Int, data: Data) -> CaveError {
+        let bounded = Data(data.prefix(serverErrorBodyLimit))
+        guard let envelope = try? JSONDecoder().decode(
+            ServerErrorEnvelope.self,
+            from: bounded
+        ) else {
+            return .serverResponse(status: statusCode, code: nil, message: nil)
+        }
+        let message = [envelope.error, envelope.hint]
+            .compactMap { value -> String? in
+                guard let value else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .first
+        return .serverResponse(
+            status: statusCode,
+            code: envelope.code,
+            message: message
+        )
+    }
+
+    private static func readServerErrorBody(
+        from bytes: URLSession.AsyncBytes
+    ) async throws -> Data {
+        var body = Data()
+        body.reserveCapacity(serverErrorBodyLimit)
+        for try await byte in bytes {
+            guard body.count < serverErrorBodyLimit else { break }
+            body.append(byte)
+        }
+        return body
     }
 
     /// Open the SSE stream for a chat send. Yields decoded frames — keep the
@@ -406,7 +661,14 @@ struct CaveClient {
                     req.timeoutInterval = 600
 
                     let (bytes, resp) = try await Self.streamSession.bytes(for: req)
-                    try Self.check(resp)
+                    if let http = resp as? HTTPURLResponse,
+                       !(200..<300).contains(http.statusCode) {
+                        let data = try await Self.readServerErrorBody(from: bytes)
+                        throw Self.serverResponseError(
+                            statusCode: http.statusCode,
+                            data: data
+                        )
+                    }
 
                     var parser = SSELineParser()
                     for try await line in bytes.lines {
@@ -564,29 +826,6 @@ struct CaveClient {
         }
     }
 
-    /// `GET /api/journal` — the list of days that have a reflection.
-    func journalDays() async throws -> [JournalDay] {
-        let req = try request("api/journal")
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(JournalDaysResponse.self, from: data).days
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
-
-    /// `GET /api/journal?date=yyyy-MM-dd` — one day's reflection.
-    func journalDay(date: String) async throws -> JournalEntry {
-        let req = try request("api/journal?date=\(urlQuery(date))")
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(JournalDayResponse.self, from: data).entry
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
 
     /// `POST /api/inbox` — create a reminder (used by the New Reminder App Intent).
     func createReminder(title: String, fireAt: Date) async throws {
@@ -609,6 +848,45 @@ struct CaveClient {
 
     struct ReminderActionResponse: Decodable { var ok: Bool; var error: String?; var item: Reminder? }
 
+    /// What a bulk call actually did, per item (cave-ioswipe.2). The endpoint
+    /// echoes only what it changed, so an id requested but present in NEITHER
+    /// list did not take effect — that absence is the per-item failure signal,
+    /// and it is why a partial failure no longer has to revert the whole batch.
+    struct BulkInboxOutcome: Decodable {
+        var ok: Bool
+        var updated: [Reminder]
+        var deletedIds: [String]
+
+        enum CodingKeys: String, CodingKey { case ok, updated, deletedIds }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+            updated = (try? c.decode([Reminder].self, forKey: .updated)) ?? []
+            deletedIds = (try? c.decode([String].self, forKey: .deletedIds)) ?? []
+        }
+    }
+
+    /// `POST /api/inbox/bulk` — one round trip for read/unread/dismiss/done/
+    /// delete over many ids, replacing N sequential per-id calls.
+    ///
+    /// Snooze is deliberately NOT routed here: the endpoint has no `snooze`
+    /// action and no slot for its `minutes` argument. AppModel fans that one out
+    /// with bounded concurrency instead, which the bead's acceptance criteria
+    /// allow ("one round trip OR bounded concurrency"). Extending the server
+    /// action set is a separate, deliberate change — not something to slip in.
+    func bulkInboxAction(_ action: String, ids: [String]) async throws -> BulkInboxOutcome {
+        let body = try JSONSerialization.data(withJSONObject: ["action": action, "ids": ids])
+        let req = try request("api/inbox/bulk", method: "POST", body: body)
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(BulkInboxOutcome.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     /// `POST /api/inbox/{id}/{action}` — done / dismiss / snooze. Returns the
     /// server's updated item when present.
     @discardableResult
@@ -626,153 +904,9 @@ struct CaveClient {
         try await inboxAction(id, "snooze", body: try JSONEncoder().encode(["minutes": minutes]))
     }
 
-    // MARK: - Content feed (Tweets · Repos)
-
-    /// One OpenCoven repo from the curated star list. Mirrors the web
-    /// `RepoItem` (src/lib/home-feed.ts).
-    struct RepoFeedItem: Decodable, Identifiable {
-        let id: String
-        let fullName: String
-        let description: String?
-        let stars: Int
-        let language: String?
-        let url: String
-        let pushedAt: String?
-    }
-
-    /// One post from the OpenCoven timeline (RSS-backed). Mirrors the web
-    /// `TweetItem` (src/lib/home-feed.ts).
-    struct TweetFeedItem: Decodable, Identifiable {
-        let id: String
-        let url: String
-        let title: String
-        let handle: String?
-        let isoDate: String?
-    }
-
-    private struct ReposResponse: Decodable {
-        let ok: Bool?
-        let items: [RepoFeedItem]?
-        let configured: Bool?
-    }
-    private struct TweetsResponse: Decodable {
-        let ok: Bool?
-        let items: [TweetFeedItem]?
-    }
-
-    /// Repos from the OpenCoven star list. `configured == false` means the
-    /// desktop has no GitHub token yet (the list query needs one).
-    func repos() async throws -> (items: [RepoFeedItem], configured: Bool) {
-        let req = try request("api/github/repos")
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        do {
-            let decoded = try JSONDecoder().decode(ReposResponse.self, from: data)
-            return (decoded.items ?? [], decoded.configured ?? true)
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
-
-    /// Latest OpenCoven posts. `refresh` bypasses the desktop's short cache.
-    func homeTweets(refresh: Bool = false) async throws -> [TweetFeedItem] {
-        let req = try request("api/home-tweets" + (refresh ? "?refresh=1" : ""))
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(TweetsResponse.self, from: data).items ?? []
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
 
     // MARK: - Canvas (generated artifacts)
 
-    private struct CanvasResponse: Decodable {
-        var ok: Bool?
-        var artifact: CanvasArtifact?
-        var artifacts: [CanvasArtifact]?
-    }
-    struct CanvasResolutionToken: Encodable {
-        var id: String
-        var updatedAt: String
-    }
-    private struct UpsertBody: Encodable {
-        var artifact: CanvasArtifact
-        var expectedUpdatedAt: String?
-        var expectedAbsent: Bool?
-        var resolvedAnnotations: [CanvasResolutionToken]?
-    }
-    private struct AnnotationMutationBody: Encodable {
-        var id: String
-        var annotation: CanvasAnnotation
-        var expectedAnnotationUpdatedAt: String?
-        var expectedAnnotationAbsent: Bool?
-    }
-
-    /// `GET /api/canvas` — the saved canvas artifacts.
-    func canvasArtifacts() async throws -> [CanvasArtifact] {
-        let req = try request("api/canvas")
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(CanvasResponse.self, from: data).artifacts ?? []
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
-
-    /// `POST /api/canvas` — guarded artifact upsert; returns the server-settled artifact.
-    @discardableResult
-    func saveCanvasArtifact(_ artifact: CanvasArtifact, expectedUpdatedAt: String? = nil,
-                            expectedAbsent: Bool = false,
-                            resolvedAnnotations: [CanvasResolutionToken]? = nil)
-        async throws -> (artifact: CanvasArtifact, artifacts: [CanvasArtifact]) {
-        let payload = try JSONEncoder().encode(UpsertBody(
-            artifact: artifact,
-            expectedUpdatedAt: expectedUpdatedAt,
-            expectedAbsent: expectedAbsent ? true : nil,
-            resolvedAnnotations: resolvedAnnotations
-        ))
-        let req = try request("api/canvas", method: "POST", body: payload)
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        let decoded = try JSONDecoder().decode(CanvasResponse.self, from: data)
-        guard let settled = decoded.artifact else {
-            throw CaveError.decoding("Canvas save did not return the settled artifact.")
-        }
-        return (settled, decoded.artifacts ?? [settled])
-    }
-
-    /// `PATCH /api/canvas` — add or replace one component annotation.
-    func saveCanvasAnnotation(artifactId: String, annotation: CanvasAnnotation,
-                              expectedUpdatedAt: String?)
-        async throws -> (artifact: CanvasArtifact, artifacts: [CanvasArtifact]) {
-        let payload = try JSONEncoder().encode(
-            AnnotationMutationBody(
-                id: artifactId,
-                annotation: annotation,
-                expectedAnnotationUpdatedAt: expectedUpdatedAt,
-                expectedAnnotationAbsent: expectedUpdatedAt == nil ? true : nil
-            )
-        )
-        let req = try request("api/canvas", method: "PATCH", body: payload)
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        let decoded = try JSONDecoder().decode(CanvasResponse.self, from: data)
-        guard let settled = decoded.artifact else {
-            throw CaveError.decoding("Canvas annotation save did not return the artifact.")
-        }
-        return (settled, decoded.artifacts ?? [settled])
-    }
-
-    /// `DELETE /api/canvas` — remove an artifact by id.
-    func deleteCanvasArtifact(id: String) async throws {
-        let payload = try JSONEncoder().encode(["id": id])
-        let req = try request("api/canvas", method: "DELETE", body: payload)
-        let (_, resp) = try await session.data(for: req)
-        try Self.check(resp)
-    }
 
     // MARK: - Helpers
 

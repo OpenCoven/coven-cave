@@ -22,18 +22,18 @@ const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.m
 // revamp 1d) — same ComposerRuntimePopover, same live model state.
 assert.match(
   homeComposer,
-  /<ComposerContextPill[\s\S]*?runtime=\{selectedRuntime\}[\s\S]*?modelValue=\{selectedModelId\}[\s\S]*?modelOptions=\{runtimeModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
-  "the home composer's context pill hosts the runtime picker from its own model state",
+  /<ComposerContextChips[\s\S]*?runtime=\{selectedRuntime\}[\s\S]*?modelValue=\{selectedModelId\}[\s\S]*?modelOptions=\{runtimeModelOptions\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "the home composer's context chips host the runtime picker from its own model state",
 );
 assert.match(
   homeComposer,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
-  "the home pill anchors the composer footer band (2026-07-21 home parity pass moved it down from the utility row)",
+  /className="cave-composer-footer-band[^"]*"[^>]*>[\s\S]*?<ComposerContextChips/,
+  "the chips anchor the composer footer band",
 );
 assert.match(
   contextPill,
-  /export function ComposerContextActionRows\(/,
-  "runtime/model rows are reusable outside the Home pill wrapper",
+  /aria-label=\{`Model: \$\{modelLabel\} — change model`\}/,
+  "the model chip is a separately labelled control (split grammar, cave-g21f)",
 );
 assert.match(
   contextPill,
@@ -42,13 +42,13 @@ assert.match(
 );
 assert.match(
   contextPill,
-  /const runtimeName = runtimeDisplayName\(config\.runtime\);[\s\S]*?const modelLabel = runtimeModelLabel\(config\.modelValue, config\.modelOptions\);/,
-  "triggerless context actions derive runtime/model labels once for the shared rows",
+  /const runtimeName = runtimeDisplayName\(config\.runtime\);[\s\S]*?!config\.modelValue && runtimeOwnsModelDefault\(config\.runtime\)[\s\S]*?"Runtime default"[\s\S]*?: runtimeModelLabel\(config\.modelValue, config\.modelOptions\);/,
+  "triggerless context actions derive runtime/model labels once and name a runtime-owned default explicitly",
 );
 assert.match(
   contextPill,
-  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerContextActionRows[\s\S]*?<ComposerContextPickers[\s\S]*?context=\{context\}/,
-  "ComposerContextPill still wraps the extracted runtime/model rows and pickers",
+  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerRuntimePopover[\s\S]*?onPickModel=\{context\.config\.onPickModel\}/,
+  "the chips mount the shared runtime popover from the same context controller",
 );
 
 // ── Runtime switches refresh the familiar roster immediately (cave-v25g) ────
@@ -66,11 +66,11 @@ assert.match(
 );
 assert.match(
   homeModelState,
-  /if \(json\.ok\) \{\s*\n[\s\S]{0,200}?window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
+  /if \(\n\s*!ok\n\s*\|\| familiarId !== selectedFamiliarIdRef\.current[\s\S]{0,500}?window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
   "a home runtime switch fires the roster refresh (only on a successful PATCH)",
 );
 
-// ── The picker is always in the composer control row, wired to live state ───
+// ── The picker is always reachable from the composer Tools edge ─────────────
 assert.match(
   chatView,
   /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?runtime: modelHarness,[\s\S]*?modelValue: composerModelValue,[\s\S]*?modelOptions: composerModelOptions,[\s\S]*?onPickRuntime: handleSelectRuntime,[\s\S]*?onPickModel: handleSelectModel,[\s\S]*?\}\}/,
@@ -78,36 +78,63 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-composer-utility-row">[\s\S]{0,4000}?<ComposerActionsMenu/,
-  "the chat options trigger sits in the composer utility row — always visible, session or not",
+  /className="cave-composer-edge-actions">[\s\S]{0,4000}?<ComposerActionsMenu[\s\S]*?triggerVariant="tools"/,
+  "the chat options trigger sits at the composer edge — always visible, session or not",
 );
 assert.match(
   chatView,
-  /className="cave-composer-footer-band">\s*\n\s*<ComposerContextPill/,
-  "the pill anchors the composer footer band — always visible, session or not (2026-07-21 wide-column pass moved it down from the utility row)",
+  /const chatContextControls = \([\s\S]*?<ComposerContextChips[\s\S]*?runtime=\{modelHarness\}[\s\S]*?onPickRuntime=\{handleSelectRuntime\}[\s\S]*?onPickModel=\{handleSelectModel\}/,
+  "chatContextControls is constructed once with live runtime/model state; new chat (inlineComposer) mounts it in the footer cluster, active chat in cave-chat-header-context",
 );
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──
 assert.match(
   chatView,
-  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{\s*\n\s*const nextModel = defaultModelForRuntime\(runtime\);/,
-  "a runtime pick lands with the runtime's default model (a bare harness flip would keep a foreign model id)",
+  /const handleSelectRuntime = useCallback\(\s*\n\s*\(runtime: string\) => \{[\s\S]*?const nextModel = modelForRuntimeSwitch\(runtime\);/,
+  "a runtime pick uses the runtime-switch policy instead of carrying a foreign model id",
 );
 assert.match(
   chatView,
-  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,200}?familiars: \{ \[familiar\.id\]: \{ harness: runtime, model: nextModel \} \}/,
-  "runtime switches persist through /api/config — the same channel the home composer's selectRuntime uses; the send route re-resolves the binding per turn, so the switch applies from the next message",
+  /fetch\("\/api\/config", \{\s*\n\s*method: "PATCH",[\s\S]{0,300}?familiars: \{[\s\S]*?\[familiar\.id\]: \{[\s\S]*?harness: runtime,[\s\S]*?model: nextModel,/,
+  "runtime switches persist through /api/config with explicit default intent",
 );
 const selectRuntimeBlock = chatView.match(/const handleSelectRuntime = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 assert.match(
   selectRuntimeBlock,
-  /setModelState\(\(current\) =>[\s\S]{0,300}?harness: runtime, effectiveModel: nextModel/,
+  /if \(sessionId\) \{[\s\S]*?Runtime switching applies to new chats[\s\S]*?announce\(message, "assertive"\)[\s\S]*?return;/,
+  "an active conversation rejects runtime rebinding because its persisted harness pins the next send",
+);
+assert.match(
+  selectRuntimeBlock,
+  /const optimistic: ChatModelState = \{[\s\S]*?harness: runtime,[\s\S]*?effectiveModel: nextModel,[\s\S]*?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
   "the chip flips optimistically before the network round-trip",
 );
 assert.match(
   selectRuntimeBlock,
-  /finally \{\s*\n\s*await refreshModelState\(\);/,
+  /finally\(async \(\) => \{[\s\S]{0,220}?await refreshModelState\(/,
   "the model-state refetch reconciles the optimistic flip (even when the PATCH fails)",
+);
+
+const selectModelBlock = chatView.match(/const handleSelectModel = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
+assert.match(
+  selectModelBlock,
+  /effectiveModel: stagedModel,[\s\S]*?source: modelId \? \(sessionId \? "session" : "familiar-default"\) : "runtime-default"[\s\S]*?modelStateRef\.current = optimistic;\s*\n\s*setModelState\(optimistic\)/,
+  "clearing a model synchronously stages the runtime default before its PATCH",
+);
+assert.match(
+  selectModelBlock,
+  /if \(json\.ok && json\.state\) \{[\s\S]*?setModelState\(json\.state\);[\s\S]{0,260}?await refreshModelState\(/,
+  "a successful model selection refreshes capability controls from the authoritative state response",
+);
+assert.match(
+  chatView,
+  /const currentModelState = modelStateRef\.current;[\s\S]{0,500}?const modelOverrideForRequest =[\s\S]{0,300}?currentModelState\?\.source === "session"/,
+  "send snapshots the synchronously staged model state rather than the prior render",
+);
+assert.match(
+  chatView,
+  /const stagedInitialModelOverride = initialModelOverride !== undefined[\s\S]{0,420}?initialControls\?\.modelOverride[\s\S]{0,260}?modelOverrideScope: stagedInitialModelScope/,
+  "a Home handoff carries its staged model intent into the first Chat send",
 );
 
 // ── The chip face: runtime logo + model, one accessible name ─────────────────
@@ -128,8 +155,13 @@ assert.match(
 );
 assert.match(
   chip,
-  /modelOptions\.length > 0 && \([\s\S]*?<PopoverLabel>Model<\/PopoverLabel>/,
-  "the model group only renders for runtimes with a curated catalog (hermes/openclaw run their own adapters)",
+  /\(hasRuntimeDefault \|\| modelOptions\.length > 0 \|\| modelIsOutsideInventory\) && \([\s\S]*?<PopoverLabel>Model<\/PopoverLabel>[\s\S]*?Runtime default/,
+  "the model group exposes runtime-owned defaults even when no inventory is available",
+);
+assert.match(
+  chip,
+  /modelIsOutsideInventory[\s\S]*?Current selection · \{modelValue\} \(not in current inventory\)/,
+  "a persisted custom or stale model remains visible and explicitly marked when scoped inventory omits it",
 );
 
 // ── Two-step pick: a runtime pick keeps the menu open for the model pick ─────
@@ -139,8 +171,8 @@ assert.match(
 // menu-less runtime with no model step, completes the visit.
 assert.match(
   chip,
-  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,400}?if \(catalog\.models\.length === 0\) setOpen\(false\);/,
-  "a runtime pick closes the menu only for menu-less runtimes (hermes/openclaw); curated runtimes keep it open until a model is picked",
+  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,700}?if \(catalog\.models\.length === 0 && catalog\.runtime !== "opencode"\) setOpen\(false\);/,
+  "a runtime pick closes the menu only for menu-less runtimes; curated runtimes and OpenCode's asynchronous inventory stay open until a model is picked",
 );
 const modelRowBlock = chip.match(/\{modelOptions\.map\(\(m\) =>[\s\S]*?\)\)\}/)?.[0] ?? "";
 assert.match(
@@ -167,5 +199,16 @@ assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "chip styles stay on semantic to
 assert.match(css, /\.cave-composer-runtime-chip \{[\s\S]*?border-radius: var\(--radius-pill\);/, "the runtime chip uses the pill token, matching the composer icon buttons");
 const hostCss = readFileSync(new URL("../styles/composer-host-chip.css", import.meta.url), "utf8");
 assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(--radius-pill\);/, "the host chip matches the same pill token");
+
+assert.match(
+  chatView,
+  /const composerModelValue =\s*\n\s*pendingModelOverrideRef\.current !== undefined\s*\n\s*\? pendingModelOverrideRef\.current[\s\S]*?modelState\?\.effectiveModel && modelState\.effectiveModel !== "unknown"[\s\S]*?: "";/,
+  "the composer preserves a pending explicit model intent and otherwise carries an explicit empty runtime-default value",
+);
+assert.match(
+  chatView,
+  /\{\s*value: "",\s*label: "Runtime default"/,
+  "the empty model entry is labeled as the durable runtime-default clear action",
+);
 
 console.log("composer-runtime-chip.test.ts: ok");

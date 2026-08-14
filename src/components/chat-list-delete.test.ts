@@ -11,6 +11,7 @@ import {
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./chat-list-primitives.tsx", import.meta.url), "utf8");
 const model = readFileSync(new URL("../lib/chat-list-model.ts", import.meta.url), "utf8");
+const sortModel = readFileSync(new URL("../lib/chat-session-sort.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   source,
@@ -124,7 +125,7 @@ assert.match(source, /<SortableContext items=\{displayIds\} strategy=\{verticalL
 assert.match(primitives, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
 assert.match(source, /setSessionOrder\(readSessionOrder\(\)\)/, "ChatList should hydrate the persisted manual order after mount");
 assert.match(source, /if \(effectiveSelection === "all" && groupBy !== "project"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups (unless grouping by project) so cross-project drag order can stick");
-assert.match(source, /partitionPinnedFirst\(sortChatRowsByRecency\(rows\), pinnedIds\)/, "Pinned rows still float, over a recency-sorted rest, in the flat All chats view until manual drag order exists");
+assert.match(source, /partitionPinnedFirst\(sortChatSessionRows\(rows, sessionSort\), pinnedIds\)/, "Pinned rows still float, over a rest in the reader's chosen order, in the flat All chats view until manual drag order exists");
 assert.match(source, /applyManualOrder\(group\.sessions, sessionOrder\)/, "ChatList should apply the manual order inside visible project groups");
 assert.match(source, /mergeVisibleOrder\(prev\.length > 0 \? prev : fallbackOrderIds, nextVisible\)/, "ChatList should merge dragged visible rows back into the full saved order");
 assert.match(source, /const pruned = merged\.filter\(\(id\) => liveSessionIds\.has\(id\)\)/, "ChatList should prune stale session ids before persisting drag order");
@@ -338,14 +339,17 @@ assert.doesNotMatch(
   "Old non-uniform px-1.5 py-0.5 action-button chrome must be gone",
 );
 
-// The flat "All" view sorts by recency (most-recent-first), restoring the
-// global order the per-project flatMap drops — while still honoring an explicit
-// manual drag order and floating pinned sessions first.
-assert.match(model, /function sortChatRowsByRecency\(rows: readonly SessionRow\[\]\)/, "a recency sorter exists");
+// The flat "All" view restores the global order the per-project flatMap drops
+// — while still honoring an explicit manual drag order and floating pinned
+// sessions first. cave-n3jg2 made the order the reader's choice (the SORT
+// menu), so the sorter now takes the chosen order rather than assuming recency;
+// `sortChatSessionRows(rows, "recent")` IS the old recency sort, and remains
+// the default.
+assert.match(sortModel, /export function sortChatSessionRows\(\s*rows: readonly SessionRow\[\],\s*sort: ChatSessionSort,\s*\)/, "a sorter takes the reader's chosen order");
 assert.match(
   source,
-  /sessionOrder\.length === 0\s*\?\s*partitionPinnedFirst\(sortChatRowsByRecency\(rows\), pinnedIds\)\s*:\s*applyManualOrder\(rows, sessionOrder\)/,
-  "the All view sorts by recency by default, defers to manual order when the user has dragged, and keeps pinned-first",
+  /sessionOrder\.length === 0\s*\?\s*partitionPinnedFirst\(sortChatSessionRows\(rows, sessionSort\), pinnedIds\)\s*:\s*applyManualOrder\(rows, sessionOrder\)/,
+  "the All view sorts by the chosen order by default, defers to manual order when the user has dragged, and keeps pinned-first",
 );
 
 // ── Bulk-select: pick several chats and delete/archive them at once ─────────
@@ -354,11 +358,11 @@ assert.match(source, /const \[selectedIds, setSelectedIds\] = useState<Set<strin
 assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\)/, "the header Select toggle clears any selection");
 assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
 assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
-// Expandable rows (Sessions redesign): a single click toggles the inline
-// detail disclosure; double-click and Enter keep the fast open path. Mobile
-// keeps tap = open — the disclosure is a desktop affordance.
-assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} if \(isMobile\) \{ setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); return; \} setExpandedRowId\(\(cur\) => \(cur === s\.id \? null : s\.id\)\)/, "a row click selects in select mode, opens directly on mobile, otherwise toggles the detail strip");
-assert.match(source, /onDoubleClick=\{\(\) => \{ if \(selectMode\) return; setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); \}\}/, "double-click still opens the session immediately");
+// Row click = open (Sessions): clicking a row opens the session directly on
+// every device; select mode still toggles selection. The old inline detail
+// disclosure (single-click expand + double-click open) is gone.
+assert.match(source, /onClick=\{\(\) => \{ if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setActiveId\(s\.id\); onOpen\(s\.id, s\.familiarId\); \}\}/, "a row click selects in select mode, otherwise opens the session directly");
+assert.doesNotMatch(source, /expandedRowId|onDoubleClick/, "no disclosure state or double-click path remains on rows");
 assert.match(source, /const bulkDelete = \(\) =>/, "bulk delete handler exists (deferred/undoable)");
 assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
 assert.match(source, /Promise\.all\([\s\S]{0,80}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");

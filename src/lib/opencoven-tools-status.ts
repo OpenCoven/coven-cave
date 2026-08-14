@@ -9,8 +9,10 @@ import {
   type OpenCovenToolState,
 } from "./opencoven-tools-state.ts";
 import {
+  covenBinaryFromEnvironment,
   covenLaunchCommandForBinary,
   covenSpawnEnv,
+  covenWrapperSpawnEnv,
   pickWindowsLauncher,
   refreshCovenSpawnEnv,
 } from "./coven-bin.ts";
@@ -34,7 +36,7 @@ export const OPEN_COVEN_TOOLS = [
     packageName: "@opencoven/cli",
     binary: "coven",
     versionArgs: ["--version"],
-    minimumVersion: "0.1.1",
+    minimumVersion: "0.2.5",
     installCommand: "npm i -g @opencoven/cli@latest",
   },
 ] as const;
@@ -77,7 +79,7 @@ type NpmLatestCheckDependencies = {
   execFile?: (
     command: string,
     args: string[],
-    options: { env: NodeJS.ProcessEnv; timeout: number },
+    options: { env: NodeJS.ProcessEnv; timeout: number; windowsHide: true },
   ) => Promise<{ stdout: string }>;
   now?: () => Date;
 };
@@ -123,14 +125,29 @@ function firstSemver(text: string): string | null {
   return match?.[1] ?? null;
 }
 
+/** How long a PATH lookup (`which`/`where`) may take before we treat the tool
+ *  as absent, and how long a launcher may take to answer `--version`.
+ *
+ *  These are UI latency budgets, not correctness thresholds: a wedged launcher
+ *  must not stall the settings surface behind it. Callers that care about the
+ *  ANSWER rather than the wait — an end-to-end test on a loaded machine, say —
+ *  pass their own budget instead of inheriting a deadline tuned for a
+ *  responsive UI, which is otherwise a coin flip they'd lose occasionally. */
+const LOOKUP_TIMEOUT_MS = 1500;
+const VERSION_PROBE_TIMEOUT_MS = 2500;
+
 async function commandPath(
   binary: string,
-  options: { env?: NodeJS.ProcessEnv; refresh?: boolean } = {},
+  options: { env?: NodeJS.ProcessEnv; refresh?: boolean; timeoutMs?: number } = {},
 ): Promise<CommandPathResult> {
-  const finder = process.platform === "win32" ? "where" : "which";
+  const timeout = options.timeoutMs ?? LOOKUP_TIMEOUT_MS;
   const find = async (env: NodeJS.ProcessEnv): Promise<CommandPathResult> => {
+    if (process.platform === "win32" && binary.toLowerCase() === "coven") {
+      return { path: covenBinaryFromEnvironment(env) };
+    }
+    const finder = process.platform === "win32" ? "where" : "which";
     try {
-      const { stdout } = await execFileAsync(finder, [binary], { env, timeout: 1500 });
+      const { stdout } = await execFileAsync(finder, [binary], { windowsHide: true, env, timeout });
       const lines = stdout.split(/\r?\n/);
       return {
         path:
@@ -227,10 +244,10 @@ async function packageIdentityForExecutable(
 
 export async function discoverOpenCovenTool(
   tool: OpenCovenToolSpec,
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): Promise<OpenCovenToolProbe> {
   const env = options.env ?? refreshCovenSpawnEnv();
-  const located = await commandPath(tool.binary, { env });
+  const located = await commandPath(tool.binary, { env, timeoutMs: options.timeoutMs });
   if (!located.path) {
     return {
       path: null,
@@ -241,7 +258,7 @@ export async function discoverOpenCovenTool(
       packagePath: null,
     };
   }
-  return probeOpenCovenBinaryAt(tool, located.path, env);
+  return probeOpenCovenBinaryAt(tool, located.path, env, { timeoutMs: options.timeoutMs });
 }
 
 /** Probe one explicit launcher path (no PATH lookup): resolve its executable
@@ -252,6 +269,7 @@ export async function probeOpenCovenBinaryAt(
   tool: Pick<OpenCovenToolSpec, "binary" | "versionArgs">,
   binaryPath: string,
   env: NodeJS.ProcessEnv = refreshCovenSpawnEnv(),
+  options: { timeoutMs?: number } = {},
 ): Promise<OpenCovenToolProbe> {
   const executablePath = await resolvedExecutablePath(binaryPath);
   const identity = executablePath
@@ -273,7 +291,11 @@ export async function probeOpenCovenBinaryAt(
     const { stdout, stderr } = await execFileAsync(
       launch.command,
       [...launch.fixedArgs, ...tool.versionArgs],
-      { env, timeout: 2500 },
+      {
+        windowsHide: true,
+        env: tool.binary === "coven" ? covenWrapperSpawnEnv(env) : env,
+        timeout: options.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS,
+      },
     );
     const version = firstSemver(`${stdout}\n${stderr}`);
     return {
@@ -301,9 +323,13 @@ export async function probeOpenCovenBinaryAt(
 async function execLatestVersion(
   command: string,
   args: string[],
-  options: { env: NodeJS.ProcessEnv; timeout: number },
+  options: { env: NodeJS.ProcessEnv; timeout: number; windowsHide: true },
 ): Promise<{ stdout: string }> {
-  const { stdout } = await execFileAsync(command, args, options);
+  const { stdout } = await execFileAsync(command, args, {
+    env: options.env,
+    timeout: options.timeout,
+    windowsHide: true,
+  });
   return { stdout: String(stdout) };
 }
 
@@ -345,7 +371,7 @@ async function npmPathFromEnvironment(
 ): Promise<string | null> {
   const finder = platform === "win32" ? "where" : "which";
   try {
-    const { stdout } = await exec(finder, ["npm"], { env, timeout: 1500 });
+    const { stdout } = await exec(finder, ["npm"], { windowsHide: true, env, timeout: 1500 });
     const lines = stdout.split(/\r?\n/);
     return platform === "win32"
       ? pickWindowsLauncher(lines)
@@ -434,7 +460,7 @@ export async function checkNpmLatestVersion(
     const { stdout } = await exec(
       launch.command,
       [...launch.fixedArgs, "view", tool.packageName, "version", "--json"],
-      { env, timeout: 5000 },
+      { windowsHide: true, env, timeout: 5000 },
     );
     const parsed = JSON.parse(stdout);
     const latest = typeof parsed === "string" ? firstSemver(parsed) : null;
@@ -549,6 +575,7 @@ export function composeOpenCovenToolReadinessStatus(
 
 export async function verifyOpenCovenToolInstall(
   id: OpenCovenToolId,
+  options: { binaryPath?: string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<OpenCovenToolVerification<OpenCovenToolId>> {
   const tool = OPEN_COVEN_TOOLS.find((candidate) => candidate.id === id);
   if (!tool) throw new Error("unknown OpenCoven tool");
@@ -556,9 +583,11 @@ export async function verifyOpenCovenToolInstall(
   // Rebuild PATH before both discovery and registry lookup. This is the
   // authoritative post-install check: it must not inherit the pre-install
   // cache that made a stale launcher look like a successful update.
-  const env = refreshCovenSpawnEnv();
+  const env = options.env ?? refreshCovenSpawnEnv();
   const [probe, latestCheck] = await Promise.all([
-    discoverOpenCovenTool(tool, { env }),
+    options.binaryPath
+      ? probeOpenCovenBinaryAt(tool, options.binaryPath, env)
+      : discoverOpenCovenTool(tool, { env }),
     checkNpmLatestVersion(tool, { env: () => env, refreshEnv: () => env }),
   ]);
   const latest = latestCheck.status === "verified" ? latestCheck.latest : null;

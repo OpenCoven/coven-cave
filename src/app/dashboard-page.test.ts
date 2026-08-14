@@ -32,10 +32,18 @@ assert.match(bento, /\/api\/board/, "board panel pulls the live board");
 assert.match(bento, /\/api\/familiars/, "roster pulls the familiar list");
 assert.match(bento, /\/api\/inbox/, "needs-you pulls the live inbox");
 assert.match(bento, /\/api\/sessions\/list/, "stats/heatmap/carousel pull sessions");
-assert.match(bento, /\/api\/coven-memory/, "familiar card stats pull coven memory");
+assert.match(
+  bento,
+  /loadCanonicalMemoryList\(\)/,
+  "familiar card stats pull coven memory through the shared canonical loader",
+);
 assert.match(bento, /\/api\/projects/, "the projects stat pulls the project registry");
 assert.match(bento, /\/api\/github\/activity/, "github rail pulls activity");
-assert.match(bento, /\/api\/github\/assigned/, "github rail merges assigned items");
+assert.doesNotMatch(
+  bento,
+  /\/api\/github\/assigned/,
+  "github rail does not merge an independently capped feed into the completeness-aware activity response",
+);
 assert.match(bento, /usePausablePoll\(load, 30_000\)/, "polls on the shared pausable interval");
 assert.match(bento, /aliveRef/, "poll results guard against unmounted setState");
 assert.match(
@@ -60,6 +68,12 @@ assert.match(bento, /matrixRows\(/, "matrix derives from matrixRows");
 assert.match(bento, /githubByRepo\(/, "github rail groups by repo");
 assert.match(bento, /ciSummary\(/, "github footer rolls up CI status");
 assert.match(bento, /topCollaborators\(/, "footer ranks collaborators by session volume");
+assert.match(
+  bento,
+  /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/profile`\}/,
+  "footer collaborator avatars open the familiar profile page (bare /dashboard/familiars/[id] has no route)",
+);
+assert.match(bento, /aria-label=\{`Open profile for \$\{name\}`\}/, "footer avatar links carry an accessible name");
 assert.match(bento, /useUserProfile\(\)/, "human card reads the operator profile store");
 assert.match(bento, /userAvatarUrl\(/, "human avatar uses the authed object URL, never a raw /api src");
 

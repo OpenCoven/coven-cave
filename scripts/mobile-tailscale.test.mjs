@@ -13,11 +13,9 @@ const packageJson = JSON.parse(
 
 test("mobile tailscale runner exposes operator commands", () => {
   assert.match(script, /COMMAND="\$\{1:-start\}"/);
-  assert.match(script, /start\|invite\|native\|app\|status\|stop/);
+  assert.match(script, /start\|invite\|app\|status\|stop/);
   assert.match(packageJson.scripts["mobile:tailscale"], /mobile-tailscale\.sh start/);
   assert.match(packageJson.scripts["mobile:tailscale:invite"], /mobile-tailscale\.sh invite/);
-  assert.match(packageJson.scripts["mobile:tailscale:native"], /mobile-tailscale\.sh native/);
-  assert.match(packageJson.scripts["mobile:tailscale:native:device"], /CAVE_MOBILE_DEVICE=1/);
   assert.match(packageJson.scripts["mobile:tailscale:app"], /mobile-tailscale\.sh app/);
   assert.match(packageJson.scripts["mobile:tailscale:status"], /mobile-tailscale\.sh status/);
   assert.match(packageJson.scripts["mobile:tailscale:stop"], /mobile-tailscale\.sh stop/);
@@ -46,12 +44,10 @@ test("mobile tailscale runner can use an explicit Tailscale binary", () => {
   assert.match(script, /command -v "\$TAILSCALE_BIN"/);
 });
 
-test("mobile tailscale app mode falls back to Tailscale IP HTTP when MagicDNS is missing", () => {
-  assert.match(script, /tailscale_ip_host\(\)/);
-  assert.match(script, /Array\.isArray\(rawIps\)/);
-  assert.match(script, /typeof ip === "string"/);
-  assert.match(script, /tailscale_cmd serve --bg --http="\$PORT" "\$TAILSCALE_BACKEND"/);
-  assert.match(script, /APP_URL="http:\/\/\$\{APP_IP_HOST\}:\$\{PORT\}\/"/);
+test("mobile tailscale app mode fails closed when HTTPS Serve is unavailable", () => {
+  assert.match(script, /Could not determine an HTTPS Tailscale Serve URL/);
+  assert.doesNotMatch(script, /tailscale_cmd serve --bg --http=/);
+  assert.doesNotMatch(script, /APP_URL="http:\/\//);
 });
 
 test("mobile tailscale app mode records ownership separately from sidecar tokens", () => {

@@ -8,12 +8,10 @@ type Props = {
   /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
    *  itself lives in the sidenav header switcher (cave-vtk9), not this bar. */
   activeFamiliarId: string | null;
-  /** Active familiar display name — personalizes the command-bar placeholder
-   *  ("Search or ask <name>…"). Falls back to Salem, the docs familiar. */
-  activeFamiliarName?: string | null;
-  /** Live count of running daemon sessions — drives the compact status control
-   *  (hidden at zero). */
-  runningCount?: number;
+  /** Running-processes control (waveform trigger + popover), rendered by the
+   *  workspace (it owns the sessions state and chat navigation) so this bar
+   *  stays markup-thin. Hidden at zero by the control itself. */
+  runningStatus?: ReactNode;
   /** Notification bell, rendered by the workspace (it owns the inbox state)
    *  so this bar stays markup-thin. Joins the right-side status controls. */
   bell?: ReactNode;
@@ -58,8 +56,7 @@ function fmtBadge(n: number): string {
  */
 export function FamiliarMenuBar({
   activeFamiliarId,
-  activeFamiliarName,
-  runningCount,
+  runningStatus,
   bell,
   taskCount,
   scheduleNeedsCount,
@@ -79,10 +76,6 @@ export function FamiliarMenuBar({
       ? `${enrichProgress.done}/${enrichProgress.total}`
       : "Starting..."
     : "Enhance";
-  // The command bar addresses whoever is summoned; without a scoped familiar
-  // it falls back to Salem, the docs familiar, who answers doc questions.
-  const searchTarget = activeFamiliarName?.trim() || "Salem";
-
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
       {/* Familiar scope moved to the sidenav header (cave-vtk9) — present on
@@ -106,9 +99,9 @@ export function FamiliarMenuBar({
           className="menu-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder={`Search or ask ${searchTarget}...`}
-          aria-label={`Search anything or ask ${searchTarget}`}
-          title={`Search everything — or ask ${searchTarget} (⌘K opens the command palette)`}
+          placeholder="Search Cave..."
+          aria-label="Search Cave"
+          title="Search everything in your Cave (⌘K opens the command palette)"
           autoComplete="off"
           spellCheck={false}
         />
@@ -176,22 +169,11 @@ export function FamiliarMenuBar({
         </button>
       </div>
 
-      {/* Right edge (chat-revamp phase D): compact running-session status
-          (waveform + count, hidden at zero) and the notification bell. */}
+      {/* Right edge (chat-revamp phase D): the running-processes control
+          (waveform + count trigger opening the process list, hidden at zero)
+          and the notification bell. */}
       <div className="menu-bar__group menu-bar__group--status">
-        {typeof runningCount === "number" && runningCount > 0 ? (
-          <span
-            className="menu-bar__status"
-            role="status"
-            aria-label={`${runningCount} session${runningCount === 1 ? "" : "s"} running`}
-            title={`${runningCount} session${runningCount === 1 ? "" : "s"} running`}
-          >
-            <Icon name="ph:waveform" width={22} height={22} aria-hidden />
-            <span className="menu-bar__badge" aria-hidden>
-              {fmtBadge(runningCount)}
-            </span>
-          </span>
-        ) : null}
+        {runningStatus}
         {bell}
       </div>
     </nav>

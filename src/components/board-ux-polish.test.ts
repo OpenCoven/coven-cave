@@ -44,7 +44,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.board-search-wrap\s*\{[\s\S]*min-width:\s*0/,
+  /\.board-token-search\s*\{[\s\S]*min-width:\s*0/,
   "Desktop board search should be allowed to shrink before forcing toolbar wrapping",
 );
 // The stacked layout is keyed to the surface's own width (@container board) so
@@ -79,7 +79,7 @@ assert.match(kanban, /board-kanban-card--grabbed/, "Grabbed visual affordance pr
 // ───────── Mobile board chrome ─────────
 assert.match(
   styles,
-  /@container board \(max-width: 767px\) \{[\s\S]*\.board-search-input\s*\{[\s\S]*height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  /@container board \(max-width: 767px\) \{[\s\S]*\.board-token-field\s*\{[\s\S]*min-height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Narrow board search and toolbar controls should meet thumb-sized touch targets",
 );
 
@@ -153,6 +153,11 @@ assert.match(
   "quick-add inherits the swimlane's familiar so the card lands in the right lane",
 );
 assert.match(view, /onQuickAdd=\{quickAdd\}/, "BoardView wires the quick-add create path");
+assert.match(
+  view,
+  /familiarId: lane\.projectId \? null : \(lane\.familiarId !== undefined \? lane\.familiarId : \(activeFamiliarId \?\? null\)\)/,
+  "quick-add leaves project-lane tasks unassigned until their authorized familiar is selected",
+);
 
 // ── WIP limits per column (#3) ──
 assert.match(kanban, /wipLimits\?:\s*WipLimits/, "BoardKanban accepts WIP limits");

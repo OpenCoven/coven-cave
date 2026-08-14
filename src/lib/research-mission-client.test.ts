@@ -4,6 +4,7 @@ import type { ResearchMission } from "./research-missions.ts";
 import {
   actOnResearchMission,
   createResearchMission,
+  getResearchMissionFile,
   isActiveResearchMission,
   listResearchMissions,
   runResearchAutomationNow,
@@ -13,7 +14,30 @@ import {
 } from "./research-mission-client.ts";
 
 function mission(id: string, status: ResearchMission["status"]): ResearchMission {
-  return { id, status } as ResearchMission;
+  return {
+    version: 1,
+    id,
+    familiarId: "sage",
+    title: "Mission",
+    intent: "Investigate the evidence",
+    mode: "brief",
+    modeSource: "user",
+    deliverable: "Brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 30,
+      maxIterations: 3,
+      sourceTarget: 5,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: true,
+    },
+    status,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:01:00.000Z",
+    iterations: [],
+    artifacts: [],
+    sources: [],
+  };
 }
 
 test("list encodes familiar id and forwards abort signals", async () => {
@@ -28,6 +52,22 @@ test("list encodes familiar id and forwards abort signals", async () => {
     await listResearchMissions("sage & team", controller.signal);
     assert.equal(requests[0]?.input, "/api/research/missions?familiarId=sage%20%26%20team");
     assert.equal(requests[0]?.signal, controller.signal);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("mission API consumers reject malformed mission JSON", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({
+    ok: true,
+    missions: [mission("valid", "running"), { id: "arbitrary" }],
+  })) as typeof fetch;
+  try {
+    assert.deepEqual(await listResearchMissions("sage"), {
+      ok: false,
+      error: "Research missions returned an invalid response",
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -94,7 +134,7 @@ test("actions post to the encoded mission endpoint", async () => {
   const requests: Array<{ input: string; method?: string; body?: BodyInit | null }> = [];
   globalThis.fetch = (async (input, init) => {
     requests.push({ input: String(input), method: init?.method, body: init?.body });
-    return Response.json({ ok: true, mission: mission("m/1", "checkpoint") });
+    return Response.json({ ok: true, mission: mission("m-1", "checkpoint") });
   }) as typeof fetch;
   try {
     await actOnResearchMission("m/1", { action: "continue" });
@@ -113,7 +153,7 @@ test("schedule and standard Automation controls use their owning APIs", async ()
   const requests: Array<{ input: string; method?: string; body?: BodyInit | null }> = [];
   globalThis.fetch = (async (input, init) => {
     requests.push({ input: String(input), method: init?.method, body: init?.body });
-    return Response.json({ ok: true, mission: mission("m/1", "checkpoint") });
+    return Response.json({ ok: true, mission: mission("m-1", "checkpoint") });
   }) as typeof fetch;
   globalThis.window = { dispatchEvent: (event: Event) => events.push(event.type) } as unknown as Window & typeof globalThis;
   try {
@@ -132,5 +172,50 @@ test("schedule and standard Automation controls use their owning APIs", async ()
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.window = priorWindow;
+  }
+});
+
+test("getResearchMissionFile fetches the file payload with encoded segments", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({
+      ok: true,
+      file: {
+        key: "source-ledger",
+        kind: "source-ledger",
+        title: "Source ledger",
+        fileName: "sources.json",
+        relativePath: "sources.json",
+        content: "[]",
+        workspacePath: "/tmp/research-missions/mission-1",
+        updatedAt: "2026-07-24T00:00:00.000Z",
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    const file = await getResearchMissionFile("mission 1", "source-ledger");
+    assert.deepEqual(calls, ["/api/research/missions/mission%201/files/source-ledger"]);
+    assert.equal(file.content, "[]");
+    assert.equal(file.workspacePath, "/tmp/research-missions/mission-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getResearchMissionFile surfaces API errors", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(
+    JSON.stringify({ ok: false, error: "research artifact not found" }),
+    { status: 404, headers: { "content-type": "application/json" } },
+  )) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => getResearchMissionFile("mission-1", "nope"),
+      /research artifact not found/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

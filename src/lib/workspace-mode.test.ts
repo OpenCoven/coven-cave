@@ -12,11 +12,12 @@ import {
 // mode lands (issue #3283, cave-m4ih.3). These tests pin its invariants;
 // workspace-alias-modes.test.ts pins the Workspace wiring to it.
 
-test("every alias resolves to a canonical mode, never to another alias", () => {
+test("every alias resolves to a canonical mode or a Role Surface room, never another alias", () => {
   for (const [alias, target] of Object.entries(MODE_ALIASES)) {
     assert.ok(
-      (CANONICAL_WORKSPACE_MODES as readonly string[]).includes(target),
-      `alias "${alias}" must land on a canonical surface, got "${target}"`,
+      (CANONICAL_WORKSPACE_MODES as readonly string[]).includes(target) ||
+        target.startsWith("surface:"),
+      `alias "${alias}" must land on a canonical surface or a room, got "${target}"`,
     );
     assert.ok(!isAliasWorkspaceMode(target), `alias "${alias}" must not chain to another alias`);
   }
@@ -37,7 +38,8 @@ test("isWorkspaceMode accepts the full vocabulary and nothing else", () => {
   }
   // Retired or foreign mode strings must be rejected (the persisted
   // last-surface restore and ?mode= deep links validate through this guard).
-  for (const retired of ["projects", "code", "terminal", "evals", "retro", "workflows", "", "surface:threads", "__proto__", "constructor"]) {
+  // Note: "code" left this list when the Code surface returned (cave-k0ua).
+  for (const retired of ["projects", "terminal", "evals", "retro", "workflows", "", "surface:threads", "__proto__", "constructor"]) {
     assert.ok(!isWorkspaceMode(retired), `"${retired}" must not validate as a workspace mode`);
   }
 });
@@ -59,6 +61,15 @@ test("the documented alias landings hold", () => {
   assert.equal(MODE_ALIASES["familiar-work-queue"], "board", "the Queue is a Tasks tab");
   assert.equal(MODE_ALIASES.roles, "marketplace", "Roles is a Marketplace hub section");
   assert.equal(MODE_ALIASES.capabilities, "marketplace", "Capabilities is a Marketplace hub section");
+  assert.equal(MODE_ALIASES.code, "surface:code", "Code is the Coding familiar's room (cave-cc5r)");
+  assert.equal(MODE_ALIASES.github, "surface:code", "GitHub is an Activity intent inside Coding Desk");
+});
+
+test("github remains valid only as a Coding Desk compatibility alias", () => {
+  assert.ok(!(CANONICAL_WORKSPACE_MODES as readonly string[]).includes("github"));
+  assert.ok(isAliasWorkspaceMode("github"));
+  assert.equal(MODE_ALIASES.github, "surface:code");
+  assert.equal(resolveWorkspaceModeAlias("github"), "surface:code");
 });
 
 test("salem is a canonical standalone surface, not an alias", () => {

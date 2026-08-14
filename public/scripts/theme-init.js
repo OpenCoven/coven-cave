@@ -22,7 +22,6 @@
   var reading = appearance.reading && typeof appearance.reading === "object" ? appearance.reading : {};
   var datetime = appearance.datetime && typeof appearance.datetime === "object" ? appearance.datetime : {};
   var backdrop = appearance.backdrop && typeof appearance.backdrop === "object" ? appearance.backdrop : {};
-  var general = bootstrap && bootstrap.general && typeof bootstrap.general === "object" ? bootstrap.general : {};
   var phone = bootstrap && bootstrap.phone && typeof bootstrap.phone === "object" ? bootstrap.phone : {};
 
   function safeGet(key) {
@@ -192,15 +191,15 @@
       enabled: backdrop.enabled === true,
       intensity: typeof backdrop.intensity === "number" ? backdrop.intensity : 50,
       matchAccent: backdrop.matchAccent !== false,
-      accentSeed: backdrop.accentSeed || null
+      accentSeed: backdrop.accentSeed || null,
+      style: backdrop.style === "blaze" ? "blaze" : backdrop.style === "off" ? "off" : "image"
     }));
-    safeSet("cave:home-news-enabled", general.newsHeadlines === false ? "false" : "true");
     safeSet("cave:mobile-mode-enabled", phone.mobileMode === false ? "false" : "true");
   }
 
   try {
-    var rename = { "mood-c": "coven", "sky": "tide", "orchid": "dusk", "midnight": "slate" };
-    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","hex","bane","slate","ghosty","claymorphism","claude","openai","pastel-dreams","meatseeks","trucker","snow","contrast","beacon","solstice","custom"];
+    var rename = { "mood-c": "coven", "sky": "tide", "orchid": "coven", "midnight": "slate", "openai": "codex" };
+    var valid = ["coven","tide","ember","slate","ghosty","claymorphism","claude","codex","pastel-dreams","snow","contrast","solstice","custom"];
     var theme = String(stored("coven-theme", themePrefs.id || "coven"));
     if (rename[theme]) theme = rename[theme];
     if (!isChoice(theme, valid)) theme = "coven";
@@ -319,7 +318,11 @@
     intensity = Math.min(100, Math.max(0, intensity));
     html.style.setProperty("--cave-backdrop-opacity", String(intensity / 100));
     var seed = backdropPrefs.accentSeed;
-    if (backdropEnabled && backdropPrefs.matchAccent !== false && seed &&
+    // Blaze derives its tint live from the theme accent; a leftover image
+    // accentSeed must not repaint the app pre-paint (mirrors the runtime
+    // guard in applyBackdropToDocument, cave-99s9).
+    var backdropStyle = backdropPrefs.style === "blaze" ? "blaze" : "image";
+    if (backdropEnabled && backdropStyle === "image" && backdropPrefs.matchAccent !== false && seed &&
         isFinite(seed.L) && isFinite(seed.a) && isFinite(seed.b)) {
       var tokenBackground = themePrefs.tokens && themePrefs.tokens["--bg-base"];
       var computedBackground = "";

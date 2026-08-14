@@ -15,6 +15,33 @@ bd update <id> --claim
 
 One familiar claims one ready bead at a time. The bead notes should record the branch or worktree path, related GitHub PR, related Linear issue when present, current session, and verification evidence. If a familiar discovers new work while implementing, create a linked bead with `discovered-from:<parent-id>` instead of burying the follow-up in chat.
 
+Create new Beads through the canonical wrapper so ownership is explicit exactly
+once:
+
+```bash
+pnpm beads:create --surface shared "Short title" \
+  --description "Why this exists and what needs to be done" \
+  --type task --priority 2
+```
+
+Choose exactly one ownership surface per new Bead:
+
+- `ios` — native iOS-only delivery.
+- `desktop` — desktop-only delivery.
+- `shared` — API, backend, workflow, and any cross-platform work.
+
+Non-platform labels such as `familiar:cody`, `from-pr`, `asana`, or
+`verification-required` may coexist, but they do **not** satisfy ownership. Do
+not pass `surface:ios`, `surface:desktop`, or `surface:shared` manually through
+`--labels`; the wrapper appends the single canonical ownership label for you.
+
+Raw `bd create` cannot be universally intercepted, so `pnpm beads:surfaces` is
+the non-mutating audit for newly introduced missing/conflicting ownership
+labels. Existing backlog rows stay valid only through
+`config/beads-surface-grandfather.json`, which records each grandfathered row's
+current `missing`/`conflicting` state; do not backfill the old queue as part of
+routine work.
+
 For sibling work under the same epic, prefer `--defer` for simple sequencing unless you have verified the exact `bd dep` direction with `bd dep list` and `bd ready --json`. During the initial Cave dogfood, `--deps blocks:<sibling>` created the opposite edge from what the familiar expected, so the follow-ups were deferred and annotated instead of forced through a questionable dependency graph.
 
 Close only after the work is genuinely done:
@@ -28,7 +55,8 @@ bd close <id> --reason "Merged in PR #123 after pnpm typecheck and pnpm test:app
 Use labels and metadata consistently so Cave can render the graph without guessing:
 
 - `familiar:cody`, `familiar:kitty`, `familiar:nova`, or the owning familiar.
-- `surface:ios`, `surface:daemon`, `surface:chat`, `surface:github`, `surface:release`, or another concrete Cave surface.
+- Exactly one ownership label from `surface:ios`, `surface:desktop`, or `surface:shared` on new canonical Beads.
+- Narrower non-platform labels for area, workflow, or verification when they help triage, without replacing ownership.
 - `release-blocker`, `needs-human`, `verification-required`, and `dogfood` when those states apply.
 - `external-ref` for GitHub PRs, GitHub issues, Linear tickets, or App Store Connect links.
 - `--design` for the chosen implementation shape and `--acceptance` for the exact done criteria.
@@ -51,6 +79,8 @@ The package shortcuts are the stable entrypoints for familiars:
 ```bash
 pnpm beads:prime
 pnpm beads:ready
+pnpm beads:create --surface shared "Short title" --description "Why this exists and what needs to be done" --type task --priority 2
+pnpm beads:surfaces
 pnpm beads:prs
 pnpm beads:prs:apply
 pnpm beads:doctor
@@ -68,8 +98,8 @@ Every PR-backed bead follows this lifecycle:
 3. Open a draft PR early once the patch is coherent enough for CI and review.
 4. Keep the checks/review loop in GitHub, but mirror concise state into the bead with the bridge.
 5. Enter the merge gate only after required checks are green, review threads are resolved, and the repository merge policy is satisfied.
-6. Perform post-merge cleanup: sync `main`, remove the merged branch/worktree, prune stale refs only when safe, and record cleanup in the bead.
-7. Do not close the bead before the merge or explicit completion; the close reason must include the PR number and verification evidence.
+6. Run `pnpm beads:worktrees`, then perform post-merge cleanup: sync `main`, remove the merged branch/worktree only when its owner and the safety gates allow it, or record why it remains intentionally preserved.
+7. Do not close the bead before the merge or explicit completion; the close reason must include the PR number and verification evidence. Do not close the bead until the local worktree has a recorded disposition: removed and verified, or preserved with an owner and reason.
 
 The PR bridge is report-only by default:
 
@@ -102,10 +132,45 @@ and end of every working session (or schedule it — a Coven cron or reminder
 invoking the package script works):
 
 ```bash
-pnpm beads:prs:patrol                       # report-only; window picked by local clock
-pnpm beads:prs:patrol -- --window evening   # explicit window
-pnpm beads:prs:patrol:apply                 # also mirror every linked PR's state into its beads
+pnpm beads:patrol                            # PR lanes plus local worktree lifecycle
+pnpm beads:prs:patrol -- --window evening    # PR-only patrol with an explicit window
+pnpm beads:worktrees                         # local worktrees only, report-only
+pnpm beads:patrol:apply                      # mirror PR state, then report worktrees
 ```
+
+The worktree patrol remains read-only. It records full dirty paths and correlates
+each registered worktree with live processes, Coven claims, non-closed Beads,
+open PRs, active workflows, exact PR heads merged to `main`, and recency. Its lifecycle
+lanes are:
+
+- `active` — local changes or a live owner still needs the worktree.
+- `recovery` — detached, WIP, backup, or unlanded work still protects data.
+- `cooldown` — landed work is inside the mandatory 8-hour recency window.
+- `retire-after-gate` — old, clean, landed work is cleanup-ready. Automatic
+  retirement still requires the full repository-wide maintenance gate; explicit
+  maintainer authorization in the current task may instead activate Branch
+  Curator's bounded manual deletion proof.
+- `uncertain` — an ownership or remote probe failed, so cleanup fails closed.
+- `protected` — the primary checkout or tool-owned infrastructure.
+
+Closing a Bead never removes a worktree. The patrol reads Git registrations
+directly, so a leftover remains visible even after its PR merges or its Bead
+closes.
+
+### Maintenance coordination
+
+Cave's lifecycle creator and retirement path hold a composite fence: the
+existing Cave-local writer-intent fence plus `coven maintenance
+acquire`/`heartbeat`/`release` from `@opencoven/cli` 0.2.5 or newer. The local
+fence preserves safety for existing Cave writers; Coven covers its supported
+direct CLI, daemon-session, and claim paths. The coordinator uses exact owner
+generations, rolls back the local fence if Coven cannot be held, and preserves
+both handles for recovery when release fails. It never writes Coven's
+`owner`/`writers`/`lock` records itself.
+
+This remains a cooperating-writer boundary, not a claim that arbitrary Git
+commands or uninstrumented tooling are excluded. Beads and GitHub maintenance
+planes are still required before unattended retirement can run.
 
 The two windows order the same lanes for different intents:
 
@@ -141,7 +206,7 @@ Lanes, ordered fix-first → land → review → bead-driven → waiting:
 - **Checks failing** / **Changes requested** — open PRs that need work before more review.
 - **Needs review** / **Ready to merge** — approved-and-green PRs show a *merge eligible* badge, never a merge button: merge authority still follows repository policy (see the merge gate above).
 - **No open PR** — ready beads no PR references yet (epics excluded), with a **Claim** action.
-- **Post-merge cleanup** — a merged PR whose bead is still open, with a **Close bead** action. (Detection is limited to beads still in the `ready` set; worktree/branch removal stays a CLI step.)
+- **Post-merge cleanup** — a merged PR whose bead is still open, with a **Close bead** action. Detection is limited to beads still in the `ready` set, and the action never removes a worktree or branch. Run `pnpm beads:worktrees` and record the local disposition before closing; registered leftovers remain visible in that patrol after the Bead leaves the queue.
 - **Waiting** — draft, pending-checks, and blocked PRs; shown but never counted as actionable.
 
 Each card carries the familiar and surface labels, the bead id, live check/review state, and a stale flag (no update in 24h). A per-familiar rollup along the top filters the whole board to one familiar. The pure join lives in `src/lib/beads-work-queue.ts`; claim/close map to the `/api/beads` adapter with verification recorded in the bead, not a chat transcript.

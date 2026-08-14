@@ -19,11 +19,13 @@ import {
 } from "@/components/profile-card-data";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useHeatTip } from "@/components/ui/heat-tip";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Icon } from "@/lib/icon";
 import type { ProfileHeatmap, ProfileKind, ProfileSeriesPoint } from "@/lib/profile-card";
+import { formatHeatTip } from "@/lib/heat-tip";
 import { humanHandle } from "@/lib/profile-card";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -135,7 +137,7 @@ export function ProfileCardView({ kind, familiarId }: { kind: ProfileKind; famil
           headline="Familiar not found"
           subtitle={`No familiar with id “${familiarId}”. It may have been retired, or the daemon is offline.`}
           actions={
-            <Link className="focus-ring pfc-retry" href="/?mode=familiars">
+            <Link className="focus-ring pfc-retry" href="/?mode=agents">
               Back to familiars
             </Link>
           }
@@ -163,7 +165,7 @@ export function ProfileCard({
   const profile = isHuman ? vm.userProfile ?? snapshot?.profile ?? null : null;
 
   const name = isHuman ? userDisplayName(profile) : vm.familiar?.display_name ?? "familiar";
-  const handle = isHuman ? humanHandle(profile?.name) : vm.familiar?.id ?? "";
+  const handle = isHuman ? humanHandle(name === "You" ? null : name) : vm.familiar?.id ?? "";
   const bio = isHuman
     ? [profile?.pronouns, profile?.bio].filter(Boolean).join(" · ") || "operator of this coven"
     : [vm.familiar?.role, vm.familiar?.description].filter(Boolean).join(" · ");
@@ -171,9 +173,15 @@ export function ProfileCard({
   return (
     <main className="pfc-page" aria-busy={refreshing ? "true" : undefined}>
       <nav className="pfc-topnav" aria-label="Profile">
-        <Link className="focus-ring pfc-topnav-link" href="/?mode=familiars">
-          ← Familiars
-        </Link>
+        {vm.kind === "familiar" ? (
+          <Link className="focus-ring pfc-topnav-link" href="/?mode=agents">
+            ← Familiars
+          </Link>
+        ) : (
+          <Link className="focus-ring pfc-topnav-link" href="/settings">
+            ← Settings
+          </Link>
+        )}
         {vm.kind === "familiar" && vm.familiar ? (
           <Link
             className="focus-ring pfc-topnav-link"
@@ -181,11 +189,7 @@ export function ProfileCard({
           >
             Analytics →
           </Link>
-        ) : (
-          <Link className="focus-ring pfc-topnav-link" href="/?mode=settings">
-            Settings →
-          </Link>
-        )}
+        ) : null}
       </nav>
 
       {error || vm.errors.length > 0 ? (
@@ -296,6 +300,7 @@ function avatarTint(familiar: Familiar | null): React.CSSProperties | undefined 
 
 function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
   const columns = heatmap.weeks.length;
+  const heatTip = useHeatTip();
   const summary = `Session activity, last 12 months: ${heatmap.total} session${heatmap.total === 1 ? "" : "s"} across ${heatmap.activeDays} active day${heatmap.activeDays === 1 ? "" : "s"}.`;
   return (
     <section className="pfc-heatmap-panel">
@@ -310,7 +315,7 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
         </span>
       </header>
       <div className="pfc-heatmap" role="img" aria-label={summary}>
-        <div className="pfc-heatmap-grid" aria-hidden>
+        <div className="pfc-heatmap-grid" aria-hidden {...heatTip.gridProps}>
           {heatmap.weeks.map((week, weekIndex) => (
             <div className="pfc-week" key={weekIndex}>
               {week.map((cell, dayIndex) =>
@@ -319,7 +324,7 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
                     key={cell.key}
                     className="pfc-cell"
                     data-level={cell.level}
-                    title={`${cell.key}: ${cell.count} session${cell.count === 1 ? "" : "s"}`}
+                    data-tip={formatHeatTip(cell.key, cell.count)}
                   />
                 ) : (
                   <i key={`pad-${dayIndex}`} className="pfc-cell pfc-cell--pad" />
@@ -328,6 +333,7 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
             </div>
           ))}
         </div>
+        {heatTip.tip}
         <div
           className="pfc-heatmap-months"
           aria-hidden

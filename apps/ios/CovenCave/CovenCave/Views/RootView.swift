@@ -6,17 +6,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        @Bindable var app = app
         Group {
-            if app.deepLink == .search && !app.hasLoadedSurfaces && app.connectionState != .connected {
-                // Search deep link before a connection exists: land on the
-                // local-index SearchView rather than the Connect screen. The
-                // hasLoadedSurfaces guard limits this to the genuine
-                // pre-connection case — once the tab tree has data, a stale
-                // .search marker must never tear it down on a connection blip.
-                SearchView()
-            } else {
-                switch app.connectionState {
+            switch app.connectionState {
                 case .unconfigured, .needsAuth:
                     // No endpoint, or the desktop is up but demands pairing —
                     // only the user can fix either, so the Connect screen takes
@@ -29,11 +20,10 @@ struct RootView: View {
                     ConnectionView()
                 default:
                     // Connected — or a transient drop AFTER surfaces loaded. Keep
-                    // the tab tree mounted (cached data stays usable, offline
+                    // the primary shell mounted (cached data stays usable, offline
                     // compose keeps queueing) and narrate recovery with the pill
                     // instead of tearing down to the Connect screen.
-                    MainTabView()
-                }
+                    MainShellView()
             }
         }
         .overlay(alignment: .top) {
@@ -45,36 +35,44 @@ struct RootView: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: showsReconnectPill)
-        // While the pill is up over the tabs, quietly re-probe so a desktop
-        // that comes back (restarted, woke from sleep) reconnects on its own.
-        // The Connect screen has its own ticker for the pre-surfaces case;
-        // the hasLoadedSurfaces guard keeps the two from double-probing.
-        // Keyed on scenePhase so backgrounding stops the timer.
+        // Brief "Connected" confirmation over the freshly mounted shell when a
+        // connection lands — the connect screen's success is no longer an
+        // abrupt teleport into the app. Purely decorative and self-dismissing.
+        .overlay {
+            ConnectedMomentOverlay()
+        }
+        // Keep the active app connected for long sessions. Unreachable Cave
+        // instances retry every tick; a nominally connected instance gets a
+        // cheap heartbeat once a minute so a same-path desktop restart is
+        // discovered before the user's next send.
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
+            var connectedTicks = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 if Task.isCancelled { return }
-                guard app.hasLoadedSurfaces,
-                      case .unreachable = app.connectionState else { continue }
-                await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+                switch app.connectionState {
+                case .connected:
+                    connectedTicks += 1
+                    guard connectedTicks >= 6 else { continue }
+                    connectedTicks = 0
+                    await app.maintainConnectionWhileActive()
+                case .unreachable where app.hasLoadedSurfaces:
+                    connectedTicks = 0
+                    await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+                default:
+                    connectedTicks = 0
+                }
             }
         }
         .background(chrome.bgBase.ignoresSafeArea())
         .foregroundStyle(chrome.textPrimary)
-        // Frosted, accent-infused tab + navigation bars that track the desktop
+        // Frosted, accent-infused navigation bars that track the desktop
         // palette and degrade to solid themed surfaces under Reduce Transparency.
-        .glassBars()
-        // The Diary presents HERE, not inside MainTabView: the switch above
-        // swaps the tab tree out on a transient connection flap, and a cover
-        // presented from within it would dismiss mid-reply, aborting the
-        // diary's stream.
-        .fullScreenCover(isPresented: $app.diaryPresented) {
-            DiaryView()
-        }
+        .glassNavigationBars()
     }
 
-    /// The tabs are mounted but the desktop is out of reach (or a recovery
+    /// The primary shell is mounted but the desktop is out of reach (or a recovery
     /// probe is in flight) — show the honest "Reconnecting…" pill.
     private var showsReconnectPill: Bool {
         guard app.hasLoadedSurfaces else { return false }
@@ -85,8 +83,54 @@ struct RootView: View {
     }
 }
 
-/// Floating "Reconnecting… · last seen Xm" capsule shown over the mounted tab
-/// tree during a connection drop. Tapping it fires an immediate quiet probe
+/// Brief celebratory "Connected" chip that fades in over the primary shell the
+/// moment a connection lands (fresh pairing or reconnect from the Connect
+/// screen), then self-dismisses. Skips entirely when the connection predates
+/// this view (normal warm launches) and collapses to a plain fade under
+/// Reduce Motion.
+private struct ConnectedMomentOverlay: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visible = false
+
+    var body: some View {
+        ZStack {
+            if visible {
+                Label("Connected", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.green)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .glass(.elevated, in: Capsule())
+                    .transition(
+                        reduceMotion
+                            ? .opacity.animation(.easeInOut(duration: 0.2))
+                            : .scale(scale: 0.86).combined(with: .opacity)
+                    )
+                    .accessibilityAddTraits(.isStaticText)
+            }
+        }
+        .allowsHitTesting(false)
+        .task(id: app.connectedAt) {
+            // Only celebrate a connection that landed just now — not one
+            // restored long before this overlay appeared (warm launch).
+            guard let connectedAt = app.connectedAt,
+                  Date().timeIntervalSince(connectedAt) < 3
+            else { return }
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.35)) {
+                visible = true
+            }
+            try? await Task.sleep(for: .seconds(1.4))
+            withAnimation(.easeOut(duration: 0.3)) {
+                visible = false
+            }
+        }
+    }
+}
+
+/// Floating "Reconnecting… · last seen Xm" capsule shown over the mounted
+/// primary shell during a connection drop. Tapping it fires an immediate quiet probe
 /// instead of waiting out the 10s ticker.
 private struct ReconnectPill: View {
     @Environment(\.chrome) private var chrome
@@ -122,55 +166,97 @@ private struct ReconnectPill: View {
     }
 }
 
-/// Bottom tab bar shown once connected: Chats, Tasks, Developer, Settings.
-///
-/// Uses the modern `Tab(value:)` API (iOS 18+). The legacy `.tabItem`/`.tag`
-/// TabView on the iOS 26 SDK reset the selection to the first tab on a cold
-/// launch, clobbering any restored value; the value-based `Tab` API honours the
-/// initial selection, so the app reliably reopens on the last-used tab.
-struct MainTabView: View {
+/// Connected application shell. It mounts exactly one primary destination and
+/// overlays the global drawer for navigation and cross-surface handoffs.
+struct MainShellView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
-
-    /// Tab order, used to map ⌘1–7 to the right tab.
-    private let tabOrder: [AppTab] = [.chats, .canvas, .tasks, .calendar, .dev, .settings, .search]
+    @State private var presentedOverlay: MainOverlay? = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-open-search") {
+            return .search
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-open-projects") {
+            return .projects(nil)
+        }
+        #endif
+        return nil
+    }()
+    @State private var overlayDismissalAction: (() -> Void)?
+    @State private var terminal = PtyTerminal()
+    @State private var terminalCwd: String?
 
     var body: some View {
-        @Bindable var app = app
-        TabView(selection: $app.selectedTab) {
-            Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
-                ChatsHomeView()
+        ZStack {
+            selectedDestination
+
+            CaveNavigationDrawer(
+                isOpen: Binding(
+                    get: { app.navigationDrawerOpen },
+                    set: { app.navigationDrawerOpen = $0 }
+                ),
+                openProjects: { project in
+                    presentedOverlay = .projects(project)
+                },
+                openFamiliars: { presentedOverlay = .familiars },
+                openThread: { app.requestOpen($0) },
+                newChat: {
+                    app.selectedTab = .chats
+                    app.newChatRequested = true
+                },
+                openSearch: { presentedOverlay = .search }
+            )
+            .zIndex(100)
+        }
+        .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
+            switch overlay {
+            case .projects(let project):
+                ProjectsPanel(initialProject: project) {
+                    presentedOverlay = nil
+                }
+            case .familiars: FamiliarsListView { familiar in
+                dismissOverlay {
+                    app.requestOpen(app.directThread(for: familiar.id))
+                }
             }
-            Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
-                CanvasView()
-            }
-            Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
-                TasksView()
-            }
-            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                CalendarView()
-            }
-            Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
-                DeveloperView()
-            }
-            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
-                SettingsView()
-            }
-            Tab(value: .search, role: .search) {
-                SearchView()
+            case .search:
+                GlobalSearchView(
+                    dismiss: { presentedOverlay = nil },
+                    openThread: { thread in
+                        dismissOverlay { app.requestOpen(thread) }
+                    },
+                    openProject: { project in
+                        presentedOverlay = .projects(project)
+                    },
+                    openFamiliar: { familiar in
+                        dismissOverlay {
+                            app.requestOpen(app.directThread(for: familiar.id))
+                        }
+                    },
+                    openTask: { card in
+                        dismissOverlay { app.requestOpenTask(card) }
+                    }
+                )
             }
         }
-        // Command confirmations float above the whole tab bar so they're visible
-        // whether a command stays in chat or jumps to the Tasks tab.
-        .toast($app.toast)
-        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–6.
+        // Command confirmations float above the whole shell so they're visible
+        // whether a command stays in chat or jumps to the Tasks destination.
+        .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
+        // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–4.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
-            ForEach(Array(tabOrder.enumerated()), id: \.element) { index, tab in
+            ForEach(Array(AppTab.shortcutOrder.enumerated()), id: \.element) { index, tab in
                 Button {
                     app.selectedTab = tab
                 } label: { EmptyView() }
                 .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                // An EmptyView label gives VoiceOver nothing to announce, so
+                // without this each shortcut lands in the accessibility tree as
+                // an unnamed button. They only host the ⌘-key equivalents and
+                // duplicate the tab bar, which is already reachable — so hide
+                // them from assistive tech rather than inventing names for
+                // controls a VoiceOver user should never land on.
+                .accessibilityHidden(true)
             }
         }
         // Keep the app chrome in step with desktop theme changes: re-fetch while
@@ -187,20 +273,133 @@ struct MainTabView: View {
             }
         }
     }
+
+    private func dismissOverlay(then action: @escaping () -> Void) {
+        overlayDismissalAction = action
+        presentedOverlay = nil
+    }
+
+    private func runOverlayDismissalAction() {
+        let action = overlayDismissalAction
+        overlayDismissalAction = nil
+        Task { @MainActor in
+            await Task.yield()
+            action?()
+        }
+    }
+
+    @ViewBuilder
+    private var selectedDestination: some View {
+        switch app.selectedTab {
+        case .chats:
+            ChatsHomeView()
+        case .tasks:
+            TasksView()
+        case .terminal:
+            TerminalView(terminal: terminal, cwd: $terminalCwd)
+        case .settings:
+            SettingsView()
+        }
+    }
+}
+
+private enum MainOverlay: Identifiable {
+    case projects(ProjectInfo?)
+    case familiars
+    case search
+
+    var id: String {
+        switch self {
+        case .projects(let project): "projects:\(project?.id ?? "root")"
+        case .familiars: "familiars"
+        case .search: "search"
+        }
+    }
 }
 
 struct ConnectingView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 16) {
-            ProgressView().controlSize(.large)
-            Text("Connecting to your desktop…")
-                .foregroundStyle(.secondary)
-            if let host = app.connection?.host {
-                Text(host).font(.footnote.monospaced()).foregroundStyle(.tertiary)
+        VStack(spacing: 0) {
+            Spacer()
+
+            ZStack {
+                RadialGradient(
+                    colors: [chrome.accent.opacity(0.18), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 56
+                )
+                .frame(width: 112, height: 112)
+
+                Image(systemName: "moon.stars.fill")
+                    .font(.system(size: 27, weight: .medium))
+                    .foregroundStyle(chrome.accent)
+            }
+            .accessibilityHidden(true)
+            .padding(.bottom, 34)
+
+            Text("Entering the Cave")
+                .font(.title.weight(.medium))
+                .fontDesign(.serif)
+                .italic()
+
+            Text("Connecting to your desktop")
+                .font(.subheadline)
+                .foregroundStyle(chrome.textSecondary)
+                .padding(.top, 12)
+
+            connectionSignal
+                .padding(.top, 24)
+
+            if let host = app.connection?.host, !host.isEmpty {
+                Text(host)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(chrome.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.top, 22)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Connecting to your desktop")
+        .accessibilityValue(app.connection?.host ?? "")
+    }
+
+    @ViewBuilder
+    private var connectionSignal: some View {
+        if reduceMotion {
+            staticSignal
+        } else {
+            PhaseAnimator([0, 1, 2]) { phase in
+                signalDots(active: phase)
+            } animation: { _ in
+                .easeInOut(duration: 0.34)
             }
         }
-        .padding()
+    }
+
+    private var staticSignal: some View {
+        signalDots(active: 1)
+    }
+
+    private func signalDots(active: Int) -> some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(chrome.accent)
+                    .frame(width: 5, height: 5)
+                    .opacity(index == active ? 1 : 0.24)
+                    .scaleEffect(index == active ? 1.12 : 1)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

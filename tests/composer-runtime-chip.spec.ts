@@ -1,16 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Verifies the composer runtime picker (cave-yq5l / cave-v25g / cave-bfwk,
-// relocated behind the context pill by chat revamp 1d): the chat composer's
-// context pill always shows the effective model, its Model section opens the
-// Runtime/Model picker with radio semantics, and picking a runtime rebinds
-// the familiar through /api/config — flipping the pill, re-listing the Model
-// group in the still-open menu (the pick isn't complete until a model is
-// chosen), refetching the familiar roster (cave:familiars-refresh), and
-// catching the empty-state identity line up without a reload. A model pick
-// then closes the menu.
+// split-chip grammar since cave-g21f): the chat composer footer's model chip
+// always shows the effective model and opens the Runtime/Model picker
+// directly with radio semantics; picking a runtime rebinds the familiar
+// through /api/config — flipping the chip, re-listing the Model group in the
+// still-open menu (the pick isn't complete until a model is chosen),
+// refetching the familiar roster (cave:familiars-refresh), and catching the
+// new-chat landing's identity line up without a reload. A model pick then
+// closes the menu.
 //
-// Desktop only (the pill lives in the chat composer). All APIs are mocked;
+// Desktop only (the chip lives in the chat composer). All APIs are mocked;
 // the config mock is stateful so the roster refetch observably changes what
 // the app sees — exactly the loop the feature exists to close.
 
@@ -82,7 +82,12 @@ async function seed(page: Page): Promise<Mutable> {
       state.configPatches.push(body);
       const fam = body?.familiars?.nova;
       if (fam?.harness) state.harness = fam.harness;
-      if (fam?.model) state.effectiveModel = fam.model;
+      // Empty is the explicit runtime-default sentinel. Preserve it in the
+      // stateful mock so the follow-up model-state GET cannot resurrect the
+      // previous runtime's model.
+      if (fam && Object.prototype.hasOwnProperty.call(fam, "model")) {
+        state.effectiveModel = fam.model ?? "";
+      }
       return route.fulfill({ json: { ok: true } });
     }
     return route.fulfill({ json: { ok: true, config: {} } });
@@ -90,18 +95,17 @@ async function seed(page: Page): Promise<Mutable> {
   return state;
 }
 
-test.describe("composer runtime picker (context pill)", () => {
+test.describe("composer runtime picker (context chips)", () => {
   test("always visible with the runtime + model, popover carries radio groups", async ({ page }) => {
     await seed(page);
     await page.goto("/?mode=chat");
-    const pill = page.getByRole("button", { name: "Chat context: project, model, and branch" });
-    await expect(pill).toBeVisible({ timeout: 45_000 });
-    // toContainText retries — the pill settles once model-state hydrates.
-    await expect(pill).toContainText("GPT-5.5", { timeout: 15_000 });
+    const modelChip = page.getByRole("button", { name: /change model/ });
+    await expect(modelChip).toBeVisible({ timeout: 45_000 });
+    // toContainText retries — the chip settles once model-state hydrates.
+    await expect(modelChip).toContainText("GPT-5.5", { timeout: 15_000 });
 
-    await pill.click();
-    // Hub popover → Model section row opens the Runtime/Model picker.
-    await page.getByRole("menuitem", { name: /Codex · GPT-5\.5/ }).click();
+    // Split chips (cave-g21f): the model chip opens the picker directly.
+    await modelChip.click();
     const menu = page.getByRole("menu", { name: "Runtime and model" });
     await expect(menu).toBeVisible();
     // Runtime group: all four runtimes, the active one checked.
@@ -116,16 +120,15 @@ test.describe("composer runtime picker (context pill)", () => {
   test("picking a runtime rebinds via /api/config, flips the chip, and refreshes the roster", async ({ page }) => {
     const state = await seed(page);
     await page.goto("/?mode=chat");
-    const pill = page.getByRole("button", { name: "Chat context: project, model, and branch" });
+    const pill = page.getByRole("button", { name: /change model/ });
     await expect(pill).toBeVisible({ timeout: 45_000 });
     await expect(pill).toContainText("GPT-5.5", { timeout: 15_000 });
-    // The empty-state identity line reads the roster's familiar.harness.
-    await expect(page.locator(".cave-chat-empty-meta")).toContainText("codex");
+    // The landing identity line reads the roster's familiar.harness.
+    await expect(page.locator(".home-dash__meta")).toContainText("codex");
     const servedBefore = state.familiarsServed;
     const modelStateGetsBefore = state.modelStateServed;
 
     await pill.click();
-    await page.getByRole("menuitem", { name: /Codex · GPT-5\.5/ }).click();
     const menu = page.getByRole("menu", { name: "Runtime and model" });
     await menu.getByRole("menuitemradio", { name: "Claude Code", exact: true }).click();
 
@@ -135,22 +138,24 @@ test.describe("composer runtime picker (context pill)", () => {
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true })).toBeVisible();
 
-    // The PATCH carries the harness + that runtime's default model.
+    // The PATCH carries the harness + explicit runtime-default intent. A
+    // curated catalog is a picker seed, never an implicit launch override.
     await expect(() => {
       const fam = state.configPatches.at(-1)?.familiars as
         | Record<string, { harness?: string; model?: string }>
         | undefined;
       expect(fam?.nova?.harness).toBe("claude");
-      expect(fam?.nova?.model ?? "").toMatch(/^anthropic\//);
+      expect(Object.prototype.hasOwnProperty.call(fam?.nova ?? {}, "model")).toBe(true);
+      expect(fam?.nova?.model).toBe("");
     }).toPass({ timeout: 10_000 });
 
     // Pill flips (optimistic, then reconciled by the model-state refetch).
-    await expect(pill).toContainText("Claude Opus", { timeout: 10_000 });
+    await expect(pill).toContainText("Claude Code", { timeout: 10_000 });
 
     // cave:familiars-refresh refetched the roster…
     await expect(() => expect(state.familiarsServed).toBeGreaterThan(servedBefore)).toPass({ timeout: 10_000 });
     // …so the identity line catches up without a reload.
-    await expect(page.locator(".cave-chat-empty-meta")).toContainText("claude", { timeout: 10_000 });
+    await expect(page.locator(".home-dash__meta")).toContainText("claude", { timeout: 10_000 });
 
     // Let the runtime pick's reconciling model-state refetch land before the
     // model pick, so a stale in-flight GET can't overwrite the model PATCH.

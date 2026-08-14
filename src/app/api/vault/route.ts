@@ -8,6 +8,8 @@
  *          { key, ref, description?, required? } for 1Password refs, or
  *          { key, storage: "encrypted", value, description?, required? } for local encrypted secrets.
  *
+ * PATCH  — grants or revokes one familiar without rewriting the secret.
+ *
  * DELETE — removes a mapping: { key }
  */
 
@@ -17,13 +19,19 @@ import {
   setLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
 import {
+  canMirrorVaultKeyToProcessEnv,
   getVaultStatuses,
+  grantVaultScope,
   loadVaultMap,
+  mirrorVaultSecretToProcessEnv,
+  normalizeVaultScope,
   refStorage,
+  revokeVaultScope,
   saveVaultMap,
   validateRef,
   type VaultEntry,
 } from "@/lib/vault";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,7 +41,14 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const statuses = getVaultStatuses();
-    return NextResponse.json({ ok: true, mappings: statuses });
+    const map = loadVaultMap();
+    return NextResponse.json({
+      ok: true,
+      mappings: statuses.map((status) => ({
+        ...status,
+        scope: normalizeVaultScope(map[status.key]?.scope),
+      })),
+    });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
@@ -49,6 +64,7 @@ export async function POST(req: NextRequest) {
     value?: string;
     description?: string;
     required?: boolean;
+    scope?: unknown;
   } = {};
   try { body = await req.json(); } catch { /**/ }
 
@@ -67,6 +83,9 @@ export async function POST(req: NextRequest) {
     // mapping here must not silently reset a key back to shared.
     scope: map[key]?.scope,
   };
+  if (body.scope !== undefined) {
+    baseEntry.scope = normalizeVaultScope(body.scope);
+  }
 
   let entry: VaultEntry;
   if (storage === "encrypted") {
@@ -85,8 +104,8 @@ export async function POST(req: NextRequest) {
   saveVaultMap(map);
 
   if (storage === "encrypted" && typeof body.value === "string") {
-    process.env[key] = body.value;
-  } else {
+    mirrorVaultSecretToProcessEnv(key, body.value, { source: "vault", storage: "encrypted" });
+  } else if (canMirrorVaultKeyToProcessEnv(key)) {
     delete process.env[key];
   }
 
@@ -96,6 +115,49 @@ export async function POST(req: NextRequest) {
     ref: entry.ref ?? null,
     storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : "1password"),
   });
+}
+
+// ── PATCH — update one familiar grant without touching the secret ────────────
+
+export async function PATCH(req: NextRequest) {
+  let body: {
+    key?: string;
+    action?: "grant" | "revoke";
+    familiarId?: string;
+  } = {};
+  try { body = await req.json(); } catch { /**/ }
+
+  const key = typeof body.key === "string"
+    ? body.key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_")
+    : "";
+  const familiarId = typeof body.familiarId === "string"
+    ? body.familiarId.trim().toLowerCase()
+    : "";
+  const action = body.action;
+
+  if (!key) {
+    return NextResponse.json({ ok: false, error: "key is required" }, { status: 400 });
+  }
+  if (!isValidFamiliarId(familiarId)) {
+    return NextResponse.json({ ok: false, error: "invalid familiar id" }, { status: 400 });
+  }
+  if (action !== "grant" && action !== "revoke") {
+    return NextResponse.json({ ok: false, error: "action must be grant or revoke" }, { status: 400 });
+  }
+
+  const map = loadVaultMap(true);
+  const entry = map[key];
+  if (!entry) {
+    return NextResponse.json({ ok: false, error: "key not found" }, { status: 404 });
+  }
+
+  const scope = action === "grant"
+    ? grantVaultScope(entry.scope, familiarId)
+    : revokeVaultScope(entry.scope, familiarId);
+  map[key] = { ...entry, scope };
+  saveVaultMap(map);
+
+  return NextResponse.json({ ok: true, key, scope });
 }
 
 // ── DELETE — remove a mapping ─────────────────────────────────────────────────
@@ -114,8 +176,9 @@ export async function DELETE(req: NextRequest) {
   saveVaultMap(map);
   deleteLocalEncryptedSecret(key);
 
-  // Clear from process.env too so it picks up fresh next resolve
-  delete process.env[key];
+  // Clear cached safe values so the next resolve is fresh. Denied keys may be
+  // inherited runtime configuration and are never owned by the vault.
+  if (canMirrorVaultKeyToProcessEnv(key)) delete process.env[key];
 
   return NextResponse.json({ ok: true });
 }

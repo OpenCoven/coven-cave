@@ -41,6 +41,27 @@ async function denySymlink() {
   throw error;
 }
 
+// Native Windows requires Developer Mode or elevated privilege for file
+// symlinks. Keep the tests that use a real link when the host permits one;
+// the explicit `denySymlink` cases below still cover the normal fallback.
+const nativeFileSymlinkAvailable = await (async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "cave-home-symlink-probe-"));
+  const target = path.join(root, "target");
+  const link = path.join(root, "link");
+  try {
+    await writeFile(target, "probe", "utf8");
+    await symlink("target", link, "file");
+    return true;
+  } catch (error) {
+    if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") {
+      return false;
+    }
+    throw error;
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+})();
+
 const baseState = () => ({
   sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {},
   sessionKeep: {}, sessionArchiveExtendedUntil: {}, sessionOwned: {}, mergedPrAutoArchived: {},
@@ -69,7 +90,7 @@ try {
 
   // Do not treat an arbitrary or broken legacy symlink as a completed
   // compatibility bridge. Its target may contain the only remaining data.
-  {
+  if (nativeFileSymlinkAvailable) {
     const { coven, cave } = await home("foreign-legacy-symlink");
     const foreign = path.join(coven, "foreign-config.json");
     await mkdir(cave, { recursive: true });
@@ -82,6 +103,8 @@ try {
     const result = await migrateCaveHome();
     assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
     assert.deepEqual(await json(foreign), { source: "foreign" });
+  } else {
+    console.log("cave-home-migration: skipped native symlink cases (Windows symlink privilege unavailable)");
   }
 
   // Legacy-only data moves to canonical storage. On normal Windows, a verified
@@ -177,7 +200,7 @@ try {
   // A symlink can be installed before canonical validation notices a late
   // invalid write. Remove that attempted link and restore the original legacy
   // pathname instead of hiding the recoverable bytes in a retired file.
-  {
+  if (nativeFileSymlinkAvailable) {
     const { coven, cave } = await home("canonical-post-link-write");
     const legacyPath = path.join(coven, "cave-config.json");
     const canonicalPath = path.join(cave, "config.json");

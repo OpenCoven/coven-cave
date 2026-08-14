@@ -45,6 +45,18 @@ assert.match(panel, /resolveEnvPanelVisible\(\{/, "visibility decided by the pur
 assert.match(panel, /pointer-events-none sticky top-0 z-30 flex h-0 w-full justify-end/, "wrapper is sticky, zero-height and pointer-transparent");
 assert.match(panel, /pointer-events-auto/, "the card re-enables pointer events");
 
+// The card must stay legible over the transcript even when the theme /
+// backdrop mode makes --bg-raised translucent: an opaque --bg-base floor
+// under the raised tint, plus a frosted blur (repo convention for floating
+// HUDs, e.g. grimoire-graph-view).
+assert.match(
+  panel,
+  /linear-gradient\(var\(--bg-raised\),[_ ]var\(--bg-raised\)\),[_ ]var\(--bg-base\)/,
+  "card pins an opaque bg-base floor under the raised tint",
+);
+const blurCount = panel.match(/backdrop-blur-md/g)?.length ?? 0;
+assert.ok(blurCount >= 2, "expanded card AND collapsed pill are frosted (backdrop-blur-md)");
+
 // Collapse preference persists under a VERSIONED key, hydrated post-mount
 // (SSR-safe) like CODE_RAIL_PIN_KEY.
 assert.match(panel, /ENV_PANEL_COLLAPSED_KEY = "cave:chat-env-panel:collapsed:v1"/, "versioned localStorage key");
@@ -65,7 +77,7 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 assert.match(
   chatView,
   /<ChatEnvironmentPanel\n\s+projectRoot=\{session\?\.project_root \?\? projectRoot \?\? null\}/,
-  "panel keys on the SAME session-root derivation as ChatStageHeader (cave-r0gt)",
+  "panel keys on the SESSION-root derivation (cave-r0gt)",
 );
 assert.match(chatView, /runtime=\{session\?\.runtime \?\? null\}/, "runtime rides the session row for the Local/ssh label");
 assert.match(chatView, /hasTurns=\{turns\.length > 0\}/, "empty-state chats keep the transcript clean");

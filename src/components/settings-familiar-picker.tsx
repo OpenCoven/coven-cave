@@ -1,17 +1,22 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
 } from "react";
+
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
-import { Popover } from "@/components/ui/popover";
-import { Icon } from "@/lib/icon";
+import { IconButton } from "@/components/ui/icon-button";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { SearchInput } from "@/components/ui/search-input";
+import {
+  archiveFamiliar,
+  unarchiveFamiliar,
+} from "@/lib/cave-familiar-archive";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   familiarRosterCountLabel,
@@ -24,258 +29,179 @@ type Props = {
   value: string | null;
   onChange: (id: string) => void;
   onSummon?: () => void;
+  /** Opens the selected familiar's existing undo-safe lifecycle controls. */
+  onManageLifecycle?: (id: string) => void;
 };
 
-const LISTBOX_ID = "settings-familiar-picker-listbox";
-const OPTION_ID_PREFIX = "settings-familiar-picker-option-";
-
-function optionId(index: number): string {
-  return OPTION_ID_PREFIX + index;
-}
-
-export function SettingsFamiliarPicker({ familiars, value, onChange, onSummon }: Props) {
-  const [open, setOpen] = useState(false);
+export function SettingsFamiliarPicker({
+  familiars,
+  value,
+  onChange,
+  onSummon,
+  onManageLifecycle,
+}: Props) {
+  const [collapsed, setCollapsed] = useState(false);
   const [query, setQuery] = useState("");
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const searchRef = useRef<HTMLInputElement | null>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const { announce } = useAnnouncer();
 
-  const active = useMemo(
-    () => familiars.find((familiar) => familiar.id === value) ?? null,
-    [familiars, value],
-  );
   const filtered = useMemo(
     () => filterSettingsFamiliars(familiars, query),
     [familiars, query],
   );
   const rosterCount = familiarRosterCountLabel(familiars.length);
 
-  const resetAndClose = () => {
-    setOpen(false);
-    setQuery("");
-    setHighlightedIndex(-1);
+  const moveFocus = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const next = moveFamiliarPickerIndex(index, event.key, filtered.length);
+    optionRefs.current[next]?.focus();
   };
-
-  const updateOpen = (next: boolean) => {
-    if (!next) {
-      resetAndClose();
-      return;
-    }
-    setQuery("");
-    const selectedIndex = familiars.findIndex((familiar) => familiar.id === value);
-    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : familiars.length > 0 ? 0 : -1);
-    setOpen(true);
-  };
-
-  const selectFamiliar = (id: string) => {
-    onChange(id);
-    resetAndClose();
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    searchRef.current?.focus({ preventScroll: true });
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    setHighlightedIndex((current) => {
-      if (filtered.length === 0) return -1;
-      if (current < 0) return 0;
-      return Math.min(current, filtered.length - 1);
-    });
-  }, [filtered.length, open]);
-
-  useEffect(() => {
-    if (!open || highlightedIndex < 0) return;
-    optionRefs.current[highlightedIndex]?.scrollIntoView({ block: "nearest" });
-  }, [filtered, highlightedIndex, open]);
-
-  const handleQueryChange = (nextQuery: string) => {
-    setQuery(nextQuery);
-    const nextFiltered = filterSettingsFamiliars(familiars, nextQuery);
-    const selectedIndex = nextFiltered.findIndex((familiar) => familiar.id === value);
-    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : nextFiltered.length > 0 ? 0 : -1);
-  };
-
-  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    const key = event.key;
-    if (key === "ArrowDown" || key === "ArrowUp") {
-      event.preventDefault();
-      setHighlightedIndex((current) =>
-        moveFamiliarPickerIndex(current, key, filtered.length),
-      );
-      return;
-    }
-    if (event.key === "Enter") {
-      const familiar = filtered[highlightedIndex];
-      if (!familiar) return;
-      event.preventDefault();
-      selectFamiliar(familiar.id);
-    }
-  };
-
-  const activeDescendant =
-    highlightedIndex >= 0 && filtered[highlightedIndex]
-      ? optionId(highlightedIndex)
-      : undefined;
-  const triggerLabel = active
-    ? "Choose familiar to edit. Current: " + active.display_name + ". " + rosterCount + "."
-    : "Choose familiar to edit. " + rosterCount + ".";
-  const resultSummary = query.trim()
-    ? filtered.length + " of " + rosterCount
-    : rosterCount;
 
   return (
-    <div className="familiar-studio-inline__selector">
-      <span className="familiar-studio-inline__selector-label" id="settings-familiar-picker-label">
-        Familiar
-      </span>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="familiar-studio-picker__trigger"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={triggerLabel}
-        onClick={() => updateOpen(!open)}
-        style={
-          active
-            ? ({ ["--familiar-accent"]: active.color } as CSSProperties)
-            : undefined
-        }
-      >
-        <span className="familiar-studio-picker__trigger-avatar" aria-hidden>
-          {active ? (
-            <FamiliarAvatar familiar={active} size="md" />
-          ) : (
-            <Icon name="ph:sparkle" width={16} />
-          )}
-        </span>
-        <span className="familiar-studio-picker__trigger-copy">
-          <span className="familiar-studio-picker__trigger-name">
-            {active?.display_name ?? "Select a familiar"}
-          </span>
-          <span className="familiar-studio-picker__trigger-role">
-            {active?.role || active?.id || "Choose who to edit"}
-          </span>
-        </span>
-        <span className="familiar-studio-picker__trigger-count">{rosterCount}</span>
-        <Icon
-          name="ph:caret-up-down-bold"
-          width={12}
-          className="familiar-studio-picker__trigger-caret"
-          aria-hidden
-        />
-      </button>
-
-      <Popover
-        open={open}
-        onOpenChange={updateOpen}
-        anchorRef={triggerRef}
-        placement="bottom-start"
-        minWidth={240}
-        scrollStrategy="content"
-        compactAtHeight={184}
-        className="familiar-studio-picker__popover"
-        ariaLabel="Choose familiar to edit"
-      >
-        <div className="familiar-studio-picker">
-          <div className="familiar-studio-picker__search-shell">
-            <Icon name="ph:magnifying-glass" width={14} aria-hidden />
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(event) => handleQueryChange(event.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              role="combobox"
-              aria-label="Search familiars"
-              aria-expanded={open}
-              aria-autocomplete="list"
-              aria-controls={LISTBOX_ID}
-              aria-activedescendant={activeDescendant}
-              autoComplete="off"
-              placeholder="Search name, role, or ID…"
-              className="familiar-studio-picker__search"
-            />
-          </div>
-          <div className="familiar-studio-picker__result-summary" aria-live="polite">
-            {resultSummary}
-          </div>
-
-          <ul
-            id={LISTBOX_ID}
-            className="familiar-studio-picker__results"
-            role="listbox"
-            aria-label="Familiars"
-          >
-            {filtered.map((familiar, index) => {
-              const selected = familiar.id === value;
-              const highlighted = index === highlightedIndex;
-              return (
-                <li key={familiar.id} role="presentation">
-                  <button
-                    ref={(node) => {
-                      optionRefs.current[index] = node;
-                    }}
-                    id={optionId(index)}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    tabIndex={-1}
-                    data-selected={selected || undefined}
-                    data-highlighted={highlighted || undefined}
-                    className="familiar-studio-picker__option"
-                    style={{ ["--familiar-accent"]: familiar.color } as CSSProperties}
-                    onMouseEnter={() => setHighlightedIndex(index)}
-                    onClick={() => selectFamiliar(familiar.id)}
-                    title={familiar.display_name + " — " + (familiar.role || familiar.id)}
-                  >
-                    <span className="familiar-studio-picker__option-avatar" aria-hidden>
-                      <FamiliarAvatar familiar={familiar} size="sm" />
-                    </span>
-                    <span className="familiar-studio-picker__option-copy">
-                      <span className="familiar-studio-picker__option-name">
-                        {familiar.display_name}
-                      </span>
-                      <span className="familiar-studio-picker__option-meta">
-                        {familiar.role ? familiar.role + " · " : ""}
-                        <span>{familiar.id}</span>
-                      </span>
-                    </span>
-                    {selected ? <Icon name="ph:check-bold" width={13} aria-hidden /> : null}
-                  </button>
-                </li>
-              );
-            })}
-            {filtered.length === 0 ? (
-              <li className="familiar-studio-picker__empty" role="presentation">
-                No familiars match “{query.trim()}”.
-              </li>
-            ) : null}
-          </ul>
-
-          {onSummon ? (
-            <div className="familiar-studio-picker__footer">
-              <Button
-                variant="primary"
-                size="lg"
-                fullWidth
-                className="familiar-studio-picker__summon"
-                onClick={() => {
-                  resetAndClose();
-                  onSummon();
-                }}
-                leadingIcon="ph:magic-wand-fill"
-              >
-                Summon familiar
-              </Button>
-            </div>
-          ) : null}
+    <aside
+      className="settings-familiar-roster"
+      data-collapsed={collapsed || undefined}
+      aria-label="Familiar roster"
+    >
+      <div className="settings-familiar-roster__header">
+        <div className="settings-familiar-roster__heading">
+          <span>Familiars</span>
+          <span className="settings-familiar-roster__count">{familiars.length}</span>
         </div>
-      </Popover>
-    </div>
+        {onSummon ? (
+          <IconButton
+            icon="ph:plus"
+            size="sm"
+            className="settings-familiar-roster__summon focus-ring"
+            aria-label="Summon familiar"
+            title="Summon familiar"
+            onClick={onSummon}
+          />
+        ) : null}
+        <IconButton
+          icon="ph:sidebar-simple"
+          size="sm"
+          className="settings-familiar-roster__collapse focus-ring"
+          aria-label={collapsed ? "Expand familiar list" : "Collapse familiar list"}
+          title={collapsed ? "Expand familiar list" : "Collapse familiar list"}
+          onClick={() => setCollapsed((current) => !current)}
+        />
+      </div>
+
+      <SearchInput
+        value={query}
+        onValueChange={setQuery}
+        onClear={() => setQuery("")}
+        placeholder="Find a familiar…"
+        aria-label="Find a familiar"
+        containerClassName="settings-familiar-roster__search"
+      />
+
+      <div className="settings-familiar-roster__summary" aria-live="polite">
+        {query.trim()
+          ? `${filtered.length} of ${rosterCount}`
+          : rosterCount}
+      </div>
+
+      <ul
+        className="settings-familiar-roster__list"
+        aria-label="Familiars"
+      >
+        {filtered.map((familiar, index) => {
+          const selected = familiar.id === value;
+          return (
+            <li
+              key={familiar.id}
+              className="settings-familiar-roster__row reveal-scope"
+              style={{ ["--familiar-accent"]: familiar.color } as CSSProperties}
+              data-selected={selected || undefined}
+              data-archived={familiar.archived || undefined}
+            >
+              <Button
+                ref={(node) => {
+                  optionRefs.current[index] = node;
+                }}
+                variant="ghost"
+                fullWidth
+                aria-current={selected ? "page" : undefined}
+                className="settings-familiar-roster__option focus-ring"
+                title={`${familiar.display_name} — ${familiar.role || familiar.id}`}
+                onClick={() => onChange(familiar.id)}
+                onKeyDown={(event) => moveFocus(event, index)}
+              >
+                <span className="settings-familiar-roster__avatar" aria-hidden>
+                  <FamiliarAvatar
+                    familiar={familiar}
+                    size="md"
+                    className="settings-familiar-roster__avatar-image"
+                  />
+                </span>
+                <span className="settings-familiar-roster__copy">
+                  <span className="settings-familiar-roster__name">
+                    {familiar.display_name}
+                  </span>
+                  <span className="settings-familiar-roster__role">
+                    {familiar.role || familiar.id}
+                  </span>
+                </span>
+                <span className="sr-only">
+                  {familiar.archived ? "Archived. " : ""}
+                  Status: {familiar.status || "unknown"}
+                </span>
+              </Button>
+
+              <span
+                className="settings-familiar-roster__presence"
+                data-status={familiar.status || "unknown"}
+                title={familiar.status ? `Status: ${familiar.status}` : "Status unknown"}
+                aria-hidden
+              />
+
+              <span className="settings-familiar-roster__actions reveal-on-hover">
+                <IconButton
+                  icon={familiar.archived ? "ph:arrow-counter-clockwise" : "ph:archive"}
+                  size="xs"
+                  aria-label={`${familiar.archived ? "Unarchive" : "Archive"} ${familiar.display_name}`}
+                  title={familiar.archived
+                    ? "Unarchive — return to active switchers"
+                    : "Archive — hide from switchers; restore from this roster"}
+                  onClick={() => {
+                    familiar.archived
+                      ? unarchiveFamiliar(familiar.id)
+                      : archiveFamiliar(familiar.id);
+                    announce(
+                      `${familiar.archived ? "Unarchived" : "Archived"} ${familiar.display_name}.`,
+                    );
+                  }}
+                />
+                {onManageLifecycle ? (
+                  <IconButton
+                    icon="ph:trash"
+                    size="xs"
+                    danger
+                    aria-label={`Dismiss ${familiar.display_name}`}
+                    title="Dismiss — review the undo-safe remove controls"
+                    onClick={() => {
+                      onChange(familiar.id);
+                      onManageLifecycle(familiar.id);
+                    }}
+                  />
+                ) : null}
+              </span>
+            </li>
+          );
+        })}
+        {filtered.length === 0 ? (
+          <li className="settings-familiar-roster__empty" role="presentation">
+            No familiar matches that.
+          </li>
+        ) : null}
+      </ul>
+    </aside>
   );
 }

@@ -69,8 +69,20 @@ assert.match(
   "Dossier identity row (avatar + name + role) renders only in all-familiars mode — the sidebar already names the selected familiar",
 );
 
+// Placement guard, not a familiar-selection one: the CTA moved OUT of the
+// `{familiar && …}` branch in cave-n3jg2 — the handoff gives the surface one
+// title row (serif heading · session count · one primary action), so a single
+// unconditional "New session" button replaces the two conditional CTAs that
+// used to live in the identity row and the filter row. The argument is named
+// only to anchor the match — it was renamed fallbackFamiliarId →
+// scopedFamiliarId when the silent familiars[0] default was retired.
 assert.match(
   source,
-  /\{familiar && \(\s*<button[\s\S]*?onNewChat\(undefined, fallbackFamiliarId\)/,
-  "With the identity row hidden, the + Chat CTA moves into the search/filter row",
+  /<h1 className="chat-sessions-title[\s\S]{0,400}?onNewChat\(undefined, scopedFamiliarId\)[\s\S]{0,1200}?New session\s*\n\s*<\/button>/,
+  "The surface title row carries the one New session CTA",
+);
+assert.doesNotMatch(
+  source,
+  /\{familiar && \(\s*<button[\s\S]{0,200}?onNewChat\(undefined, scopedFamiliarId\)/,
+  "the old familiar-conditional duplicate CTA is gone — one surface, one primary action",
 );

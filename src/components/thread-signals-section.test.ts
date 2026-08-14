@@ -6,7 +6,9 @@ import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
 const analyticsSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// The .fa-* analytics surface CSS is component-imported (cave-5rqi / #3264),
+// so these rules live in src/styles/familiar-analytics.css, not the global facade.
+const faCss = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
 
 assert.match(source, /import \{ Button \}/, "ThreadSignalsSection review actions use the shared Button primitive");
 assert.doesNotMatch(source, /<button\b/, "ThreadSignalsSection should not hand-roll button controls");
@@ -69,20 +71,21 @@ describe("aggregateThreadSignals", () => {
   it("marks blockers as crit when in >50% of reports", () => {
     const blocker = { id: "x", title: "X", category: "auth" as const, impact: "high" as const, detail: "" };
     const reports = [
-      report({ id: "r1", persistentBlockers: [blocker] }),
-      report({ id: "r2", persistentBlockers: [blocker] }),
-      report({ id: "r3", persistentBlockers: [] }),
+      report({ id: "r1", reportedAt: "2026-06-23T00:00:00.000Z", persistentBlockers: [blocker] }),
+      report({ id: "r2", reportedAt: "2026-06-24T00:00:00.000Z", persistentBlockers: [blocker] }),
+      report({ id: "r3", reportedAt: "2026-06-25T00:00:00.000Z", persistentBlockers: [blocker] }),
     ];
     const agg = aggregateThreadSignals(reports);
-    // x appears in 2/3 = 67% → crit
+    // x appears in 3/3 = 100% → crit
     assert.equal(agg.persistentBlockers[0].crit, true);
   });
 
   it("does not mark blockers as crit when in ≤50% of reports", () => {
     const blocker = { id: "y", title: "Y", category: "tooling" as const, impact: "medium" as const, detail: "" };
     const reports = [
-      report({ id: "r1", persistentBlockers: [blocker] }),
-      report({ id: "r2", persistentBlockers: [] }),
+      report({ id: "r1", reportedAt: "2026-06-23T00:00:00.000Z", persistentBlockers: [] }),
+      report({ id: "r2", reportedAt: "2026-06-24T00:00:00.000Z", persistentBlockers: [] }),
+      report({ id: "r3", reportedAt: "2026-06-25T00:00:00.000Z", persistentBlockers: [blocker] }),
     ];
     const agg = aggregateThreadSignals(reports);
     assert.equal(agg.persistentBlockers[0].crit, false);
@@ -102,16 +105,18 @@ describe("aggregateThreadSignals", () => {
     const reports = [
       report({
         id: "r1",
+        reportedAt: "2026-06-26T00:00:00.000Z",
         contextPressure: "critical",
         skillsNeedingAccess: [{ skillId: "github", reason: "token expired" }],
+        capabilitiesLacking: [{ name: "calendar search", importance: "blocking", detail: "cannot inspect conflicts" }],
         persistentBlockers: [
           { id: "auth", title: "Auth expired", category: "auth", impact: "blocking", detail: "GitHub auth failed" },
         ],
       }),
       report({
         id: "r2",
+        reportedAt: "2026-06-25T00:00:00.000Z",
         contextPressure: "tight",
-        capabilitiesLacking: [{ name: "calendar search", importance: "blocking", detail: "cannot inspect conflicts" }],
       }),
     ];
     const review = buildThreadSignalReviewQueue(aggregateThreadSignals(reports));
@@ -119,6 +124,12 @@ describe("aggregateThreadSignals", () => {
     assert.equal(review[0].severity, "critical");
     assert.match(review[0].title, /Auth expired/);
     assert.ok(review.some((item) => item.kind === "skill-access" && item.title === "github"));
+    assert.ok(
+      review.some(
+        (item) =>
+          item.kind === "capability" && item.sourceId === "calendar search" && item.title === "calendar search",
+      ),
+    );
     assert.ok(review.some((item) => item.kind === "context-pressure" && item.detail.includes("critical")));
   });
 
@@ -200,19 +211,22 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /fa-thread-table__row--added/, "promoted rows read as settled");
   });
 
-  it("spans both analytics columns and scrolls under a max height", () => {
+  it("gets the whole stage in the analytics workbench, and scrolls under a max height", () => {
+    // The workbench opens Thread signals as a full-stage overlay rather than a
+    // grid cell — the section is dense enough that a column would truncate it,
+    // and the overlay deliberately leaves the familiar dock on screen.
     assert.match(
       analyticsSource,
-      /id="fa-thread-signals"[\s\S]*?wide=\{model\.threadReports\.length > 0\}/,
-      "the Thread signals section spans both fa-grid columns when it has data",
+      /<StageOverlay\s+label="Thread signals"[\s\S]*?<ThreadSignalsSection familiarId=\{model\.familiarId\} reports=\{windowReports\} \/>/,
+      "the Thread signals section is hosted by the stage overlay",
     );
     assert.match(
-      globals,
+      faCss,
       /\.fa-thread-table-wrap \{[^}]*max-height: 420px;[^}]*overflow: auto;/,
       "the signal table caps its height and scrolls",
     );
     assert.match(
-      globals,
+      faCss,
       /\.fa-thread-review-list \{[^}]*max-height: 240px;[^}]*overflow-y: auto;/,
       "the review queue caps its height and scrolls",
     );
@@ -304,7 +318,7 @@ describe("review queue UX — filters, dismiss with undo, keyboard parity", () =
 describe("signal table UX — sticky header, coarse-pointer overflow, empty discipline", () => {
   it("pins the header row while the wrap scrolls", () => {
     assert.match(
-      globals,
+      faCss,
       /\.fa-thread-table thead th \{[^}]*position: sticky;[^}]*top: 0;[^}]*background: var\(--bg-raised\);/,
       "thead cells stick to the top of the scrolling wrap on a solid token background",
     );

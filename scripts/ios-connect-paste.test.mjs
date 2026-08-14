@@ -43,18 +43,35 @@ assert.match(
   "connect should clean and invite-parse the host before configuring",
 );
 
-// --- Gentle, non-blocking malformed hint -------------------------------------
+// --- Gentle, non-blocking address advice (extracted classifier) ---------------
 assert.match(
   src,
-  /private var hostHint: String\? \{[\s\S]*?contains\(" "\)/,
-  "a hostHint should nudge when the address has a stray space",
+  /private var hostAdvice: CaveHostAdvice\? \{[\s\S]*?CaveHostAdvice\.evaluate\(host\)/,
+  "the hint should delegate to the CaveHostAdvice classifier (loopback/LAN/.local/space)",
+);
+assert.match(
+  src,
+  /private var hostHint: String\? \{ hostAdvice\?\.message \}/,
+  "the advisory hint renders the classifier's message",
+);
+const advice = await read("apps/ios/CovenCave/CovenCave/Networking/CaveHostAdvice.swift");
+assert.match(
+  advice,
+  /case \.hasSpace:[\s\S]*?That has a space — paste just the address\./,
+  "the stray-space nudge lives on as a classifier case, copy intact",
 );
 // The hint must NOT disable Connect — validation stays advisory (the connect flow
-// does the real probing); the button stays gated only on empty/busy.
+// does the real probing); the button stays gated only on empty/busy or an
+// in-flight device-authentication prompt, never on the advisory hint.
 assert.match(
   src,
-  /\.disabled\(host\.trimmingCharacters\(in: \.whitespaces\)\.isEmpty \|\| busy\)/,
-  "Connect should stay enabled regardless of the advisory hint",
+  /\.disabled\(!hostPresent \|\| busy \|\| appLock\.isAuthenticating\)/,
+  "Connect should stay enabled regardless of the advisory hint, except while device authentication is in flight",
+);
+assert.match(
+  src,
+  /private var hostPresent: Bool \{\s*!host\.trimmingCharacters\(in: \.whitespaces\)\.isEmpty\s*\}/,
+  "the presence gate is exactly the trimmed-empty check",
 );
 
 console.log("ios-connect-paste: OK");

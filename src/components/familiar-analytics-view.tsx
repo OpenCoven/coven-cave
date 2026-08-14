@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/globals/surface-reporting.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildFamiliarAnalyticsModel,
@@ -12,6 +13,10 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { FamiliarAnalyticsContent } from "@/components/familiar-analytics-content";
+// Surface CSS rides the component (not the global bundle) so it code-splits
+// out of the every-route root + home first load (cave-5rqi, per the CSS
+// facade split convention).
+import "@/styles/familiar-analytics.css";
 
 export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   const [data, setData] = useState<FamiliarAnalyticsData | null>(null);
@@ -67,11 +72,19 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
 
   const model = useMemo(() => data ? buildFamiliarAnalyticsModel(data) : null, [data]);
 
+  // The workbench is a fixed-height two-pane frame, so the first-load skeleton
+  // has to claim the same frame — a centred spinner would collapse the layout
+  // and then snap it back open when the data lands.
   if (loading && !model) {
     return (
       <main className="fa-page" aria-busy="true">
-        <div className="fa-section">
-          <SkeletonRows count={8} />
+        <div className="fa-frame fa-frame--loading">
+          <div className="fa-dock">
+            <SkeletonRows count={6} />
+          </div>
+          <div className="fa-stage">
+            <SkeletonRows count={8} />
+          </div>
         </div>
       </main>
     );

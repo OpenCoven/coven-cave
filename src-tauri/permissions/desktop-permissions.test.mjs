@@ -21,14 +21,25 @@ const loopbackUpdaterCapability = JSON.parse(
 const loopbackSpeechCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-speech.json", import.meta.url), "utf8"),
 );
+const loopbackMicrophoneCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-microphone.json", import.meta.url), "utf8"),
+);
+const loopbackXOAuthCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-x-oauth.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
+const microphonePermissions = readFileSync(new URL("./microphone.toml", import.meta.url), "utf8");
+const reachabilityPermissions = readFileSync(new URL("./desktop-reachability.toml", import.meta.url), "utf8");
+const reliabilityPermissions = readFileSync(new URL("./reliability.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const tauriSetupRust = readFileSync(new URL("../src/tauri_setup.rs", import.meta.url), "utf8");
+const microphoneRust = readFileSync(new URL("../src/microphone.rs", import.meta.url), "utf8");
 const nativeSttTs = readFileSync(new URL("../../src/lib/voice/native-stt.ts", import.meta.url), "utf8");
+const microphoneAccessTs = readFileSync(new URL("../../src/lib/voice/microphone-access.ts", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
 const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
@@ -51,6 +62,7 @@ const requiredPermissionIds = [
   "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
+  "allow-open-x-oauth-url",
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
@@ -58,6 +70,9 @@ const requiredPermissionIds = [
   "allow-speech-stt-start",
   "allow-speech-stt-finish",
   "allow-speech-stt-stop",
+  "allow-desktop-reachability-status",
+  "allow-desktop-reachability-configure",
+  "allow-record-daemon-reliability-measurement",
 ];
 
 const requiredCommands = [
@@ -76,14 +91,22 @@ const requiredCommands = [
   "browser_close_all",
   "browser_reload",
   "shell_open",
+  "open_x_oauth_url",
   "sidecar_startup_status",
   "retry_sidecar_startup",
   "cancel_sidecar_startup",
+  "desktop_reachability_status",
+  "desktop_reachability_configure",
+  "record_daemon_reliability_measurement",
 ];
 
-// Node 22 (CI's runtime) has no global URLPattern, so match capability
-// remote URL patterns component-wise the way Tauri's urlpattern crate does
-// for the simple `scheme://host:port/path` + `*` shapes this repo uses.
+// Match capability remote URL patterns component-wise, the way Tauri's
+// urlpattern crate does for the simple `scheme://host:port/path` + `*` shapes
+// this repo uses. Node 24 DOES expose a global URLPattern (verified on 24.13
+// and 24.18), but it implements the WHATWG spec rather than Tauri's matcher,
+// and what this test asserts is what Tauri will accept — so the hand-rolled
+// comparison stays. The previous wording claimed the global was absent: true
+// on Node 22, carried forward unchecked when CI moved to 24 in #4033.
 // Backslash escapes in patterns (e.g. the IPv6 colons in
 // "http://[\:\:1]:*/*") are URLPattern literal escapes — strip them first.
 function originMatchesPattern(pattern, origin) {
@@ -136,8 +159,13 @@ test("packaged desktop app can use native browser and terminal commands", () => 
 
   for (const command of requiredCommands) {
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const permissionSource = command.startsWith("desktop_reachability_")
+      ? reachabilityPermissions
+      : command === "record_daemon_reliability_measurement"
+        ? reliabilityPermissions
+        : commandPermissions;
     assert.match(
-      commandPermissions,
+      permissionSource,
       new RegExp(String.raw`commands\.allow\s*=\s*\[[^\]]*"${escapedCommand}"[^\]]*\]`),
       `${command} must have a Tauri allow permission`,
     );
@@ -225,6 +253,9 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-browser-deactivate-all",
     "allow-browser-close-all",
     "allow-browser-reload",
+    "allow-desktop-reachability-status",
+    "allow-desktop-reachability-configure",
+    "allow-record-daemon-reliability-measurement",
   ]) {
     assert.ok(
       loopbackBrowserCapability.permissions.includes(permission),
@@ -289,6 +320,8 @@ test("native browser children can report metadata but cannot control browser lay
     "allow-browser-deactivate-all",
     "allow-browser-close-all",
     "allow-browser-reload",
+    "allow-desktop-reachability-status",
+    "allow-desktop-reachability-configure",
   ]);
 
   for (const command of [
@@ -505,6 +538,38 @@ test("the trusted main loopback webview can run the native in-app updater", () =
   );
 });
 
+test("X OAuth grants only system-browser opening to the trusted main loopback webview", () => {
+  assert.deepEqual(loopbackXOAuthCapability.webviews, ["main"]);
+  assert.equal(loopbackXOAuthCapability.windows, undefined);
+  assert.deepEqual(loopbackXOAuthCapability.remote?.urls, [
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "http://[\\:\\:1]:*/*",
+  ]);
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+  ]) {
+    assert.ok(capabilityAllowsOrigin(loopbackXOAuthCapability, origin));
+  }
+  assert.equal(
+    capabilityAllowsOrigin(loopbackXOAuthCapability, "http://example.com:3000/"),
+    false,
+  );
+  assert.deepEqual(loopbackXOAuthCapability.permissions, ["allow-open-x-oauth-url"]);
+  assertCapabilityDoesNotGrant(loopbackXOAuthCapability, [
+    "allow-shell-open",
+    "allow-pty-start",
+    "allow-browser-navigate",
+    "updater:default",
+    "allow-speech-stt-start",
+    "fs:default",
+    "process:default",
+    "process:allow-restart",
+  ]);
+});
+
 test("browser event labels use the same native prefix in Rust and React", () => {
   assert.match(browserRust, /const BROWSER_LABEL_PREFIX: &str = "cave-browser-";/);
   assert.match(browserPane, /const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";/);
@@ -637,5 +702,55 @@ test("native speech recognition is scoped to the trusted main webview", () => {
     readFileSync(new URL("../src/speech.rs", import.meta.url), "utf8"),
     /options\.device|device_id|model_path/,
     "renderer must not choose capture devices or model files",
+  );
+});
+
+test("desktop calls can request and recover macOS microphone permission", () => {
+  const microphonePermissionIds = [
+    ["allow-microphone-permission-request", "microphone_permission_request"],
+    ["allow-microphone-settings-open", "microphone_settings_open"],
+  ];
+
+  for (const [permission, command] of microphonePermissionIds) {
+    assert.match(
+      microphonePermissions,
+      new RegExp(String.raw`identifier\s*=\s*"${permission}"[\s\S]{0,240}commands\.allow\s*=\s*\[[^\]]*"${command}"`),
+      `${permission} must map to ${command}`,
+    );
+    assert.match(
+      tauriSetupRust,
+      new RegExp(String.raw`microphone::${command}`),
+      `${command} must be registered in the desktop invoke handler`,
+    );
+    assert.match(
+      microphoneAccessTs,
+      new RegExp(String.raw`"${command}"`),
+      `the frontend microphone flow must drive ${command}`,
+    );
+    assert.ok(
+      loopbackMicrophoneCapability.permissions.includes(permission),
+      `loopback-microphone should grant ${permission}`,
+    );
+  }
+
+  assert.deepEqual(loopbackMicrophoneCapability.webviews, ["main"]);
+  assert.deepEqual(loopbackMicrophoneCapability.platforms, ["macOS"]);
+  assert.ok(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://127.0.0.1:3000/"));
+  assert.ok(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://localhost:64203/"));
+  assert.equal(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://example.com:64203/"), false);
+  assert.match(
+    microphoneRust,
+    /requestRecordPermissionWithCompletionHandler/,
+    "the native command must use the Sonoma microphone permission API",
+  );
+  assert.match(
+    microphoneRust,
+    /AVCaptureDevice[\s\S]*respondsToSelector[\s\S]*requestAccessForMediaType/,
+    "the native command must safely fall back to AVFoundation permission prompting before macOS 14",
+  );
+  assert.match(
+    microphoneRust,
+    /x-apple\.systempreferences:com\.apple\.preference\.security\?Privacy_Microphone/,
+    "denied access must open the macOS microphone privacy pane directly",
   );
 });

@@ -201,6 +201,84 @@ The 2026-07-03 actor left no session transcript (likely a familiar/automation
 running outside the hook system) — for those, the pushed-branch discipline and
 the branch-protection rules are the only backstops.
 
+**Audit log (cave-boor8).** On 2026-07-29 `.worktrees/probe-timing` was
+destroyed holding 3 uncommitted files, and the post-mortem could not tell a
+deliberate `WT_GUARD_BYPASS=1` from a hole in the guard — the bypass path left
+no trace. The guard now appends one JSON line per **bypass** and per **block**
+to `.claude/worktree-guard-bypass.log` (gitignored): `at`, `verdict`,
+`session`, `cwd`, `command`, and for blocks the `reason`. Read it as evidence,
+in three tiers: a `bypass` entry names a deliberate override; a `block` entry
+followed by the worktree's disappearance names an actor that retried *outside*
+the hook; and **no entry at all** means the destruction never routed through
+the Bash tool — an external terminal, editor, or automation, which no
+PreToolUse hook can see. That last tier is the one the pushed-branch
+discipline exists for.
+
+**Audits record paths, not counts (cave-boor8's other lesson).** probe-timing
+was unrecoverable *even in principle* because the sweep that flagged it logged
+only `dirty=3` — once the directory was gone there was no filename or content
+signature to match `git fsck` debris against. Any sweep or audit that touches
+a dirty worktree must capture the full `git status --porcelain` output (paths,
+not counts) in its notes or bead. Three lines of porcelain is the difference
+between "recovery impossible" and a targeted `lost-found` search — and for
+UNSTAGED edits (which never enter the object store) it is the only record that
+the work existed at all.
+
+## The PR layer: duplicate publication of the same work
+
+Every guard above assumes the collision happens locally — worktree-guard
+blocks destruction, surface-claim-guard warns on co-edited files, and the
+sections above cover duplicate and orphaned *work*. A fourth failure mode
+happens entirely on GitHub, where none of them can see (observed 2026-07-29,
+cave-pimgr):
+
+1. Session A commits on `feat/grant-audit-console` and pushes.
+2. Nine minutes later a different actor opens a PR on that same branch —
+   same commit, same title — and merges it. The repo's auto-delete setting
+   removes the head branch.
+3. Session A's own `gh pr create` now fails with
+   `No commits between main and feat/grant-audit-console`.
+
+Nothing was destroyed and no file was co-edited, so no hook fired. The cost
+came from *misreading the aftermath*: session A interpreted the (correct)
+`gh` error as branch corruption, "recovered" a branch that needed no recovery,
+and opened a duplicate PR; a second session doing unrelated GC found the
+branch gone and independently wrote "another session deleted work" into its
+summary — which session A then treated as corroboration. Two agents inferring
+destruction from identical ambiguous evidence is not confirmation. Net: a
+false destructive-actor incident report, a duplicate PR, and an hour of
+investigation. Across the preceding 200 PRs, four head refs carried more
+than one PR — rare, not unique.
+
+Two habits kill this failure mode outright:
+
+- **Before `gh pr create`, check whether the branch already has one:**
+  `gh pr list --state all --head <branch>`. If a PR exists — open or merged —
+  report it instead of creating a second. One command ends duplicate
+  publication entirely.
+- **Treat `No commits between main and <branch>` as a SIGNAL, not an
+  error.** It usually means the work is already ON main. Before concluding
+  anything was lost, verify in two steps:
+  `git merge-base --is-ancestor <your-sha> origin/main` answers yes for
+  merge/fast-forward landings, but a SQUASH merge — this repo's default —
+  rewrites the sha, so on "no" continue with
+  `git cherry origin/main <your-sha>` (a leading `-` means a
+  patch-equivalent commit is already upstream) and
+  `gh pr list --state merged --head <branch>` (a merged PR on the branch IS
+  the landing record, whatever the merge style). Any one of the three
+  answering "landed" means the branch deletion was routine post-merge
+  cleanup. That check would have ended the 2026-07-29 incident in seconds.
+
+The corollary for the *reading* side: a vanished branch plus a merged PR
+containing your commit is the signature of **completed publication**, not
+destruction. Check the PR history for the branch before writing
+"another session deleted my work" into any summary — the next session will
+believe you.
+
+A heavier option — a branch-claim mechanism mirroring surface-claim-guard so
+a session can see another owns a pushed branch — remains unbuilt; the two
+habits above have so far been sufficient.
+
 ## Practical recommendations for sessions
 
 Until any of the above is built, sessions should:
@@ -228,6 +306,14 @@ Until any of the above is built, sessions should:
    or any structural change. The worktree itself is a cheap signal —
    `git worktree list` is one of the only places where "Session B is working
    on branch C" is visible to Session A.
+
+6. **Check the PR layer before publishing and before crying destruction.**
+   `gh pr list --state all --head <branch>` before `gh pr create`; and on
+   `No commits between main and <branch>`, verify the work landed
+   (`merge-base --is-ancestor`, then `git cherry` for squash merges, then
+   `gh pr list --state merged --head`) before concluding anything was lost.
+   See "The PR layer" section above for the incident that made both habits
+   policy.
 
 ## Open questions
 

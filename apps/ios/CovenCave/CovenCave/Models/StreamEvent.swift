@@ -6,9 +6,10 @@ enum StreamEvent {
     case session(sessionId: String)
     case user(text: String)
     case assistantChunk(text: String)
-    case progress(label: String, detail: String?, status: String?)
-    case toolUse(id: String?, name: String, input: String?, output: String?, status: String?)
-    case done(isError: Bool, sessionId: String?)
+    case assistantReplace(text: String)
+    case progress(id: String?, label: String, detail: String?, status: String?, durationMs: Int?)
+    case toolUse(id: String?, name: String, input: String?, output: String?, status: String?, durationMs: Int?)
+    case done(isError: Bool, sessionId: String?, requestedModel: String?, desiredModel: String?, forwardedModel: String?, confirmedModel: String?, modelSource: String?, modelApplicationState: String?, modelApplicationReason: String?, retryModel: String?, requestedControls: [String: String]?, forwardedControls: [String: String]?, promptGuidanceControls: [String: String]?, appliedControls: [String: String]?, rejectedControlFamilies: [String]?)
     case error(message: String)
     case unknown(kind: String)
 
@@ -26,11 +27,15 @@ enum StreamEvent {
             return .user(text: obj["text"] as? String ?? "")
         case "assistant_chunk":
             return .assistantChunk(text: obj["text"] as? String ?? "")
+        case "assistant_replace":
+            return .assistantReplace(text: obj["text"] as? String ?? "")
         case "progress":
             return .progress(
+                id: obj["id"] as? String,
                 label: obj["label"] as? String ?? "",
                 detail: obj["detail"] as? String,
-                status: obj["status"] as? String
+                status: obj["status"] as? String,
+                durationMs: obj["durationMs"] as? Int
             )
         case "tool_use":
             return .toolUse(
@@ -38,12 +43,27 @@ enum StreamEvent {
                 name: obj["name"] as? String ?? "tool",
                 input: obj["input"] as? String,
                 output: obj["output"] as? String,
-                status: obj["status"] as? String
+                status: obj["status"] as? String,
+                durationMs: obj["durationMs"] as? Int
             )
         case "done":
+            let responseMetadata = obj["responseMetadata"] as? [String: Any]
             return .done(
                 isError: obj["isError"] as? Bool ?? false,
-                sessionId: obj["sessionId"] as? String
+                sessionId: obj["sessionId"] as? String,
+                requestedModel: responseMetadata?["requestedModel"] as? String,
+                desiredModel: responseMetadata?["desiredModel"] as? String,
+                forwardedModel: responseMetadata?["forwardedModel"] as? String,
+                confirmedModel: responseMetadata?["confirmedModel"] as? String,
+                modelSource: responseMetadata?["modelSource"] as? String,
+                modelApplicationState: responseMetadata?["modelApplicationState"] as? String,
+                modelApplicationReason: responseMetadata?["modelApplicationReason"] as? String,
+                retryModel: responseMetadata?["retryModel"] as? String,
+                requestedControls: responseMetadata?["requestedControls"] as? [String: String],
+                forwardedControls: responseMetadata?["forwardedControls"] as? [String: String],
+                promptGuidanceControls: responseMetadata?["promptGuidanceControls"] as? [String: String],
+                appliedControls: responseMetadata?["appliedControls"] as? [String: String],
+                rejectedControlFamilies: responseMetadata?["rejectedControlFamilies"] as? [String]
             )
         case "error":
             return .error(message: obj["message"] as? String ?? "Unknown error")

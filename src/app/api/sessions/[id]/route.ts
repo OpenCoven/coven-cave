@@ -1,30 +1,46 @@
 import { NextResponse } from "next/server";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
+import { isValidSessionId } from "@/lib/server/session-id";
 import {
   archiveSessionLocal,
   extendSessionAutoArchiveLocal,
+  loadState,
   sacrificeSessionLocal,
   setSessionKeepLocal,
+  setSessionPinnedLocal,
   setSessionTitle,
+  setSessionTitleAutoIfOwned,
   summonSessionLocal,
 } from "@/lib/cave-config";
+import {
+  defaultChatTitleForSession,
+  MAX_CHAT_TITLE_LENGTH,
+} from "@/lib/cave-chat-titles";
 import { clampExtendDays, extendUntilIso } from "@/lib/chat-auto-archive";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
-
-/** Validate session ID: only alphanum, hyphens, colons, dots — no path traversal. */
-function isValidSessionId(id: string): boolean {
-  return /^[A-Za-z0-9:._-]{1,256}$/.test(id);
-}
 
 export const dynamic = "force-dynamic";
 
 type PatchBody = {
   /** New display title. Empty string clears the override. */
   title?: string;
+  /** Automatic title writes use atomic ownership checks; omitted means manual. */
+  titleOwnership?: "auto";
+  /** Titles the automatic caller observed as defaults before generating. */
+  autoDefaults?: string[];
+  /** When true with titleOwnership "auto", the automatic title replaces any
+   *  current title including a manually owned one. Omit for background callers. */
+  replaceManualTitle?: boolean;
+  /** Display title observed by an explicit takeover caller. */
+  observedTitle?: string;
+  /** Ownership revision observed alongside observedTitle. */
+  observedTitleRevision?: number;
   /** true → archive, false → summon (unarchive). */
   archived?: boolean;
   /** true → mark keep (never auto-archived), false → clear the mark. */
   keep?: boolean;
+  /** true → pin to the top of chat lists, false → unpin. */
+  pinned?: boolean;
   /** Push the auto-archive deadline out by N days from now (1–365). */
   extendDays?: number;
 };
@@ -57,18 +73,119 @@ export async function PATCH(
       { status: 400 },
     );
   }
+  if (
+    body.titleOwnership !== undefined &&
+    (body.titleOwnership !== "auto" || typeof body.title !== "string")
+  ) {
+    return NextResponse.json(
+      { ok: false, error: 'titleOwnership must be "auto" and include a title' },
+      { status: 400 },
+    );
+  }
+  if (
+    body.replaceManualTitle !== undefined &&
+    typeof body.replaceManualTitle !== "boolean"
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "replaceManualTitle must be a boolean" },
+      { status: 400 },
+    );
+  }
+  if (
+    body.replaceManualTitle === true &&
+    (
+      body.titleOwnership !== "auto" ||
+      typeof body.title !== "string" ||
+      typeof body.observedTitle !== "string" ||
+      !body.observedTitle.trim() ||
+      body.observedTitle.trim().length > MAX_CHAT_TITLE_LENGTH ||
+      !Number.isSafeInteger(body.observedTitleRevision) ||
+      (body.observedTitleRevision ?? -1) < 0
+    )
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          'replaceManualTitle requires titleOwnership "auto", a title, observedTitle, and observedTitleRevision',
+      },
+      { status: 400 },
+    );
+  }
 
   const result: {
     ok: true;
     title?: string | null;
+    titleUpdated?: boolean;
     archivedAt?: string | null;
     keep?: boolean;
+    pinned?: boolean;
     extendedUntil?: string;
   } = { ok: true };
 
   if (typeof body.title === "string") {
-    const next = await setSessionTitle(id, body.title);
-    result.title = next;
+    if (body.titleOwnership === "auto") {
+      if (
+        body.autoDefaults !== undefined &&
+        (
+          !Array.isArray(body.autoDefaults) ||
+          body.autoDefaults.length > 4 ||
+          body.autoDefaults.some(
+            (value) => typeof value !== "string" || value.trim().length > MAX_CHAT_TITLE_LENGTH,
+          )
+        )
+      ) {
+        return NextResponse.json(
+          { ok: false, error: "autoDefaults must contain at most 4 session titles" },
+          { status: 400 },
+        );
+      }
+      if (!body.title.trim()) {
+        return NextResponse.json(
+          { ok: false, error: "automatic title must not be empty" },
+          { status: 400 },
+        );
+      }
+
+      const state = await loadState();
+      const current = state.sessionTitles[id];
+      const observedDefaults = new Set(
+        (body.autoDefaults ?? []).map((value) => value.trim()).filter(Boolean),
+      );
+      // Never pass arbitrary client strings into the ownership gate. The
+      // canonical default is always safe; an observed title is admitted only
+      // when it still equals the server's current override (compare-and-set).
+      const safeDefaults = new Set([defaultChatTitleForSession(id)]);
+      if (current && observedDefaults.has(current)) safeDefaults.add(current);
+
+      const next = await setSessionTitleAutoIfOwned(
+        id,
+        body.title,
+        safeDefaults,
+        body.replaceManualTitle !== true,
+        body.replaceManualTitle === true ? body.observedTitleRevision : undefined,
+        body.replaceManualTitle === true ? body.observedTitle?.trim() : undefined,
+      );
+      if (body.replaceManualTitle === true && next === null) {
+        const latest = await loadState();
+        return NextResponse.json(
+          {
+            ok: false,
+            conflict: true,
+            error: "session title changed since it was observed",
+            title: latest.sessionTitles[id] ?? null,
+            titleRevision: latest.sessionTitleRevision[id] ?? 0,
+          },
+          { status: 409 },
+        );
+      }
+      result.titleUpdated = next !== null;
+      result.title = next ?? (await loadState()).sessionTitles[id] ?? null;
+    } else {
+      const next = await setSessionTitle(id, body.title);
+      result.title = next;
+      result.titleUpdated = true;
+    }
   }
 
   if (typeof body.archived === "boolean") {
@@ -84,6 +201,10 @@ export async function PATCH(
 
   if (typeof body.keep === "boolean") {
     result.keep = await setSessionKeepLocal(id, body.keep);
+  }
+
+  if (typeof body.pinned === "boolean") {
+    result.pinned = await setSessionPinnedLocal(id, body.pinned);
   }
 
   if (extendDays != null) {

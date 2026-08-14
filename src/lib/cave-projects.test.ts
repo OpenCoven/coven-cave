@@ -19,6 +19,7 @@ try {
     seedDefaultProjectsIfEmpty,
     sortProjectsAlphabetically,
   } = await import("./cave-projects.ts");
+  const { projectForPickerQuery } = await import("./cave-projects-types.ts");
   const source = await readFile(new URL("./cave-projects.ts", import.meta.url), "utf8");
 
   assert.equal(
@@ -59,6 +60,26 @@ try {
     false,
     "cleared color is removed from the record, not persisted as null",
   );
+
+  // repoUrl: same string-sets / undefined-keeps / null-clears contract as color.
+  const linked = await patchProject(created.id, { repoUrl: "https://github.com/OpenCoven/coven-cave" });
+  assert.equal(linked?.repoUrl, "https://github.com/OpenCoven/coven-cave", "string sets the GitHub link");
+  const untouchedKeepsRepo = await patchProject(created.id, { name: "New" });
+  assert.equal(untouchedKeepsRepo?.repoUrl, "https://github.com/OpenCoven/coven-cave", "untouched patch keeps the link");
+  const unlinked = await patchProject(created.id, { repoUrl: null });
+  assert.equal(unlinked?.repoUrl, undefined, "null unlinks the repository");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(unlinked ?? {}, "repoUrl"),
+    false,
+    "cleared repoUrl is removed from the record, not persisted as null",
+  );
+  const createdLinked = await createProject({
+    name: "Linked",
+    root: "/tmp/linked",
+    repoUrl: "https://github.com/OpenCoven/coven-docs",
+  });
+  assert.equal(createdLinked.repoUrl, "https://github.com/OpenCoven/coven-docs", "create persists a provided link");
+  assert.equal(await deleteProject(createdLinked.id), true);
 
   const slashHeavy = await createProject({
     name: "Slash heavy",
@@ -233,6 +254,28 @@ try {
     ["new", "solo", "z"],
     "shared project sorting deduplicates by normalized root before alphabetical order",
   );
+
+  assert.equal(
+    typeof projectForPickerQuery,
+    "function",
+    "the shared picker exposes a pure typed-query resolver",
+  );
+  const pickerProjects = [
+    { id: "partial", name: "Alpha Coven tools", root: "/work/alpha", createdAt: "", updatedAt: "" },
+    { id: "exact", name: "Coven", root: "/work/coven", createdAt: "", updatedAt: "" },
+    { id: "root", name: "Toolkit", root: "/work/coven-runtime", createdAt: "", updatedAt: "" },
+  ];
+  assert.equal(
+    projectForPickerQuery(pickerProjects, "  COVEN  ")?.id,
+    "exact",
+    "an exact project-name match wins over an alphabetically earlier partial match",
+  );
+  assert.equal(
+    projectForPickerQuery(pickerProjects, "coven-r")?.id,
+    "root",
+    "typed queries retain the picker's existing root matching",
+  );
+  assert.equal(projectForPickerQuery(pickerProjects, "   "), null, "blank input selects nothing");
 
   console.log("cave-projects.test.ts: ok");
 } finally {

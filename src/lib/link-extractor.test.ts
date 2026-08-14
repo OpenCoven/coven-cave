@@ -6,6 +6,18 @@ const CASES = [
   // happy path
   ["check https://github.com/foo/bar for context", ["https://github.com/foo/bar"]],
   ["two links: https://a.com and https://b.com", ["https://a.com/", "https://b.com/"]],
+  [
+    "comma-separated links without spaces https://a.example/one,https://b.example/two",
+    ["https://a.example/one", "https://b.example/two"],
+  ],
+  [
+    "line-separated links\nhttps://a.example/one\nhttps://b.example/two",
+    ["https://a.example/one", "https://b.example/two"],
+  ],
+  [
+    "commas that belong to one URL stay intact https://example.com/search?q=a,b",
+    ["https://example.com/search?q=a,b"],
+  ],
 
   // dedup within input
   ["https://a.com twice https://a.com", ["https://a.com/"]],

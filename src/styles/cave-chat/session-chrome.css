@@ -1,0 +1,543 @@
+/* ── Session chrome (Chat.dc.html 2a) ──────────────────────────────────────
+   The handoff's chat session reads top-down as: tab row · title row · slim
+   context row · transcript · full-width suggestion pills · composer · footer
+   band. The tab row, composer and footer band already existed; this sheet
+   carries the three pieces the redesign changed —
+
+     ② the title row wears the display serif (identity moment, DESIGN.md §4)
+     ③ the slim mono context row underneath it (new)
+     ⑤ the suggestion pills spread the full width instead of hugging their text
+
+   plus the turn typography the design specifies: serif familiar names over a
+   26px avatar, and a user turn that is a bordered card in the reading column
+   rather than a right-aligned accent bubble. */
+
+/* ── ② Title row — the one identity moment in the chat chrome ───────────── */
+
+.cave-chat-meta-line .cave-chat-title button,
+.cave-chat-meta-line .cave-chat-title-input {
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.cave-chat-meta-line .cave-chat-title button {
+  /* The serif sits optically low against the 20px avatar beside it. */
+  line-height: 1.15;
+}
+
+/* cave-quiva: name-this-chat. A presence-tinted chip leads the title row; its
+   glyph stays transparent until hover/focus so a settled header reads
+   title-first, and the title itself dims while the rename is in flight so the
+   feedback lands on the thing being changed. aria-busy + aria-disabled carry
+   the state for assistive tech, which never sees the opacity at all. */
+.cave-chat-title-spark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent-presence) 24%, transparent),
+    transparent
+  );
+  color: var(--accent-presence);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-title:hover .cave-chat-title-spark,
+.cave-chat-title-spark:focus-visible,
+.cave-chat-title-spark[data-generating="true"] {
+  opacity: 1;
+}
+
+.cave-chat-title-spark[data-generating="true"] {
+  cursor: progress;
+}
+
+/* The sparkle is itself a button inside .cave-chat-title and carries the same
+   data-generating flag, and `.cave-chat-title button[data-generating]` (0,2,1)
+   outranks the spark's own reveal (0,2,0) — so without this exclusion the
+   control dims itself the moment it starts working. Hover masks it
+   (`.cave-chat-title:hover .cave-chat-title-spark` is (0,3,0)), which is
+   exactly why a pointer-driven check misses it and a keyboard run does not. */
+.cave-chat-title button[data-generating="true"]:not(.cave-chat-title-spark) {
+  opacity: 0.35;
+}
+
+/* ── ③ Slim context row ─────────────────────────────────────────────────────
+   Machine-readable facts only, in mono, on a 30px band closed by hairlines
+   top and bottom — the design's "everything the machine decided" register. */
+
+.cave-chat-context-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-height: var(--space-8);
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--foreground) 2%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.cave-chat-context-row::-webkit-scrollbar {
+  display: none;
+}
+
+.cave-chat-context-row__chips,
+.cave-chat-context-row__stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cave-chat-context-row__chips {
+  flex: none;
+}
+
+.cave-chat-context-row__stats {
+  flex: none;
+  margin-left: auto;
+}
+
+.cave-chat-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  white-space: nowrap;
+}
+
+.cave-chat-context-chip--action {
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-context-chip--action:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+/* One tint per element, set by the model's `is-*` class and read by the glyph,
+   the dot, the value and the meter fill — so a new tint teaches one place. */
+.cave-chat-context-chip__glyph,
+.cave-chat-context-stat,
+.cave-chat-context-breakdown :where(
+  .cave-chat-context-breakdown__heading,
+  .cave-chat-context-breakdown__row,
+  .cave-chat-context-breakdown__segment
+) {
+  --ctx-tint: var(--text-muted);
+}
+
+.cave-chat-context-chip__glyph.is-accent,
+.cave-chat-context-stat.is-accent,
+.cave-chat-context-breakdown .is-accent {
+  --ctx-tint: var(--accent-presence);
+}
+
+.cave-chat-context-chip__glyph.is-success,
+.cave-chat-context-stat.is-success,
+.cave-chat-context-breakdown .is-success {
+  --ctx-tint: var(--color-success);
+}
+
+.cave-chat-context-stat.is-warning,
+.cave-chat-context-breakdown .is-warning {
+  --ctx-tint: var(--color-warning);
+}
+
+.cave-chat-context-stat.is-danger,
+.cave-chat-context-breakdown .is-danger {
+  --ctx-tint: var(--color-danger);
+}
+
+.cave-chat-context-chip__glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--ctx-tint);
+}
+
+.cave-chat-context-chip__key {
+  flex: none;
+  color: color-mix(in oklch, var(--text-muted) 70%, transparent);
+}
+
+.cave-chat-context-chip__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+/* Right cluster: what the last run cost, in the same mono register. The
+   context stat carries a 34px meter so a filling window is visible at a
+   glance without reading the number. */
+.cave-chat-context-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.cave-chat-context-stat--action {
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-context-stat--action:hover,
+.cave-chat-context-stat--action[aria-expanded="true"] {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.cave-chat-context-stat__dot,
+.cave-chat-context-stat__fill,
+.cave-chat-context-breakdown__segment {
+  background: var(--ctx-tint);
+}
+
+.cave-chat-context-stat__dot {
+  width: 4px;
+  height: 4px;
+  flex: none;
+  border-radius: var(--radius-pill);
+}
+
+.cave-chat-context-stat__key {
+  color: var(--text-secondary);
+}
+
+.cave-chat-context-stat__value {
+  color: var(--ctx-tint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cave-chat-context-stat__meter {
+  display: inline-flex;
+  width: var(--space-10);
+  height: 4px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+.cave-chat-context-stat__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+}
+
+.cave-chat-context-popover {
+  overflow: hidden;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-card);
+  background-color: var(--bg-panel);
+  background-image: linear-gradient(
+    color-mix(in oklch, var(--foreground) 6%, transparent),
+    color-mix(in oklch, var(--foreground) 6%, transparent)
+  );
+  box-shadow: var(--shadow-popover);
+}
+
+.cave-chat-context-breakdown {
+  min-width: 320px;
+  padding: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+}
+
+.cave-chat-context-breakdown__heading,
+.cave-chat-context-breakdown__row {
+  display: grid;
+  grid-template-columns: var(--space-3) minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+.cave-chat-context-breakdown__heading {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--ctx-tint);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cave-chat-context-breakdown__total {
+  color: var(--text-secondary);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cave-chat-context-breakdown__bar {
+  display: flex;
+  width: 100%;
+  height: var(--space-3);
+  margin-top: var(--space-3);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+
+.cave-chat-context-breakdown__segment {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+}
+
+.cave-chat-context-breakdown__rows {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+
+.cave-chat-context-breakdown__row {
+  min-height: var(--space-6);
+}
+
+.cave-chat-context-breakdown__label {
+  min-width: 0;
+  color: var(--text-secondary);
+  text-transform: lowercase;
+}
+
+.cave-chat-context-breakdown__value {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cave-chat-context-breakdown__note {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: right;
+}
+
+/* ── ⑤ Suggestions spread the full width ───────────────────────────────────
+   The design gives the follow-ups equal shares of ONE row of the composer's
+   measure. The typed follow-up cards that replaced the plain pills carry that
+   geometry in cave-chat/transcript.css (.cave-followup-cards__grid); the
+   in-turn .cave-next-paths chips keep their own count-keyed grammar. */
+
+/* ── Turn typography (④) ───────────────────────────────────────────────────
+   The familiar's name is the second identity moment in the surface, so it
+   takes the display serif over a 26px avatar; everything measurable in the
+   meta row stays mono. */
+
+.cave-chat-linear .cave-linear-turn--assistant .cave-linear-turn-name {
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.cave-chat-linear .cave-linear-turn-recency {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+/* The user turn is a bordered card in the reading column — same left edge as
+   the answer it precedes — rather than a right-aligned accent bubble, so a
+   long thread reads as one column of alternating voices (design 2a ④). */
+.cave-chat-linear .cave-bubble-user {
+  /* The message column is items-end (its action row is right-aligned), so the
+     card claims the left edge explicitly rather than floating right. */
+  align-self: flex-start;
+  width: 100%;
+  max-width: min(100%, 800px);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+  padding: 11px 15px;
+}
+
+/* ── New session (Chat.dc.html 2b) ─────────────────────────────────────────
+   The blank page reads eyebrow → serif hero → prompts → "Start from"
+   launcher. The eyebrow names the session in mono; the hero is the surface's
+   one identity moment; the launcher below turns existing work into one tap.
+   The launcher's groups reuse the starting page's existing section/row
+   grammar — only the band and the per-group count are new, so the redesign
+   adds structure without adding a second row vocabulary. */
+
+.cave-chat-empty-eyebrow {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.cave-chat-empty-hero {
+  margin: 10px 0 0;
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: clamp(26px, 3.4vw, 38px);
+  font-weight: 500;
+  line-height: 1.12;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.cave-chat-startfrom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.cave-chat-startfrom__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cave-chat-startfrom__rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+/* Per-group count ("3 of 12") beside the reused section label. */
+.cave-chat-startfrom__count {
+  display: inline-flex;
+  align-items: center;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+/* ── Transcript gap divider ("Chat Session - Prototype.dc.html", cave-n3jg2) ─
+   A named rule across the reading column wherever the conversation paused for
+   long enough to be a separate sitting. The transcript already revealed the
+   turn's timestamp at the same threshold; this says what that timestamp only
+   implies. Decorative by construction — the label is aria-hidden, because the
+   timestamp below it carries the same fact to a screen reader once. */
+.cave-chat-turn-gap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0;
+}
+.cave-chat-turn-gap__rule {
+  flex: 1;
+  min-width: var(--space-2);
+  height: 1px;
+  background: var(--border-hairline);
+}
+.cave-chat-turn-gap__label {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Earlier-turns fold ("Chat Session - Prototype.dc.html", cave-u5lq7) ─────
+   A long thread opens on its recent exchange; everything older sits behind one
+   pill on a rule, which reads as a seam in the conversation rather than as a
+   toolbar. Same rule + mono-uppercase vocabulary as the turn-gap divider above,
+   because both mark a discontinuity in the transcript — the difference is that
+   this one is actionable, so it is a real button with a caret. */
+.cave-chat-fold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-4);
+}
+.cave-chat-fold__rule {
+  flex: 1;
+  min-width: var(--space-2);
+  height: 1px;
+  background: var(--border-hairline);
+}
+.cave-chat-fold__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-panel) 55%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.cave-chat-fold__pill:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+/* The caret points at what the press will do: up = fold away, down = reveal.
+   Driven off the button's aria-expanded rather than a data attribute on the
+   glyph — Icon forwards only aria-* and role, so anything else is dropped and
+   the caret would sit frozen in one direction while the label changed. */
+.cave-chat-fold__caret {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.cave-chat-fold__pill[aria-expanded="false"] .cave-chat-fold__caret {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-fold__caret {
+    transition: none;
+  }
+}

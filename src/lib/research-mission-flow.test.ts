@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { compileFlowPrompt, flowExecutionOrder } from "./flow/flow-compile.ts";
 import type { ResearchMission } from "./research-missions.ts";
-import { buildResearchMissionFlow } from "./research-mission-flow.ts";
+import {
+  buildResearchMissionFlow,
+  isResearchMissionFlowSnapshot,
+} from "./research-mission-flow.ts";
 
 function mission(mode: ResearchMission["mode"] = "brief"): ResearchMission {
   return {
@@ -14,6 +17,7 @@ function mission(mode: ResearchMission["mode"] = "brief"): ResearchMission {
     mode,
     modeSource: "user",
     deliverable: mode,
+    audience: "storage architects",
     constraints: ["Prefer primary sources"],
     bounds: {
       wallClockMinutes: mode === "autoresearch" ? 240 : 90,
@@ -45,6 +49,16 @@ test("Flow order is scope, gather, challenge, synthesize, control, publish", () 
   assert.ok(flow.nodes.slice(1).every((node) => node.params.familiar === "sage"));
 });
 
+test("legacy queue recognition requires the exact Research snapshot shape", () => {
+  const flow = buildResearchMissionFlow(mission(), 1);
+  assert.equal(isResearchMissionFlowSnapshot(flow), true);
+  assert.equal(isResearchMissionFlowSnapshot({ ...flow, id: "research-themed-user-flow" }), false);
+  assert.equal(isResearchMissionFlowSnapshot({
+    ...flow,
+    nodes: flow.nodes.map((node, index) => index === 3 ? { ...node, id: "user-step" } : node),
+  }), false);
+});
+
 test("paper mode requires eight distinct sources and Markdown", () => {
   const flow = buildResearchMissionFlow(mission("paper"), 1);
   const prompt = compileFlowPrompt(flow);
@@ -52,13 +66,21 @@ test("paper mode requires eight distinct sources and Markdown", () => {
   assert.match(prompt, /artifacts\/primary\.md/);
 });
 
-test("every agent step repeats workspace and bounded stop rules", () => {
+test("the compiled flow carries one shared context while preserving every phase instruction", () => {
   const flow = buildResearchMissionFlow(mission("autoresearch"), 2);
-  for (const node of flow.nodes.slice(1)) {
-    assert.match(String(node.params.prompt), /mission-flow/);
-    assert.match(String(node.params.prompt), /iteration 2 of 6/i);
-    assert.match(String(node.params.prompt), /Do not start another iteration/i);
-  }
+  const prompt = compileFlowPrompt(flow);
+  assert.equal(prompt.match(/Intent: Compare SQLite and Postgres/g)?.length, 1);
+  assert.equal(prompt.match(/Deliverable: autoresearch/g)?.length, 1);
+  assert.equal(prompt.match(/Audience: storage architects/g)?.length, 1);
+  assert.equal(prompt.match(/Do not start another iteration/g)?.length, 1);
+  assert.match(prompt, /SHARED RESEARCH MISSION CONTEXT/);
+  assert.match(prompt, /iteration 2 of 6/i);
+  assert.match(prompt, /Define research questions, inclusion rules, exclusions/);
+  assert.match(prompt, /gather primary, local, and approved project sources/i);
+  assert.match(prompt, /try to refute weak claims/i);
+  assert.match(prompt, /update findings\.md and artifacts\/primary\.md/i);
+  assert.match(prompt, /choose continue, checkpoint, or complete/i);
+  assert.match(prompt, /Atomically finish the working files/i);
 });
 
 test("publish step preserves the exact bare-line research marker contract", () => {

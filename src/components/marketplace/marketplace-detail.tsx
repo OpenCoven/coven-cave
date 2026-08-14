@@ -68,6 +68,29 @@ function kindLabel(kind: MarketplacePlugin["kind"]) {
 }
 
 function detailDecisionItems(plugin: MarketplacePlugin) {
+  if (plugin.unlisted) {
+    return [
+      {
+        label: "Catalog",
+        icon: "ph:warning" as const,
+        value: "Details unavailable",
+        detail: "This local install record no longer has a Marketplace listing.",
+      },
+      {
+        label: "Version",
+        icon: "ph:tag" as const,
+        value: plugin.installation?.version ?? plugin.version,
+        detail: "Recorded in your local Cave configuration.",
+      },
+      {
+        label: "Source",
+        icon: "ph:folder-open" as const,
+        value: plugin.installation?.source ?? "Local",
+        detail: "No capabilities or trust claims are inferred.",
+      },
+    ];
+  }
+
   const requiredFields = plugin.requiredConfig.length;
   const capabilities = plugin.capabilities.length > 0 ? plugin.capabilities : plugin.keywords;
   const roles = [...new Set(plugin.roleAffinity.flatMap((entry) => entry.roles).filter(Boolean))];
@@ -466,7 +489,7 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
     },
     [onClose],
   );
-  const state = pluginBadgeState(plugin);
+  const state = plugin.unlisted ? "added" : pluginBadgeState(plugin);
   const decisionItems = detailDecisionItems(plugin);
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
@@ -485,7 +508,9 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-[length:var(--text-lg)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
-              <p className="truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">By {plugin.author} · {plugin.category}</p>
+              <p className="truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">
+                {plugin.unlisted ? "Installed item · Local record" : `By ${plugin.author} · ${plugin.category}`}
+              </p>
             </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
@@ -494,6 +519,11 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
         </div>
 
         {plugin.description ? <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{plugin.description}</p> : null}
+        {plugin.unlisted ? (
+          <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
+            Catalog details unavailable. This installed record is preserved from your local Cave configuration.
+          </p>
+        ) : null}
 
         <div className="marketplace-detail__decision-grid" aria-label="Install decision summary">
           {decisionItems.map((item) => (
@@ -511,10 +541,11 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
         <div className="flex flex-wrap gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)]">
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
             <Icon name={kindIcon(plugin.kind)} width={11} aria-hidden />{" "}
-            {kindLabel(plugin.kind)}
+            {plugin.unlisted ? "Installed item" : kindLabel(plugin.kind)}
           </span>
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
-            <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}
+            <Icon name={plugin.unlisted ? "ph:folder-open" : "ph:seal-check"} width={11} aria-hidden />{" "}
+            {plugin.unlisted ? "Local record" : TRUST_LABEL[plugin.trust] ?? plugin.trust}
           </span>
           {plugin.policy.authentication === "ON_INSTALL" ? (
             <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5">Auth on install</span>

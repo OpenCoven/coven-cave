@@ -15,15 +15,18 @@ import {
   categorizeLink,
   deriveLinkTitle,
   LINK_CATEGORY_ORDER,
+  MAX_LINKS_PER_SAVE,
   normalizeLinkUrl,
   type LinkCategory,
   type SavedLink,
 } from "../link-organizer.ts";
 import { caveHome } from "../coven-paths.ts";
+import { corruptAsidePath } from "./corrupt-aside.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
+export { MAX_LINKS_PER_SAVE };
+
 export const MAX_SAVED_LINKS = 500;
-export const MAX_LINKS_PER_SAVE = 50;
 
 type ResearchLinksFile = {
   version: 1;
@@ -93,8 +96,7 @@ async function loadFile(): Promise<ResearchLinksFile> {
 
 async function preserveMalformedFile(): Promise<void> {
   const source = researchLinksPath();
-  const suffix = new Date().toISOString().replace(/[^0-9]/g, "");
-  await copyFile(/* turbopackIgnore: true */ source, `${source}.corrupt-${suffix}`).catch(() => {});
+  await copyFile(/* turbopackIgnore: true */ source, corruptAsidePath(source)).catch(() => {});
 }
 
 async function saveFile(file: ResearchLinksFile): Promise<void> {

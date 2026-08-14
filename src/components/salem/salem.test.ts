@@ -96,14 +96,31 @@ const workspace = await readFile(path.join(root, "src/components/workspace.tsx")
 // The right companion rail was removed; Salem was re-homed into the
 // drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-assert.match(workspace, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem launcher must open Salem in the drag-to-split pane");
-assert.match(workspace, /import \{[\s\S]*SalemChatPanel[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
+assert.match(
+  workspace,
+  /const request = normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), "salem"\);[\s\S]*if \(request\) addSplitTarget\(request\);/,
+  "Salem launcher must open a normalized Salem page in the drag-to-split pane",
+);
+assert.match(
+  workspace,
+  /import \{[\s\S]*AskSalemView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  "workspace should lazy-load the Ask Salem page",
+);
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
-assert.match(workspace, /<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the split with the local familiar's model");
+assert.match(
+  workspace,
+  /mode === "salem" \? \(\s*<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
+  "workspace renders Ask Salem with the familiar roster and active familiar",
+);
 
 // 7. CSS classes present
-const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");
+const css = (
+  await Promise.all([
+    "src/app/globals.css",
+    "src/styles/globals/foundations.css",
+    "src/styles/globals/surface-compact-calendar.css",
+  ].map((file) => readFile(path.join(root, file), "utf8")))
+).join("\n");
 assert.doesNotMatch(css, /\.salem-perch|--salem-proximity/, "floating Salem perch CSS should stay removed");
 assert.match(css, /\.salem-panel/, "must have .salem-panel CSS");
 assert.match(css, /\.salem-panel--rail/, "must support Salem inside the right rail");

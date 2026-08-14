@@ -4,6 +4,8 @@
 // The SSE frame parser is exported pure so it can be unit-tested.
 
 import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 
 export type SketchStreamEvent = {
   kind?: string;
@@ -11,12 +13,27 @@ export type SketchStreamEvent = {
   sessionId?: string;
   isError?: boolean;
   message?: string;
+  responseMetadata?: ChatResponseMetadata;
 };
 
-/** Parse one SSE frame ("data: {...}") into its event object, or null. */
+/**
+ * Parse one SSE frame into its event object, or null.
+ *
+ * A frame is everything between blank-line separators and may carry `id:`,
+ * `event:`, and comment lines ahead of its `data:` payload — /api/chat/send
+ * frames every event as "id: N\ndata: {json}" so /api/chat/stream can resume
+ * from the last seen id. A parser that required the frame to *start with*
+ * "data:" dropped every id-carrying event, which read as "the familiar didn't
+ * return a reflection" in the journal and a blind stream everywhere else
+ * (cave-am2b). Multi-line data is joined with newlines per the SSE spec; CRLF
+ * line endings are tolerated for platform WebViews that normalize them.
+ */
 export function parseSseFrame(frame: string): SketchStreamEvent | null {
-  if (!frame.startsWith("data:")) return null;
-  const payload = frame.slice(5).trim();
+  const data: string[] = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+  }
+  const payload = data.join("\n").trim();
   if (!payload) return null;
   try {
     return JSON.parse(payload) as SketchStreamEvent;
@@ -91,7 +108,7 @@ export async function generateArtifactCode(opts: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let text = "";
+  const attentionText = createAttentionSafeTextAccumulator();
   let sessionId: string | null = opts.sessionId ?? null;
   let error: string | null = null;
 
@@ -112,8 +129,16 @@ export async function generateArtifactCode(opts: {
         if (!ev) continue;
         switch (ev.kind) {
           case "assistant_chunk":
-            text += ev.text ?? "";
-            opts.onText?.(text);
+            {
+              const visible = attentionText.append(ev.text ?? "");
+              opts.onText?.(visible);
+            }
+            break;
+          case "assistant_replace":
+            {
+              const visible = attentionText.replace(ev.text ?? "");
+              opts.onText?.(visible);
+            }
             break;
           case "session":
             sessionId = ev.sessionId ?? sessionId;
@@ -134,12 +159,14 @@ export async function generateArtifactCode(opts: {
       : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
-  const extracted = extractArtifact(text);
-  const failure = error ? "transport" : extracted ? null : "format";
+  const failed = error !== null;
+  const visible = failed ? attentionText.terminal() : attentionText.settled();
+  const extracted = extractArtifact(visible);
+  const failure = failed ? "transport" : extracted ? null : "format";
   return {
     code: extracted?.code ?? null,
     kind: extracted?.kind ?? null,
-    text,
+    text: visible,
     sessionId,
     error: error ?? (failure === "format" ? "response format could not be previewed" : null),
     failure,

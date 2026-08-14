@@ -1,19 +1,19 @@
 /* ============================================================
    Coven aesthetic tokens (Mood C — foundation, issue #14)
    ============================================================
-   Promoted from the /mockup clean-room theme so the entire app
-   inherits the same palette/radii/spacing. The mockup's
-   `.multica-theme` class still works — it now just inherits these
-   :root values.
+   The entire app inherits the same palette/radii/spacing from these
+   root values.
 
    Two vocabularies are exposed on the same palette:
-     - Mockup names: --background, --card, --muted, --border, --primary, --brand…
+     - Compatibility names: --background, --card, --muted, --border, --primary, --brand…
      - Issue #14 names: --bg-base, --bg-raised, --border-hairline, --text-*…
    Both resolve to the same colours so they stay in sync.
 
    Brand: OpenCoven lavender (#9386D0) lives at --accent-presence.
-   Reserved for familiar presence dots and the health strip — not
-   for primary CTAs.
+   Presence first (familiar dots, the health strip); solid fills are
+   allowed for at most one designated primary CTA per surface (e.g.
+   the New chat button, cave-xr5z) via the pre-audited trio
+   --accent-presence / -foreground / -hover.
 
    Palette v1.2 — Coven (default) tuned for editor density at both
    modes. Dark uses near-black panels with low chroma on surfaces;
@@ -33,6 +33,11 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.245 0.005 291);
   --popover-foreground: oklch(0.985 0 0);
+  /* Base ink for elevation shadows. Themed palettes override this (e.g.
+     claymorphism's soft gray); consumers mix it with transparency via
+     color-mix, so it must be defined here — an undefined var collapses the
+     whole color-mix and silently deletes the shadow (cave-8ppoa). */
+  --shadow-color: oklch(0 0 0);
   --primary: oklch(0.92 0.004 291);
   /* Dark ink, not tied to --card — --primary-foreground also paints text on
      --brand/--accent-presence (a mid-tone violet), which needs a genuinely
@@ -54,11 +59,18 @@
   --ring: oklch(0.55 0.075 291);
 
   /* ---- Coven brand ----
-     Lavender presence accent. Use sparingly — familiar dots,
-     status strip, the gradient AI toggle in #22. */
+     Lavender presence accent. Use sparingly — familiar dots, status
+     strip, the gradient AI toggle in #22, and at most one designated
+     solid primary CTA per surface (New chat, cave-xr5z) paired with
+     --accent-presence-foreground/-hover below. */
   --accent-presence: #9386d0;
   --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.70 0.10 293);
+  /* Hover fill for solid accent CTAs. The mix direction is per-theme: a
+     fixed direction fails AA somewhere (cave-c7hy — lightening under light
+     ink, darkening under dark ink). Light-root flips to black below;
+     themes.css re-overrides where a palette's measured direction differs. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
   --brand: var(--accent-presence);
   /* Follows the per-theme ink choice — hardcoded white failed AA on every
      palette whose accent is light (22 of 32 theme×mode combos). */
@@ -85,6 +97,13 @@
   --bg-sunken: color-mix(in oklch, var(--bg-base) 88%, black);
   --bg-elevated: oklch(0.275 0.006 291);     /* dropdowns / popovers */
   --bg-hover: oklch(0.305 0.007 291);        /* hover state */
+  /* Fixed "document page" ground for embedded light-page content — sketch
+     iframes, HTML artifact previews, canvas thumbnails, the mobile-handoff QR
+     card. These are documents/scannables, not interface surfaces, so the
+     ground is deliberately identical in both modes (cave-yxiz). */
+  --surface-paper: #ffffff;
+  --surface-paper-ink: #111;
+  --surface-paper-muted: #444;
   --border-hairline: var(--border);
   --fg-base: var(--text-primary);
   --fg-muted: var(--text-secondary);
@@ -125,6 +144,7 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
+  --space-12: 48px;
 
   /* ---- Shell pane widths ----
      Mirrors of the nav/list Panel px props in components/shell.tsx (the
@@ -180,6 +200,7 @@
      backgrounds, and badge edges; base variants are for foreground
      text and dots. */
   --color-success: oklch(0.78 0.14 158);
+  --color-success-foreground: #111111;
   --color-success-soft: oklch(0.82 0.06 158);
   --color-warning: oklch(0.83 0.13 78);
   --color-warning-soft: oklch(0.86 0.05 78);
@@ -296,6 +317,9 @@
   --card-foreground: oklch(0.18 0.008 291);
   --popover: oklch(0.97 0.005 291);
   --popover-foreground: oklch(0.18 0.008 291);
+  /* Soft graphite instead of pure black: mixed at popover strengths this
+     reads as a paper shadow rather than a smudge (cave-8ppoa). */
+  --shadow-color: oklch(0.45 0.01 291);
   --primary: oklch(0.20 0.008 291);
   --primary-foreground: oklch(0.975 0.004 291);
   --secondary: oklch(0.92 0.007 291);
@@ -309,6 +333,8 @@
   --accent-presence: #6859ac;
   --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.53 0.10 291);
+  /* Light surfaces pair light ink with a mid accent: darken on hover. */
+  --accent-presence-hover: color-mix(in oklch, var(--accent-presence) 88%, black 12%);
 
   --bg-base: var(--background);
   --bg-panel: oklch(0.99 0.004 291);
@@ -339,6 +365,7 @@
      The :root values above are tuned for dark backgrounds and read too
      pale on light. */
   --color-success: oklch(0.52 0.16 158);
+  --color-success-foreground: #ffffff;
   --color-success-soft: oklch(0.66 0.10 158);
   --color-warning: oklch(0.58 0.16 78);
   --color-warning-soft: oklch(0.72 0.10 78);

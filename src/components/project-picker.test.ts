@@ -9,12 +9,25 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./project-picker.tsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../styles/globals/surface-marketplace.css", import.meta.url), "utf8");
+// The picker's CSS moved out of surface-marketplace.css when that sheet was
+// code-split onto the Marketplace chunk (cave-ii7xi) — a shared picker used by
+// the always-loaded shell cannot ship with a mode-gated surface.
+const css = readFileSync(
+  new URL("../styles/globals/shared-pickers-and-toasts.css", import.meta.url),
+  "utf8",
+);
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
+const addMenu = readFileSync(new URL("./composer-add-menu.tsx", import.meta.url), "utf8");
+const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.meta.url), "utf8");
 
 // ── One shared add flow: register + grant in a single human-initiated step ──
 assert.match(src, /export function useAddProjectFlow\(/, "shared flow exported");
 assert.match(src, /addChatProject\(\{/, "register+grant goes through the tested helper");
+assert.match(src, /createProject\?: \(/, "the shared flow can rely on the throwing creator alone");
+assert.match(src, /createProjectOrThrow: args\.createProjectOrThrow/, "the shared flow threads the throwing creation path");
+assert.match(src, /const canAddProject = Boolean\(createProject \|\| createProjectOrThrow\)/, "a throwing-only creator still enables the shared add flow");
+assert.match(src, /onAddProject=\{canAddProject \? addFlow\.beginAddProject : undefined\}/, "the picker exposes add when only the throwing creator is available");
 assert.match(src, /shell_pick_directory/, "native folder dialog on desktop builds");
 assert.match(src, /DirectoryPickerModal/, "web fallback directory browser");
 
@@ -22,11 +35,56 @@ assert.match(src, /DirectoryPickerModal/, "web fallback directory browser");
 assert.match(src, /export function ProjectPicker\(/, "picker exported");
 assert.match(src, /onChange\(NO_PROJECT_ID\);/, "explicit No-project row");
 assert.match(src, /Add project…/, "proactive add affordance (not 403-recovery-only)");
-assert.match(src, /aria-label="Filter projects"/, "filter input for long lists");
+assert.match(src, /aria-label="Filter projects"/, "typed project-name input is always available");
+assert.doesNotMatch(
+  src,
+  /projects\.length > 6 \? \([\s\S]*?aria-label="Filter projects"/,
+  "small project lists must not hide manual name entry",
+);
+assert.match(
+  src,
+  /projectForPickerQuery\(sortedProjects, query\)/,
+  "Enter resolves through the shared exact-name-first matcher",
+);
+// Enter now goes through pick(), which records the frecency pick, calls
+// onChange and closes (cave-ow9f) — same outcome, one path shared with
+// clicking a row instead of a second inline copy.
+assert.match(
+  src,
+  /event\.key !== "Enter"[\s\S]*?event\.preventDefault\(\);[\s\S]*?pick\(match\);/,
+  "Enter selects the typed match",
+);
+assert.match(
+  src,
+  /const pick = \(project: \{ id: string; root: string \}\) => \{[\s\S]*?onChange\(project\.id\);\s*close\(\);/,
+  "and pick() is what changes the selection and closes the picker",
+);
 assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
 assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");
 assert.match(src, /sortProjectsAlphabetically\(projects\)/, "picker renders projects alphabetically");
 assert.doesNotMatch(src, /if \(!q\) return projects;/, "unfiltered picker must not expose raw API order");
+assert.match(src, /projectAccessLabel/, "picker uses the shared Read/Full access copy");
+assert.match(src, /cave-project-picker__option-access/, "every scoped project option renders access");
+assert.match(
+  src,
+  /aria-label=\{`\$\{ariaLabel\}: \$\{selectedAccessibleLabel\}`\}/,
+  "the picker trigger's accessible name includes the selected project's Read or Full access",
+);
+assert.match(
+  src,
+  /allowNoProject \? "No project" : "Choose project"/,
+  "a required picker names the missing state as Choose project, not No project",
+);
+assert.match(
+  src,
+  /value[\s\S]{0,80}\? sorted\.find\(\(project\) => project\.id === value\)[\s\S]{0,80}: defaultToFirst \? sorted\[0\] : undefined/,
+  "an explicit stale picker value resolves to no project instead of silently selecting the first",
+);
+assert.match(
+  src,
+  /defaultToFirst \? sorted\[0\] : undefined/,
+  "callers that require an explicit durable choice can keep null rendered as Choose project",
+);
 assert.match(src, /import \{ Button \}/, "picker trigger uses the shared Button primitive");
 assert.doesNotMatch(src, /<button\b/, "picker should not hand-roll button controls");
 assert.doesNotMatch(
@@ -39,8 +97,8 @@ assert.doesNotMatch(
 // The selector lets the user choose which project a new chat runs in (mirrors
 // the chat composer). The pill chains to the shared ProjectPickerPopover, so
 // selection reads the same everywhere (chat revamp 1d).
-assert.match(homeComposer, /<ComposerContextPill[\s\S]*?projectValue=\{selectedProjectId \|\| null\}/, "home composer's context pill hosts the shared project picker");
-const contextPill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
+assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{displayProjectId\}/, "home composer's context chips host the shared project picker");
+assert.match(homeComposer, /\{plusAddProject\.addError \? \(/, "home's Start a new project flow renders add failures");
 assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
 assert.match(
   contextPill,
@@ -51,24 +109,57 @@ assert.match(contextPill, /export function ComposerContextPickers\(/, "picker si
 assert.match(contextPill, /const context = useComposerContextActions\(props\);/, "the pill wrapper still builds one shared context controller");
 assert.match(
   contextPill,
-  /<ComposerContextActionRows[\s\S]*?onOpenProject=\{\(\) => setMenu\("project"\)\}/,
-  "the pill wrapper still renders the extracted project row entry point",
+  /aria-label=\{`Project: \$\{projectLabel\} — change project`\}[\s\S]*?<ProjectPickerPopover/,
+  "the project chip is a labelled control that opens the shared ProjectPickerPopover",
 );
 assert.match(
-  contextPill,
+  actionsMenu,
   /<ComposerContextPickers[\s\S]*?context=\{context\}/,
-  "the pill wrapper still threads the extracted context into the shared pickers",
+  "the actions menu still threads the shared context into the extracted pickers",
 );
 assert.match(contextPill, /<ProjectPickerPopover/, "the context pill opens the shared ProjectPickerPopover");
 assert.match(contextPill, /useAddProjectFlow\(\{/, "the context pill folds in the shared add-project flow");
+assert.match(contextPill, /const canAddProject = Boolean\(config\.createProject \|\| config\.createProjectOrThrow\)/, "composer context supports throwing-only project creation");
+assert.match(contextPill, /onAddProject=\{context\.canAddProject \? context\.addFlow\.beginAddProject : undefined\}/, "composer pickers expose the add flow for the throwing creator");
+assert.match(
+  contextPill,
+  /projectAccessLabel\(context\.selectedProject\.access\)/,
+  "the selected project chip visibly includes its effective access level",
+);
+assert.match(
+  actionsMenu,
+  /access: p\.access/,
+  "the chat actions menu preserves access metadata in its alternate project chooser",
+);
+assert.match(
+  addMenu,
+  /projectAccessLabel\(p\.access\)/,
+  "the alternate Add-to-project chooser shows Read or Full",
+);
 
 // ── Styled ──────────────────────────────────────────────────────────────────
 assert.match(css, /\.cave-project-picker__trigger/, "trigger styled");
 assert.match(css, /\.cave-project-picker__option-root/, "root subtitle styled");
+assert.match(css, /\.cave-project-picker__option-access/, "access label styled with design tokens");
 assert.match(
   css,
   /\.ui-popover\.cave-project-picker__popover \.ui-popover-item > span:not\(\.project-avatar\)/,
   "project picker grows the text column without stretching avatar badges",
 );
+
+// ── In-place registration row (spec 2026-07-24) ─────────────────────────────
+// A chat running in an ad-hoc unregistered folder offers to register THAT
+// folder — no directory re-browse — above the generic Add-project row.
+assert.match(src, /registerCurrentRoot\?: string;/, "picker takes the candidate root");
+assert.match(src, /onRegisterCurrentRoot\?: \(\) => void;/, "and the setup-open callback");
+assert.match(src, /Register this folder as a project…/, "in-place registration row");
+assert.match(src, /ph:folder-plus/, "register row carries the folder-plus icon");
+
+// cave-8e7q: selection travels as the project's generated id, never its display
+// name. Emitting the name would make presentation text a connection identifier,
+// which is what mangled names containing spaces. The behaviour of the id the
+// caller then resolves is pinned in lib/project-display-name-spaces.test.ts.
+assert.match(src, /onChange: \(id: string\) => void;/, "the picker's selection callback takes an id");
+assert.match(src, /onChange\(project\.id\);/, "picking a project emits its id, not its display name");
 
 console.log("project-picker.test.ts OK");

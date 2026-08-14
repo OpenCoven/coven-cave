@@ -37,9 +37,14 @@ const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/home/home-feed.tsx", "minute ticker for relative timestamps; no network"],
   ["components/calendar-view-primitives.tsx", "wall-clock minute ticker for the now-line; no network"],
   ["components/chat-view.tsx", "1s elapsed ticker on the streaming meta line; no network"],
+  ["components/chat-run-rail.tsx", "run-rail elapsed + session-age ticker (1s while a call runs, 60s idle); no network"],
+  ["components/coven-run-header.tsx", "1s elapsed ticker on the coven run header, mounted only while the run is active; reads the clock only, issues no request"],
+  ["components/status-bar.tsx", "1s elapsed ticker on the coven run pill, armed only while a run is genuinely live; reads the clock only, issues no request"],
   ["components/familiar-studio-projects-tab.tsx", "30s grant-undo countdown while an accepting row is visible; no network"],
   ["components/update-available.tsx", "6-hour recheck cadence; a hidden-tab skip would defer updates for days"],
   ["components/onboarding-overlay.tsx", "modal-scoped 2s install polls; only run while the overlay is open mid-setup"],
+  ["components/familiar-x-section.tsx", "attempt-scoped X OAuth completion poll; the user is necessarily in ANOTHER window authorizing, so this is the one poll that must keep running while our tab is hidden — it is bounded by the attempt deadline and cancelled on unmount"],
+  ["components/github-view.tsx", "15s re-render tick so the GitHub freshness pill's \"synced Nm ago\" ages honestly between polls; reads the clock only, issues no request"],
   ["lib/use-pausable-poll.ts", "the shared hook's own interval (it self-guards via document.hidden)"],
 ]);
 

@@ -12,9 +12,9 @@ const css = readFileSync(new URL("../styles/composer-git-chip.css", import.meta.
 const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 
 // ── The chat composer carries git context from the chat's active root ───────
-// Task 3's triggerless extraction moved branch/PR/change actions into shared
-// ComposerContextActionRows + ComposerContextPickers, with ComposerContextPill
-// staying as the wrapper that owns the anchor/menu state.
+// The 2026-07-22 split (cave-g21f) puts branch/PR/change actions on the
+// branch chip's GitBranchMenuPopover (via branchPopoverExtras);
+// ComposerContextPickers keeps the actions-menu flow on the same wiring.
 assert.match(
   chatView,
   /<ComposerActionsMenu[\s\S]*?context=\{\{[\s\S]*?projectRoot: activeProjectRoot,[\s\S]*?onOpenUrl,[\s\S]*?\}\}/,
@@ -27,7 +27,7 @@ assert.match(
   "the pill reads branch/worktree/dirty state from the shared changes-summary hook",
 );
 assert.match(pill, /const pr = useBranchPr\(root, branch\);/, "shared context actions derive the branch PR once from root + branch");
-assert.match(pill, /export function ComposerContextActionRows\(/, "branch/PR/change rows are extracted from the pill trigger");
+assert.match(pill, /function branchPopoverExtras\(context: ComposerContextController\)/, "the PR/changes rows are built once and shared by the chip and the actions-menu flow");
 assert.match(
   pill,
   /export function ComposerContextPickers\(/,
@@ -40,13 +40,24 @@ assert.match(
 );
 assert.match(
   pill,
-  /const context = useComposerContextActions\(props\);[\s\S]*?<ComposerContextActionRows[\s\S]*?<ComposerContextPickers[\s\S]*?context=\{context\}/,
-  "ComposerContextPill still wraps the extracted branch rows/pickers on the shared anchor",
+  /const context = useComposerContextActions\(props\);[\s\S]*?<GitBranchMenuPopover[\s\S]*?\{\.\.\.branchPopoverExtras\(context\)\}/,
+  "the chips mount the branch menu with the PR/changes extras on the chip anchor",
 );
 assert.match(
   pill,
   /window\.dispatchEvent\(new CustomEvent\("cave:changes-open"\)\)/,
   "the pill keeps the Git-changes drill-through",
+);
+// ── Worktree is a separate chip; branch label no longer folds it in ──────────
+assert.match(
+  pill,
+  /aria-label=\{`Worktree: \$\{context\.worktree\} — open worktree actions`\}/,
+  "the worktree chip carries its own dedicated accessible name",
+);
+assert.doesNotMatch(
+  pill,
+  /name="ph:git-branch"[\s\S]{0,400}?context\.worktree/,
+  "worktree no longer appears inside the branch chip's text content",
 );
 
 // ── Git-less chats render nothing — the chip gates on a loaded repo status ──
@@ -114,6 +125,11 @@ assert.match(
 );
 assert.match(
   chip,
+  /ariaLabel = "Switch branch"[\s\S]*?menuLabel = "Branches"[\s\S]*?<Popover[\s\S]*?ariaLabel=\{ariaLabel\}[\s\S]*?<PopoverBody role="menu" ariaLabel=\{menuLabel\}>[\s\S]*?<PopoverLabel>\{ariaLabel\}<\/PopoverLabel>/,
+  "the shared branch menu exposes overridable popover and menu labels while preserving branch defaults",
+);
+assert.match(
+  chip,
   /\/api\/changes\?projectRoot=\$\{encodeURIComponent\(root\)\}&branches=1/,
   "opening the menu lists local branches via the changes route's ?branches=1 query",
 );
@@ -124,8 +140,8 @@ assert.match(
 );
 assert.match(
   chip,
-  /closeMenu\(\);\s*\n\s*onSwitched\?\.\(\);/,
-  "a successful switch notifies the host so it can refresh immediately",
+  /closeMenu\(\);\s*\n\s*announce\(`Switched to branch \$\{name\}\.`\);\s*\n\s*onSwitched\?\.\(\);/,
+  "a successful switch announces the result and notifies the host so it can refresh immediately",
 );
 assert.match(
   chip,
@@ -134,8 +150,26 @@ assert.match(
 );
 assert.match(
   chip,
-  /disabled=\{menuBusy \|\| row\.current \|\| row\.worktree !== null\}/,
-  "branches checked out in another worktree (and the current one) are not switch targets",
+  /disabled=\{menuBusy \|\| row\.current \|\| \(row\.worktree !== null && !jumpable\)\}/,
+  "the current branch stays disabled; other-worktree branches only enable as jump targets",
+);
+// REGRESSION (cave-tmst): rows for branches living in another worktree were
+// dead ends — disabled with only a tooltip. They now open a chat rooted in
+// that worktree via the same hand-off event worktree creation uses.
+assert.match(
+  chip,
+  /const jumpable = !row\.current && row\.worktree !== null && !!row\.worktreePath;/,
+  "other-worktree rows become jump targets when the server sends the worktree path",
+);
+assert.match(
+  chip,
+  /if \(jumpable\) openWorktreeChat\(row\);\s*\n\s*else void switchBranch\(row\.name\);/,
+  "selecting a jumpable row opens a chat in that worktree instead of attempting a switch",
+);
+assert.match(
+  chip,
+  /const openWorktreeChat = [\s\S]{0,400}?new CustomEvent\("cave:agents-new-chat", \{\s*\n\s*detail: \{ projectRoot: target \}/,
+  "the worktree jump dispatches the same new-chat hand-off event as creation",
 );
 assert.match(
   chip,
@@ -149,6 +183,16 @@ assert.match(
 );
 assert.match(
   chip,
+  /announce\(\s*\n?\s*`Worktree \$\{json\.created === false \? "reused" : "created"\} for \$\{json\.branch \?\? name\} — opening a chat there\.`,/,
+  "worktree creation announces created vs reused for assistive tech (the visible UI navigates away)",
+);
+assert.match(
+  chip,
+  /usePopoverEscapeLayer\(menuOpen && creating,/,
+  "Escape in the inline new-branch form backs out to the menu instead of dismissing the popover",
+);
+assert.match(
+  chip,
   /new CustomEvent\("cave:agents-new-chat", \{\s*\n\s*detail: \{ projectRoot: json\.worktree \}/,
   "a created worktree opens as a fresh chat rooted in it (safe-merge hand-off pattern)",
 );
@@ -156,6 +200,31 @@ assert.match(
   chip,
   /onClick=\{\(event\) => \{\s*\n\s*event\.stopPropagation\(\);\s*\n\s*setMenuOpen/,
   "the branch trigger stops propagation so it never fires the chip's open-changes click",
+);
+
+// ── The branch menu carries PR + changes rows (post-hub grammar, cave-g21f) ──
+// The footer's branch chip opens this menu directly; the PR link and the
+// Git-changes drill-through that used to live in the pill's hub ride along as
+// optional footer rows so nothing regresses.
+assert.match(
+  chip,
+  /pr\?: BranchPr \| null;[\s\S]*?onOpenPr\?: \(url: string\) => void;[\s\S]*?onOpenChanges\?: \(\) => void;/,
+  "the branch menu takes optional PR/changes rows so the footer chip keeps hub parity",
+);
+assert.match(
+  chip,
+  /\{pr \|\| onOpenChanges \? <PopoverSeparator \/> : null\}/,
+  "the extra rows sit behind a separator and render only when provided",
+);
+assert.match(
+  chip,
+  /closeMenu\(\);\s*\n\s*onOpenPr\?\.\(pr\.url\);[\s\S]{0,120}?Open PR #\{pr\.number\}/,
+  "the PR row closes the menu and defers to the host's URL opener",
+);
+assert.match(
+  chip,
+  /closeMenu\(\);\s*\n\s*onOpenChanges\(\);[\s\S]{0,120}?Open Git changes/,
+  "the changes row closes the menu and fires the host's drill-through",
 );
 
 console.log("composer-git-chip.test.ts: ok");

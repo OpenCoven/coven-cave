@@ -7,6 +7,8 @@ export type FirstProjectGatePolicyInput = {
   activeFamiliarId: string | null;
   visibleFamiliars: readonly FamiliarLike[];
   registeredProjects: readonly CaveProject[];
+  /** Projects the target familiar can launch chat in, resolved server-side. */
+  accessibleProjects?: readonly CaveProject[];
   pendingGrant: PendingFirstProjectAccessSnapshot | null;
   onboardingResolved: boolean;
   onboardingOpen: boolean;
@@ -14,6 +16,7 @@ export type FirstProjectGatePolicyInput = {
   familiarsLoaded: boolean;
   familiarRosterLoadedSuccessfully: boolean;
   projectsInitiallyResolved: boolean;
+  accessibleProjectsInitiallyResolved?: boolean;
 };
 
 export type FirstProjectGatePolicy = {
@@ -33,14 +36,19 @@ export function resolveFirstProjectGatePolicy(
   input: FirstProjectGatePolicyInput,
 ): FirstProjectGatePolicy {
   const familiarId = input.pendingGrant?.familiarId
-    ?? preferredFirstProjectGateFamiliarId(input.activeFamiliarId, input.visibleFamiliars);
+    ?? input.activeFamiliarId;
+  const accessibleProjects = input.accessibleProjects ?? input.registeredProjects;
+  const accessibleProjectsInitiallyResolved = input.accessibleProjectsInitiallyResolved ?? true;
   const blockChatLaunch = input.onboardingResolved
     && !input.onboardingOpen
     && input.familiarsLoaded
     && input.familiarRosterLoadedSuccessfully
     && input.projectsInitiallyResolved
+    && accessibleProjectsInitiallyResolved
     && familiarId !== null
-    && (input.registeredProjects.length === 0 || input.pendingGrant !== null);
+    // A project somewhere in the registry is not sufficient: the active
+    // familiar still needs an effective grant before a chat can be launched.
+    && (accessibleProjects.length === 0 || input.pendingGrant !== null);
 
   return {
     open: blockChatLaunch && (input.mode === "home" || input.mode === "chat"),

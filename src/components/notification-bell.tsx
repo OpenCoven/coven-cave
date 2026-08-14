@@ -9,7 +9,7 @@ import type { Familiar } from "@/lib/types";
 import { MUTABLE_KINDS, type InboxPrefs, type MutableKind, type SoundMode } from "@/lib/inbox-prefs-shape";
 import { collapseInboxSeries, isInboxItemPastDue, isInboxItemUnread, unreadInboxCount } from "@/lib/inbox-feed";
 import { normalizeInboxTitle } from "@/lib/inbox-title";
-import { Icon } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 
@@ -320,7 +320,23 @@ export function NotificationBell({
         title={`${displayBadgeCount} unread`}
         aria-label={`Notifications, ${displayBadgeCount} unread`}
       >
-        <Icon name="ph:bell-fill" aria-hidden />
+        {/* Fill (not hue) is the second unread channel: the glyph solidifies
+            while the count chip stays border+tint, so the two read as one
+            warning-hued control with distinct treatments.
+
+            Sized with the same headerAction token as every other action glyph
+            in the mobile top bar. BOTH dimensions are deliberate: Icon defaults
+            width and height to 1em independently, so passing neither (as this
+            call previously did) leaves the glyph scaling with the inherited
+            font-size, and passing width alone still leaves height at 1em. On
+            desktop the top-chrome rule in desktop-chrome.css narrows this to
+            --icon-sm, exactly as it does for the menu-bar siblings. */}
+        <Icon
+          name={displayBadgeCount > 0 ? "ph:bell-fill" : "ph:bell"}
+          width={CAVE_ICON_SIZE.headerAction}
+          height={CAVE_ICON_SIZE.headerAction}
+          aria-hidden
+        />
 
         {displayBadgeCount > 0 ? (
           <span aria-hidden className="notification-bell__badge">

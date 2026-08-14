@@ -18,6 +18,53 @@ of the design file):
 | Studio | "Generations" | 309–533 / 877–1109 | NEW `/api/research/generations` |
 | Resources | "Resources" | 623–762 / 1111–1171 + 1294–1403 | `/api/research/links` + mission sources cross-ref |
 
+## Autoresearch loop as a Library-tab source (implemented 2026-07-26)
+
+The Library also projects Sage's durable autoresearch receipts:
+
+- `~/.coven/research/autoresearch/results.tsv` is the authoritative ledger.
+  Its tab-separated schema is
+  `timestamp\tkind\titer\tslug\tinbox_delta\tscore\tscore_delta\tverdict\tbranch\tsummary`.
+  Historical rows are preserved as written; the UI never edits or derives rows
+  back into this file.
+- `~/.coven/logs/autoloop.jsonl` is the optional per-iteration completion event
+  stream written by the `coven-autoloop` skill. Its
+  `{ts, iter, slug, score, verdict, synthesis, staged_skill}` records may
+  enrich a matching ledger receipt with document paths, but cannot create a
+  Library row.
+- `~/.coven/research/synthesis/INDEX.md` is a read-only path fallback for
+  legacy ledger rows that predate completion events.
+
+The projection contract is:
+
+```ts
+type AutoresearchRow = {
+  timestamp: string;
+  kind: string;
+  iter: number;
+  slug: string;
+  score: number | null; // 0–30 only; historical word-count fields render as —
+  verdict: "PROMOTE" | "ACCEPT" | "REJECT" | "REVISE"; // REVISE is legacy
+  branch: string;
+  summary: string;
+  synthesisPath: string | null;
+  stagedSkillPath: string | null;
+};
+```
+
+The collapsed `Autoresearch iterations` region renders above mission artifacts,
+newest first, with iter, date, synthesis, score, verdict, and staged-skill
+columns. `PROMOTE` derives its fill and border from `--color-success`;
+`REJECT` and legacy `REVISE` derive theirs from `--color-warning`; `ACCEPT`
+uses the neutral surface tokens. Synthesis and staged-skill Markdown open in a
+focus-trapped in-app reader.
+
+The browser receives bounded snapshots from a local-origin-only SSE route.
+Server-side `fs.watch` invalidates the three source locations; no data polling
+or mtime loop is used. Document reads resolve real paths and remain contained
+under `~/.coven/research/synthesis` or `~/.coven/research/skills`, including
+symlink checks and file-size bounds. The integration is read-only end to end.
+
 Component files (one owner each — do not edit files you don't own):
 
 - `src/components/role-surfaces/researcher-surface.tsx` — tab host (Phase A)
@@ -131,10 +178,12 @@ the desk's existing `@container` breakpoints (900/760/560).
 New store + API, modeled on research links/missions patterns:
 
 - `src/lib/research-generations.ts` — types + pure helpers + client fetchers.
-  `ResearchGeneration = { id, familiarId, kind, sourceMissionId, sourceTitle,
-  directions?, status: "ready" | "failed" | "cancelled", createdAt, updatedAt,
-  content, error? }` with kinds `diagram | blog | slides | infographic |
-  thread`. Content is **extractive**: drafted server-side from the source
+  `ResearchGeneration` v2 covers extractive kinds `diagram | blog | slides |
+  infographic | thread` and media kinds `podcast | short-video | long-video`.
+  Extractive rows are terminal; media rows use explicit `draft | queued |
+  rendering | ready | failed | cancelled` state, frozen render configuration,
+  and persisted stage/chapter progress. Content is **extractive**: drafted
+  server-side from the source
   mission's published/working artifact markdown —
   - blog → the artifact markdown itself as an editable draft copy
   - slides → outline from headings + bullets
@@ -143,23 +192,28 @@ New store + API, modeled on research links/missions patterns:
     section headings (structural, not invented)
   - infographic → numbers extracted from the artifact with their line context
   If the mission has no artifact yet, creation fails with a clear error.
-- Podcast / short video / long video cards render per the design but disabled
-  with an honest "needs a media pipeline — not available yet" hint; file a
-  follow-up bead. Do NOT create queued records that can never complete.
+- Podcast / short video / long video cards follow the async media contract:
+  each card is enabled only when its selected local or ElevenLabs voice and,
+  for video, ffmpeg/ffprobe prerequisites are ready. Media creation freezes
+  provider, voice, and a bounded length preset on a reviewable script,
+  storyboard, or chapter draft, then queues a persistent single-flight render
+  only after explicit approval. Kept drafts reopen, retries return to review,
+  and long video reports real chapter progress. Do NOT create queued records
+  that cannot complete.
 - `src/lib/server/research-generations.ts` — JSON store under
-  `~/.coven/research-generations/<familiarId>.json` (follow `research-links.ts`
+  `~/.coven/cave/research-generations/<familiarId>.json` (follow `research-links.ts`
   patterns incl. path safety), drafting functions reading mission artifacts via
   `research-mission-store`.
 - Routes: `/api/research/generations` GET (list by familiarId), POST (create =
   draft synchronously), DELETE (remove). Add to `api-contracts.test.ts`
   (alphabetical: `generations` sorts before `links` — verify ordering rule in
   that file). localOriginGuard like siblings.
-- Viewer modal per design: slides deck w/ thumb strip, diagram preview
-  (render mermaid source as the design's simple boxes is NOT required — show
-  the mermaid code block + copy, plus the design's pending state), blog →
-  inline editable draft + "Open in Markdown editor" modal (rich/source toggle;
-  saving writes the draft back to the generation record), points list w/ copy
-  per row for threads. Copy buttons flash ✓ like the design.
+- Viewer modal per design: slides deck w/ thumb strip, diagram preview through
+  the shared Mermaid renderer plus inspectable source, blog → Markdown editor
+  modal with rich/source modes, and points list with per-row copy for threads.
+  Until generation update persistence lands, the editor honestly offers
+  `Copy updated draft` rather than claiming it saved. Copy buttons flash ✓ like
+  the design.
 
 ## Testing / gates
 

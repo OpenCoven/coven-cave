@@ -1,17 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
-import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
@@ -22,26 +20,28 @@ import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   ACTIVITY_DAYS,
-  buildFamiliarCardStats,
+  type CanonicalMemoryAvailability,
   type FamiliarCardStats,
-  type CovenMemoryEntry,
 } from "@/components/familiars-view-stats";
 import { deriveRenown } from "@/lib/familiar-renown";
 import { compactCount } from "@/lib/profile-card";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 import { useSurfacePreference } from "@/lib/surface-preferences";
+import { useDetailOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 
-export function emptyStats(): FamiliarCardStats {
+export function emptyStats(
+  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+): FamiliarCardStats {
   return {
     memoryCount: 0,
+    memoryAvailability,
     latestMemory: null,
     lastSessionAt: null,
     sessionsTotal: 0,
@@ -106,9 +106,12 @@ export function FamiliarRosterCard({
   // memories), never a synthetic counter. Tier reads as quiet metadata in the
   // microlabel voice; the tooltip carries the score and the next rung.
   const renown = deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount });
-  const renownTitle = renown.next
-    ? `${renown.score} renown · ${renown.next.remaining} to ${renown.next.tier.label}`
-    : `${renown.score} renown · top of the ladder`;
+  const renownAvailable = stats.memoryAvailability === "ready";
+  const renownTitle = renownAvailable
+    ? renown.next
+      ? `${renown.score} renown · ${renown.next.remaining} to ${renown.next.tier.label}`
+      : `${renown.score} renown · top of the ladder`
+    : "Renown unavailable";
   const streakTitle =
     stats.streakDays > 0
       ? `${stats.streakDays} consecutive day${stats.streakDays === 1 ? "" : "s"} with sessions`
@@ -139,7 +142,7 @@ export function FamiliarRosterCard({
               <span className="truncate">{familiar.role || familiar.harness || familiar.id}</span>
               <span aria-hidden="true">·</span>
               <span className="shrink-0 text-[var(--text-secondary)]" title={renownTitle}>
-                {renown.tier.label}
+                {renownAvailable ? renown.tier.label : "—"}
               </span>
             </span>
           </span>
@@ -178,7 +181,11 @@ export function FamiliarRosterCard({
           </span>
           <span className="familiars-view__stat">
             <span className="familiars-view__stat-label">memories</span>
-            <span className="familiars-view__stat-value">{compactCount(stats.memoryCount)}</span>
+            <span className="familiars-view__stat-value">
+              {stats.memoryAvailability === "ready"
+                ? compactCount(stats.memoryCount)
+                : "—"}
+            </span>
           </span>
           <span className="familiars-view__stat" title={streakTitle}>
             <span className="familiars-view__stat-label">streak</span>
@@ -263,11 +270,23 @@ type AgentMemoryOverlayProps = {
   familiars: ResolvedFamiliar[];
   familiar: ResolvedFamiliar;
   memoryFeed: MemoryFeed;
+  localDaemonReady: boolean;
+  pendingCanonicalMemorySelection?: PendingCanonicalMemorySelection | null;
+  onCanonicalMemorySelectionApplied?: (id: string) => void;
   onClose: () => void;
   onOpenMemoryFile: (path: string) => void;
 };
 
-export function FamiliarMemoryOverlay({ familiars, familiar, memoryFeed, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
+export function FamiliarMemoryOverlay({
+  familiars,
+  familiar,
+  memoryFeed,
+  localDaemonReady,
+  pendingCanonicalMemorySelection,
+  onCanonicalMemorySelectionApplied,
+  onClose,
+  onOpenMemoryFile,
+}: AgentMemoryOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Trap focus inside the panel + Escape-to-close + restore focus to the opener.
   useFocusTrap(true, panelRef, { onEscape: onClose });
@@ -300,6 +319,9 @@ export function FamiliarMemoryOverlay({ familiars, familiar, memoryFeed, onClose
           activeFamiliar={familiar}
           lockToFamiliar
           feed={memoryFeed}
+          localDaemonReady={localDaemonReady}
+          pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
+          onCanonicalMemorySelectionApplied={onCanonicalMemorySelectionApplied}
           onOpenMemoryFile={onOpenMemoryFile}
         />
       </div>
@@ -384,6 +406,7 @@ type AgentDetailPanelProps = {
   memoryError: string | null;
   memoryLoaded: boolean;
   memoryFeed: MemoryFeed;
+  localDaemonReady: boolean;
   onClose: () => void;
   onPreview: () => void;
   onStartChat: () => void;
@@ -395,9 +418,9 @@ type AgentDetailPanelProps = {
 };
 
 // Per-familiar overflow menu on the detail panel header. Remove routes to the
-// Studio lifecycle tab rather than confirming here — the destructive flow
+// Studio identity tab rather than confirming here — the destructive flow
 // (confirm copy, undo toast, tombstone coupling) lives only in
-// familiar-studio-lifecycle-tab.tsx, and this menu is the discoverable
+// familiar-lifecycle-section.tsx, and this menu is the discoverable
 // entry point the Familiars surface lacked.
 function FamiliarPanelMenu({ familiar }: { familiar: ResolvedFamiliar }) {
   const { openFamiliarStudio } = useFamiliarStudio();
@@ -441,7 +464,7 @@ function FamiliarPanelMenu({ familiar }: { familiar: ResolvedFamiliar }) {
             danger
             onSelect={() => {
               setOpen(false);
-              openFamiliarStudio(familiar.id, "lifecycle");
+              openFamiliarStudio(familiar.id, "identity");
             }}
           >
             Remove familiar…
@@ -460,6 +483,7 @@ export function FamiliarDetailPanel({
   memoryError,
   memoryLoaded,
   memoryFeed,
+  localDaemonReady,
   onClose,
   onPreview,
   onStartChat,
@@ -469,8 +493,21 @@ export function FamiliarDetailPanel({
   onOpenUrl,
 }: AgentDetailPanelProps) {
   const [tab, setTab] = useSurfacePreference(surfacePreferenceSpecs.familiars.detailTab);
+  // Memory / Daily Notes / Files / Sessions / Feed are destinations inside the
+  // familiar detail, not a view toggle.
+  const selectTab = useTrackedSurfaceValue({
+    id: "familiars:detail-tab",
+    value: tab,
+    onRestore: setTab,
+  });
   // Session trace overlay — the daemon event timeline behind one session.
   const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
+  // Back closes the trace overlay before it leaves the section.
+  const { openDetail: openTrace, closeDetail: closeTrace } = useDetailOverlayHistory<TraceTarget>({
+    id: "overlay:session-trace",
+    value: traceTarget,
+    setValue: setTraceTarget,
+  });
   const familiarSessions = useMemo(
     () =>
       sessions
@@ -543,7 +580,7 @@ export function FamiliarDetailPanel({
       <Tabs
         items={DETAIL_TABS}
         value={tab}
-        onChange={setTab}
+        onChange={selectTab}
         ariaLabel="Familiar details"
         idPrefix="familiar-detail"
         className="shrink-0 px-3"
@@ -561,6 +598,7 @@ export function FamiliarDetailPanel({
             activeFamiliar={familiar}
             lockToFamiliar
             feed={memoryFeed}
+            localDaemonReady={localDaemonReady}
             onOpenMemoryFile={onOpenMemoryFile}
           />
         ) : tab === "daily-notes" ? (
@@ -630,7 +668,7 @@ export function FamiliarDetailPanel({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setTraceTarget({ id: s.id, title: s.title })}
+                      onClick={() => openTrace({ id: s.id, title: s.title })}
                       className="focus-ring-inset flex shrink-0 items-center gap-1 border-l border-[var(--border-hairline)] px-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                       title="Trace this session's daemon events"
                       aria-label={`Trace ${s.title || s.id}`}
@@ -647,7 +685,7 @@ export function FamiliarDetailPanel({
       </div>
 
       {traceTarget ? (
-        <SessionTraceOverlay target={traceTarget} onClose={() => setTraceTarget(null)} />
+        <SessionTraceOverlay target={traceTarget} onClose={closeTrace} />
       ) : null}
     </section>
   );

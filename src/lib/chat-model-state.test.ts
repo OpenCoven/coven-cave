@@ -19,6 +19,11 @@ const base = {
 
 assert.equal(cleanModelId("  anthropic/claude-opus-4-7  "), "anthropic/claude-opus-4-7");
 assert.equal(cleanModelId("openai/gpt-5.5"), "openai/gpt-5.5");
+assert.equal(
+  cleanModelId("openrouter/~anthropic/claude-opus-latest"),
+  "openrouter/~anthropic/claude-opus-latest",
+  "OpenCode provider aliases with a tilde-prefixed path segment remain selectable",
+);
 assert.equal(cleanModelId(""), null);
 assert.equal(cleanModelId("bad model with spaces"), null);
 assert.equal(cleanModelId("../escape"), null);
@@ -37,9 +42,20 @@ assert.deepEqual(resolveChatModelState({ ...base }), {
   runtime: "local:/tmp/coven-cave",
   effectiveModel: "anthropic/claude-sonnet-4-6",
   source: "familiar-default",
+  familiarDefaultModel: "anthropic/claude-sonnet-4-6",
   applicationState: "saved",
   reason: "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.",
 });
+
+const clearedFamiliarDefault = resolveChatModelState({ ...base, familiarModel: "" });
+assert.equal(clearedFamiliarDefault.effectiveModel, "");
+assert.equal(clearedFamiliarDefault.source, "runtime-default");
+assert.equal(clearedFamiliarDefault.familiarDefaultModel, null);
+assert.equal(
+  clearedFamiliarDefault.reason,
+  "Using the runtime's configured default model.",
+  "an explicitly cleared familiar model remains durable runtime-default intent",
+);
 
 assert.equal(
   resolveChatModelState({ ...base, sessionModel: "anthropic/claude-opus-4-7" }).source,
@@ -58,7 +74,45 @@ assert.equal(
   }).source,
   "next-message",
 );
+assert.deepEqual(
+  resolveChatModelState({
+    ...base,
+    sessionModel: "anthropic/claude-opus-4-7",
+    nextMessageModel: "",
+  }),
+  {
+    familiarId: "salem",
+    harness: "claude",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "runtime-default",
+    familiarDefaultModel: "anthropic/claude-sonnet-4-6",
+    applicationState: "saved",
+    reason: "Using the runtime's configured default model for this message.",
+  },
+  "a one-turn Runtime-default sentinel overrides the saved session model without deleting it",
+);
 assert.equal(resolveChatModelState({ ...base, familiarModel: null }).source, "global-default");
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "hermes",
+    harness: "hermes",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: null,
+  }),
+  {
+    familiarId: "hermes",
+    harness: "hermes",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "runtime-default",
+    familiarDefaultModel: null,
+    applicationState: "saved",
+    reason: "Using the runtime's configured default model.",
+  },
+  "a fallback Hermes inventory must not become an implicit launch override",
+);
 assert.deepEqual(
   resolveChatModelState({
     familiarId: "local-openclaw",
@@ -71,12 +125,13 @@ assert.deepEqual(
     familiarId: "local-openclaw",
     harness: "openclaw",
     runtime: "local:/tmp/coven-cave",
-    effectiveModel: "openai/gpt-5.5",
-    source: "global-default",
+    effectiveModel: "",
+    source: "runtime-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
-    reason: "Inherited from Cave defaults.",
+    reason: "Using the runtime's configured default model.",
   },
-  "legacy synthetic runtime-local placeholders should not become the effective model",
+  "legacy synthetic runtime-local placeholders should defer to the runtime default",
 );
 assert.deepEqual(
   resolveChatModelState({
@@ -92,10 +147,106 @@ assert.deepEqual(
     runtime: "local:/tmp/coven-cave",
     effectiveModel: "openai/gpt-5.6-sol",
     source: "global-default",
+    familiarDefaultModel: null,
     applicationState: "saved",
     reason: "Inherited from Cave defaults.",
   },
   "stale synthetic defaults should fall back to a real global model instead of being forwarded",
+);
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: null,
+  }),
+  {
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "runtime-default",
+    familiarDefaultModel: null,
+    applicationState: "saved",
+    reason: "Using the runtime's configured default model.",
+  },
+  "an unconfigured Grok familiar must defer to Grok Build's configured default",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "xai/grok-code-fast-1",
+    familiarModel: null,
+  }).effectiveModel,
+  "",
+  "a Cave-wide fallback does not become an implicit Grok launch override",
+);
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "anthropic/claude-opus-4-8",
+    sessionModel: "github/gpt-5.6-sol",
+    nextMessageModel: "openai/gpt-5.5",
+  }),
+  {
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "runtime-default",
+    familiarDefaultModel: null,
+    applicationState: "saved",
+    reason: "Using the runtime's configured default model.",
+  },
+  "stale models from a prior runtime must not be forwarded after switching a familiar to Grok",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "xai/grok-code-fast-1",
+  }).effectiveModel,
+  "xai/grok-code-fast-1",
+  "an explicitly configured familiar Grok model remains selectable",
+);
+assert.equal(
+  resolveChatModelState({
+    familiarId: "grok-nova",
+    harness: "grok",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: "my-model",
+  }).effectiveModel,
+  "my-model",
+  "unqualified custom Grok model ids must not be mistaken for stale Cave provider models",
+);
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "nova",
+    harness: "opencode",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.6-sol",
+    familiarModel: null,
+  }),
+  {
+    familiarId: "nova",
+    harness: "opencode",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "",
+    source: "runtime-default",
+    familiarDefaultModel: null,
+    applicationState: "saved",
+    reason: "Using the runtime's configured default model.",
+  },
+  "OpenCode must defer an unconfigured familiar to its authenticated CLI default",
 );
 assert.equal(
   resolveChatModelState({ ...base, lastResponseModel: "anthropic/claude-haiku-4-5" })
@@ -194,3 +345,48 @@ assert.deepEqual(
 }
 
 console.log("chat-model-state.test.ts: ok");
+
+// cave-pkapw: `source` reports which scope WON, not that the scopes differ.
+// A session intent that merely restates the familiar default still resolves to
+// source "session", so "is this promotable to the familiar default?" cannot be
+// answered from `source` alone — hence `familiarDefaultModel` on the state.
+{
+  const sameAsDefault = resolveChatModelState({
+    ...base,
+    sessionModel: "anthropic/claude-sonnet-4-6",
+  });
+  assert.equal(
+    sameAsDefault.source,
+    "session",
+    "a session intent equal to the familiar default STILL reports source 'session'",
+  );
+  assert.equal(
+    sameAsDefault.effectiveModel,
+    sameAsDefault.familiarDefaultModel,
+    "…so the two compare equal, which is the only signal that promotion is a no-op",
+  );
+
+  const differs = resolveChatModelState({
+    ...base,
+    sessionModel: "anthropic/claude-opus-4-7",
+  });
+  assert.equal(differs.source, "session");
+  assert.notEqual(
+    differs.effectiveModel,
+    differs.familiarDefaultModel,
+    "a genuinely diverged session model is the only case worth offering to promote",
+  );
+
+  // After promotion the familiar default becomes the session's model while the
+  // session intent survives — the exact state that left the row stuck on screen.
+  const afterPromotion = resolveChatModelState({
+    ...base,
+    familiarModel: "anthropic/claude-opus-4-7",
+    sessionModel: "anthropic/claude-opus-4-7",
+  });
+  assert.equal(
+    afterPromotion.effectiveModel,
+    afterPromotion.familiarDefaultModel,
+    "promotion collapses the difference, so the promote row hides on refresh",
+  );
+}

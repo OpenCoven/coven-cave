@@ -32,6 +32,47 @@ test("parseBranchPr rejects junk", () => {
   assert.equal(parseBranchPr(JSON.stringify({ url: "https://github.com/o/r/pull/1" }), "b"), null);
 });
 
+test("parseBranchPr accepts the REST list shape (html_url + draft, head-filtered)", () => {
+  const restList = JSON.stringify([
+    {
+      number: 42,
+      html_url: "https://github.com/OpenCoven/coven-cave/pull/42",
+      state: "open",
+      draft: true,
+    },
+  ]);
+  const pr = parseBranchPr(restList, "feat/x");
+  assert.deepEqual(pr, {
+    repo: "OpenCoven/coven-cave",
+    number: 42,
+    url: "https://github.com/OpenCoven/coven-cave/pull/42",
+    state: "open",
+    branch: "feat/x",
+    draft: true,
+  });
+});
+
+test("parseBranchPr accepts a single REST object (URL-keyed lookup)", () => {
+  const restOne = JSON.stringify({
+    number: 7,
+    html_url: "https://github.com/o/r/pull/7",
+    state: "CLOSED",
+    draft: false,
+  });
+  const pr = parseBranchPr(restOne);
+  assert.deepEqual(pr, {
+    repo: "o/r",
+    number: 7,
+    url: "https://github.com/o/r/pull/7",
+    state: "closed",
+    draft: false,
+  });
+});
+
+test("parseBranchPr returns null for an empty REST list (no PR for branch)", () => {
+  assert.equal(parseBranchPr("[]", "main"), null);
+});
+
 test("first read misses but schedules a background fetch; next read serves it", async () => {
   let calls = 0;
   const cache = createBranchPrCache({

@@ -70,7 +70,7 @@ function validCraft(overrides = {}) {
           id: "open-a-research-space",
           name: "Open a research space",
           description: "Generate and rank bounded research directions.",
-          body: "Explore {{topic}} with divergent and convergent research lenses.",
+          body: "Explore {{topic}} with divergent and convergent research lenses.\r\nUse evidence to rank the candidates.",
         },
       ],
       workflows: [
@@ -154,6 +154,10 @@ function runSync(fixture, extraArgs = []) {
   );
 }
 
+function normalizePathDiagnostics(text) {
+  return text.replaceAll("\\", "/");
+}
+
 function generatedDigest(root) {
   const out = [];
   function walk(dir) {
@@ -184,6 +188,15 @@ function expectRejected(catalog, pattern, sourcePaths = true) {
 
 const fixture = writeFixture(fixtureCatalog());
 try {
+  const binarySource = path.join(
+    fixture.marketplace,
+    "craft-sources",
+    "seekers-lens",
+    "brainstorming-research-ideas",
+    "fixture.bin",
+  );
+  const binaryPayload = Buffer.from([0x00, 0x0d, 0x0a, 0x41]);
+  writeFileSync(binarySource, binaryPayload);
   const first = runSync(fixture);
   assert.equal(first.status, 0, first.stderr);
 
@@ -200,7 +213,13 @@ try {
   for (const skill of ["brainstorming-research-ideas", "creative-thinking-for-research"]) {
     assert.match(readFileSync(path.join(pluginRoot, "skills", skill, "SKILL.md"), "utf8"), new RegExp(`name: ${skill}`));
   }
-  assert.match(readFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"), "utf8"), /Open a research space/);
+  const generatedPrompt = readFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"));
+  assert.match(generatedPrompt.toString("utf8"), /Open a research space/);
+  assert.ok(
+    generatedPrompt.includes(Buffer.from("\nUse evidence to rank the candidates.")),
+    "CRLF prompt bodies are emitted with LF",
+  );
+  assert.equal(generatedPrompt.includes(Buffer.from("\r\n")), false, "generated prompt content uses LF");
   assert.deepEqual(
     JSON.parse(readFileSync(path.join(pluginRoot, "workflows", "diverge-converge-refine.json"), "utf8")).steps,
     ["Generate candidate directions", "Rank with evidence", "Define a pilot"],
@@ -230,10 +249,34 @@ try {
   assert.equal(second.status, 0, second.stderr);
   assert.deepEqual(generatedDigest(fixture.marketplace), before, "generation should be deterministic");
 
+  const crlfMarketplace = path.join(fixture.marketplace, "marketplace.json");
+  writeFileSync(
+    crlfMarketplace,
+    readFileSync(crlfMarketplace, "utf8").replaceAll("\r\n", "\n").replaceAll("\n", "\r\n"),
+  );
+  const lineEndingCheck = runSync(fixture, ["--check"]);
+  assert.equal(lineEndingCheck.status, 0, lineEndingCheck.stderr);
+
+  const binaryOutput = path.join(pluginRoot, "skills", "brainstorming-research-ideas", "fixture.bin");
+  assert.deepEqual(readFileSync(binaryOutput), binaryPayload, "bundled byte assets are copied exactly");
+  writeFileSync(binaryOutput, Buffer.from([0x00, 0x0a, 0x41]));
+  const binaryDrift = runSync(fixture, ["--check"]);
+  assert.notEqual(binaryDrift.status, 0);
+  assert.match(
+    normalizePathDiagnostics(binaryDrift.stderr),
+    /stale marketplace\/plugins\/seekers-lens\/skills\/brainstorming-research-ideas\/fixture\.bin/,
+  );
+  const repairedBinary = runSync(fixture);
+  assert.equal(repairedBinary.status, 0, repairedBinary.stderr);
+  assert.deepEqual(readFileSync(binaryOutput), binaryPayload, "sync restores bundled byte assets exactly");
+
   writeFileSync(path.join(pluginRoot, "prompts", "open-a-research-space.md"), "stale\n");
   const stale = runSync(fixture, ["--check"]);
   assert.notEqual(stale.status, 0);
-  assert.match(stale.stderr, /stale marketplace\/plugins\/seekers-lens\/prompts\/open-a-research-space\.md/);
+  assert.match(
+    normalizePathDiagnostics(stale.stderr),
+    /stale marketplace\/plugins\/seekers-lens\/prompts\/open-a-research-space\.md/,
+  );
   const repaired = runSync(fixture);
   assert.equal(repaired.status, 0, repaired.stderr);
 
@@ -241,7 +284,10 @@ try {
   writeFileSync(orphan, "this resource is no longer declared\n");
   const orphaned = runSync(fixture, ["--check"]);
   assert.notEqual(orphaned.status, 0);
-  assert.match(orphaned.stderr, /unexpected marketplace\/plugins\/seekers-lens\/prompts\/removed-resource\.md/);
+  assert.match(
+    normalizePathDiagnostics(orphaned.stderr),
+    /unexpected marketplace\/plugins\/seekers-lens\/prompts\/removed-resource\.md/,
+  );
   const cleaned = runSync(fixture);
   assert.equal(cleaned.status, 0, cleaned.stderr);
   assert.equal(existsSync(orphan), false, "sync removes undeclared files from fully managed Craft packages");
@@ -278,10 +324,19 @@ try {
   const target = path.join(craftSymlinkFixture.marketplace, "outside-secret.md");
   writeFileSync(target, "outside\n");
   const skillRoot = path.join(craftSymlinkFixture.marketplace, "craft-sources", "seekers-lens", "brainstorming-research-ideas");
-  symlinkSync(target, path.join(skillRoot, "leak.md"));
-  const result = runSync(craftSymlinkFixture);
-  assert.notEqual(result.status, 0, "craft symlink source should be rejected");
-  assert.match(result.stderr, /craft skill source contains a symlink/i);
+  try {
+    symlinkSync(target, path.join(skillRoot, "leak.md"));
+    const result = runSync(craftSymlinkFixture);
+    assert.notEqual(result.status, 0, "craft symlink source should be rejected");
+    assert.match(result.stderr, /craft skill source contains a symlink/i);
+  } catch (error) {
+    // Windows developer-mode / elevation policy can forbid ordinary users from
+    // creating symlinks. The generator's rejection path runs on platforms that
+    // support the fixture; do not turn an unavailable OS capability into a
+    // false test failure on native Windows.
+    if (error?.code !== "EPERM") throw error;
+    console.log("sync-marketplace: skipped symlink fixture (Windows policy)");
+  }
 } finally {
   rmSync(craftSymlinkFixture.dir, { recursive: true, force: true });
 }
@@ -299,6 +354,109 @@ expectRejected(fixtureCatalog(nested, [nestedComponent]), /nested Craft componen
 // slice, publicly browsable and installable alongside the other six
 // audited research Crafts.
 const productionCatalog = JSON.parse(readFileSync(path.join(ROOT, "marketplace", "catalog.json"), "utf8"));
+const productionThreadLab = productionCatalog.plugins.find((plugin) => plugin.name === "tweet-thread-lab");
+assert.ok(productionThreadLab, "the production catalog includes Tweet Thread Lab");
+assert.equal(productionThreadLab.displayName, "Tweet Thread Lab");
+assert.equal(productionThreadLab.trust, "official-local");
+assert.deepEqual(productionThreadLab.capabilities, ["read_files", "write_files", "network"]);
+assert.equal(productionThreadLab.skill.managed, "manual");
+
+const productionThreadLabRoot = path.join(ROOT, "marketplace", "plugins", "tweet-thread-lab");
+const threadLabManifest = JSON.parse(readFileSync(path.join(productionThreadLabRoot, "plugin.json"), "utf8"));
+const threadLabCodexManifest = JSON.parse(
+  readFileSync(path.join(productionThreadLabRoot, ".codex-plugin", "plugin.json"), "utf8"),
+);
+assert.equal(threadLabManifest.name, "tweet-thread-lab");
+assert.deepEqual(threadLabManifest.capabilities, ["read_files", "write_files", "network"]);
+assert.equal(threadLabManifest.skills, "./skills/");
+assert.equal(threadLabCodexManifest.name, "tweet-thread-lab");
+assert.equal(threadLabCodexManifest.skills, "./skills/");
+
+const productionMemoryRoot = path.join(ROOT, "marketplace", "plugins", "coven-memory");
+const memoryManifest = JSON.parse(readFileSync(path.join(productionMemoryRoot, "plugin.json"), "utf8"));
+const memoryCodexManifest = JSON.parse(
+  readFileSync(path.join(productionMemoryRoot, ".codex-plugin", "plugin.json"), "utf8"),
+);
+assert.equal(memoryManifest.name, "coven-memory");
+assert.equal(memoryManifest.skills, "./skills/");
+assert.equal(memoryCodexManifest.skills, "./skills/");
+
+const threadLabSkillRoot = path.join(productionThreadLabRoot, "skills", "tweet-thread-lab");
+const threadLabSkill = readFileSync(path.join(threadLabSkillRoot, "SKILL.md"), "utf8");
+const threadLabProtocol = readFileSync(path.join(threadLabSkillRoot, "references", "protocol.md"), "utf8");
+const threadLabRubric = readFileSync(path.join(threadLabSkillRoot, "references", "rubric.md"), "utf8");
+assert.match(threadLabSkill, /^## When to use$/m);
+assert.match(threadLabSkill, /^## Inputs$/m);
+assert.match(threadLabSkill, /^## Steps$/m);
+assert.match(threadLabSkill, /^## Hard gates$/m);
+assert.match(threadLabSkill, /^## Artifacts$/m);
+assert.match(threadLabSkill, /^## Verification$/m);
+assert.match(
+  threadLabSkill,
+  /node "<validatorPath>" validate <candidate\.json> \[brief\.json\]/i,
+);
+assert.match(threadLabSkill, /materialize the canonical validation record before the manifest or approval/i);
+assert.match(threadLabSkill, /only after the bundled command succeeds may `cave\.output` record/i);
+assert.match(threadLabSkill, /loaded `SKILL\.md`.*installed.*validatorPath/i);
+assert.match(threadLabSkill, /`tooling\.json`/i);
+assert.match(
+  threadLabProtocol,
+  /"validatorPath": "\/absolute\/installed\/.+\/tweet-thread-lab\/bin\/tweet-thread-validate\.mjs"/i,
+);
+assert.match(threadLabProtocol, /loaded.*SKILL\.md/i);
+assert.match(threadLabProtocol, /validatorPath.*absolute installed/i);
+for (const document of [threadLabSkill, threadLabProtocol, threadLabRubric]) {
+  assert.doesNotMatch(document, /\.\.\/\.\.\/bin\/tweet-thread-validate\.mjs/i);
+  assert.doesNotMatch(document, /node \S*tweet-thread-validate\.mjs validate/i);
+}
+assert.doesNotMatch(threadLabProtocol, /node bin\/tweet-thread-validate\.mjs validate/i);
+assert.match(
+  threadLabProtocol,
+  /node "<validatorPath>" validate <candidate\.json> \[brief\.json\]/i,
+);
+assert.match(threadLabProtocol, /blinded scorecard/i);
+assert.match(threadLabProtocol, /publicTrialSha256/i);
+assert.match(threadLabProtocol, /armToken/i);
+assert.match(threadLabProtocol, /reveal.*canonical.*candidateSha256/i);
+assert.match(threadLabRubric, /judge.*must not receive.*candidate/i);
+for (const document of [threadLabSkill, threadLabProtocol, threadLabRubric]) {
+  assert.match(document, /scorecard set commitment/i);
+  assert.match(document, /before (?:identity )?reveal|before .*stopping.*unlock/i);
+}
+for (const document of [threadLabSkill, threadLabProtocol]) {
+  assert.match(document, /`strategies\.json`/);
+  assert.match(document, /`execution-log\.jsonl`/);
+  assert.match(document, /`validations`/);
+  assert.match(document, /tweet-thread-validate\.mjs/);
+}
+assert.ok(
+  existsSync(path.join(productionThreadLabRoot, "bin", "tweet-thread-validate.mjs")),
+  "the dependency-free validator bundle is shipped with the plugin",
+);
+assert.doesNotMatch(threadLabSkill, /candidate with its strategy/i);
+assert.doesNotMatch(threadLabSkill, /manifest .*exposes failures or partial state/i);
+assert.doesNotMatch(
+  threadLabProtocol,
+  /manifest with every candidate, scorecard, approval, failure, and partial state/i,
+);
+for (const reference of ["protocol.md", "rubric.md"]) {
+  assert.ok(existsSync(path.join(threadLabSkillRoot, "references", reference)), `${reference} is bundled`);
+}
+for (const schema of [
+  "blinded-scorecard-set-commitment.schema.json",
+  "thread-brief.schema.json",
+  "blinded-thread-scorecard.schema.json",
+  "thread-candidate.schema.json",
+  "thread-run-manifest.schema.json",
+  "thread-scorecard.schema.json",
+  "thread-validation-record.schema.json",
+]) {
+  assert.ok(
+    existsSync(path.join(threadLabSkillRoot, "references", "schemas", schema)),
+    `${schema} is bundled without drifting from the protocol generator`,
+  );
+}
+
 const productionSeeker = productionCatalog.plugins.find((plugin) => plugin.name === "seekers-lens");
 assert.ok(productionSeeker, "the production catalog includes Seeker's Lens");
 assert.equal(productionSeeker.kind, "craft");
@@ -325,10 +483,49 @@ for (const skill of productionSeeker.craft.bundled.skills) {
 }
 const productionBrowse = JSON.parse(readFileSync(path.join(ROOT, "marketplace", "marketplace.json"), "utf8"));
 assert.ok(productionBrowse.plugins.some((plugin) => plugin.name === "seekers-lens"), "public Crafts are browsable");
+assert.ok(productionBrowse.plugins.some((plugin) => plugin.name === "tweet-thread-lab"), "Tweet Thread Lab is browsable");
 const productionCodexBrowse = JSON.parse(readFileSync(path.join(ROOT, "marketplace", ".claude-plugin", "marketplace.json"), "utf8"));
 const codexSeeker = productionCodexBrowse.plugins.find((plugin) => plugin.name === "seekers-lens");
 assert.ok(codexSeeker, "public Crafts are installable through the Codex marketplace export");
 assert.equal(codexSeeker.source, "./plugins/seekers-lens", "Codex plugin sources stay inside the registered marketplace root");
+// Generated manifests must satisfy the runtime contract in
+// src/lib/server/bundled-copilot-plugins.ts (isSkillOnlyManifest): an
+// app-bundled plugin loads ONLY when its plugin.json advertises a skills
+// directory and carries no agents/hooks/mcpServers. That field was previously
+// absent from the generator and hand-edited into the generated file, so a
+// routine `sync-marketplace.py` run would have deleted it and silently dropped
+// Coven recall from Copilot chats. Pin it on the generated output.
+const bundledMemory = JSON.parse(
+  readFileSync(path.join(ROOT, "marketplace", "plugins", "coven-memory", "plugin.json"), "utf8"),
+);
+const bundledSkills = Array.isArray(bundledMemory.skills) ? bundledMemory.skills : [bundledMemory.skills];
+assert.ok(
+  bundledSkills.length > 0 && bundledSkills.every((entry) => entry === "skills/" || entry === "./skills/"),
+  "coven-memory advertises its skills directory, or the app stops loading the bundle",
+);
+for (const key of ["agents", "hooks", "mcpServers"]) {
+  assert.ok(!(key in bundledMemory), `coven-memory stays skill-only (no ${key})`);
+}
+assert.ok(
+  existsSync(path.join(ROOT, "marketplace", "plugins", "coven-memory", "skills", "recall", "SKILL.md")),
+  "the advertised directory actually holds the recall skill",
+);
+// A prompt-only plugin has no skills/ directory, so it must not claim one.
+const promptOnly = productionCatalog.plugins.find(
+  (plugin) => !plugin.skill && plugin.kind !== "craft" && plugin.kind !== "knowledge-pack",
+);
+if (promptOnly) {
+  const promptManifest = JSON.parse(
+    readFileSync(path.join(ROOT, "marketplace", "plugins", promptOnly.name, "plugin.json"), "utf8"),
+  );
+  assert.ok(!("skills" in promptManifest), `${promptOnly.name} carries no skill, so it advertises no skills directory`);
+}
+
+assert.equal(
+  productionCodexBrowse.plugins.find((plugin) => plugin.name === "tweet-thread-lab")?.source,
+  "./plugins/tweet-thread-lab",
+  "Tweet Thread Lab stays inside the registered marketplace root",
+);
 const productionCheck = spawnSync("python3", [SYNC, "--check"], { cwd: ROOT, encoding: "utf8" });
 assert.equal(productionCheck.status, 0, productionCheck.stderr);
 

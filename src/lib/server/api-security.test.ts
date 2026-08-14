@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
+import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
 import { readJsonBody, rejectNonLocalRequest } from "./api-security.ts";
 
 const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;
@@ -29,7 +30,11 @@ test("rejects mobile-marked requests with 403", async () => {
 
   assert.ok(res);
   assert.equal(res.status, 403);
-  assert.deepEqual(await res.json(), { ok: false, error: "forbidden" });
+  assert.deepEqual(await res.json(), {
+    ok: false,
+    code: LOCAL_REQUEST_REQUIRED_CODE,
+    error: "forbidden",
+  });
 });
 
 test("rejects sidecar token mismatches with 403", async () => {
@@ -41,7 +46,27 @@ test("rejects sidecar token mismatches with 403", async () => {
 
   assert.ok(res);
   assert.equal(res.status, 403);
-  assert.deepEqual(await res.json(), { ok: false, error: "forbidden" });
+  assert.deepEqual(await res.json(), {
+    ok: false,
+    code: LOCAL_REQUEST_REQUIRED_CODE,
+    error: "forbidden",
+  });
+});
+
+test("rejects remote origins with the stable local-request code", async () => {
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+
+  const res = rejectNonLocalRequest(
+    request({ host: "127.0.0.1:3000", origin: "https://cave.example.test" }),
+  );
+
+  assert.ok(res);
+  assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), {
+    ok: false,
+    code: LOCAL_REQUEST_REQUIRED_CODE,
+    error: "forbidden",
+  });
 });
 
 test("accepts valid loopback plus sidecar token requests", () => {
@@ -52,6 +77,21 @@ test("accepts valid loopback plus sidecar token requests", () => {
   );
 
   assert.equal(res, null);
+});
+
+test("accepts loopback origins without widening the host allowlist", () => {
+  delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  for (const [host, origin] of [
+    ["localhost:3000", "http://localhost:3000"],
+    ["127.0.0.1:3000", "http://127.0.0.1:3000"],
+    ["[::1]:3000", "http://[::1]:3000"],
+  ]) {
+    assert.equal(
+      rejectNonLocalRequest(request({ host, origin })),
+      null,
+      `${origin} should remain a trusted loopback origin`,
+    );
+  }
 });
 
 function jsonBodyRequest(raw: string) {

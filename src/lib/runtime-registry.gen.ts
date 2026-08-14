@@ -3,7 +3,7 @@
 //
 // Source: OpenCoven/coven-runtimes canonical registry index
 //   ref:      main
-//   blob sha: 051805ae24056d3efee0b93b73fee75e0d737b52
+//   blob sha: ced69d5b532f7c1478a1f45d00c0701ab948e221
 //
 // Every entry passed coven-runtimes acceptance (conformance + review), so
 // Cave treats these as trusted runtimes (see harness-adapters.ts). New
@@ -17,6 +17,8 @@ export type RegistryRuntimeCapabilities = {
   speed: boolean;
 };
 
+export type RegistryModelIdTransform = "strip_provider" | "preserve";
+
 export type RegistryRuntime = {
   id: string;
   label: string;
@@ -27,6 +29,8 @@ export type RegistryRuntime = {
   description?: string;
   /** CLI flag that forwards a model id, when the runtime supports one. */
   modelFlag: string | null;
+  /** How provider-qualified model ids are forwarded to this runtime. */
+  modelIdTransform: RegistryModelIdTransform;
   capabilities: RegistryRuntimeCapabilities;
   /** The full `$COVEN_HOME/adapters/<id>.json` document for this runtime. */
   adapterManifest: unknown;
@@ -35,7 +39,7 @@ export type RegistryRuntime = {
 export const REGISTRY_SOURCE = {
   repo: "OpenCoven/coven-runtimes",
   ref: "main",
-  blobSha: "051805ae24056d3efee0b93b73fee75e0d737b52",
+  blobSha: "ced69d5b532f7c1478a1f45d00c0701ab948e221",
 } as const;
 
 export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
@@ -48,6 +52,7 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
     "homepage": "https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
     "description": "GitHub Copilot CLI adapter. One-shot via `-s -p`, interactive via `-i`, JSONL streaming via `--output-format json --stream on`, session pre-assignment/resume via `--session-id`/`--resume`. Permission mapping uses the argv-list sandbox form because Copilot's flags are boolean/repeatable (`--allow-all`; `--deny-tool write --deny-tool shell`) rather than a single `--flag value` pair.",
     "modelFlag": "--model",
+    "modelIdTransform": "strip_provider",
     "capabilities": {
       "stream": true,
       "preassignedSessionId": true,
@@ -105,13 +110,96 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
     }
   },
   {
+    "id": "grok",
+    "label": "Grok Build",
+    "binary": "grok",
+    "installHint": "Install Grok Build by following xAI's official instructions at https://docs.x.ai/build/overview. Make sure `grok` is on PATH and run `grok login` (or set XAI_API_KEY for headless auth), then retry `coven adapter doctor grok`.",
+    "version": "1.0.0",
+    "homepage": "https://docs.x.ai/build/cli/headless-scripting",
+    "description": "xAI Grok Build adapter. Finite one-shot headless runs via `--single=<prompt>` in Grok's plain output mode (`--output-format plain`, its own default): stdout carries only the final response text, reasoning is dropped at the source, and errors go to stderr — no event protocol or translation layer. Session pre-assignment via `--session-id`, cold-start resume via `--resume`. Permission mapping uses the argv-list sandbox form to drive both `--permission-mode` and `--sandbox`. No stream mode: every turn is a fresh process.",
+    "modelFlag": "--model",
+    "modelIdTransform": "strip_provider",
+    "capabilities": {
+      "stream": false,
+      "preassignedSessionId": true,
+      "think": false,
+      "speed": false
+    },
+    "adapterManifest": {
+      "adapters": [
+        {
+          "id": "grok",
+          "label": "Grok Build",
+          "executable": "grok",
+          "interactive_prompt_prefix_args": [
+            "--no-auto-update",
+            "--no-alt-screen",
+            "--output-format",
+            "plain"
+          ],
+          "non_interactive_prompt_prefix_args": [
+            "--no-auto-update",
+            "--no-alt-screen",
+            "--output-format",
+            "plain"
+          ],
+          "prompt_flag": "--single",
+          "interactive_prompt_flag": "--single",
+          "install_hint": "Install Grok Build by following xAI's official instructions at https://docs.x.ai/build/overview. Make sure `grok` is on PATH and run `grok login` (or set XAI_API_KEY for headless auth), then retry `coven adapter doctor grok`.",
+          "system_prompt_flag": "--rules",
+          "model_flag": "--model",
+          "capabilities": {
+            "stream": false,
+            "preassigned_session_id": true,
+            "think": false,
+            "speed": false
+          },
+          "sandbox": {
+            "full_args": [
+              "--permission-mode",
+              "bypassPermissions",
+              "--sandbox",
+              "off"
+            ],
+            "read_only_args": [
+              "--permission-mode",
+              "default",
+              "--sandbox",
+              "read-only"
+            ]
+          },
+          "continuity_args": {
+            "init_prefix_args": [
+              "--no-auto-update",
+              "--no-alt-screen",
+              "--output-format",
+              "plain"
+            ],
+            "resume_prefix_args": [
+              "--no-auto-update",
+              "--no-alt-screen",
+              "--output-format",
+              "plain"
+            ],
+            "session_id_flag": "--session-id",
+            "resume_flag": "--resume"
+          },
+          "version": "1.0.0",
+          "homepage": "https://docs.x.ai/build/cli/headless-scripting",
+          "description": "xAI Grok Build adapter. Finite one-shot headless runs via `--single=<prompt>` in Grok's plain output mode (`--output-format plain`, its own default): stdout carries only the final response text, reasoning is dropped at the source, and errors go to stderr — no event protocol or translation layer. Session pre-assignment via `--session-id`, cold-start resume via `--resume`. Permission mapping uses the argv-list sandbox form to drive both `--permission-mode` and `--sandbox`. No stream mode: every turn is a fresh process."
+        }
+      ]
+    }
+  },
+  {
     "id": "hermes",
     "label": "Hermes Agent",
-    "binary": "hermes-coven",
-    "installHint": "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
-    "version": "1.0.1",
-    "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities. Uses the hermes-coven shim so the harness's trailing positional prompt is remapped to hermes chat's -q/--query flag (hermes has no positional prompt slot).",
-    "modelFlag": null,
+    "binary": "hermes",
+    "installHint": "Install and complete setup for Hermes Agent from https://github.com/NousResearch/hermes-agent, then ensure the native `hermes` executable resolves on PATH.",
+    "version": "1.0.3",
+    "description": "Hermes adapter using the native `hermes chat` executable and `--query` prompt binding while preserving provider-qualified model IDs.",
+    "modelFlag": "--model",
+    "modelIdTransform": "preserve",
     "capabilities": {
       "stream": false,
       "preassignedSessionId": false,
@@ -123,7 +211,7 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
         {
           "id": "hermes",
           "label": "Hermes Agent",
-          "executable": "hermes-coven",
+          "executable": "hermes",
           "interactive_prompt_prefix_args": [
             "chat",
             "--source",
@@ -135,15 +223,19 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
             "coven",
             "-Q"
           ],
-          "install_hint": "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+          "prompt_flag": "--query",
+          "interactive_prompt_flag": "--query",
+          "install_hint": "Install and complete setup for Hermes Agent from https://github.com/NousResearch/hermes-agent, then ensure the native `hermes` executable resolves on PATH.",
+          "model_flag": "--model",
+          "model_id_transform": "preserve",
           "capabilities": {
             "stream": false,
             "preassigned_session_id": false,
             "think": false,
             "speed": false
           },
-          "version": "1.0.1",
-          "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities. Uses the hermes-coven shim so the harness's trailing positional prompt is remapped to hermes chat's -q/--query flag (hermes has no positional prompt slot)."
+          "version": "1.0.3",
+          "description": "Hermes adapter using the native `hermes chat` executable and `--query` prompt binding while preserving provider-qualified model IDs."
         }
       ]
     }
@@ -153,10 +245,11 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
     "label": "OpenCode",
     "binary": "opencode",
     "installHint": "Install OpenCode from https://opencode.ai/docs/cli (e.g. `npm i -g opencode-ai`) and ensure `opencode` resolves on PATH. Verify with `opencode run --help` — the similarly-named Go app some package managers ship has no `run` subcommand and will not work.",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "homepage": "https://opencode.ai",
-    "description": "OpenCode runtime adapter for Coven. Drives `opencode run` in non-interactive mode; system prompts and tools are configured via the OpenCode project config (AGENTS.md / opencode.json), not via CLI flags.",
+    "description": "OpenCode runtime adapter for Coven. Drives `opencode run` in both native launch modes and preserves provider-qualified model IDs; system prompts and tools are configured via project config (AGENTS.md / opencode.json).",
     "modelFlag": "--model",
+    "modelIdTransform": "preserve",
     "capabilities": {
       "stream": false,
       "preassignedSessionId": false,
@@ -169,21 +262,24 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
           "id": "opencode",
           "label": "OpenCode",
           "executable": "opencode",
-          "interactive_prompt_prefix_args": [],
+          "interactive_prompt_prefix_args": [
+            "run"
+          ],
           "non_interactive_prompt_prefix_args": [
             "run"
           ],
           "install_hint": "Install OpenCode from https://opencode.ai/docs/cli (e.g. `npm i -g opencode-ai`) and ensure `opencode` resolves on PATH. Verify with `opencode run --help` — the similarly-named Go app some package managers ship has no `run` subcommand and will not work.",
           "model_flag": "--model",
+          "model_id_transform": "preserve",
           "capabilities": {
             "stream": false,
             "preassigned_session_id": false,
             "think": false,
             "speed": false
           },
-          "version": "0.1.0",
+          "version": "0.1.1",
           "homepage": "https://opencode.ai",
-          "description": "OpenCode runtime adapter for Coven. Drives `opencode run` in non-interactive mode; system prompts and tools are configured via the OpenCode project config (AGENTS.md / opencode.json), not via CLI flags."
+          "description": "OpenCode runtime adapter for Coven. Drives `opencode run` in both native launch modes and preserves provider-qualified model IDs; system prompts and tools are configured via project config (AGENTS.md / opencode.json)."
         }
       ]
     }

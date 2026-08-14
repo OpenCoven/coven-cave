@@ -6,24 +6,33 @@ import {
   offlineTravelItemsNeedingSync,
   recordSessionFamiliar,
   setSessionTitle,
+  setSessionTitleAutoIfOwned,
+  updateOfflineTravelItemPayload,
   type CaveConfig,
   type CaveTravelQueueItem,
 } from "@/lib/cave-config";
-import { chatTitleFromPrompt, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
+import { chatSummaryTitle, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { isSshRuntime } from "@/lib/familiar-runtime";
+import { cleanModelId } from "@/lib/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime-models";
+import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import { flowRunRedactsData } from "@/lib/flow/flow-doc";
+import { isResearchMissionFlowSnapshot } from "@/lib/research-mission-flow";
 import type { FlowRunStepStatus } from "@/lib/flows";
 import { startAutomationRun } from "@/lib/server/automation-runner";
-import { recordFlowRun } from "@/lib/server/flow-store";
+import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
 import { assertProjectRootAccess } from "@/lib/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
@@ -38,6 +47,27 @@ export type TravelOfflineReplayResult = {
 
 type DaemonSessionResponse = { id?: string; status?: string };
 type WorkflowEngineResponse = { ok?: boolean; runId?: string; status?: string; error?: string };
+
+function queuedModelOverride(payload: Record<string, unknown>): string | null | undefined {
+  const hasModelOverride = Object.prototype.hasOwnProperty.call(payload, "modelOverride");
+  const metadata = record(payload.responseMetadata);
+  const modelSource = metadata.modelSource;
+  const queuedModel = hasModelOverride
+    ? payload.modelOverride
+    : modelSource === "runtime-default"
+      ? ""
+      : modelSource === "global-default" ||
+          modelSource === "familiar-default" ||
+          modelSource === "session" ||
+          modelSource === "next-message"
+        ? metadata.desiredModel ?? metadata.model
+        : undefined;
+  if (queuedModel === undefined) return undefined;
+  if (queuedModel === "") return "";
+  const model = cleanModelId(queuedModel);
+  if (!model) throw new Error("queued chat model id is not safe for launch");
+  return model;
+}
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
@@ -56,6 +86,31 @@ function queuedRuntime(payload: Record<string, unknown>): string | null {
   return stringValue(metadata.runtime);
 }
 
+/**
+ * The hub daemon's session endpoint currently accepts model selection but not
+ * per-turn control families. Do not let a replay appear synced after the JSON
+ * parser silently ignores those fields.
+ */
+export function daemonReplayControlFamilies(payload: Record<string, unknown>): string[] {
+  const families = new Set<string>();
+  if (stringValue(payload.reasoningEffort)) families.add("reasoning");
+  if (stringValue(payload.responseSpeed)) families.add("performance");
+  const modelControls = record(payload.modelControls);
+  const knownFamilies = new Set([
+    "reasoning",
+    "performance",
+    "verbosity",
+    "output-limit",
+    "modalities",
+    "tool-support",
+  ]);
+  for (const [family, value] of Object.entries(modelControls)) {
+    if (value === undefined || value === null || value === "") continue;
+    families.add(knownFamilies.has(family) ? family : "model-controls");
+  }
+  return [...families];
+}
+
 function replayError(err: unknown): string {
   return err instanceof Error ? err.message : "sync failed";
 }
@@ -71,11 +126,22 @@ async function spawnHubSession(args: {
   familiarId: string | null;
   harness: string;
   prompt: string;
+  model?: string | null;
+  modelOverrideScope?: "runtime-default";
+  reasoningEffort?: string | null;
+  responseSpeed?: string | null;
+  modelControls?: Record<string, unknown>;
   projectRoot?: string | null;
   title: string;
+  /** How to record the session title. "auto" records auto-rename provenance so
+   *  the periodic rename can update it; "manual" (the default) stores it as a
+   *  human-chosen title that the auto-rename does not overwrite. Chat replay
+   *  passes "auto"; workflow / flow replay omit this and use the default. */
+  titleOwnership?: "auto" | "manual";
 }): Promise<string> {
-  if (!isAllowedHarness(args.harness)) {
-    throw new Error(`harness '${args.harness}' can't run as an agent session`);
+  const harness = canonicalHarnessId(args.harness);
+  if (!isAllowedHarness(harness)) {
+    throw new Error(`harness '${harness}' can't run as an agent session`);
   }
   const projectRoot = normalizeProjectRoot(args.projectRoot ?? process.cwd());
   if (!projectRoot) throw new Error("invalid project root");
@@ -85,8 +151,13 @@ async function spawnHubSession(args: {
     path: "/api/v1/sessions",
     body: {
       projectRoot,
-      harness: args.harness,
+      harness,
       prompt: args.prompt,
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.modelOverrideScope ? { modelOverrideScope: args.modelOverrideScope } : {}),
+      ...(args.reasoningEffort ? { reasoningEffort: args.reasoningEffort } : {}),
+      ...(args.responseSpeed ? { responseSpeed: args.responseSpeed } : {}),
+      ...(Object.keys(args.modelControls ?? {}).length ? { modelControls: args.modelControls } : {}),
       ...(args.familiarId ? { familiarId: args.familiarId } : {}),
     },
     timeoutMs: 8000,
@@ -98,7 +169,13 @@ async function spawnHubSession(args: {
 
   await Promise.all([
     args.familiarId ? recordSessionFamiliar(res.data.id, args.familiarId) : Promise.resolve(),
-    setSessionTitle(res.data.id, args.title),
+    args.titleOwnership === "auto"
+      ? setSessionTitleAutoIfOwned(
+          res.data.id,
+          args.title,
+          new Set([defaultChatTitleForSession(res.data.id)]),
+        )
+      : setSessionTitle(res.data.id, args.title),
   ]);
   return res.data.id;
 }
@@ -108,7 +185,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
-
+  const controlFamilies = daemonReplayControlFamilies(payload);
+  if (controlFamilies.length) {
+    throw new Error(
+      `queued model controls cannot be replayed through the current hub session contract (${controlFamilies.join(", ")})`,
+    );
+  }
   const runtime = queuedRuntime(payload);
   if (runtime?.startsWith("ssh:")) {
     throw new Error("queued SSH-runtime chat cannot be replayed as a local hub session");
@@ -122,18 +204,97 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   });
 
   const binding = bindingFor(config, familiarId);
+  const modelOverride = queuedModelOverride(payload);
+  if (modelOverride && !isModelAllowedByRuntime(binding.harness, modelOverride)) {
+    throw new Error("queued chat model id is not allowed by the selected runtime");
+  }
+  const queuedMetadata = record(payload.responseMetadata);
+  const queuedHarness = stringValue(queuedMetadata.harness);
+  if (
+    queuedHarness &&
+    canonicalHarnessId(queuedHarness) !== canonicalHarnessId(binding.harness)
+  ) {
+    throw new Error("queued chat runtime binding changed while offline; choose the runtime again before replaying");
+  }
+  if (runtime?.startsWith("local:") && isSshRuntime(binding.runtime)) {
+    throw new Error("queued local-runtime chat cannot be replayed after this familiar moved to SSH");
+  }
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const attachments = objectArray<ChatAttachment>(payload.attachments);
+  const queuedPayloadModelOverride = stringValue(payload.modelOverride);
+  const queuedRunId = stringValue(payload.runId);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
-  const sessionId = await spawnHubSession({
-    config,
+  const replayTitle =
+    chatSummaryTitle({ userText: prompt }) ??
+    defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id);
+  let harnessSessionId = stringValue(payload.harnessSessionId);
+  if (!harnessSessionId) {
+    harnessSessionId = await spawnHubSession({
+      config,
+      familiarId,
+      harness: binding.harness,
+      prompt: replayPrompt,
+      // Preserve the distinction between an omitted model and an explicit
+      // runtime-default request. The daemon receives no model argument in both
+      // cases, while the scope marker prevents this replay path from treating a
+      // cleared model as an accidental static/catalog fallback.
+      model: modelOverride,
+      ...(payload.modelOverrideScope === "runtime-default"
+        ? { modelOverrideScope: "runtime-default" as const }
+        : {}),
+      reasoningEffort: stringValue(payload.reasoningEffort),
+      responseSpeed: stringValue(payload.responseSpeed),
+      modelControls: record(payload.modelControls),
+      projectRoot,
+      title: replayTitle,
+      titleOwnership: "auto",
+    });
+    await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
+  }
+  const sessionId = stringValue(payload.sessionId) ?? item.id;
+  await persistQueuedOfflineConversation({
+    sessionId,
     familiarId,
     harness: binding.harness,
-    prompt: replayPrompt,
-    projectRoot,
-    title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
+    ...(Object.prototype.hasOwnProperty.call(queuedMetadata, "model")
+      ? { model: stringValue(queuedMetadata.model) ?? undefined }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(queuedMetadata, "runtime")
+      ? { runtime: stringValue(queuedMetadata.runtime) ?? undefined }
+      : {}),
+    title: replayTitle,
+    createdAt: item.createdAt,
+    harnessSessionId,
+    userTurn: {
+      id: stringValue(payload.userTurnId) ?? item.id,
+      text: prompt,
+      ...(attachments.length ? { attachments } : {}),
+      ...(queuedRunId ? { attentionClearOperationId: queuedRunId } : {}),
+      ...(stringValue(payload.reasoningEffort)
+        ? { reasoningEffort: stringValue(payload.reasoningEffort) as "low" | "medium" | "high" }
+        : {}),
+      ...(stringValue(payload.responseSpeed)
+        ? { responseSpeed: stringValue(payload.responseSpeed) as "fast" | "balanced" | "careful" }
+        : {}),
+      ...(Object.keys(record(payload.modelControls)).length
+        ? { modelControls: record(payload.modelControls) }
+        : {}),
+      ...(queuedPayloadModelOverride ? { modelOverride: queuedPayloadModelOverride } : {}),
+      ...(payload.modelOverrideScope === "runtime-default"
+        ? { modelOverrideScope: "runtime-default" as const }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(payload, "parentTurnId")
+        ? { parentId: payload.parentTurnId as string | null }
+        : {}),
+    },
   });
-  if (stringValue(payload.sessionId) && payload.sessionId !== sessionId) {
-    await setSessionTitle(sessionId, chatTitleFromPrompt(prompt) ?? `Travel replay: ${item.summary}`);
+  if (sessionId !== harnessSessionId) {
+    await setSessionTitleAutoIfOwned(
+      harnessSessionId,
+      replayTitle,
+      new Set([defaultChatTitleForSession(harnessSessionId)]),
+    );
   }
 }
 
@@ -174,6 +335,8 @@ async function replayWorkflow(item: CaveTravelQueueItem, config: CaveConfig): Pr
 
   const familiarId = stringValue(body.familiarId) ?? workflow.familiar ?? null;
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const prompt = buildWorkflowRunPrompt(workflow, record(body.inputs));
   const sessionId = await spawnHubSession({
     config,
@@ -228,10 +391,17 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const payload = record(item.payload);
   const flow = payload.flow as FlowDoc | undefined;
   if (!flow?.id || !Array.isArray(flow.nodes)) throw new Error("queued flow payload missing flow snapshot");
+  if (isResearchMissionFlowSnapshot(flow)) {
+    throw new Error(
+      "Queued Research work is not replayed. Open the mission and start a fresh iteration while execution is connected.",
+    );
+  }
   const options = record(payload.options);
   const targetNodeId = stringValue(options.targetNodeId) ?? undefined;
   const familiarId = stringValue(payload.familiarId) ?? flowFamiliar(flow);
   const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
+  const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
+  if (profileBlock) throw new Error(profileBlock);
   const prompt = compileFlowPrompt(flow, {
     targetNodeId,
     triggerInput: options.triggerInput as never,
@@ -251,10 +421,10 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const customData = extractFlowCustomData(flow);
   const redacted = flowRunRedactsData(flow, options.mode as never);
   const seenActiveAgentStep = { value: false };
-  await recordFlowRun({
+  const runFields = {
     flowId: flow.id,
     flowName: flow.name,
-    status: "running",
+    status: "running" as const,
     mode: flowExecutionMode(options.mode),
     ...(Object.keys(customData).length > 0 ? { customData } : {}),
     ...(redacted ? { redacted: true } : {}),
@@ -265,10 +435,20 @@ async function replayFlow(item: CaveTravelQueueItem, config: CaveConfig): Promis
       status: initialFlowRunStepStatus(flow, stepId, seenActiveAgentStep),
     })),
     summary: `replayed agent session ${sessionId.slice(0, 8)}`,
-    source: "cave",
+    source: "cave" as const,
     sessionId,
     flowSnapshot: flow,
-  });
+  };
+  // The queued placeholder run's id rides in the payload — update that run in
+  // place so callers that stored it (research mission iterations, the runs
+  // list) keep pointing at the run that actually executes. Fall back to a
+  // fresh record for legacy queue items or a placeholder evicted by the cap.
+  const placeholderRunId = stringValue(payload.placeholderRunId);
+  if (placeholderRunId) {
+    const updated = await updateFlowRun(placeholderRunId, runFields);
+    if (updated) return;
+  }
+  await recordFlowRun(runFields);
 }
 
 async function replayJob(item: CaveTravelQueueItem): Promise<void> {

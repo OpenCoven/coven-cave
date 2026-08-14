@@ -4,18 +4,19 @@ import "@/styles/cave-chat.css";
 import "@/styles/cave-md.css";
 import "@/styles/cave-composer.css";
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surface-history";
 import {
   ChatCanvasView,
   ChatFamiliarView,
-  ChatSettingsView,
   GroupChatView,
   ProjectsView,
   WorkspaceRail,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat-tab-events";
 import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Tabs } from "@/components/ui/tabs";
@@ -25,7 +26,6 @@ import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller"
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
-import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 
@@ -60,10 +60,9 @@ const chatStorage = {
 // surface and the Grimoire editor, not as a chat scope (cave-liut).
 // "familiar" is the active familiar's capability panel, promoted from the
 // retired inspector sidepanel to a first-class chat tab.
-// "settings" is the consolidated chat-settings tab (auto-archive policy et al).
 // "canvas" is the gallery of sketches saved from chat artifacts — saves landed
 // in the canvas store with no surface after the standalone Canvas page retired.
-type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "settings" | "canvas";
+type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "canvas";
 
 type Props = {
   familiars: Familiar[];
@@ -72,6 +71,7 @@ type Props = {
   activeFamiliarId: string | null;
   selectedFamiliarIds: ReadonlySet<string>;
   daemonRunning: boolean;
+  localDaemonReady: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
   /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
@@ -82,12 +82,9 @@ type Props = {
   onRetryFamiliars?: () => void;
   pendingProjectRoot: string | null;
   pendingChatAction?: PendingChatAction;
-  pendingCodeRailOpen?: PendingCodeRailOpen | null;
   onSetActiveFamiliar: (id: string | null) => void;
   onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean; preserveSurface?: boolean }) => void;
-  onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
-  onPendingCodeRailOpenHandled: () => void;
   onSessionStarted: () => void;
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
@@ -104,6 +101,8 @@ type Props = {
    *  Shell nav/sidebar already owns the project-grouped chat list, so the
    *  in-surface rail would duplicate it. */
   hideThreadRail?: boolean;
+  initialScope?: FamiliarsScope;
+  scopeHistoryId?: string;
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
@@ -115,6 +114,7 @@ export function ChatSurface({
   activeFamiliarId,
   selectedFamiliarIds,
   daemonRunning,
+  localDaemonReady,
   routerRef,
   sessionsLoaded,
   sessionsError,
@@ -123,12 +123,9 @@ export function ChatSurface({
   onRetryFamiliars,
   pendingProjectRoot,
   pendingChatAction,
-  pendingCodeRailOpen,
   onSetActiveFamiliar,
   onFamiliarScopeChange,
-  onClearPendingProjectRoot,
   onPendingChatActionHandled,
-  onPendingCodeRailOpenHandled,
   onSessionStarted,
   onSlashFromChat,
   onOpenOnboarding,
@@ -138,11 +135,37 @@ export function ChatSurface({
   onOpenUrl,
   onActiveSessionChange,
   hideThreadRail = false,
+  initialScope = "conversation",
+  scopeHistoryId = "chat:scope",
 }: Props) {
   // The in-surface project/thread rail is dropped when the outer WorkspaceSidebar
   // already owns chats beside the surface.
   const compactRail = hideThreadRail;
-  const [scope, setScope] = useState<FamiliarsScope>("conversation");
+  // The scope strip is a navigation level, not view state: Back from Canvas
+  // should land on Projects, not leave Chat entirely. `select` records an
+  // entry (the tab strip itself); `show` lands without one, which is what
+  // every cross-surface handoff below wants — those already push an entry on
+  // a level the Workspace tracks, so recording a second here would cost the
+  // user two Back presses for one action.
+  const {
+    value: scope,
+    select: selectScope,
+    show: showScope,
+  } = useSurfaceHistory<FamiliarsScope>({
+    id: scopeHistoryId,
+    initial: initialScope,
+  });
+  const setScope = showScope;
+  // The Workspace traverses its chat-session stack before any registered level.
+  // That ordering is right on the Sessions tab, where the session is what the
+  // user sees, and wrong everywhere else: from Projects or Familiar the Back
+  // press would walk an invisible session trail and leave the strip alone.
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  useEffect(
+    () => registerSurfaceHistoryGate(CHAT_SESSION_LEVEL, () => scopeRef.current === "conversation"),
+    [],
+  );
   const surfaceRef = useRef<HTMLElement | null>(null);
   const consumedPendingActionNonce = useRef<number | null>(null);
   const snapshot = useChatDebugSnapshot();
@@ -178,14 +201,12 @@ export function ChatSurface({
     changeCount,
     effectiveProjectRoot,
     focus: codeRailFocus,
-    reopenChecksFailing,
     isMobile,
     paneNarrow,
     showInline: showCodeRail,
     mobileAvailable: mobileRail,
     mobileOpen: mobileRailOpen,
     setMobileOpen: setMobileRailOpen,
-    openTarget: openCodeRailTarget,
     collapse: collapseCodeRail,
   } = railController;
 
@@ -251,11 +272,19 @@ export function ChatSurface({
   // surfaces: Inspect opens the Familiar chat tab; Git/Changes opens the code
   // rail's Changes tab. (cave:debug-open is owned by ChatView's debug modal.)
   useEffect(() => {
-    const onInspectorOpen = () => setScope("familiar");
+    // Inspect only moves this level, so it records an entry of its own —
+    // unlike the handoffs below, which ride a mode or session change.
+    const onInspectorOpen = () => selectScope("familiar");
     window.addEventListener("cave:inspector-open", onInspectorOpen);
     return () => {
       window.removeEventListener("cave:inspector-open", onInspectorOpen);
     };
+  }, [selectScope]);
+
+  useEffect(() => {
+    const open = () => setScope("conversation");
+    window.addEventListener(CHAT_OPEN_CONVERSATION_EVENT, open);
+    return () => window.removeEventListener(CHAT_OPEN_CONVERSATION_EVENT, open);
   }, []);
 
   useEffect(() => {
@@ -299,12 +328,6 @@ export function ChatSurface({
     onPendingChatActionHandled();
   }, [onPendingChatActionHandled, onSetActiveFamiliar, pendingChatAction, routerRef]);
 
-  useEffect(() => {
-    if (!pendingCodeRailOpen) return;
-    openCodeRailTarget(pendingCodeRailOpen);
-    onPendingCodeRailOpenHandled();
-  }, [onPendingCodeRailOpenHandled, openCodeRailTarget, pendingCodeRailOpen]);
-
   function startProjectChat(projectRoot: string) {
     setScope("conversation");
     window.setTimeout(() => routerRef.current?.newChat(projectRoot), 0);
@@ -340,6 +363,21 @@ export function ChatSurface({
     return () => window.removeEventListener(CHAT_OPEN_COVEN_EVENT, open);
   }, []);
 
+  // Composer "+" menu → "Manage skills" lands on the Familiar scope (Skills
+  // section), including from Home where this surface mounts fresh (latch).
+  useEffect(() => {
+    if (consumeSkillsTabPending()) setScope("familiar");
+    // Consume in the live path too: when chat is already mounted the
+    // navigate-mode hop doesn't remount this surface, so a latch left set
+    // here would hijack a LATER fresh mount onto the Familiar scope.
+    const open = () => {
+      consumeSkillsTabPending();
+      setScope("familiar");
+    };
+    window.addEventListener(CHAT_OPEN_SKILLS_EVENT, open);
+    return () => window.removeEventListener(CHAT_OPEN_SKILLS_EVENT, open);
+  }, []);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -355,7 +393,7 @@ export function ChatSurface({
             className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             value={scope}
             onChange={(s) => {
-              setScope(s);
+              selectScope(s);
               if (s === "conversation") {
                 window.setTimeout(() => routerRef.current?.goToList(), 0);
               }
@@ -365,7 +403,6 @@ export function ChatSurface({
               { id: "projects", label: "Projects" },
               { id: "canvas", label: "Canvas" },
               { id: "familiar", label: "Familiar" },
-              { id: "settings", label: "Settings" },
             ]}
           />
           <div className="flex shrink-0 items-center gap-1.5">
@@ -379,7 +416,7 @@ export function ChatSurface({
               aria-label="Group chat — broadcast one prompt to a coven of familiars"
               aria-pressed={scope === "coven"}
               title="Group chat — broadcast one prompt to a coven of familiars"
-              onClick={() => setScope("coven")}
+              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "groupchat" } }))}
             >
               <Icon name="ph:users-three" width={16} aria-hidden />
             </button>
@@ -428,20 +465,15 @@ export function ChatSurface({
                 familiarsLoaded={familiarsLoaded}
                 familiarsError={familiarsError}
                 daemonRunning={daemonRunning}
+                localDaemonReady={localDaemonReady}
                 onRetryFamiliars={onRetryFamiliars}
                 onCreateFamiliar={requestSummonFamiliar}
                 onOpenOnboarding={onOpenOnboarding}
                 onFamiliarScopeChange={onFamiliarScopeChange}
                 onStartChat={startFamiliarHeroChat}
+                onRosterChanged={onRetryFamiliars}
               />
             </div>
-          </div>
-        ) : scope === "settings" ? (
-          // Consolidated chat settings (cave-wide auto-archive policy, incl.
-          // archive-on-reflection) as a first-class chat tab — the knobs govern
-          // chat behavior, so they live where chats live.
-          <div className="flex min-h-0 min-w-0 flex-1">
-            <ChatSettingsView />
           </div>
         ) : scope === "coven" ? (
           // Group Chat ("coven") lives here as a first-class chat tab instead of
@@ -470,6 +502,7 @@ export function ChatSurface({
                   familiars={familiars}
                   sessions={sessions}
                   daemonRunning={daemonRunning}
+                  activeFamiliarId={activeFamiliarId}
                   sessionsLoaded={sessionsLoaded}
                   sessionsError={sessionsError}
                   familiarsLoaded={familiarsLoaded}
@@ -477,7 +510,6 @@ export function ChatSurface({
                   onRetryFamiliars={onRetryFamiliars}
                   hideRail={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
-                  onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}
                   onSessionsDeleted={onSessionsDeleted}
                   onSlashFromChat={onSlashFromChat}
@@ -531,14 +563,13 @@ export function ChatSurface({
       {rail.available && !rail.open && !isMobile && !paneNarrow && (
         <button
           type="button"
-          aria-label={reopenChecksFailing ? "Show code rail — PR checks failing" : "Show code rail"}
-          title={reopenChecksFailing ? "PR checks failing" : "Show code rail"}
+          aria-label="Show code rail"
+          title="Show code rail"
           className="workspace-rail-reopen focus-ring"
           onClick={rail.reopen}
         >
           <Icon name="ph:sidebar-simple" width={15} aria-hidden />
           <span className="workspace-rail-reopen__label">Code</span>
-          {reopenChecksFailing ? <span className="workspace-rail__badge workspace-rail__badge--alert" aria-hidden /> : null}
         </button>
       )}
       {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in

@@ -2,13 +2,13 @@
 
 /**
  * MobileBottomTabs — fixed/sticky bottom navigation strip for mobile/tablet
- * viewports. Surfaces the desktop sidebar's primary cluster (the non-quiet,
- * non-hidden FOLDER_MODES rows — Home, Chat, Tasks, Rituals) as a tablist
+ * viewports. Surfaces the shared primary workspace cluster (Home, Chat, Tasks,
+ * Rituals) as a tablist
  * with icon + label and an active highlight. Tabs are DERIVED from
- * FOLDER_MODES rather than hand-copied so desktop and mobile present the
- * same conceptual hierarchy by construction (issue #3283 — one surface, one
- * name; the quiet cluster and footer stay reachable via the nav drawer,
- * which hosts the full sidebar).
+ * PRIMARY_WORKSPACE_NAV_ITEMS rather than hand-copied so desktop and mobile
+ * present the same conceptual hierarchy by construction (issue #3283 — one
+ * surface, one name; the quiet cluster and footer stay reachable via the nav
+ * drawer, which hosts the full sidebar).
  *
  * Renders only when the parent shell is in mobile mode (≤1023px); Shell is
  * responsible for that conditional render — this component itself doesn't
@@ -16,11 +16,11 @@
  */
 
 import { Icon } from "@/lib/icon";
-import { FOLDER_MODES } from "@/components/sidebar-minimal";
+import { PRIMARY_WORKSPACE_NAV_ITEMS } from "@/lib/workspace-navigation";
 
 // Primary daily destinations: exactly the rows the desktop sidebar promotes
 // (quiet rows live in the drawer's full sidebar; navHidden are on-demand).
-const TABS = FOLDER_MODES.filter((fm) => !fm.quiet && !fm.navHidden).map(
+const TABS = PRIMARY_WORKSPACE_NAV_ITEMS.map(
   (fm) => ({ id: fm.id, label: fm.label, ariaLabel: fm.label, iconName: fm.iconName }),
 );
 

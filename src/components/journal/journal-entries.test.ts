@@ -6,9 +6,32 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
 const entries = read("./journal-entries.tsx");
 const css = read("../../styles/journal.css");
+const grimoire = read("../grimoire-view.tsx");
 
 assert.match(css, /\.journal-list \{[\s\S]*?min-width:\s*0;/, "Journal master-detail shell can shrink inside the workspace");
-assert.match(css, /\.journal-detail \{[\s\S]*?overflow:\s*hidden;/, "Journal detail pane contains overflowing code surfaces");
+assert.match(css, /\.journal-detail \{[\s\S]*?overflow-y:\s*auto;/, "Journal detail pane scrolls so long entries remain reviewable");
+assert.match(css, /\.journal-detail \{[\s\S]*?overflow-x:\s*hidden;/, "Journal detail pane still contains horizontal overflow");
+assert.match(
+  grimoire,
+  /className="grimoire-journal-tab flex h-full min-h-0 overflow-hidden"/,
+  "the Grimoire Journal host constrains the detail pane to a real scroll boundary",
+);
+
+// ── The journal day rail collapses to a persistent, reachable spine ──────────
+assert.match(entries, /JOURNAL_RAIL_COLLAPSED_KEY = "cave:journal:rail-collapsed:v1"/, "journal rail collapse uses a versioned preference");
+assert.match(entries, /railCollapsed,\s*setRailCollapsed/, "JournalEntries tracks the day rail's collapsed state");
+assert.match(entries, /aria-expanded=\{!railCollapsed\}/, "the rail disclosure exposes its current state");
+assert.match(entries, /aria-controls="journal-day-rail-content"/, "the rail disclosure names the controlled content");
+assert.match(entries, /aria-label=\{railCollapsed \? "Expand journal entries" : "Collapse journal entries"\}/, "the rail disclosure names the next action");
+assert.match(entries, /data-collapsed=\{railCollapsed \? "true" : undefined\}/, "the rail publishes collapsed layout state");
+assert.match(entries, /window\.localStorage\.setItem\(JOURNAL_RAIL_COLLAPSED_KEY, String\(next\)\)/, "rail collapse persists locally");
+assert.match(css, /\.journal-list__rail\[data-collapsed="true"\] \{[\s\S]*?flex-basis:/, "the collapsed rail becomes a narrow spine");
+assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-list__rail/, "rail motion respects reduced-motion");
+assert.match(
+  css,
+  /transition:\s*width var\(--duration-base\) var\(--ease-standard\),\s*flex-basis var\(--duration-base\) var\(--ease-standard\),\s*padding var\(--duration-base\) var\(--ease-standard\)/,
+  "rail motion uses the design-system duration and easing tokens",
+);
 
 // JournalEntries can be edited and deleted through the persisted journal API.
 assert.match(entries, /editing,\s*setEditing/, "JournalEntries tracks edit mode for daily reflections");
@@ -50,8 +73,12 @@ assert.match(entries, /const selectedFamiliarId = activeFamiliarId \?\? familiar
 // scope (empty = All), so switching familiars/scope never refetches.
 assert.match(entries, /await fetch\(`\/api\/journal`, \{ cache: "no-store" \}\)/, "JournalEntries fetches the full journal day list");
 assert.match(entries, /if \(!familiarInScope\(scope, d\.reflectedBy\)\) return false/, "JournalEntries filters the day list by the familiar multiselect scope");
-// The day detail scopes its memory stats to the single active familiar (null at 0/≥ 2).
-assert.match(entries, /const dayQuery = useCallback\(\(slug: string\) => \(\s*activeFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(activeFamiliarId\)\}`\s*:\s*`date=\$\{encodeURIComponent\(slug\)\}`/, "JournalEntries scopes day detail stats to the active familiar");
+// Entry reads stay coven-wide so a list row written by another familiar always
+// opens. Only the inventory-derived stats/context request is familiar-scoped.
+assert.match(entries, /const entryQuery = useCallback\(\(slug: string\) => `date=\$\{encodeURIComponent\(slug\)\}`/, "journal entry reads never inherit the active-familiar filter");
+assert.match(entries, /const statsQuery = useCallback\(\(slug: string\) => \(\s*selectedFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(selectedFamiliarId\)\}`/, "journal stats and generation context use the selected familiar");
+assert.match(entries, /fetch\(`\/api\/journal\?\$\{entryQuery\(slug\)\}`/, "loadDay uses the coven-wide entry query");
+assert.match(entries, /fetch\(`\/api\/journal\?\$\{statsQuery\(slug\)\}&stats=1`/, "fetchDayStats uses the familiar-scoped stats query");
 
 // ── Perf: the entry paints without waiting for the memory inventory (cave-tgx9)
 // The stats block needs a full memory-file inventory walk server-side (~1900
@@ -71,12 +98,12 @@ assert.match(
 );
 assert.match(
   entries,
-  /fetch\(`\/api\/journal\?\$\{dayQuery\(slug\)\}&stats=1`/,
+  /fetch\(`\/api\/journal\?\$\{statsQuery\(slug\)\}&stats=1`/,
   "JournalEntries fetches the stats block on a separate non-blocking request",
 );
 assert.match(
   entries,
-  /setDay\(\{ \.\.\.\(json as Omit<JournalDay, "stats" \| "context">\), stats: null, context: null \}\)/,
+  /setDay\(\{ \.\.\.\(json as Omit<JournalDay, "stats" \| "context" \| "sources">\), stats: null, context: null, sources: null \}\)/,
   "JournalEntries paints the entry immediately with stats pending",
 );
 assert.match(
@@ -103,6 +130,43 @@ assert.match(entries, /const reqId = \+\+loadDayReqRef\.current/, "each loadDay 
 assert.match(entries, /if \(reqId !== loadDayReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late day fetch is dropped");
 assert.match(entries, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
 assert.match(entries, /return \(\) => \{ mountedRef\.current = false; \}/, "mountedRef is cleared on unmount");
+assert.match(entries, /setDay\(null\);\s*\n\s*setDayError\(null\);/, "selecting a day clears the previous entry before its request starts");
+assert.match(entries, /if \(!res\.ok \|\| !json\.ok\) throw new Error\(json\.error \?\? "Couldn't load journal entry\."\)/, "failed day responses cannot leave stale content visible");
+assert.match(entries, /headline="Couldn't load this journal entry"/, "day failures render a truthful error state");
+assert.match(entries, /onClick=\{\(\) => \{ void loadDay\(selected\); \}\}/, "day failures expose a retry action");
+
+// Initial list failures must not masquerade as an empty journal.
+assert.match(entries, /daysError,\s*setDaysError/, "JournalEntries tracks day-list failures separately");
+assert.match(entries, /const loadDaysReqRef = useRef\(0\)/, "loadDays tracks a request id");
+assert.match(entries, /const reqId = \+\+loadDaysReqRef\.current/, "each loadDays stamps a request id");
+assert.match(
+  entries,
+  /if \(reqId !== loadDaysReqRef\.current \|\| !mountedRef\.current\) return/,
+  "a stale/late list response is dropped",
+);
+assert.match(entries, /if \(!res\.ok \|\| !json\.ok\) throw new Error\(json\.error \?\? "Couldn't load journal entries\."\)/, "failed list responses surface as errors");
+assert.match(entries, /headline="Couldn't load journal entries"/, "list failures use the shared ErrorState");
+assert.match(entries, /onClick=\{\(\) => \{ void loadDays\(\); \}\}/, "list failures expose a retry action");
+
+// Generation may finish after the user navigates to another day. The list
+// refresh is still useful, but the completed generation must not pull the
+// detail pane back to the captured day.
+assert.match(entries, /const selectedRef = useRef\(selected\)/, "generation can read the current selection");
+assert.match(
+  entries,
+  /if \(selectedRef\.current === day\.date\) await loadDay\(day\.date\);/,
+  "generation only reloads the detail when its day is still selected",
+);
+
+// Mutation failures stay visible even when the independently collapsible rail
+// content is hidden.
+{
+  const railContentStart = entries.indexOf('<div id="journal-day-rail-content"');
+  const asideEnd = entries.indexOf("</aside>", railContentStart);
+  const mutationError = entries.indexOf('{error ? (', railContentStart);
+  assert.ok(railContentStart >= 0 && asideEnd > railContentStart, "the collapsible rail subtree is present");
+  assert.ok(mutationError > asideEnd, "the shared mutation error alert renders outside the collapsible rail");
+}
 
 // ── Selected day is announced + keyboard-navigable ──────────────────────────
 assert.match(entries, /aria-current=\{d\.date === selected \? "true" : undefined\}/, "the open day row is aria-current");
@@ -114,53 +178,29 @@ assert.match(entries, /aria-label="Older entry"/, "detail header has an older-en
 assert.match(entries, /const hasOlder = dayIndex >= 0 && dayIndex < filteredDays\.length - 1/, "older-entry availability derives from the visible list");
 assert.match(css, /\.journal-entry__sec--nav \{[\s\S]*?justify-content: space-between/, "the heading row lays out the nav controls");
 
-// ── Click-to-automate: suggested next steps become one-click actions ─────────
-// The familiar's `<coven:next-paths>` suggestions are no longer static text —
-// each opens an automate tray (Run now / Add task / Remind me) that turns the
-// step into a real action with no typing.
-assert.match(entries, /function NextPaths\(/, "JournalEntries renders an interactive NextPaths component for suggested steps");
-assert.match(entries, /aria-expanded=\{isOpen\}/, "each suggested step is an expandable automate chip");
-assert.match(
-  entries,
-  /new CustomEvent\("cave:agents-new-chat", \{ detail: \{ familiarId, initialPrompt: text \} \}\)/,
-  "Run now opens a chat that acts on the suggestion (self-contained, no prop threading)",
-);
-assert.match(
-  entries,
-  /fetch\("\/api\/board",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?title: text/,
-  "Add task files the suggestion on the task board via /api/board POST",
-);
-assert.match(
-  entries,
-  /fetch\("\/api\/inbox",\s*\{[\s\S]*?kind:\s*"reminder"[\s\S]*?title: text[\s\S]*?fireAt: when\.toISOString\(\)/,
-  "Remind me schedules the suggestion as a reminder via /api/inbox POST",
-);
-assert.match(entries, /aria-label=\{`\$\{a\.label\}: \$\{s\}`\}/, "each automate action exposes an accessible label naming the step");
-assert.match(entries, /className=\{`journal-next__act[\s\S]*?\$\{isDone \? " is-done" : ""\}/, "automate actions flash a success state when they land");
-// One-click confirmation toast, with a deep-link to the surface the action wrote to.
-assert.match(entries, /className="journal-notice"[\s\S]*?role="status"[\s\S]*?aria-live="polite"/, "an automate action shows an aria-live confirmation toast");
-assert.match(
-  entries,
-  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: notice\.action!\.mode \} \}\)/,
-  "the toast's action deep-links to the surface the automation landed on",
-);
+// ── Reflection follow-up controls are display-only ───────────────────────────
+// Journal is not a task/action owner. It strips the structured trailer before
+// rendering Markdown and does not turn assistant intent into a mutation.
+assert.match(entries, /function JournalReflection\(\{ text \}: \{ text: string \}\)/, "journal keeps a focused reflection renderer");
+assert.match(entries, /const \{ visible \} = useMemo\(\(\) => extractNextPaths\(text\), \[text\]\);/, "journal strips next-path control blocks from reflection text");
+assert.doesNotMatch(entries, /function NextPaths\(/, "journal does not render interactive next-path actions");
+assert.doesNotMatch(entries, /cave:agents-new-chat/, "journal never launches chat from an assistant suggestion");
+assert.doesNotMatch(entries, /body: JSON\.stringify\(\{ title: text/, "journal never files an assistant suggestion as a task");
+assert.doesNotMatch(css, /\.journal-(?:entry__next|next__|notice)/, "journal removes the retired next-path and notice styling with its inactive UI");
 assert.match(entries, /className=\{`journal-entry-gen\$\{generating \? " is-generating" : ""\}`\}/, "the generate button animates while reflecting");
 
-// Engaging click feedback: chips/actions/buttons have press + transition styling,
-// with a reduced-motion fallback.
-assert.match(css, /\.journal-next__chip \{[\s\S]*?cursor: pointer;/, "suggested-step chips are styled, interactive controls");
-assert.match(css, /\.journal-next__act\b/, "automate tray action buttons are styled");
-assert.match(css, /\.journal-next__act\.is-done \{[\s\S]*?animation: journal-act-pop/, "a landed automate action pops with a success animation");
-assert.match(css, /\.journal-notice \{[\s\S]*?position: fixed/, "the automate confirmation toast is styled");
+// Engaging entry controls retain tactile press feedback.
 assert.match(css, /\.journal-entry-gen:active:not\(:disabled\) \{ transform:/, "the generate button has a tactile press");
 assert.match(css, /\.journal-day:active \{ transform:/, "day rows have a tactile press");
 assert.match(css, /\.journal-entry__action:active:not\(:disabled\) \{ transform: scale/, "entry action icons have a tactile press");
-assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-next__chip,/, "the new interactions respect prefers-reduced-motion");
 
 // ── a11y: audible mutations, real headings, visible focus (cave-t1ou) ────────
 assert.match(entries, /const \{ announce \} = useAnnouncer\(\)/, "the surface uses the shared announcer");
 assert.match(entries, /announce\("Reflection generated\."\)/, "generate success is announced");
 assert.match(entries, /announce\("Journal entry saved\."\)/, "save success is announced");
+assert.match(entries, /const saveJson = await saveRes\.json\(\)\.catch\(\(\) => \(\{\}\)\)/, "generation inspects the persistence response body");
+assert.match(entries, /if \(!saveRes\.ok \|\| !saveJson\.ok\) throw new Error\(saveJson\.error \?\? "Couldn't save the generated reflection\."\)/, "generation refuses to report success when persistence fails");
+assert.match(entries, /\} finally \{\s*\n\s*if \(mountedRef\.current\) setGenerating\(false\);/, "generation always clears its busy state");
 // Delete deliberately does NOT announce(): UndoToast is itself role=status
 // (ui/undo-toast.tsx) and speaks the scheduled deletion — a second announce
 // made AT hear every delete twice (cave-6rhk).
@@ -173,9 +213,43 @@ assert.match(entries, /aria-busy=\{generating\}/, "the generate button reports b
 assert.match(entries, /unavailable — select today to generate/, "the disabled reason reaches the accessible name (not just title=)");
 assert.match(entries, /<h3 className="journal-entry__sec-heading">What happened/, "the day section is a real heading");
 assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Reflection<\/h4>/, "the reflection section is a real heading");
-assert.match(entries, /aria-live="polite" aria-atomic="true"/, "the notice toast announces atomically");
+assert.doesNotMatch(entries, /journal-notice/, "journal no longer keeps an action-toast path for assistant suggestions");
 assert.match(css, /\.journal-day:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "day-rail rows have a visible focus ring");
 assert.match(css, /\.journal-entry__action:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "entry actions have a distinct focus ring");
+
+// ── Sources / Visual / Generation prompt ("Memories Prototype", cave-hlic) ───
+// The entry pane carries the prototype's three post-reflection sections:
+// mtime-attributed source chips that deep-link into the Grimoire reader, a
+// deterministic memory-constellation visual, and the editable prompt template
+// behind Generate/Regenerate.
+assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Sources<\/h4>/, "the sources section is a real heading");
+assert.match(entries, /day\.sources\?\.length \?/, "sources render only when the day touched memory files");
+assert.match(entries, /openGrimoireDoc\("memory", s\.fullPath\)/, "a source chip deep-links into the Grimoire memory reader");
+assert.doesNotMatch(
+  entries,
+  /grimoireHash/,
+  "no standalone-host navigation fork remains — the journal lives only in the workspace Grimoire (PR #3751)",
+);
+assert.match(entries, /sources: Array\.isArray\(json\.sources\) \? \(json\.sources as JournalSource\[\]\) : \[\]/, "sources ride the non-blocking stats fetch");
+assert.match(entries, /<JournalConstellation/, "the entry pane renders the constellation Visual");
+assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Generation prompt<\/h4>/, "the generation-prompt section is a real heading");
+assert.match(entries, /aria-label="Generation prompt template"/, "the template textarea is labelled");
+assert.match(entries, /splitPromptSegments\(journalPrompt\)/, "the highlight overlay marks {placeholder} runs");
+assert.match(entries, /writeStoredJournalPrompt\(value\)/, "template edits persist");
+assert.match(entries, /journalPrompt !== DEFAULT_JOURNAL_PROMPT \?/, "Reset appears only for a customized template");
+assert.match(
+  entries,
+  /promptTemplate: journalPrompt,\s*\n\s*familiarName: familiarName\(familiarId\) \?\? undefined,/,
+  "generate sends the edited template + placeholder vars",
+);
+assert.match(entries, /\{generating \? "Reflecting…" : "Regenerate entry"\}/, "an existing today-entry can be regenerated from the prompt section");
+const constellation = read("./journal-constellation.tsx");
+assert.match(constellation, /usePrefersReducedMotion\(\)/, "the visual's sketch beat respects prefers-reduced-motion");
+assert.match(constellation, /var\(--accent-presence\)/, "constellation stars use theme tokens (no raw hex)");
+assert.doesNotMatch(constellation, /#[0-9a-fA-F]{3,8}\b/, "no hardcoded colors in the constellation renderer");
+assert.match(constellation, /role="img"/, "the constellation SVG is an image with an accessible name");
+assert.match(css, /\.journal-prompt__ph \{[\s\S]*?color-mix\(in srgb, var\(--accent-presence\) 14%, transparent\)/, "placeholder highlight uses the one-hue tint recipe");
+assert.match(css, /\.journal-sources__chip \{[\s\S]*?cursor: pointer;/, "source chips are styled, interactive controls");
 
 // ── Journal write conflict + generatedAt (cave-9f2e) ─────────────────────────
 // generate is the only real generation → it stamps generatedAt and sends the

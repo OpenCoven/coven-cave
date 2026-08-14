@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isLocalOrigin } from "@/lib/server/local-origin";
+import { requireTrustedHumanGrantMutation } from "@/lib/server/trusted-grant-mutation";
 
 import {
   ProjectAccessDeniedError,
@@ -28,12 +28,10 @@ export async function PATCH(
   req: Request,
   { params: rawParams }: { params: Promise<{ id: string }> },
 ) {
-  if (!isLocalOrigin(req)) {
-    return NextResponse.json(
-      { ok: false, error: "proposal decisions must be confirmed from the local desktop" },
-      { status: 403 },
-    );
-  }
+  // Local desktop always; the paired phone only behind the desktop opt-in
+  // (isLocalOrigin is enforced inside the shared trusted-human gate).
+  const blocked = await requireTrustedHumanGrantMutation(req);
+  if (blocked) return blocked;
   const params = await rawParams;
   let payload: Record<string, unknown>;
   try {

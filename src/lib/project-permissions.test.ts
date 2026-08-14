@@ -20,17 +20,26 @@ try {
     createGrantProposal,
     deleteAccessGroup,
     effectiveProjectAccess,
+    filterFamiliarsForProject,
     filterProjectsForFamiliar,
     grantProjectToFamiliar,
+    revokeAllGrantsForProject,
+    inspectProjectPermissionIntegrity,
+    repairOrphanProjectPermissions,
+    listProjectGrants,
     listAccessibleProjects,
+    loadHumanPermissionConfig,
+    loadMobileWriteAccess,
     loadProjectPermissions,
     requiredAccessLevel,
     resolveGrantProposal,
     undoGrantProposal,
     updateAccessGroup,
+    updateMobileWriteAccess,
     GRANT_ACCEPT_UNDO_WINDOW_MS,
     ProjectAccessDeniedError,
   } = await import("./project-permissions.ts");
+  const { withProjectRegistryLock } = await import("./cave-projects.ts");
 
   const projects = [
     { id: "cave", name: "Cave", root: "/tmp/cave", createdAt: "now", updatedAt: "now" },
@@ -64,6 +73,11 @@ try {
     (await filterProjectsForFamiliar(projects, "nova")).map((project) => project.id),
     ["cave"],
     "project picker results are filtered server-side for normal familiars",
+  );
+  assert.deepEqual(
+    filterFamiliarsForProject(permissions, [{ id: "nova" }, { id: "sage" }], "cave"),
+    [{ id: "nova" }],
+    "familiar picker results use session-launch access for the selected project",
   );
   assert.deepEqual(
     (await filterProjectsForFamiliar(projects, "supreme")).map((project) => project.id),
@@ -343,6 +357,151 @@ try {
     () => undoGrantProposal({ proposalId: undoable.id }),
     ProjectAccessDeniedError,
     "a finalized grant can no longer be undone via the proposal",
+  );
+
+  // Mobile write-access opt-ins: fail closed by default, persist via the
+  // config mutator, and normalize non-boolean junk back to off.
+  const defaults = await loadMobileWriteAccess();
+  assert.deepEqual(
+    defaults,
+    {
+      allowMobileGrantMutations: false,
+      allowMobileFileWrites: false,
+      allowMobileCanvasWrites: false,
+    },
+    "mobile write access defaults to fully off",
+  );
+  const enabled = await updateMobileWriteAccess({ allowMobileGrantMutations: true });
+  assert.deepEqual(
+    enabled,
+    {
+      allowMobileGrantMutations: true,
+      allowMobileFileWrites: false,
+      allowMobileCanvasWrites: false,
+    },
+    "a partial patch flips only the addressed flag",
+  );
+  const persisted = await loadMobileWriteAccess();
+  assert.equal(persisted.allowMobileGrantMutations, true, "the opt-in persists across loads");
+  const config = await loadHumanPermissionConfig();
+  assert.equal(config.supremeFamiliarId, "supreme", "supreme id survives mobile flag writes");
+  const bothOff = await updateMobileWriteAccess({ allowMobileGrantMutations: false });
+  assert.equal(bothOff.allowMobileGrantMutations, false, "the opt-in can be revoked");
+  await writeFile(
+    process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      supremeFamiliarId: "supreme",
+      allowMobileFileWrites: "yes",
+      allowMobileCanvasWrites: 1,
+    }),
+    "utf8",
+  );
+  const junk = await loadMobileWriteAccess();
+  assert.equal(junk.allowMobileFileWrites, false, "non-boolean flag values fail closed");
+  assert.equal(junk.allowMobileCanvasWrites, false, "non-boolean canvas flag fails closed");
+
+  // ── revokeAllGrantsForProject: removing a project leaves no orphaned access ──
+  await grantProjectToFamiliar({ familiarId: "cascade-a", projectId: "cave", source: "human" });
+  await grantProjectToFamiliar({ familiarId: "cascade-b", projectId: "cave", source: "human" });
+  await grantProjectToFamiliar({ familiarId: "cascade-a", projectId: "docs", source: "human" });
+  const cascadeCleaned = await revokeAllGrantsForProject("cave");
+  assert.ok(cascadeCleaned.grants >= 2, "the cascade revokes every direct grant on the removed project");
+  const afterCascade = await listProjectGrants();
+  assert.equal(
+    afterCascade.some((grant) => grant.projectId === "cave"),
+    false,
+    "no grant for the removed project survives (a reused id can't inherit stale access)",
+  );
+  assert.ok(
+    afterCascade.some((grant) => grant.projectId === "docs" && grant.familiarId === "cascade-a"),
+    "grants for other projects are untouched by the cascade",
+  );
+
+  // ── Explicit orphan repair: legacy state is inspected first, then pruned
+  // only by an idempotent human-triggered repair that records what changed. ──
+  await grantProjectToFamiliar({ familiarId: "orphaned", projectId: "removed-project", source: "human" });
+  const beforeRepair = await inspectProjectPermissionIntegrity();
+  assert.deepEqual(beforeRepair, {
+    directGrants: 1,
+    groupGrants: 0,
+    proposals: 0,
+    orphanProjectIds: ["removed-project"],
+  }, "orphaned grants are visible without changing access");
+  const permissionSource = await readFile(new URL("./project-permissions.ts", import.meta.url), "utf8");
+  assert.match(permissionSource, /await writeJsonAtomic\(filePath, file\)/, "permission repairs persist through the atomic writer");
+  const interruptedWrite = `${process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE}.interrupted.tmp`;
+  await writeFile(interruptedWrite, '{"version":2,"projectGrants":[', "utf8");
+  assert.deepEqual(
+    await inspectProjectPermissionIntegrity(),
+    beforeRepair,
+    "an abandoned partial atomic-write temp file cannot replace the last valid permission state",
+  );
+  const repaired = await repairOrphanProjectPermissions();
+  assert.deepEqual(repaired, beforeRepair, "repair reports the exact records it removed");
+  const afterRepair = await inspectProjectPermissionIntegrity();
+  assert.deepEqual(afterRepair, {
+    directGrants: 0,
+    groupGrants: 0,
+    proposals: 0,
+    orphanProjectIds: [],
+  }, "repair only removes unknown-project records and never broadens access");
+  assert.equal((await loadProjectPermissions()).repairAudit.at(-1)?.kind, "orphan-project-repair", "repair writes an auditable record");
+  assert.deepEqual(await repairOrphanProjectPermissions(), afterRepair, "a retry after an interrupted repair is idempotent");
+
+  // A registry registration that is in-flight while repair is requested must
+  // commit before repair snapshots project ids. Otherwise a grant for an
+  // existing restored id can be incorrectly pruned between an earlier registry
+  // read and the permission-file write.
+  const restoredProject = {
+    id: "restored-during-repair",
+    name: "Restored during repair",
+    root: "/tmp/restored-during-repair",
+    createdAt: "now",
+    updatedAt: "now",
+  };
+  await grantProjectToFamiliar({
+    familiarId: "racing-registration",
+    projectId: restoredProject.id,
+    source: "human",
+  });
+  let registrationEntered!: () => void;
+  let finishRegistration!: () => void;
+  const enteredRegistration = new Promise<void>((resolve) => {
+    registrationEntered = resolve;
+  });
+  const registrationGate = new Promise<void>((resolve) => {
+    finishRegistration = resolve;
+  });
+  const registering = withProjectRegistryLock(async (currentProjects) => {
+    registrationEntered();
+    await registrationGate;
+    await writeFile(
+      process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+      JSON.stringify({ version: 1, projects: [...currentProjects, restoredProject] }),
+      "utf8",
+    );
+  });
+  await enteredRegistration;
+  const concurrentRepair = repairOrphanProjectPermissions();
+  await Promise.resolve();
+  finishRegistration();
+  await registering;
+  assert.deepEqual(
+    await concurrentRepair,
+    {
+      directGrants: 0,
+      groupGrants: 0,
+      proposals: 0,
+      orphanProjectIds: [],
+    },
+    "repair snapshots the registry only after the concurrent registration commits",
+  );
+  assert.ok(
+    (await listProjectGrants()).some(
+      (grant) => grant.familiarId === "racing-registration" && grant.projectId === restoredProject.id,
+    ),
+    "a concurrent registry restore cannot lose its existing permission record",
   );
 
   console.log("project-permissions.test.ts: ok");

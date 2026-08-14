@@ -9,12 +9,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  markFamiliarSettingsPending,
+  type FamiliarSettingsTab,
+} from "@/lib/chat-tab-events";
+import { setFamiliarScope } from "@/lib/familiar-memory";
 
 export type FamiliarStudioTab =
-  | "identity" | "look" | "brain" | "lifecycle" | "memory" | "projects" | "contract" | "vault" | "journal";
+  | "identity" | "brain" | "memory" | "projects" | "contract" | "vault";
 
 const STUDIO_TABS: readonly FamiliarStudioTab[] = [
-  "identity", "look", "brain", "lifecycle", "memory", "projects", "contract", "vault", "journal",
+  "identity", "brain", "memory", "projects", "contract", "vault",
 ];
 
 const TAB_STORAGE_KEY = "cave:familiar-studio-tab:v1";
@@ -23,17 +28,15 @@ const DEFAULT_TAB: FamiliarStudioTab = "identity";
 /**
  * One-shot handoff for "Open Brain Studio": the right-side drawer (Workspace
  * provider) writes the familiar id here before a full navigation to
- * `/settings#familiars`, and the Settings inline panel (a separate, isolated
- * provider — so `activeFamiliarId` does not carry over) reads it once to select
- * the same familiar, then clears it.
+ * Chat → Familiar → Settings consumes the familiar/tab handoff after the
+ * workspace boots the selected scope.
  */
 export const BRAIN_STUDIO_FAMILIAR_KEY = "cave:brain-studio-familiar:v1";
 
 /**
- * Hard-navigate to Settings → Familiars with an optional studio tab and
- * familiar preselected. This is the single redirect path shared by the
- * workspace-level provider (`redirectToSettings`) and workspace surfaces that
- * retired their own page (e.g. the Journal, now a studio tab).
+ * Hard-navigate to Chat → Familiar → Settings with an optional studio tab and
+ * familiar preselected. This is the single handoff path shared by workspace
+ * surfaces that retired their own Familiar editor in favor of Chat.
  */
 export function openFamiliarStudioSettingsTab(tab?: FamiliarStudioTab, familiarId?: string): void {
   if (typeof window === "undefined") return;
@@ -43,16 +46,35 @@ export function openFamiliarStudioSettingsTab(tab?: FamiliarStudioTab, familiarI
   } catch {
     /* storage may be unavailable */
   }
-  window.location.assign("/settings#familiars");
+  if (familiarId) setFamiliarScope([familiarId]);
+  markFamiliarSettingsPending(chatSettingsTabFor(tab));
+  window.location.assign("/?mode=chat");
+}
+
+function chatSettingsTabFor(tab?: FamiliarStudioTab): FamiliarSettingsTab | undefined {
+  switch (tab) {
+    case "brain":
+      return "brain";
+    case "memory":
+      return "memory";
+    case "projects":
+      return "projects";
+    case "vault":
+      return "vault";
+    case "identity":
+    case "contract":
+      return "identity";
+    default:
+      return undefined;
+  }
 }
 
 type Ctx = {
   /** `null` means closed; a string id means open for a specific familiar. */
   activeFamiliarId: string | null;
-  /** `true` means open in no-familiar list view (Lifecycle tab only). */
-  listView: boolean;
   activeTab: FamiliarStudioTab;
   openFamiliarStudio: (id: string, tab?: FamiliarStudioTab) => void;
+  /** Opens Chat → Familiar → Settings without forcing a nested tab. */
   openFamiliarStudioListView: () => void;
   closeFamiliarStudio: () => void;
   setActiveTab: (tab: FamiliarStudioTab) => void;
@@ -62,21 +84,17 @@ const StudioContext = createContext<Ctx | null>(null);
 
 export function FamiliarStudioProvider({
   children,
-  redirectToSettings = false,
+  redirectToChat = false,
 }: {
   children: ReactNode;
   /**
-   * When true (the workspace-level provider), opening a familiar no longer
-   * pops a drawer — there is no drawer. Instead it hands the familiar/tab off
-   * to Settings → Familiars (the single source of truth) and navigates there,
-   * reusing the same `BRAIN_STUDIO_FAMILIAR_KEY` / tab handoff the Settings
-   * inline panel already reads. The Settings provider leaves this false so the
-   * inline panel keeps its in-place tab/familiar navigation.
+   * When true, opening a familiar hands the familiar/tab off to Chat →
+   * Familiar → Settings. The Chat surface consumes the one-shot target after
+   * the workspace switches to the active familiar.
    */
-  redirectToSettings?: boolean;
+  redirectToChat?: boolean;
 }) {
   const [activeFamiliarId, setActiveFamiliarId] = useState<string | null>(null);
-  const [listView, setListView] = useState(false);
   const [activeTab, setActiveTabState] = useState<FamiliarStudioTab>(DEFAULT_TAB);
 
   // Restore last-used tab on mount.
@@ -97,43 +115,39 @@ export function FamiliarStudioProvider({
 
   const openFamiliarStudio = useCallback(
     (id: string, tab?: FamiliarStudioTab) => {
-      if (redirectToSettings) {
+      if (redirectToChat) {
         openFamiliarStudioSettingsTab(tab, id);
         return;
       }
       setActiveFamiliarId(id);
-      setListView(false);
       if (tab) setActiveTab(tab);
     },
-    [setActiveTab, redirectToSettings],
+    [setActiveTab, redirectToChat],
   );
 
+  // "Manage familiars" entry point: open the Chat Familiar settings surface.
   const openFamiliarStudioListView = useCallback(() => {
-    if (redirectToSettings) {
-      openFamiliarStudioSettingsTab("lifecycle");
+    if (redirectToChat) {
+      openFamiliarStudioSettingsTab();
       return;
     }
     setActiveFamiliarId(null);
-    setListView(true);
-    setActiveTab("lifecycle");
-  }, [setActiveTab, redirectToSettings]);
+  }, [redirectToChat]);
 
   const closeFamiliarStudio = useCallback(() => {
     setActiveFamiliarId(null);
-    setListView(false);
   }, []);
 
   const value = useMemo<Ctx>(
     () => ({
       activeFamiliarId,
-      listView,
       activeTab,
       openFamiliarStudio,
       openFamiliarStudioListView,
       closeFamiliarStudio,
       setActiveTab,
     }),
-    [activeFamiliarId, listView, activeTab, openFamiliarStudio, openFamiliarStudioListView, closeFamiliarStudio, setActiveTab],
+    [activeFamiliarId, activeTab, openFamiliarStudio, openFamiliarStudioListView, closeFamiliarStudio, setActiveTab],
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;

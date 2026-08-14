@@ -25,7 +25,7 @@
 - [ ] **Step 1: Create the archive feature branch on origin from current main (canvas surface intact)**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git fetch origin
 git push origin origin/main:refs/heads/feature/journal-canvas-surface
 ```
@@ -737,7 +737,7 @@ gh pr merge <#> --squash --delete-branch
 - [ ] **Step 4: Local cleanup (worktree guard rules apply — branch must be merged first)**
 
 ```bash
-cd /Users/buns/Documents/GitHub/OpenCoven/coven-cave
+cd /Users/<someone>/Documents/GitHub/OpenCoven/coven-cave
 git worktree remove .worktrees/journal-studio-move
 git branch -D journal-studio-move
 git worktree list

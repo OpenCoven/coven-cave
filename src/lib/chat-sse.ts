@@ -17,11 +17,12 @@ export type ChatSseReadResult = {
 export async function consumeChatSse(
   body: ReadableStream<Uint8Array>,
   onEvent: (event: StreamEvent, cursor: number | null) => void,
+  initialCursor = 0,
 ): Promise<ChatSseReadResult> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let cursor = 0;
+  let cursor = initialCursor;
   let sawDone = false;
 
   const handleFrame = (frame: string) => {
@@ -35,6 +36,10 @@ export async function consumeChatSse(
         data.push(rawLine.slice(5).trimStart());
       }
     }
+    // The run buffer can overlap the tail of the original response during a
+    // reconnect. A numbered event is one canonical stream record, so applying
+    // the same (or an older) id twice would duplicate assistant deltas.
+    if (frameCursor != null && frameCursor <= cursor) return;
     if (frameCursor != null) cursor = frameCursor;
     const payload = data.join("\n").trim();
     if (!payload) return;

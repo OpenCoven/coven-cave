@@ -107,11 +107,15 @@ assert.doesNotMatch(saveModal, /autoFocus/, "no autoFocus inside a focus-trapped
 assert.match(saveModal, /\{\{name\|default\}\}/, "the form teaches the placeholder + default grammar");
 
 // ── Composer wiring ──────────────────────────────────────────────────────────
-assert.match(actionsMenu, /Prompt snippets/, "the Chat options Improve group carries the snippets action");
 assert.match(
   actionsMenu,
-  /<ComposerResponseSections[\s\S]*saveAsTemplateDisabled=\{response\.saveAsTemplateDisabled\}/,
-  "the grouped Chat options Response section forwards the save-as-template disabled state",
+  /promptSnippets: improve\.promptSnippets,/,
+  "the Chat options cascade carries the snippets action in its utility group",
+);
+assert.match(
+  actionsMenu,
+  /<ResponseSections[\s\S]*saveAsTemplateDisabled=\{response\.saveAsTemplateDisabled\}/,
+  "the Response options flyout forwards the save-as-template disabled state",
 );
 assert.match(optionsMenu, /Save draft as template…/, "the Options menu carries the save action");
 assert.match(

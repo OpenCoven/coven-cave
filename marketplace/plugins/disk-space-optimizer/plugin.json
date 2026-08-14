@@ -19,6 +19,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/disk-space-optimizer",
   "x-coven": {
     "displayName": "Disk Space Optimization",

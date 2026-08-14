@@ -2,54 +2,47 @@
 
 import "@/styles/dashboard.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icon, type IconName } from "@/lib/icon";
-import type { PairingStep } from "@/lib/mobile-handoff";
+import { Icon } from "@/lib/icon";
+import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { IconButton } from "@/components/ui/icon-button";
+import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import type { Familiar } from "@/lib/types";
-import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import type { Mode, ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
-import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
-import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
-import { APP_VERSION } from "@/lib/app-version";
-import { UpdateSettingsRow } from "@/components/update-available";
-import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
-import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import {
-  DEFAULT_STOP_PHRASE,
   STOP_PHRASE_MAX_LENGTH,
+  appendStopPhrase,
+  parseStopPhrases,
+  removeStopPhraseAt,
   useStopPhrase,
   writeStopPhrase,
 } from "@/lib/stop-phrase";
-import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
-import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
+import { DaemonSection } from "./settings-daemon";
 import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
-import { AccessGroupsSection } from "./access-groups-section";
 import { SettingsOverview } from "./settings-overview";
+import { AboutSection } from "./settings-about";
+import { PhoneSection } from "./settings-phone";
 import {
   SECTIONS,
   SETTINGS_INDEX,
@@ -66,12 +59,15 @@ import {
 } from "@/lib/appearance-corner-radius";
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
-import { copyText } from "@/lib/clipboard";
+import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
 import { BackdropSettings } from "@/components/backdrop-settings";
+import { VoiceEngineSettings } from "@/components/voice-engine-settings";
+import { VoiceProviderSettings } from "@/components/voice-provider-settings";
 import {
   flushAppPreferences,
   readAppPreferences,
   refreshAppPreferences,
+  subscribeAppPreferences,
   updateAppPreferences,
 } from "@/lib/app-preferences";
 import {
@@ -82,71 +78,38 @@ import type { CustomThemeData } from "@/lib/preferences-schema";
 import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
 import {
   formatHostWorkspaceText,
-  parseExecutorUrls,
   parseHostWorkspaceText,
 } from "./settings-multihost";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type DaemonStatus = {
-  running: boolean;
-  reason?: string;
-  covenVersion?: string;
-  apiVersion?: string;
-  workspacePath?: string;
-  daemon?: { pid: number; startedAt: string; socket: string };
-  executors?: Array<{
-    url: string;
-    healthUrl: string;
-    ok: boolean;
-    state: "available" | "unreachable";
-    detail: string;
-  }>;
-  target?: {
-    mode: "local" | "hub" | "unconfigured-hub";
-    label: string;
-    socket?: string;
-    url?: string;
-    error?: string;
-  };
-  travel?: {
-    mode: "home" | "hub" | "watching-hub" | "travel" | "handoff-pending";
-    authority: "local" | "hub" | "travel-local";
-    reason: string;
-    manualOffline: boolean;
-    staleCache: boolean;
-    wakeLocalSubdaemon: boolean;
-    localBindHost: "127.0.0.1";
-    hubUnreachableSince: string | null;
-    hubUnreachableForMs: number;
-    pendingQueueCount: number;
-    handoffPending: boolean;
-  };
-};
-
-type MultiHostMode = "local" | "hub";
-
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
-export function SettingsShell() {
+export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const isMobile = useIsMobile();
 
-  const [section, setSection] = useState<Section>("general");
+  // Sections are navigation, not view state: Back from Appearance should land
+  // on the section you came from rather than popping the whole route.
+  const {
+    value: section,
+    select: selectSection,
+    show: showSection,
+  } = useSurfaceHistory<Section>({ id: "settings:section", initial: "general" });
+  const setSection = showSection;
+  const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
-  // render that section. Hash-deep-link (`/settings#familiars`) skips the
-  // picker so the user lands directly on the target.
+  // render that section.
   const [pickerView, setPickerView] = useState(false);
   const activeSection = SECTIONS.find((s) => s.id === section);
   const showPicker = isMobile && pickerView;
 
   // ── Search across settings ────────────────────────────────────────────────
-  const [query, setQuery] = useState("");
+  const { value: query, select: selectQuery, show: setQuery } = useSurfaceHistory<string>({
+    id: "settings:search",
+    initial: "",
+    coalesceMs: 1200,
+  });
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
-  // One-shot studio-tab target for search results that point inside the
-  // Familiars panel (see SettingsIndexEntry.familiarTab).
-  const [familiarsTabTarget, setFamiliarsTabTarget] = useState<FamiliarStudioTab | null>(null);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -157,14 +120,6 @@ export function SettingsShell() {
   function goToSetting(entry: SettingsIndexEntry) {
     openSection(entry.section);
     setQuery("");
-    if (entry.familiarTab) {
-      // The Familiars panel isn't a SettingsGroup — the entry targets one of
-      // its studio tabs instead, activated below the provider by
-      // FamiliarsSection once the roster has loaded.
-      setFamiliarsTabTarget(entry.familiarTab);
-      setScrollTarget(null);
-      return;
-    }
     setScrollTarget(entry.group ? settingsGroupId(entry.group) : null);
   }
 
@@ -191,46 +146,56 @@ export function SettingsShell() {
     return () => cancelAnimationFrame(raf);
   }, [scrollTarget, section]);
 
+  /** A user picking a section — from the rail, the search results, or ⌘↓. */
   function openSection(id: Section) {
-    setSection(id);
+    selectSection(id);
     setPickerView(false);
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#${id}`);
-    }
   }
   function backToPicker() {
     setPickerView(true);
-    if (typeof window !== "undefined") {
+    if (!embedded && typeof window !== "undefined") {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }
 
-  // Support hash-based deep-linking, e.g. /settings#familiars. Read it after
-  // hydration so SSR and the first client render both start on General.
+  // Keep the deep-link hash on whatever section is showing, including one the
+  // history controls restored — openSection is no longer the only way to move.
+  //
+  // It must not run before the incoming hash has been read. On mount `section`
+  // is still the "general" default while the URL already says `#about`, so an
+  // ungated write rewrites the deep link to `#general` and the reader below
+  // then honours the value this effect just clobbered.
+  const hashHydratedRef = useRef(false);
   useEffect(() => {
+    if (embedded || typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
+    if (window.location.hash === `#${section}`) return;
+    window.history.replaceState(null, "", `#${section}`);
+  }, [section, pickerView]);
+
+  // Support hash-based deep-linking. Read it after hydration so SSR and the
+  // first client render both start on General.
+  useEffect(() => {
+    if (embedded) {
+      hashHydratedRef.current = true;
+      return;
+    }
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
         const params = new URLSearchParams(window.location.search);
         const group = params.get("group")?.trim();
-        const familiarTab = params.get("familiarTab")?.trim() as FamiliarStudioTab | undefined;
         setSection(hash);
         setPickerView(false);
-        if (familiarTab && SETTINGS_INDEX.some((entry) => entry.familiarTab === familiarTab)) {
-          setFamiliarsTabTarget(familiarTab);
-          setScrollTarget(null);
-        } else {
-          setFamiliarsTabTarget(null);
-          setScrollTarget(group ? settingsGroupId(group) : null);
-        }
+        setScrollTarget(group ? settingsGroupId(group) : null);
         return;
       }
       setPickerView(true);
     };
     applyHashSection();
+    hashHydratedRef.current = true;
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -240,7 +205,11 @@ export function SettingsShell() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.key === "Escape") {
         e.preventDefault();
-        router.back();
+        if (embedded) {
+          if (isMobile && !pickerView) backToPicker();
+        } else {
+          router.back();
+        }
         return;
       }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -253,11 +222,12 @@ export function SettingsShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, section]);
+  }, [embedded, isMobile, pickerView, router, section]);
 
   return (
-    <FamiliarStudioProvider>
-    <div className="settings-shell flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <div
+      className={`settings-shell${embedded ? " settings-shell--embedded h-full" : " h-[100dvh]"} w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
+    >
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
           route. Desktop always pops the route. */}
@@ -271,7 +241,7 @@ export function SettingsShell() {
         // Real window drag on the loopback webview (the CSS app-region hint is
         // inert on external URLs — see the titlebar notes in shell.tsx). The
         // Back button and other controls opt out automatically as clickables.
-        data-tauri-drag-region="deep"
+        data-tauri-drag-region={embedded ? undefined : "deep"}
       >
         <Button
           variant="ghost"
@@ -308,7 +278,7 @@ export function SettingsShell() {
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
             <SearchInput
               value={query}
-              onValueChange={setQuery}
+              onValueChange={selectQuery}
               onClear={() => setQuery("")}
               placeholder="Search settings…"
               aria-label="Search settings"
@@ -371,14 +341,15 @@ export function SettingsShell() {
         >
           {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
-          {section === "daemon"   && <DaemonSection />}
-          {section === "familiars" && (
-            <FamiliarsSection
-              tabTarget={familiarsTabTarget}
-              onTabTargetConsumed={() => setFamiliarsTabTarget(null)}
+          {section === "voice" && <VoiceSection />}
+          {section === "daemon" && (
+            <DaemonSection
+              suggestedHubUrl={suggestedHubUrl}
+              onSuggestionConsumed={() => setSuggestedHubUrl(null)}
+              omnigentSettings={<OmnigentSettingsGroup />}
             />
           )}
-          {section === "mobile"   && <MobileSection />}
+          {section === "mobile"   && <PhoneSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
         </main>
@@ -387,7 +358,6 @@ export function SettingsShell() {
         {isMobile ? (pickerView ? "Tap a section to open" : "Back returns to Settings") : "Esc back · ↑↓ navigate sections"}
       </footer>
     </div>
-    </FamiliarStudioProvider>
   );
 }
 
@@ -395,53 +365,54 @@ export function SettingsShell() {
 
 function GeneralSection() {
   return (
-    <SettingsPage section="general" title="General" description="App-wide preferences.">
-      <SettingsGroup label="Workspace">
-        <SettingsRow label="Workspace path" description="Where Coven stores familiar workspaces.">
+    <SettingsPage section="general" title="General" description="App-wide preferences." variant="control-sheet">
+      <SettingsGroup label="Workspace" variant="ruled" panel={false}>
+        <SettingsRow
+          label="Workspace path"
+          description="Where Coven stores familiar workspaces."
+          variant="sheet"
+        >
           <WorkspacePathField />
         </SettingsRow>
       </SettingsGroup>
-      <SettingsGroup label="Home">
-        <HomeNewsToggle />
-      </SettingsGroup>
-      <SettingsGroup label="Chat">
+      <SettingsGroup label="Chat" variant="ruled" panel={false}>
         <StopPhraseField />
       </SettingsGroup>
-      <SettingsGroup label="Progression">
-        <CelebrationsToggle />
+      <SettingsGroup label="Progression" variant="ruled" panel={false}>
+        <div className="settings-progression-card">
+          <CelebrationsToggle />
+        </div>
       </SettingsGroup>
       <BackupSettingsGroup />
-      <SettingsGroup label="Startup">
-        <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
-        <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
+      <SettingsGroup label="Startup" variant="ruled" panel={false}>
+        <div className="settings-startup-grid">
+          <div className="settings-startup-cell">
+            <span>Launch at login</span>
+            <span className="settings-startup-soon">Soon</span>
+          </div>
+          <div className="settings-startup-cell">
+            <span>Open to</span>
+            <span className="settings-startup-soon">Soon</span>
+          </div>
+        </div>
       </SettingsGroup>
     </SettingsPage>
   );
 }
 
-// News on Home is opt-out here rather than dismissible inline — the carousel
-// row carries no X, so this switch is the one place the choice lives (and it
-// persists across visits, unlike the old per-mount dismiss). Rendered as a
-// minimal track/knob switch (user-requested): the row label carries the
-// meaning, so the control itself needs no On/Off text.
-function HomeNewsToggle() {
-  const newsEnabled = useHomeNewsEnabled();
+// ─── Section: Voice ───────────────────────────────────────────────────────────
+
+function VoiceSection() {
   return (
-    <SettingsRow
-      label="News headlines"
-      description="Show the News carousel on the Home screen's daily summary."
-    >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={newsEnabled}
-        aria-label="News headlines"
-        onClick={() => writeHomeNewsEnabled(!newsEnabled)}
-        className={`settings-switch focus-ring${newsEnabled ? " is-on" : ""}`}
+    <div className="settings-voice">
+      <SettingsPage
+        section="voice"
+        title="Voice"
+        description="Providers, models, voices, and creation defaults."
       >
-        <span className="settings-switch__knob" aria-hidden />
-      </button>
-    </SettingsRow>
+        <VoiceProviderSettings localSpeechSettings={<VoiceEngineSettings />} />
+      </SettingsPage>
+    </div>
   );
 }
 
@@ -476,29 +447,96 @@ function CelebrationsToggle() {
 // clearing the field disables interception.
 function StopPhraseField() {
   const saved = useStopPhrase();
-  const [draft, setDraft] = useState<string | null>(null);
-  const value = draft ?? saved;
-  const commit = () => {
-    if (draft !== null && draft.trim() !== saved) writeStopPhrase(draft);
-    setDraft(null);
+  const { announce } = useAnnouncer();
+  const [draft, setDraft] = useState("");
+  const phrases = parseStopPhrases(saved);
+
+  const persist = (value: string, announcement: string) => {
+    writeStopPhrase(value);
+    announce(announcement);
   };
+
+  const addDraft = () => {
+    const result = appendStopPhrase(saved, draft);
+    if (!result.added) {
+      if (result.reason === "too-long") {
+        announce(
+          `Stop phrases must fit within ${STOP_PHRASE_MAX_LENGTH} characters.`,
+          "assertive",
+        );
+      }
+      if (result.reason === "duplicate") announce("That stop phrase is already saved.");
+      return;
+    }
+    setDraft("");
+    persist(result.value, `Added stop phrase ${parseStopPhrases(result.value).at(-1)}.`);
+  };
+
   return (
     <SettingsRow
       label="Stop phrases"
-      description="Typing any one of these in the composer while a task is running stops it. Separate options with commas; leave empty to disable."
+      description="Typing one while a task runs stops it."
+      descriptionId="general-stop-phrases-help"
+      variant="sheet"
     >
-      <input
-        value={value}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-        }}
-        placeholder={DEFAULT_STOP_PHRASE}
-        maxLength={STOP_PHRASE_MAX_LENGTH}
+      <div
+        className="settings-stop-phrases"
+        role="group"
         aria-label="Stop phrases"
-        className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
-      />
+        aria-describedby="general-stop-phrases-help"
+      >
+        <div className="settings-stop-phrases__editor">
+          {phrases.map((phrase, index) => (
+            <span key={phrase} className="settings-stop-phrase">
+              {phrase}
+              <IconButton
+                icon="ph:x"
+                size="xs"
+                className="settings-stop-phrase__remove focus-ring"
+                aria-label={`Remove stop phrase ${phrase}`}
+                onClick={() => persist(
+                  removeStopPhraseAt(saved, index),
+                  `Removed stop phrase ${phrase}.`,
+                )}
+              />
+            </span>
+          ))}
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => {
+              if (draft.trim()) addDraft();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                addDraft();
+              } else if (e.key === "Backspace" && !draft && phrases.length > 0) {
+                persist(
+                  removeStopPhraseAt(saved, phrases.length - 1),
+                  `Removed stop phrase ${phrases.at(-1)}.`,
+                );
+              }
+            }}
+            aria-label="Add stop phrase"
+            placeholder="Add another…"
+            maxLength={STOP_PHRASE_MAX_LENGTH}
+            className="settings-stop-phrases__input focus-ring"
+          />
+        </div>
+        <div className="settings-stop-phrases__meta">
+          <span>{phrases.length} {phrases.length === 1 ? "phrase" : "phrases"}</span>
+          <Button
+            variant="ghost"
+            size="xs"
+            className="settings-stop-phrases__clear focus-ring"
+            disabled={phrases.length === 0}
+            onClick={() => persist("", "Cleared stop phrases.")}
+          >
+            Clear
+          </Button>
+        </div>
+      </div>
     </SettingsRow>
   );
 }
@@ -512,6 +550,7 @@ function BackupSettingsGroup() {
   const [status, setStatus] = useState<string>("");
 
   const canSubmit = passphrase.length >= 8;
+  const backupPassphraseGuidance = getBackupPassphraseGuidance(passphrase);
 
   const exportBackup = async () => {
     setBusy("export");
@@ -580,64 +619,488 @@ function BackupSettingsGroup() {
   };
 
   return (
-    <SettingsGroup label="Backup" description="Manual encrypted snapshots for machine loss recovery.">
-      <SettingsRow
-        label="Encrypted export"
-        description="Includes Tier-1 state and the vault key inside a passphrase-wrapped envelope. Browser profile state is not included yet."
-      >
-        <div className="flex w-full max-w-md flex-col gap-2">
+    <SettingsGroup label="Backup" variant="ruled" panel={false}>
+      <div className="settings-backup-intro">
+        <h3 id="settings-backup-manual-title">Encrypted export</h3>
+        <p>Tier-1 state and the vault key, wrapped with your passphrase.</p>
+      </div>
+      <div className="settings-backup-grid">
+        <section
+          className="settings-backup-manual"
+          aria-labelledby="settings-backup-manual-title"
+        >
           <input
             type="password"
             value={passphrase}
-            onChange={(e) => setPassphrase(e.target.value)}
+            onChange={(event) => setPassphrase(event.target.value)}
             placeholder="Backup passphrase"
             aria-label="Backup passphrase"
-            className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] outline-none"
+            className="settings-backup-input focus-ring"
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={exportBackup} disabled={!canSubmit || busy !== null} leadingIcon="ph:arrow-down">
+          <div
+            className="settings-backup-guidance"
+            aria-label="Passphrase length guidance"
+            aria-live="polite"
+          >
+            <span className="settings-backup-guidance__track" aria-hidden="true">
+              <span
+                className={`settings-backup-guidance__fill is-${backupPassphraseGuidance.score}`}
+              />
+            </span>
+            <span className={`settings-backup-guidance__label is-${backupPassphraseGuidance.score}`}>
+              {backupPassphraseGuidance.label}
+            </span>
+          </div>
+          <div className="settings-backup-actions">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={exportBackup}
+              disabled={!canSubmit || busy !== null}
+              leadingIcon="ph:arrow-down"
+            >
               {busy === "export" ? "Exporting…" : "Export backup"}
             </Button>
-            <label className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[length:var(--text-sm)] text-[var(--text-primary)] hover:border-[var(--border-strong)]">
+            <label className="settings-backup-file focus-ring">
               Choose backup
               <input
                 type="file"
                 accept=".ccbackup,application/octet-stream"
                 className="sr-only"
-                onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
+                onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)}
               />
             </label>
-            <Button size="sm" onClick={restoreBackup} disabled={!canSubmit || !restoreFile || busy !== null} leadingIcon="ph:arrow-counter-clockwise">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={restoreBackup}
+              disabled={!canSubmit || !restoreFile || busy !== null}
+              leadingIcon="ph:arrow-counter-clockwise"
+            >
               {busy === "restore" ? "Restoring…" : "Restore"}
             </Button>
           </div>
-          {restoreFile ? <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Selected {restoreFile.name}</p> : null}
-          {status ? <p className="text-[length:var(--text-xs)] leading-5 text-[var(--text-secondary)]">{status}</p> : null}
-        </div>
-      </SettingsRow>
+          <p className="settings-backup-footnote">
+            Browser profile state is not included yet.
+          </p>
+          {restoreFile ? (
+            <p className="settings-backup-selection">Selected {restoreFile.name}</p>
+          ) : null}
+          {status ? <p className="settings-backup-status" role="status">{status}</p> : null}
+        </section>
+        <ScheduledSyncSettings />
+      </div>
     </SettingsGroup>
   );
 }
 
+type BackupSyncOverview = {
+  config: {
+    enabled: boolean;
+    directory: string | null;
+    retainCount: number;
+    intervalHours: number;
+    onQuitPush: boolean;
+  };
+  status: {
+    lastAttemptAt: string | null;
+    lastSuccessAt: string | null;
+    lastSuccessFile: string | null;
+    lastError: string | null;
+    lastReason: string | null;
+    retainedCount: number | null;
+  };
+  defaultDirectory: string;
+  effectiveDirectory: string;
+  passphraseSet: boolean;
+  due: boolean;
+};
+
+// Scheduled encrypted sync (Persistence P2): a daily snapshot pushed into a
+// user-owned folder (iCloud Drive by default) plus an on-quit push, so machine
+// loss costs at most a day. The passphrase saves into the local encrypted
+// vault for unattended runs; restoring still asks for it manually above.
+function ScheduledSyncSettings() {
+  const { announce } = useAnnouncer();
+  const [overview, setOverview] = useState<BackupSyncOverview | null>(null);
+  const [directoryDraft, setDirectoryDraft] = useState<string | null>(null);
+  const [retainDraft, setRetainDraft] = useState<string | null>(null);
+  const [passphraseDraft, setPassphraseDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [syncLoadState, setSyncLoadState] =
+    useState<"loading" | "ready" | "error">("loading");
+
+  const loadOverview = useCallback(async (signal?: AbortSignal) => {
+    setSyncLoadState("loading");
+    try {
+      const response = await fetch("/api/backup/sync", {
+        cache: "no-store",
+        signal,
+      });
+      const json = await response.json().catch(() => null) as
+        | (BackupSyncOverview & { ok?: boolean })
+        | null;
+      if (!response.ok || !json?.ok) throw new Error("invalid sync response");
+      if (signal?.aborted) return;
+      setOverview(json);
+      setSyncLoadState("ready");
+    } catch {
+      if (signal?.aborted) return;
+      setSyncLoadState("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadOverview(controller.signal);
+    return () => controller.abort();
+  }, [loadOverview]);
+
+  const update = async (patch: Record<string, unknown>, announcement: string) => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/backup/sync", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json?.error || `sync update failed (${res.status})`);
+      setOverview(json as BackupSyncOverview);
+      window.dispatchEvent(new Event("cave:backup-sync-refresh"));
+      announce(announcement);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "sync update failed";
+      setMessage(text);
+      announce(`Scheduled sync update failed: ${text}`, "assertive");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runNow = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/backup/sync/run", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json?.error || `backup failed (${res.status})`);
+      const refreshed = await fetch("/api/backup/sync", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
+      if (refreshed?.ok) setOverview(refreshed as BackupSyncOverview);
+      setMessage("Snapshot saved.");
+      announce("Backup snapshot saved.");
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "backup failed";
+      setMessage(text);
+      announce(`Backup failed: ${text}`, "assertive");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (syncLoadState === "loading") {
+    return (
+      <section
+        className="settings-backup-card settings-backup-sync"
+        aria-label="Scheduled sync"
+        role="status"
+        aria-busy="true"
+      >
+        <span className="sr-only">Loading scheduled sync…</span>
+        <SkeletonRows count={3} />
+      </section>
+    );
+  }
+
+  if (syncLoadState === "error" || !overview) {
+    return (
+      <section className="settings-backup-card settings-backup-sync" aria-label="Scheduled sync">
+        <ErrorState
+          compact
+          headline="Couldn't load scheduled sync"
+          subtitle="Retry after the Cave sidecar is available."
+          actions={<Button size="sm" onClick={() => void loadOverview()}>Retry</Button>}
+        />
+      </section>
+    );
+  }
+
+  const { config, status: sync } = overview;
+  const enabled = config.enabled;
+  const freshness = sync.lastSuccessAt
+    ? `Last snapshot ${relativeTime(sync.lastSuccessAt)}${typeof sync.retainedCount === "number" ? ` · ${sync.retainedCount} kept` : ""}`
+    : "No snapshots yet.";
+
+  return (
+    <section
+      className="settings-backup-card settings-backup-sync"
+      aria-labelledby="settings-backup-sync-title"
+    >
+      <div className="settings-backup-sync__header">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Scheduled sync"
+          disabled={busy}
+          onClick={() => update({ enabled: !enabled }, enabled ? "Scheduled sync off." : "Scheduled sync on.")}
+          className={`settings-switch focus-ring${enabled ? " is-on" : ""}`}
+        >
+          <span className="settings-switch__knob" aria-hidden />
+        </button>
+        <h3 id="settings-backup-sync-title">Scheduled sync</h3>
+        <span className={`settings-backup-sync__state${enabled ? " is-on" : ""}`}>
+          {enabled ? "On" : "Off"}
+        </span>
+      </div>
+      <p>Pushes an encrypted snapshot to a folder you own and again when Cave quits.</p>
+      <p className="settings-backup-sync__freshness">{freshness}</p>
+      {enabled ? (
+        <div className="settings-backup-sync__details">
+          <label className="settings-backup-field">
+            <span className="settings-backup-field__label">Destination</span>
+            <span className="settings-backup-field__help">
+              Folder that receives snapshots. Leave empty to use iCloud Drive when available.
+            </span>
+            <input
+              value={directoryDraft ?? config.directory ?? ""}
+              onChange={(event) => setDirectoryDraft(event.target.value)}
+              onBlur={() => {
+                if (directoryDraft === null) return;
+                const next = directoryDraft.trim();
+                setDirectoryDraft(null);
+                if (next === (config.directory ?? "")) return;
+                void update({ directory: next || null }, "Backup destination saved.");
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder={overview.defaultDirectory}
+              aria-label="Backup destination folder"
+              className="settings-backup-input settings-backup-input--mono focus-ring"
+            />
+          </label>
+
+          <div className="settings-backup-field">
+            <span className="settings-backup-field__label">Sync passphrase</span>
+            <span className="settings-backup-field__help">
+              Saved in the local encrypted vault for unattended snapshots.
+            </span>
+            <div className="settings-backup-field__controls">
+              <input
+                type="password"
+                value={passphraseDraft}
+                onChange={(event) => setPassphraseDraft(event.target.value)}
+                placeholder={overview.passphraseSet ? "Passphrase saved" : "Sync passphrase"}
+                aria-label="Sync passphrase"
+                className="settings-backup-input focus-ring"
+              />
+              <Button
+                size="sm"
+                disabled={busy || passphraseDraft.length < 8}
+                onClick={() => {
+                  void update({ passphrase: passphraseDraft }, "Sync passphrase saved.").then(() => setPassphraseDraft(""));
+                }}
+              >
+                Save passphrase
+              </Button>
+              {overview.passphraseSet ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => update({ clearPassphrase: true }, "Sync passphrase cleared.")}
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <label className="settings-backup-field">
+            <span className="settings-backup-field__label">Keep snapshots</span>
+            <span className="settings-backup-field__help">
+              Oldest snapshots are pruned after this limit.
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={retainDraft ?? String(config.retainCount)}
+              onChange={(event) => setRetainDraft(event.target.value)}
+              onBlur={() => {
+                if (retainDraft === null) return;
+                const next = Number(retainDraft);
+                setRetainDraft(null);
+                if (!Number.isFinite(next) || next === config.retainCount) return;
+                void update({ retainCount: next }, "Snapshot retention saved.");
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              aria-label="Snapshots to keep"
+              className="settings-backup-input settings-backup-input--count focus-ring"
+            />
+          </label>
+
+          <div className="settings-backup-field">
+            <span className="settings-backup-field__label">Freshness</span>
+            <span className="settings-backup-field__help">{freshness}</span>
+            <Button
+              size="sm"
+              onClick={runNow}
+              disabled={busy || !overview.passphraseSet}
+              leadingIcon="ph:arrow-clockwise"
+            >
+              {busy ? "Backing up…" : "Back up now"}
+            </Button>
+            {!overview.passphraseSet ? (
+              <p className="settings-backup-field__help">
+                Save a sync passphrase to start scheduled snapshots.
+              </p>
+            ) : null}
+            {sync.lastError ? (
+              <p className="settings-backup-error" role="alert">{sync.lastError}</p>
+            ) : null}
+            {message ? <p className="settings-backup-status" role="status">{message}</p> : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * Workspace path — read the current root, and let Browse *change* it.
+ *
+ * Browse used to hand the path to the OS file manager (`shell_open_path`),
+ * which meant it did nothing at all on the web build and, on desktop, could
+ * only ever show you the folder you already had. Choosing a different one had
+ * no UI at all. It now opens the in-app folder browser — the same modal the
+ * new-project flow uses, so this works identically on web and desktop with no
+ * native dialog — and persists the pick through /api/config/workspace-path.
+ *
+ * Revealing the folder in the OS file manager is still available on desktop,
+ * as its own control rather than as the meaning of "Browse".
+ */
 function WorkspacePathField() {
   const [path, setPath] = useState("");
+  const [envPin, setEnvPin] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const desktop = useIsTauriDesktop();
+  const { announce } = useAnnouncer();
+  // One slot for both failures the row can surface (saving a pick, revealing
+  // the folder natively) — they are mutually exclusive in practice and share
+  // the same alert line.
+  const [fieldError, setFieldError] = useState("");
+
   useEffect(() => {
     const ctl = new AbortController();
-    fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
+    fetch("/api/config/workspace-path", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
-      .then((j: { workspacePath?: string }) => {
-        if (!ctl.signal.aborted && j.workspacePath) setPath(j.workspacePath);
+      .then((j: { workspacePath?: string; envPin?: string | null }) => {
+        if (ctl.signal.aborted) return;
+        if (j.workspacePath) setPath(j.workspacePath);
+        setEnvPin(j.envPin ?? null);
       })
       .catch(() => {});
     return () => ctl.abort();
   }, []);
+
+  const choose = async (dir: string) => {
+    setPickerOpen(false);
+    setSaving(true);
+    setFieldError("");
+    try {
+      const res = await fetch("/api/config/workspace-path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ dir }),
+      });
+      const body = (await res.json()) as { ok?: boolean; workspacePath?: string; error?: string };
+      if (!res.ok || !body.ok || !body.workspacePath) {
+        const message = body.error ?? "Couldn't save the workspace path.";
+        setFieldError(message);
+        announce(message, "assertive");
+        return;
+      }
+      setPath(body.workspacePath);
+      announce("Workspace path saved.");
+    } catch {
+      setFieldError("Couldn't save the workspace path.");
+      announce("Couldn't save the workspace path.", "assertive");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reveal = async () => {
+    if (!desktop || !path) return;
+    setFieldError("");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("shell_open_path", { path });
+      announce("Workspace folder opened.");
+    } catch {
+      setFieldError("Couldn't open the workspace folder.");
+      announce("Couldn't open the workspace folder.", "assertive");
+    }
+  };
+
   return (
-    <input
-      value={path}
-      readOnly
-      aria-label="Workspace path"
-      className="w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-secondary)] outline-none"
-    />
+    <div className="settings-workspace-control">
+      <input
+        value={path}
+        readOnly
+        aria-label="Workspace path"
+        className="settings-workspace-path focus-ring"
+      />
+      <div className="settings-workspace-actions">
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon="ph:folder-open"
+          disabled={Boolean(envPin) || saving}
+          title={
+            envPin
+              ? `Pinned by ${envPin}`
+              : "Choose where Coven stores familiar workspaces"
+          }
+          onClick={() => {
+            // Don't carry a previous failure into a fresh attempt.
+            setFieldError("");
+            setPickerOpen(true);
+          }}
+        >
+          {saving ? "Saving…" : "Browse"}
+        </Button>
+        {desktop ? (
+          <IconButton
+            icon="ph:arrow-square-out"
+            aria-label="Open workspace folder in file manager"
+            title="Open workspace folder in file manager"
+            size="sm"
+            disabled={!path}
+            onClick={() => void reveal()}
+          />
+        ) : null}
+      </div>
+      {envPin ? (
+        <p className="settings-workspace-hint">
+          Pinned by the {envPin} environment variable.
+        </p>
+      ) : null}
+      {fieldError ? <p role="alert" className="settings-workspace-error">{fieldError}</p> : null}
+      <DirectoryPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(dir) => void choose(dir)}
+      />
+    </div>
   );
 }
 
@@ -907,518 +1370,6 @@ function OmnigentSettingsGroup() {
   );
 }
 
-function DaemonSection() {
-  const [status, setStatus] = useState<DaemonStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
-  const [restarting, setRestarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const [mode, setMode] = useState<MultiHostMode>("local");
-  const [hubUrl, setHubUrl] = useState("");
-  const [executorText, setExecutorText] = useState("");
-  const [savingConnection, setSavingConnection] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const { announce } = useAnnouncer();
-  const [savingTravel, setSavingTravel] = useState(false);
-  const [travelError, setTravelError] = useState<string | null>(null);
-
-  // Abort the in-flight status read on each refresh: Start/Restart/Manual-
-  // Offline each trigger one, and without cancellation a slow earlier
-  // response can land after a newer one and flash a stale pre-action status
-  // (same guard FamiliarsSection uses for its loads).
-  const refreshCtlRef = useRef<AbortController | null>(null);
-  const refresh = () => {
-    refreshCtlRef.current?.abort();
-    const ctl = new AbortController();
-    refreshCtlRef.current = ctl;
-    setLoading(true);
-    fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
-      .then((r) => r.json())
-      .then((j: DaemonStatus) => {
-        if (ctl.signal.aborted) return;
-        setStatus(j); setLoading(false);
-      })
-      .catch(() => {
-        if (ctl.signal.aborted) return;
-        setStatus({ running: false }); setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    refresh();
-    return () => refreshCtlRef.current?.abort();
-    // refresh is stable-by-construction (only touches refs/setters); running
-    // this once on mount is the intent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const ctl = new AbortController();
-    fetch("/api/config", { cache: "no-store", signal: ctl.signal })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; config?: { multiHost?: { mode?: MultiHostMode; hubUrl?: string; executorUrls?: string[] } } }) => {
-        if (ctl.signal.aborted) return;
-        const multiHost = j.config?.multiHost;
-        if (!j.ok || !multiHost) return;
-        setMode(multiHost.mode === "hub" ? "hub" : "local");
-        setHubUrl(multiHost.hubUrl ?? "");
-        setExecutorText((multiHost.executorUrls ?? []).join("\n"));
-      })
-      .catch(() => {});
-    return () => ctl.abort();
-  }, []);
-
-  const saveConnection = async (nextMode = mode) => {
-    setSavingConnection(true);
-    setConnectionError(null);
-    try {
-      const res = await fetch("/api/config", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ multiHost: { mode: nextMode, hubUrl, executorUrls: parseExecutorUrls(executorText) } }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || `save failed (${res.status})`);
-      }
-      setMode(nextMode);
-      announce("Daemon connection saved.");
-      refresh();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "could not save daemon connection";
-      setConnectionError(msg);
-      announce(`Couldn't save daemon connection: ${msg}`, "assertive");
-    } finally {
-      setSavingConnection(false);
-    }
-  };
-
-  const chooseMode = (nextMode: MultiHostMode) => {
-    void saveConnection(nextMode);
-  };
-
-  const startDaemon = async () => {
-    setStarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      refresh();
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : "daemon did not start");
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const restartDaemon = async () => {
-    setRestarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch("/api/daemon/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ restart: true }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not restart");
-      }
-      refresh();
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : "daemon did not restart");
-    } finally {
-      setRestarting(false);
-    }
-  };
-
-  const setManualOffline = async (manualOffline: boolean) => {
-    setSavingTravel(true);
-    setTravelError(null);
-    try {
-      const res = await fetch("/api/travel/client", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ manualOffline }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || `travel mode save failed (${res.status})`);
-      }
-      refresh();
-    } catch (err) {
-      setTravelError(err instanceof Error ? err.message : "could not save travel mode");
-    } finally {
-      setSavingTravel(false);
-    }
-  };
-
-  return (
-    <SettingsPage section="daemon" title="Daemon" description="The coven daemon manages familiar sessions and the workspace.">
-      <SettingsGroup label="Connection">
-        <SettingControlRow
-          label="Runtime target"
-          hint={status?.target?.mode === "hub" ? `Connected through ${status.target.url ?? "server hub"}` : "Local runs everything on this machine (the default). Server hub connects to a shared daemon on another machine."}
-        >
-          <Segmented
-            options={["local", "hub"] as const}
-            value={mode}
-            onChange={chooseMode}
-            getLabel={(option) => option === "local" ? "Local" : "Server hub"}
-            ariaLabel="Daemon runtime target"
-          />
-        </SettingControlRow>
-        <SettingControlRow label="Server hub URL" hint="HTTP endpoint for the Linux/server hub on your private network.">
-          <input
-            value={hubUrl}
-            onChange={(event) => setHubUrl(event.target.value)}
-            onBlur={() => void saveConnection()}
-            aria-label="Server hub URL"
-            placeholder="http://server.tailnet:8787"
-            disabled={mode !== "hub"}
-            className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
-          />
-        </SettingControlRow>
-        <SettingControlRow label="Executor addresses" hint="Advanced, optional: addresses of extra machines that can run familiar sessions, one per line. Leave empty unless you run a multi-machine setup.">
-          <textarea
-            value={executorText}
-            onChange={(event) => setExecutorText(event.target.value)}
-            onBlur={() => void saveConnection()}
-            aria-label="Executor addresses, one per line"
-            placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
-            disabled={mode !== "hub"}
-            rows={3}
-            className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)] outline-none disabled:opacity-50"
-          />
-        </SettingControlRow>
-        {/* Save hugs the section's bottom-right corner at the short (xs)
-            control height — same as the Status row's Refresh button. */}
-        <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-2.5 pt-0.5">
-          {connectionError && <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">{connectionError}</span>}
-          <Button
-            variant="secondary"
-            size="xs"
-            onClick={() => void saveConnection()}
-            disabled={savingConnection}
-            leadingIcon="ph:floppy-disk-bold"
-          >
-            {savingConnection ? "Saving..." : "Save connection"}
-          </Button>
-        </div>
-      </SettingsGroup>
-
-      <OmnigentSettingsGroup />
-
-      <SettingsGroup label="Status">
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-            loading ? "animate-pulse bg-[var(--text-muted)]"
-            : status?.running ? "bg-[var(--color-success)]"
-            : "bg-red-400"
-          }`} />
-          <span className="text-[length:var(--text-base)] font-medium">
-            {loading ? "Checking…" : status?.running ? "Running" : "Offline"}
-          </span>
-          {status?.running && status.daemon && (
-            <span className="ml-auto font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              pid {status.daemon.pid}
-            </span>
-          )}
-          {!loading && !status?.running && mode === "local" && (
-            <Button
-              variant="primary"
-              size="sm"
-              className="ml-auto"
-              onClick={startDaemon}
-              disabled={starting}
-              leadingIcon="ph:rocket-launch-bold"
-              title="coven daemon start"
-            >
-              {starting ? "Starting..." : "Start daemon"}
-            </Button>
-          )}
-          {status?.running && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={restartDaemon}
-              disabled={restarting}
-              leadingIcon="ph:arrow-clockwise"
-              title="coven daemon start"
-            >
-              {restarting ? "Restarting..." : "Restart daemon"}
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={refresh}
-            leadingIcon="ph:arrow-clockwise"
-          >
-            Refresh
-          </Button>
-          {status?.target?.mode === "hub" && (
-            <span className="font-mono text-[length:var(--text-xs)] text-[var(--text-muted)]">
-              hub {status.target.url}
-            </span>
-          )}
-          {startError && <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">{startError}</p>}
-          {!loading && !status?.running && mode === "hub" && status?.target?.mode === "hub" && (
-            <p className="basis-full text-[length:var(--text-xs)] text-[var(--color-danger)]">
-              {status.target.url} is not reachable from this Cave.
-            </p>
-          )}
-          {mode === "hub" && (status?.executors?.length ?? 0) > 0 && (
-            <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
-              <div className="mb-1 flex items-center gap-2 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-                <Icon name="ph:terminal-window" width={12} />
-                Executor nodes
-              </div>
-              <div className="space-y-1">
-                {status?.executors?.map((executor) => (
-                  <div key={executor.url} className="flex min-w-0 flex-wrap items-center gap-2 text-[length:var(--text-xs)]">
-                    <span className={`h-2 w-2 rounded-full ${executor.ok ? "bg-[var(--color-success)]" : "bg-red-400"}`} />
-                    <span className="min-w-0 truncate font-mono text-[var(--text-primary)]">{executor.url}</span>
-                    <span className={executor.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}>
-                      {executor.detail}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {status?.travel && (
-            <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Icon name="ph:device-mobile" width={13} />
-                <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">Travel mode</span>
-                <span className="rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[length:var(--text-2xs)] uppercase tracking-wide text-[var(--text-muted)]">
-                  {status.travel.mode}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="xs"
-                  onClick={() => void setManualOffline(!status.travel?.manualOffline)}
-                  disabled={savingTravel}
-                  className="ml-auto"
-                  leadingIcon={status.travel.manualOffline ? "ph:plug-bold" : "ph:plug"}
-                >
-                  {status.travel.manualOffline ? "Return online" : "Manual offline"}
-                </Button>
-              </div>
-              <div className="grid gap-2 text-[length:var(--text-xs)] text-[var(--text-muted)] sm:grid-cols-3">
-                <span>Reason: <strong className="font-medium text-[var(--text-primary)]">{status.travel.reason}</strong></span>
-                <span>Pending queue: <strong className="font-medium text-[var(--text-primary)]">{status?.travel?.pendingQueueCount ?? 0}</strong></span>
-                <span>Local bind: <strong className="font-mono font-medium text-[var(--text-primary)]">127.0.0.1</strong></span>
-                <span>Stale cache: <strong className="font-medium text-[var(--text-primary)]">{status.travel.staleCache ? "yes" : "no"}</strong></span>
-                <span>Wake local: <strong className="font-medium text-[var(--text-primary)]">{status.travel.wakeLocalSubdaemon ? "requested" : "standby"}</strong></span>
-                <span>Handoff: <strong className="font-medium text-[var(--text-primary)]">{status.travel.handoffPending ? "pending sync" : "clear"}</strong></span>
-              </div>
-              {travelError && <p className="mt-2 text-[length:var(--text-xs)] text-[var(--color-danger)]">{travelError}</p>}
-            </div>
-          )}
-        </div>
-      </SettingsGroup>
-
-      {status?.running && (
-        <SettingsGroup label="Info">
-          <SettingsKV label="Coven version" value={status.covenVersion ?? "—"} />
-          <SettingsKV label="API version"   value={status.apiVersion   ?? "—"} />
-          <SettingsKV label="Socket"        value={status.daemon?.socket ?? "—"} mono />
-          <SettingsKV label="Started"       value={<RelativeTime iso={status.daemon?.startedAt} fallback="—" />} />
-          <SettingsKV label="Workspace"     value={status.workspacePath ?? "—"} mono />
-        </SettingsGroup>
-      )}
-    </SettingsPage>
-  );
-}
-
-// ─── Section: Familiars ───────────────────────────────────────────────────────
-
-function FamiliarsSection({
-  tabTarget,
-  onTabTargetConsumed,
-}: {
-  /** Studio tab a search result asked to open; consumed once activated. */
-  tabTarget?: FamiliarStudioTab | null;
-  onTabTargetConsumed?: () => void;
-}) {
-  // Settings is a standalone route with no workspace context, so this panel
-  // sources its own familiar roster and resolves cave overrides locally.
-  const [rawFamiliars, setRawFamiliars] = useState<Familiar[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  // The roster endpoint 503s when the daemon is down — that means "unknown",
-  // not "no familiars"; the two must never share an empty state.
-  const [daemonDown, setDaemonDown] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const familiars = useResolvedFamiliars(rawFamiliars);
-  // This renders below FamiliarStudioProvider (the shell mounts it), so the
-  // studio tab state is reachable here even though the shell body can't.
-  const { setActiveTab, openFamiliarStudio } = useFamiliarStudio();
-
-  // A search result can target a specific studio tab (e.g. "voice" → Brain).
-  // Activate it once the roster has settled so the tab strip exists, move
-  // focus to the tab button (the panel has no SettingsGroup to flash), and
-  // hand the one-shot target back to the shell.
-  useEffect(() => {
-    if (!tabTarget || !loaded) return;
-    setActiveTab(tabTarget);
-    const raf = requestAnimationFrame(() => {
-      const el = document.getElementById(`familiar-studio-inline-tab-${tabTarget}`);
-      if (el) {
-        el.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
-        el.focus({ preventScroll: true });
-      }
-      onTabTargetConsumed?.();
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [tabTarget, loaded, setActiveTab, onTabTargetConsumed]);
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const res = await fetch("/api/familiars", { cache: "no-store", signal });
-      const json = await res.json().catch(() => null);
-      if (signal?.aborted) return;
-      if (json?.ok) {
-        setRawFamiliars((json.familiars ?? []) as Familiar[]);
-        setDaemonDown(false);
-      } else if (res.status === 503) {
-        setDaemonDown(true);
-      }
-    } catch {
-      /* transient (or aborted) — keep last good list */
-    } finally {
-      if (!signal?.aborted) setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    void load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
-
-  const startDaemon = useCallback(async () => {
-    setStarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      await load();
-    } catch (err) {
-      setStartError(err instanceof Error ? err.message : "daemon did not start");
-    } finally {
-      setStarting(false);
-    }
-  }, [load]);
-
-  // Hold the panel until the first fetch settles so the "No familiars
-  // configured" empty state never flashes before the roster loads.
-  if (!loaded) {
-    return (
-      <div className="settings-familiars-panel" role="status" aria-busy="true" aria-label="Loading familiars">
-        <SkeletonRows count={4} />
-      </div>
-    );
-  }
-
-  const createDialog = (
-    <FamiliarSummoningCircle
-      open={createOpen}
-      onClose={() => setCreateOpen(false)}
-      existingIds={rawFamiliars.map((f) => f.id)}
-      defaultHarness={rawFamiliars.find((f) => f.defaultHarness)?.defaultHarness}
-      daemonRunning={!daemonDown}
-      onCreated={(id) => {
-        // Select the freshly created familiar (not the first in the roster);
-        // the shared studio context drives the inline panel's detail pane.
-        openFamiliarStudio(id);
-        void load();
-      }}
-    />
-  );
-
-  if (daemonDown) {
-    return (
-      <div className="settings-familiars-panel">
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
-          <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
-            <Icon name="ph:warning-circle" width={13} aria-hidden className="mr-1.5 inline-block align-[-2px]" />
-            The daemon is offline, so the familiar roster can&apos;t be read. Start it to manage
-            familiars.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => void startDaemon()}
-              disabled={starting}
-              leadingIcon="ph:rocket-launch-bold"
-              title="coven daemon start"
-            >
-              {starting ? "Starting..." : "Start daemon"}
-            </Button>
-            {startError ? (
-              <span role="alert" className="text-[length:var(--text-xs)] text-[var(--color-danger)]">
-                {startError}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (familiars.length === 0) {
-    return (
-      <div className="settings-familiars-panel">
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
-          <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
-            No familiars configured yet. The circle awaits your first summoning.
-          </p>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-            leadingIcon="ph:magic-wand-fill"
-          >
-            Summon familiar
-          </Button>
-        </div>
-        {createDialog}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {/* Summon lives in the familiar picker's fixed footer, alongside the
-          roster it extends instead of floating above the Studio. */}
-      <FamiliarStudioInlinePanel
-        familiars={rawFamiliars}
-        resolved={familiars}
-        onSummon={() => setCreateOpen(true)}
-        onRosterChanged={() => void load()}
-      />
-      {/* Cross-familiar access groups — shared base project grants at read or
-          write level; per-familiar effective access renders in the studio's
-          Projects tab. */}
-      <div className="mt-4">
-        <AccessGroupsSection familiars={familiars} />
-      </div>
-      {createDialog}
-    </>
-  );
-}
-
 // ─── Theme helpers ───────────────────────────────────────────────────────────────────────
 
 type PresetTheme = ThemeId;
@@ -1498,8 +1449,10 @@ function resolveSyncTokens(): Record<string, string> {
 }
 
 /** Push the active theme + resolved tokens to the daemon for cross-device sync.
- *  Returns whether the write reached the daemon (the manual Resync button shows
- *  the result; the automatic on-change call ignores it). */
+ *  Manual Resync only. Change-driven publishing belongs to RemoteThemeController:
+ *  every selection/edit here lands in updateAppPreferences, whose store notify
+ *  runs the controller's reconcile → publish. A second on-change PUT from this
+ *  section raced it — identical payloads plus a 409 window (cave-gvtw). */
 async function persistThemeTokens(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   if (!(await flushAppPreferences())) return false;
@@ -1802,21 +1755,34 @@ function withAlphaFrom(prev: string | undefined, hex: string): string {
  *  companions) changes on the selected theme. */
 function applyTokenOverride(key: string, hex: string, mode: Mode) {
   const html = document.documentElement;
-  const themePreferences = readAppPreferences().appearance.theme;
-  let existing: CustomThemeData | null =
+  const preferences = readAppPreferences();
+  const themePreferences = preferences.appearance.theme;
+  const existing: CustomThemeData | null =
     themePreferences.id === "custom" ? themePreferences.custom : null;
-  try {
-    const raw = null;
-    if (raw) existing = JSON.parse(raw) as CustomThemeData;
-  } catch {
-    /* malformed — treat as none */
-  }
   const groupKey: "light" | "dark" = mode === "light" ? "light" : "dark";
+  const otherGroupKey: "light" | "dark" = groupKey === "light" ? "dark" : "light";
   const group: Record<string, string> = { ...(existing?.cssVars?.[groupKey] ?? {}) };
-  // Seed from the current computed look while the preset CSS is still applied
-  // (also fills a missing mode group when a dark-only custom theme is edited
-  // in light mode, or vice versa).
-  if (Object.keys(group).length === 0) Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+  // Fresh fork from a preset: snapshot BOTH mode palettes while the preset CSS
+  // is still applied. Seeding only the edited mode made the fork single-mode —
+  // a later Light/Dark flip kept rendering this mode's colors
+  // (activeCustomThemeVariables falls back to the only group) and the first
+  // edit in the other mode seeded it from the wrong mode's look. Clear in-drag
+  // preview inline vars first so both snapshots read the preset (the live
+  // re-apply below restores the finished look); flipping data-mode +
+  // getComputedStyle forces a synchronous recalc, so nothing paints mid-flip.
+  // Imported customs missing one mode group keep the fill-on-first-edit
+  // fallback — their preset is long gone, the current look is all there is.
+  let otherSeed: Record<string, string> | null = null;
+  if (!existing) {
+    for (const name of THEME_FORK_SNAPSHOT_KEYS) html.style.removeProperty(name);
+    Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+    const restore = html.getAttribute("data-mode") ?? groupKey;
+    html.setAttribute("data-mode", otherGroupKey);
+    otherSeed = resolveTokens(THEME_FORK_SNAPSHOT_KEYS);
+    html.setAttribute("data-mode", restore);
+  } else if (Object.keys(group).length === 0) {
+    Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
+  }
   group[key] = hex;
   Object.assign(group, deriveTokenCompanions(key, hex, mode));
   const baseTheme = html.getAttribute("data-theme");
@@ -1826,18 +1792,48 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
       : "Custom";
   const data: CustomThemeData = {
     name: existing?.name ?? forkName,
-    cssVars: { ...(existing?.cssVars ?? {}), [groupKey]: group },
+    cssVars: {
+      ...(existing?.cssVars ?? {}),
+      [groupKey]: group,
+      ...(otherSeed ? { [otherGroupKey]: otherSeed } : {}),
+    },
   };
+  // An explicit accent pick is a statement of intent: disarm the backdrop's
+  // auto-match in the same atomic patch, or applyBackdropToDocument re-fits
+  // --accent-presence to the image seed on the very next reconcile and the
+  // pick never renders (the backdrop settings toggle re-arms matching).
+  const backdrop = preferences.appearance.backdrop;
+  const disarmBackdropAccent =
+    key === "--accent-presence" && backdrop.enabled && backdrop.matchAccent;
   updateAppPreferences({
-    appearance: { theme: { id: "custom", resolvedMode: mode, custom: data } },
+    appearance: {
+      theme: { id: "custom", resolvedMode: mode, custom: data },
+      ...(disarmBackdropAccent ? { backdrop: { matchAccent: false } } : {}),
+    },
   });
   // Live-apply the whole group — not just the edited key — so the selected
   // theme's look survives the data-theme flip. Boot (theme-init.js) replays
   // this exact group, so what you see now is what a reload restores.
+  // Normalize to custom-property names: imported tweakcn groups keep raw keys
+  // ("background", "radius"), and a raw setProperty would set the real CSS
+  // property inline on <html>, which no cleanup path removes (cave-7eno).
   for (const [name, value] of Object.entries(group)) {
-    html.style.setProperty(name, value);
+    html.style.setProperty(name.startsWith("--") ? name : `--${name}`, value);
   }
   html.setAttribute("data-theme", "custom");
+}
+
+/** Paint-only in-drag preview: writes the edited token + its companions inline
+ *  so the pick renders instantly, without touching the preferences store — no
+ *  reconcile, no PATCH, no cross-tab broadcast per pointer-move. Inline
+ *  element.style beats whichever preset/custom CSS block is active, so no
+ *  data-theme flip is needed; commit (applyTokenOverride) makes it durable. */
+function previewTokenOverride(key: string, hex: string, mode: Mode) {
+  const html = document.documentElement;
+  html.style.setProperty(key, hex);
+  for (const [name, value] of Object.entries(deriveTokenCompanions(key, hex, mode))) {
+    html.style.setProperty(name, value);
+  }
 }
 
 /** One editable token row — swatch button opening the in-app ColorPicker
@@ -1929,46 +1925,62 @@ function ThemeTokenOverrides({
     setRecents(getRecentColors());
   }, []);
 
-  // The picker fires onChange per pointer-move, and each apply rewrites ~20
-  // root CSS vars + localStorage — coalesce to one apply per animation frame
-  // (mirrors the removed editor's rAF throttle). The daemon sync (onChange →
-  // reloadCustomData → persistThemeTokens PUT) waits for commit: one network
-  // write per finished edit instead of one per move.
+  // The picker fires onChange per pointer-move. Drags stay paint-only — each
+  // rAF-coalesced frame calls previewTokenOverride (inline vars, store
+  // untouched), so nothing reconciles, PATCHes, or broadcasts mid-drag. The
+  // durable write (applyTokenOverride → store → PUT) happens once per finished
+  // edit, at commit (popover close) or unmount.
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<{ key: string; value: string } | null>(null);
-  const flushPendingApply = useCallback(() => {
+  const dirtyRef = useRef<Set<(typeof THEME_SYNC_KEYS)[number]>>(new Set());
+  const flushPendingPreview = useCallback(() => {
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
     const pending = pendingRef.current;
     pendingRef.current = null;
-    if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+    if (pending) previewTokenOverride(pending.key, pending.value, modeRef.current);
   }, []);
-  // Flush on unmount so a drag-in-progress still persists.
-  useEffect(() => flushPendingApply, [flushPendingApply]);
+  // Persist any un-committed edit on unmount so a drag-in-progress isn't lost
+  // when the user navigates away with the picker still open.
+  useEffect(() => {
+    return () => {
+      flushPendingPreview();
+      for (const key of dirtyRef.current) {
+        const value = valuesRef.current[key];
+        if (value) applyTokenOverride(key, value, modeRef.current);
+      }
+      dirtyRef.current.clear();
+    };
+  }, [flushPendingPreview]);
 
   const handlePick = (key: (typeof THEME_SYNC_KEYS)[number], hex: string) => {
     // Preserve the token's original alpha byte (hairline borders are washes).
     const next = withAlphaFrom(valuesRef.current[key], hex);
     setValues((v) => ({ ...v, [key]: next }));
+    dirtyRef.current.add(key);
     pendingRef.current = { key, value: next };
     if (frameRef.current === null) {
       frameRef.current = requestAnimationFrame(() => {
         frameRef.current = null;
         const pending = pendingRef.current;
         pendingRef.current = null;
-        if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+        if (pending) previewTokenOverride(pending.key, pending.value, modeRef.current);
       });
     }
   };
 
   const handleCommit = (key: (typeof THEME_SYNC_KEYS)[number]) => {
-    flushPendingApply();
-    const committed = (valuesRef.current[key] ?? "").slice(0, 7);
-    if (committed) setRecents(addRecentColor(committed));
+    flushPendingPreview();
+    if (!dirtyRef.current.has(key)) return; // opened + closed without a pick
+    dirtyRef.current.delete(key);
+    const committed = valuesRef.current[key];
+    if (!committed) return;
+    applyTokenOverride(key, committed, modeRef.current);
+    setRecents(addRecentColor(committed.slice(0, 7)));
     onChange();
   };
 
@@ -2021,17 +2033,12 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
   const [appearanceHydrated, setAppearanceHydrated] = useState(false);
-  // Below the shell's FamiliarStudioProvider — lets the pin-order hint open
-  // Familiars directly on the Lifecycle tab (the app-wide roster order lives
-  // there, distinct from the avatar-strip pin order set here).
-  const { setActiveTab: setStudioTab } = useFamiliarStudio();
 
-  // Mirror the active theme + resolved tokens to the daemon on change (and mount)
-  // so cross-device clients can read it. Best-effort; failures are swallowed.
-  useEffect(() => {
-    if (!appearanceHydrated) return;
-    void persistThemeTokens();
-  }, [activeTheme, mode, customData, appearanceHydrated]);
+  // No on-change daemon mirror here: RemoteThemeController publishes tokens
+  // whenever the canonical theme signature changes (every selection, mode flip,
+  // and token commit in this section writes updateAppPreferences). A section-
+  // side effect doubled each PUT /api/theme (cave-gvtw); persistThemeTokens
+  // remains for the manual Resync button only.
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -2072,6 +2079,28 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     }
     setAppearanceHydrated(true);
   }, []);
+
+  // External theme changes — the 10s /api/theme poll, another tab via the
+  // preferences BroadcastChannel, a phone PATCH — land in the store and
+  // repaint the app, but this section hydrated its selection state once on
+  // mount, leaving the theme grid and token-row swatches stale until a full
+  // reload (cave-hkfq). Follow the store. setCustomData keeps the previous
+  // object when content is unchanged so unrelated store notifies don't churn
+  // renders or the token rows' content-keyed reloadKey.
+  useEffect(() => {
+    if (!appearanceHydrated) return;
+    return subscribeAppPreferences(() => {
+      const theme = readAppPreferences().appearance.theme;
+      setActiveTheme(readPersistedTheme());
+      setMode(readPersistedMode());
+      const next = theme.id === "custom" ? theme.custom : null;
+      setCustomData((prev) => {
+        if (prev === next) return prev;
+        if (prev && next && JSON.stringify(prev) === JSON.stringify(next)) return prev;
+        return next;
+      });
+    });
+  }, [appearanceHydrated]);
 
   const handleSelectPreset = (id: PresetTheme) => {
     setActiveTheme(id);
@@ -2271,7 +2300,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       <SettingsGroup label="Theme tokens">
         <ThemeTokenOverrides
           mode={resolveMode(mode)}
-          reloadKey={`${activeTheme}:${mode}:${customData ? "c" : "p"}`}
+          reloadKey={`${activeTheme}:${mode}:${customData ? JSON.stringify(customData.cssVars) : "preset"}`}
           onChange={reloadCustomData}
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
@@ -2392,501 +2421,40 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   );
 }
 
-// ─── Section: Phone (connect the native mobile app) ─────────────────────────────
-
-/** Plain-language framing for handoff failures. The raw error stays available
- *  behind a disclosure; the headline tells a person what to actually do. */
-function describeMobileHandoffError(raw: string): { headline: string; hint: string } {
-  const text = raw.toLowerCase();
-  if (text.includes("pnpm dev") || text.includes("access token") || text.includes("pairing secret")) {
-    return {
-      headline: "Pairing secret unavailable",
-      hint: "Cave provisions the pairing secret automatically — retry below. If this persists, restart Cave (or the dev server) and check the app data folder’s permissions.",
-    };
-  }
-  if (text.includes("tailscale") && (text.includes("not installed") || text.includes("cli not found"))) {
-    return {
-      headline: "Tailscale isn’t installed",
-      hint: "Install Tailscale from tailscale.com/download and sign in — pairing resumes here automatically.",
-    };
-  }
-  if (text.includes("tailscale") && (text.includes("signed out") || text.includes("logged out"))) {
-    return {
-      headline: "Tailscale is signed out",
-      hint: "Open Tailscale and sign in — pairing resumes here automatically.",
-    };
-  }
-  if (
-    text.includes("tailscale") &&
-    (text.includes("not connected") ||
-      text.includes("not running") ||
-      text.includes("stopped") ||
-      text.includes("unreachable") ||
-      text.includes("logged out"))
-  ) {
-    return {
-      headline: "Tailscale isn’t running",
-      hint: "Open Tailscale and sign in — pairing resumes here automatically.",
-    };
-  }
-  // Word-boundary match: backend errors mentioning a "server" must not be
-  // misdiagnosed as Tailscale Serve failures (cave-gzje).
-  if (/\bserve\b/.test(text)) {
-    return {
-      headline: "Tailscale Serve couldn’t start",
-      hint: "Retry below; if it keeps failing, quit and reopen Tailscale.",
-    };
-  }
-  return {
-    headline: "Phone pairing is unavailable",
-    hint: "Retry below — the technical details may help if it persists.",
-  };
-}
-
-type MobileHandoffCardState = {
-  nativeHost: string | null;
-  inviteUrl: string | null;
-  appInviteUrl: string | null;
-  qrSvg: string | null;
-  /** Last token-refresh beat from a paired device (cave-i74f) — pairing
-   *  success used to be silent on the desktop. */
-  lastSeenAt: number | null;
-};
-
-/** One glyph per checklist state — never color alone (cave-jr4r.1). */
-const PAIRING_STEP_GLYPH: Record<PairingStep["state"], { icon: IconName; className: string; announce: string }> = {
-  ok: { icon: "ph:check-circle-bold", className: "text-[var(--color-success)]", announce: "done" },
-  fail: { icon: "ph:x-circle", className: "text-[var(--color-warning)]", announce: "failed" },
-  skipped: { icon: "ph:minus-circle", className: "text-[var(--text-muted)]", announce: "skipped" },
-  pending: { icon: "ph:circle-dashed", className: "text-[var(--text-muted)]", announce: "waiting" },
-};
-
-function MobileModeToggle() {
-  const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
-  const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
-  // The proven probe ladder from the route (cave-jr4r.1) — present on success
-  // AND failure responses, so the card can show which rung broke instead of
-  // guessing from one error string.
-  const [steps, setSteps] = useState<PairingStep[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [autoRetryBlocked, setAutoRetryBlocked] = useState(false);
-  const [copied, setCopied] = useState<"link" | "app" | "host" | null>(null);
-  const initialReconcileDoneRef = useRef(false);
-
-  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { busy?: boolean; force?: boolean }) => {
-    if (options?.busy) setBusy(true);
-    setError(null);
-    try {
-      const result = await reconcileMobileModeRequest(enabled, { force: options?.force });
-      setAutoRetryBlocked(result.retryBlocked);
-      // The proven ladder rides both success and unavailable responses.
-      setSteps(enabled && Array.isArray(result.steps) ? result.steps : null);
-      if (!result.ok) {
-        setError(result.stderr || result.error || "Mobile mode unavailable.");
-        return;
-      }
-      setHandoff(
-        enabled
-          ? {
-              nativeHost: result.nativeHost ?? null,
-              inviteUrl: result.inviteUrl ?? null,
-              appInviteUrl: result.appInviteUrl ?? null,
-              qrSvg: result.qrSvg ?? null,
-              lastSeenAt: result.lastSeenAt ?? null,
-            }
-          : null,
-      );
-    } finally {
-      if (options?.busy) setBusy(false);
-    }
-  }, []);
-
-  const onMobileModeChange = async (enabled: boolean) => {
-    writeMobileModeEnabled(enabled);
-    setMobileModeEnabled(enabled);
-    setAutoRetryBlocked(false);
-    await reconcileMobileMode(enabled, { busy: true, force: true });
-  };
-
-  useEffect(() => {
-    if (initialReconcileDoneRef.current) return;
-    initialReconcileDoneRef.current = true;
-    if (!mobileModeEnabled) return;
-    void reconcileMobileMode(mobileModeEnabled);
-  }, [mobileModeEnabled, reconcileMobileMode]);
-  // Recurring reconcile only while mobile mode is on; pauses in a hidden tab.
-  usePausablePoll(() => void reconcileMobileMode(true), 60_000, {
-    enabled: mobileModeEnabled && !autoRetryBlocked,
-  });
-
-  const copy = (kind: "link" | "app" | "host", value: string) => {
-    void copyText(value).then((ok) => {
-      if (!ok) return;
-      setCopied(kind);
-      window.setTimeout(() => setCopied((current) => (current === kind ? null : current)), 1500);
-    });
-  };
-
-  const friendly = error ? describeMobileHandoffError(error) : null;
-  const statusLine = busy
-    ? "Updating…"
-    : !mobileModeEnabled
-      ? "Off — turn on to pair your iPhone."
-      : friendly
-        ? friendly.headline
-        : handoff?.qrSvg
-          ? "Ready — scan the code with your iPhone camera."
-          : "Starting the tailnet route…";
-
-  return (
-    <div className="flex flex-col gap-4 px-4 py-4">
-      {/* Status header + the one switch */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            aria-hidden
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              !mobileModeEnabled
-                ? "bg-[var(--text-muted)]"
-                : friendly
-                  ? "bg-[var(--color-warning)]"
-                  : handoff?.qrSvg
-                    ? "bg-[var(--color-success)]"
-                    : "bg-[var(--text-muted)]"
-            }`}
-          />
-          <div className="min-w-0">
-            <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">Mobile mode</p>
-            <p className="truncate text-[length:var(--text-xs)] text-[var(--text-muted)]">{statusLine}</p>
-            {handoff?.lastSeenAt ? (
-              <p className="truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]">
-                Paired · last seen {relativeTime(new Date(handoff.lastSeenAt).toISOString())}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={mobileModeEnabled}
-          onClick={() => void onMobileModeChange(!mobileModeEnabled)}
-          disabled={busy}
-          className={`settings-mobile-switch rounded-[var(--radius-control)] border px-3 py-1.5 text-[length:var(--text-sm)] transition-colors ${
-            mobileModeEnabled
-              ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-              : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
-          }`}
-        >
-          {busy ? "Updating..." : mobileModeEnabled ? "On" : "Off"}
-        </button>
-      </div>
-
-      {/* The proven ladder — which rung broke, and what to do about it. */}
-      {mobileModeEnabled && steps ? (
-        <ol className="flex flex-col gap-1.5 rounded-[var(--radius-card)] border border-[var(--border-hairline)] px-3.5 py-3" aria-label="Pairing checklist">
-          {steps.map((step) => {
-            const glyph = PAIRING_STEP_GLYPH[step.state];
-            return (
-              <li key={step.id} className="flex items-start gap-2 text-[length:var(--text-sm)]">
-                <Icon name={glyph.icon} className={`mt-[1px] shrink-0 ${glyph.className}`} aria-hidden />
-                <span className="min-w-0">
-                  <span className={step.state === "skipped" ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}>
-                    {step.label}
-                  </span>
-                  <span className="sr-only"> — {glyph.announce}</span>
-                  {step.detail && (step.state === "fail" || step.state === "pending") ? (
-                    <span className={`block text-[length:var(--text-xs)] leading-relaxed ${step.state === "fail" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
-                      {step.detail}
-                    </span>
-                  ) : null}
-                </span>
-              </li>
-            );
-          })}
-          {steps.some((step) => step.state === "fail") ? (
-            <li className="mt-1 flex items-center gap-2" aria-hidden={false}>
-              <Button
-                size="xs"
-                variant="secondary"
-                leadingIcon="ph:arrows-clockwise"
-                onClick={() => void reconcileMobileMode(true, { busy: true, force: true })}
-                disabled={busy}
-              >
-                Retry
-              </Button>
-              {error ? (
-                <details className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                  <summary className="cursor-pointer">Technical details</summary>
-                  <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[length:var(--text-2xs)]">{error}</code>
-                </details>
-              ) : null}
-            </li>
-          ) : null}
-        </ol>
-      ) : null}
-
-      {/* Humanized failure — the jargon lives behind a disclosure now. Only
-          the fallback when the route couldn't even report its ladder. */}
-      {mobileModeEnabled && friendly && error && !steps ? (
-        <div
-          role="status"
-          className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-[color-mix(in_oklch,var(--color-warning)_35%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3.5 py-3"
-        >
-          <p className="text-[length:var(--text-sm)] font-medium text-[var(--color-warning)]">{friendly.headline}</p>
-          <p className="text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">{friendly.hint}</p>
-          <div className="flex items-center gap-2">
-            <Button
-              size="xs"
-              variant="secondary"
-              leadingIcon="ph:arrows-clockwise"
-              onClick={() => void reconcileMobileMode(true, { busy: true, force: true })}
-              disabled={busy}
-            >
-              Retry
-            </Button>
-          </div>
-          <details className="text-[length:var(--text-xs)] text-[var(--text-muted)]">
-            <summary className="cursor-pointer">Technical details</summary>
-            <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[length:var(--text-2xs)]">{error}</code>
-          </details>
-        </div>
-      ) : null}
-
-      {/* The pairing code — one scan, no typing. */}
-      {mobileModeEnabled && !friendly && handoff?.qrSvg ? (
-        <div className="flex flex-col items-center gap-2.5">
-          <div
-            className="mobile-handoff-qr__svg overflow-hidden rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-white p-2"
-            role="img"
-            aria-label="Pairing code for your iPhone camera"
-            dangerouslySetInnerHTML={{ __html: handoff.qrSvg }}
-          />
-          <p className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">
-            Scan with your iPhone camera — Cave opens on your phone already paired.
-          </p>
-          <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-            Works in Safari or the Cave app · the code refreshes itself while this switch is on.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {handoff.inviteUrl ? (
-              <Button
-                size="xs"
-                variant="secondary"
-                leadingIcon={copied === "link" ? "ph:check" : "ph:copy"}
-                onClick={() => copy("link", handoff.inviteUrl ?? "")}
-              >
-                {copied === "link" ? "Copied" : "Copy link"}
-              </Button>
-            ) : null}
-            {handoff.appInviteUrl ? (
-              <Button
-                size="xs"
-                variant="ghost"
-                leadingIcon={copied === "app" ? "ph:check" : "ph:copy"}
-                onClick={() => copy("app", handoff.appInviteUrl ?? "")}
-              >
-                {copied === "app" ? "Copied" : "Copy app link"}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Everything that used to be four loud steps lives here, folded away. */}
-      {mobileModeEnabled ? (
-        <details className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] px-3.5 py-2.5">
-          <summary className="cursor-pointer text-[length:var(--text-sm)] font-medium text-[var(--text-secondary)]">
-            Manual setup
-          </summary>
-          <div className="mt-2 flex flex-col gap-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]">
-            {handoff?.nativeHost ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[var(--text-muted)]">Desktop address:</span>
-                <code className="rounded bg-[var(--bg-base)] px-1.5 py-0.5 font-mono text-[length:var(--text-xs)] text-[var(--text-primary)]">
-                  {handoff.nativeHost}
-                </code>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  leadingIcon={copied === "host" ? "ph:check" : "ph:copy"}
-                  onClick={() => copy("host", handoff.nativeHost ?? "")}
-                >
-                  {copied === "host" ? "Copied" : "Copy"}
-                </Button>
-              </div>
-            ) : null}
-            <p>
-              Sign your iPhone and this Mac into the same Tailscale network, open the Cave app, and enter the
-              desktop address on its connect screen. Pasting the copied link works too.
-            </p>
-          </div>
-        </details>
-      ) : null}
-    </div>
-  );
-}
-
-function MobileSection() {
-  return (
-    <SettingsPage
-      section="mobile"
-      title="Connect your iPhone"
-      description="One scan pairs your phone over your private Tailscale network — no typing, no password."
-    >
-      <SettingsGroup label="Pair">
-        <MobileModeToggle />
-      </SettingsGroup>
-
-      <SettingsGroup label="Why there’s no password">
-        <div className="flex items-start gap-3 px-4 py-3">
-          <Icon name="ph:lock-simple-bold" width={16} className="mt-0.5 shrink-0 text-[var(--accent-presence)]" />
-          <p className="text-[length:var(--text-sm)] leading-relaxed text-[var(--text-secondary)]">
-            Being on your Tailscale network <em>is</em> the credential. The desktop only serves the mobile API over the
-            tailnet — encrypted and private — so nothing is exposed to the public internet, and there’s no token to copy.
-          </p>
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup label="Get the app">
-        <SettingsRow label="Build it with Xcode" description="apps/ios/CovenCave — open in Xcode and run on your device, or install the TestFlight build." />
-        <div className="flex flex-wrap gap-2 px-4 py-3">
-          <Button
-            variant="secondary"
-            size="sm"
-            className="settings-touch-action"
-            onClick={() => openExternalUrl("https://github.com/OpenCoven/coven-cave/blob/main/docs/ios-native-rebuild.md")}
-            leadingIcon="ph:file-text"
-          >
-            Setup guide
-          </Button>
-        </div>
-      </SettingsGroup>
-    </SettingsPage>
-  );
-}
-
-// ─── Section: About ───────────────────────────────────────────────────────────
-
-function AboutDaemonStatusRow() {
-  const [state, setState] = useState<AboutDaemonState>({ kind: "checking" });
-  const requestRef = useRef<AbortController | null>(null);
-
-  const refresh = useCallback(() => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setState({ kind: "checking" });
-    void fetch("/api/daemon/status", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null);
-        if (controller.signal.aborted) return;
-        setState(classifyAboutDaemonStatus({
-          responseOk: response.ok,
-          payload,
-          checkedAt: new Date().toISOString(),
-        }));
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setState(classifyAboutDaemonStatus({
-          responseOk: false,
-          payload: null,
-          checkedAt: new Date().toISOString(),
-          error: error instanceof Error ? error.message : "status request failed",
-        }));
-      });
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    return () => requestRef.current?.abort();
-  }, [refresh]);
-
-  const detail =
-    state.kind === "running"
-      ? state.version ? `Running v${state.version}` : "Running (version unavailable)"
-      : state.kind === "stopped"
-        ? "Stopped"
-        : state.kind === "unreachable"
-          ? "Unreachable"
-          : state.kind === "failed-to-check"
-            ? "Failed to check"
-            : "Checking…";
-  const reason = state.kind === "checking" || state.kind === "running" ? null : state.reason;
-  const checkedAt = state.kind === "checking" ? null : state.checkedAt;
-  const tone =
-    state.kind === "running"
-      ? "text-[var(--color-success)]"
-      : state.kind === "checking"
-        ? "text-[var(--text-muted)]"
-        : state.kind === "stopped"
-          ? "text-[var(--color-warning)]"
-          : "text-[var(--color-danger)]";
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">Daemon</span>
-      <div className="flex min-w-0 items-center gap-2">
-        <span className={`truncate text-right text-[length:var(--text-sm)] ${tone}`} title={reason ?? checkedAt ?? undefined}>
-          {detail}{checkedAt ? ` · checked ${relativeTime(checkedAt)}` : ""}
-        </span>
-        <Button variant="secondary" size="xs" onClick={refresh} disabled={state.kind === "checking"}>
-          {state.kind === "checking" ? "Checking…" : "Retry"}
-        </Button>
-      </div>
-      {reason ? (
-        <p className="basis-full text-right text-[length:var(--text-xs)] text-[var(--text-muted)]">
-          {reason}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function AboutSection() {
-  return (
-    <SettingsPage section="about" title="About" description="Version and build information.">
-      <SettingsGroup label="CovenCave">
-        <SettingsKV label="App version" value={APP_VERSION} />
-        <UpdateSettingsRow />
-        <AboutDaemonStatusRow />
-        <SettingsKV label="Built with" value="Next.js · React · Tauri · Tailwind" />
-      </SettingsGroup>
-      <SettingsGroup label="OpenCoven tools">
-        <OpenCovenToolsUpdate />
-      </SettingsGroup>
-      <SettingsGroup label="Links">
-        <div className="flex flex-wrap gap-2 px-4 py-3">
-          {[
-            { label: "GitHub",   href: "https://github.com/OpenCoven/coven-cave", icon: "ph:github-logo" as const },
-            { label: "Docs",     href: "https://docs.opencoven.ai",               icon: "ph:file-text" as const },
-            { label: "X",        href: "https://x.com/OpenCvn",                   icon: "ph:x-logo-bold" as const },
-            { label: "Discord",  href: "https://discord.gg/opencoven",            icon: "ph:discord-logo" as const },
-            { label: "Grimoire", href: "https://mind.opencoven.ai",               icon: "ph:book-open" as const },
-            { label: "Podcast",  href: "https://pod.opencoven.ai",                icon: "ph:waveform-bold" as const },
-          ].map((l) => (
-            <Button
-              key={l.href}
-              variant="secondary"
-              size="xs"
-              className="settings-touch-action settings-tool-action gap-1.5 px-2.5 text-[length:var(--text-xs)]"
-              onClick={() => openExternalUrl(l.href)}
-              leadingIcon={l.icon}
-            >
-              {l.label}
-            </Button>
-          ))}
-        </div>
-      </SettingsGroup>
-    </SettingsPage>
-  );
-}
-
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
-function SettingsPage({ title, description, section, children }: { title: string; description?: string; section?: Section; children: React.ReactNode }) {
+function SettingsPage({
+  title,
+  description,
+  section,
+  variant = "default",
+  children,
+}: {
+  title: string;
+  description?: string;
+  section?: Section;
+  variant?: "default" | "control-sheet";
+  children: React.ReactNode;
+}) {
   const pageTitleId = section ? `settings-${section}-title` : "settings-page-title";
+
+  if (variant === "control-sheet") {
+    return (
+      <section className="settings-general" aria-labelledby={pageTitleId}>
+        <h2 id={pageTitleId} className="sr-only">{title}</h2>
+        {section ? (
+          <SettingsOverview section={section} variant="control-sheet" />
+        ) : (
+          <div>
+            <p className="text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">{title}</p>
+            {description && <p className="mt-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">{description}</p>}
+          </div>
+        )}
+        {children}
+      </section>
+    );
+  }
+
   return (
     <section className="max-w-none space-y-6" aria-labelledby={pageTitleId}>
       <h2 id={pageTitleId} className="sr-only">{title}</h2>
@@ -2904,25 +2472,43 @@ function SettingsPage({ title, description, section, children }: { title: string
 }
 
 
-function SettingsRow({ label, description, comingSoon, children }: { label: string; description?: string; comingSoon?: boolean; children?: React.ReactNode }) {
+function SettingsRow({
+  label,
+  description,
+  descriptionId,
+  comingSoon,
+  variant = "default",
+  children,
+}: {
+  label: string;
+  description?: string;
+  descriptionId?: string;
+  comingSoon?: boolean;
+  variant?: "default" | "sheet";
+  children?: React.ReactNode;
+}) {
   return (
-    <div className={`flex items-center justify-between gap-4 px-4 py-3 ${comingSoon ? "opacity-50" : ""}`}>
+    <div
+      className={
+        variant === "sheet"
+          ? `settings-row settings-row--sheet${comingSoon ? " is-dimmed" : ""}`
+          : `flex items-center justify-between gap-4 px-4 py-3 ${comingSoon ? "opacity-50" : ""}`
+      }
+    >
       <div className="min-w-0">
         <p className="text-[length:var(--text-base)] text-[var(--text-primary)]">{label}</p>
-        {description && <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">{description}</p>}
+        {description ? (
+          <p
+            id={descriptionId}
+            className="text-[length:var(--text-xs)] text-[var(--text-muted)]"
+          >
+            {description}
+          </p>
+        ) : null}
       </div>
       {comingSoon ? (
         <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">Soon</span>
       ) : children}
-    </div>
-  );
-}
-
-function SettingsKV({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <span className="text-[length:var(--text-sm)] text-[var(--text-secondary)]">{label}</span>
-      <span className={`text-right text-[length:var(--text-sm)] text-[var(--text-muted)] ${mono ? "font-mono" : ""}`}>{value}</span>
     </div>
   );
 }

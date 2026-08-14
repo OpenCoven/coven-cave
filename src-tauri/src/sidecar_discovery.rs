@@ -9,6 +9,31 @@ pub(super) fn bundled_node_path(resource_dir: &Path) -> PathBuf {
         .join("node.exe")
 }
 
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) fn bundled_whisper_cli_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("whisper")
+        .join("whisper-cli.exe")
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+pub(super) fn bundled_whisper_cli_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("whisper")
+        .join("whisper-cli")
+}
+
+/// Release builds must use the exact whisper.cpp executable staged with the
+/// app. This intentionally has no PATH fallback: a missing bundle is a
+/// packaging failure, not an invitation to upload audio to a host toolchain.
+#[cfg(desktop)]
+pub(super) fn find_bundled_whisper_cli(resource_dir: &Path) -> Option<PathBuf> {
+    let bundled = bundled_whisper_cli_path(resource_dir);
+    bundled.exists().then_some(bundled)
+}
+
 #[cfg(all(desktop, not(target_os = "windows")))]
 pub(super) fn bundled_node_path(resource_dir: &Path) -> PathBuf {
     resource_dir
@@ -16,6 +41,38 @@ pub(super) fn bundled_node_path(resource_dir: &Path) -> PathBuf {
         .join("node")
         .join("bin")
         .join("node")
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) fn bundled_piper_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("piper")
+        .join("piper.exe")
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+pub(super) fn bundled_piper_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("piper")
+        .join("piper")
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+pub(super) fn bundled_kokoro_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("kokoro")
+        .join("sherpa-onnx-offline-tts.exe")
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+pub(super) fn bundled_kokoro_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("kokoro")
+        .join("sherpa-onnx-offline-tts")
 }
 
 /// Find a usable `node` binary. Release builds include a Node runtime under
@@ -72,7 +129,10 @@ pub(super) fn find_node(resource_dir: &Path) -> Option<PathBuf> {
         }
 
         // Last ditch: where.exe (Windows equivalent of `which`)
-        if let Ok(out) = std::process::Command::new("where.exe").arg("node").output() {
+        if let Ok(out) = windows_command::hidden_system32_command("where.exe")
+            .arg("node")
+            .output()
+        {
             let path = String::from_utf8_lossy(&out.stdout)
                 .lines()
                 .next()
@@ -154,7 +214,16 @@ pub(super) fn find_coven() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let home = std::env::var("USERPROFILE").unwrap_or_default();
+        // npm global installs land in %APPDATA%\\npm as a .cmd shim (not .exe),
+        // which is the most common way users install the Coven CLI. A GUI-launched
+        // Tauri app frequently does not inherit that dir on PATH, so we must probe
+        // it explicitly or `where.exe` below will miss it. Fall back to
+        // %USERPROFILE%\\AppData\\Roaming\\npm when APPDATA is unset.
+        let appdata = std::env::var("APPDATA")
+            .unwrap_or_else(|_| format!("{}\\AppData\\Roaming", home));
         let candidates = [
+            PathBuf::from(format!("{}\\npm\\coven.cmd", appdata)),
+            PathBuf::from(format!("{}\\npm\\coven.exe", appdata)),
             PathBuf::from(format!("{}\\.volta\\bin\\coven.exe", home)),
             PathBuf::from(format!("{}\\.bun\\bin\\coven.exe", home)),
             PathBuf::from(format!("{}\\.cargo\\bin\\coven.exe", home)),
@@ -164,7 +233,7 @@ pub(super) fn find_coven() -> Option<PathBuf> {
                 return Some(c.clone());
             }
         }
-        if let Ok(out) = std::process::Command::new("where.exe")
+        if let Ok(out) = windows_command::hidden_system32_command("where.exe")
             .arg("coven")
             .output()
         {

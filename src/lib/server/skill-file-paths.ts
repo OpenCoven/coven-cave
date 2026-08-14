@@ -123,3 +123,43 @@ export async function isRemovableSkillDir(dir: string, home = homedir()): Promis
   }
   return false;
 }
+
+/**
+ * Guards for GET /api/skills/files — the skill-detail file browser.
+ *
+ * Browsing widens the preview surface from "the descriptor file" to "the
+ * text files sitting next to it", so the constraint chain is: the DIRECTORY
+ * must prove itself first (its descriptor passes the descriptor allow-list
+ * above), and only then may single-segment, extension-limited, non-hidden,
+ * non-symlink regular files inside it be listed or read. Nothing outside a
+ * proven skill directory is ever reachable, and the read primitive never
+ * accepts a path — only a validated name joined to the proven directory.
+ */
+const BROWSABLE_SKILL_AUX_EXTENSIONS = new Set([".md", ".toml", ".txt", ".json", ".yaml", ".yml"]);
+
+/** Resolve a browsable skill directory to its realpath, or null. */
+export async function resolveBrowsableSkillDir(dir: string, home = homedir()): Promise<string | null> {
+  if (!dir) return null;
+  let real: string;
+  try {
+    const st = await lstat(/* turbopackIgnore: true */ dir);
+    if (st.isSymbolicLink() || !st.isDirectory()) return null;
+    real = await realpath(/* turbopackIgnore: true */ dir);
+  } catch {
+    return null;
+  }
+  for (const descriptor of ["SKILL.md", CODEX_AUTOMATION_FILE_NAME]) {
+    if (await isAllowedSkillFilePath(path.join(/* turbopackIgnore: true */ real, descriptor), home)) {
+      return real;
+    }
+  }
+  return null;
+}
+
+/** One plain filename (no separators, no dotfiles) with a text-ish extension. */
+export function isBrowsableSkillAuxName(name: string): boolean {
+  if (!name || name !== path.basename(name)) return false;
+  if (name.startsWith(".") || name.includes("..")) return false;
+  if (isAllowedSkillFileName(name)) return true;
+  return BROWSABLE_SKILL_AUX_EXTENSIONS.has(path.extname(name).toLowerCase());
+}

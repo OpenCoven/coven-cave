@@ -5,7 +5,10 @@ import { readFile } from "node:fs/promises";
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const tabState = await readFile(new URL("./browser-tab-state.ts", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
-const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const browserResponsiveStyles = await readFile(
+  new URL("../styles/globals/calendar-agenda.css", import.meta.url),
+  "utf8",
+);
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const nativeLifecycle = await readFile(new URL("../lib/native-browser-lifecycle.ts", import.meta.url), "utf8");
 const navigationQueue = await readFile(new URL("../lib/browser-navigation-queue.ts", import.meta.url), "utf8");
@@ -101,22 +104,22 @@ assert.match(pane, /browser-toolbar-button/, "Browser toolbar buttons should exp
 assert.match(pane, /browser-address-form/, "Browser address form should expose a mobile hook");
 assert.match(pane, /browser-address-input/, "Browser address input should expose a mobile hook");
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-tab-rail\s*\{[\s\S]*display:\s*none/,
   "Mobile browser should hide the hover rail instead of exposing tiny offscreen controls",
 );
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-toolbar\s*\{[\s\S]*transform:\s*none !important[\s\S]*pointer-events:\s*auto !important/,
   "Mobile browser toolbar should stay visible without relying on hover or keyboard shortcuts",
 );
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-toolbar-button\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile browser toolbar buttons should meet the shared touch target",
 );
 assert.match(
-  globals,
+  browserResponsiveStyles,
   /@media \(max-width: 767px\) \{[\s\S]*\.browser-address-input\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile browser address input should meet the shared touch target",
 );
@@ -165,9 +168,19 @@ assert.match(
   "offscreen constant mirrors OFFSCREEN_X/Y in src-tauri/src/browser.rs",
 );
 assert.match(
+  nativeOverlay,
+  /function nativeBrowserBounds[\s\S]*window\.devicePixelRatio[\s\S]*const left = Math\.round\(rect\.left \* scale\)[\s\S]*const right = Math\.round\(\(rect\.left \+ rect\.width\) \* scale\)[\s\S]*w: right - left/,
+  "browser bounds cross the DOM/native boundary in renderer physical pixels",
+);
+assert.match(
   pane,
-  /const covered = toolbarOpenRef\.current \|\| surfaceIsCovered\(surface, rect\);[\s\S]{0,320}x: covered \? WEBVIEW_OFFSCREEN : rect\.left,\s*\n\s*y: covered \? WEBVIEW_OFFSCREEN : rect\.top,/,
+  /const covered = toolbarOpenRef\.current \|\| surfaceIsCovered\(surface, rect\);[\s\S]{0,320}\.{3}nativeBrowserBounds\(rect, covered\)/,
   "navigate loads covered webviews offscreen; the bounds loop re-seats them when the cover lifts",
+);
+assert.match(
+  pane,
+  /window\.matchMedia\(`\(resolution: \$\{window\.devicePixelRatio\}dppx\)`\)[\s\S]*onDprChange[\s\S]*scheduleImmediateReconcile\(\)/,
+  "a monitor DPI transition re-seats the native child even when CSS layout dimensions do not change",
 );
 
 // ───────── Native webview lifecycle: deactivate on surface leave ─────────
@@ -216,7 +229,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /mode === "browser" \|\|[\s\S]{0,180}target\.kind === "browser" \|\| \(target\.kind === "page" && target\.mode === "browser"\)/,
+  /mode === "browser" \|\|[\s\S]{0,180}splitTargets\.some\(\(target\) => target\.pageId === "browser"\)/,
   "Workspace tracks browser visibility across primary and split panes",
 );
 assert.match(
@@ -304,17 +317,49 @@ const hideWebviewFn = rustBrowser.match(
   /fn hide_webview\(webview: &tauri::Webview\) -> Result<\(\), String> \{[\s\S]*?\n\}/,
 )?.[0];
 assert.ok(hideWebviewFn, "hide_webview() exists in src-tauri/src/browser.rs");
-assert.match(hideWebviewFn, /#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.hide\(\)/, "Windows hides WebView2 so it cannot capture clicks");
-assert.match(hideWebviewFn, /#\[cfg\(not\(target_os = "windows"\)\)\][\s\S]*set_position\(LogicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)\)/, "non-Windows retains offscreen parking");
+assert.match(
+  hideWebviewFn,
+  /#\[cfg\(any\(target_os = "windows", target_os = "linux"\)\)\][\s\S]*webview\.hide\(\)/,
+  "Windows hides WebView2 so it cannot capture clicks; Linux hides because parking is a no-op there (cave-vb79)",
+);
+assert.match(
+  hideWebviewFn,
+  /#\[cfg\(not\(any\(target_os = "windows", target_os = "linux"\)\)\)\][\s\S]*offscreen_browser_position\([\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*set_position\(offscreen_position\)/,
+  "the remaining platforms park the retained child fully outside its physical client area",
+);
+const showWebviewFn = rustBrowser.match(
+  /fn show_webview_at\([\s\S]*?\n\}/,
+)?.[0];
+assert.ok(showWebviewFn, "show_webview_at() exists in src-tauri/src/browser.rs");
 assert.match(
   rustBrowser,
-  /fn show_webview_at[\s\S]*set_bounds\(Rect \{[\s\S]*position:[\s\S]*size:[\s\S]*#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.show\(\)/,
-  "Windows atomically applies clamped bounds before revealing WebView2",
+  /fn show_webview_at[\s\S]*inner_size\(\)[\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*#\[cfg\(any\(target_os = "windows", target_os = "linux"\)\)\][\s\S]*webview\.show\(\)/,
+  "hiding platforms atomically apply clamped bounds before revealing the child",
 );
+
+// Hide and show must cover the SAME platform set. A platform that hides the
+// widget but never shows it again strands the browser invisible forever —
+// which is how extending the Linux hide (cave-vb79) could have gone wrong.
+{
+  // The first `cfg(any(...))` in each function is its hide/show guard.
+  const guardOf = (fn: string) =>
+    (fn.match(/#\[cfg\(any\(([^)]*)\)\)\]/)?.[1] ?? "").replace(/\s+/g, "");
+  const hideGuard = guardOf(hideWebviewFn);
+  assert.equal(
+    hideGuard,
+    guardOf(showWebviewFn),
+    "every platform that hides the child webview must also show it again in show_webview_at",
+  );
+  assert.ok(
+    hideGuard.includes('target_os="windows"') && hideGuard.includes('target_os="linux"'),
+    "the hiding platforms are Windows and Linux",
+  );
+}
 assert.match(rustBrowser, /fn browser_bounds_within_client[\s\S]{0,900}!x\.is_finite\(\)[\s\S]{0,500}browser bounds must be finite/, "invalid browser bounds fail closed");
 assert.match(rustBrowser, /fn ensure_browser[\s\S]{0,1200}offscreen_browser_creation_bounds[\s\S]*main\.add_child/, "first-created WebViews use the same bounded geometry policy");
 assert.match(rustBrowser, /fn offscreen_browser_creation_bounds[\s\S]{0,600}browser_bounds_within_client/, "offscreen creation bounds are derived from the bounded geometry policy");
 assert.match(rustBrowser, /fn show_webview_at[\s\S]{0,1200}browser_bounds_within_client[\s\S]*set_bounds/, "existing WebViews use the bounded geometry policy");
+assert.match(rustBrowser, /fn show_webview_at[\s\S]*inner_size\(\)[\s\S]*PhysicalPosition::new\(x, y\)[\s\S]*PhysicalSize::new\(w, h\)/, "native bounds remain physical through client clamping and child placement");
 
 // Settings URLs survive the lazy Browser chunk and are cleared only after
 // BrowserPane acknowledges the declarative request.

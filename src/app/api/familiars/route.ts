@@ -6,15 +6,18 @@ import { bindingFor, saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
+import { filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
   normalizeFamiliarDraft,
   type OnboardingFamiliarInput,
 } from "@/lib/onboarding-familiars";
-import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";
+import { loadPreferences } from "@/lib/server/preferences-store";
+import { voiceBindingForNewFamiliar } from "@/lib/voice/new-familiar-defaults";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +33,7 @@ export type DaemonFamiliar = {
   memory_freshness?: string;
 };
 
-export async function GET() {
+export async function GET(req: Request) {
   const rosterResult = await loadVisibleFamiliarRoster();
   if (!rosterResult.ok) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token
@@ -56,6 +59,30 @@ export async function GET() {
     );
   }
   const { config } = rosterResult;
+  const projectIds = [...new Set(
+    new URL(req.url).searchParams
+      .getAll("projectId")
+      .map((projectId) => projectId.trim())
+      .filter(Boolean),
+  )];
+  // Board task creation selects the project first. Restrict its familiar
+  // picker using the same read-level session-launch rule enforced by
+  // /api/board/:id/chat; the route's final assertProjectAccess remains the
+  // authority for a launch request.
+  const permissions = projectIds.length > 0 ? await loadProjectPermissions() : null;
+  const rostersByProject = new Map(
+    projectIds.map((projectId) => [
+      projectId,
+      filterFamiliarsForProject(permissions!, rosterResult.roster, projectId, "session-launch"),
+    ]),
+  );
+  const roster = projectIds.length === 0
+    ? rosterResult.roster
+    : projectIds.length === 1
+      ? rostersByProject.get(projectIds[0]) ?? []
+      : [...new Map(
+          [...rostersByProject.values()].flat().map((familiar) => [familiar.id, familiar]),
+        ).values()];
   // Pass `emoji` through — it's the daemon-provided default glyph the
   // glyph picker uses as the starting value. The Cave-local override store
   // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
@@ -64,36 +91,62 @@ export async function GET() {
   // when one exists, cache-busted by file mtime plus renderer format so both
   // content changes and server-side encoding changes refetch in desktop
   // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
-  const familiars = await Promise.all(
-    rosterResult.roster.map(async (f) => {
-      const configEntry = config.familiars[f.id] ?? {};
-      const binding = bindingFor(config, f.id);
-      const avatar = await resolveFamiliarAvatar(f.id);
-      return {
-        ...f,
-        display_name: binding.display_name ?? f.display_name,
-        role: binding.role ?? f.role,
-        pronouns: binding.pronouns ?? f.pronouns,
-        description: binding.description ?? f.description,
-        color: binding.color,
-        harness: binding.harness,
-        defaultHarness: config.defaults.harness,
-        harnessOverride: configEntry.harness ?? null,
-        model: binding.model,
-        note: binding.note,
-        voiceProvider: binding.voiceProvider,
-        voiceModel: binding.voiceModel,
-        voiceName: binding.voiceName,
-        autoSelfReport: configEntry.autoSelfReport ?? false,
-        asanaEnabled: configEntry.asanaEnabled,
-        asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
-        ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
-        avatarUrl: avatar
-          ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
-          : undefined,
-      };
-    }),
-  );
+  const enrichFamiliar = async (f: (typeof rosterResult.roster)[number]) => {
+    const configEntry = config.familiars[f.id] ?? {};
+    const binding = bindingFor(config, f.id);
+    const avatar = await resolveFamiliarAvatar(f.id);
+    return {
+      ...f,
+      display_name: binding.display_name ?? f.display_name,
+      role: binding.role ?? f.role,
+      familiarType: binding.familiarType,
+      pronouns: binding.pronouns ?? f.pronouns,
+      description: binding.description ?? f.description,
+      color: binding.color,
+      harness: binding.harness,
+      defaultHarness: config.defaults.harness,
+      harnessOverride: configEntry.harness ?? null,
+      model: binding.model,
+      note: binding.note,
+      voiceProvider: binding.voiceProvider,
+      voiceModel: binding.voiceModel,
+      voiceName: binding.voiceName,
+      imageProvider: binding.imageProvider,
+      imageModel: binding.imageModel,
+      imageSize: binding.imageSize,
+      imageQuality: binding.imageQuality,
+      autoSelfReport: configEntry.autoSelfReport ?? false,
+      asanaEnabled: configEntry.asanaEnabled,
+      asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
+      xResearchEnabled: configEntry.xResearchEnabled === true,
+      xPublishEnabled: configEntry.xPublishEnabled === true,
+      ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
+      avatarUrl: avatar
+        ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
+        : undefined,
+    };
+  };
+  const familiars = await Promise.all(roster.map(enrichFamiliar));
+
+  // The table can show cards from many projects at once. Fetching the daemon
+  // roster once per project is especially expensive for hub and remote-host
+  // installs, so repeated projectId parameters return each filtered roster
+  // from one config/permissions/daemon snapshot.
+  if (projectIds.length > 1) {
+    const familiarById = new Map(familiars.map((familiar) => [familiar.id, familiar]));
+    return NextResponse.json({
+      ok: true,
+      familiarsByProject: Object.fromEntries(
+        projectIds.map((projectId) => [
+          projectId,
+          (rostersByProject.get(projectId) ?? []).flatMap((familiar) => {
+            const enriched = familiarById.get(familiar.id);
+            return enriched ? [enriched] : [];
+          }),
+        ]),
+      ),
+    });
+  }
   return NextResponse.json({ ok: true, familiars });
 }
 
@@ -149,7 +202,6 @@ export async function POST(req: Request) {
 
   const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
-  const adaptersDir = path.join(covenDir, "adapters");
 
   await mkdir(covenDir, { recursive: true });
 
@@ -175,17 +227,48 @@ export async function POST(req: Request) {
     );
   }
 
-  // Reject duplicates rather than appending a second [[familiar]] block with
-  // the same id (the daemon would only ever see the first).
-  const familiarsExists = await pathExists(familiarsToml);
-  if (familiarsExists) {
-    const existingToml = await readFile(familiarsToml, "utf8");
-    if (familiarsTomlContainsId(existingToml, draft.id)) {
-      return NextResponse.json(
-        { ok: false, error: `A familiar with id "${draft.id}" already exists.` },
-        { status: 409 },
-      );
-    }
+  // Check for a local duplicate before making any config change. Keep the
+  // verified contents for the later registration write, after the binding has
+  // been persisted.
+  const existingToml = await pathExists(familiarsToml)
+    ? await readFile(familiarsToml, "utf8")
+    : null;
+  if (existingToml && familiarsTomlContainsId(existingToml, draft.id)) {
+    return NextResponse.json(
+      { ok: false, error: `A familiar with id "${draft.id}" already exists.` },
+      { status: 409 },
+    );
+  }
+
+  // Scaffold the harness adapter manifest if it is missing, or repair the
+  // known Windows Hermes shim before the new familiar can launch it. Persist
+  // the binding before registering the familiar below: a profile-selected
+  // familiar must never become visible without its explicit profile binding.
+  await ensureAdapterManifestScaffold(draft.harness);
+
+  // Upsert only this familiar's binding. No `defaults` key → global defaults
+  // are preserved (see the doc comment above).
+  const preferences = await loadPreferences();
+  const voiceBinding = voiceBindingForNewFamiliar(preferences.voice);
+  await saveConfig({
+    familiars: {
+      [draft.id]: {
+        harness: draft.harness,
+        model: draft.model,
+        ...(draft.hermesProfile ? { hermesProfile: draft.hermesProfile } : {}),
+        ...(draft.runtime ? { runtime: draft.runtime } : {}),
+        voiceProvider: null,
+        voiceModel: null,
+        voiceName: null,
+        ...voiceBinding,
+      },
+    },
+  });
+
+  // The duplicate was checked above before any mutation. Register only after
+  // saveConfig succeeds: if binding persistence fails, no unbound familiar is
+  // registered for chat to launch through a Hermes default profile.
+  if (existingToml !== null) {
     const separator = existingToml.endsWith("\n") ? "\n" : "\n\n";
     await writeFile(
       familiarsToml,
@@ -199,30 +282,6 @@ export async function POST(req: Request) {
   // Re-creating a removed id must clear its tombstone: the roster GET hides
   // tombstoned ids, so a stale entry would make the new familiar invisible.
   await takeTombstone(draft.id).catch(() => {});
-
-  // Scaffold the harness adapter manifest if it's missing (parity with
-  // onboarding) so a familiar bound to a not-yet-configured harness still works.
-  const adapterManifest = adapterManifestScaffoldForHarness(draft.harness);
-  if (adapterManifest) {
-    await mkdir(adaptersDir, { recursive: true });
-    const manifestPath = path.join(adaptersDir, adapterManifest.filename);
-    if (!(await pathExists(manifestPath))) {
-      await writeFile(manifestPath, adapterManifest.contents, "utf8");
-    }
-  }
-
-  // Upsert only this familiar's binding. No `defaults` key → global defaults
-  // are preserved (see the doc comment above).
-  await saveConfig({
-    familiars: {
-      [draft.id]: {
-        harness: draft.harness,
-        model: draft.model,
-        ...(draft.runtime ? { runtime: draft.runtime } : {}),
-      },
-    },
-  });
-
   // Scaffold the Familiar Contract (SOUL.md / IDENTITY.md / ward.toml /
   // MEMORY.md) so the new familiar is contract-compliant from birth instead of
   // showing up for "rehabilitation" in the Studio Contract tab. Best-effort and

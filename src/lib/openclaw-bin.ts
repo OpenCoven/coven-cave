@@ -6,21 +6,45 @@
 
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { covenSpawnEnv } from "./coven-bin";
+import {
+  covenLaunchCommandForBinary,
+  covenSpawnEnv,
+  type CovenLaunchCommand,
+} from "./coven-bin";
+import {
+  allowedHarnessEnvKeys,
+  restoreAllowedGitHubTokenEnv,
+  restoreGrantedVaultGitHubTokenEnv,
+} from "./harness-spawn-env";
+import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env";
+import { isVaultKeyGrantedTo, loadVaultMap } from "./vault";
 
 let cachedBin: string | null = null;
 
+export type OpenClawLaunchCommand = CovenLaunchCommand & {
+  requiredFiles?: string[];
+};
+
 const FORBIDDEN_SPAWN_ENV_KEYS = new Set(["GITHUB_PAT"]);
+// The Gateway dispatcher reads these only in Cave's server process. They must
+// never cross the fallback boundary, even if a broad harness allow-list was
+// configured for a different OpenClaw integration.
+// Keep the entire direct-Gateway namespace in Cave's server process. An
+// explicit generic harness allow-list must not turn a future Gateway token,
+// device identity, private key, or signing value into a CLI child credential.
+// The CLI compatibility path has no supported need for these settings.
+const GATEWAY_ENV_PREFIX = "OPENCLAW_GATEWAY_";
 const FORBIDDEN_SPAWN_ENV_RE =
   /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?|COOKIE|SESSION)(?:_|$)/i;
 
 function allowedOpenClawEnvKeys(): Set<string> {
-  return new Set(
-    (process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
+  return new Set([
+    ...allowedHarnessEnvKeys(),
+    ...(process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
       .split(",")
       .map((key) => key.trim())
       .filter(Boolean),
-  );
+  ]);
 }
 
 function dedupe(values: string[]): string[] {
@@ -97,6 +121,25 @@ export function openClawSupportsUntrustedArgs(bin = openClawBin()): boolean {
   return !openClawNeedsShell(bin);
 }
 
+/**
+ * Start OpenClaw without routing a chat prompt through cmd.exe. npm's Windows
+ * shims are batch files, but their final target is a JavaScript entry point;
+ * resolve that target and execute it with the running Node binary instead.
+ */
+export function openClawLaunchCommandForBinary(binary: string): OpenClawLaunchCommand {
+  const shimPlatform = /\.(cmd|bat)$/i.test(binary) ? "win32" : process.platform;
+  const launch = covenLaunchCommandForBinary(binary, shimPlatform);
+  return {
+    ...launch,
+    ...(launch.fixedArgs.length > 0 ? { requiredFiles: [launch.fixedArgs.at(-1)!] } : {}),
+  };
+}
+
+/** A spawn-safe OpenClaw command for either a native executable or npm shim. */
+export function openClawLaunchCommand(): OpenClawLaunchCommand {
+  return openClawLaunchCommandForBinary(openClawBin());
+}
+
 const WINDOWS_SHELL_META_RE = /[\s"&|<>()^%!]/;
 
 function quoteWindowsShellArg(arg: string): string {
@@ -133,10 +176,29 @@ export function openClawSpawnArgs(argv: string[], bin = openClawBin()): string[]
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   const allowed = allowedOpenClawEnvKeys();
+  const map = loadVaultMap(true);
+  const grantedVaultTokenKeys = new Set<string>(
+    GITHUB_HARNESS_TOKEN_ENV_KEYS.filter((key) => isVaultKeyGrantedTo(map[key])),
+  );
+
+  // Direct OpenClaw sessions have no familiar id, so they receive shared
+  // Vault aliases just like other context-free harness launches. Scoped
+  // aliases remain unavailable without a granted familiar. The shared
+  // harness opt-in covers launcher credentials for any supported runtime,
+  // while the OpenClaw-specific setting remains available for existing
+  // installations. Cave-managed GITHUB_PAT follows the same Vault scope
+  // policy; an unmanaged launcher GITHUB_PAT still requires an explicit
+  // opt-in and is never restored when Cave has local storage for that key.
+  restoreGrantedVaultGitHubTokenEnv(env, map);
+  restoreAllowedGitHubTokenEnv(env, allowed, new Set(Object.keys(map)));
+
   for (const key of Object.keys(env)) {
+    const mustNotReachFallback = key.startsWith(GATEWAY_ENV_PREFIX);
+    const genericSecret =
+      FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key);
     if (
-      (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&
-      !allowed.has(key)
+      mustNotReachFallback ||
+      (genericSecret && !allowed.has(key) && !grantedVaultTokenKeys.has(key))
     ) {
       delete env[key];
     }

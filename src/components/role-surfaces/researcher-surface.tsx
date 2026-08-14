@@ -23,15 +23,19 @@ import "@/styles/globals/surface-research-prompt.css";
 import "@/styles/globals/surface-research-library.css";
 import "@/styles/globals/surface-research-studio.css";
 import "@/styles/globals/surface-research-resources.css";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import type { ResearchMissionMode, ResearchMissionStatus } from "@/lib/research-missions";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
+import type { ResearchMissionMode } from "@/lib/research-missions";
+import { useRoleSurfaceState } from "@/lib/role-surface-state";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
+import { RESEARCHER_SURFACE_ID } from "./ids";
 import { ResearchTabDesk } from "./research-tab-desk";
 import { ResearchTabLibrary } from "./research-tab-library";
 import { ResearchTabPrompt } from "./research-tab-prompt";
 import { ResearchTabResources } from "./research-tab-resources";
 import { ResearchTabStudio } from "./research-tab-studio";
+import { researchEngineStatus, researchLiveRunCount } from "./researcher-status";
 import { useResearchMissions } from "./use-research-missions";
 
 export type ResearchDeskTab = "prompt" | "desk" | "library" | "studio" | "resources";
@@ -64,8 +68,13 @@ const TAB_LABELS: Record<ResearchDeskTab, string> = {
   resources: "Resources",
 };
 
-/** Missions the engine is actively working — the header's "N runs live". */
-const LIVE_STATUSES: ReadonlySet<ResearchMissionStatus> = new Set(["running", "planning", "queued"]);
+type ResearcherState = {
+  lastLiveRunCount: number | null;
+};
+
+const RESEARCHER_STATUS_INITIAL_STATE: ResearcherState = {
+  lastLiveRunCount: null,
+};
 
 function isResearchDeskTab(value: string | null): value is ResearchDeskTab {
   return value !== null && (TAB_IDS as readonly string[]).includes(value);
@@ -85,15 +94,34 @@ function readStoredTab(): ResearchDeskTab | null {
 
 export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) {
   const research = useResearchMissions(context.activeFamiliar.id);
+  const [, patch] = useRoleSurfaceState<ResearcherState>(
+    context.activeFamiliar.id,
+    RESEARCHER_SURFACE_ID,
+    RESEARCHER_STATUS_INITIAL_STATE,
+  );
   const [tab, setTab] = useState<ResearchDeskTab | null>(readStoredTab);
   const [promptMode, setPromptMode] = useState<ResearchMissionMode | null>(null);
+  const liveRunCount = researchLiveRunCount(research.missions);
+
+  // Publish only settled reads. Loading and failed refreshes retain the last
+  // known count instead of turning unavailable data into a convincing zero.
+  useEffect(() => {
+    if (research.loading || research.error) return;
+    patch({ lastLiveRunCount: liveRunCount });
+  }, [research.loading, research.error, liveRunCount, patch]);
 
   // No stored preference: land on the desk when missions exist (or are still
   // loading — the desk shows its own loading state), otherwise start at the
-  // Prompt intake. Only explicit selections persist, so the default keeps
-  // tracking reality instead of freezing the first visit's answer.
+  // Prompt intake. The answer latches once loading settles: a mission
+  // appearing later (an automation firing mid-visit) or the list emptying
+  // must not flip tabs under the user and discard an in-progress prompt
+  // draft (cave-9589). Only explicit selections persist to storage.
   const activeTab: ResearchDeskTab =
     tab ?? (research.loading || research.missions.length > 0 ? "desk" : "prompt");
+  useEffect(() => {
+    if (tab !== null || research.loading) return;
+    setTab(research.missions.length > 0 ? "desk" : "prompt");
+  }, [tab, research.loading, research.missions.length]);
 
   const selectTab = useCallback((next: ResearchDeskTab) => {
     setTab(next);
@@ -105,6 +133,14 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     }
   }, []);
 
+  // The desk's five tabs are destinations; the stored tab restores on mount
+  // through setTab, which records nothing.
+  const selectTabTracked = useTrackedSurfaceValue<ResearchDeskTab>({
+    id: "research:desk-tab",
+    value: activeTab,
+    onRestore: selectTab,
+  });
+
   const select = research.select;
   const onNavigate = useCallback<ResearchTabNavigate>((next, opts) => {
     if (opts?.missionId) select(opts.missionId);
@@ -112,12 +148,12 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     selectTab(next);
   }, [select, selectTab]);
 
-  // Engine status, derived honestly from the daemon + live mission count.
-  const daemonRunning = context.runtimeState.daemonRunning;
-  const liveCount = research.missions.filter((mission) => LIVE_STATUSES.has(mission.status)).length;
-  const engineStatus = daemonRunning
-    ? `Engine ready · ${liveCount} run${liveCount === 1 ? "" : "s"} live`
-    : "Engine offline · runs stay retryable";
+  // A routed Prompt mode is one-shot: once the Prompt tab has rendered with it
+  // (its effects consume initialMode before this parent effect runs), clear it
+  // so later manual visits to the tab never re-apply a stale mode.
+  useEffect(() => {
+    if (activeTab === "prompt" && promptMode !== null) setPromptMode(null);
+  }, [activeTab, promptMode]);
 
   // Checkpoint dot on the Desk tab label — only while the desk is not looking.
   const checkpointWaiting = research.missions.some((mission) => mission.status === "checkpoint");
@@ -134,26 +170,52 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
     ) : TAB_LABELS[id],
   }));
 
+  const checkpointCount = research.missions.filter(
+    (mission) => mission.status === "checkpoint",
+  ).length;
+  const engine = researchEngineStatus(context.runtimeState.daemonRunning, liveRunCount);
+
   return (
     <div className="research-desk">
       <div className="research-desk__tabs">
         <Tabs<ResearchDeskTab>
           items={tabItems}
           value={activeTab}
-          onChange={selectTab}
+          onChange={selectTabTracked}
           ariaLabel="Research desk views"
           idPrefix="research-desk"
           size="sm"
           bordered={false}
         />
-        <span
-          className="research-desk__engine"
-          data-tone={daemonRunning ? "ok" : "warn"}
-          role="status"
-        >
-          <i className="research-desk__engine-dot" aria-hidden />
-          {engineStatus}
-        </span>
+        {/* Status cluster: engine readiness, live runs, and the review queue —
+            the three numbers the frame keeps permanently on screen so the desk
+            never has to be opened to learn there is work waiting. The review
+            segment is a button because it has somewhere to go. */}
+        <div className="research-desk__status">
+          <span className="research-desk__status-seg" data-tone={engine.tone} title={engine.label}>
+            <i aria-hidden />
+            engine
+            <span className="sr-only"> — {engine.label}</span>
+          </span>
+          <span className="research-desk__status-seg" title={`${liveRunCount} live`}>
+            {liveRunCount} live
+          </span>
+          {checkpointCount > 0 ? (
+            <button
+              type="button"
+              className="research-desk__status-review focus-ring"
+              title="Runs paused for your direction"
+              onClick={() => selectTabTracked("desk")}
+            >
+              {checkpointCount} review
+              <span className="sr-only">
+                {" — "}
+                {checkpointCount === 1 ? "one run is" : `${checkpointCount} runs are`} waiting at a
+                checkpoint. Opens the Desk.
+              </span>
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div

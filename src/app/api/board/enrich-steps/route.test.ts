@@ -28,10 +28,21 @@ assert.match(
   "Enrich route should require the matching JSON intent body and familiar id",
 );
 
+// The spawn (and its abort wiring) moved to the shared one-shot runner
+// (cave-xailn). The guarantee is unchanged, and still checked end to end.
+const oneShot = readFileSync(
+  new URL("../../../../lib/server/coven-oneshot.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  source,
+  oneShot,
   /signal\.addEventListener\("abort", onAbort, \{ once: true \}\)/,
   "Coven child process should be killed if the client aborts",
+);
+assert.match(
+  source,
+  /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
+  "Enrich route forwards its request signal to the runner, so aborts reach the child",
 );
 
 assert.match(
@@ -105,6 +116,16 @@ assert.match(
   /await updateCard\(card\.id, \{[\s\S]*notes:[\s\S]*startDate:[\s\S]*endDate:[\s\S]*links:[\s\S]*github:[\s\S]*sessionId:/,
   "Enrich route should persist simplified description, dates, associated issue links, and chat assignment together",
 );
+assert.match(
+  source,
+  /\}, \{ automated: true \}\)/,
+  "Enrich writes must identify themselves as automation for authorship enforcement",
+);
+assert.match(
+  source,
+  /error instanceof OrchestrationValidationError[\s\S]*reason: "orchestration_invalid"[\s\S]*errors: error\.errors/,
+  "Enrich should report field-specific orchestration rejections per card",
+);
 
 assert.match(
   source,
@@ -114,8 +135,8 @@ assert.match(
 
 assert.match(
   source,
-  /resolveSecret\("GITHUB_PAT"\)[\s\S]*https:\/\/api\.github\.com\/repos\/\$\{item\.repo\}\/issues\/\$\{item\.number\}/,
-  "GitHub issue-state refresh should use the saved PAT when present and the REST issue endpoint",
+  /resolveGitHubToken\(\)[\s\S]*https:\/\/api\.github\.com\/repos\/\$\{item\.repo\}\/issues\/\$\{item\.number\}/,
+  "GitHub issue-state refresh should use the shared configured GitHub token when present and the REST issue endpoint",
 );
 
 assert.match(

@@ -1,6 +1,6 @@
 import type { SessionRow } from "./types.ts";
 import type { CaveProject } from "./cave-projects.ts";
-import { compareProjectsAlphabetically } from "./cave-projects-types.ts";
+import { compareProjectsAlphabetically, normalizeProjectRoot } from "./cave-projects-types.ts";
 
 export type ChatProject = CaveProject;
 export type { CaveProject };
@@ -16,9 +16,18 @@ export type ChatProjectGroup = {
   updatedAt: string | null;
 };
 
+/**
+ * Canonical project-root form for chat.
+ *
+ * This was a character-for-character reimplementation of normalizeProjectRoot
+ * (cave-zz12) — same trim, same backslash flip, same trailing-slash strip,
+ * same "/" fallback. Two identical normalizers are one silent divergence
+ * waiting to happen, so this is now a re-export that keeps the chat-side name
+ * at its ~30 call sites. The signature stays string -> string: chat callers
+ * always have a root in hand, and widening it would hide a missing one.
+ */
 export function normalizeChatProjectRoot(root: string): string {
-  const normalized = root.trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized || "/";
+  return normalizeProjectRoot(root);
 }
 
 export function chatProjectById(
@@ -45,6 +54,28 @@ export function projectIdForRoot(
   return projectForRoot(projectRoot, projects)?.id ?? null;
 }
 
+/** Resolve a checkout below a registered project's `.worktrees/` directory.
+ * Browser-safe path handling is intentionally strict: dot segments are
+ * rejected instead of normalized so a traversal-looking root can never claim
+ * a parent project in the picker before the server performs its own path check. */
+function projectForWorktreeRoot(
+  projectRoot: string | null | undefined,
+  projects: CaveProject[],
+): CaveProject | null {
+  if (!projectRoot?.trim()) return null;
+  const normalized = normalizeChatProjectRoot(projectRoot);
+  const segments = normalized.split("/");
+  if (segments.some((segment) => segment === "." || segment === "..")) return null;
+
+  for (const project of projects) {
+    const prefix = `${normalizeChatProjectRoot(project.root)}/.worktrees/`;
+    if (!normalized.startsWith(prefix)) continue;
+    const relative = normalized.slice(prefix.length);
+    if (relative && !relative.startsWith("/")) return project;
+  }
+  return null;
+}
+
 /** Sentinel picker id for "this chat runs outside every registered project"
  *  (typically the familiar's own workspace). A real id so it can live in the
  *  same draft-state slot as project ids, distinct from null = "unresolved". */
@@ -55,6 +86,11 @@ export type ChatProjectSelection = {
   projectId: string | null;
   /** The registered project the chat is scoped to; null for no-project. */
   project: CaveProject | null;
+  /** Explicit opener-provided root that maps to no registered project — e.g. a
+   *  `.worktrees/<branch>` checkout handed off by the worktree-creation flow.
+   *  The chat runs here; it must NOT be re-rooted to a registered project.
+   *  Only present when the selection resolved through that path. */
+  unregisteredRoot?: string;
 };
 
 /**
@@ -70,8 +106,18 @@ export type ChatProjectSelection = {
  * registered project is "No project" — it runs in the familiar's own
  * workspace or another unregistered dir, and defaulting it to the first
  * registered project would re-root the next turn's cwd there and fork the
- * harness session (`--continue` misses in the new dir). Only a brand new chat
- * (no session yet) defaults to the first project.
+ * harness session (`--continue` misses in the new dir). An opener-provided
+ * root that maps to no registered project (`fallbackProjectRoot`, e.g. a
+ * freshly provisioned `.worktrees/<branch>` checkout) resolves to No-project
+ * with `unregisteredRoot` carrying the root, so the chat actually runs there.
+ * The same applies to an existing session whose recorded cwd lives under a
+ * registered project's `.worktrees/` directory: reopened later — when the
+ * view's opener root no longer matches — the chat keeps its worktree home
+ * instead of degrading to a root-less No-project (cave-k0ra).
+ * Only a brand new chat
+ * (no session yet) defaults: to the most recent chat's registered project
+ * (`recentProjectRoot`, see recentChatProjectRoot) so new chats pick up where
+ * the user is actually working, then to the first project.
  */
 export function resolveChatProjectSelection(args: {
   draftId: string | null;
@@ -82,6 +128,14 @@ export function resolveChatProjectSelection(args: {
    *  the card's stable projectId, with its cwd as a fallback mapping. */
   taskProjectId?: string | null;
   taskCwd?: string | null;
+  /** Root of the most recent chat's registered project (recentChatProjectRoot):
+   *  the brand-new-chat default when no other context picked a project. */
+  recentProjectRoot?: string | null;
+  /** Project the user pinned with "Save as default" (Chat.dc.html 2b). Beats
+   *  the recent-chat inference — an explicit choice outranks a guess — but
+   *  stays BELOW every contextual signal above it, so opening a task chat or a
+   *  worktree still lands where that context says. */
+  defaultProjectId?: string | null;
   projects: CaveProject[];
 }): ChatProjectSelection {
   const firstProject = args.projects[0] ?? null;
@@ -89,7 +143,7 @@ export function resolveChatProjectSelection(args: {
   if (args.draftId) {
     return {
       projectId: args.draftId,
-      project: chatProjectById(args.draftId, args.projects) ?? firstProject,
+      project: chatProjectById(args.draftId, args.projects),
     };
   }
   const taskProject =
@@ -100,7 +154,58 @@ export function resolveChatProjectSelection(args: {
     args.projects,
   );
   if (mappedId) return { projectId: mappedId, project: chatProjectById(mappedId, args.projects) };
+  // An explicit opener root that maps to no registered project (a
+  // `.worktrees/<branch>` checkout from the composer's "New worktree…" flow or
+  // the GitHub safe-merge hand-off) is an intentional choice of where the chat
+  // runs. Falling through to the recent/first project would silently re-root
+  // the chat back into the shared checkout — the exact collision the worktree
+  // was created to avoid. Honored for the view's own session too (the root
+  // must match), so the worktree context survives the first send; a DIFFERENT
+  // session opened into this view keeps its own home instead.
+  const explicitRoot = args.fallbackProjectRoot?.trim()
+    ? normalizeChatProjectRoot(args.fallbackProjectRoot)
+    : null;
+  if (
+    explicitRoot &&
+    (!args.hasSession ||
+      (args.sessionProjectRoot?.trim()
+        ? normalizeChatProjectRoot(args.sessionProjectRoot) === explicitRoot
+        : false))
+  ) {
+    const worktreeProject = projectForWorktreeRoot(explicitRoot, args.projects);
+    if (worktreeProject) {
+      return {
+        projectId: worktreeProject.id,
+        project: worktreeProject,
+        unregisteredRoot: explicitRoot,
+      };
+    }
+    return { projectId: NO_PROJECT_ID, project: null, unregisteredRoot: explicitRoot };
+  }
+  // A chat that RAN in a project's worktree keeps that root when reopened
+  // later, when the view's opener root no longer matches (cave-k0ra): a
+  // recorded cwd under a registered project's `.worktrees/` directory is as
+  // intentional as the opener hand-off above — the git chip, env panel, and
+  // enhance mode belong to that checkout, not to "No project". Scoped to
+  // `.worktrees/` containment on purpose: a session recorded in the
+  // familiar's own workspace (or any other unregistered dir) still resolves
+  // to bare No-project, so its cwd is never surfaced or re-asserted.
+  if (args.hasSession && args.sessionProjectRoot?.trim()) {
+    const sessionRoot = normalizeChatProjectRoot(args.sessionProjectRoot);
+    const worktreeProject = projectForWorktreeRoot(sessionRoot, args.projects);
+    if (worktreeProject) {
+      return {
+        projectId: worktreeProject.id,
+        project: worktreeProject,
+        unregisteredRoot: sessionRoot,
+      };
+    }
+  }
   if (args.hasSession) return { projectId: NO_PROJECT_ID, project: null };
+  const pinnedDefault = chatProjectById(args.defaultProjectId, args.projects);
+  if (pinnedDefault) return { projectId: pinnedDefault.id, project: pinnedDefault };
+  const recentProject = projectForRoot(args.recentProjectRoot, args.projects);
+  if (recentProject) return { projectId: recentProject.id, project: recentProject };
   return { projectId: null, project: firstProject };
 }
 
@@ -168,6 +273,27 @@ export function filterVisibleChatSessions(
     .filter((session) => !isGeneratedChatSession(session))
     .filter((session) => familiarId === null || session.familiarId === familiarId)
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
+}
+
+/** The registered project the most recent visible chat ran in, as a root for
+ *  resolveChatProjectSelection's `recentProjectRoot` — so a brand-new chat
+ *  starts off in the project the user was just working in instead of the
+ *  alphabetically-first one. Walks newest-first (all familiars: project
+ *  context follows the work across familiar switches) and skips chats whose
+ *  recorded cwd maps to no entry in `projects` — an unregistered or
+ *  no-project chat can't meaningfully seed a picker that only offers
+ *  registered projects, and `projects` is already scoped to the familiar's
+ *  grants, so an inaccessible project can never be inherited. */
+export function recentChatProjectRoot(
+  sessions: SessionRow[],
+  projects: CaveProject[],
+): string | null {
+  if (projects.length === 0) return null;
+  for (const session of filterVisibleChatSessions(sessions, null)) {
+    const project = projectForRoot(session.project_root, projects);
+    if (project) return project.root;
+  }
+  return null;
 }
 
 export function deriveChatProjectGroups(

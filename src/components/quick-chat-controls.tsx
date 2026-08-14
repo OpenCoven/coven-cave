@@ -7,16 +7,10 @@ import { useCallback, useRef, useState } from "react";
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
 import "@/styles/home-composer.css";
-import {
-  COMMAND_RESPONSE_SPEED_OPTIONS,
-  COMMAND_THINKING_OPTIONS,
-  type CommandResponseSpeed,
-  type CommandThinkingEffort,
-} from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects-types";
+import { projectAccessLabel } from "@/lib/project-access-levels";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import { StandardSelect } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { useReplyRecommendation, type ReplyRecommendationState } from "@/lib/use-reply-recommendation";
@@ -26,9 +20,16 @@ import { attachmentIcon, type ChatAttachment } from "@/lib/chat-attachments";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/use-quick-chat";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import type {
+  ModelControlCapability,
+  ModelControlFamily,
+  ModelControlValues,
+} from "@/lib/model-control-capabilities";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
+import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
-import { formatModelList, resolveModelArg } from "@/lib/slash-model";
+import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
   buildSkillPrompt,
   formatSkillList,
@@ -44,9 +45,7 @@ import {
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import {
   FamiliarMark,
-  QuickChatIdentity,
   QuickChatSelect,
-  type QuickChatSelectOption,
 } from "./quick-chat-primitives";
 
 export {
@@ -65,11 +64,7 @@ export { QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 const EMPTY_MESSAGES: QuickChatMessage[] = [];
 
 // ── Controls row ─────────────────────────────────────────────────────────────
-// Familiar picker + thinking-effort + response-speed selects — identical in the
-// in-app dropdown and the tray window.
-
-const CONTROL_SELECT_CLASS =
-  "min-w-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none";
+// Familiar/project selection is identical in the in-app dropdown and tray.
 
 export function QuickChatControlsRow({
   loading,
@@ -78,13 +73,9 @@ export function QuickChatControlsRow({
   onPickFamiliar,
   projects,
   projectsLoading,
+  projectsError,
   selectedProjectRoot,
   onPickProjectRoot,
-  thinkingEffort,
-  onThinkingEffortChange,
-  responseSpeed,
-  onResponseSpeedChange,
-  sending,
   showFamiliarPicker = false,
 }: {
   loading: boolean;
@@ -93,13 +84,9 @@ export function QuickChatControlsRow({
   onPickFamiliar: (id: string | null) => void;
   projects: CaveProject[];
   projectsLoading: boolean;
+  projectsError?: string | null;
   selectedProjectRoot: string | null;
   onPickProjectRoot: (root: string | null) => void;
-  thinkingEffort: CommandThinkingEffort;
-  onThinkingEffortChange: (value: CommandThinkingEffort) => void;
-  responseSpeed: CommandResponseSpeed;
-  onResponseSpeedChange: (value: CommandResponseSpeed) => void;
-  sending: boolean;
   showFamiliarPicker?: boolean;
 }) {
   // Once a project is picked the thread is locked to that context (switching
@@ -110,6 +97,9 @@ export function QuickChatControlsRow({
     : null;
   const selectedProjectName =
     selectedProject?.name ?? selectedProjectRoot?.split(/[\\/]/).filter(Boolean).pop() ?? "";
+  const selectedProjectAccess = selectedProject?.access
+    ? projectAccessLabel(selectedProject.access)
+    : null;
   return (
     <div className="quick-chat-overlay__controls">
       {showFamiliarPicker ? (
@@ -130,14 +120,16 @@ export function QuickChatControlsRow({
           }
         />
       ) : null}
-      {selectedProjectRoot ? (
+      {selectedProject ? (
         <span
           className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs"
-          title={selectedProjectRoot}
-          aria-label={`Project: ${selectedProjectName} (locked for this chat)`}
+          title={selectedProject.root}
+          aria-label={`Project: ${selectedProjectName}, ${selectedProjectAccess} access (locked for this chat)`}
         >
           <Icon name="ph:folder" width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" />
-          <span className="min-w-0 truncate">{selectedProjectName}</span>
+          <span className="min-w-0 truncate">
+            {selectedProjectName} · {selectedProjectAccess}
+          </span>
           <Icon
             name="ph:lock-simple"
             width={11}
@@ -148,40 +140,32 @@ export function QuickChatControlsRow({
       ) : (
         <QuickChatSelect
           label="Project"
-          value={selectedProjectRoot ?? "__none__"}
-          onChange={(next) => onPickProjectRoot(next === "__none__" ? null : next)}
-          disabled={projectsLoading && projects.length === 0}
+          value="__choose__"
+          onChange={(next) => {
+            if (next !== "__choose__") onPickProjectRoot(next);
+          }}
+          disabled={projectsLoading || Boolean(projectsError) || projects.length === 0}
           className="flex-1"
           options={
             projectsLoading && projects.length === 0
-              ? [{ value: "__none__", label: "Loading projects…", disabled: true }]
-              : [
-                  { value: "__none__", label: "No project", icon: "ph:folder-simple-dashed" as IconName },
+              ? [{ value: "__choose__", label: "Loading projects…", disabled: true }]
+              : projectsError
+                ? [{ value: "__choose__", label: "Projects unavailable", disabled: true }]
+                : projects.length === 0
+                  ? [{ value: "__choose__", label: "No accessible projects", disabled: true }]
+                  : [
+                  { value: "__choose__", label: "Choose project…", disabled: true },
                   ...projects.map((project) => ({
                     value: project.root,
-                    label: project.name,
+                    label: `${project.name} · ${
+                      project.access ? projectAccessLabel(project.access) : "Unknown"
+                    }`,
                     icon: "ph:folder" as IconName,
                   })),
                 ]
           }
         />
       )}
-      <StandardSelect
-        label="Choose thinking effort"
-        value={thinkingEffort}
-        onChange={(next) => onThinkingEffortChange(next as CommandThinkingEffort)}
-        disabled={sending}
-        className={CONTROL_SELECT_CLASS}
-        options={COMMAND_THINKING_OPTIONS}
-      />
-      <StandardSelect
-        label="Choose response speed"
-        value={responseSpeed}
-        onChange={(next) => onResponseSpeedChange(next as CommandResponseSpeed)}
-        disabled={sending}
-        className={CONTROL_SELECT_CLASS}
-        options={COMMAND_RESPONSE_SPEED_OPTIONS}
-      />
     </div>
   );
 }
@@ -231,6 +215,7 @@ export function QuickChatComposer({
   onCancel,
   sending,
   disabled,
+  launchReady = true,
   familiar,
   inputId,
   composerRef,
@@ -243,6 +228,10 @@ export function QuickChatComposer({
   onSendText,
   modelOverride,
   onModelOverrideChange,
+  modelCapabilities = [],
+  modelControls = {},
+  modelControlsLoading = false,
+  onModelControlChange,
   queued,
   onRemoveQueued,
   onSteerQueued,
@@ -256,6 +245,9 @@ export function QuickChatComposer({
   sending: boolean;
   /** Blocks sending while true (e.g. the roster is still loading). */
   disabled?: boolean;
+  /** Ordinary messages require a freshly authorized project. Local slash
+   *  commands stay available so setup/model help is never trapped. */
+  launchReady?: boolean;
   familiar: Familiar | null;
   inputId: string;
   composerRef?: React.RefObject<HTMLTextAreaElement | null>;
@@ -280,6 +272,11 @@ export function QuickChatComposer({
   modelOverride?: string | null;
   /** /model pick — set the thread's model override. */
   onModelOverrideChange?: (id: string | null) => void;
+  /** Selected-model controls negotiated by the shared model-state contract. */
+  modelCapabilities?: readonly ModelControlCapability[];
+  modelControls?: ModelControlValues;
+  modelControlsLoading?: boolean;
+  onModelControlChange?: (family: ModelControlFamily, value: string) => void;
   /** Messages parked behind the in-flight turn (chips above the actions row). */
   queued?: QueuedQuickChatMessage[];
   onRemoveQueued?: (id: string) => void;
@@ -330,7 +327,20 @@ export function QuickChatComposer({
   // Slash commands are live only when the host wires all three handlers (the
   // tray does); otherwise a leading "/" just sends as plain text, as before.
   const slashEnabled = Boolean(onNewThread && onLocalNote && onSendText);
-  const modelHarness = familiar?.harness ?? "claude";
+  const modelHarness = canonicalHarnessId(familiar?.harness ?? "claude");
+  const runtimeModelInventory = useRuntimeModelInventory(modelHarness, familiar?.id);
+  const runtimeModelOptions = runtimeModelInventory.models;
+  const [composerCaret, setComposerCaret] = useState(draft.length);
+  const completeComposerText = useCallback((nextText: string, nextCaret: number) => {
+    onDraftChange(nextText);
+    setComposerCaret(nextCaret);
+    requestAnimationFrame(() => {
+      const textarea = composerRef?.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, [composerRef, onDraftChange]);
   // Shared inline menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — same hook as the home/chat composers so the keyboard
   // grammar transfers. The pick callbacks reference the helpers declared just
@@ -339,7 +349,10 @@ export function QuickChatComposer({
   const menu = useInlineSlashMenus({
     text: draft,
     setText: onDraftChange,
+    caret: composerCaret,
+    onCompleteText: completeComposerText,
     modelHarness,
+    modelOptionsOverride: runtimeModelOptions,
     onPickModel: (id) => {
       onModelOverrideChange?.(id);
       onLocalNote?.(`Model set to \`${id}\` for this thread.`);
@@ -386,10 +399,11 @@ export function QuickChatComposer({
         composerRef?.current?.focus();
         return;
       }
+      if (!launchReady) return;
       onDraftChange("");
       onSendText?.(buildSkillPrompt(skill, args));
     },
-    [draft, onDraftChange, composerRef, onSendText],
+    [draft, launchReady, onDraftChange, composerRef, onSendText],
   );
 
   // Slash dispatch — the quick-chat subset. Supported commands act locally or
@@ -413,10 +427,27 @@ export function QuickChatComposer({
         case "/model": {
           onDraftChange("");
           if (!args) {
-            onLocalNote?.(formatModelList(modelHarness, modelOverride ?? null));
+            onLocalNote?.(
+              formatModelList(
+                modelHarness,
+                modelOverride ?? null,
+                runtimeModelOptions,
+                runtimeModelInventory.allowCustom,
+              ),
+            );
             return;
           }
-          const id = resolveModelArg(args, modelHarness);
+          if (isRuntimeDefaultModelArg(args)) {
+            onModelOverrideChange?.("");
+            onLocalNote?.("Model reset to the Runtime default for this thread.");
+            return;
+          }
+          const id = resolveModelArg(
+            args,
+            modelHarness,
+            runtimeModelOptions,
+            runtimeModelInventory.allowCustom,
+          );
           if (!id) {
             onLocalNote?.(`Unknown model "${args}".`);
             return;
@@ -474,6 +505,8 @@ export function QuickChatComposer({
       onModelOverrideChange,
       modelHarness,
       modelOverride,
+      runtimeModelOptions,
+      runtimeModelInventory.allowCustom,
       menu.skills,
       menu.prompts,
       invokeSkillOption,
@@ -490,6 +523,7 @@ export function QuickChatComposer({
       runSlash(trimmed);
       return;
     }
+    if (!launchReady) return;
     // The strip belongs to the draft being sent — don't leave it hanging
     // over the emptied composer.
     promptEnhance.reset();
@@ -497,10 +531,21 @@ export function QuickChatComposer({
     // the outgoing payload (mirrors the chat composer's send).
     onSend(attachments.map(({ id: _id, ...attachment }) => attachment));
     clearAttachments();
-  }, [draft, slashEnabled, runSlash, onSend, promptEnhance.reset, attachments, clearAttachments]);
+  }, [
+    attachments,
+    clearAttachments,
+    draft,
+    launchReady,
+    onSend,
+    promptEnhance.reset,
+    runSlash,
+    slashEnabled,
+  ]);
   // Sendable = something to say (text or files). While a reply streams the
   // same action QUEUES — the hook parks it and auto-sends on settle.
   const canSend = Boolean(draft.trim() || attachments.length > 0);
+  const canDispatch =
+    canSend && (launchReady || (slashEnabled && draft.trim().startsWith("/")));
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // The inline slash menus (Esc-dismiss, ↑↓/Tab/Enter across the pickers)
@@ -532,10 +577,19 @@ export function QuickChatComposer({
         event.preventDefault();
         // Enter while a reply streams queues the message (the hook parks it);
         // `disabled` (roster loading) still blocks.
-        if (!disabled && canSend) send();
+        if (!disabled && canDispatch) send();
       }
     },
-    [acceptRecommendation, canSend, disabled, draft, recommendation.suggestion, send, slashEnabled, menu.handleKeyDown],
+    [
+      acceptRecommendation,
+      canDispatch,
+      disabled,
+      draft,
+      recommendation.suggestion,
+      send,
+      slashEnabled,
+      menu.handleKeyDown,
+    ],
   );
 
   const slashMenuOpen = slashEnabled && menu.menuOpen;
@@ -560,10 +614,10 @@ export function QuickChatComposer({
       {slashEnabled && menu.modelMenuActive && menu.modelOptions ? (
         <HomeSlashMenu
           listboxId={menu.slashListboxId}
-          ariaLabel="Models"
+          ariaLabel={`Models · ${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)}`}
           items={menu.modelOptions.map((m) => ({ key: m.id, name: m.label, desc: m.id }))}
           activeIndex={menu.slashIdx}
-          footer="↑↓ navigate · Enter switch · Esc cancel"
+          footer={`${inventoryProvenanceLabel(runtimeModelInventory.provenance, runtimeModelInventory.loading)} · ↑↓ navigate · Enter switch · Esc cancel`}
           onHover={menu.setSlashIdx}
           onPick={(i) => {
             const m = menu.modelOptions?.[i];
@@ -626,13 +680,40 @@ export function QuickChatComposer({
             const cmd = menu.slashSuggestions[i];
             const s = menu.skillCommandRows[i - menu.slashSuggestions.length];
             if (cmd) {
-              onDraftChange(cmd.name + (cmd.argPlaceholder ? " " : ""));
+              menu.completeCommand(cmd.name, Boolean(cmd.argPlaceholder));
               composerRef?.current?.focus();
             } else if (s) {
               invokeSkillOption(s);
             }
           }}
         />
+      ) : null}
+      {familiar && (modelControlsLoading || modelCapabilities.length > 0) ? (
+        <div
+          className="quick-chat-overlay__controls"
+          role="group"
+          aria-label="Selected model controls"
+          aria-busy={modelControlsLoading}
+        >
+          {modelControlsLoading ? (
+            <span className="min-w-0 truncate text-xs text-[var(--fg-muted)]" role="status">
+              Loading model controls…
+            </span>
+          ) : modelCapabilities.map((capability) => (
+            <QuickChatSelect
+              key={capability.family}
+              label={`${capability.label} · ${capability.delivery === "prompt-only" ? "Prompt guidance" : "Native"}`}
+              value={modelControls[capability.family] ?? ""}
+              disabled={sending || !onModelControlChange}
+              onChange={(value) => onModelControlChange?.(capability.family, value)}
+              options={[
+                { value: "", label: "Not set" },
+                ...capability.values.map((option) => ({ value: option.value, label: option.label })),
+              ]}
+              className="min-w-0 flex-1"
+            />
+          ))}
+        </div>
       ) : null}
       {error ? (
         <p className="quick-chat-overlay__error" role="alert">
@@ -657,7 +738,13 @@ export function QuickChatComposer({
         aria-expanded={slashMenuOpen}
         aria-controls={slashMenuOpen ? menu.slashListboxId : undefined}
         aria-activedescendant={slashMenuOpen ? `${menu.slashListboxId}-opt-${menu.slashIdx}` : undefined}
-        onChange={(event) => onDraftChange(event.target.value)}
+        onChange={(event) => {
+          onDraftChange(event.target.value);
+          setComposerCaret(event.target.selectionStart ?? event.target.value.length);
+        }}
+        onSelect={(event) => setComposerCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+        onClick={(event) => setComposerCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+        onKeyUp={(event) => setComposerCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
         onKeyDown={onKeyDown}
         onPaste={handlePaste}
         placeholder={familiar ? `Message @${familiar.id}…` : "@sage summarize what needs attention"}
@@ -749,7 +836,7 @@ export function QuickChatComposer({
             size="sm"
             leadingIcon="ph:sparkle"
             onClick={send}
-            disabled={disabled || !canSend}
+            disabled={disabled || !canDispatch}
             title={sending ? "Queues — sends when the reply finishes" : undefined}
           >
             {sending ? "Queue" : "Send"}

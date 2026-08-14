@@ -1,39 +1,34 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { Tabs } from "@/components/ui/tabs";
-// Shared relative-time formatter, imported as `age` so the call sites read the
-// same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
-import { relativeTime as age } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
-import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { AuthedImage } from "@/components/ui/authed-image";
-import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
-import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
-import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
-  ACTIVITY_DAYS,
   buildFamiliarCardStats,
-  type FamiliarCardStats,
-  type CovenMemoryEntry,
+  type CanonicalMemoryAvailability,
 } from "@/components/familiars-view-stats";
-import { deriveRenown } from "@/lib/familiar-renown";
-import { compactCount } from "@/lib/profile-card";
+import {
+  loadCanonicalMemoryList,
+  loadCanonicalMemoryOverview,
+  refreshCanonicalMemory,
+  type CanonicalMemoryListLoad,
+  type CanonicalMemoryOverviewLoad,
+} from "@/lib/canonical-memory-resources";
+import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
+import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
+import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
-import { useFamiliarStudio } from "@/lib/familiar-studio-context";
-import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
-import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
+import {
+  SUMMON_FAMILIAR_EVENT,
+  consumeSummonPending,
+  hasSummonPending,
+} from "@/lib/summon-events";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
 import { readSurfaceResource } from "@/lib/surface-warmup-registry";
@@ -47,21 +42,22 @@ import {
   FamiliarAvatarPreviewOverlay,
 } from "@/components/familiars-view-sections";
 
-type CovenMemoryResponse =
-  | { ok: true; entries: CovenMemoryEntry[] }
-  | { ok: false; entries?: CovenMemoryEntry[]; error?: string };
-
 type FileMemoryResponse =
   | { ok: true; entries: FileMemoryEntry[] }
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
-
-type ViewMode = "roster" | "detail" | "agent-memory";
 
 type AgentsViewProps = {
   familiars: Familiar[];
   sessions: SessionRow[];
   activeFamiliar?: Familiar | null;
   daemonRunning: boolean;
+  localDaemonReady: boolean;
+  pendingRosterSettledSuccessfully: boolean;
+  pendingCanonicalMemorySelection?: PendingCanonicalMemorySelection | null;
+  onCanonicalMemorySelectionApplied?: (id: string) => void;
+  onCanonicalMemorySelectionUnavailable?: (
+    selection: PendingCanonicalMemorySelection,
+  ) => void;
   responseNeeded: Set<string>;
   onStartChat: (familiarId: string) => void;
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
@@ -94,6 +90,11 @@ export function FamiliarsView({
   sessions,
   activeFamiliar,
   daemonRunning,
+  localDaemonReady,
+  pendingRosterSettledSuccessfully,
+  pendingCanonicalMemorySelection = null,
+  onCanonicalMemorySelectionApplied,
+  onCanonicalMemorySelectionUnavailable,
   responseNeeded,
   onStartChat,
   onOpenSession,
@@ -105,7 +106,7 @@ export function FamiliarsView({
   onRetryFamiliars,
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(hasSummonPending);
   // Other surfaces request the Summoning Circle through summon-events: the
   // retained latch covers the fresh-mount race (mode flip → this view mounts
   // after the event fired); the event covers the already-mounted case. The
@@ -113,8 +114,10 @@ export function FamiliarsView({
   // unconditionally, so an already-mounted view that only reacted to the
   // event left it armed and the NEXT mount popped the circle open uninvited
   // (cave-ibvl).
+  useLayoutEffect(() => {
+    if (createOpen) consumeSummonPending();
+  }, [createOpen]);
   useEffect(() => {
-    if (consumeSummonPending()) setCreateOpen(true);
     const open = () => {
       consumeSummonPending();
       setCreateOpen(true);
@@ -124,16 +127,44 @@ export function FamiliarsView({
   }, []);
   // When set, the summoning circle opens as the Enhancement Rite for this familiar.
   const [enhanceTarget, setEnhanceTarget] = useState<ResolvedFamiliar | null>(null);
-  const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
-  const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
-  const [memoryError, setMemoryError] = useState<string | null>(null);
-  const [memoryLoaded, setMemoryLoaded] = useState(false);
+  const [canonicalMemoryState, setCanonicalMemoryState] =
+    useState<MemoryFeed["canonical"]>({ state: "loading", entries: [] });
+  const [canonicalOverviewState, setCanonicalOverviewState] =
+    useState<MemoryFeed["overview"]>({ state: "loading", value: null });
+  const [fileMemoryState, setFileMemoryState] = useState<MemoryFeed["files"]>({
+    state: "loading",
+    entries: [],
+  });
   const [memoryLoadedAt, setMemoryLoadedAt] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
   const [selectedFamiliarId, setSelectedFamiliarId] = useSurfacePreference(surfacePreferenceSpecs.familiars.selectedId);
   const [viewMode, setViewMode] = useSurfacePreference(surfacePreferenceSpecs.familiars.viewMode);
+  const rejectedPendingSelectionRef =
+    useRef<PendingCanonicalMemorySelection | null>(null);
+  const memoryRequestGateRef = useRef<ReturnType<
+    typeof createMemoryFeedRequestGate
+  > | null>(null);
+  if (!memoryRequestGateRef.current) {
+    memoryRequestGateRef.current = createMemoryFeedRequestGate();
+  }
+
+  useEffect(() => {
+    if (!pendingCanonicalMemorySelection) return;
+    setSelectedFamiliarId(pendingCanonicalMemorySelection.familiarId);
+    setViewMode("agent-memory");
+  }, [
+    pendingCanonicalMemorySelection,
+    setSelectedFamiliarId,
+    setViewMode,
+  ]);
+
+  useEffect(() => {
+    const requestGate = memoryRequestGateRef.current!;
+    requestGate.mount();
+    return () => requestGate.unmount();
+  }, []);
 
   // "/" jumps to the search (GitHub-style) while this surface is shown — but
   // never when the user is already typing in a field or holding a modifier.
@@ -151,53 +182,191 @@ export function FamiliarsView({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const loadMemory = useCallback(async (force = false) => {
-    try {
-      const [covenResult, fileResult] = await Promise.all([
-        readSurfaceResource<CovenMemoryResponse>("agents:coven-memory", force),
-        readSurfaceResource<FileMemoryResponse>("memory:list", force),
-      ]);
-      const covenJson = covenResult.data;
-      const fileJson = fileResult.data;
-      if (covenJson.ok) setCovenEntries(covenJson.entries ?? []);
-      if (fileJson.ok) setFileEntries(fileJson.entries ?? []);
-      const errors = [
-        covenJson.ok ? null : covenJson.error ?? "Coven memory unavailable",
-        fileJson.ok ? null : fileJson.error ?? "Memory files unavailable",
-      ].filter(Boolean);
-      setMemoryError(errors.length > 0 ? errors.join(" · ") : null);
-    } catch (err) {
-      setMemoryError(err instanceof Error ? err.message : "memory unavailable");
-    } finally {
-      setMemoryLoaded(true);
-      setMemoryLoadedAt(new Date().toISOString());
-    }
+  const applyFileMemory = useCallback((fileJson: FileMemoryResponse) => {
+    setFileMemoryState((current) =>
+      fileJson.ok
+        ? { state: "ready", entries: fileJson.entries }
+        : {
+            state: "error",
+            entries: fileJson.entries ?? current.entries,
+            error: fileJson.error ?? "Memory files unavailable",
+          },
+    );
   }, []);
+
+  const applyFileMemoryError = useCallback((error: unknown) => {
+    setFileMemoryState((current) => ({
+      state: "error",
+      entries: current.entries,
+      error: error instanceof Error ? error.message : "Memory files unavailable",
+    }));
+  }, []);
+
+  const loadMemory = useCallback(async () => {
+    const requestGate = memoryRequestGateRef.current!;
+    const request = requestGate.beginBackground("files");
+    try {
+      const fileResult = await readSurfaceResource<FileMemoryResponse>(
+        "memory:list",
+        false,
+      );
+      if (!requestGate.isCurrent(request)) return;
+      applyFileMemory(fileResult.data);
+    } catch (error) {
+      if (!requestGate.isCurrent(request)) return;
+      applyFileMemoryError(error);
+    } finally {
+      if (requestGate.isCurrent(request)) {
+        setMemoryLoadedAt(new Date().toISOString());
+      }
+    }
+  }, [applyFileMemory, applyFileMemoryError]);
 
   useEffect(() => {
     void loadMemory();
   }, [loadMemory]);
-  // Pauses in a hidden tab; refreshes on return.
-  usePausablePoll(() => void loadMemory(true), 30_000);
+  // Pauses in a hidden tab; non-forced reads coalesce with the shared cache.
+  usePausablePoll(() => void loadMemory(), 30_000);
 
-  // Single source of truth for the memory endpoints: the embedded
-  // FamiliarsMemoryView mounts consume this instead of running their own
-  // duplicate fetch + 30s poll of the same two APIs (cave-5dnw).
-  const memoryFeed = useMemo<MemoryFeed>(
-    () => ({
-      covenEntries,
-      fileEntries,
-      error: memoryError,
-      loaded: memoryLoaded,
-      lastLoadedAt: memoryLoadedAt,
-      reload: () => loadMemory(true),
-    }),
-    [covenEntries, fileEntries, memoryError, memoryLoaded, memoryLoadedAt, loadMemory],
+  const applyCanonicalList = useCallback((canonical: CanonicalMemoryListLoad) => {
+    setCanonicalMemoryState((current) =>
+      canonical.state === "ready"
+        ? { state: "ready", entries: canonical.entries }
+        : {
+            state: "error",
+            entries: current.entries,
+            error: canonical.error,
+          },
+    );
+  }, []);
+
+  const applyCanonicalOverview = useCallback(
+    (overview: CanonicalMemoryOverviewLoad) => {
+      setCanonicalOverviewState(
+        overview.state === "ready"
+          ? { state: "ready", value: overview.overview }
+          : { state: "error", value: null, error: overview.error },
+      );
+    },
+    [],
   );
 
+  const loadCanonicalMemory = useCallback(async () => {
+    const requestGate = memoryRequestGateRef.current!;
+    const request = requestGate.beginBackground("canonical");
+    const [canonical, overview] = await Promise.all([
+      loadCanonicalMemoryList(),
+      loadCanonicalMemoryOverview(),
+    ]);
+    if (!requestGate.isCurrent(request)) return;
+    applyCanonicalList(canonical);
+    applyCanonicalOverview(overview);
+  }, [applyCanonicalList, applyCanonicalOverview]);
+
+  useEffect(() => {
+    void loadCanonicalMemory();
+  }, [loadCanonicalMemory]);
+  // Background reads stay non-forced so canonical list consumers coalesce.
+  usePausablePoll(() => void loadCanonicalMemory(), 30_000);
+
+  const refreshMemory = useCallback(async (): Promise<CanonicalMemoryListLoad> => {
+    const requestGate = memoryRequestGateRef.current!;
+    const request = requestGate.beginForce();
+    const fileRefresh = (async () => {
+      try {
+        const fileResult = await readSurfaceResource<FileMemoryResponse>(
+          "memory:list",
+          true,
+        );
+        if (requestGate.isCurrent(request)) {
+          applyFileMemory(fileResult.data);
+        }
+      } catch (error) {
+        if (requestGate.isCurrent(request)) {
+          applyFileMemoryError(error);
+        }
+      }
+    })();
+
+    let canonicalList: CanonicalMemoryListLoad;
+    try {
+      try {
+        const canonical = await refreshCanonicalMemory();
+        canonicalList = canonical.list;
+        if (requestGate.isCurrent(request)) {
+          applyCanonicalList(canonical.list);
+          applyCanonicalOverview(canonical.overview);
+        }
+      } catch (error) {
+        const stableError =
+          error instanceof CanonicalMemoryRequestError
+            ? error
+            : new CanonicalMemoryRequestError("invalid_daemon_payload", 0);
+        canonicalList = { state: "error", error: stableError };
+        if (requestGate.isCurrent(request)) {
+          applyCanonicalList(canonicalList);
+          applyCanonicalOverview({ state: "error", error: stableError });
+        }
+      }
+      await fileRefresh;
+      if (requestGate.isCurrent(request)) {
+        setMemoryLoadedAt(new Date().toISOString());
+      }
+      return canonicalList;
+    } finally {
+      requestGate.finishForce(request);
+    }
+  }, [
+    applyCanonicalList,
+    applyCanonicalOverview,
+    applyFileMemory,
+    applyFileMemoryError,
+  ]);
+
+  // A single parent feed keeps embedded memory surfaces on the same independently
+  // settled canonical-list, overview, and local-file snapshots.
+  const memoryFeed = useMemo<MemoryFeed>(
+    () => ({
+      canonical: canonicalMemoryState,
+      overview: canonicalOverviewState,
+      files: fileMemoryState,
+      lastLoadedAt: memoryLoadedAt,
+      reload: refreshMemory,
+    }),
+    [
+      canonicalMemoryState,
+      canonicalOverviewState,
+      fileMemoryState,
+      memoryLoadedAt,
+      refreshMemory,
+    ],
+  );
+
+  const canonicalStatsEntries =
+    canonicalMemoryState.state === "ready"
+      ? canonicalMemoryState.entries
+      : [];
+  const canonicalMemoryAvailability: CanonicalMemoryAvailability =
+    canonicalMemoryState.state === "ready" ? "ready" : "unavailable";
+  const canonicalMemoryLoaded = canonicalMemoryState.state !== "loading";
+  const fileEntries = fileMemoryState.entries;
+  const memoryError =
+    fileMemoryState.state === "error" ? fileMemoryState.error : null;
+  const memoryLoaded = fileMemoryState.state !== "loading";
+
   const stats = useMemo(
-    () => buildFamiliarCardStats({ familiars, sessions, covenEntries }),
-    [familiars, sessions, covenEntries],
+    () => buildFamiliarCardStats({
+      familiars,
+      sessions,
+      covenEntries: canonicalStatsEntries,
+      memoryAvailability: canonicalMemoryAvailability,
+    }),
+    [
+      canonicalMemoryAvailability,
+      canonicalStatsEntries,
+      familiars,
+      sessions,
+    ],
   );
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
 
@@ -214,14 +383,59 @@ export function FamiliarsView({
     () => (activeFamiliar ? resolvedFamiliars.find((f) => f.id === activeFamiliar.id) ?? null : null),
     [activeFamiliar, resolvedFamiliars],
   );
-  const memoryFamiliar = selectedFamiliar ?? resolvedActiveFamiliar ?? null;
+  const pendingMemoryFamiliar = pendingCanonicalMemorySelection
+    ? resolvedFamiliars.find(
+        (familiar) =>
+          familiar.id === pendingCanonicalMemorySelection.familiarId,
+      ) ?? null
+    : null;
+  const memoryFamiliar = pendingCanonicalMemorySelection
+    ? pendingMemoryFamiliar
+    : selectedFamiliar ?? resolvedActiveFamiliar ?? null;
+
+  useEffect(() => {
+    if (
+      !pendingCanonicalMemorySelection ||
+      !pendingRosterSettledSuccessfully ||
+      pendingMemoryFamiliar ||
+      rejectedPendingSelectionRef.current ===
+        pendingCanonicalMemorySelection
+    ) {
+      return;
+    }
+    rejectedPendingSelectionRef.current = pendingCanonicalMemorySelection;
+    setSelectedFamiliarId(null);
+    setViewMode("roster");
+    onCanonicalMemorySelectionUnavailable?.(
+      pendingCanonicalMemorySelection,
+    );
+  }, [
+    pendingRosterSettledSuccessfully,
+    onCanonicalMemorySelectionUnavailable,
+    pendingCanonicalMemorySelection,
+    pendingMemoryFamiliar,
+    setSelectedFamiliarId,
+    setViewMode,
+  ]);
 
   useEffect(() => {
     if (selectedFamiliarId && !selectedFamiliar) {
+      if (
+        pendingCanonicalMemorySelection &&
+        selectedFamiliarId === pendingCanonicalMemorySelection.familiarId
+      ) {
+        return;
+      }
       setSelectedFamiliarId(null);
       setViewMode("roster");
     }
-  }, [selectedFamiliar, selectedFamiliarId]);
+  }, [
+    pendingCanonicalMemorySelection,
+    selectedFamiliar,
+    selectedFamiliarId,
+    setSelectedFamiliarId,
+    setViewMode,
+  ]);
 
   const enterDetail = useCallback((id: string) => {
     setSelectedFamiliarId(id);
@@ -265,7 +479,7 @@ export function FamiliarsView({
             </button>
             <button
               type="button"
-              onClick={() => void loadMemory(true)}
+              onClick={() => void refreshMemory()}
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             >
               <Icon name="ph:arrows-clockwise" width={12} />
@@ -310,7 +524,7 @@ export function FamiliarsView({
               Memory feed unavailable
               <button
                 type="button"
-                onClick={() => void loadMemory(true)}
+                onClick={() => void refreshMemory()}
                 className="ml-1 underline underline-offset-2"
               >
                 Refresh
@@ -368,6 +582,7 @@ export function FamiliarsView({
               memoryError={memoryError}
               memoryLoaded={memoryLoaded}
               memoryFeed={memoryFeed}
+              localDaemonReady={localDaemonReady}
               onClose={backToRoster}
               onPreview={() => setPreviewFamiliar(selectedFamiliar)}
               onStartChat={() => onStartChat(selectedFamiliar.id)}
@@ -399,10 +614,19 @@ export function FamiliarsView({
                 <FamiliarRosterCard
                   key={familiar.id}
                   familiar={familiar}
-                  stats={stats.get(familiar.id) ?? emptyStats()}
+                  stats={
+                    stats.get(familiar.id) ??
+                    emptyStats(canonicalMemoryAvailability)
+                  }
                   daemonRunning={daemonRunning}
                   responseNeeded={responseNeeded.has(familiar.id)}
-                  memoryStatus={memoryError ? "error" : memoryLoaded ? "ready" : "loading"}
+                  memoryStatus={
+                    canonicalMemoryAvailability === "ready"
+                      ? "ready"
+                      : canonicalMemoryLoaded
+                        ? "error"
+                        : "loading"
+                  }
                   onSelect={() => enterDetail(familiar.id)}
                 />
               ))}
@@ -415,6 +639,9 @@ export function FamiliarsView({
           familiars={resolvedFamiliars}
           familiar={memoryFamiliar}
           memoryFeed={memoryFeed}
+          localDaemonReady={localDaemonReady}
+          pendingCanonicalMemorySelection={pendingCanonicalMemorySelection}
+          onCanonicalMemorySelectionApplied={onCanonicalMemorySelectionApplied}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
         />

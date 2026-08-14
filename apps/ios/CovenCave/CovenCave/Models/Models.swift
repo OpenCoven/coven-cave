@@ -15,12 +15,22 @@ struct Familiar: Identifiable, Codable, Hashable {
     var model: String?
     var icon: String?
     var avatarUrl: String?
+    var activeSessions: Int?
+    var memoryFreshness: String?
+    /// Voice configuration published by Familiar Studio. All three remain
+    /// optional so phones can decode familiars created before voice support.
+    var voiceProvider: String? = nil
+    var voiceModel: String? = nil
+    var voiceName: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
         case role, description, pronouns, color, status, harness, model, icon
         case avatarUrl
+        case activeSessions = "active_sessions"
+        case memoryFreshness = "memory_freshness"
+        case voiceProvider, voiceModel, voiceName
     }
 }
 
@@ -55,11 +65,16 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var title: String
     var harness: String?
     var model: String?
+    /// Concrete session runtime (`local:<cwd>` or `ssh:<host>:<cwd>`), when
+    /// published by `/api/sessions/list`.
+    var runtime: String?
     var status: String?
     var familiarId: String?
     var createdAt: String?
     var updatedAt: String?
     var archivedAt: String?
+    /// Launch provenance for first-turn continuity across clients.
+    var projectRoot: String? = nil
     /// Provenance from /api/sessions/list — generator surfaces (journal,
     /// canvas, cron, …) tag their runs so chat lists can hide them.
     var origin: String?
@@ -67,11 +82,12 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var generated: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, harness, model, status
+        case id, title, harness, model, runtime, status
         case familiarId
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case archivedAt = "archived_at"
+        case projectRoot = "project_root"
         case origin, generated
     }
 
@@ -102,11 +118,40 @@ struct ToolCall: Identifiable, Codable, Hashable {
     var input: String?
     var output: String?
     var status: String?
+    /// Wall-clock the server recorded when the call settled. Persisted with the
+    /// turn, so a reloaded transcript keeps the timings a live turn showed.
+    var durationMs: Int?
 }
 
 struct TurnUsage: Codable, Hashable {
     var inputTokens: Int?
     var outputTokens: Int?
+}
+
+/// Safe response facts persisted by the server for transcript replay. These
+/// are intentionally limited to display and retry state; provider credentials
+/// and runtime configuration never cross the history boundary.
+struct ChatTurnResponseMetadata: Codable, Hashable {
+    /// Explicit user intent. An empty string is the durable runtime-default
+    /// sentinel; nil means the turn had no explicit model selection.
+    var requestedModel: String?
+    /// Model selected by Cave after resolving familiar/session/runtime scope.
+    var desiredModel: String?
+    /// Native/runtime id handed to the launch boundary after Cave's transform.
+    var forwardedModel: String?
+    /// Model the runtime actually confirmed, when the transport can prove it.
+    var confirmedModel: String?
+    var modelSource: String?
+    var modelApplicationState: String?
+    /// Safe, user-visible explanation for a pending, rejected, or degraded
+    /// model application. Provider payloads never cross this boundary.
+    var modelApplicationReason: String?
+    var retryModel: String?
+    var requestedControls: [String: String]?
+    var forwardedControls: [String: String]?
+    var promptGuidanceControls: [String: String]?
+    var appliedControls: [String: String]?
+    var rejectedControlFamilies: [String]?
 }
 
 /// One message turn within a conversation.
@@ -119,12 +164,21 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     var createdAt: String?
     var isError: Bool?
     var usage: TurnUsage?
+    /// Response controls persisted on user turns so refresh and retry retain
+    /// the exact turn semantics. Older conversations decode these as nil.
+    var reasoningEffort: ChatThinkingEffort?
+    var responseSpeed: ChatResponseSpeed?
+    var modelControls: [String: String]?
+    var modelOverride: String?
+    var modelOverrideScope: ChatModelOverrideScope?
+    var responseMetadata: ChatTurnResponseMetadata?
 
     enum CodingKeys: String, CodingKey {
         case id, role, text, reasoning, tools
         case createdAt
         case isError
         case usage
+        case reasoningEffort, responseSpeed, modelControls, modelOverride, modelOverrideScope, responseMetadata
     }
 }
 

@@ -10,8 +10,34 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  overflow-y: auto;
+  overflow: hidden;
+  transition:
+    width var(--duration-base) var(--ease-standard),
+    flex-basis var(--duration-base) var(--ease-standard),
+    padding var(--duration-base) var(--ease-standard);
 }
+.journal-list__rail[data-collapsed="true"] {
+  width: 56px;
+  flex-basis: 56px;
+  padding: var(--space-2);
+}
+.journal-list__rail-toggle {
+  flex: none;
+  align-self: flex-end;
+}
+.journal-list__rail[data-collapsed="true"] .journal-list__rail-toggle {
+  align-self: center;
+}
+.journal-list__rail-content {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.journal-list__rail-content[hidden] { display: none; }
 .journal-list__error {
   padding: var(--space-2) 11px;
   border-radius: var(--radius-control);
@@ -44,7 +70,7 @@
   background: var(--bg-raised);
 }
 .journal-list__items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.journal-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 14px 16px; gap: 12px; overflow: hidden; }
+.journal-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 14px 16px; gap: 12px; overflow-y: auto; overflow-x: hidden; }
 .journal-empty {
   display: flex;
   align-items: center;
@@ -103,7 +129,7 @@
   background: linear-gradient(
     100deg,
     transparent 20%,
-    color-mix(in oklch, #fff 38%, transparent) 50%,
+    color-mix(in oklch, white 38%, transparent) 50%,
     transparent 80%
   );
   transform: translateX(-100%);
@@ -113,6 +139,7 @@
 @keyframes journal-gen-sweep { to { transform: translateX(100%); } }
 @keyframes journal-gen-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
+  .journal-list__rail { transition: none; }
   .journal-entry-gen { transition: none; }
   .journal-entry-gen:hover:not(:disabled) { transform: none; }
   .journal-entry-gen.is-generating::after,
@@ -259,225 +286,11 @@
   outline-offset: 2px;
 }
 .journal-entry__reflection { line-height: 1.6; color: var(--text-secondary); font-size: 13px; }
-/* Reflective "next-paths" prompts lifted out of the reflection markdown. */
-.journal-entry__next {
-  margin-top: var(--space-4);
-  padding: var(--space-3) 14px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
-}
-.journal-entry__next-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 9px;
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.journal-entry__next-label svg { color: var(--accent-presence); }
-.journal-next__hint {
-  margin-left: auto;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: color-mix(in oklch, var(--accent-presence) 80%, var(--text-muted));
-  opacity: 0.85;
-}
-
-/* Suggested next steps — one click turns each into a real action. */
-.journal-next__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.journal-next__item { display: flex; flex-direction: column; }
-
-.journal-next__chip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  text-align: left;
-  padding: 9px 11px;
-  font-size: 12.5px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--text-secondary);
-  background: var(--bg-base);
-  border: 1px solid var(--border-hairline);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease,
-    transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
-}
-.journal-next__chip:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px -8px color-mix(in oklch, var(--accent-presence) 60%, transparent);
-}
-.journal-next__chip:active { transform: translateY(0) scale(0.985); }
-.journal-next__chip:focus-visible {
-  outline: var(--ring-width, 2px) solid var(--ring-focus);
-  outline-offset: 2px;
-}
-.journal-next__chip.is-open {
-  color: var(--text-primary);
-  border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 7%, var(--bg-base));
-}
-.journal-next__chip-icon { color: var(--accent-presence); flex: 0 0 auto; }
-.journal-next__chip-text { flex: 1; min-width: 0; }
-.journal-next__caret {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  transition: transform 0.18s ease, color 0.15s ease;
-}
-.journal-next__chip.is-open .journal-next__caret { transform: rotate(180deg); color: var(--accent-presence); }
-
-/* The recommended (first) step gets a gentle attention pulse. */
-.journal-next__chip--rec {
-  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
-  animation: journal-next-pulse 2.8s ease-in-out infinite;
-}
-.journal-next__chip--rec.is-open { animation: none; }
-@keyframes journal-next-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent-presence) 30%, transparent); }
-  50% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 14%, transparent); }
-}
-
-/* Automate action tray — slides open under its step. */
-.journal-next__tray {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 7px 2px 2px;
-  animation: journal-tray-in 0.18s ease both;
-}
-@keyframes journal-tray-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.journal-next__act {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 11px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-raised);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease,
-    transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.journal-next__act svg { flex: 0 0 auto; }
-.journal-next__act:hover:not(:disabled) {
-  color: var(--text-primary);
-  border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
-  transform: translateY(-1px);
-}
-.journal-next__act:active:not(:disabled) { transform: scale(0.94); }
-.journal-next__act:focus-visible {
-  outline: var(--ring-width, 2px) solid var(--ring-focus);
-  outline-offset: 2px;
-}
-.journal-next__act:disabled { opacity: 0.6; cursor: progress; }
-.journal-next__act--run:hover:not(:disabled) { color: var(--accent-presence); }
-/* Satisfying success state: green fill + a quick pop when an action lands. */
-.journal-next__act.is-done {
-  color: var(--color-success, #36b37e);
-  border-color: color-mix(in oklch, var(--color-success, #36b37e) 55%, transparent);
-  background: color-mix(in oklch, var(--color-success, #36b37e) 16%, var(--bg-raised));
-  animation: journal-act-pop 0.34s ease;
-}
-@keyframes journal-act-pop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.12); }
-  100% { transform: scale(1); }
-}
-
-/* One-click confirmation toast (Add task / Remind me / Run now). */
-.journal-notice {
-  position: fixed;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
-  z-index: 1300;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  max-width: min(92vw, 460px);
-  padding: 10px var(--space-3) 10px 13px;
-  font-size: 12.5px;
-  color: var(--text-primary);
-  background: var(--glass-elevated);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, var(--border-strong));
-  border-radius: var(--radius-card);
-  box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.6);
-  animation: journal-notice-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-/* Frosted glass needs a live blur behind it — restore the opaque surface
-   wherever backdrop-filter is unavailable or the OS asked for less
-   transparency. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .journal-notice {
-    background: var(--bg-elevated, var(--bg-raised));
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .journal-notice {
-    background: var(--bg-elevated, var(--bg-raised));
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-@keyframes journal-notice-in {
-  from { opacity: 0; transform: translate(-50%, 12px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
-}
-.journal-notice__icon { color: var(--color-success, #36b37e); flex: 0 0 auto; }
-.journal-notice__text { flex: 1; min-width: 0; }
-.journal-notice__act {
-  flex: 0 0 auto;
-  padding: 5px 11px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, transparent);
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  transition: background 0.12s ease, transform 0.1s ease;
-}
-.journal-notice__act:hover { background: color-mix(in oklch, var(--accent-presence) 20%, transparent); }
-.journal-notice__act:active { transform: scale(0.95); }
 
 @media (prefers-reduced-motion: reduce) {
-  .journal-next__chip,
-  .journal-next__act,
-  .journal-next__caret,
-  .journal-next__tray,
-  .journal-notice,
   .journal-entry-gen,
   .journal-entry__action,
   .journal-day { transition: none; animation: none; }
-  .journal-next__chip:hover,
-  .journal-next__act:hover:not(:disabled) { transform: none; }
 }
 .journal-entry__by {
   display: flex;
@@ -489,13 +302,6 @@
 }
 .journal-entry__by b { color: var(--accent-presence); }
 
-/* ── Familiar Studio host ─────────────────────────────────────────────────────
-   Inside Settings → Familiars the journal has no full-page flex parent, so the
-   master-detail shell gets an explicit bounded height: the day rail and the
-   detail pane scroll internally instead of growing the settings page. */
-.familiar-studio-journal { display: flex; min-width: 0; }
-.familiar-studio-journal .journal-list { height: min(65vh, 720px); }
-
 /* The section labels are real headings now (cave-t1ou) — inherit the label
    styling instead of UA heading defaults. */
 .journal-entry__sec-heading {
@@ -504,4 +310,162 @@
   color: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
+}
+
+/* ── Entry sources ────────────────────────────────────────────────────────────
+   Memory files touched on the entry's local day (mtime-attributed, familiar-
+   scoped like the stats). Each chip deep-links into the Grimoire reader. */
+.journal-sources { margin-top: var(--space-5); }
+.journal-sources__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.journal-sources__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 240px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel, var(--bg-base));
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  transition: border-color 0.13s ease, color 0.13s ease;
+}
+.journal-sources__chip:hover {
+  border-color: color-mix(in srgb, var(--accent-presence) 45%, transparent);
+  color: var(--text-primary);
+}
+.journal-sources__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Entry visual (memory constellation) ─────────────────────────────────── */
+.journal-visual { margin-top: var(--space-5); }
+.journal-visual__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.journal-visual__regen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.journal-visual__regen:hover { color: var(--text-primary); }
+.journal-visual__gen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color 0.13s ease, color 0.13s ease;
+}
+.journal-visual__gen:hover {
+  border-color: color-mix(in srgb, var(--accent-presence) 45%, transparent);
+  color: var(--text-primary);
+}
+.journal-visual__busy {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.journal-visual__frame {
+  margin-top: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--accent-presence) 4%, var(--bg-panel, var(--bg-base)));
+  overflow: hidden;
+}
+.journal-visual__svg { display: block; width: 100%; height: auto; }
+.journal-visual__caption {
+  margin-top: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* ── Generation prompt ────────────────────────────────────────────────────────
+   The editable template behind "Generate/Regenerate entry". A transparent
+   textarea rides over a highlight layer that marks {placeholder} runs; both
+   share metrics so the overlay tracks the caret line-for-line. */
+.journal-prompt { margin-top: var(--space-5); }
+.journal-prompt__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.journal-prompt__reset {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.journal-prompt__reset:hover { color: var(--text-primary); }
+.journal-prompt__editor { position: relative; margin-top: var(--space-2); }
+.journal-prompt__hl,
+.journal-prompt__ta {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.journal-prompt__hl {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+.journal-prompt__ph {
+  background: color-mix(in srgb, var(--accent-presence) 14%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-presence);
+}
+.journal-prompt__ta {
+  position: relative;
+  display: block;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent-presence);
+}
+.journal-prompt__ta:focus { border-color: var(--border-strong); }
+.journal-prompt__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.journal-prompt__hint {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
 }

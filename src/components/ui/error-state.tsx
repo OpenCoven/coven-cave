@@ -12,6 +12,8 @@ export type ErrorStateProps = {
   actions?: ReactNode;
   compact?: boolean;
   className?: string;
+  /** Set false for a duplicate copy when another visible error owns the announcement. */
+  live?: boolean;
 };
 
 export function ErrorState({
@@ -21,12 +23,13 @@ export function ErrorState({
   actions,
   compact,
   className,
+  live = true,
 }: ErrorStateProps) {
   const classes = ["ui-error-state", compact ? "ui-error-state--compact" : "", className ?? ""]
     .filter(Boolean)
     .join(" ");
   return (
-    <div className={classes} role="alert">
+    <div className={classes} role={live ? "alert" : undefined}>
       <div className="ui-error-state-icon" aria-hidden>
         <Icon name={icon} width={20} />
       </div>

@@ -279,6 +279,25 @@ assert.match(
   /root\.style\.removeProperty\("--accent-presence"\)/,
   "disabling the match restores the theme accent untouched",
 );
+// Custom themes carry their accent as an inline property (no preset CSS
+// behind them), so the restore path must hand the token back to the theme
+// instead of blind-removing it — removal reverted user-edited accents the
+// moment the layer re-applied (issue #3672).
+assert.match(
+  lib,
+  /const themeAccent = customThemeAccent\(\);\s*if \(themeAccent\) root\.style\.setProperty\("--accent-presence", themeAccent\);\s*else root\.style\.removeProperty\("--accent-presence"\);/,
+  "the restore path re-installs a custom theme's own accent (#3672)",
+);
+assert.match(
+  lib,
+  /if \(theme\.id !== "custom" \|\| !theme\.custom\) return null;/,
+  "presets keep plain removal — their accent lives in theme CSS",
+);
+assert.match(
+  lib,
+  /activeCustomThemeVariables\(theme\.custom, mode\)\["--accent-presence"\]/,
+  "the restored accent resolves through the same mode-group logic as applyThemeToRoot",
+);
 
 // The layer stays mounted and crossfades; only home/chat lift the opaque panes.
 assert.match(layer, /data-on=\{active \? "true" : "false"\}/, "the layer crossfades via data-on");
@@ -407,5 +426,15 @@ assert.match(
   /convert it to JPEG first/,
   "an undecodable HEIC gets an actionable announce, not the engine's decode error",
 );
+
+// ── Backdrop style plumbing (cave-99s9) ──────────────────────────────────────
+// The client store mirrors the central style choice; the default stays the
+// image so existing setups don't change visuals on upgrade.
+{
+  const src = await readFile(new URL("./cave-backdrop.ts", import.meta.url), "utf8");
+  assert.match(src, /style: CaveBackdropStyle;/, "BackdropPrefs carries the style choice");
+  assert.match(src, /style: "image",\n  familiars: \{\},/, "the default style is the image");
+  assert.match(src, /style: central\.style,/, "readBackdropPrefs mirrors the central style");
+}
 
 console.log("cave-backdrop.test.ts: ok");

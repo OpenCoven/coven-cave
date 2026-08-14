@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
-import { caveHome } from "@/lib/coven-paths";
+import { caveHome, covenHome } from "@/lib/coven-paths";
 import {
   loadConfig,
   normalizeMultiHostConfig,
@@ -19,8 +18,8 @@ import {
   adapterManifestScaffoldForHarness,
   isTrustedOnboardingHarness,
 } from "@/lib/harness-adapters";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
-import { isManifestShadowedByBuiltin } from "@/lib/server/adapter-conflict-heal";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
+import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,17 +67,17 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const model =
-    (draft?.model ?? body.model ?? defaultModelForRuntime(harness)).trim() || defaultModelForRuntime(harness);
+  const model = modelForRuntimeSwitch(
+    harness,
+    draft?.model ?? body.model ?? null,
+  );
 
-  const home = homedir();
-  const covenDir = path.join(home, ".coven");
+  const covenDir = covenHome();
   const caveDir = caveHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
   const configJson = path.join(caveDir, "config.json");
   const conversationsDir = path.join(caveDir, "conversations");
   const memoryDir = path.join(covenDir, "memory");
-  const adaptersDir = path.join(covenDir, "adapters");
 
   const wrote: string[] = [];
 
@@ -86,21 +85,10 @@ export async function POST(req: Request) {
   await mkdir(caveDir, { recursive: true });
   await mkdir(conversationsDir, { recursive: true });
   await mkdir(memoryDir, { recursive: true });
-  await mkdir(adaptersDir, { recursive: true });
 
   const adapterManifest = adapterManifestScaffoldForHarness(harness);
-  if (adapterManifest) {
-    const manifestPath = path.join(adaptersDir, adapterManifest.filename);
-    // A quarantined manifest means the installed CLI ships this id as a
-    // built-in harness and fatally rejects the external copy — never
-    // resurrect it (cave-1c05).
-    if (
-      !(await isManifestShadowedByBuiltin(manifestPath)) &&
-      !(await pathExists(manifestPath))
-    ) {
-      await writeFile(manifestPath, adapterManifest.contents, "utf8");
-      wrote.push(`adapters/${adapterManifest.filename}`);
-    }
+  if (adapterManifest && await ensureAdapterManifestScaffold(harness)) {
+    wrote.push(`adapters/${adapterManifest.filename}`);
   }
 
   const familiarsExists = await pathExists(familiarsToml);
@@ -132,13 +120,16 @@ export async function POST(req: Request) {
   const existing = await loadConfig();
   const nextConfig = {
     version: existing.version || 1,
-    defaults: { harness, model },
+    defaults: {
+      harness,
+      model: model || existing.defaults.model,
+    },
     familiars: draft
       ? {
           ...(existing.familiars ?? {}),
           [draft.id]: {
             harness: draft.harness,
-            model: draft.model,
+            ...(draft.model ? { model: draft.model } : {}),
             // Remote familiars carry their SSH runtime in the binding —
             // chat's send route reads it via bindingFor(); familiars.toml
             // stays runtime-free.

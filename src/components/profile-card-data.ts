@@ -10,8 +10,10 @@ import {
   type ProfileCardModel,
   type ProfileKind,
 } from "@/lib/profile-card";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import type { UserProfile } from "@/lib/user-profile-shared";
-import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
+import type { CanonicalMemoryAvailability } from "@/components/familiars-view-stats";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -22,10 +24,6 @@ type SessionsResponse =
   | { ok: true; sessions: SessionRow[] }
   | { ok: false; sessions?: SessionRow[]; error?: string };
 
-type CovenMemoryResponse =
-  | { ok: true; entries: CovenMemoryEntry[] }
-  | { ok: false; entries?: CovenMemoryEntry[]; error?: string };
-
 type ProfileResponse =
   | { ok: true; profile: UserProfile }
   | { ok: false; profile?: UserProfile; error?: string };
@@ -35,7 +33,8 @@ export type ProfileCardData = {
   familiarId?: string;
   familiars: Familiar[];
   sessions: SessionRow[];
-  covenEntries: CovenMemoryEntry[];
+  covenEntries: CanonicalMemorySummary[];
+  memoryAvailability: CanonicalMemoryAvailability;
   userProfile: UserProfile | null;
   errors: string[];
 };
@@ -65,7 +64,7 @@ export async function loadProfileCardData(
   const [familiarsJson, sessionsJson, memoryJson, profileJson] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
-    fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
+    loadCanonicalMemoryList(),
     kind === "human"
       ? fetchResource<ProfileResponse>("/api/profile", { ok: false })
       : Promise.resolve<ProfileResponse>({ ok: true, profile: {} }),
@@ -74,7 +73,9 @@ export async function loadProfileCardData(
   const errors = [
     responseError(familiarsJson, "familiars unavailable"),
     responseError(sessionsJson, "sessions unavailable"),
-    responseError(memoryJson, "memory unavailable"),
+    memoryJson.state === "error"
+      ? `memory unavailable (${memoryJson.error.code})`
+      : null,
     kind === "human" ? responseError(profileJson, "profile unavailable") : null,
   ].filter((error): error is string => Boolean(error));
 
@@ -83,7 +84,9 @@ export async function loadProfileCardData(
     familiarId,
     familiars: familiarsJson.familiars ?? [],
     sessions: sessionsJson.sessions ?? [],
-    covenEntries: memoryJson.entries ?? [],
+    covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
+    memoryAvailability:
+      memoryJson.state === "ready" ? "ready" : "unavailable",
     userProfile: profileJson.ok ? profileJson.profile ?? {} : null,
     errors,
   };
@@ -108,8 +111,10 @@ export function buildProfileCardViewModel(
       ? data.familiars.find((item) => item.id === data.familiarId) ?? null
       : null;
   const memoryCount =
-    data.kind === "familiar"
-      ? data.covenEntries.filter((entry) => entry.familiar_id === data.familiarId).length
+    data.kind === "familiar" && data.memoryAvailability === "ready"
+      ? data.covenEntries.filter((entry) => entry.familiarId === data.familiarId).length
+      : data.kind === "familiar"
+        ? null
       : 0;
 
   return {

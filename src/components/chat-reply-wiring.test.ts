@@ -15,18 +15,38 @@ assert.match(
   /onReply,\s*onOpenUrl/,
   "onReply is destructured in the MessageBubble signature",
 );
-{
-  const replyButtons = bubble.match(/aria-label="Reply to message"/g) ?? [];
-  assert.equal(replyButtons.length, 2, "Reply action renders in both the user and assistant action rows");
-}
+assert.match(
+  bubble,
+  /aria-label="Reply to message"/,
+  "Reply remains directly available on user messages",
+);
+assert.match(
+  bubble,
+  /<PopoverItem icon="ph:arrow-bend-up-left" onSelect=\{onReply\}>[\s\S]*?Reply[\s\S]*?<\/PopoverItem>/,
+  "Reply remains available for assistant responses under More",
+);
 // The reply buttons live INSIDE the !pending action rows so they never show
 // on a streaming turn.
 assert.match(bubble, /onClick=\{onReply\}/, "the Reply button invokes onReply");
+assert.match(bubble, /onSelect=\{onReply\}/, "the assistant Reply menu item invokes onReply");
 
 // ── chat-view stages, shows, and sends the reply ──────────────────────────
 assert.match(view, /from "@\/lib\/chat-reply"/, "chat-view imports the quote-reply helpers");
 assert.match(view, /const \[replyTarget, setReplyTarget\] = useState<ReplyTarget \| null>/, "reply target state exists");
-assert.match(view, /function replyToTurn\(turn: Turn\)/, "a handler stages a turn as the reply target");
+// The optional `quote` is the reader's "Ask about this": a passage selected
+// inside the Expand reader becomes the reply target instead of the whole turn.
+// Omitted, the handler behaves exactly as the Reply action always has, which
+// the snippet assertion below pins.
+assert.match(
+  view,
+  /function replyToTurn\(turn: Turn, quote\?: string\)/,
+  "a handler stages a turn — or a selected passage of it — as the reply target",
+);
+assert.match(
+  view,
+  /const snippet = buildReplySnippet\(quote \?\? source\);/,
+  "with no quote the whole turn is still the subject",
+);
 assert.match(view, /function replyFor\(turn: Turn\)/, "a gate builds the per-turn Reply action");
 // Pending turns can't be replied to; empty turns produce no action.
 assert.match(view, /if \(turn\.pending\) return undefined;/, "replyFor hides on pending turns");

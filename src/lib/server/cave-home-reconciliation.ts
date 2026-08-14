@@ -28,8 +28,6 @@ import type {
   CaveHomeReconciliationStatus,
   MigrationJournal,
   MigrationJournalEntry,
-  ReconciliationAction,
-  ReconciliationDecision,
   ReconciliationLockDiagnostic,
   ReconciliationOptions,
   ReconciliationStrategy,
@@ -54,6 +52,8 @@ type PathInfo = {
   hash?: string;
   mtimeMs?: number;
   size?: number;
+  /** Content bytes: the file size, or the recursive file-size sum for directories (lstat size is the inode size, not the contents). */
+  contentBytes?: number;
 };
 
 type MergeOutcome =
@@ -125,19 +125,47 @@ async function sha256File(target: string): Promise<string> {
   return createHash("sha256").update(await readFile(target)).digest("hex");
 }
 
-async function sha256Dir(target: string): Promise<string> {
+async function digestDir(target: string): Promise<{ hash: string; bytes: number }> {
   const hash = createHash("sha256");
+  let bytes = 0;
   for (const name of (await readdir(target)).sort()) {
     if (name === ".DS_Store") continue;
     const child = path.join(target, name);
     const info = await lstat(child);
     hash.update(name);
     if (info.isSymbolicLink()) hash.update(`l:${await readlink(child)}`);
-    else hash.update(info.isDirectory() ? `d:${await sha256Dir(child)}` : `f:${await sha256File(child)}`);
+    else if (info.isDirectory()) {
+      const nested = await digestDir(child);
+      hash.update(`d:${nested.hash}`);
+      bytes += nested.bytes;
+    } else {
+      hash.update(`f:${await sha256File(child)}`);
+      bytes += info.size;
+    }
   }
-  return hash.digest("hex");
+  return { hash: hash.digest("hex"), bytes };
 }
 
+/**
+ * Cheap lstat-only classification. Unlike pathInfo it never reads file
+ * contents or recurses into directories, so callers that only need `kind`
+ * (steady-state reconciliation: legacy absent, verified compatibility
+ * bridge, deferred entries, per-store override) stay O(1) instead of
+ * re-hashing whole canonical stores under the global lock on every
+ * startup (cave-573l).
+ */
+async function statPath(target: string): Promise<PathInfo> {
+  try {
+    const info = await lstat(target);
+    const kind: PathInfo["kind"] = info.isSymbolicLink() ? "symlink" : info.isDirectory() ? "dir" : "file";
+    return { kind, mtimeMs: info.mtimeMs, size: info.size };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
+    throw error;
+  }
+}
+
+/** Full classification including content hashes; reads every byte of files and directories. */
 async function pathInfo(target: string): Promise<PathInfo> {
   try {
     const info = await lstat(target);
@@ -150,8 +178,11 @@ async function pathInfo(target: string): Promise<PathInfo> {
         size: info.size,
       };
     }
-    if (info.isDirectory()) return { kind: "dir", hash: await sha256Dir(target), mtimeMs: info.mtimeMs, size: info.size };
-    return { kind: "file", hash: await sha256File(target), mtimeMs: info.mtimeMs, size: info.size };
+    if (info.isDirectory()) {
+      const digest = await digestDir(target);
+      return { kind: "dir", hash: digest.hash, mtimeMs: info.mtimeMs, size: info.size, contentBytes: digest.bytes };
+    }
+    return { kind: "file", hash: await sha256File(target), mtimeMs: info.mtimeMs, size: info.size, contentBytes: info.size };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
     throw error;
@@ -381,7 +412,8 @@ async function renameLockCandidate(
 
 async function acquireLock(options: ReconciliationOptions): Promise<() => Promise<void>> {
   const lock = migrationLockPath();
-  const startedAt = Date.now();
+  const now = options.lockNow ?? Date.now;
+  const startedAt = now();
   const timeoutMs = Math.max(1, options.lockTimeoutMs ?? RECONCILIATION_LOCK_TIMEOUT_MS);
   const deadline = startedAt + timeoutMs;
   let slowDiagnosticEmitted = false;
@@ -394,7 +426,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
     const event: ReconciliationLockDiagnostic = {
       phase,
       result,
-      durationMs: Date.now() - startedAt,
+      durationMs: now() - startedAt,
       ...(error && typeof error === "object" && "code" in error
         ? { errorCode: String((error as NodeJS.ErrnoException).code ?? "") }
         : {}),
@@ -430,13 +462,13 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
   const removeCandidate = () => rm(candidate, { recursive: true, force: true }).catch(() => {});
 
   for (;;) {
-    if (Date.now() >= deadline) {
+    if (now() >= deadline) {
       await removeCandidate();
       const timeout = new Error(`timed out acquiring cave home reconciliation lock after ${timeoutMs}ms`) as NodeJS.ErrnoException;
       timeout.code = "ETIMEDOUT";
       throw terminalError(timeout);
     }
-    if (!slowDiagnosticEmitted && Date.now() - startedAt >= LOCK_SLOW_DIAGNOSTIC_MS) {
+    if (!slowDiagnosticEmitted && now() - startedAt >= LOCK_SLOW_DIAGNOSTIC_MS) {
       slowDiagnosticEmitted = true;
       diagnostic("waiting", "pending", undefined, true);
     }
@@ -532,7 +564,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         const sameProcessOrphan = owner.pid === process.pid &&
           (!owner.token || !activeLockTokens().has(owner.token));
         const reclaimable = Boolean(owner.releasedAt) || sameProcessOrphan ||
-          (owner.pid ? !alive : Date.now() - info.mtimeMs > LOCK_STALE_MS);
+          (owner.pid ? !alive : now() - info.mtimeMs > LOCK_STALE_MS);
         if (reclaimable) {
           await options.lockProbe?.("stale-observed");
           const takeover = path.join(lock, ".takeover");
@@ -686,7 +718,7 @@ async function retireExpectedPath(
   // The pathname may have changed after its final inspection but before the
   // atomic rename. Put those bytes back when the old pathname is still vacant;
   // otherwise keep the retired copy so neither concurrent writer is lost.
-  const targetMissing = (await pathInfo(target)).kind === "missing";
+  const targetMissing = (await statPath(target)).kind === "missing";
   if (targetMissing) {
     await rename(retired, target);
   }
@@ -696,7 +728,7 @@ async function retireExpectedPath(
 }
 
 async function restoreInterruptedRetirement(target: string): Promise<void> {
-  if ((await pathInfo(target)).kind !== "missing") return;
+  if ((await statPath(target)).kind !== "missing") return;
   const parent = path.dirname(target);
   const prefix = `.${path.basename(target)}.migration-retired-`;
   const retired = (await readdir(parent).catch((error) => {
@@ -784,7 +816,7 @@ async function replaceExpectedPath(
   } finally {
     if (installed) {
       await rm(retired, { recursive: true, force: true });
-    } else if ((await pathInfo(destination)).kind === "missing") {
+    } else if ((await statPath(destination)).kind === "missing") {
       await rename(retired, destination);
     }
   }
@@ -903,9 +935,12 @@ function mergeInbox(legacy: unknown, canonical: unknown): MergeOutcome {
 const STATE_MAPS = [
   "sessionFamiliar",
   "sessionTitles",
+  "sessionTitleAuto",
+  "sessionTitleManual",
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
+  "sessionPinned",
   "sessionArchiveExtendedUntil",
   "sessionOwned",
   "mergedPrAutoArchived",
@@ -915,14 +950,18 @@ const TIMESTAMP_STATE_MAPS = new Set<string>([
   "sessionArchived",
   "sessionSacrificed",
   "sessionKeep",
+  "sessionPinned",
   "sessionArchiveExtendedUntil",
   "sessionOwned",
 ]);
 
 const DELETABLE_STATE_MAPS = new Set<string>([
   "sessionTitles",
+  "sessionTitleAuto",
+  "sessionTitleManual",
   "sessionArchived",
   "sessionKeep",
+  "sessionPinned",
 ]);
 
 function mergeRecordMap(
@@ -951,6 +990,43 @@ function mergeRecordMap(
     const rightTime = parseDate(right[key]);
     if (!leftTime || !rightTime || leftTime === rightTime) return { ok: false, summary: `State map ${name} has an ambiguous timestamp for ${key}.` };
     value[key] = leftTime > rightTime ? left[key] : right[key];
+  }
+  return { ok: true, value };
+}
+
+function validateSessionTitleRevisions(
+  value: unknown,
+): { ok: true; value: Record<string, number> } | { ok: false; summary: string } {
+  const revisions = record(value);
+  if (!revisions) {
+    return { ok: false, summary: "State map sessionTitleRevision is malformed." };
+  }
+  for (const [sessionId, revision] of Object.entries(revisions)) {
+    if (
+      !sessionId ||
+      typeof revision !== "number" ||
+      !Number.isSafeInteger(revision) ||
+      revision < 0
+    ) {
+      return { ok: false, summary: `State map sessionTitleRevision is malformed for ${sessionId || "(empty session ID)"}.` };
+    }
+  }
+  return { ok: true, value: revisions as Record<string, number> };
+}
+
+function mergeSessionTitleRevisions(
+  leftValue: unknown,
+  rightValue: unknown,
+): { ok: true; value: Record<string, number> } | { ok: false; summary: string } {
+  const left = validateSessionTitleRevisions(leftValue);
+  if (!left.ok) return left;
+  const right = validateSessionTitleRevisions(rightValue);
+  if (!right.ok) return right;
+  const value: Record<string, number> = {};
+  for (const revisions of [left.value, right.value]) {
+    for (const [sessionId, revision] of Object.entries(revisions)) {
+      value[sessionId] = Math.max(value[sessionId] ?? 0, revision);
+    }
   }
   return { ok: true, value };
 }
@@ -1021,6 +1097,12 @@ function mergeState(legacy: unknown, canonical: unknown): MergeOutcome {
     if (!merged.ok) return merged;
     value[name] = merged.value;
   }
+  const titleRevisions = mergeSessionTitleRevisions(
+    left.sessionTitleRevision === undefined ? {} : left.sessionTitleRevision,
+    right.sessionTitleRevision === undefined ? {} : right.sessionTitleRevision,
+  );
+  if (!titleRevisions.ok) return titleRevisions;
+  value.sessionTitleRevision = titleRevisions.value;
   const travel = mergeTravel(left.travel ?? {}, right.travel ?? {});
   if (!travel.ok) return travel;
   value.travel = travel.value;
@@ -1091,6 +1173,69 @@ function mergePreferences(legacy: unknown, canonical: unknown): MergeOutcome {
   return { ok: true, value: merged, summary: "Merged independent preference sections by revision and timestamp." };
 }
 
+/** Cards keyed by stable id, or a review reason when the copy is malformed. */
+function boardCardsById(value: unknown): Map<string, Record<string, unknown>> | string {
+  const raw = record(value);
+  if (!raw || !Array.isArray(raw.cards)) return "Board data is malformed and requires review.";
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const rawCard of raw.cards) {
+    const card = record(rawCard);
+    if (!card || typeof card.id !== "string" || !card.id) return "Board card without a stable ID requires review.";
+    if (byId.has(card.id)) return `Board contains duplicate card ID ${card.id} and requires review.`;
+    byId.set(card.id, card);
+  }
+  return byId;
+}
+
+/**
+ * Card-id union merge for divergent board copies (cave-6z41, deferred
+ * follow-up from the 2026-07-22 board near-loss incident). Explicit-only:
+ * a one-sided card is ambiguous (new on this side vs deleted on the other),
+ * so the union — which resurrects rather than discards — never runs
+ * unprompted; the caller gates it on the user picking "merge" for this
+ * entry. Shared ids keep the newer per-card updatedAt; a shared id whose
+ * copies differ without a usable timestamp order refuses the merge.
+ */
+function mergeBoard(legacy: unknown, canonical: unknown): MergeOutcome {
+  const left = boardCardsById(legacy);
+  if (typeof left === "string") return { ok: false, summary: left };
+  const right = boardCardsById(canonical);
+  if (typeof right === "string") return { ok: false, summary: right };
+  let recovered = 0;
+  let newerLegacy = 0;
+  const cards: Record<string, unknown>[] = [];
+  for (const [id, canonicalCard] of right) {
+    const legacyCard = left.get(id);
+    if (!legacyCard || JSON.stringify(legacyCard) === JSON.stringify(canonicalCard)) {
+      cards.push(canonicalCard);
+      continue;
+    }
+    const legacyTime = parseDate(legacyCard.updatedAt);
+    const canonicalTime = parseDate(canonicalCard.updatedAt);
+    if (!legacyTime || !canonicalTime || legacyTime === canonicalTime) {
+      return { ok: false, summary: `Board card ${id} differs without a usable updatedAt order and requires review.` };
+    }
+    if (legacyTime > canonicalTime) newerLegacy += 1;
+    cards.push(legacyTime > canonicalTime ? legacyCard : canonicalCard);
+  }
+  for (const [id, legacyCard] of left) {
+    if (right.has(id)) continue;
+    cards.push(legacyCard);
+    recovered += 1;
+  }
+  const leftRaw = record(legacy) as Record<string, unknown>;
+  const rightRaw = record(canonical) as Record<string, unknown>;
+  const version = Math.max(
+    typeof leftRaw.version === "number" ? leftRaw.version : 1,
+    typeof rightRaw.version === "number" ? rightRaw.version : 1,
+  );
+  return {
+    ok: true,
+    value: { ...rightRaw, version, cards },
+    summary: `Merged ${cards.length} card(s) by stable ID (${recovered} recovered from legacy, ${newerLegacy} newer legacy edit(s) kept).`,
+  };
+}
+
 async function mergeJson(strategy: ReconciliationStrategy, legacyPath: string, canonicalPath: string): Promise<MergeOutcome> {
   let legacy: unknown;
   let canonical: unknown;
@@ -1103,6 +1248,7 @@ async function mergeJson(strategy: ReconciliationStrategy, legacyPath: string, c
   if (strategy === "inbox") return mergeInbox(legacy, canonical);
   if (strategy === "state") return mergeState(legacy, canonical);
   if (strategy === "preferences") return mergePreferences(legacy, canonical);
+  if (strategy === "board") return mergeBoard(legacy, canonical);
   return { ok: false, summary: "This file type requires an explicit choice." };
 }
 
@@ -1111,7 +1257,7 @@ async function validateCanonical(
   canonicalPath: string,
   knownInfo?: PathInfo,
 ): Promise<void> {
-  const info = knownInfo ?? await pathInfo(canonicalPath);
+  const info = knownInfo ?? await statPath(canonicalPath);
   if (info.kind === "missing" || info.kind === "symlink") throw new Error("canonical path is missing");
   if (entry.strategy === "directory") {
     if (info.kind !== "dir") throw new Error("canonical directory is invalid");
@@ -1126,9 +1272,23 @@ async function validateCanonical(
       if (!value || !Array.isArray(value.items) || value.items.some((item) => typeof record(item)?.id !== "string")) throw new Error("canonical inbox validation failed");
     } else if (entry.strategy === "state") {
       const value = record(parsed);
-      if (!value || STATE_MAPS.some((key) => !record(value[key] ?? {})) || !record(value.travel ?? {})) throw new Error("canonical state validation failed");
+      const titleRevisions = validateSessionTitleRevisions(
+        value?.sessionTitleRevision === undefined ? {} : value.sessionTitleRevision,
+      );
+      if (
+        !value ||
+        STATE_MAPS.some((key) => !record(value[key] ?? {})) ||
+        !titleRevisions.ok ||
+        !record(value.travel ?? {})
+      ) throw new Error("canonical state validation failed");
     } else if (entry.strategy === "preferences" && !validPreferences(parsed)) {
       throw new Error("canonical preferences validation failed");
+    } else if (entry.strategy === "board") {
+      const value = record(parsed);
+      if (!value || !Array.isArray(value.cards) || value.cards.some((card) => {
+        const id = record(card)?.id;
+        return typeof id !== "string" || !id;
+      })) throw new Error("canonical board validation failed");
     }
   }
 }
@@ -1176,8 +1336,17 @@ async function ensureCompatibility(
       // concurrent/invalid canonical change. Remove that attempted bridge
       // before entering the ordinary-file fallback; otherwise copyFile/cp can
       // follow the link and leave the retired legacy bytes hidden.
-      if ((await pathInfo(legacyPath)).kind === "symlink") {
+      if ((await statPath(legacyPath)).kind === "symlink") {
         await rm(legacyPath, { recursive: true, force: true });
+      }
+      // The legacy path was retired above, so anything present here now was
+      // recreated by a concurrent writer (an older tool still running). The
+      // mirror fallback must fail closed rather than merge canonical bytes
+      // into that foreign directory. fs.cp's errorOnExist only enforces this
+      // on newer Node releases (older 24.x silently merges directories), so
+      // the invariant is checked explicitly instead of delegated to cp.
+      if ((await statPath(legacyPath)).kind !== "missing") {
+        throw new Error("legacy path was recreated before the compatibility mirror could be installed");
       }
       const fallbackCanonical = await pathInfo(canonicalPath);
       await validateCanonical(entry, canonicalPath, fallbackCanonical);
@@ -1257,7 +1426,7 @@ async function syncManagedMirror(
       } finally {
         if (installed) {
           await rm(retired, { recursive: true, force: true });
-        } else if ((await pathInfo(legacyPath)).kind === "missing") {
+        } else if ((await statPath(legacyPath)).kind === "missing") {
           await rename(retired, legacyPath);
         }
       }
@@ -1279,7 +1448,6 @@ async function reconcileDirectory(
   legacyInfo: PathInfo,
   canonicalInfo: PathInfo,
   result: CaveHomeReconciliationResult,
-  options: ReconciliationOptions,
 ): Promise<{ outcome: MergeOutcome; files: number; collisions: number }> {
   if (legacyInfo.kind !== "dir" || canonicalInfo.kind !== "dir") return { outcome: { ok: false, summary: "Path types differ and require review." }, files: 0, collisions: 0 };
   let files = 0;
@@ -1304,6 +1472,54 @@ async function reconcileDirectory(
   return { outcome: { ok: true, value: null, summary: `Merged ${files} legacy-only directory entr${files === 1 ? "y" : "ies"}.` }, files, collisions };
 }
 
+/**
+ * Discard guard for explicit keep-canonical/recover-legacy resolutions
+ * (cave-5ax2): a choice that would replace a dramatically larger copy with a
+ * much smaller one is almost always a mistake (a stale writer recreated one
+ * side nearly empty). Directories are guarded by their recursive content
+ * size, the same class of loss at directory granularity. Confirmation is
+ * pinned to the discarded content: the caller must echo the discardToken
+ * issued with the block, so a copy that changed after the user saw the sizes
+ * re-blocks instead of being destroyed unseen. Both copies are already
+ * preserved in the verified recovery bundle when this check runs.
+ */
+const DISCARD_GUARD_RATIO = 8;
+const DISCARD_GUARD_MIN_BYTES = 4096;
+
+function formatByteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function guardedPathInfo(info: PathInfo): info is PathInfo & { contentBytes: number; hash: string } {
+  return (info.kind === "file" || info.kind === "dir") && typeof info.contentBytes === "number" && typeof info.hash === "string";
+}
+
+function discardConfirmation(
+  action: "keep-canonical" | "recover-legacy",
+  legacyInfo: PathInfo,
+  canonicalInfo: PathInfo,
+): { keptBytes: number; discardedBytes: number; discardToken: string; summary: string } | null {
+  if (!guardedPathInfo(legacyInfo) || !guardedPathInfo(canonicalInfo)) return null;
+  const [discardedInfo, keptInfo] = action === "recover-legacy" ? [canonicalInfo, legacyInfo] : [legacyInfo, canonicalInfo];
+  const discarded = discardedInfo.contentBytes;
+  const kept = keptInfo.contentBytes;
+  if (discarded < DISCARD_GUARD_MIN_BYTES || discarded < DISCARD_GUARD_RATIO * Math.max(kept, 1)) return null;
+  const discardedSide = action === "recover-legacy" ? "canonical" : "legacy";
+  const keptSide = action === "recover-legacy" ? "legacy" : "canonical";
+  return {
+    keptBytes: kept,
+    discardedBytes: discarded,
+    discardToken: discardedInfo.hash,
+    summary:
+      `Blocked without confirmation: this would discard the ${discardedSide} copy ` +
+      `(${formatByteSize(discarded)}) in favor of a much smaller ${keptSide} copy ` +
+      `(${formatByteSize(kept)}). Both copies are preserved in the recovery bundle; ` +
+      `confirm the discard to proceed.`,
+  };
+}
+
 async function reconcileEntry(
   entry: CaveHomeReconciliationEntry,
   journal: MigrationJournal,
@@ -1320,8 +1536,13 @@ async function reconcileEntry(
   // missing canonical path can be rebuilt from an older compatibility copy.
   await restoreInterruptedRetirement(legacyPath);
   await restoreInterruptedRetirement(canonicalPath);
-  let legacyInfo = await pathInfo(legacyPath);
-  let canonicalInfo = await pathInfo(canonicalPath);
+  // Classify with cheap stats first: on every steady-state startup the legacy
+  // path is absent or a verified compatibility bridge, and none of the early
+  // decisions below consume a content hash. Hashing lazily keeps large
+  // canonical stores (conversations/) from being re-digested under the
+  // cross-process lock on every launch (cave-573l).
+  let legacyInfo = await statPath(legacyPath);
+  let canonicalInfo = await statPath(canonicalPath);
   const prior = journal.entries[entry.legacy];
 
   if (prior?.decision === "deferred" && !options.action) {
@@ -1363,12 +1584,19 @@ async function reconcileEntry(
     if (
       !samePath(legacyPath, canonicalPath) &&
       legacyInfo.kind !== "missing" && legacyInfo.kind !== "symlink" &&
-      canonicalInfo.kind !== "missing" && canonicalInfo.kind !== "symlink" &&
-      legacyInfo.hash !== canonicalInfo.hash
+      canonicalInfo.kind !== "missing" && canonicalInfo.kind !== "symlink"
     ) {
-      const backup = await createRecoveryBundle(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, journal, options);
-      result.backedUp.push(backup.directory);
-      journalEntry.backupId = backup.id;
+      // Deferring a real pair needs content hashes: they decide whether the
+      // copies diverge and verify the recovery bundle when they do.
+      legacyInfo = await pathInfo(legacyPath);
+      canonicalInfo = await pathInfo(canonicalPath);
+      journalEntry.legacyHash = legacyInfo.hash;
+      journalEntry.canonicalHash = canonicalInfo.hash;
+      if (legacyInfo.hash !== canonicalInfo.hash) {
+        const backup = await createRecoveryBundle(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, journal, options);
+        result.backedUp.push(backup.directory);
+        journalEntry.backupId = backup.id;
+      }
     }
     journalEntry.decision = "deferred";
     journalEntry.summary = "User deferred this migration; existing copies remain in place.";
@@ -1409,6 +1637,17 @@ async function reconcileEntry(
     return;
   }
 
+  // From here on the legacy side is a real file or directory that is neither
+  // absent, a verified bridge, nor the canonical path itself: every remaining
+  // decision copies, verifies, backs up, or merges real bytes, so upgrade the
+  // cheap stats to full content hashes now.
+  legacyInfo = await pathInfo(legacyPath);
+  canonicalInfo = await pathInfo(canonicalPath);
+  journalEntry.legacyHash = legacyInfo.hash;
+  journalEntry.canonicalHash = canonicalInfo.hash;
+  journalEntry.legacyMtimeMs = legacyInfo.mtimeMs;
+  journalEntry.canonicalMtimeMs = canonicalInfo.mtimeMs;
+
   if (canonicalInfo.kind === "missing") {
     // Keep the legacy source intact until a fully copied and hash-verified
     // canonical sibling has been atomically installed. A crash can therefore
@@ -1446,6 +1685,21 @@ async function reconcileEntry(
   journalEntry.backupId = backup.id;
 
   if (options.action === "keep-canonical" || options.action === "recover-legacy") {
+    const confirmation = discardConfirmation(options.action, legacyInfo, canonicalInfo);
+    if (confirmation && options.confirmDiscard !== confirmation.discardToken) {
+      // A supplied-but-mismatched token means the discarded side changed after
+      // the user saw the block: re-block with fresh numbers instead of
+      // destroying bytes the user never reviewed.
+      const summary = options.confirmDiscard === undefined
+        ? confirmation.summary
+        : `${confirmation.summary} The copy to be discarded changed after the previous confirmation was issued; review the new sizes and confirm again.`;
+      result.confirmationRequired.push({ legacy: entry.legacy, action: options.action, ...confirmation, summary });
+      journalEntry.decision = "unresolved";
+      journalEntry.summary = summary;
+      journal.entries[entry.legacy] = journalEntry;
+      result.skipped.push(entry.legacy);
+      return;
+    }
     if (options.action === "recover-legacy") {
       // Restore from the verified bundle, not the live legacy path, so an old
       // writer cannot change the selected bytes between backup and recovery.
@@ -1479,16 +1733,25 @@ async function reconcileEntry(
     // canonical storage. Do not resurrect it until the user explicitly asks
     // to merge the two directory snapshots.
     merged = options.action === "merge"
-      ? (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result, options)).outcome
+      ? (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result)).outcome
       : { ok: false, summary: "Directory entries differ and require an explicit merge or whole-directory choice." };
   }
-  else if (["inbox", "state", "preferences"].includes(entry.strategy)) {
+  else if (
+    ["inbox", "state", "preferences"].includes(entry.strategy) ||
+    (entry.strategy === "board" && options.action === "merge")
+  ) {
     // Merge the exact snapshots recorded in the verified bundle. Reading the
     // live paths here would let an uncoordinated store writer change either
     // input after backup verification.
     const legacyBackup = await verifiedBundleRole(backup.directory, "legacy");
     const canonicalBackup = await verifiedBundleRole(backup.directory, "canonical");
     merged = await mergeJson(entry.strategy, legacyBackup.source, canonicalBackup.source);
+  }
+  else if (entry.strategy === "board") {
+    // A one-sided board card is ambiguous (new vs deleted-on-the-other-side),
+    // so the union never runs unprompted — it is offered as the suggested
+    // resolution instead (cave-6z41; conservative philosophy from cave-5ax2).
+    merged = { ok: false, summary: "Divergent board copies support an explicit card-id merge — every card from both copies is kept, the newest edit wins per card — or a whole-file choice." };
   }
   else merged = { ok: false, summary: "This file has no lossless automatic merge and requires an explicit choice." };
 
@@ -1542,6 +1805,7 @@ export async function reconcileCaveHome(
 ): Promise<CaveHomeReconciliationResult> {
   const result: CaveHomeReconciliationResult = {
     moved: [], linked: [], skipped: [], merged: [], backedUp: [], resolved: [], errors: [],
+    confirmationRequired: [],
   };
   await mkdir(caveHome(), { recursive: true });
   const release = await acquireLock(options);
@@ -1571,9 +1835,12 @@ export async function caveHomeReconciliationStatus(
   for (const entry of entries) {
     const legacyPath = path.join(covenHome(), entry.legacy);
     const canonicalPath = canonicalPathFor(entry);
-    const legacyInfo = await pathInfo(legacyPath);
+    // Stat-only classification first: steady-state entries (legacy absent,
+    // verified bridge, per-store override, unchanged managed mirror) must not
+    // re-hash canonical stores on every status poll (cave-573l).
+    let legacyInfo = await statPath(legacyPath);
     if (legacyInfo.kind === "missing") continue;
-    const canonicalInfo = await pathInfo(canonicalPath);
+    let canonicalInfo = await statPath(canonicalPath);
     const prior = journal.entries[entry.legacy];
     const canonicalValid = await validateCanonical(entry, canonicalPath, canonicalInfo).then(() => true, () => false);
     if (
@@ -1581,12 +1848,13 @@ export async function caveHomeReconciliationStatus(
       await isCanonicalCompatibilityLink(legacyPath, canonicalPath)
     ) continue;
     if (samePath(legacyPath, canonicalPath) && canonicalValid) continue;
-    const managed = Boolean(
-      canonicalValid &&
-      prior?.managedMirrorHash &&
-      legacyInfo.hash === prior.managedMirrorHash,
-    );
-    if (managed) continue;
+    if (canonicalValid && prior?.managedMirrorHash) {
+      legacyInfo = await pathInfo(legacyPath);
+      if (legacyInfo.hash === prior.managedMirrorHash) continue;
+    }
+    // Real conflict or pending migration: hash both sides for review details.
+    if (!legacyInfo.hash) legacyInfo = await pathInfo(legacyPath);
+    canonicalInfo = await pathInfo(canonicalPath);
     const isPending = canonicalInfo.kind === "missing" && legacyInfo.kind !== "symlink";
     (isPending ? pending : conflicts).push(entry.legacy);
     const backupPath = prior?.backupId ? path.join(migrationBackupRoot(), prior.backupId) : undefined;
@@ -1600,6 +1868,8 @@ export async function caveHomeReconciliationStatus(
       canonicalHash: canonicalInfo.hash,
       legacyMtimeMs: legacyInfo.mtimeMs,
       canonicalMtimeMs: canonicalInfo.mtimeMs,
+      legacySize: legacyInfo.contentBytes ?? legacyInfo.size,
+      canonicalSize: canonicalInfo.contentBytes ?? canonicalInfo.size,
       state: isPending ? "pending" : "unresolved",
       summary: legacyInfo.kind === "symlink"
         ? "Legacy symlink is not a valid compatibility bridge and requires review."

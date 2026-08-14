@@ -6,8 +6,8 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{ resolveSecret \} from "@\/lib\/vault";/,
-  "rerun route should use the shared vault/env secret resolver",
+  /import \{ resolveGitHubToken \} from "@\/lib\/github-token";/,
+  "rerun route should use the shared installation-agnostic token resolver",
 );
 assert.match(
   source,

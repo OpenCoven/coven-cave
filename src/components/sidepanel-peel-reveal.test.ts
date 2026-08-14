@@ -1,0 +1,209 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const css = readFileSync(
+  new URL("../styles/globals/shell-navigation.css", import.meta.url),
+  "utf8",
+);
+
+// Plain mode (no HTML-in-canvas, or reduced motion) must be layout-invisible.
+assert.match(
+  css,
+  /\.shell-peel-reveal--live \{/,
+  "live peel wrapper block exists",
+);
+
+// Live mode reproduces .shell-detail's scroll contract (the vendored content
+// wrapper is overflow: hidden, so scrolling moves inside the sheet).
+assert.match(
+  css,
+  /\.shell-peel-reveal--live \{[^}]*?flex: 1;[^}]*?min-height: 0;[^}]*?position: relative;/,
+  "live peel wrapper is a positioned flex child",
+);
+assert.match(
+  css,
+  /\.shell-peel-reveal--live \.shell-peel-scroll \{[^}]*?height: 100%;[^}]*?overflow-y: auto;[^}]*?flex-direction: column;/,
+  "live peel scroll host reproduces the detail scroll contract",
+);
+
+// The revealed under-layer backing uses tokens and matches the 232px peek.
+assert.match(
+  css,
+  /\.shell-peel-under \{[^}]*?width: 232px;[^}]*?background: var\(--bg-raised\);[^}]*?border-right: 1px solid var\(--border-hairline\);/,
+  "under layer is an opaque token-backed 232px sheet",
+);
+
+const wrapper = readFileSync(
+  new URL("./shell-peel-reveal.tsx", import.meta.url),
+  "utf8",
+);
+const vendored = readFileSync(
+  new URL("./canvasui/Peel.tsx", import.meta.url),
+  "utf8",
+);
+
+// The ~22 KB vendored WebGL file still reaches the client only through the
+// lazy import() in the readiness store — never statically (the top-of-file
+// import is type-only, erased at compile time) and never on the server.
+assert.match(
+  wrapper,
+  /void import\("@\/components\/canvasui\/Peel"\)/,
+  "vendored Peel loads through the readiness store's dynamic import",
+);
+assert.match(
+  wrapper,
+  /import type PeelComponent from "@\/components\/canvasui\/Peel";/,
+  "the only static reference to the vendored module is type-only",
+);
+// No lazy/Suspense wrapper: a lazy's thenable is always pending on its FIRST
+// render even when the chunk is already loaded, so the freshly-mounted
+// boundary would commit a null fallback — blanking the detail pane (~300ms)
+// and double-mounting its children exactly when enhancement flips (cave-ao2o).
+// The store stashes the loaded component and the wrapper renders it directly:
+// the flip is a single-commit re-parent.
+assert.doesNotMatch(
+  wrapper,
+  /from "next\/dynamic"|dynamic\(\(\) =>|React\.lazy\(|lazy\(\(\) =>|<Suspense/,
+  "live tree renders the stashed component directly — no lazy, no Suspense, no null fallback",
+);
+assert.match(
+  wrapper,
+  /PeelLive = mod\.default;/,
+  "the readiness store stashes the loaded component for direct render",
+);
+
+// Enhancement gates: local capability probe (false on the server) + reduced motion.
+assert.match(
+  wrapper,
+  /useSyncExternalStore\(emptySubscribe, probeHtmlInCanvas, \(\) => false\)/,
+  "capability probe returns false as the server snapshot",
+);
+assert.match(
+  wrapper,
+  /const enhanced =\s*supported && Peel !== null && !reducedMotion && !glPermanentlyLost;/,
+  "reduced motion disables the enhancement entirely",
+);
+
+// Permanent mount: `active` swaps geometry options, never mounts/unmounts Peel,
+// so toggling the nav can't re-parent (and remount) the detail tree.
+assert.match(
+  wrapper,
+  /OFF_OPTIONS = \{\s*reveal: 0,\s*zone: 0,\s*curl: 1,\s*bow: 0,\s*bulge: 0,\s*shine: 0,\s*\}/,
+  "inactive geometry flattens the whole curl and zeroes the shine",
+);
+assert.match(
+  wrapper,
+  /LIVE_OPTIONS = \{\s*reveal: 232,\s*zone: 120,\s*curl: 300,\s*bow: 75,\s*bulge: 50,\s*shine: 1,\s*\}/,
+  "live geometry restates vendor curl and shine defaults (setOptions merges)",
+);
+assert.match(
+  wrapper,
+  /\{\.\.\.\(active \? LIVE_OPTIONS : OFF_OPTIONS\)\}/,
+  "active drives options, not mounting",
+);
+assert.doesNotMatch(
+  wrapper,
+  /active \? <Peel|active && <Peel|\{active &&/,
+  "Peel is never conditionally mounted on active",
+);
+
+// The live tree waits for the vendored chunk: the plain tree keeps rendering
+// until the loaded component can mount for real, in one commit.
+assert.match(
+  wrapper,
+  /supported \? subscribePeelReady : emptySubscribe/,
+  "chunk fetch starts only on supporting browsers",
+);
+assert.match(
+  wrapper,
+  /useSyncExternalStore\(\s*supported \? subscribePeelReady : emptySubscribe,\s*getPeelLive,\s*getPeelLiveServer,\s*\)/,
+  "the rendered component comes straight from the module store",
+);
+
+// The revealed sidebar clone is decorative: hidden from AT and uninteractive.
+assert.match(
+  wrapper,
+  /<div className="shell-peel-under" aria-hidden inert>/,
+  "under layer is aria-hidden and inert",
+);
+
+// WebGL context loss re-mounts the vendored component, capped (cave-kbh1).
+assert.match(wrapper, /key=\{glEpoch\}/, "epoch key re-mounts on context loss");
+assert.match(
+  wrapper,
+  /MAX_CONTEXT_RESTARTS = 3/,
+  "context-loss restarts are capped",
+);
+// One loss past the cap must NOT strand the dead live tree: the vendored
+// createPeel has no context-loss recovery and its WebGL output canvas is the
+// pane's only paint path, so the wrapper flips a permanent-failure state and
+// rejoins the plain bare-Fragment path instead of leaving primary content
+// blank but still hit-testable (cave-yqlt). (Blaze may stay blank past its
+// cap — it's a decorative backdrop; this wraps the detail pane.)
+assert.match(
+  wrapper,
+  /setGlEpoch\(\(epoch\) => Math\.min\(epoch \+ 1, MAX_CONTEXT_RESTARTS \+ 1\)\)/,
+  "the epoch saturates one past the cap so the final loss escapes the live tree",
+);
+assert.match(
+  wrapper,
+  /const glPermanentlyLost = glEpoch > MAX_CONTEXT_RESTARTS;/,
+  "past-cap context loss is a permanent-failure state",
+);
+assert.match(
+  wrapper,
+  /&& !glPermanentlyLost;/,
+  "permanent loss gates `enhanced` off — the existing bare-Fragment fallback, no new rendering mode",
+);
+// The capture-phase listener reacts only to the peel's own output canvas (a
+// direct child of the .shell-peel-fill root). The detail children render
+// inside the source canvas subtree, so a context loss from any future WebGL
+// canvas nested in the detail content must not bump the epoch — that would
+// remount (or, past the cap, permanently downgrade) the whole pane.
+assert.match(
+  wrapper,
+  /!\(target instanceof HTMLCanvasElement\) \|\|\s*!target\.parentElement\?\.classList\.contains\("shell-peel-fill"\)/,
+  "context-loss handler is scoped to the peel's own output canvas",
+);
+
+// Plain path is a bare Fragment: several production rules use direct-child
+// chains (`.shell-detail > .cave-mode-fade`, see detail-split-host.tsx) that
+// even display:contents wrappers would break — selectors match the DOM tree,
+// not the box tree.
+assert.match(
+  wrapper,
+  /if \(!enhanced\) \{\s*return <>\{children\}<\/>;\s*\}/,
+  "plain path renders children as a bare Fragment (no wrapper elements)",
+);
+assert.doesNotMatch(
+  wrapper,
+  /shell-peel-reveal--plain/,
+  "no plain wrapper class remains",
+);
+
+// Vendored file keeps its provenance and stays the module the wrapper imports.
+assert.match(
+  vendored,
+  /Vendored from Canvas UI — https:\/\/canvasui\.dev\/docs\/components\/peel/,
+  "vendored Peel carries the provenance header",
+);
+assert.match(vendored, /peel-react\.json/, "provenance cites the registry item");
+assert.match(vendored, /export default Peel;/, "vendored Peel default-exports");
+
+const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
+
+// The peel arms exactly when the interactive hover-peek is armed, and the
+// under layer is the same nav node the sidebar aside renders.
+assert.match(
+  shell,
+  /<ShellPeelReveal active=\{navPeekEnabled\} under=\{nav\}>/,
+  "shell arms the peel with navPeekEnabled and feeds it the nav",
+);
+assert.match(
+  shell,
+  /import \{ ShellPeelReveal \} from "@\/components\/shell-peel-reveal";/,
+  "shell imports the wrapper",
+);
+
+console.log("sidepanel-peel-reveal.test.ts: ok");

@@ -22,8 +22,8 @@ const css = [
 // ── ThreadRow: real PR context wins the leading slot ─────────────────────────
 assert.match(
   sidebar,
-  /const prStatus = sessionPrStatus\(session\.pullRequest\);/,
-  "rows derive PR status from the session's pullRequest context (shared lib)",
+  /const prStatus = archived \? null : sessionPrStatus\(session\.pullRequest\);/,
+  "rows derive PR status from the session's pullRequest context unless archived styling has taken precedence",
 );
 assert.match(
   sidebar,
@@ -32,18 +32,27 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /\{prStatus \? null : glyph \? \(/,
-  "real PR context suppresses the dot AND the title-heuristic glyph",
+  /\{prStatus \? null : leadGlyph \? \(/,
+  "real PR context suppresses the dot AND the title-heuristic/archive glyph",
 );
 
 // ── Pinned rail rows carry the badge too ─────────────────────────────────────
-const pinStart = sidebar.indexOf('aria-label="Pinned threads"');
-assert.ok(pinStart > 0, "the pinned rail section exists");
-const pinnedRail = sidebar.slice(pinStart, sidebar.indexOf('view === "recent"', pinStart));
+// The pinned rail is rendered through the dedicated PinnedThreadRow component
+// (not inlined at the render site), so pin against that function's body
+// rather than the `aria-label="Pinned threads"` JSX, which only contains a
+// `<PinnedThreadRow ... />` reference — see cave-zs85n Task 6 gap-fix notes.
+const pinnedRowFnStart = sidebar.indexOf("function PinnedThreadRow(");
+assert.ok(pinnedRowFnStart > 0, "the PinnedThreadRow component exists");
+const pinnedRowFnBody = sidebar.slice(pinnedRowFnStart, sidebar.indexOf("\n}\n", pinnedRowFnStart));
 assert.match(
-  pinnedRail,
-  /<ThreadPrBadge prStatus=\{prStatus\} onOpenUrl=\{onOpenUrl\} \/>/,
-  "pinned rail rows show the PR badge as well",
+  pinnedRowFnBody,
+  /const prStatus = archived \? null : sessionPrStatus\(session\.pullRequest\);[\s\S]*?<ThreadPrBadge prStatus=\{prStatus\} onOpenUrl=\{onOpenUrl\} \/>/,
+  "pinned rail rows show the PR badge only when the row is not archived",
+);
+assert.match(
+  sidebar,
+  /aria-label="Pinned threads">[\s\S]*?<PinnedThreadRow\b/,
+  "the Pinned section renders rows through the shared PinnedThreadRow component",
 );
 
 // ── Badge behavior mirrors the chat-list badge ───────────────────────────────

@@ -1,9 +1,11 @@
 import {
   ACTIVITY_DAYS,
   buildFamiliarCardStats,
-  type CovenMemoryEntry,
+  type CanonicalMemoryAvailability,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
+import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
+import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
 import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
 import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
 import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
@@ -12,6 +14,7 @@ import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-gr
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
 import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
+import { buildActivityLattice, type ActivityLattice } from "@/lib/activity-lattice";
 import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
@@ -32,10 +35,6 @@ type ContractResponse =
 type SessionsResponse =
   | { ok: true; sessions: SessionRow[] }
   | { ok: false; sessions?: SessionRow[]; error?: string };
-
-type CovenMemoryResponse =
-  | { ok: true; entries: CovenMemoryEntry[] }
-  | { ok: false; entries?: CovenMemoryEntry[]; error?: string };
 
 type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
@@ -58,7 +57,8 @@ export type FamiliarAnalyticsData = {
   familiars: Familiar[];
   contractReport: ContractReport | null;
   sessions: SessionRow[];
-  covenEntries: CovenMemoryEntry[];
+  covenEntries: CanonicalMemorySummary[];
+  memoryAvailability: CanonicalMemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
   /** Compact per-thread metric snapshots, oldest → newest (signal trends). */
@@ -79,6 +79,8 @@ export type FamiliarAnalyticsModel = {
   signalTrends: SignalTrends;
   healRequests: SelfHealRequest[];
   threadReports: ThreadSelfReport[];
+  /** Complete persisted metric history for time-windowed trend reads. */
+  metricSnapshots: ThreadMetricSnapshot[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
   /**
@@ -86,17 +88,20 @@ export type FamiliarAnalyticsModel = {
    * (same derivation as the roster cards, so the surfaces always agree).
    * Null when the familiar itself couldn't be resolved.
    */
-  progression: { renown: FamiliarRenown; streakDays: number } | null;
+  progression: {
+    renown: FamiliarRenown;
+    streakDays: number;
+    memoryAvailability: CanonicalMemoryAvailability;
+  } | null;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
-  /** This familiar's sessions, newest first, capped for the drill-through list. */
+  /** Year / quarter / fortnight of the same session series, derived together
+   *  so the three views can be compared rather than paged between (cave-yd3qu). */
+  activityLattice: ActivityLattice;
+  /** This familiar's complete session history, newest first, for scoped evidence. */
   recentSessions: SessionRow[];
   errors: string[];
 };
-
-/** Cap on the drill-through session list — enough history to trace without
- *  turning the analytics page into a full session browser. */
-const RECENT_SESSIONS_CAP = 40;
 
 const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   generatedAt: new Date(0).toISOString(),
@@ -113,9 +118,12 @@ const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   runs: [],
 };
 
-function emptyStats(): FamiliarCardStats {
+function emptyStats(
+  memoryAvailability: CanonicalMemoryAvailability = "unavailable",
+): FamiliarCardStats {
   return {
     memoryCount: 0,
+    memoryAvailability,
     latestMemory: null,
     lastSessionAt: null,
     sessionsTotal: 0,
@@ -169,10 +177,16 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
-    fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
-    fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
+    // The workbench's ALL window and session ledger are complete evidence,
+    // including archived sessions. Restricting at the route keeps the larger
+    // session response local to the familiar being inspected.
+    fetchResource<SessionsResponse>(`/api/sessions/list?includeArchived=1&familiarId=${encodedId}`, { ok: false, sessions: [] }),
+    loadCanonicalMemoryList(),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
-    fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
+    // The workbench's ALL window and report ledger are complete evidence, not a
+    // newest-page sample. The route retains bounded pagination for consumers
+    // that need it; this explicit mode is for the single-familiar evidence view.
+    fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=all`, { ok: false, reports: [], total: 0 }),
     fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
     fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
   ]);
@@ -181,7 +195,9 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(familiarsJson, "familiars unavailable"),
     responseError(contractJson, "contract unavailable"),
     responseError(sessionsJson, "sessions unavailable"),
-    responseError(memoryJson, "memory unavailable"),
+    memoryJson.state === "error"
+      ? `memory unavailable (${memoryJson.error.code})`
+      : null,
     responseError(retroJson, "retro runs unavailable"),
     responseError(metricSnapshotsJson, "metric snapshots unavailable"),
     responseError(feedbackJson, "message feedback unavailable"),
@@ -192,9 +208,14 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     familiars: familiarsJson.familiars ?? [],
     contractReport: contractJson.report ?? null,
     sessions: sessionsJson.sessions ?? [],
-    covenEntries: memoryJson.entries ?? [],
+    covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
+    memoryAvailability:
+      memoryJson.state === "ready" ? "ready" : "unavailable",
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
-    threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
+    // `ok: true` says the request succeeded, not that the payload has the shape
+    // its type claims — SelfReportsResponse is erased at runtime. Check it here
+    // rather than let a non-array reach the aggregation (cave-p9dsb).
+    threadReports: Array.isArray(selfReportsJson.reports) ? selfReportsJson.reports : [],
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     errors,
@@ -213,10 +234,11 @@ export function buildFamiliarAnalyticsModel(
     ? buildFamiliarCardStats({
         familiars: [familiar],
         sessions: familiarSessions,
-        covenEntries: data.covenEntries.filter((entry) => entry.familiar_id === familiar.id),
+        covenEntries: data.covenEntries.filter((entry) => entry.familiarId === familiar.id),
+        memoryAvailability: data.memoryAvailability,
         now,
-      }).get(familiar.id) ?? emptyStats()
-    : emptyStats();
+      }).get(familiar.id) ?? emptyStats(data.memoryAvailability)
+    : emptyStats(data.memoryAvailability);
   const growthReport = familiar
     ? deriveGrowthReport({
         familiar,
@@ -242,17 +264,19 @@ export function buildFamiliarAnalyticsModel(
     signalTrends,
     healRequests,
     threadReports: data.threadReports,
+    metricSnapshots: data.metricSnapshots,
     modelFeedback: data.modelFeedback,
     progression: familiar
       ? {
           renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),
           streakDays: stats.streakDays,
+          memoryAvailability: stats.memoryAvailability,
         }
       : null,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
+    activityLattice: buildActivityLattice(familiarSessions, data.familiarId, now),
     recentSessions: [...familiarSessions]
-      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
-      .slice(0, RECENT_SESSIONS_CAP),
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
     errors: data.errors,
   };
 }

@@ -16,8 +16,6 @@ import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
-import { OverflowMenu } from "@/components/ui/overflow-menu";
-import { PopoverItem } from "@/components/ui/popover";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { familiarInScope } from "@/lib/familiar-multiselect";
@@ -30,6 +28,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
+import { BoardTokenSearch } from "@/components/board-token-search";
+import { BoardFilterMenu } from "@/components/board-filter-menu";
 import { BoardInspector } from "@/components/board-inspector";
 import { TaskWorkCockpit } from "@/components/task-work-cockpit";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -37,10 +37,11 @@ import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
-import { BoardKanbanSkeleton, type ViewMode } from "@/components/board-view-display";
+import { modelForRuntimeSwitch } from "@/lib/runtime-models";
+import { BoardKanbanSkeleton } from "@/components/board-view-display";
 import { useSurfacePreference } from "@/lib/surface-preferences";
 import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 
 
@@ -93,6 +94,13 @@ export function BoardView({
     setDeepLinkTab(null);
     setStoredActiveTab(tab);
   }, [setStoredActiveTab]);
+  // Tasks/Queue is a destination — an alias deep link can land straight on
+  // Queue, and Back should return to Tasks rather than leaving the surface.
+  const selectActiveTab = useTrackedSurfaceValue<"tasks" | "queue">({
+    id: "board:tab",
+    value: activeTab,
+    onRestore: setActiveTab,
+  });
   const [cards, setCards] = useState<Card[]>([]);
   // Deferred + undoable task deletion: cards hide immediately, the DELETEs fire
   // only after the undo window, and Undo restores them (mirrors chat/projects).
@@ -126,8 +134,21 @@ export function BoardView({
   const [tableSortDir, setTableSortDir] = useSurfacePreference(surfacePreferenceSpecs.board.tableSortDir);
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  // Toolbar filter dropdown (redesign): status/project narrowing on top of the
+  // search + grouping. Modelled as EXCLUDED sets so newly-appearing statuses or
+  // projects default to visible; "Select all" clears the exclusions.
+  const [excludedStatus, setExcludedStatus] = useState<ReadonlySet<CardStatus>>(new Set());
+  const [excludedProject, setExcludedProject] = useState<ReadonlySet<string>>(new Set());
+  // Inline confirm for the toolbar's Delete-selected button (redesign).
+  const [toolbarDeleteConfirm, setToolbarDeleteConfirm] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [workCardId, setWorkCardId] = useState<string | null>(null);
+  const [pendingBridgeStart, setPendingBridgeStart] = useState<{
+    cardId: string;
+    sessionId: string;
+    initialPrompt: string;
+    initialModelOverride?: string;
+  } | null>(null);
   const pendingWorkFocusIdRef = useRef<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
@@ -137,6 +158,16 @@ export function BoardView({
   // which familiar to rebind and which task chat to re-run.
   const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
   const { projects } = useProjects();
+
+  // The OpenClaw bridge reserves its conversation id before the first streamed
+  // turn. Once the normal chat path persists that local conversation, stop
+  // treating this as a first-launch handoff so reopening the task never sends
+  // the task prompt twice.
+  useEffect(() => {
+    if (pendingBridgeStart && sessions.some((session) => session.id === pendingBridgeStart.sessionId)) {
+      setPendingBridgeStart(null);
+    }
+  }, [pendingBridgeStart, sessions]);
 
   // "Clear done" flow: an inline confirm gate, and a transient undo banner that
   // snapshots the cleared cards so they can be re-created via POST.
@@ -246,7 +277,7 @@ export function BoardView({
   // External create paths dispatch `cave:board:reload` after POST so the board
   // picks up the new card without a full surface remount.
   useEffect(() => {
-  const onReload = () => { invalidateSurfaceResources("board:cards", "tasks:queue"); void load(); };
+  const onReload = () => { invalidateSurfaceResources("board:cards"); void load(); };
     window.addEventListener("cave:board:reload", onReload);
     return () => window.removeEventListener("cave:board:reload", onReload);
   }, [load]);
@@ -298,6 +329,17 @@ export function BoardView({
   }, [cards]);
 
   const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
+  // Stable project label for a card — the key the project filter/grouping keys
+  // on. Mirrors the board's project grouping: named project → its name, else a
+  // cwd basename, else the "No project" bucket.
+  const projectLabelOf = useCallback((c: Card): string => {
+    if (c.projectId) {
+      const p = chatProjectById(c.projectId, projects);
+      if (p?.name) return p.name;
+    }
+    if (c.cwd) return c.cwd.split("/").filter(Boolean).pop() ?? c.cwd;
+    return "No project";
+  }, [projects]);
   const filtered = useMemo(() => {
     // Hide cards whose delete is pending in the undo window (restored on Undo).
     const hidden = new Set((deletePending?.item ?? []).map((c) => c.id));
@@ -307,13 +349,50 @@ export function BoardView({
         (scopeFamiliarIds
           ? familiarInScope(scopeFamiliarIds, c.familiarId)
           : activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
+        !excludedStatus.has(c.status) &&
+        !excludedProject.has(projectLabelOf(c)) &&
         cardMatchesBoardSearch(c, searchQuery, familiarsById),
     );
-  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending]);
+  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending, excludedStatus, excludedProject, projectLabelOf]);
 
   // Done cards in the CURRENT scope (the filtered set the user is viewing) —
   // the exact set "Clear done" operates on.
   const doneCards = useMemo(() => filtered.filter((c) => c.status === "done"), [filtered]);
+
+  // ── Toolbar filter dropdown options ─────────────────────────────────────────
+  // The menu narrows by the dimension the board is grouped by (status by
+  // default, project when grouping by project). Project options are the distinct
+  // labels present in the current (familiar-scoped, pre-filter) card set.
+  const STATUS_TOOLBAR_LABELS: Record<CardStatus, string> = {
+    backlog: "Backlog", inbox: "Inbox", running: "Running",
+    review: "Review", blocked: "Blocked", done: "Done",
+  };
+  const scopedCards = useMemo(
+    () => cards.filter((c) =>
+      scopeFamiliarIds
+        ? familiarInScope(scopeFamiliarIds, c.familiarId)
+        : activeFamiliarId === null || c.familiarId === activeFamiliarId),
+    [cards, scopeFamiliarIds, activeFamiliarId],
+  );
+  const projectFilterLabels = useMemo(
+    () => [...new Set(scopedCards.map(projectLabelOf))].sort((a, b) =>
+      a === "No project" ? -1 : b === "No project" ? 1 : a.localeCompare(b)),
+    [scopedCards, projectLabelOf],
+  );
+  const toggleStatusFilter = useCallback((id: CardStatus) => {
+    setExcludedStatus((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+  const toggleProjectFilter = useCallback((id: string) => {
+    setExcludedProject((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
 
   // The undo banner is transient — auto-dismiss ~5s after a clear.
   useEffect(() => {
@@ -329,12 +408,12 @@ export function BoardView({
     return () => window.clearTimeout(t);
   }, [rescheduleUndo]);
 
-  // Familiar grouping is redundant once the board is scoped to a single
-  // familiar — fall back to status there. Status and project grouping stay
-  // meaningful regardless of the familiar scope.
-  const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" ? "status" : groupBy;
-  // Familiar grouping is meaningless once the board is scoped to one familiar.
-  const effectiveGanttGroup = ganttGroup === "familiar" && activeFamiliarId !== null ? "project" : ganttGroup;
+  // The shell already owns familiar scope. Re-expose Familiar grouping only
+  // when the selected set contains multiple familiars and grouping that union
+  // adds information; hide it for All and single-familiar scopes.
+  const showFamiliarGrouping = (scopeFamiliarIds?.size ?? 0) > 1;
+  const effectiveGroupBy: GroupBy = !showFamiliarGrouping && groupBy === "familiar" ? "status" : groupBy;
+  const effectiveGanttGroup = ganttGroup === "familiar" && !showFamiliarGrouping ? "project" : ganttGroup;
   // Grouping applies to both the kanban (swimlanes) and table views; hidden on
   // phones, where BoardCardStack replaces both surfaces.
   const showGroupToggle = !isMobile;
@@ -449,7 +528,7 @@ export function BoardView({
         setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
         reloadWhenPatchesSettleRef.current = true;
       } else {
-        invalidateSurfaceResources("board:cards", "tasks:queue");
+        invalidateSurfaceResources("board:cards");
         saved = true;
         setActionError(null);
         if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
@@ -500,7 +579,7 @@ export function BoardView({
       // silently dropping the failure).
       const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
       if (!json.ok) throw new Error(json.error ?? "create failed");
-      invalidateSurfaceResources("board:cards", "tasks:queue");
+      invalidateSurfaceResources("board:cards");
       setActionError(null);
       announce(`Created task '${draft.title.trim()}'.`);
       await load();
@@ -516,7 +595,10 @@ export function BoardView({
 
   // Inline quick-add from a kanban column: title-only card in that column's
   // status, scoped to the swimlane it was dropped under (familiar/project) or
-  // the active familiar when ungrouped.
+  // the active familiar when ungrouped. Project lanes deliberately begin
+  // unassigned: the active familiar may use a different harness/runtime and
+  // lack that project's session-launch grant, so the dependent picker must
+  // choose an authorized familiar first.
   const quickAdd = async (
     status: CardStatus,
     title: string,
@@ -527,7 +609,7 @@ export function BoardView({
       notes: "",
       status,
       priority: "medium",
-      familiarId: lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null),
+      familiarId: lane.projectId ? null : (lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null)),
       sessionId: null,
       projectId: lane.projectId !== undefined ? lane.projectId : null,
       cwd: null,
@@ -542,19 +624,34 @@ export function BoardView({
   // Schedule a deferred, undoable delete of one or more cards. The cards hide at
   // once (via the `filtered` exclusion), and the actual DELETEs fire only when
   // the undo window lapses; Undo just drops the timer and the cards reappear.
-  const deleteCards = useCallback((toRemove: Card[]) => {
-    if (toRemove.length === 0) return;
+  const deleteCards = useCallback((requested: Card[]) => {
+    // Same retention rule as Clear done: a Bead-linked mirror is preserved and
+    // reported, not deleted. Without this the server's 409 would land as a
+    // generic "couldn't delete N tasks" failure, which reads as a bug rather
+    // than the deliberate protection it is (cave-xddxs).
+    const preserved = requested.filter((c) => c.beadRef);
+    const toRemove = requested.filter((c) => !c.beadRef);
+    if (toRemove.length === 0) {
+      if (preserved.length > 0) {
+        const noun = preserved.length === 1 ? "task" : "tasks";
+        announce(`Kept ${preserved.length} linked ${noun}. Unlink to delete.`);
+      }
+      return;
+    }
     const idSet = new Set(toRemove.map((c) => c.id));
     if (selectedCardId && idSet.has(selectedCardId)) setSelectedCardId(null);
     setClearedBanner(null); // one bottom undo affordance at a time
-    announce(`Deleted ${toRemove.length} task${toRemove.length === 1 ? "" : "s"}. Undo available.`);
+    const kept = preserved.length > 0
+      ? ` Kept ${preserved.length} linked task${preserved.length === 1 ? "" : "s"}.`
+      : "";
+    announce(`Deleted ${toRemove.length} task${toRemove.length === 1 ? "" : "s"}.${kept} Undo available.`);
     scheduleCardDelete(
       toRemove,
       `${toRemove.length} task${toRemove.length === 1 ? "" : "s"}`,
       async () => {
         // Commit: drop from local state, then fire the DELETEs. Both the unhide
         // (pending → null) and this removal batch, so the cards never flash back.
-        invalidateSurfaceResources("board:cards", "tasks:queue");
+        invalidateSurfaceResources("board:cards");
         setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
         const results = await Promise.all(
           toRemove.map(async (c) => {
@@ -585,6 +682,14 @@ export function BoardView({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [labelDraft, setLabelDraft] = useState("");
   const selectedCards = () => cardSelect.selectedFrom(filtered);
+  // Live selection count for the toolbar Select/Delete buttons (redesign).
+  const selectionCount = selectedCards().length;
+  const hasSelection = selectionCount > 0;
+  // Drop the delete-confirm popover whenever the selection empties or select
+  // mode exits, so it can't linger with nothing to act on.
+  useEffect(() => {
+    if (!hasSelection || !cardSelect.selectMode) setToolbarDeleteConfirm(false);
+  }, [hasSelection, cardSelect.selectMode]);
   // Existing labels across the board → datalist autocomplete for the bulk
   // add-label control (NOT a filter row — label filtering is search syntax).
   const bulkLabelOptions = useMemo(
@@ -652,11 +757,23 @@ export function BoardView({
   };
 
   const handleClearDone = async () => {
-    const snapshot = doneCards;
+    // Cards linked to a Bead are durable reference targets, so routine cleanup
+    // preserves them and says so rather than deleting them silently. The server
+    // refuses them too (409 linked_bead_requires_unlink) — this filter is the
+    // experience, not the boundary (cave-xddxs).
+    const preserved = doneCards.filter((c) => c.beadRef);
+    const snapshot = doneCards.filter((c) => !c.beadRef);
     setClearConfirm(false);
-    if (snapshot.length === 0) return;
+    if (snapshot.length === 0) {
+      if (preserved.length > 0) {
+        const noun = preserved.length === 1 ? "task" : "tasks";
+        setActionError(null);
+        announce(`Kept ${preserved.length} linked ${noun}. Unlink to delete.`);
+      }
+      return;
+    }
     const ids = new Set(snapshot.map((c) => c.id));
-    invalidateSurfaceResources("board:cards", "tasks:queue");
+    invalidateSurfaceResources("board:cards");
     // Optimistic remove + drop selection if it pointed at a cleared card.
     setCards((prev) => prev.filter((c) => !ids.has(c.id)));
     if (selectedCardId && ids.has(selectedCardId)) setSelectedCardId(null);
@@ -686,7 +803,10 @@ export function BoardView({
     }
     if (cleared.length > 0) {
       setClearedBanner({ snapshot: cleared });
-      announce(`Cleared ${cleared.length} done task${cleared.length === 1 ? "" : "s"}. Undo available.`);
+      const kept = preserved.length > 0
+        ? ` Kept ${preserved.length} linked task${preserved.length === 1 ? "" : "s"}.`
+        : "";
+      announce(`Cleared ${cleared.length} done task${cleared.length === 1 ? "" : "s"}.${kept} Undo available.`);
     }
   };
 
@@ -696,35 +816,32 @@ export function BoardView({
     setClearedBanner(null);
     announce(`Restored ${banner.snapshot.length} cleared task${banner.snapshot.length === 1 ? "" : "s"}.`);
     try {
-      await Promise.all(
-        banner.snapshot.map((c) =>
-          fetch("/api/board", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              title: c.title,
-              notes: c.notes,
-              status: c.status,
-              priority: c.priority,
-              familiarId: c.familiarId,
-              sessionId: c.sessionId,
-              cwd: c.cwd,
-              projectId: c.projectId,
-              links: c.links,
-              github: c.github,
-              labels: c.labels,
-              startDate: c.startDate,
-              endDate: c.endDate,
-              template: c.template,
-              steps: c.steps.map((s) => ({ text: s.text })),
-            }),
-          }),
-        ),
-      );
+      // Restore the STORED cards, not a re-creation of them. Undo used to POST
+      // /api/board per card, which minted a new id and carried ~16 of the ~30
+      // fields — breaking every Bead/GitHub reference to the old id and losing
+      // step state, Asana links, dependencies and lifecycle history (cave-xddxs).
+      const res = await fetch("/api/board/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cards: banner.snapshot }),
+      });
+      const json = await res.json().catch(() => null) as
+        | { ok?: boolean; restored?: string[]; skipped?: string[] }
+        | null;
+      if (!res.ok || !json?.ok) throw new Error("restore failed");
+      // A skipped id means that card came back by another route while the undo
+      // banner was up; restore never overwrites, so say nothing was lost.
+      if ((json.skipped?.length ?? 0) > 0) {
+        setActionError(
+          `${json.skipped!.length} task${json.skipped!.length === 1 ? " was" : "s were"} already back — left as they are.`,
+        );
+      } else {
+        setActionError(null);
+      }
     } catch {
       setActionError("Couldn't restore all cleared tasks — reload to check.");
     }
-    invalidateSurfaceResources("board:cards", "tasks:queue");
+    invalidateSurfaceResources("board:cards");
     await load({ force: true });
   };
 
@@ -740,8 +857,24 @@ export function BoardView({
   const startTaskChat = async (
     id: string,
     projectRoot?: string,
-  ): Promise<{ sessionId: string; familiarId: string | null } | null> => {
+  ): Promise<{
+    sessionId: string;
+    familiarId: string | null;
+    initialPrompt?: string;
+    initialModelOverride?: string;
+    bridge?: string;
+  } | null> => {
     const card = cards.find((candidate) => candidate.id === id);
+    // Project-backed tasks must retain an explicit familiar chosen from the
+    // project's authorized roster. Falling back to the active/default
+    // familiar here would bypass the Project → Familiar picker and produce a
+    // late `project access denied` for installations whose active runtime is
+    // not granted this project.
+    if (card?.projectId && !card.familiarId) {
+      setChatLinkError("Choose an authorized familiar before starting work in this project.");
+      setChatLinkErrorCardId(id);
+      return null;
+    }
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
     setChatLinkError(null);
@@ -761,6 +894,9 @@ export function BoardView({
         card?: Card;
         sessionId?: string;
         familiarId?: string | null;
+        initialPrompt?: string;
+        initialModelOverride?: string;
+        bridge?: string;
       };
       if (!res.ok || !json.ok || !json.sessionId) {
         throw new Error(json.error ?? "failed to open task work");
@@ -770,7 +906,13 @@ export function BoardView({
         setCards((prev) => prev.map((candidate) => candidate.id === id ? updatedCard : candidate));
       }
       onSessionsChanged();
-      return { sessionId: json.sessionId, familiarId: json.familiarId ?? null };
+      return {
+        sessionId: json.sessionId,
+        familiarId: json.familiarId ?? null,
+        initialPrompt: json.initialPrompt,
+        initialModelOverride: json.initialModelOverride,
+        bridge: json.bridge,
+      };
     } catch (err) {
       setChatLinkError(err instanceof Error ? err.message : "failed to open task work");
       setChatLinkErrorCardId(id);
@@ -783,7 +925,11 @@ export function BoardView({
   const openTaskWork = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
     if (!card) return;
-    if (card.sessionId) {
+    // Project-backed sessions must still traverse the board-chat endpoint so
+    // a grant revoked after the session was created cannot be reopened from
+    // the Board without a fresh authorization check. Unscoped legacy cards
+    // have no project boundary to revalidate and can keep the direct path.
+    if (card.sessionId && !card.projectId) {
       if (isMobile) {
         const linkedSession = sessions.find((session) => session.id === card.sessionId);
         onJumpToSession?.(card.sessionId, linkedSession?.familiarId ?? card.familiarId ?? null);
@@ -803,7 +949,13 @@ export function BoardView({
 
     const started = await startTaskChat(id, project?.root);
     if (!started) return;
-    if (isMobile) {
+    if (started.bridge === "native-chat" && started.initialPrompt) {
+      setPendingBridgeStart({ cardId: id, sessionId: started.sessionId, initialPrompt: started.initialPrompt, initialModelOverride: started.initialModelOverride });
+    }
+    // Native Chat needs TaskWorkCockpit to hand the first prompt to ChatView.
+    // Jumping straight to the mobile session view would discard that one-shot
+    // handoff before a local conversation exists.
+    if (isMobile && started.bridge !== "native-chat") {
       onJumpToSession?.(started.sessionId, started.familiarId);
       return;
     }
@@ -826,11 +978,24 @@ export function BoardView({
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          familiars: { [familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+          familiars: {
+            [familiarId]: {
+              harness: runtime,
+              model: modelForRuntimeSwitch(runtime),
+            },
+          },
         }),
       });
       if (!res.ok) {
         setChatLinkError(`Could not switch harness (${res.status}).`);
+        return;
+      }
+      // A task override names a model for the familiar's previous runtime.
+      // Keep recovery portable across Codex, OpenClaw, Hermes, and registry
+      // adapters by falling back to the newly selected harness's configured
+      // default instead of forwarding a potentially incompatible model id.
+      if (!(await patchCard(id, { modelOverride: null, modelOverrideHarness: null }))) {
+        setChatLinkError("Could not clear the prior task model after switching harness.");
         return;
       }
       window.dispatchEvent(new Event("cave:familiars-refresh"));
@@ -868,6 +1033,16 @@ export function BoardView({
           setWorkCardId(null);
         }}
         onUnlinkSession={() => patchCard(workCard.id, { sessionId: null })}
+        initialPrompt={
+          pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
+            ? pendingBridgeStart.initialPrompt
+            : null
+        }
+        initialModelOverride={
+          pendingBridgeStart?.cardId === workCard.id && pendingBridgeStart.sessionId === workCard.sessionId
+            ? pendingBridgeStart.initialModelOverride
+            : undefined
+        }
         onSlashCommand={onSlashFromChat}
         onOpenOnboarding={onOpenOnboarding}
         onOpenUrl={onOpenUrl}
@@ -888,7 +1063,7 @@ export function BoardView({
             ariaLabel="Tasks tabs"
             idPrefix="tasks"
             value={activeTab}
-            onChange={setActiveTab}
+            onChange={selectActiveTab}
             items={[
               { id: "tasks" as const, label: "Tasks" },
               { id: "queue" as const, label: "Queue" },
@@ -897,37 +1072,13 @@ export function BoardView({
         ) : null}
         {activeTab === "tasks" ? (
         <>
-        <div className="board-search-wrap">
-          <Icon name="ph:magnifying-glass" width={13} className="board-search-icon" />
-          <label className="sr-only" htmlFor="board-search">Search tasks</label>
-          <input
-            ref={searchRef}
-            id="board-search"
-            className="board-search-input"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && searchQuery) {
-                e.preventDefault();
-                setSearchQuery("");
-              }
-            }}
-            placeholder='Search tasks or type is:open cwd:coven-cave url:github'
-          />
-          {!searchQuery ? (
-            <kbd aria-hidden className="board-search-kbd">/</kbd>
-          ) : null}
-          {searchQuery ? (
-            <button
-              type="button"
-              className="board-search-clear"
-              onClick={() => setSearchQuery("")}
-              aria-label="Clear task search"
-            >
-              <Icon name="ph:x-bold" width={10} />
-            </button>
-          ) : null}
-        </div>
+        <BoardTokenSearch
+          value={searchQuery}
+          onChange={setSearchQuery}
+          familiars={familiars}
+          cards={cards}
+          inputRef={searchRef}
+        />
         <div className="board-header-controls">
           {/* Grouping drives status columns (kanban) / status rows (table) when
               "Status", and swimlanes / grouped rows when "Familiar" or
@@ -953,7 +1104,7 @@ export function BoardView({
                 >
                   Task
                 </button>
-                {activeFamiliarId === null ? (
+                {showFamiliarGrouping ? (
                   <button
                     type="button"
                     className={`board-group-toggle-btn${effectiveGanttGroup === "familiar" ? " board-group-toggle-btn--active" : ""}`}
@@ -974,7 +1125,7 @@ export function BoardView({
             >
               Status
             </button>
-            {activeFamiliarId === null ? (
+            {showFamiliarGrouping ? (
               <button
                 type="button"
                 className={`board-group-toggle-btn${effectiveGroupBy === "familiar" ? " board-group-toggle-btn--active" : ""}`}
@@ -1017,10 +1168,46 @@ export function BoardView({
             </button>
           </div>
 
-          {/* Chrome budget (§8): Select-multiple and Clear-done are occasional
-              verbs — they live in the overflow menu. The destructive clear
-              still routes through the inline confirm group, which temporarily
-              replaces the menu while deciding. */}
+          {/* Redesign: Select-multiple is a first-class toolbar verb (a
+              visible icon button), not an overflow item. It applies to the
+              kanban + table surfaces (the gantt has no row selection). */}
+          {!isMobile && (viewMode === "kanban" || viewMode === "table") ? (
+            <button
+              type="button"
+              className={`board-icon-btn${cardSelect.selectMode ? " board-icon-btn--active" : ""}`}
+              title="Select multiple"
+              aria-pressed={cardSelect.selectMode}
+              onClick={() => cardSelect.setSelectMode(!cardSelect.selectMode)}
+            >
+              <Icon name="ph:check-square" width={16} />
+              {cardSelect.selectMode && selectionCount > 0 ? (
+                <span className="board-icon-btn-count">{selectionCount}</span>
+              ) : null}
+            </button>
+          ) : null}
+
+          {/* Redesign: Filter dropdown narrows by the grouped dimension. */}
+          {showGroupToggle ? (
+            <BoardFilterMenu
+              dimension={effectiveGroupBy === "project" ? "project" : "status"}
+              statusOptions={STATUSES.map((st) => ({ id: st, label: STATUS_TOOLBAR_LABELS[st], checked: !excludedStatus.has(st) }))}
+              projectOptions={projectFilterLabels.map((p) => ({ id: p, label: p, checked: !excludedProject.has(p) }))}
+              onToggleStatus={toggleStatusFilter}
+              onToggleProject={toggleProjectFilter}
+              onSelectAll={() => { setExcludedStatus(new Set()); setExcludedProject(new Set()); }}
+              activeCount={effectiveGroupBy === "project"
+                ? projectFilterLabels.filter((p) => !excludedProject.has(p)).length
+                : STATUSES.length - excludedStatus.size}
+              totalCount={effectiveGroupBy === "project" ? projectFilterLabels.length : STATUSES.length}
+            />
+          ) : null}
+
+          {/* The trash button owns both destructive verbs: in select mode it
+              deletes the selection (inline confirm popover); otherwise it
+              clears the done tasks in view (the confirm group replaces it
+              while deciding). That keeps clear-done reachable on every
+              surface — table/gantt/phone included — without an overflow menu;
+              the kanban Done column also exposes it inline. */}
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
@@ -1040,26 +1227,36 @@ export function BoardView({
               </button>
             </div>
           ) : (
-            <OverflowMenu ariaLabel="More task actions">
-              {!isMobile && (viewMode === "kanban" || viewMode === "table") && filtered.length > 0 && !cardSelect.selectMode ? (
-                <PopoverItem
-                  icon="ph:check-square"
-                  onSelect={() => cardSelect.setSelectMode(true)}
-                  title="Select multiple tasks"
-                >
-                  Select multiple
-                </PopoverItem>
-              ) : null}
-              <PopoverItem
-                icon="ph:trash"
-                danger
-                disabled={doneCards.length === 0}
-                onSelect={() => setClearConfirm(true)}
-                title="Remove all done tasks in view"
+            <div className="board-icon-wrap">
+              <button
+                type="button"
+                className={`board-icon-btn${hasSelection ? " board-icon-btn--danger" : ""}`}
+                title={cardSelect.selectMode ? "Delete selected" : "Clear done"}
+                disabled={cardSelect.selectMode ? !hasSelection : doneCards.length === 0}
+                onClick={() => {
+                  if (cardSelect.selectMode) {
+                    if (hasSelection) setToolbarDeleteConfirm(true);
+                  } else if (doneCards.length > 0) {
+                    setClearConfirm(true);
+                  }
+                }}
               >
-                Clear done
-              </PopoverItem>
-            </OverflowMenu>
+                <Icon name="ph:trash" width={16} />
+              </button>
+              {toolbarDeleteConfirm && hasSelection ? (
+                <>
+                  <div className="board-confirm-scrim" onClick={() => setToolbarDeleteConfirm(false)} />
+                  <div className="board-confirm-pop" role="dialog" aria-label="Confirm delete tasks">
+                    <div className="board-confirm-title">Delete {selectionCount} {selectionCount === 1 ? "task" : "tasks"}?</div>
+                    <div className="board-confirm-desc">This removes them from the queue. Undo is available briefly.</div>
+                    <div className="board-confirm-actions">
+                      <button type="button" className="board-toolbar-btn" onClick={() => setToolbarDeleteConfirm(false)}>Cancel</button>
+                      <button type="button" className="board-confirm-delete" onClick={() => { bulkDelete(); setToolbarDeleteConfirm(false); }}>Delete</button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
           )}
 
           <button
@@ -1067,7 +1264,8 @@ export function BoardView({
             className="board-new-card-btn"
             onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
           >
-            + New task
+            <Icon name="ph:plus" width={15} />
+            New task
           </button>
         </div>
         </>

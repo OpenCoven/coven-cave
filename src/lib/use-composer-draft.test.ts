@@ -19,8 +19,25 @@ assert.match(
 // ── Debounce (extracted verbatim from the two composers) ─────────────────────
 assert.match(
   src,
-  /useEffect\(\(\) => \{\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(key, value\);\s*\}, delayMs\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[key, value, delayMs\]\);/,
+  /useEffect\(\(\) => \{\s*latestRef\.current = \{ key, value \};\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(key, value\);\s*\}, delayMs\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[key, value, delayMs\]\);/,
   "draft writes are debounced so mobile typing does not hit localStorage per keystroke",
+);
+
+// ── Flush on unmount ─────────────────────────────────────────────────────────
+// The debounce cleanup CANCELS a pending write, so an unmount within delayMs
+// of the last keystroke dropped the draft's tail (pane-set remounts, mode
+// switches). A ref-driven empty-dep cleanup flushes the latest value instead.
+assert.match(
+  src,
+  /useEffect\(\s*\(\) => \(\) => writeComposerDraft\(latestRef\.current\.key, latestRef\.current\.value\),\s*\[\],\s*\);/,
+  "unmount flushes the latest draft value the cancelled debounce never wrote",
+);
+// clearNow must update latestRef too, or a send that unmounts the composer in
+// the same tick would flush the PRE-send text — resurrecting the sent prompt.
+assert.match(
+  src,
+  /const clearNow = useCallback\(\(\) => \{\s*latestRef\.current = \{ key, value: "" \};\s*writeComposerDraft\(key, ""\);\s*\}, \[key\]\);/,
+  "clearNow updates latestRef so a send-then-unmount flushes empty, never pre-send text",
 );
 
 // ── Remove-on-empty ──────────────────────────────────────────────────────────
@@ -33,7 +50,7 @@ assert.match(
 // ── Synchronous clear for send paths ─────────────────────────────────────────
 assert.match(
   src,
-  /const clearNow = useCallback\(\(\) => writeComposerDraft\(key, ""\), \[key\]\);/,
+  /const clearNow = useCallback\(\(\) => \{[\s\S]*?writeComposerDraft\(key, ""\);\s*\}, \[key\]\);/,
   "clearNow writes the empty draft synchronously — a send can unmount the composer and cancel the debounced writer",
 );
 

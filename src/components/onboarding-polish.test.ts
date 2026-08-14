@@ -7,6 +7,50 @@ const source = [
   readFileSync(new URL("./onboarding-model.ts", import.meta.url), "utf8"),
 ].join("\n");
 
+// Setup status actions stay together as one compact row. On narrow panes the
+// row scrolls within its own width instead of wrapping or widening the page.
+const setupHeader = source.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+const setupActionsMatch = setupHeader.match(
+  /<div\s+className="([^"]*\boverflow-x-auto\b[^"]*)"/,
+);
+const setupActionsClasses = setupActionsMatch?.[1]?.split(/\s+/) ?? [];
+for (const className of [
+  "flex",
+  "w-full",
+  "flex-nowrap",
+  "items-center",
+  "gap-2",
+  "overflow-x-auto",
+  "lg:w-auto",
+  "lg:shrink-0",
+]) {
+  assert.ok(
+    setupActionsClasses.includes(className),
+    `setup actions retain ${className} without pinning harmless class order`,
+  );
+}
+assert.equal(
+  setupHeader.match(/focus-ring-inset/g)?.length,
+  2,
+  "scrollable setup actions keep their focus indicator inside the clipped row",
+);
+assert.equal(
+  setupHeader.match(/shrink-0 whitespace-nowrap/g)?.length,
+  3,
+  "each setup status action keeps its label on one line",
+);
+
+assert.doesNotMatch(
+  source,
+  /SalemPathfinder(?:Entry|Request)|Ask Salem for setup help/,
+  "the setup page no longer mounts or prepares the Ask Salem entry",
+);
+assert.doesNotMatch(
+  source,
+  /Installing the CovenCave app itself|platformCopy\.caveInstall/,
+  "the setup page no longer renders the redundant app-install accordion",
+);
+
 // Refresh-failure tracking
 assert.match(
   source,
@@ -24,26 +68,28 @@ assert.match(
   "Onboarding should reset statusFailures when a poll succeeds",
 );
 
-// The threshold banner — must be reachable from the rendered tree
+// Partial status failure is advisory when the named readiness decision still
+// allows entry. The pure helper owns the two copy branches; this render
+// contract keeps the warning, retry, and continuation controls independent.
 assert.match(
   source,
-  /statusFailures >= 3 \?/,
-  "Onboarding should show the unreachable-status banner only after multiple consecutive failures (no single-blip flashes)",
+  /const statusWarningMessage = onboardingStatusWarningMessage\(\{\s*statusFailures,\s*mayContinue,\s*\}\)/,
+  "status warning copy derives from failure evidence plus the continuation decision",
 );
 assert.match(
   source,
-  /Setup status is unreachable\./,
-  "Onboarding banner copy should name the failure mode directly",
+  /\{statusWarningMessage \? \([\s\S]{0,900}?role="status"[\s\S]{0,900}?Setup check unavailable[\s\S]{0,900}?\{statusWarningMessage\}/,
+  "partial-check warnings are non-blocking status updates with helper-owned copy",
 );
 assert.match(
   source,
-  /onClick=\{\(\) => void refresh\(\)\}/,
-  "Onboarding banner should expose a retry affordance",
+  /<Button\s+variant="secondary"\s+size="sm"\s+onClick=\{\(\) => void refresh\(\)\}[\s\S]{0,120}?Retry setup check/,
+  "the warning exposes a shared secondary retry Button",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /role="alert"/,
-  "Onboarding status-unreachable banner should announce as alert",
+  /statusFailures >= 3|Setup status is unreachable\./,
+  "the former outage threshold and blocking copy do not mask usable partial status",
 );
 
 assert.doesNotMatch(
@@ -132,43 +178,53 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{[\s\S]*advanceOnboardingAutoFinishGate[\s\S]*isLatestOnboardingStatusRequest[\s\S]*\} from "@\/lib\/onboarding-gate"/,
-  "OnboardingOverlay imports the shared onboarding gate helpers",
+  /import \{ advanceOnboardingAutoFinishGate \} from "@\/lib\/onboarding-gate"/,
+  "OnboardingOverlay keeps the shared auto-finish gate",
 );
 assert.match(
   source,
-  /const statusGenerationRef = useRef\(0\)/,
-  "status polling tracks the latest onboarding-status generation",
+  /const ONBOARDING_STATUS_TIMEOUT_MS = 5_000/,
+  "status polling has a bounded five-second request lifetime",
 );
 assert.match(
   source,
-  /const statusRefreshInFlightRef = useRef\(false\)/,
-  "status polling tracks whether a request is already in flight",
+  /const statusRequestCoordinatorRef =\s*useRef<OnboardingStatusRequestCoordinator \| null>\(null\);[\s\S]{0,300}?createOnboardingStatusRequestCoordinator\(\)/,
+  "one coordinator instance owns request coalescing and generations across renders",
 );
 assert.match(
   source,
-  /if \(statusRefreshInFlightRef\.current\) return;[\s\S]*statusRefreshInFlightRef\.current = true;[\s\S]*const requestId = \+\+statusGenerationRef\.current;/,
-  "overlapping poll ticks are skipped before a new status generation is created",
+  /const request = statusRequestCoordinator\.begin\(\);\s*if \(!request\) return;\s*const \{ controller \} = request;/,
+  "overlapping poll ticks coalesce before a request is issued",
 );
 assert.match(
   source,
-  /if \(!isLatestOnboardingStatusRequest\(\{ requestId, currentRequestId: statusGenerationRef\.current \}\)\) return;\s*setStatus\(json\);\s*setStatusFailures\(0\);/s,
-  "only the latest successful status poll may update status or clear failure count",
+  /const timeout = setTimeout\(\s*\(\) => controller\.abort\(\),\s*ONBOARDING_STATUS_TIMEOUT_MS,\s*\);[\s\S]{0,260}?signal: controller\.signal/,
+  "each status fetch is aborted at the five-second deadline",
+);
+assert.equal(
+  source.match(/if \(!statusRequestCoordinator\.isLatest\(request\)\) return;/g)?.length,
+  3,
+  "success, non-OK, and thrown outcomes all reject stale generations",
 );
 assert.match(
   source,
-  /if \(!isLatestOnboardingStatusRequest\(\{ requestId, currentRequestId: statusGenerationRef\.current \}\)\) return;\s*setStatusFailures\(\(n\) => n \+ 1\);/s,
-  "stale failed polls cannot increment the failure counter",
+  /finally \{\s*clearTimeout\(timeout\);\s*statusRequestCoordinator\.finish\(request\);\s*\}/,
+  "every settled request clears its timer and releases the coordinator",
 );
 assert.match(
   source,
-  /finally \{\s*statusRefreshInFlightRef\.current = false;\s*\}/,
-  "status polling releases the in-flight guard after every request outcome",
+  /useEffect\(\(\) => \{\s*if \(!open\) return;\s*return \(\) => \{\s*statusRequestCoordinator\.cancel\(\);\s*\};\s*\}, \[open, statusRequestCoordinator\]\)/,
+  "closing onboarding aborts and invalidates an in-flight status request",
 );
 assert.match(
   source,
-  /return \(\) => \{[\s\S]*statusGenerationRef\.current \+= 1;[\s\S]*\};/s,
-  "closing onboarding invalidates in-flight status generations before late responses resolve",
+  /if \(pollRef\.current\) clearInterval\(pollRef\.current\);\s*pollRef\.current = null;\s*statusRequestCoordinator\.cancel\(\);/,
+  "heartbeat cleanup also cancels any in-flight status request",
+);
+assert.doesNotMatch(
+  source,
+  /statusGenerationRef|statusRefreshInFlightRef|isLatestOnboardingStatusRequest/,
+  "the retired split generation and in-flight refs cannot drift from cancellation state",
 );
 assert.match(
   source,
@@ -235,8 +291,8 @@ assert.match(
 );
 assert.match(
   source,
-  /announce\([\s\S]{0,200}?— done\. Next: step /,
-  "completing a step announces the completion and what comes next",
+  /const transitionAnnouncement = onboardingStepTransitionAnnouncement\(\{[\s\S]{0,240}?previousActiveStepKey: prev,[\s\S]{0,240}?activeStepKey,[\s\S]{0,240}?setupComplete,[\s\S]{0,240}?steps,[\s\S]{0,120}?\}\);\s*if \(transitionAnnouncement\) announce\(transitionAnnouncement\);/,
+  "step changes use the shared announcement helper before entering the live region",
 );
 assert.match(
   source,
@@ -245,12 +301,13 @@ assert.match(
 );
 
 // ── cave-4op: the wizard's primary CTAs use the shared Button primitive ──────
-// The four accent-background call-to-action buttons (Create Coven home, Start
-// local daemon, Install the Coven CLI, Install <adapter>) render through
+// The six accent-background call-to-action sites (Create home, start daemon,
+// both mutually exclusive footer actions, Install the Coven CLI, and Install
+// <adapter>) render through
 // <Button variant="primary">, so their radius / height / focus ring /
 // disabled + busy treatment come from one place. The two install CTAs use the
-// primitive's `loading` prop for their spinner. Bordered secondary actions,
-// option cards, and skip links stay bespoke here.
+// primitive's `loading` prop for their spinner. The status retry also uses the
+// shared secondary primitive; option cards and skip links stay bespoke here.
 assert.match(
   source,
   /import \{ Button \} from "@\/components\/ui\/button"/,
@@ -258,8 +315,8 @@ assert.match(
 );
 assert.equal(
   (source.match(/<Button\s+variant="primary"/g) ?? []).length,
-  4,
-  'all four primary CTAs render through <Button variant="primary">',
+  6,
+  'all six primary CTA sites render through <Button variant="primary">',
 );
 assert.match(
   source,
@@ -275,6 +332,28 @@ assert.doesNotMatch(
   source,
   /className="focus-ring inline-flex[^"]*bg-\[var\(--accent-presence\)\][^"]*text-\[var\(--accent-presence-foreground\)\]/,
   "the hand-rolled accent-bg CTA recipe is gone (now Button variant=primary)",
+);
+
+// Complete, continue, and blocked are three distinct footer decisions. The
+// permissive path dismisses without summoning; only the completed path can
+// make the Summoning Circle promise.
+assert.match(
+  source,
+  /\{setupComplete \? \([\s\S]{0,500}?<Button[\s\S]{0,180}?onClick=\{finishOnboarding\}[\s\S]{0,300}?: mayContinue \? \([\s\S]{0,240}?<Button variant="primary" onClick=\{continueToCave\}>[\s\S]{0,160}?Continue to Cave[\s\S]{0,300}?: \([\s\S]{0,220}?role="status"[\s\S]{0,220}?Finish required setup/,
+  "the footer keeps completion, advisory continuation, and required remediation separate",
+);
+const continueHandler =
+  source.match(/const continueToCave = useCallback\(\(\) => \{[\s\S]*?\}, \[onDismiss\]\);/)?.[0] ?? "";
+assert.ok(continueHandler, "the advisory continuation handler is present");
+assert.match(
+  continueHandler,
+  /localStorage\.setItem\("cave:onboarding:dismissed", "1"\);[\s\S]*onDismiss\(\);/,
+  "Continue to Cave records dismissal before closing",
+);
+assert.doesNotMatch(
+  continueHandler,
+  /requestSummonFamiliar/,
+  "advisory continuation never makes the completed setup summoning promise",
 );
 
 // ── cave-uvv7: the finish CTA keeps its promise ──────────────────────────────
@@ -370,6 +449,20 @@ assert.match(
   source,
   /if \(!setupError \|\| setupRetryBusy\) return;/,
   "retry is a no-op while the action is already in flight (no stacked requests)",
+);
+
+// A failed Codex adapter probe is not proof that the executable is missing.
+// Setup must surface the exact availability remediation rather than offering a
+// misleading generic install card.
+assert.match(
+  source,
+  /const availabilityIssue = adapter\.availability\?\.state && adapter\.availability\.state !== "ready"/,
+  "runtime cards distinguish launch availability from executable installation",
+);
+assert.match(
+  source,
+  /\{availabilityIssue\?\.message \? \([\s\S]{0,600}?role="alert"[\s\S]{0,600}?\{availabilityIssue\.message\}[\s\S]{0,600}?\) : !adapter\.installed \? \(/,
+  "an unavailable runtime shows its probe remediation before the generic install action",
 );
 
 console.log("onboarding-polish.test.ts: ok");

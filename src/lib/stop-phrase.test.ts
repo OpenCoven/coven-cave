@@ -6,9 +6,11 @@ import { test } from "node:test";
 import {
   DEFAULT_STOP_PHRASE,
   STOP_PHRASE_MAX_LENGTH,
+  appendStopPhrase,
   matchesStopPhrase,
   normalizeStopUtterance,
   parseStopPhrases,
+  removeStopPhraseAt,
 } from "./stop-phrase.ts";
 import {
   applyPreferencesPatch,
@@ -86,6 +88,39 @@ test("normalizeStopUtterance canonicalizes case, whitespace, trailing punctuatio
   assert.equal(normalizeStopUtterance(""), "");
 });
 
+test("appendStopPhrase normalizes, deduplicates, and preserves bounded storage", () => {
+  assert.deepEqual(appendStopPhrase("stop, halt", " Cancel! "), {
+    value: "stop, halt, cancel",
+    added: true,
+  });
+  assert.deepEqual(appendStopPhrase("stop, halt", "STOP."), {
+    value: "stop, halt",
+    added: false,
+    reason: "duplicate",
+  });
+  assert.deepEqual(appendStopPhrase("stop", "   "), {
+    value: "stop",
+    added: false,
+    reason: "empty",
+  });
+  const oversized = "x".repeat(STOP_PHRASE_MAX_LENGTH);
+  assert.deepEqual(appendStopPhrase("stop", oversized), {
+    value: "stop",
+    added: false,
+    reason: "too-long",
+  });
+});
+
+test("removeStopPhraseAt removes one normalized option without truncating siblings", () => {
+  assert.equal(removeStopPhraseAt("stop, cancel, halt", 1), "stop, halt");
+  assert.equal(removeStopPhraseAt("stop, cancel", 99), "stop, cancel");
+});
+
+test("removeStopPhraseAt names its filter position as an index", () => {
+  const source = readFileSync(new URL("./stop-phrase.ts", import.meta.url), "utf8");
+  assert.match(source, /filter\(\(_,\s*optionIndex\)\s*=>\s*optionIndex !== index\)/);
+});
+
 // ── Preference schema plumbing ────────────────────────────────────────────────
 
 test("preferences default stopPhrase and survive normalize/patch round-trips", () => {
@@ -93,7 +128,7 @@ test("preferences default stopPhrase and survive normalize/patch round-trips", (
   assert.equal(defaults.general.stopPhrase, DEFAULT_STOP_PHRASE);
 
   // Legacy files without the field normalize to the default.
-  const legacy = normalizeCavePreferences({ general: { newsHeadlines: false } });
+  const legacy = normalizeCavePreferences({ general: {} });
   assert.equal(legacy.general.stopPhrase, DEFAULT_STOP_PHRASE);
 
   // A patch can change it; empty string persists (that is the off switch).
@@ -101,7 +136,7 @@ test("preferences default stopPhrase and survive normalize/patch round-trips", (
   assert.equal(custom.general.stopPhrase, "halt");
   const disabled = applyPreferencesPatch(custom, { general: { stopPhrase: "" } });
   assert.equal(disabled.general.stopPhrase, "");
-  assert.equal(disabled.general.newsHeadlines, true);
+  assert.equal(disabled.general.celebrations, true);
 });
 
 test("validatePreferencesPatch validates stopPhrase as a trimmed bounded string", () => {
@@ -118,20 +153,24 @@ test("validatePreferencesPatch validates stopPhrase as a trimmed bounded string"
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
-test("chat composer send() intercepts the stop phrase before the busy bail", () => {
+test("chat composer send() intercepts the stop phrase before busy queueing", () => {
   const src = readFileSync(path.join(repoRoot, "src/components/chat-view.tsx"), "utf8");
   assert.match(src, /matchesStopPhrase, readStopPhrase \} from "@\/lib\/stop-phrase"/);
   const intercept = src.indexOf("busy && matchesStopPhrase(text, readStopPhrase())");
   assert.ok(intercept > 0, "send() consults the stop phrase while busy");
-  const bail = src.indexOf("if (busy) return;", intercept);
-  assert.ok(bail > intercept, "intercept sits before the CHAT-D5-01 busy bail");
-  const between = src.slice(intercept, bail);
+  const queue = src.indexOf("const queueing = busy || abortRef.current;", intercept);
+  assert.ok(queue > intercept, "intercept sits before the busy queue path");
+  const between = src.slice(intercept, queue);
   assert.match(between, /cancelSend\(\)/);
 });
 
-test("Settings → General exposes the stop phrases field", () => {
+test("Settings → General exposes the stop-phrase chip editor", () => {
   const src = readFileSync(path.join(repoRoot, "src/components/settings-shell.tsx"), "utf8");
-  assert.match(src, /<StopPhraseField \/>/);
-  assert.match(src, /writeStopPhrase\(draft\)/);
-  assert.match(src, /aria-label="Stop phrases"/);
+  assert.match(src, /parseStopPhrases\(saved\)/);
+  assert.match(src, /appendStopPhrase\(saved, draft\)/);
+  assert.match(src, /removeStopPhraseAt\(saved, index\)/);
+  assert.match(src, /aria-label=\{`Remove stop phrase \$\{phrase\}`\}/);
+  assert.match(src, /aria-label="Add stop phrase"/);
+  assert.match(src, /e\.key === "Backspace"/);
+  assert.match(src, />\s*Clear\s*<\/Button>/);
 });

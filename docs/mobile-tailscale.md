@@ -2,6 +2,9 @@
 
 This runs CovenCave's browser surface on your development machine and exposes it privately to your phone through Tailscale Serve with a short-lived mobile invite.
 
+For a device you own, you can skip the invite entirely — see
+[Tokenless access by tailnet device identity](#tokenless-access-by-tailnet-device-identity).
+
 ## Requirements
 
 - Tailscale installed and signed in on the development machine.
@@ -37,15 +40,11 @@ pnpm mobile:tailscale:stop     # stop the dev server and reset Tailscale Serve
 For a local simulator/emulator workflow, use the checked-in wrappers:
 
 ```bash
-pnpm mobile:ios:sim
-pnpm mobile:android:setup   # one-time SDK, AVD, and Tauri project setup
-pnpm mobile:android:start
-pnpm mobile:android:dev
+pnpm mobile:ios:sim   # xcodegen generate + xcodebuild the native app onto the iOS simulator
 ```
 
-The Android wrapper uses `Coven_Cave_API_35` by default, selects the system
-image ABI for Apple Silicon or Intel, chooses a free development port in
-`3000..3010`, and keeps `src-tauri/gen/android/` as ignored local build output.
+The iOS wrapper drives the native Swift app under `apps/ios/CovenCave` (Android
+is not a supported target).
 
 Set `PRINT_URL=1` only when you intentionally want the raw invite printed in a trusted local terminal:
 
@@ -56,6 +55,39 @@ PRINT_URL=1 pnpm mobile:tailscale:invite
 The app stores the invite in an HTTP-only cookie after the first successful request and removes it from the visible URL.
 
 In the packaged desktop app, click **Open on phone** in the top bar to create the same kind of invite as a QR code. Scan it from a phone signed into the same tailnet.
+
+## Keep the Mac reachable
+
+The packaged macOS app has two explicit, default-off controls under **Settings
+→ Phone → Keep this Mac reachable**:
+
+- **Keep Mac awake for phone** holds a macOS power assertion after a phone has
+  paired. **Only keep awake on power** is on by default, so battery power keeps
+  the Mac's normal sleep policy. Turning either setting off releases the
+  assertion.
+- **Background availability** installs a per-user LaunchAgent. The GUI owns the
+  loopback server while its main window is open; after that window closes, the
+  LaunchAgent starts the bundled `server.mjs` without opening the app. Disabling
+  the option unloads and removes the LaunchAgent.
+
+Both the GUI server and the LaunchAgent server remain bound to
+`127.0.0.1`. Whenever either server chooses a different port, it repoints
+Tailscale Serve at that exact loopback backend. Existing signed phone tokens
+continue to use the same persisted mobile access secret.
+
+Tailscale cannot wake a sleeping Mac. Its userspace WireGuard daemon sleeps
+with the computer, so the phone has no path to deliver a wake packet. Bonjour
+sleep proxy is limited to local-network mDNS and does not make wake-on-LAN work
+across a tailnet. Use the keep-awake option or an always-on Server Hub when the
+phone must remain reachable.
+
+## Connect Cave to a remote Server Hub
+
+Open **Settings → Daemon → Connection**, choose **Server hub**, and use the **Tailnet devices** list to select the machine running the remote Coven daemon. Cave discovers this device and online peers from `tailscale status --json`; it uses the device's `100.x` address when available and fills the standard daemon port, `8787`. The current machine is labelled **This device**. You can still enter a MagicDNS name or another private HTTP URL manually.
+
+Before Cave saves a Server Hub URL, it checks `/api/v1/health` with a short timeout and shows the result and latency beside the field. A healthy target saves normally. An unreachable, unauthorized, or unhealthy target remains unsaved until you explicitly choose **Save anyway**. The Status group then distinguishes a connected hub and its last successful check from a configured-but-unreachable hub.
+
+When Phone pairing has already resolved this machine's tailnet address, expand **Manual setup** and choose **Use this device as hub** to carry that address into the Server Hub field. Cave still runs the reachability check before saving it.
 
 ## Remote Agent Handoff
 
@@ -111,6 +143,130 @@ Do not run CovenCave with `-H 0.0.0.0` for mobile access. Binding to all interfa
 pnpm mobile:tailscale:stop
 ```
 
+## Tokenless access by tailnet device identity
+
+The invite flow authorizes a phone with a **shared bearer secret** that you copy,
+deep-link, or scan. It works, but the secret is transferable: anything that
+learns it is you. For a device you own, you can authorize the *device itself*
+instead and stop minting invites.
+
+Find the stable node ID of the devices you want to admit:
+
+```bash
+node scripts/tailnet-allowlist.mjs                  # list every visible device
+node scripts/tailnet-allowlist.mjs my-phone        # emit the env line for one
+```
+
+Then start the server with that allowlist:
+
+```bash
+COVEN_CAVE_TAILNET_ALLOWED_NODES=nEXAMPLE0000011CNTRL pnpm dev
+```
+
+That device now reaches the app over Tailscale Serve with no token at all. Every
+other tailnet node is refused, so this is *not* the old "anyone on the tailnet"
+behavior — tailnet membership alone has never been authorization here, and still
+isn't.
+
+**How it is enforced.** `server.ts` is the only component that sees the raw TCP
+socket. It resolves the forwarded tailnet address against a `tailscale status`
+poll (refreshed every 30s), checks the resulting stable node ID against the
+allowlist, and stamps a header signed with a per-boot secret that never leaves
+the process. `proxy.ts` verifies that stamp in constant time. Any client-supplied
+copy of the header is deleted before Next ever sees the request, so the stamp
+cannot be forged from outside.
+
+**Why the forwarded address is trusted here.** The TCP peer must already be
+loopback, because Tailscale Serve terminates TLS and forwards to `127.0.0.1`. A
+local process able to forge the forwarded-for header could instead connect
+straight to loopback, which grants strictly *more* authority. So reading it adds
+no new exposure while upgrading remote auth from a shared secret to WireGuard
+device identity.
+
+**Fail-closed behavior.** No allowlist means no tailnet access. An unreadable
+`tailscale status` clears the allowlist rather than leaving stale entries, so a
+revoked device loses access instead of coasting on a cached mapping. Revoking a
+device takes at most one refresh interval.
+
+**Notes and limits.**
+
+- Stable node IDs are used deliberately: hostnames and tailnet IPs both move,
+  node IDs survive renames, IP changes, and re-authentication.
+- Local-only surfaces (Codex automation runs) stay off this path exactly as they
+  stay off the invite path — a forwarded Host cannot prove a loopback origin.
+- This authorizes a **device**, not a person. Anyone holding an unlocked
+  allowlisted phone is that device. The next section closes that gap.
+
+## Proving the human, not just the device (passkeys)
+
+Tailnet identity answers *which device*. It cannot answer *which human* — an
+unlocked allowlisted phone in someone else's hand is still the allowlisted
+phone.
+
+The app has had a biometric lock for a while, but it was a SwiftUI screen gated
+on a local preference: nothing about it reached the server, so a client with
+biometrics switched off was indistinguishable from one that had just passed Face
+ID. It was a UI lock, not an authorization signal.
+
+A passkey fixes that, because the proof is a signature rather than a claim. The
+private key lives in the Secure Enclave with user verification required, so it
+**cannot sign at all** without a successful biometric check. A verifying
+signature therefore *is* the biometric check.
+
+### Enrolling
+
+Open **Settings → Phone → Passkey** on the device you want to enroll and choose
+**Add a passkey**. Enrollment is reachable only from a peer the server has
+already authenticated at the socket layer — an allowlisted tailnet device, or a
+direct loopback connection on the machine itself. The passkey is a *second*
+factor; it does not replace the first.
+
+### Requiring it
+
+```bash
+COVEN_CAVE_PASSKEY_REQUIRED=1 pnpm dev
+```
+
+Off by default, deliberately: arming it before anything is enrolled would lock
+the phone out of the very ceremony that would satisfy it. With it on, every
+remote `/api` request must carry a presence proof no older than 15 minutes.
+
+Three exemptions, each for a reason:
+
+- **Page navigations.** The surface that runs the WebAuthn ceremony has to
+  render, or the gate is a wall with no door.
+- **`/api/passkey/*`.** Obtaining presence cannot itself require presence.
+- **Local ingress.** A direct loopback peer is someone sitting at the machine.
+
+That second exemption would otherwise be the bypass — an attacker holding a
+stolen allowlisted device could enroll *their own* credential and satisfy the
+gate with it. So the sensitive endpoints in that family police themselves:
+enrolling an **additional** credential requires the existing one, and so does
+revoking any. Only bootstrapping the very first is exempt.
+
+Note that a **mobile invite token can never satisfy this gate**. The presence
+proof is bound to a device identity and a shared bearer secret does not carry
+one. Arming the requirement means remote access is by tailnet device identity
+plus biometrics, full stop.
+
+### What is and is not verified
+
+Verified: the signature, the server-minted single-use challenge, the origin and
+RP ID, the user-verification flag, the signature counter when the authenticator
+implements one, and that the credential is bound to the presenting tailnet node.
+
+**Not** verified: the attestation statement. Checking it means walking a
+certificate chain to Apple's root, which proves the authenticator *model* — that
+the key really is in a Secure Enclave rather than a software authenticator that
+can simply assert the UV flag. The gap is narrow, because registration is
+already reachable only from an allowlisted device, but it is real and it is
+filed as `cave-01v4u`. The stored credential records the attestation format so
+the gap is visible in state rather than implied.
+
+Presence tokens are keyed by a secret minted per boot, so restarting the server
+invalidates every outstanding proof. That is intended: "the process that saw
+your biometric proof is gone" is a good reason to ask for it again.
+
 ## Troubleshooting
 
 If the phone cannot open the URL:
@@ -123,33 +279,29 @@ curl -I http://127.0.0.1:3000
 
 If the app loads but actions fail, verify the host machine has the Coven daemon/runtime available. The phone is only a browser; the host machine still performs local work.
 
-## Native Tauri Mobile Shell
+## Native iOS App
 
-A Tauri iOS / Android binary (built via `pnpm tauri ios build` / `pnpm tauri android build`) ships exactly the same daemon-over-Tailscale model — there is **no bundled local Node sidecar** on mobile. iOS sandbox rules forbid spawning child processes, and the standalone Next.js server + node_modules tree would balloon the IPA past 100MB. The native shell is a thin webview that points at:
+The mobile experience is a **native Swift/SwiftUI app** at [`apps/ios/CovenCave`](../apps/ios/CovenCave), not a Tauri webview. (The Tauri iOS/Android shell was retired — see [`ios-native-rebuild.md`](ios-native-rebuild.md).) It ships exactly the same daemon-over-Tailscale model described above: there is **no bundled local Node sidecar** on mobile. The app is a native client that talks to a Cave daemon over the tailnet, pointed at either:
 
 - The Tailscale Serve URL of your laptop while you're on the same tailnet, OR
 - A long-lived `tailscale serve` on a home server that the phone always reaches over the tailnet.
 
-Either way the daemon lives on a desktop, not the phone. The phone only renders.
+Either way the daemon lives on a desktop, not the phone.
 
-### What changes in the native shell vs. mobile-web
+### Pairing the app to a daemon
 
-The native shell wraps the same Next.js UI. The only differences:
-
-- Push notifications: `tauri-plugin-notification` works on iOS and Android. The first call to `nativeNotify()` triggers the system permission prompt; thereafter the shell can fire local notifications even when the webview isn't focused.
-- "Add to Home Screen" isn't a thing because the shell ships as a regular app icon installed from TestFlight / Play.
-- The PWA service worker (`/sw.js`) is **not** registered inside Tauri. The desktop and mobile shells both rely on Tauri's webview cache, and an SW would intercept loopback requests and cache stale IPC responses (`PwaRegister` skips when `__TAURI_INTERNALS__` is present).
-- The bottom terminal and the embedded `BrowserPane` surfaces are unavailable, same as mobile-web — the `pty_*` / `browser_*` Rust commands are `cfg(desktop)`-gated and not registered on mobile-Tauri. Both surfaces detect this via `useTauriPlatform()` and render their "Terminal is only available inside the CovenCave desktop app" / iframe-fallback placeholder.
-
-### One-time scaffolding
+Expose the daemon over Tailscale Serve and print a pairing URL for the app:
 
 ```bash
-pnpm tauri ios init      # generates src-tauri/gen/apple/
-pnpm tauri android init  # generates src-tauri/gen/android/
+pnpm mobile:tailscale:app      # tailscale serve + a QR/pairing URL carrying the access token
 ```
 
-Both are interactive (Xcode signing team, Android SDK path). After scaffolding, builds run with `pnpm tauri ios build` / `pnpm tauri android build`. The `prebuild` hook (PWA icon generation) still runs but `sidecar-bundle.sh` short-circuits when `TAURI_PLATFORM` is `ios` or `android`.
+Scan or paste that URL in the app. The `coven_access_token` query param authorizes the client against the gated API (tailnet membership alone is not sufficient — Serve exposes every `/api` route).
 
-### Configuration: which daemon does the phone talk to?
+### Building / running the app
 
-The native shell's `devUrl` (in `src-tauri/tauri.conf.json`) points at the dev server. In production builds, point it at your Tailscale-served daemon URL before running `tauri ios build` — the `$COVEN_CAVE_DAEMON_URL` env var (or whatever your team adopts) should be honoured by a small `build.rs` patch. (Not yet wired; track in a follow-up.)
+```bash
+pnpm mobile:ios:sim            # xcodegen generate + xcodebuild against the iOS simulator
+```
+
+The Xcode project is generated by `xcodegen` from `apps/ios/CovenCave/project.yml` (the `.xcodeproj` is gitignored). Production builds ship through TestFlight. Because the app is native, there is no PWA service worker and no bundled sidecar to reason about.

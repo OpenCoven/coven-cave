@@ -16,7 +16,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -230,7 +230,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid number" }, { status: 400 });
   }
 
-  const token = resolveSecret("GITHUB_PAT") ?? null;
+  const token = resolveGitHubToken();
   const [owner, name] = repo.split("/");
 
   try {

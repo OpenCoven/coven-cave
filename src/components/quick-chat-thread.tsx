@@ -1,15 +1,69 @@
 import { useEffect, useRef, useState } from "react";
-import { MarkdownBlock } from "@/components/message-bubble";
+import { GitHubActionCard } from "@/components/github-action-card";
+import { GitHubCard } from "@/components/github-card";
+import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
+import { SkillStageCard } from "@/components/skill-stage-card";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { copyText } from "@/lib/clipboard";
 import { Icon, type IconName } from "@/lib/icon";
-import { extractNextPaths } from "@/lib/next-paths";
+import { formatQuickChatAssistantMessage } from "@/lib/quick-chat-message-format";
 import type { Familiar } from "@/lib/types";
 import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import type { QuickChatMessage } from "@/lib/use-quick-chat";
 import { FamiliarMark, QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 import { lastRegenerableQuickChatMessageId } from "@/lib/quick-chat-thread-state";
+
+function QuickChatResponseMetadata({ metadata }: { metadata?: QuickChatMessage["responseMetadata"] }) {
+  if (!metadata) return null;
+  const lines: string[] = [];
+  if (metadata.requestedModel !== undefined) {
+    lines.push(`Requested model: ${metadata.requestedModel || "Runtime default"}`);
+  }
+  if (metadata.desiredModel) lines.push(`Effective model: ${metadata.desiredModel}`);
+  if (metadata.forwardedModel && metadata.forwardedModel !== metadata.desiredModel) {
+    lines.push(`Forwarded model: ${metadata.forwardedModel}`);
+  }
+  if (metadata.confirmedModel) lines.push(`Applied model: ${metadata.confirmedModel}`);
+  else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
+  if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
+  if (metadata.modelApplicationReason && !metadata.confirmedModel) {
+    lines.push(metadata.modelApplicationReason);
+  }
+  const promptOnly = new Set(Object.keys(metadata.promptGuidanceControls ?? {}));
+  const forwarded = new Set(Object.keys(metadata.forwardedControls ?? {}));
+  const applied = new Set(Object.keys(metadata.appliedControls ?? {}));
+  const rejected = new Set(metadata.rejectedControlFamilies ?? []);
+  for (const [family, value] of Object.entries(metadata.requestedControls ?? {})) {
+    const status = rejected.has(family)
+      ? "Rejected"
+      : promptOnly.has(family)
+        ? "Prompt guidance"
+        : applied.has(family)
+          ? "Applied"
+          : forwarded.has(family)
+            ? "Forwarded — not confirmed"
+            : "Requested — not confirmed";
+    lines.push(`${status}: ${family} ${value}`);
+  }
+  if (lines.length === 0) return null;
+  return (
+    <div
+      className="mt-2 flex flex-wrap gap-1.5"
+      role="status"
+      aria-label={`Response model and controls. ${lines.join(". ")}`}
+    >
+      {lines.map((line) => (
+        <span
+          key={line}
+          className="rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--fg-muted)]"
+        >
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function QuickChatBubble({
   message,
@@ -32,11 +86,6 @@ function QuickChatBubble({
     return () => window.clearTimeout(timer);
   }, [copied]);
 
-  const { visible, suggestions } =
-    message.role === "assistant"
-      ? extractNextPaths(message.text)
-      : { visible: message.text, suggestions: [] };
-
   if (message.role === "user") {
     return (
       <div className="quick-chat-turn quick-chat-turn--user">
@@ -53,7 +102,29 @@ function QuickChatBubble({
     );
   }
 
-  const streaming = message.pending;
+  const streaming = Boolean(message.pending);
+  const {
+    copyText: visible,
+    pieces,
+    skillUpdates,
+    suggestions: typedSuggestions,
+  } = formatQuickChatAssistantMessage(message.text, streaming);
+  // Quick chat is intentionally a compact reply-only surface. Task and action
+  // intents stay hidden because this tray cannot review or execute them.
+  const suggestions = typedSuggestions
+    .filter((path) => path.kind === "reply")
+    .map((path) => path.prompt);
+  const hasRenderableContent = pieces.some(
+    (piece) => piece.kind === "text"
+      ? piece.text.trim().length > 0
+      : !streaming,
+  );
+  let pendingTextIndex = -1;
+  if (streaming) {
+    pieces.forEach((piece, index) => {
+      if (piece.kind === "text" && piece.text.trim()) pendingTextIndex = index;
+    });
+  }
   const canAct = !streaming && visible.length > 0;
   return (
     <div className="quick-chat-turn quick-chat-turn--familiar">
@@ -63,15 +134,49 @@ function QuickChatBubble({
         </span>
       )}
       <div className="quick-chat-bubble quick-chat-bubble--familiar">
-        {visible ? (
-          streaming ? <p className="whitespace-pre-wrap break-words leading-6">{visible}<span className="quick-chat-caret" aria-hidden /></p> : (
-            <div className="quick-chat-md"><MarkdownBlock text={visible} /></div>
-          )
+        {hasRenderableContent ? (
+          <div className="quick-chat-md">
+            {pieces.map((piece, index) => {
+              if (piece.kind === "text") {
+                return piece.text.trim() ? (
+                  <ProgressiveMarkdownBlock key={`text-${index}`} text={piece.text} pending={streaming && index === pendingTextIndex} />
+                ) : null;
+              }
+              if (streaming) return null;
+              if (piece.kind === "action") {
+                return (
+                  <div key={`action-${index}`} className="my-2">
+                    <GitHubActionCard action={piece.action} />
+                  </div>
+                );
+              }
+              return (
+                <div key={`card-${index}`} className="my-2">
+                  <GitHubCard descriptor={piece.descriptor} />
+                </div>
+              );
+            })}
+          </div>
         ) : streaming ? (
           <span className="quick-chat-typing" aria-label="Thinking…"><i /><i /><i /></span>
         ) : <p className="text-[var(--fg-muted)]">No response.</p>}
 
+        {skillUpdates.length ? (
+          <div className="mt-2 space-y-2">
+            {skillUpdates.map((update) => (
+              <SkillStageCard
+                key={update.name}
+                name={update.name}
+                stage={update.stage}
+                note={update.note}
+              />
+            ))}
+          </div>
+        ) : null}
+
         {message.error ? <p className="quick-chat-turn__error">{message.error}</p> : null}
+
+        <QuickChatResponseMetadata metadata={message.responseMetadata} />
 
         {canAct ? (
           <div className="quick-chat-turn__actions">

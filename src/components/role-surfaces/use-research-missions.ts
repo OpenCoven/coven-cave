@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actOnResearchMission,
   createResearchMission,
@@ -25,6 +25,26 @@ export type ResearchMissionViewState = {
   error: string | null;
 };
 
+type ApplyMissionOptions = {
+  select?: boolean;
+};
+
+function isMissionAtLeastAsFresh(
+  incoming: ResearchMission,
+  current: ResearchMission,
+): boolean {
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  if (Number.isFinite(incomingUpdatedAt)
+    && Number.isFinite(currentUpdatedAt)
+    && incomingUpdatedAt !== currentUpdatedAt) {
+    return incomingUpdatedAt > currentUpdatedAt;
+  }
+  const incomingIteration = incoming.iterations.at(-1)?.number ?? 0;
+  const currentIteration = current.iterations.at(-1)?.number ?? 0;
+  return incomingIteration >= currentIteration;
+}
+
 const INITIAL_STATE: ResearchMissionViewState = {
   missions: [],
   selectedId: null,
@@ -34,11 +54,21 @@ const INITIAL_STATE: ResearchMissionViewState = {
 
 export function useResearchMissions(familiarId: string) {
   const [state, setState] = useState<ResearchMissionViewState>(INITIAL_STATE);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  // Monotonic load token (the familiar-work-queue-view/daily-notes pattern):
+  // every load claims a sequence number and bails before each setState once
+  // superseded, and every mutation-applied refresh bumps the token — so an
+  // in-flight 2s poll response that predates a user action can never land on
+  // top of the fresher state (a just-started mission vanishing until the next
+  // poll, an act() result flickering back).
+  const loadSeq = useRef(0);
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const seq = ++loadSeq.current;
     try {
       const result = await listResearchMissions(familiarId, signal);
-      if (signal?.aborted) return;
+      if (signal?.aborted || seq !== loadSeq.current) return; // a newer load or mutation won
       if (!result.ok) {
         setState((current) => ({
           ...current,
@@ -56,6 +86,7 @@ export function useResearchMissions(familiarId: string) {
       }));
     } catch (error) {
       if (signal?.aborted || (error as Error).name === "AbortError") return;
+      if (seq !== loadSeq.current) return; // stale failure — leave fresher state intact
       setState((current) => ({
         ...current,
         loading: false,
@@ -66,6 +97,7 @@ export function useResearchMissions(familiarId: string) {
 
   useEffect(() => {
     const controller = new AbortController();
+    loadSeq.current += 1; // invalidate in-flight responses from the previous familiar
     setState(INITIAL_STATE);
     void load(controller.signal);
     return () => controller.abort();
@@ -85,52 +117,102 @@ export function useResearchMissions(familiarId: string) {
     setState((current) => ({ ...current, selectedId }));
   }, []);
 
+  const applyMission = useCallback((
+    mission: ResearchMission,
+    options: ApplyMissionOptions = {},
+  ) => {
+    if (mission.familiarId !== familiarId) return;
+    const existing = stateRef.current.missions.find((candidate) => candidate.id === mission.id);
+    if (existing && !isMissionAtLeastAsFresh(mission, existing)) return;
+    loadSeq.current += 1;
+    setState((current) => {
+      const currentMission = current.missions.find((candidate) => candidate.id === mission.id);
+      if (currentMission && !isMissionAtLeastAsFresh(mission, currentMission)) return current;
+      return {
+        ...current,
+        missions: currentMission
+          ? current.missions.map((candidate) => candidate.id === mission.id ? mission : candidate)
+          : [mission, ...current.missions],
+        selectedId: options.select ? mission.id : current.selectedId,
+        loading: false,
+        error: null,
+      };
+    });
+  }, [familiarId]);
+
   const start = useCallback(async (input: CreateResearchMissionInput) => {
-    const result = await createResearchMission(input);
-    if (!result.ok || !result.mission) {
-      return { ok: false as const, error: result.error ?? "Research could not start" };
+    try {
+      const result = await createResearchMission(input);
+      if (!result.ok || !result.mission) {
+        return { ok: false as const, error: result.error ?? "Research could not start" };
+      }
+      loadSeq.current += 1; // this refresh is the freshest truth — stale polls bail
+      setState((current) => ({
+        missions: [
+          result.mission!,
+          ...current.missions.filter((mission) => mission.id !== result.mission!.id),
+        ],
+        selectedId: result.mission!.id,
+        loading: false,
+        error: null,
+      }));
+      return { ok: true as const, mission: result.mission };
+    } catch {
+      // Transport failure (network reject, non-JSON) resolves to the same
+      // failure shape the API path returns — bare awaits must never throw.
+      // The POST may still have landed server-side, so resync with server
+      // truth: a retry after a false failure would duplicate mission spend.
+      void load();
+      return { ok: false as const, error: "Research could not start" };
     }
-    setState((current) => ({
-      missions: [
-        result.mission!,
-        ...current.missions.filter((mission) => mission.id !== result.mission!.id),
-      ],
-      selectedId: result.mission!.id,
-      loading: false,
-      error: null,
-    }));
-    return { ok: true as const, mission: result.mission };
-  }, []);
+  }, [load]);
 
   const act = useCallback(async (id: string, input: ResearchMissionActionInput) => {
-    const result = await actOnResearchMission(id, input);
-    if (!result.ok || !result.mission) {
-      return { ok: false as const, error: result.error ?? "Research action failed" };
+    try {
+      const result = await actOnResearchMission(id, input);
+      if (!result.ok || !result.mission) {
+        // A refused action usually means the on-screen mission went stale —
+        // resync with server truth alongside the failure shape.
+        void load();
+        return { ok: false as const, error: result.error ?? "Research action failed" };
+      }
+      loadSeq.current += 1; // this refresh is the freshest truth — stale polls bail
+      setState((current) => ({
+        ...current,
+        missions: current.missions.map((mission) => (
+          mission.id === result.mission!.id ? result.mission! : mission
+        )),
+        selectedId: result.mission!.id,
+        error: null,
+      }));
+      return { ok: true as const, mission: result.mission };
+    } catch {
+      // Transport failure — the action may still have landed server-side, so
+      // resync with server truth before returning the API failure shape.
+      void load();
+      return { ok: false as const, error: "Research action failed" };
     }
-    setState((current) => ({
-      ...current,
-      missions: current.missions.map((mission) => (
-        mission.id === result.mission!.id ? result.mission! : mission
-      )),
-      selectedId: result.mission!.id,
-      error: null,
-    }));
-    return { ok: true as const, mission: result.mission };
-  }, []);
+  }, [load]);
 
   const schedule = useCallback(async (id: string, rrule: string) => {
-    const result = await scheduleResearchMission(id, { rrule });
-    if (!result.ok || !result.mission) {
-      return { ok: false as const, error: result.error ?? "Research schedule could not be created" };
+    try {
+      const result = await scheduleResearchMission(id, { rrule });
+      if (!result.ok || !result.mission) {
+        return { ok: false as const, error: result.error ?? "Research schedule could not be created" };
+      }
+      loadSeq.current += 1; // this refresh is the freshest truth — stale polls bail
+      setState((current) => ({
+        ...current,
+        missions: current.missions.map((mission) => (
+          mission.id === result.mission!.id ? result.mission! : mission
+        )),
+        error: null,
+      }));
+      return { ok: true as const, mission: result.mission };
+    } catch {
+      // Transport failure resolves to the same failure shape the API returns.
+      return { ok: false as const, error: "Research schedule could not be created" };
     }
-    setState((current) => ({
-      ...current,
-      missions: current.missions.map((mission) => (
-        mission.id === result.mission!.id ? result.mission! : mission
-      )),
-      error: null,
-    }));
-    return { ok: true as const, mission: result.mission };
   }, []);
 
   const controlAutomation = useCallback(async (
@@ -138,28 +220,44 @@ export function useResearchMissions(familiarId: string) {
     automationId: string,
     action: "pause" | "resume" | "run-now",
   ) => {
-    const result = action === "run-now"
-      ? await runResearchAutomationNow(automationId)
-      : await setResearchAutomationStatus(automationId, action === "resume" ? "ACTIVE" : "PAUSED");
-    if (!result.ok) {
-      return { ok: false as const, error: result.error ?? "Automation action failed" };
+    try {
+      const result = action === "run-now"
+        ? await runResearchAutomationNow(automationId)
+        : await setResearchAutomationStatus(automationId, action === "resume" ? "ACTIVE" : "PAUSED");
+      if (!result.ok) {
+        return { ok: false as const, error: result.error ?? "Automation action failed" };
+      }
+      if (action !== "run-now") {
+        loadSeq.current += 1; // this refresh is the freshest truth — stale polls bail
+        setState((current) => ({
+          ...current,
+          missions: current.missions.map((mission) => mission.id === missionId && mission.automation ? {
+            ...mission,
+            automation: {
+              ...mission.automation,
+              status: action === "resume" ? "ACTIVE" : "PAUSED",
+              stopReason: undefined,
+            },
+          } : mission),
+        }));
+      }
+      void load();
+      return { ok: true as const };
+    } catch {
+      // Transport failure resolves to the same failure shape the API returns.
+      return { ok: false as const, error: "Automation action failed" };
     }
-    if (action !== "run-now") {
-      setState((current) => ({
-        ...current,
-        missions: current.missions.map((mission) => mission.id === missionId && mission.automation ? {
-          ...mission,
-          automation: {
-            ...mission.automation,
-            status: action === "resume" ? "ACTIVE" : "PAUSED",
-            stopReason: undefined,
-          },
-        } : mission),
-      }));
-    }
-    void load();
-    return { ok: true as const };
   }, [load]);
 
-  return { ...state, selected, select, start, act, schedule, controlAutomation, load };
+  return {
+    ...state,
+    selected,
+    select,
+    applyMission,
+    start,
+    act,
+    schedule,
+    controlAutomation,
+    load,
+  };
 }

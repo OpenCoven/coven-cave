@@ -20,6 +20,7 @@
     "ideation",
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/seekers-lens",
   "x-coven": {
     "displayName": "Seeker's Lens",

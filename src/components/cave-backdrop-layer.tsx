@@ -11,6 +11,7 @@ import {
   useBackdropPrefs,
   useFamiliarBackdropRevision,
 } from "@/lib/cave-backdrop";
+import { CaveBackdropBlaze } from "@/components/cave-backdrop-blaze";
 
 /**
  * Mounts once in the workspace: loads the durable backdrop image into an
@@ -53,12 +54,19 @@ export function CaveBackdropLayer({
   // explicitly switched on — even one whose own image is showing, so the
   // fallback stays warm. Deliberately keyed on prefs alone (not the async
   // familiarUrl): gating on image absence would churn the fetch on every
-  // mount and blank-flash when a familiar image is removed.
+  // mount and blank-flash when a familiar image is removed. With the Blaze
+  // style selected the layer never paints the app image, so its bytes are
+  // not fetched at all (cave-99s9).
   const wantsAppImage =
-    prefs.enabled || (familiarId ? prefs.familiars[familiarId] === true : false);
+    prefs.style === "image" &&
+    (prefs.enabled || (familiarId ? prefs.familiars[familiarId] === true : false));
   const familiarImageShowing = familiarOn && familiarUrl !== null;
   const effectiveUrl = familiarImageShowing ? familiarUrl : imageUrl;
   const effectiveEnabled = prefs.enabled || familiarOn;
+  // Blaze fills the layer app-wide; a familiar's own image (an explicit
+  // per-familiar opt-in) still takes the layer over while it is showing.
+  const blazeShowing =
+    effectiveEnabled && prefs.style === "blaze" && !familiarImageShowing;
 
   // Load (or clear) the stored image whenever the backdrop is toggled or its
   // bytes change. writeBackdropImage publishes the latter independently from
@@ -111,14 +119,15 @@ export function CaveBackdropLayer({
   // seed is suppressed — the familiar's accent (Look tab) governs its color.
   // Under the app-image fallback, app-wide accent matching applies as usual.
   useEffect(() => {
-    const effectivePrefs = familiarImageShowing
-      ? { ...prefs, enabled: true, matchAccent: false, accentSeed: null }
-      : { ...prefs, enabled: effectiveEnabled };
-    applyBackdropToDocument(effectivePrefs, effectiveUrl);
+    const effectivePrefs =
+      familiarImageShowing || blazeShowing
+        ? { ...prefs, enabled: true, matchAccent: false, accentSeed: null }
+        : { ...prefs, enabled: effectiveEnabled };
+    applyBackdropToDocument(effectivePrefs, blazeShowing ? null : effectiveUrl);
     const observer = new MutationObserver(() => applyBackdropToDocument(effectivePrefs, undefined));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode", "data-theme"] });
     return () => observer.disconnect();
-  }, [prefs, familiarImageShowing, effectiveUrl, effectiveEnabled]);
+  }, [prefs, familiarImageShowing, blazeShowing, effectiveUrl, effectiveEnabled]);
 
   // Flag the document while a backdrop surface is frontmost, so the shell's
   // opaque panes (shell-root/detail, chat roots) go translucent only then.
@@ -141,5 +150,14 @@ export function CaveBackdropLayer({
   );
 
   if (!effectiveEnabled) return null;
-  return <div className="cave-backdrop-layer" data-on={active ? "true" : "false"} aria-hidden />;
+  return (
+    <div
+      className="cave-backdrop-layer"
+      data-on={active ? "true" : "false"}
+      data-backdrop-style={blazeShowing ? "blaze" : "image"}
+      aria-hidden
+    >
+      {blazeShowing && active ? <CaveBackdropBlaze /> : null}
+    </div>
+  );
 }

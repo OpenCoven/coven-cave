@@ -7,7 +7,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$rowBudget = 64
+# Keep exact, independently reviewed baselines per table. Sharing the largest
+# value would leave silent slack in smaller tables; upper bounds would also hide
+# missing or incorrectly staged resources when a table unexpectedly shrinks.
+# These values are the measured v0.2.2 package after adding the Kokoro runtime.
+$rowBaselines = [ordered]@{
+    fileRows = 741
+    componentRows = 746
+    createFolderRows = 741
+    directoryRows = 88
+}
+$rowInspectionLimit = 4096
 $byteBudget = 256MB
 $resolvedMsi = (Resolve-Path -LiteralPath $MsiPath).Path
 $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath)
@@ -43,7 +53,7 @@ function Read-MsiRows {
     $view = Open-MsiView -Query $Query
     $count = 0
     try {
-        while ($count -le $rowBudget) {
+        while ($true) {
             $record = $view.GetType().InvokeMember(
                 "Fetch",
                 [System.Reflection.BindingFlags]::InvokeMethod,
@@ -55,10 +65,15 @@ function Read-MsiRows {
                 break
             }
             $count += 1
-            if ($count -le $rowBudget) {
+            try {
+                if ($count -gt $rowInspectionLimit) {
+                    throw "MSI table row inspection exceeded the independent limit of $rowInspectionLimit"
+                }
                 & $OnRow $record
             }
-            [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+            finally {
+                [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($record)
+            }
         }
     }
     finally {
@@ -86,54 +101,152 @@ try {
 
     [long]$installedFileBytes = 0
     [int]$serverArchiveRows = 0
-    $fileRows = Read-MsiRows -Query 'SELECT `FileSize`, `FileName` FROM `File`' -OnRow {
+    $fileEntries = [System.Collections.Generic.List[object]]::new()
+    $fileRows = Read-MsiRows -Query 'SELECT `File`, `Component_`, `FileName`, `FileSize` FROM `File`' -OnRow {
         param($record)
-        $size = $record.GetType().InvokeMember(
-            "IntegerData",
+        $identifier = $record.GetType().InvokeMember(
+            "StringData",
             [System.Reflection.BindingFlags]::GetProperty,
             $null,
             $record,
             @(1)
         )
-        $name = $record.GetType().InvokeMember(
+        $component = $record.GetType().InvokeMember(
             "StringData",
             [System.Reflection.BindingFlags]::GetProperty,
             $null,
             $record,
             @(2)
         )
+        $name = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(3)
+        )
+        $size = $record.GetType().InvokeMember(
+            "IntegerData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(4)
+        )
         $script:installedFileBytes += [long]$size
         $longName = ($name -split '\|')[-1]
+        [void]$script:fileEntries.Add([ordered]@{
+            id = $identifier
+            component = $component
+            name = $longName
+            size = [long]$size
+        })
         if ($longName -eq "server.tar.zst") {
             $script:serverArchiveRows += 1
         }
     }
-    $componentRows = Read-MsiRows -Query 'SELECT `Component` FROM `Component`' -OnRow { param($record) }
-    $createFolderRows = Read-MsiRows -Query 'SELECT `Directory_` FROM `CreateFolder`' -OnRow { param($record) }
-    $directoryRows = Read-MsiRows -Query 'SELECT `Directory` FROM `Directory`' -OnRow { param($record) }
+    $componentEntries = [System.Collections.Generic.List[object]]::new()
+    $componentRows = Read-MsiRows -Query 'SELECT `Component`, `Directory_` FROM `Component`' -OnRow {
+        param($record)
+        $identifier = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(1)
+        )
+        $directory = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(2)
+        )
+        [void]$script:componentEntries.Add([ordered]@{
+            id = $identifier
+            directory = $directory
+        })
+    }
+    $createFolderEntries = [System.Collections.Generic.List[object]]::new()
+    $createFolderRows = Read-MsiRows -Query 'SELECT `Directory_`, `Component_` FROM `CreateFolder`' -OnRow {
+        param($record)
+        $directory = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(1)
+        )
+        $component = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(2)
+        )
+        [void]$script:createFolderEntries.Add([ordered]@{
+            directory = $directory
+            component = $component
+        })
+    }
+    $directoryEntries = [System.Collections.Generic.List[object]]::new()
+    $directoryRows = Read-MsiRows -Query 'SELECT `Directory`, `Directory_Parent`, `DefaultDir` FROM `Directory`' -OnRow {
+        param($record)
+        $identifier = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(1)
+        )
+        $parent = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(2)
+        )
+        $name = $record.GetType().InvokeMember(
+            "StringData",
+            [System.Reflection.BindingFlags]::GetProperty,
+            $null,
+            $record,
+            @(3)
+        )
+        [void]$script:directoryEntries.Add([ordered]@{
+            id = $identifier
+            parent = $parent
+            name = $name
+        })
+    }
 
     $metrics = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         msiPath = $resolvedMsi
         msiBytes = (Get-Item -LiteralPath $resolvedMsi).Length
         installedFileBytes = $installedFileBytes
         fileRows = $fileRows
+        fileEntries = @($fileEntries)
         componentRows = $componentRows
+        componentEntries = @($componentEntries)
         createFolderRows = $createFolderRows
+        createFolderEntries = @($createFolderEntries)
         directoryRows = $directoryRows
+        directoryEntries = @($directoryEntries)
         serverArchiveRows = $serverArchiveRows
-        rowBudget = $rowBudget
+        rowBaselines = $rowBaselines
         byteBudget = $byteBudget
     }
-    $json = $metrics | ConvertTo-Json
+    $json = $metrics | ConvertTo-Json -Depth 4
     [System.IO.File]::WriteAllText($resolvedOutput, "$json`n")
     $metrics | Format-List | Out-String | Write-Host
     Write-Host "MSI metrics JSON: $resolvedOutput"
 
     $violations = @()
     foreach ($metric in @("fileRows", "componentRows", "createFolderRows", "directoryRows")) {
-        if ($metrics[$metric] -gt $rowBudget) {
-            $violations += "$metric exceeds $rowBudget"
+        $expected = [int]$rowBaselines[$metric]
+        $actual = [int]$metrics[$metric]
+        if ($actual -ne $expected) {
+            $violations += "$metric expected $expected; found $actual"
         }
     }
     foreach ($metric in @("msiBytes", "installedFileBytes")) {

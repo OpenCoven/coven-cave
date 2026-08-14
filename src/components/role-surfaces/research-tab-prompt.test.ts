@@ -173,6 +173,67 @@ test("quick saves attach as candidate sources via the ledger's mechanism", () =>
   assert.match(promptTab, /All in Resources →/);
 });
 
+test("a failed attach never abandons a started mission", () => {
+  // Once start() succeeds the spend is committed — the desk hand-off ALWAYS
+  // happens. Attach failures are collected without aborting the loop and
+  // surface as a partial-failure announcement, never as a generic "could not
+  // start" that invites a duplicate-spend retry.
+  assert.match(promptTab, /let failedAttaches = 0/);
+  assert.match(promptTab, /\.catch\(\(\) => \(\{ ok: false as const \}\)\)/);
+  assert.match(promptTab, /if \(!attach\.ok\) failedAttaches \+= 1/);
+  assert.match(promptTab, /useAnnouncer/);
+  assert.match(
+    promptTab,
+    /Mission started — \$\{failedAttaches\} link\$\{failedAttaches === 1 \? "" : "s"\} failed to attach\./,
+  );
+  // The announcement happens before the hand-off, and the hand-off is inside
+  // the success branch but outside any per-link condition.
+  const announceIndex = promptTab.indexOf("failed to attach.");
+  const navigateIndex = promptTab.indexOf('onNavigate("desk", { missionId: result.mission.id })');
+  assert.ok(announceIndex !== -1 && navigateIndex !== -1 && announceIndex < navigateIndex);
+});
+
+// ── Bounds editor: explicit submit only, dirty latch, clearable inputs ───────
+
+test("Enter in a bounds field never starts a mission — it commits like blur", () => {
+  // The number inputs live inside the mission form, so an unhandled Enter
+  // would implicit-submit and start a PAID mission. Enter is intercepted and
+  // commits the draft instead; the Start button and the textarea's palette
+  // shortcuts keep their existing behavior.
+  assert.match(composer, /const boundKeyDown = \(key: BoundKey\) =>/);
+  assert.match(composer, /if \(event\.key !== "Enter"\) return;\s*event\.preventDefault\(\);\s*commitBound\(key\)/);
+  for (const key of ["wallClockMinutes", "maxIterations", "sourceTarget", "checkpointEvery"]) {
+    assert.match(composer, new RegExp(`onKeyDown=\\{boundKeyDown\\("${key}"\\)\\}`));
+  }
+});
+
+test("hand-edited bounds survive auto-routing; explicit mode picks reset them", () => {
+  // Auto mode re-derives the plan on every keystroke — editing a bound latches
+  // it dirty so the plan effect stops overwriting the user's numbers…
+  assert.match(composer, /boundsDirtyRef\.current = true/);
+  assert.match(composer, /if \(boundsDirtyRef\.current\) return;\s*setBounds\(\{ \.\.\.plan\.bounds \}\);\s*setBoundDrafts\(\{\}\)/);
+  // …while every explicit mode pick funnels through setMode, which clears the
+  // latch so a deliberate switch still resets to the new plan's bounds.
+  assert.match(composer, /const setMode = useCallback\(\(next: "auto" \| ResearchMissionMode\) => \{\s*boundsDirtyRef\.current = false;\s*setModeState\(next\);/);
+});
+
+test("bound inputs are clearable — raw drafts parse on blur/Enter/submit", () => {
+  // Inputs render the raw draft while editing (parsing ""→1 on every
+  // keystroke turned "clear, then type 5" into "15")…
+  assert.match(composer, /boundDrafts\[key\] \?\? String\(bounds\[key\]\)/);
+  for (const key of ["wallClockMinutes", "maxIterations", "sourceTarget", "checkpointEvery"]) {
+    assert.match(composer, new RegExp(`onBlur=\\{\\(\\) => commitBound\\("${key}"\\)\\}`));
+  }
+  // …commits reuse the pre-existing clamp logic and server limits…
+  assert.match(composer, /boundNumber\(raw, 1, RESEARCH_BOUND_LIMITS\[key\]\)/);
+  assert.match(composer, /boundNumber\(raw, 1, RESEARCH_BOUND_LIMITS\.maxIterations\)/);
+  assert.match(composer, /checkpointEvery: Math\.min\(current\.checkpointEvery, maxIterations\)/);
+  assert.match(composer, /checkpointEvery: boundNumber\(raw, 1, current\.maxIterations\)/);
+  // …and Start submits the resolved drafts, never a stale committed value.
+  assert.match(composer, /const submittedBounds = resolveBounds\(\)/);
+  assert.match(composer, /bounds: submittedBounds,/);
+});
+
 // ── Suggested angles: real data only ─────────────────────────────────────────
 
 test("angle chips derive from real mission/link titles — never canned topics", () => {

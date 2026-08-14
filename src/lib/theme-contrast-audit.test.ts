@@ -7,6 +7,7 @@ import {
   parseThemeColor,
   flattenOnto,
   contrastRatio,
+  rgbToOklab,
   type TokenMap,
   type Rgba,
 } from "./theme-contrast.ts";
@@ -45,7 +46,11 @@ import { THEME_IDS } from "./theme-palettes.ts";
 // strong borders) needs 3:1 per §1.4.11. If this fails after a palette edit,
 // the palette is what has to change — not the thresholds.
 
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = [
+  "../app/globals.css",
+  "../styles/globals/foundations.css",
+  "../styles/globals/themes.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 
 const OPAQUE_BLACK: Rgba = { r: 0, g: 0, b: 0, alpha: 1 };
 
@@ -74,6 +79,9 @@ const PAIRS: Pair[] = [
   { fg: "--accent-foreground", bg: "--accent", min: 4.5 },
   { fg: "--primary-foreground", bg: "--primary", min: 4.5 },
   { fg: "--accent-presence-foreground", bg: "--accent-presence", min: 4.5 },
+  // cave-c7hy: the label must stay AA while the fill is in its hover state
+  // (.ui-btn--primary:hover et al. use --accent-presence-hover).
+  { fg: "--accent-presence-foreground", bg: "--accent-presence-hover", min: 4.5 },
   { fg: "--destructive-foreground", bg: "--destructive", min: 4.5 },
   { fg: "--brand-foreground", bg: "--brand", min: 4.5 },
   { fg: "--accent-presence", bg: "--bg-base", min: 3 },
@@ -108,7 +116,11 @@ for (const id of THEME_IDS) {
   }
 }
 
-assert.ok(checked > 600, `expected to audit >600 pairs, only checked ${checked}`);
+const minimumPairs = THEME_IDS.length * 2 * 20;
+assert.ok(
+  checked > minimumPairs,
+  `expected to audit >${minimumPairs} pairs, only checked ${checked}`,
+);
 assert.deepEqual(
   failures,
   [],
@@ -132,6 +144,32 @@ for (const mode of ["dark", "light"] as const) {
 
 console.log(`theme-contrast-audit: ${checked} pairs across ${THEME_IDS.length} themes × 2 modes, 0 failures`);
 
+// ── hover feedback stays visible (cave-c7hy) ────────────────────────────────
+// The AA pair above keeps hover readable; this keeps it *noticeable*. A theme
+// override that resolved hover to (nearly) the rest fill would pass contrast
+// while silently killing the hover affordance. Direction-aware 12% mixes give
+// a worst-case OKLab ΔL of ~0.027 across the premade palettes; hold 0.02.
+{
+  const shiftFailures: string[] = [];
+  for (const id of THEME_IDS) {
+    for (const mode of ["dark", "light"] as const) {
+      const tokens = themeTokens(css, id, mode);
+      const rest = surface(tokens, "--accent-presence");
+      const hover = surface(tokens, "--accent-presence-hover");
+      assert.ok(rest && hover, `${id}/${mode}: accent rest+hover fills must resolve`);
+      const delta = Math.abs(rgbToOklab(rest!).L - rgbToOklab(hover!).L);
+      if (delta < 0.02) {
+        shiftFailures.push(`${id} ${mode}: hover ΔL=${delta.toFixed(3)} (needs ≥0.02)`);
+      }
+    }
+  }
+  assert.deepEqual(
+    shiftFailures,
+    [],
+    `hover states must shift visibly from rest:\n${shiftFailures.join("\n")}`,
+  );
+}
+
 // ── fixed dark code chrome (cave-md.css, CHAT-D13-01/02) ────────────────────
 // Code blocks and system turns keep a fixed dark-terminal surface in BOTH
 // modes, so their inks are fixed too — theme-independent, but they still must
@@ -142,9 +180,21 @@ console.log(`theme-contrast-audit: ${checked} pairs across ${THEME_IDS.length} t
 // cave-md.css, the shared markdown sheet; chat-scoped system-turn chrome
 // stayed in cave-chat.css — read both.)
 
-const mdCss = readFileSync(new URL("../styles/cave-md.css", import.meta.url), "utf8");
-const chatCss =
-  readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8") + "\n" + mdCss;
+const mdCss = [
+  "../styles/cave-md.css",
+  "../styles/cave-md/prose.css",
+  "../styles/cave-md/tables-mermaid.css",
+  "../styles/cave-md/code.css",
+  "../styles/cave-md/interactions.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
+const chatCss = [
+  "../styles/cave-chat.css",
+  "../styles/cave-chat/bubbles.css",
+  "../styles/cave-chat/activity.css",
+  "../styles/cave-chat/transcript.css",
+  "../styles/cave-chat/auxiliary-surfaces.css",
+  "../styles/cave-chat/session-chrome.css",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n") + "\n" + mdCss;
 
 const chromeRootBlock = mdCss.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 const chrome: TokenMap = new Map();
@@ -190,7 +240,10 @@ function declaredColor(selectorRe: RegExp, label: string): string {
   return value!.trim();
 }
 chrome.set("--_lang-ink", declaredColor(/\.cave-code-lang \{[^}]*\}/, ".cave-code-lang"));
-chrome.set("--_ln-ink", declaredColor(/\.cave-ln \{[^}]*\}/, ".cave-ln"));
+// Line-start anchored: scoped overrides (e.g. the code rail's
+// `.workspace-rail__preview-body--code .cave-ln`) must not shadow the
+// canonical colored rule.
+chrome.set("--_ln-ink", declaredColor(/\n\.cave-ln \{[^}]*\}/, ".cave-ln"));
 chrome.set(
   "--_add-strip",
   (chatCss.match(/\.cave-diff-add \{[^}]*background:\s*([^;]+);/) ?? [])[1] ?? "",

@@ -2,6 +2,8 @@ import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { TurnUsage } from "@/lib/usage-format";
 
+export type ToolOffsetCorrection = { after: number; delta: number };
+
 /**
  * Canonical discriminated union for chat stream (SSE) events emitted by
  * `/api/chat/send` and consumed by the chat view, group chat, and other
@@ -11,13 +13,14 @@ export type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "assistant_replace"; text: string; toolOffsetCorrection?: ToolOffsetCorrection }
   | { kind: "attachment"; attachment: ChatAttachment }
   | {
       kind: "progress";
       id?: string;
       label: string;
       detail?: string;
-      status?: "running" | "done" | "error";
+      status?: "running" | "done" | "notice" | "error";
       durationMs?: number;
     }
   | {
