@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import { activeHostCapabilities, hostCapabilityById } from "./host-capabilities.ts";
@@ -20,10 +22,7 @@ const MAX_ROWS = 512;
 const MAX_STRING_LENGTH = 4_096;
 const EXPECTED_PUBLISHER = "CompleteTech";
 const EXPECTED_SIGNER_SUBJECT_PATTERN = "(^|,\\s*)CN=CompleteTech(,|$)";
-// These paths are part of the signed installer contract. Do not derive either
-// executable from PATH, cwd, registry/environment values, or request input.
-const INSTALLER_HELPER_PATH = "C:\\Program Files\\CompleteTech\\Coven Cave\\coven-host-audit.exe";
-const WINDOWS_POWERSHELL_PATH = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+const INSTALLER_MANIFEST_NAME = "coven-host-audit.manifest.json";
 const VM_STATES = new Set(["Off", "Running", "Paused", "Saved", "Starting", "Stopping", "Resetting", "Pausing", "Resuming", "Saving"]);
 const SWITCH_TYPES = new Set(["External", "Internal", "Private"]);
 const INTEGRATION_STATUSES = new Set(["OK", "Error", "No Contact", "Lost Communication", "Unknown"]);
@@ -57,7 +56,9 @@ export type HypervAuditRunner = (command: string, args: readonly string[]) => Pr
 type WindowsHypervAuditFixtureDependencies = {
   /** Test-only seam. Production never accepts dependencies. */
   run?: HypervAuditRunner;
+  resolvePaths?: () => Promise<TrustedWindowsAuditPaths>;
 };
+type TrustedWindowsAuditPaths = { helperPath: string; powerShellPath: string };
 
 async function systemRunner(command: string, args: readonly string[]): Promise<string> {
   const { stdout } = await execFileAsync(command, [...args], {
@@ -70,20 +71,34 @@ async function systemRunner(command: string, args: readonly string[]): Promise<s
   return stdout;
 }
 
-function installManagedHelperPath(): string {
-  return INSTALLER_HELPER_PATH;
+function validAbsoluteWindowsExecutable(value: unknown, expectedName: string): value is string {
+  return typeof value === "string"
+    && /^[A-Za-z]:\\/.test(value)
+    && value.toLowerCase().endsWith(`\\${expectedName}`)
+    && !value.includes("..")
+    && value.length <= 1_024;
 }
 
-function windowsPowerShellPath(): string {
-  return WINDOWS_POWERSHELL_PATH;
+/** Read only the installer-owned protected manifest beside the executable that
+ * launched Cave. This supports non-C system/install drives without trusting
+ * environment variables, PATH, cwd, registry, or a request. */
+async function resolveInstallerOwnedWindowsAuditPaths(): Promise<TrustedWindowsAuditPaths> {
+  const manifestPath = path.join(path.dirname(process.execPath), INSTALLER_MANIFEST_NAME);
+  try {
+    const value = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+    if (!validAbsoluteWindowsExecutable(value.helperPath, "coven-host-audit.exe") || !validAbsoluteWindowsExecutable(value.powerShellPath, "powershell.exe")) throw new Error("invalid");
+    return { helperPath: value.helperPath, powerShellPath: value.powerShellPath };
+  } catch {
+    throw new WindowsHypervAuditError("broker_failed", "Windows Host Audit installer configuration is missing or invalid.");
+  }
 }
 
-async function verifyAuthenticode(helperPath: string, run: HypervAuditRunner = systemRunner): Promise<void> {
+async function verifyAuthenticode(helperPath: string, powerShellPath: string, run: HypervAuditRunner = systemRunner): Promise<void> {
   // This immutable script asks Windows to validate the chain and authenticode
   // status. It has no user-provided arguments or shell interpolation.
   const script = `$s=Get-AuthenticodeSignature -LiteralPath $args[0]; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch '${EXPECTED_SIGNER_SUBJECT_PATTERN}'){exit 1}`;
   try {
-    await run(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", script, helperPath]);
+    await run(powerShellPath, ["-NoProfile", "-NonInteractive", "-Command", script, helperPath]);
   } catch {
     throw new WindowsHypervAuditError("signature_rejected", `Windows Host Audit rejected the helper because its Authenticode chain or ${EXPECTED_PUBLISHER} publisher could not be verified.`);
   }
@@ -163,7 +178,7 @@ export async function authorizeWindowsHypervAuditRuntime(input: { familiarId: st
   return authority;
 }
 
-async function executeWindowsHypervAudit(authority: WindowsHypervAuditRuntimeAuthority, run: HypervAuditRunner): Promise<HypervInventory> {
+async function executeWindowsHypervAudit(authority: WindowsHypervAuditRuntimeAuthority, run: HypervAuditRunner, resolvePaths: () => Promise<TrustedWindowsAuditPaths>): Promise<HypervInventory> {
   if (!runtimeAuthorities.has(authority)) throw new WindowsHypervAuditError("capability_required", "Windows Host Audit requires trusted runtime session authority.");
   // Recheck immediately before crossing the privilege boundary: a grant can
   // expire or be revoked after the runtime created its opaque authority.
@@ -171,9 +186,9 @@ async function executeWindowsHypervAudit(authority: WindowsHypervAuditRuntimeAut
   if (!grants.includes(WINDOWS_HYPERV_AUDIT_CAPABILITY)) {
     throw new WindowsHypervAuditError("capability_required", "The Hyper-V audit approval expired or was revoked before the helper started.");
   }
-  const helperPath = installManagedHelperPath();
   try {
-    await verifyAuthenticode(helperPath, run);
+    const { helperPath, powerShellPath } = await resolvePaths();
+    await verifyAuthenticode(helperPath, powerShellPath, run);
     // Tests inject a runner; production cannot choose the binary or argv, and
     // the auth check is always completed before the helper can execute.
     const raw = await run(helperPath, HELPER_ARGS);
@@ -187,10 +202,10 @@ async function executeWindowsHypervAudit(authority: WindowsHypervAuditRuntimeAut
 /** Production entrypoint. It owns signature verification and execution; no
  * caller can inject a runner or claim that an untrusted helper was verified. */
 export async function runWindowsHypervAudit(authority: WindowsHypervAuditRuntimeAuthority): Promise<HypervInventory> {
-  return executeWindowsHypervAudit(authority, systemRunner);
+  return executeWindowsHypervAudit(authority, systemRunner, resolveInstallerOwnedWindowsAuditPaths);
 }
 
 /** @internal Test fixture only. Never import this from a route or runtime. */
 export async function runWindowsHypervAuditFixture(authority: WindowsHypervAuditRuntimeAuthority, dependencies: WindowsHypervAuditFixtureDependencies): Promise<HypervInventory> {
-  return executeWindowsHypervAudit(authority, dependencies.run ?? systemRunner);
+  return executeWindowsHypervAudit(authority, dependencies.run ?? systemRunner, dependencies.resolvePaths ?? resolveInstallerOwnedWindowsAuditPaths);
 }

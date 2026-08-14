@@ -18,6 +18,8 @@ const fixture = JSON.stringify({
   vhdChains: [{ path: "D:\\\\VMs\\\\coven.vhdx", parentPath: null, sizeBytes: 4096 }],
   integrationServices: [{ vmId: "vm-1", name: "Heartbeat", enabled: true, primaryStatus: "OK" }],
 });
+const TEST_PATHS = { helperPath: "D:\\Apps\\CompleteTech\\Coven Cave\\coven-host-audit.exe", powerShellPath: "E:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" };
+const testPaths = async () => TEST_PATHS;
 
 assert.equal(hostCapabilityById("windows.hyperv.audit.read")?.adapter, WINDOWS_HYPERV_AUDIT_ADAPTER_ID, "the concrete Windows broker is the catalog's registered adapter");
 
@@ -28,14 +30,14 @@ test("Windows audit is Windows-only and requires the exact unexpired session cap
   assert.equal(called, false, "rejected requests never invoke a host helper");
   await grantHostCapability({ familiarId: "clove", sessionId: "session-1", capability: "windows.hyperv.audit.read", actor: "loopback", platform: "win32" });
   const authority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" });
-  const inventory = await runWindowsHypervAuditFixture(authority, { run: async (command, args) => {
-    if (command.endsWith("\\WindowsPowerShell\\v1.0\\powershell.exe")) {
+  const inventory = await runWindowsHypervAuditFixture(authority, { resolvePaths: testPaths, run: async (command, args) => {
+    if (command === TEST_PATHS.powerShellPath) {
       assert.match(args[3] ?? "", /Get-AuthenticodeSignature/);
       assert.match(args[3] ?? "", /CN=CompleteTech/);
-      assert.match(args.at(-1) ?? "", /CompleteTech\\Coven Cave\\coven-host-audit\.exe$/);
+      assert.equal(args.at(-1), TEST_PATHS.helperPath);
       return "";
     }
-    assert.match(command, /CompleteTech\\Coven Cave\\coven-host-audit\.exe$/);
+    assert.equal(command, TEST_PATHS.helperPath);
     assert.deepEqual(args, ["hyperv-inventory", "--format", "json"]);
     return fixture;
   } });
@@ -44,11 +46,11 @@ test("Windows audit is Windows-only and requires the exact unexpired session cap
 });
 
 test("unsigned helpers and forged browser-shaped authority fail before the audit process", async () => {
-  await assert.rejects(() => runWindowsHypervAuditFixture({ familiarId: "clove", sessionId: "session-1" } as never, { run: async () => { throw new Error("must not run"); } }), /trusted runtime session authority/);
+  await assert.rejects(() => runWindowsHypervAuditFixture({ familiarId: "clove", sessionId: "session-1" } as never, { resolvePaths: testPaths, run: async () => { throw new Error("must not run"); } }), /trusted runtime session authority/);
   const authority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" });
   let auditSpawned = false;
-  await assert.rejects(() => runWindowsHypervAuditFixture(authority, { run: async (command) => {
-    if (command.endsWith("\\WindowsPowerShell\\v1.0\\powershell.exe")) throw new Error("untrusted signer");
+  await assert.rejects(() => runWindowsHypervAuditFixture(authority, { resolvePaths: testPaths, run: async (command) => {
+    if (command === TEST_PATHS.powerShellPath) throw new Error("untrusted signer");
     auditSpawned = true;
     return fixture;
   } }), (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "signature_rejected");
@@ -59,7 +61,7 @@ test("a grant revoked after runtime authorization cannot reach signature or help
   const authority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-1", platform: "win32" });
   await revokeHostCapability({ familiarId: "clove", sessionId: "session-1", capability: "windows.hyperv.audit.read", actor: "loopback" });
   let spawned = false;
-  await assert.rejects(() => runWindowsHypervAuditFixture(authority, { run: async () => { spawned = true; return fixture; } }), (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "capability_required");
+  await assert.rejects(() => runWindowsHypervAuditFixture(authority, { resolvePaths: testPaths, run: async () => { spawned = true; return fixture; } }), (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "capability_required");
   assert.equal(spawned, false);
 });
 
@@ -71,7 +73,7 @@ test("malformed broker output fails closed", () => {
   assert.throws(() => parseHypervInventory(fixture.replace('"sizeBytes":4096', '"sizeBytes":-1')), /incomplete inventory/);
 });
 
-test("poisoned environment paths and supplied runners cannot alter production identity checks", async () => {
+test("non-C installer/system roots and supplied runners cannot alter production identity checks", async () => {
   const saved = { ProgramFiles: process.env.ProgramFiles, ProgramW6432: process.env.ProgramW6432, SystemRoot: process.env.SystemRoot };
   process.env.ProgramFiles = "C:\\attacker";
   process.env.ProgramW6432 = "C:\\attacker";
@@ -82,13 +84,13 @@ test("poisoned environment paths and supplied runners cannot alter production id
     let injectedRunnerCalled = false;
     await assert.rejects(
       () => (runWindowsHypervAudit as unknown as (value: unknown, ignored: unknown) => Promise<unknown>)(authority, { run: async () => { injectedRunnerCalled = true; return fixture; } }),
-      (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "signature_rejected",
+      (error: unknown) => error instanceof WindowsHypervAuditError && error.code === "broker_failed",
     );
     assert.equal(injectedRunnerCalled, false, "production ignores injected process runners");
     const seen: string[] = [];
     const fixtureAuthority = await authorizeWindowsHypervAuditRuntime({ familiarId: "clove", sessionId: "session-production", platform: "win32" });
-    await runWindowsHypervAuditFixture(fixtureAuthority, { run: async (command) => { seen.push(command); return command.endsWith("powershell.exe") ? "" : fixture; } });
-    assert.deepEqual(seen, ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "C:\\Program Files\\CompleteTech\\Coven Cave\\coven-host-audit.exe"]);
+    await runWindowsHypervAuditFixture(fixtureAuthority, { resolvePaths: testPaths, run: async (command) => { seen.push(command); return command === TEST_PATHS.powerShellPath ? "" : fixture; } });
+    assert.deepEqual(seen, [TEST_PATHS.powerShellPath, TEST_PATHS.helperPath]);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;

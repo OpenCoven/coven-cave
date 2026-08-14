@@ -1461,6 +1461,7 @@ export const SUITES = {
     "src/lib/chat-runtime-scope.test.ts",
     "src/lib/host-capabilities.test.ts",
     "src/lib/windows-hyperv-audit.test.ts",
+    "src/lib/server/windows-hyperv-audit-runtime.test.ts",
     "src/lib/chat-boundary-sentinel.test.ts",
     "src/lib/chat-project-access.test.ts",
     "src/lib/chat-history-fallback.test.ts",

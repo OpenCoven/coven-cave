@@ -13,9 +13,14 @@ Only a trusted server runtime that has bound an unexpired capability to its
 selected Cave conversation may invoke the audit. There is deliberately no
 browser endpoint that accepts familiar/session IDs and starts a host process.
 
-The desktop app invokes the separately deployed, install-managed helper at
-`C:\Program Files\CompleteTech\Coven Cave\coven-host-audit.exe` with one fixed
-operation: `hyperv-inventory --format json`. Before every invocation Windows
+The desktop app resolves the helper and Windows PowerShell paths from the
+installer-owned, ACL-protected `coven-host-audit.manifest.json` located beside
+the Cave executable. This supports all-user installations on non-`C:` drives
+without trusting PATH, environment variables, the working directory, registry,
+or a browser request. The manifest names the separately deployed helper and
+the native PowerShell executable; both are validated as absolute Windows
+executables before use. The helper accepts one fixed operation:
+`hyperv-inventory --format json`. Before every invocation Windows
 must report an Authenticode `Valid` chain and the expected `CN=CompleteTech`
 publisher subject; any
 missing, altered, expired, or differently signed helper fails closed. The
