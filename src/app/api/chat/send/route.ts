@@ -2349,6 +2349,28 @@ export async function POST(req: Request) {
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
+  const directReadOnlyEnforcement =
+    !sshRuntime &&
+    (Boolean(copilotStream) || grokDirect || (codexDirect && Boolean(codexDirectCapabilities)));
+  // Read-only is a security boundary, not a best-effort preference. Refuse the
+  // turn unless the selected direct transport enforces it itself or the local
+  // Coven transport can forward its native read-only flag. In particular, an
+  // absent/failed capability probe must never downgrade a read-only request to
+  // an unrestricted generic run, and the SSH builder cannot forward the flag.
+  if (
+    body.permissionMode === "read" &&
+    (!directReadOnlyEnforcement && (!permissionForwardingEnabled || Boolean(sshRuntime)))
+  ) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "read_only_unavailable",
+        error:
+          "This runtime cannot enforce Cave's Read-only mode. Switch Access to Full access or update the runtime before running it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
   const addDirForwardingEnabled =
     !openCodeDirect &&
     binding.harness !== "openclaw" &&

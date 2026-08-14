@@ -121,8 +121,8 @@ assert.doesNotMatch(
 );
 
 // Permission enforcement: Read-only forwards `coven run --permission read-only`
-// (mapped to the harness's native sandbox flag), gated on the CLI advertising
-// the flag; "full" stays implicit so the harness keeps its default sandbox.
+// (mapped to the harness's native sandbox flag) only when advertised, and
+// fails closed when neither the direct runtime nor Coven can enforce it.
 assert.match(
   chatRoute,
   /probeCovenCapability\(covenRunSupportsPermission\)/,
@@ -137,6 +137,11 @@ assert.match(
   chatRoute,
   /a\.push\("--permission", forwardPermission\)/,
   "coven run argv forwards --permission when enabled",
+);
+assert.match(
+  chatRoute,
+  /body\.permissionMode === "read"[\s\S]*?!directReadOnlyEnforcement && \(!permissionForwardingEnabled \|\| Boolean\(sshRuntime\)\)[\s\S]*?code: "read_only_unavailable"[\s\S]*?status: 501/,
+  "read-only requests fail closed before launch when the selected runtime cannot enforce the boundary",
 );
 
 assert.match(
