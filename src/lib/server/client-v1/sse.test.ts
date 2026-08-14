@@ -77,7 +77,11 @@ test("stateful replacement translation emits only additive suffixes and reconcil
   assert.deepEqual(
     translator.translate({ kind: "assistant_replace", text: "rewritten" }),
     {
-      event: { type: "reconcile_required", conversationId: context.conversationId },
+      event: {
+        type: "reconcile_required",
+        conversationId: context.conversationId,
+        reason: "assistant_rewrite",
+      },
       terminal: true,
     },
   );
@@ -100,10 +104,19 @@ test("SSE frames carry a canonical strictly increasing numeric id", () => {
     encodeClientStreamEvent(-1, { type: "run.completed", conversationId: "c" }));
 });
 
-test("synthetic reconciliation repeats the last committed cursor", () => {
-  const frame = new TextDecoder().decode(encodeClientReconcileEvent(9, context.conversationId));
-  assert.match(frame, /^id: 9\ndata: /);
-  assert.match(frame, /"type":"reconcile_required"/);
+test("synthetic reconciliation has no cursor id and declares its required resync", () => {
+  const frame = new TextDecoder().decode(
+    encodeClientReconcileEvent(context.conversationId, "incomplete_history"),
+  );
+  assert.doesNotMatch(frame, /^id:/m);
+  assert.deepEqual(sseFrames(frame), [{
+    id: null,
+    payload: {
+      type: "reconcile_required",
+      conversationId: context.conversationId,
+      reason: "incomplete_history",
+    },
+  }]);
 });
 
 test("cursor and Last-Event-ID are strict resumable nonnegative safe integers", () => {
@@ -224,9 +237,8 @@ function sseFrames(text: string) {
     .map((frame) => {
       const id = frame.match(/^id: (\d+)$/m);
       const data = frame.match(/^data: (.+)$/m);
-      assert.ok(id, "every event frame has an id");
       assert.ok(data, "every event frame has data");
-      return { id: Number(id[1]), payload: JSON.parse(data[1]) };
+      return { id: id ? Number(id[1]) : null, payload: JSON.parse(data[1]) };
     });
 }
 
@@ -301,11 +313,12 @@ test("initial translation emits the canonical oversized replacement recorded for
   resetRunBuffersForTest();
 });
 
-test("an evicted cursor emits reconcile_required before retained events", async () => {
+test("an evicted cursor emits an id-less reconciliation before the terminal replay", async () => {
   resetRunBuffersForTest();
   const run = openRunBuffer([context.runId]);
-  for (let index = 0; index < 10; index += 1) {
-    run.record({ kind: "assistant_chunk", text: String(index).repeat(64 * 1024) });
+  run.record({ kind: "assistant_chunk", text: "a".repeat(100_000) });
+  for (let index = 0; index < 8; index += 1) {
+    run.record({ kind: "user", text: String(index).repeat(64 * 1024) });
   }
   run.record({ kind: "done", isError: false });
   run.finish();
@@ -317,10 +330,17 @@ test("an evicted cursor emits reconcile_required before retained events", async 
   );
   assert.ok(response);
   const text = await response.text();
-  assert.match(text, /"type":"reconcile_required"/);
-  const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((match) => Number(match[1]));
-  assert.ok(ids.every((id, index) => index === 0 || id > ids[index - 1]));
-  assert.equal(ids.length, 1, "a gap reconciles and closes instead of applying a partial replay");
+  assert.deepEqual(sseFrames(text), [{
+    id: null,
+    payload: {
+      type: "reconcile_required",
+      conversationId: context.conversationId,
+      reason: "incomplete_history",
+    },
+  }, {
+    id: 10,
+    payload: { type: "run.completed", conversationId: context.conversationId },
+  }]);
 });
 
 test("resume cancellation unsubscribes the canonical live tail", async () => {
@@ -384,7 +404,7 @@ test("resume seeds translator state through the cursor before translating a repl
   resetRunBuffersForTest();
 });
 
-test("an incomplete-seed reconciliation preserves the next canonical replacement on reconnect", async () => {
+test("an incomplete seed replays the next canonical terminal without pinning reconnects", async () => {
   resetRunBuffersForTest();
   const run = openRunBuffer([context.runId]);
   const evictedText = "a".repeat(100_000);
@@ -393,40 +413,112 @@ test("an incomplete-seed reconciliation preserves the next canonical replacement
     run.record({ kind: "user", text: "p".repeat(64 * 1024) });
   }
   const cursor = getRunBufferStatus(context.runId)!.latestSeq;
-  const reconciliation = createResumedRunStream(
+  const first = createResumedRunStream(
     context.runId,
     cursor,
     context,
     new AbortController().signal,
   );
-  assert.ok(reconciliation);
-  const reconciliationFrames = sseFrames(await reconciliation.text());
-  assert.deepEqual(reconciliationFrames, [{
-    id: cursor,
-    payload: { type: "reconcile_required", conversationId: context.conversationId },
-  }], "the synthetic frame does not claim the next canonical sequence");
-
-  const replacement = `${evictedText} corrected`;
-  const replacementSeq = run.record({ kind: "assistant_replace", text: replacement });
+  assert.ok(first);
   const doneSeq = run.record({ kind: "done", isError: false });
-  assert.equal(replacementSeq, cursor + 1);
-  assert.equal(doneSeq, cursor + 2);
+  assert.equal(doneSeq, cursor + 1);
   run.finish();
+  const expected = [{
+    id: null,
+    payload: {
+      type: "reconcile_required",
+      conversationId: context.conversationId,
+      reason: "incomplete_history",
+    },
+  }, {
+    id: doneSeq,
+    payload: { type: "run.completed", conversationId: context.conversationId },
+  }];
+  assert.deepEqual(
+    sseFrames(await first.text()),
+    expected,
+    "the synthetic marker leaves the terminal's canonical id available",
+  );
 
+  const repeated = createResumedRunStream(
+    context.runId,
+    cursor,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(repeated);
+  assert.deepEqual(
+    sseFrames(await repeated.text()),
+    expected,
+    "a reconnect from the unchanged cursor is not pinned behind the marker",
+  );
+
+  const acknowledged = createResumedRunStream(
+    context.runId,
+    doneSeq!,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(acknowledged);
+  assert.equal(
+    await acknowledged.text(),
+    "",
+    "acknowledging the terminal drains the canonical stream without another marker",
+  );
+  resetRunBuffersForTest();
+});
+
+test("an incomplete reconciliation replaces later assistant content with its canonical cursor marker", async () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer([context.runId]);
+  run.record({ kind: "assistant_chunk", text: "a".repeat(100_000) });
+  for (let index = 0; index < 8; index += 1) {
+    run.record({ kind: "user", text: "p".repeat(64 * 1024) });
+  }
+  const cursor = getRunBufferStatus(context.runId)!.latestSeq;
   const response = createResumedRunStream(
     context.runId,
-    reconciliationFrames[0].id,
+    cursor,
     context,
     new AbortController().signal,
   );
   assert.ok(response);
-  assert.deepEqual(sseFrames(await response.text()), [{
-    id: replacementSeq,
-    payload: { type: "message.delta", text: replacement },
+  const laterText = "must-not-be-applied-twice";
+  const assistantSeq = run.record({ kind: "assistant_chunk", text: laterText });
+  const doneSeq = run.record({ kind: "done", isError: false });
+  assert.equal(assistantSeq, cursor + 1);
+  assert.equal(doneSeq, cursor + 2);
+  run.finish();
+
+  const frames = sseFrames(await response.text());
+  assert.deepEqual(frames, [{
+    id: null,
+    payload: {
+      type: "reconcile_required",
+      conversationId: context.conversationId,
+      reason: "incomplete_history",
+    },
+  }, {
+    id: assistantSeq,
+    payload: {
+      type: "reconcile_required",
+      conversationId: context.conversationId,
+      reason: "assistant_content_unavailable",
+    },
   }, {
     id: doneSeq,
     payload: { type: "run.completed", conversationId: context.conversationId },
-  }], "reconnecting from reconciliation's cursor replays each next canonical event once");
+  }]);
+  assert.doesNotMatch(JSON.stringify(frames), new RegExp(laterText));
+
+  const acknowledged = createResumedRunStream(
+    context.runId,
+    doneSeq!,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(acknowledged);
+  assert.equal(await acknowledged.text(), "");
   resetRunBuffersForTest();
 });
 
@@ -536,11 +628,14 @@ test("ahead resume cursor reconciles once and never tails later events", async (
   assert.ok(response);
   run.record({ kind: "assistant_chunk", text: "later" });
   const text = await response.text();
-  assert.equal(text.match(/"type":"reconcile_required"/g)?.length, 1);
-  assert.deepEqual(
-    [...text.matchAll(/^id: (\d+)$/gm)].map((match) => Number(match[1])),
-    [1],
-  );
+  assert.deepEqual(sseFrames(text), [{
+    id: null,
+    payload: {
+      type: "reconcile_required",
+      conversationId: context.conversationId,
+      reason: "cursor_ahead",
+    },
+  }]);
   assert.doesNotMatch(text, /later/);
   resetRunBuffersForTest();
 });

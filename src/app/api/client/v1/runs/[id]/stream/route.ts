@@ -65,7 +65,7 @@ export async function GET(req: Request, context: Context): Promise<Response> {
   }
 
   return new Response(
-    new TextDecoder().decode(encodeClientReconcileEvent(cursor, metadata.conversationId)),
+    new TextDecoder().decode(encodeClientReconcileEvent(metadata.conversationId, "stream_unavailable")),
     {
       headers: {
         "content-type": "text/event-stream; charset=utf-8",
