@@ -346,9 +346,9 @@ export const TOKEN_HEADER = "x-coven-cave-token";
 export const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";
 /**
  * Stamped by proxy.ts only after an admin request has passed the existing
- * sidecar-token and CSRF/source/content-type gates, or the direct-loopback
- * tokenless-development gate. Admin route handlers verify the value against
- * the per-boot local-peer secret before touching request data or stores.
+ * explicit sidecar-token and CSRF/source/content-type gates. Admin route
+ * handlers verify the value against the per-boot local-peer secret before
+ * touching request data or stores.
  */
 export const CLIENT_V1_ADMIN_HEADER = "x-coven-client-v1-admin";
 
