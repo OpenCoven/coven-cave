@@ -20,6 +20,8 @@ const CLAIM_ID_RE = /^claim-[a-z0-9-]+$/;
 const ARM_TOKEN_RE = /^arm-[a-f0-9]{64}$/;
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const RFC3339_UTC_MILLIS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const MINIMUM_ARM_COUNT = 2;
+const MAXIMUM_ARM_COUNT = 32;
 
 export type TweetThreadBlindingErrorCode =
   | "INVALID_TRIAL_ID"
@@ -29,6 +31,7 @@ export type TweetThreadBlindingErrorCode =
   | "INVALID_CLOSE_TIMESTAMP"
   | "INVALID_CANDIDATE"
   | "INSUFFICIENT_ARMS"
+  | "TOO_MANY_ARMS"
   | "DUPLICATE_CANDIDATE_ID"
   | "DUPLICATE_CANDIDATE_SHA"
   | "TOKEN_COLLISION"
@@ -156,6 +159,96 @@ function hasExactKeys(value: UnknownRecord, expected: readonly string[]): boolea
     && actual.every((key, index) => key === wanted[index]);
 }
 
+function strictJsonSnapshot<T>(
+  value: T,
+  code: TweetThreadBlindingErrorCode,
+  message: string,
+): T {
+  const ancestors = new WeakSet<object>();
+  const invalid = (): never => fail(code, message);
+
+  const visit = (current: unknown): unknown => {
+    if (
+      current === null
+      || typeof current === "string"
+      || typeof current === "boolean"
+    ) {
+      return current;
+    }
+    if (typeof current === "number") {
+      return Number.isFinite(current) ? current : invalid();
+    }
+    if (typeof current !== "object") return invalid();
+    if (ancestors.has(current)) return invalid();
+
+    let array: boolean;
+    let prototype: object | null;
+    let descriptors: PropertyDescriptorMap;
+    try {
+      array = Array.isArray(current);
+      prototype = Object.getPrototypeOf(current);
+      descriptors = Object.getOwnPropertyDescriptors(current);
+    } catch {
+      return invalid();
+    }
+
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.some((key) => typeof key === "symbol")) return invalid();
+    ancestors.add(current);
+    try {
+      if (array) {
+        if (prototype !== Array.prototype) return invalid();
+        const lengthDescriptor = descriptors.length;
+        if (
+          lengthDescriptor === undefined
+          || !("value" in lengthDescriptor)
+          || lengthDescriptor.enumerable === true
+          || !Number.isSafeInteger(lengthDescriptor.value)
+          || lengthDescriptor.value < 0
+          || lengthDescriptor.value > 0xffff_ffff
+        ) {
+          return invalid();
+        }
+        const length = lengthDescriptor.value as number;
+        if (keys.length !== length + 1) return invalid();
+        const snapshot: unknown[] = new Array(length);
+        for (let index = 0; index < length; index += 1) {
+          const descriptor = descriptors[String(index)];
+          if (
+            descriptor === undefined
+            || !("value" in descriptor)
+            || descriptor.enumerable !== true
+          ) {
+            return invalid();
+          }
+          snapshot[index] = visit(descriptor.value);
+        }
+        return Object.freeze(snapshot);
+      }
+
+      if (prototype !== Object.prototype && prototype !== null) return invalid();
+      const snapshot: UnknownRecord = Object.create(null) as UnknownRecord;
+      for (const key of keys as string[]) {
+        const descriptor = descriptors[key]!;
+        if (!("value" in descriptor) || descriptor.enumerable !== true) {
+          return invalid();
+        }
+        Object.defineProperty(snapshot, key, {
+          configurable: false,
+          enumerable: true,
+          value: visit(descriptor.value),
+          writable: false,
+        });
+      }
+      return Object.freeze(snapshot);
+    } finally {
+      ancestors.delete(current);
+    }
+  };
+
+  return visit(value) as T;
+}
+
 function isNonWhitespaceString(value: unknown): value is string {
   return typeof value === "string" && /\S/u.test(value);
 }
@@ -228,8 +321,13 @@ function canonicalizeJson(value: unknown): unknown {
 }
 
 function publicTrialCommitment(publicTrial: PublicBlindedTweetThreadTrial): string {
+  const snapshot = strictJsonSnapshot(
+    publicTrial,
+    "INVALID_PUBLIC_TRIAL",
+    "The public trial commitment input must be plain JSON data.",
+  );
   return createHash("sha256")
-    .update(JSON.stringify(canonicalizeJson(publicTrial)), "utf8")
+    .update(JSON.stringify(canonicalizeJson(snapshot)), "utf8")
     .digest("hex");
 }
 
@@ -239,13 +337,18 @@ function revealCommitment(
   mapping: Record<string, BlindedCandidateReference>,
   revealThresholds: TweetThreadTrialStoppingRule,
 ): string {
+  const snapshot = strictJsonSnapshot(
+    {
+      publicTrial,
+      mapping,
+      revealThresholds,
+    },
+    "INVALID_BLINDING_ENVELOPE",
+    "The reveal commitment input must be plain JSON data.",
+  );
   return createHmac("sha256", secret)
     .update(
-      `tweet-thread-reveal\u0000${JSON.stringify(canonicalizeJson({
-        publicTrial,
-        mapping,
-        revealThresholds,
-      }))}`,
+      `tweet-thread-reveal\u0000${JSON.stringify(canonicalizeJson(snapshot))}`,
       "utf8",
     )
     .digest("hex");
@@ -312,6 +415,15 @@ function copyStoppingRule(
     minimumVotes: stoppingRule.minimumVotes,
     ...(stoppingRule.closesAt === undefined ? {} : { closesAt: stoppingRule.closesAt }),
   };
+}
+
+function assertBoundedArmCount(count: number): void {
+  if (count < MINIMUM_ARM_COUNT) {
+    fail("INSUFFICIENT_ARMS", "A blinded trial requires at least two candidate arms.");
+  }
+  if (count > MAXIMUM_ARM_COUNT) {
+    fail("TOO_MANY_ARMS", "A blinded trial supports at most 32 candidate arms.");
+  }
 }
 
 function assertValidPublicMedia(value: unknown): asserts value is PublicThreadPostMedia {
@@ -392,10 +504,10 @@ function assertValidPublicTrial(
     || typeof value.revealCommitment !== "string"
     || !SHA256_RE.test(value.revealCommitment)
     || !Array.isArray(value.arms)
-    || value.arms.length < 2
   ) {
     fail("INVALID_PUBLIC_TRIAL", "The public trial is malformed.");
   }
+  assertBoundedArmCount(value.arms.length);
   try {
     validateStoppingRule(value.stoppingRule, "INVALID_PUBLIC_TRIAL");
   } catch (error) {
@@ -477,9 +589,11 @@ function assertValidEnvelope(value: unknown): asserts value is BlindingEnvelope 
     fail("INVALID_BLINDING_ENVELOPE", "The envelope reveal thresholds are malformed.");
   }
 
+  const mappingEntries = Object.entries(value.mapping);
+  assertBoundedArmCount(mappingEntries.length);
   const candidateIds = new Set<string>();
   const candidateShas = new Set<string>();
-  for (const [token, reference] of Object.entries(value.mapping)) {
+  for (const [token, reference] of mappingEntries) {
     if (
       !ARM_TOKEN_RE.test(token)
       || !isRecord(reference)
@@ -514,28 +628,42 @@ function sameStoppingRule(
 export function createBlindedTweetThreadTrial(
   input: CreateBlindedTweetThreadTrialInput,
 ): CreateBlindedTweetThreadTrialResult {
+  const trialId = input.trialId;
+  const candidateInput = strictJsonSnapshot(
+    input.candidates,
+    "INVALID_CANDIDATE",
+    "Candidate inputs must be plain JSON data.",
+  );
+  const seed = input.seed;
+  const secret = input.secret;
+  const stoppingRule = strictJsonSnapshot(
+    input.stoppingRule,
+    "INVALID_STOPPING_RULE",
+    "The stopping rule must be plain JSON data.",
+  );
   if (
-    typeof input.trialId !== "string"
-    || input.trialId.length > 128
-    || !TRIAL_ID_RE.test(input.trialId)
+    typeof trialId !== "string"
+    || trialId.length > 128
+    || !TRIAL_ID_RE.test(trialId)
   ) {
     fail("INVALID_TRIAL_ID", "trialId must be a strict stable trial identifier.");
   }
-  if (!isNonWhitespaceString(input.secret)) {
+  if (!isNonWhitespaceString(secret)) {
     fail("INVALID_SECRET", "The blinding secret must be a non-empty string.");
   }
-  if (!isNonWhitespaceString(input.seed)) {
+  if (!isNonWhitespaceString(seed)) {
     fail("INVALID_SEED", "The shuffle seed must be a non-empty string.");
   }
-  validateStoppingRule(input.stoppingRule, "INVALID_CLOSE_TIMESTAMP");
-  if (!Array.isArray(input.candidates) || input.candidates.length < 2) {
+  validateStoppingRule(stoppingRule, "INVALID_CLOSE_TIMESTAMP");
+  if (!Array.isArray(candidateInput)) {
     fail("INSUFFICIENT_ARMS", "A blinded trial requires at least two candidate arms.");
   }
+  assertBoundedArmCount(candidateInput.length);
 
   const candidates: ThreadCandidate[] = [];
   const candidateIds = new Set<string>();
   const candidateShas = new Set<string>();
-  for (const [index, candidate] of input.candidates.entries()) {
+  for (const [index, candidate] of candidateInput.entries()) {
     let validated: ThreadCandidate;
     try {
       validated = assertValidThreadCandidate(candidate);
@@ -559,15 +687,15 @@ export function createBlindedTweetThreadTrial(
     )
     .map((candidate) => {
       const armToken = deriveArmToken(
-        input.secret,
-        input.trialId,
+        secret,
+        trialId,
         candidate.candidateSha256,
       );
       return {
         candidate,
         armToken,
         shuffleKey: deriveShuffleKey(
-          input.seed,
+          seed,
           candidate.candidateSha256,
           armToken,
         ),
@@ -586,15 +714,15 @@ export function createBlindedTweetThreadTrial(
       : byShuffleKey;
   });
 
-  const stoppingRule = copyStoppingRule(input.stoppingRule);
+  const committedStoppingRule = copyStoppingRule(stoppingRule);
   const publicTrialWithoutCommitment: Omit<
     PublicBlindedTweetThreadTrial,
     "revealCommitment"
   > = {
     protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
-    trialId: input.trialId,
-    seedHash: createHash("sha256").update(input.seed, "utf8").digest("hex"),
-    stoppingRule,
+    trialId,
+    seedHash: createHash("sha256").update(seed, "utf8").digest("hex"),
+    stoppingRule: committedStoppingRule,
     arms: prepared.map(({ candidate, armToken }) => ({
       armToken,
       content: publicContent(candidate),
@@ -610,10 +738,10 @@ export function createBlindedTweetThreadTrial(
     ]),
   );
   const committedReveal = revealCommitment(
-    input.secret,
+    secret,
     publicTrialWithoutCommitment,
     mapping,
-    input.stoppingRule,
+    committedStoppingRule,
   );
   const publicTrial: PublicBlindedTweetThreadTrial = {
     ...publicTrialWithoutCommitment,
@@ -621,11 +749,11 @@ export function createBlindedTweetThreadTrial(
   };
   const envelope: BlindingEnvelope = {
     protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
-    trialId: input.trialId,
+    trialId,
     publicTrialSha256: publicTrialCommitment(publicTrial),
     revealCommitment: committedReveal,
     mapping,
-    revealThresholds: copyStoppingRule(input.stoppingRule),
+    revealThresholds: copyStoppingRule(committedStoppingRule),
   };
   return { publicTrial, envelope };
 }
@@ -633,28 +761,42 @@ export function createBlindedTweetThreadTrial(
 export function revealBlindedTweetThreadTrial(
   input: RevealBlindedTweetThreadTrialInput,
 ): BlindedTweetThreadReveal {
-  assertValidPublicTrial(input.publicTrial);
-  assertValidEnvelope(input.envelope);
-  if (!Number.isSafeInteger(input.observedVoteCount) || input.observedVoteCount < 0) {
+  const publicTrial = strictJsonSnapshot(
+    input.publicTrial,
+    "INVALID_PUBLIC_TRIAL",
+    "The public trial must be plain JSON data.",
+  );
+  const envelope = strictJsonSnapshot(
+    input.envelope,
+    "INVALID_BLINDING_ENVELOPE",
+    "The blinding envelope must be plain JSON data.",
+  );
+  const observedVoteCount = input.observedVoteCount;
+  const currentTime = input.currentTime;
+  const secret = input.secret;
+
+  assertValidPublicTrial(publicTrial);
+  assertValidEnvelope(envelope);
+  if (!Number.isSafeInteger(observedVoteCount) || observedVoteCount < 0) {
     fail("INVALID_VOTE_COUNT", "observedVoteCount must be a non-negative safe integer.");
   }
-  if (!isStrictRfc3339Timestamp(input.currentTime)) {
+  if (!isStrictRfc3339Timestamp(currentTime)) {
     fail("INVALID_CURRENT_TIME", "currentTime must be a real RFC3339 UTC timestamp with milliseconds.");
   }
-  if (!isNonWhitespaceString(input.secret)) {
+  if (!isNonWhitespaceString(secret)) {
     fail("INVALID_SECRET", "The reveal secret must be a non-empty string.");
   }
-  if (input.publicTrial.trialId !== input.envelope.trialId) {
+  if (publicTrial.trialId !== envelope.trialId) {
     fail("TRIAL_ID_MISMATCH", "The public trial and envelope trial identifiers differ.");
   }
 
-  const computedCommitment = publicTrialCommitment(input.publicTrial);
-  if (!hashesEqual(computedCommitment, input.envelope.publicTrialSha256)) {
+  const computedCommitment = publicTrialCommitment(publicTrial);
+  if (!hashesEqual(computedCommitment, envelope.publicTrialSha256)) {
     fail("TRIAL_COMMITMENT_MISMATCH", "The public trial no longer matches its commitment.");
   }
 
-  const publicTokens = input.publicTrial.arms.map((arm) => arm.armToken);
-  const mappingTokens = Object.keys(input.envelope.mapping);
+  const publicTokens = publicTrial.arms.map((arm) => arm.armToken);
+  const mappingTokens = Object.keys(envelope.mapping);
   const sortedPublicTokens = [...publicTokens].sort(compareOrdinalStrings);
   const sortedMappingTokens = [...mappingTokens].sort(compareOrdinalStrings);
   if (
@@ -665,8 +807,8 @@ export function revealBlindedTweetThreadTrial(
   }
   if (
     !sameStoppingRule(
-      input.publicTrial.stoppingRule,
-      input.envelope.revealThresholds,
+      publicTrial.stoppingRule,
+      envelope.revealThresholds,
     )
   ) {
     fail("INVALID_BLINDING_ENVELOPE", "Envelope reveal thresholds differ from the public stopping rule.");
@@ -675,20 +817,20 @@ export function revealBlindedTweetThreadTrial(
   const {
     revealCommitment: _publicRevealCommitment,
     ...publicTrialWithoutCommitment
-  } = input.publicTrial;
+  } = publicTrial;
   const computedRevealCommitment = revealCommitment(
-    input.secret,
+    secret,
     publicTrialWithoutCommitment,
-    input.envelope.mapping,
-    input.envelope.revealThresholds,
+    envelope.mapping,
+    envelope.revealThresholds,
   );
   const publicCommitmentMatches = hashesEqual(
     computedRevealCommitment,
-    input.publicTrial.revealCommitment,
+    publicTrial.revealCommitment,
   );
   const envelopeCommitmentMatches = hashesEqual(
     computedRevealCommitment,
-    input.envelope.revealCommitment,
+    envelope.revealCommitment,
   );
   if (!publicCommitmentMatches || !envelopeCommitmentMatches) {
     fail(
@@ -698,19 +840,19 @@ export function revealBlindedTweetThreadTrial(
   }
 
   const voteThresholdReached =
-    input.observedVoteCount >= input.envelope.revealThresholds.minimumVotes;
-  const closeThresholdReached = input.envelope.revealThresholds.closesAt !== undefined
-    && Date.parse(input.currentTime) >= Date.parse(input.envelope.revealThresholds.closesAt);
+    observedVoteCount >= envelope.revealThresholds.minimumVotes;
+  const closeThresholdReached = envelope.revealThresholds.closesAt !== undefined
+    && Date.parse(currentTime) >= Date.parse(envelope.revealThresholds.closesAt);
   if (!voteThresholdReached && !closeThresholdReached) {
     fail("REVEAL_LOCKED", "The precommitted reveal threshold has not been reached.");
   }
 
   return {
     protocolVersion: TWEET_THREAD_BLINDING_PROTOCOL_VERSION,
-    trialId: input.publicTrial.trialId,
+    trialId: publicTrial.trialId,
     arms: publicTokens.map((armToken) => ({
       armToken,
-      ...input.envelope.mapping[armToken]!,
+      ...envelope.mapping[armToken]!,
     })),
   };
 }

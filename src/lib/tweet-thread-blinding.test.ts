@@ -117,6 +117,11 @@ function createTrial(
   });
 }
 
+function bulkCandidates(count: number): ThreadCandidate[] {
+  return Array.from({ length: count }, (_, index) =>
+    candidate(`candidate-bulk-${index}`, `bulk-${index}`));
+}
+
 function expectedToken(candidateSha256: string): string {
   return `arm-${createHmac("sha256", SECRET)
     .update(`tweet-thread-arm\u0000${TRIAL_ID}\u0000${candidateSha256}`, "utf8")
@@ -570,6 +575,20 @@ function expectInvalidPublicMutation(
     () => createTrial({ candidates: [CANDIDATES[0]!] }),
     "INSUFFICIENT_ARMS",
   );
+  const maximumTrial = createTrial({
+    candidates: bulkCandidates(32),
+    stoppingRule: { minimumVotes: 1 },
+  });
+  assert.equal(maximumTrial.publicTrial.arms.length, 32);
+  assert.equal(Object.keys(maximumTrial.envelope.mapping).length, 32);
+  assert.equal(
+    reveal(maximumTrial.publicTrial, maximumTrial.envelope, 1).arms.length,
+    32,
+  );
+  expectCode(
+    () => createTrial({ candidates: bulkCandidates(33) }),
+    "TOO_MANY_ARMS",
+  );
   const duplicateId = candidate("candidate-alpha", "alternate-alpha");
   expectCode(
     () => createTrial({ candidates: [CANDIDATES[0]!, duplicateId] }),
@@ -602,6 +621,37 @@ function expectInvalidPublicMutation(
     () => createTrial({ stoppingRule: { minimumVotes: 0 } }),
     "INVALID_STOPPING_RULE",
   );
+  let creationMinimumVoteReads = 0;
+  const accessorStoppingRule = {
+    get minimumVotes() {
+      creationMinimumVoteReads += 1;
+      return creationMinimumVoteReads === 1 ? 12 : 0;
+    },
+  };
+  expectCode(
+    () => createTrial({
+      stoppingRule: accessorStoppingRule,
+    }),
+    "INVALID_STOPPING_RULE",
+  );
+  assert.equal(creationMinimumVoteReads, 0);
+  let creationCandidateReads = 0;
+  const accessorCandidate = structuredClone(CANDIDATES[0]);
+  Object.defineProperty(accessorCandidate, "candidateId", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      creationCandidateReads += 1;
+      return creationCandidateReads === 1
+        ? CANDIDATES[0].candidateId
+        : CANDIDATES[1].candidateId;
+    },
+  });
+  expectCode(
+    () => createTrial({ candidates: [accessorCandidate, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(creationCandidateReads, 0);
   expectCode(
     () => createTrial({
       stoppingRule: {
@@ -688,6 +738,242 @@ function expectInvalidPublicMutation(
   alteredThresholds.revealThresholds.minimumVotes = 13;
   expectCode(
     () => reveal(publicTrial, alteredThresholds, 13),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+}
+
+{
+  const { publicTrial, envelope } = createTrial();
+
+  const tooFewPublicArms = structuredClone(publicTrial);
+  tooFewPublicArms.arms = tooFewPublicArms.arms.slice(0, 1);
+  expectCode(
+    () => reveal(tooFewPublicArms, envelope, 12),
+    "INSUFFICIENT_ARMS",
+  );
+
+  const tooManyPublicArms = structuredClone(publicTrial);
+  tooManyPublicArms.arms = [
+    ...Array.from(
+      { length: 32 },
+      () => structuredClone(tooManyPublicArms.arms[0]!),
+    ),
+    structuredClone(tooManyPublicArms.arms[0]!),
+  ];
+  expectCode(
+    () => reveal(tooManyPublicArms, envelope, 12),
+    "TOO_MANY_ARMS",
+  );
+
+  const tooFewMappings = structuredClone(envelope);
+  for (const token of Object.keys(tooFewMappings.mapping).slice(1)) {
+    delete tooFewMappings.mapping[token];
+  }
+  expectCode(
+    () => reveal(publicTrial, tooFewMappings, 12),
+    "INSUFFICIENT_ARMS",
+  );
+
+  const tooManyMappings = structuredClone(envelope);
+  for (let index = 0; index < 29; index += 1) {
+    tooManyMappings.mapping[
+      `arm-${index.toString(16).padStart(64, "0")}`
+    ] = {
+      candidateId: `candidate-extra-${index}`,
+      candidateSha256: (index + 100).toString(16).padStart(64, "0"),
+    };
+  }
+  expectCode(
+    () => reveal(publicTrial, tooManyMappings, 12),
+    "TOO_MANY_ARMS",
+  );
+}
+
+{
+  const base = createTrial();
+
+  let publicMinimumVoteReads = 0;
+  const publicMinimumVotes = structuredClone(base.publicTrial);
+  Object.defineProperty(publicMinimumVotes.stoppingRule, "minimumVotes", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      publicMinimumVoteReads += 1;
+      return publicMinimumVoteReads === 1 ? 1 : 12;
+    },
+  });
+  expectCode(
+    () => reveal(publicMinimumVotes, base.envelope, 1),
+    "INVALID_PUBLIC_TRIAL",
+  );
+  assert.equal(publicMinimumVoteReads, 0);
+
+  let envelopeMinimumVoteReads = 0;
+  const envelopeMinimumVotes = structuredClone(base.envelope);
+  Object.defineProperty(envelopeMinimumVotes.revealThresholds, "minimumVotes", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      envelopeMinimumVoteReads += 1;
+      return envelopeMinimumVoteReads === 1 ? 1 : 12;
+    },
+  });
+  expectCode(
+    () => reveal(base.publicTrial, envelopeMinimumVotes, 1),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+  assert.equal(envelopeMinimumVoteReads, 0);
+
+  let revealCommitmentReads = 0;
+  const publicCommitmentAccessor = structuredClone(base.publicTrial);
+  Object.defineProperty(publicCommitmentAccessor, "revealCommitment", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      revealCommitmentReads += 1;
+      return revealCommitmentReads === 1
+        ? base.publicTrial.revealCommitment
+        : "0".repeat(64);
+    },
+  });
+  expectCode(
+    () => reveal(publicCommitmentAccessor, base.envelope, 12),
+    "INVALID_PUBLIC_TRIAL",
+  );
+  assert.equal(revealCommitmentReads, 0);
+
+  let envelopeCommitmentReads = 0;
+  const envelopeCommitmentAccessor = structuredClone(base.envelope);
+  Object.defineProperty(envelopeCommitmentAccessor, "revealCommitment", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      envelopeCommitmentReads += 1;
+      return envelopeCommitmentReads === 1
+        ? base.envelope.revealCommitment
+        : "0".repeat(64);
+    },
+  });
+  expectCode(
+    () => reveal(base.publicTrial, envelopeCommitmentAccessor, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+  assert.equal(envelopeCommitmentReads, 0);
+
+  let armTokenReads = 0;
+  const armTokenAccessor = structuredClone(base.publicTrial);
+  Object.defineProperty(armTokenAccessor.arms[0]!, "armToken", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      armTokenReads += 1;
+      return armTokenReads === 1
+        ? base.publicTrial.arms[0]!.armToken
+        : base.publicTrial.arms[1]!.armToken;
+    },
+  });
+  expectCode(
+    () => reveal(armTokenAccessor, base.envelope, 12),
+    "INVALID_PUBLIC_TRIAL",
+  );
+  assert.equal(armTokenReads, 0);
+
+  const firstToken = base.publicTrial.arms[0]!.armToken;
+  let mappingReferenceReads = 0;
+  const mappingReferenceAccessor = structuredClone(base.envelope);
+  const originalReference = mappingReferenceAccessor.mapping[firstToken]!;
+  Object.defineProperty(mappingReferenceAccessor.mapping, firstToken, {
+    enumerable: true,
+    configurable: true,
+    get() {
+      mappingReferenceReads += 1;
+      return mappingReferenceReads === 1
+        ? originalReference
+        : mappingReferenceAccessor.mapping[base.publicTrial.arms[1]!.armToken];
+    },
+  });
+  expectCode(
+    () => reveal(base.publicTrial, mappingReferenceAccessor, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+  assert.equal(mappingReferenceReads, 0);
+
+  let candidateReferenceReads = 0;
+  const candidateReferenceAccessor = structuredClone(base.envelope);
+  Object.defineProperty(
+    candidateReferenceAccessor.mapping[firstToken]!,
+    "candidateId",
+    {
+      enumerable: true,
+      configurable: true,
+      get() {
+        candidateReferenceReads += 1;
+        return candidateReferenceReads === 1
+          ? originalReference.candidateId
+          : "candidate-substituted";
+      },
+    },
+  );
+  expectCode(
+    () => reveal(base.publicTrial, candidateReferenceAccessor, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+  assert.equal(candidateReferenceReads, 0);
+}
+
+{
+  const base = createTrial();
+
+  const symbolTrial = structuredClone(base.publicTrial);
+  Object.defineProperty(symbolTrial, Symbol("hidden"), {
+    enumerable: true,
+    value: true,
+  });
+  expectCode(
+    () => reveal(symbolTrial, base.envelope, 12),
+    "INVALID_PUBLIC_TRIAL",
+  );
+
+  const sparseTrial = structuredClone(base.publicTrial);
+  sparseTrial.arms = new Array(2);
+  sparseTrial.arms[0] = structuredClone(base.publicTrial.arms[0]!);
+  expectCode(
+    () => reveal(sparseTrial, base.envelope, 12),
+    "INVALID_PUBLIC_TRIAL",
+  );
+
+  const cyclicTrial = structuredClone(base.publicTrial);
+  (cyclicTrial.arms[0]!.content as unknown as Record<string, unknown>).cycle =
+    cyclicTrial;
+  expectCode(
+    () => reveal(cyclicTrial, base.envelope, 12),
+    "INVALID_PUBLIC_TRIAL",
+  );
+
+  const nonPlainEnvelope = structuredClone(base.envelope);
+  Object.setPrototypeOf(nonPlainEnvelope.mapping, { inherited: true });
+  expectCode(
+    () => reveal(base.publicTrial, nonPlainEnvelope, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+
+  const inaccessibleEnvelope = new Proxy(base.envelope, {
+    ownKeys() {
+      throw new Error("inaccessible");
+    },
+  });
+  expectCode(
+    () => reveal(base.publicTrial, inaccessibleEnvelope, 12),
+    "INVALID_BLINDING_ENVELOPE",
+  );
+
+  const functionEnvelope = structuredClone(base.envelope);
+  const functionReference = functionEnvelope.mapping[
+    base.publicTrial.arms[0]!.armToken
+  ] as unknown as Record<string, unknown>;
+  functionReference.candidateId = () => "candidate-substituted";
+  expectCode(
+    () => reveal(base.publicTrial, functionEnvelope, 12),
     "INVALID_BLINDING_ENVELOPE",
   );
 }
