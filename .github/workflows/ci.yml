@@ -168,9 +168,12 @@ jobs:
             if pnpm build; then
               exit 0
             fi
-            echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
-            rm -rf .next
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
+              rm -rf .next
+            fi
           done
+          echo "::error::pnpm build failed after 3 attempts"
           exit 1
 
   build:
