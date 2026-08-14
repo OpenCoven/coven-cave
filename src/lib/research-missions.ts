@@ -728,12 +728,17 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
  *  that would still spend a real familiar session. Enforced by the create
  *  validator (server) and the desk composer (client). */
 export const RESEARCH_INTENT_MIN_LENGTH = 8;
-export const RESEARCH_INTENT_MAX_LENGTH = 10_000;
+/** Upper bound on a mission brief. Raised 10k → 25k (cave-e8z): real briefs
+ *  carry pasted context — prior findings, source lists, constraints — and hit
+ *  the old cap, which surfaced only as a server rejection after the writing was
+ *  done. The composer now shows the count as you type, so the ceiling is
+ *  visible rather than discovered. */
+export const RESEARCH_INTENT_MAX_LENGTH = 25_000;
 export const RESEARCH_TITLE_MAX_LENGTH = 160;
 export const RESEARCH_DELIVERABLE_MAX_LENGTH = 160;
 export const RESEARCH_AUDIENCE_MAX_LENGTH = 500;
 export const RESEARCH_PROJECT_ROOT_MAX_LENGTH = 2_000;
-export const RESEARCH_DIRECTION_MAX_LENGTH = 2_000;
+export const RESEARCH_DIRECTION_MAX_LENGTH = 10_000;
 export const RESEARCH_CONSTRAINT_MAX_COUNT = 20;
 export const RESEARCH_CONSTRAINT_MAX_LENGTH = 500;
 

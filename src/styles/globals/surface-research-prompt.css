@@ -77,10 +77,33 @@
 }
 .research-intake__card textarea {
   min-height: 96px;
-  max-height: 60vh;
+  /* ~12 lines (cave-r3vmj). The composer sizes the element to its content on
+     every change; this is the ceiling it settles against, after which the box
+     scrolls. `lh` is the honest unit here — it tracks the line-height above,
+     so the cap stays 12 lines if the type scale moves. The px value is the
+     fallback for engines without `lh`. */
+  max-height: 306px;
+  max-height: calc(12lh + (var(--space-3) * 2));
   font-size: var(--text-md);
   line-height: 1.5;
   padding: var(--space-3) 14px;
+  /* Room for the counter so a long brief never runs under it. */
+  padding-bottom: calc(var(--space-3) + 14px);
+}
+
+/* Character count, anchored inside the prompt box (its container is already
+   position: relative for the slash-command palette). */
+.research-intent-count {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.research-intent-count--near {
+  color: var(--text-warning, var(--text-strong));
 }
 
 /* ── Slash-command palette (design 548–559): anchored under the textarea. ── */
