@@ -199,12 +199,21 @@
   background: var(--border-hairline);
 }
 
+/* The destination row's final geometry (this block is the last declaration of
+   it in the cascade, so it — not navigation-recents.css — is what ships).
+   --rail-control / --rail-lead are the shared rail constants: the row is the
+   same height as its collapsed square and leads its icon at the same offset,
+   so peeking the rail open never moves a glyph (issue 4351). `flex: none` matters
+   for the same reason — .sidebar-nav-scroll is a flex column, so without it an
+   overflowing list silently compressed every row below its min-height and the
+   rail's fixed 32px squares no longer matched the panel's pitch. */
 .sidebar-folder-row,
 .sidebar-actions--footer .sidebar-action-row {
+  flex: none;
   gap: 6px;
-  min-height: 30px;
+  min-height: var(--rail-control);
   border-radius: var(--radius-control);
-  padding: 0 var(--space-2);
+  padding: 0 var(--rail-lead);
   color: var(--text-secondary);
 }
 
@@ -227,12 +236,22 @@
   color: var(--text-primary);
 }
 
-.sidebar-foot-bell > .relative,
-.sidebar-foot-icon-cell {
+.sidebar-foot-bell > .relative {
   display: grid;
   width: 28px;
   height: 28px;
   flex: 0 0 28px;
+  place-items: center;
+}
+
+/* The footer glyph's cell is exactly the glyph. A wider cell would centre the
+   icon inside it and push it off the rail's icon column, which is the one
+   thing the footer rows must not do (issue 4351). */
+.sidebar-foot-icon-cell {
+  display: grid;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  flex: 0 0 var(--icon-md);
   place-items: center;
 }
 

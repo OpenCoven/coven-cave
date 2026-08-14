@@ -42,9 +42,14 @@
  * destination icons so only the icons remain; each control keeps its native
  * `title` so hovering names the surface. Mobile is unaffected — it slides the
  * full drawer in and out (the rail class is only applied on desktop). */
+/* No padding and no column gap of its own — the SAME values the expanded panel
+   uses. Both used to differ (10px/6px here against 0/0 there), and since these
+   apply to the top-level bands they pushed the whole rail column down relative
+   to the panel, so hovering the rail open slid every control upward (issue 4351).
+   The bands carry their own margins instead, in both states. */
 .shell-nav--rail .sidebar-minimal {
-  padding: 10px 0;
-  gap: 6px;
+  padding: 0;
+  gap: 0;
   align-items: center;
 }
 
@@ -60,51 +65,20 @@
   display: flex;
 }
 
-/* ── Rail-only bookends (chat-revamp phase D) ────────────────────────────────
- * The brand mark tops the rail (28px accent-tinted rounded square, star
- * glyph) and the account avatar circle closes it under Settings. Both are
- * hidden in the expanded panel, which leads with the familiar switcher and
- * ends with the shared footer instead. */
-.sidebar-brand-mark,
-.sidebar-user-avatar {
-  display: none;
-}
-
-.shell-nav--rail .sidebar-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex: none;
-  margin: 0 auto var(--space-1);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
-  color: var(--accent-presence);
-}
-
-.shell-nav--rail .sidebar-user-avatar {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex: none;
-  /* The rail's own column gap separates it from Settings above. */
-  margin: 0 auto;
-  padding: 0;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--text-primary) 10%, transparent);
-  color: var(--text-secondary);
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.shell-nav--rail .sidebar-user-avatar:hover {
-  background: color-mix(in oklch, var(--text-primary) 16%, transparent);
-  color: var(--text-primary);
-}
-
-/* The header's rail behaviour (avatar-only trigger, filled compose square)
-   lives with the header itself in styles/globals/rail-header.css. */
+/* ── Rail-only bookends: retired (was chat-revamp phase D) ───────────────────
+ * The rail used to open with a decorative brand mark and close with an account
+ * avatar, neither of which the expanded panel has. Both are gone (issue 4351):
+ *
+ *  - they were the only controls with no counterpart in the panel, so between
+ *    them they displaced every control in the rail by ~60px against its own
+ *    hover-peek position — the misalignment the issue reports;
+ *  - the brand mark was decorative (aria-hidden, no action) and put a third
+ *    identity glyph in a column that already carries the familiar avatar;
+ *  - the account avatar's onClick was onOpenSettings — the same action as the
+ *    gear directly above it.
+ *
+ * The header's rail behaviour (avatar-only trigger, compose square) lives with
+ * the header itself in styles/globals/rail-header.css. */
 
 /* Labels and count pills collapse away; the icon is all that stays per row.
    (Footer icons live in `.sidebar-foot-icon-cell`, which is preserved.) */
@@ -124,8 +98,8 @@
 }
 .shell-nav--rail .sidebar-badge {
   position: absolute;
-  top: 4px;
-  right: 6px;
+  top: 3px;
+  right: 4px;
   min-width: 7px;
   width: 7px;
   height: 7px;
@@ -145,8 +119,10 @@
   padding-left: 0;
   padding-right: 0;
 }
+/* Same row gap as the expanded panel's .sidebar-nav-scroll, so the two states
+   share one vertical pitch as well as one icon column. */
 .shell-nav--rail .sidebar-nav-scroll {
-  gap: 6px;
+  gap: var(--space-1);
   align-items: center;
   scrollbar-width: none;
 }
@@ -155,22 +131,18 @@
   align-items: center;
 }
 
-/* The collapsed rail stacks its footer icons vertically (the expanded footer is
-   a horizontal row); a row here would overflow the narrow rail. */
 .shell-nav--rail .sidebar-foot {
-  flex-direction: column;
   align-items: center;
 }
 
-/* No room for text in the 56px rail — the version returns when expanded. */
-.shell-nav--rail .sidebar-version {
-  display: none;
-}
+/* Every rail control is the same centered --rail-control rounded square — one
+   shared hit-area box so the compose, nav, and footer icons read as a single
+   family (previously: compose had a 2px accent outline, the active row a tinted
+   box with a left bar, and the rest were bare icons).
 
-/* Every rail control is the same centered 36px rounded square (phase-D rail
-   geometry) — one shared hit-area box so the compose, nav, and footer icons
-   read as a single family (previously: compose had a 2px accent outline, the
-   active row a tinted box with a left bar, and the rest were bare icons). */
+   `margin-inline: auto`, NOT `margin: 0 auto`: the shorthand also zeroed
+   margin-top, which silently swallowed .sidebar-folder-row--quiet-lead's gap
+   and cost the rail the quiet-cluster grouping the panel has. */
 .shell-nav--rail .sidebar-folder-row,
 .shell-nav--rail .sidebar-action-row,
 .shell-nav--rail .sidebar-foot-btn,
@@ -178,11 +150,11 @@
   justify-content: center;
   flex: none;
   gap: 0;
-  width: 36px;
-  height: 36px;
-  min-height: 0;
+  width: var(--rail-control);
+  height: var(--rail-control);
+  min-height: var(--rail-control);
   padding: 0;
-  margin: 0 auto;
+  margin-inline: auto;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   color: var(--text-secondary);
@@ -211,7 +183,10 @@
   background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
 }
 
-/* Nav icon sizing follows the global icon scale in globals.css. */
+/* Nav icon sizing follows the global icon scale in globals.css — ONE size in
+   both states. The rail used to bump every glyph to --icon-lg, so hovering it
+   open scaled all of them down 20px → 16px in the same frame that the panel
+   slid out; the glyphs now only gain a label (issue 4351). */
 .sidebar-folder-icon,
 .sidebar-action-icon,
 .sidebar-foot-icon {
@@ -219,10 +194,25 @@
   height: var(--icon-md);
 }
 
-/* Keep the collapsed icon rail readable without oversized glyphs. */
-.shell-nav--rail .sidebar-folder-icon,
-.shell-nav--rail .sidebar-action-icon,
-.shell-nav--rail .sidebar-foot-icon {
-  width: var(--icon-lg);
-  height: var(--icon-lg);
+/* Room cluster label ("Rooms"): the 56px rail has no room for the word, and it
+   used to render anyway — a full-width uppercase string in a 56px column. It
+   collapses to a hairline that keeps the label's own line box, so the room
+   rows below stay on the panel's grid. */
+.shell-nav--rail .sidebar-rooms-label {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 12px;
+  margin-inline: auto;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+}
+
+.shell-nav--rail .sidebar-rooms-label::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--border-hairline);
 }

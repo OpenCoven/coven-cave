@@ -114,9 +114,22 @@ for (const [label, rule] of [
   assert.match(rule, /border-radius: var\(--radius-control\);/, `the ${label} takes its radius from the token`);
   assert.doesNotMatch(rule, /border-radius:\s*\d+px/, `the ${label} does not hardcode a radius`);
   // min-height, not height: the control has to grow with a longer label or a
-  // larger touch target rather than clipping.
-  assert.match(rule, /min-height: 34px;/, `the ${label} shares the 34px control height`);
+  // larger touch target rather than clipping. The value is the shared rail
+  // constant, so these two controls are also the same box as their own
+  // collapsed-rail squares and as the nav rows below (#4351).
+  assert.match(
+    rule,
+    /min-height: var\(--rail-control\);/,
+    `the ${label} shares the rail control height`,
+  );
   assert.doesNotMatch(rule, /\n\s*height:\s*\d+px/, `the ${label} does not pin a fixed height`);
+  // Border-compensated leading padding: both are bordered boxes, and their
+  // glyphs have to land on the same icon column as the border-less nav rows.
+  assert.match(
+    rule,
+    /padding: 0 calc\(var\(--rail-lead\) - 1px\);/,
+    `the ${label} leads its glyph from the shared icon column`,
+  );
 }
 
 assert.match(newRule, /font-size: var\(--text-base\);/, "the New chat label uses the rail's base type size");
@@ -129,7 +142,11 @@ assert.match(
 // ── One panel surface and one content inset ─────────────────────────────────
 // The rail's background belongs to the shared .shell-nav ancestor; both
 // sections render transparent over it, so toggling cannot change the shade.
-assert.match(chatCss, /--rail-pad: 10px;/, "the rail declares one content inset on the shared ancestor");
+assert.match(chatCss, /--rail-pad: 4px;/, "the rail declares one content inset on the shared ancestor");
+// The inset is not a free choice: it is what puts the expanded panel's icon
+// column exactly where the collapsed rail centres its squares (#4351).
+assert.match(chatCss, /--rail-lead: 8px;/, "the rail declares one leading padding for its controls");
+assert.match(chatCss, /--rail-control: 32px;/, "the rail declares one control box size");
 assert.match(
   chatCss,
   /\.cnav \{[\s\S]*?--cnav-pad: var\(--rail-pad\);/,
