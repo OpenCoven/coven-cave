@@ -85,23 +85,6 @@ export function createStrictJsonSnapshot<T>(input: T): T {
       }
       consume(keys.length + 1);
 
-      const descriptors: PropertyDescriptor[] = [];
-      for (let index = 0; index < length; index += 1) {
-        let descriptor: PropertyDescriptor | undefined;
-        try {
-          descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        } catch {
-          fail();
-        }
-        if (
-          descriptor === undefined
-          || !("value" in descriptor)
-          || descriptor.enumerable !== true
-        ) {
-          fail();
-        }
-        descriptors.push(descriptor);
-      }
       let prototype: object | null;
       try {
         prototype = Object.getPrototypeOf(value);
@@ -112,7 +95,29 @@ export function createStrictJsonSnapshot<T>(input: T): T {
 
       ancestors.add(value);
       try {
-        return descriptors.map((descriptor) => visit(descriptor.value, depth + 1));
+        const snapshot: unknown[] = new Array(length);
+        for (let index = 0; index < length; index += 1) {
+          let descriptor: PropertyDescriptor | undefined;
+          try {
+            descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+          } catch {
+            fail();
+          }
+          if (
+            descriptor === undefined
+            || !("value" in descriptor)
+            || descriptor.enumerable !== true
+          ) {
+            fail();
+          }
+          Object.defineProperty(snapshot, String(index), {
+            configurable: false,
+            enumerable: true,
+            value: visit(descriptor.value, depth + 1),
+            writable: false,
+          });
+        }
+        return snapshot;
       } finally {
         ancestors.delete(value);
       }
@@ -121,23 +126,6 @@ export function createStrictJsonSnapshot<T>(input: T): T {
     if (keys.length > MAX_OBJECT_KEYS) fail();
     if ((keys as string[]).includes("toJSON")) fail();
     consume(keys.length + 1);
-    const descriptors = new Map<string, PropertyDescriptor>();
-    for (const key of keys as string[]) {
-      let descriptor: PropertyDescriptor | undefined;
-      try {
-        descriptor = Object.getOwnPropertyDescriptor(value, key);
-      } catch {
-        fail();
-      }
-      if (
-        descriptor === undefined
-        || !("value" in descriptor)
-        || descriptor.enumerable !== true
-      ) {
-        fail();
-      }
-      descriptors.set(key, descriptor);
-    }
     let prototype: object | null;
     try {
       prototype = Object.getPrototypeOf(value);
@@ -149,7 +137,20 @@ export function createStrictJsonSnapshot<T>(input: T): T {
     ancestors.add(value);
     try {
       const snapshot = Object.create(null) as Record<string, unknown>;
-      for (const [key, descriptor] of descriptors) {
+      for (const key of keys as string[]) {
+        let descriptor: PropertyDescriptor | undefined;
+        try {
+          descriptor = Object.getOwnPropertyDescriptor(value, key);
+        } catch {
+          fail();
+        }
+        if (
+          descriptor === undefined
+          || !("value" in descriptor)
+          || descriptor.enumerable !== true
+        ) {
+          fail();
+        }
         Object.defineProperty(snapshot, key, {
           configurable: false,
           enumerable: true,

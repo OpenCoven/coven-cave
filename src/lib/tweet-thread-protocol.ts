@@ -601,9 +601,22 @@ function collectNonWhitespaceStringIssues(value: unknown, path: string): string[
     : [];
 }
 
+const MAX_PROTOCOL_ISSUES = 256;
+const MAX_ISSUE_VALUE_LENGTH = 128;
+
+function boundedIssueValue(value: string): string {
+  return value.length <= MAX_ISSUE_VALUE_LENGTH
+    ? value
+    : `${value.slice(0, MAX_ISSUE_VALUE_LENGTH)}…`;
+}
+
 function pushDuplicateIssue(seen: Set<string>, next: string, path: string, issues: string[]): void {
   if (seen.has(next)) {
-    issues.push(`${path} must be unique; duplicate value "${next}" found.`);
+    if (issues.length < MAX_PROTOCOL_ISSUES) {
+      issues.push(
+        `${path} must be unique; duplicate value "${boundedIssueValue(next)}" found.`,
+      );
+    }
     return;
   }
   seen.add(next);

@@ -426,6 +426,15 @@ for (const invalid of [
   assert.ok(codes(result).includes("brief-mismatch"));
 }
 
+for (const malformedBrief of [false, 0, ""] as const) {
+  const result = validateThreadCandidate(candidate(), malformedBrief);
+  assert.equal(result.accepted, false);
+  assert.ok(
+    codes(result).includes("brief-mismatch"),
+    `falsy malformed brief ${JSON.stringify(malformedBrief)} must not be ignored`,
+  );
+}
+
 {
   let getterReads = 0;
   const suppliedBrief = structuredClone(candidate().brief);

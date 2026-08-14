@@ -25,11 +25,31 @@ import {
   serializeCanonicalThreadCandidate,
 } from "./tweet-thread-protocol.ts";
 import type { DeterministicFinding, PublishReceipt } from "./tweet-thread-protocol.ts";
+import { createStrictJsonSnapshot } from "./strict-json-snapshot.ts";
 import { validateThreadCandidate } from "./tweet-thread-validation.ts";
 
 const TIMESTAMP = "2026-08-14T12:00:00.000Z";
 const OTHER_TIMESTAMP = "2026-08-14T12:05:00.000Z";
 type PublishedReceipt = Extract<PublishReceipt, { status: "published" }>;
+
+{
+  const child = { state: "before" };
+  const source = new Proxy(
+    { child, trigger: true },
+    {
+      getOwnPropertyDescriptor(target, key) {
+        if (key === "trigger") child.state = "after";
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    },
+  );
+  const snapshot = createStrictJsonSnapshot(source);
+  assert.equal(
+    snapshot.child.state,
+    "before",
+    "nested descriptor values are snapshotted before a later proxy trap can mutate them",
+  );
+}
 
 assert.equal(
   canonicalize([333333333.33333329, 1e30, 4.50, 2e-3, 1e-7, -0]),

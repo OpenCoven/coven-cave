@@ -33,6 +33,7 @@ const GENERATED_AT = "2026-08-14T12:00:00.000Z";
 const CLOSES_AT = "2026-08-15T12:00:00.000Z";
 const TRIAL_ID = "trial-thread-fixture";
 const SECRET = "fixture-secret-that-must-never-cross-the-boundary";
+const MUTATED_SECRET = ["mutated", "secret"].join("-");
 const SEED = "fixture-seed-alpha";
 const SCORECARD_SET_COMMITMENTS =
   new WeakMap<object, BlindedScorecardSetCommitment>();
@@ -1113,7 +1114,16 @@ function expectInvalidPublicMutation(
 }
 
 {
-  const expected = createTrial();
+  const expected = createBlindedTweetThreadTrial({
+    trialId: TRIAL_ID,
+    candidates: CANDIDATES,
+    seed: "mutated-seed",
+    secret: MUTATED_SECRET,
+    stoppingRule: {
+      minimumVotes: 12,
+      closesAt: CLOSES_AT,
+    },
+  });
   const input: Parameters<typeof createBlindedTweetThreadTrial>[0] = {
     trialId: TRIAL_ID,
     candidates: [...CANDIDATES],
@@ -1134,7 +1144,7 @@ function expectInvalidPublicMutation(
   assert.deepEqual(
     createBlindedTweetThreadTrial(attackedInput),
     expected,
-    "known sibling descriptors are captured before later structural traps",
+    "structural traps run before known sibling values are snapshotted",
   );
 }
 
@@ -1235,10 +1245,9 @@ function expectInvalidPublicMutation(
     attackedPublicTrial,
     SCORECARD_SET_COMMITMENTS.get(base.publicTrial)!,
   );
-  assert.deepEqual(
-    reveal(attackedPublicTrial, attackedEnvelope, 12),
-    reveal(base.publicTrial, base.envelope, 12),
-    "reveal snapshots both sibling commitments and thresholds before nested payloads",
+  expectCode(
+    () => reveal(attackedPublicTrial, attackedEnvelope, 12),
+    "INVALID_BLINDING_ENVELOPE",
   );
 }
 
@@ -1356,6 +1365,18 @@ function expectInvalidPublicMutation(
     committedAt: GENERATED_AT,
     secret: SECRET,
   });
+  const futureScored = structuredClone(scorecards);
+  futureScored[0]!.scoredAt = CLOSES_AT;
+  expectCode(
+    () => createBlindedScorecardSetCommitment({
+      publicTrial,
+      envelope,
+      scorecards: futureScored,
+      committedAt: GENERATED_AT,
+      secret: SECRET,
+    }),
+    "INVALID_SCORECARD_SET_COMMITMENT",
+  );
   expectCode(
     () => createBlindedScorecardSetCommitment({
       publicTrial,

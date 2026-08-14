@@ -173,6 +173,43 @@ try {
   assert.equal(acceptedResult.candidateSha256, candidate().candidateSha256);
   assert.equal(accepted.stdout, `${JSON.stringify(acceptedResult)}\n`);
 
+  const whitespaceCandidate = candidate();
+  whitespaceCandidate.brief.topic = "  Portable validator  ";
+  whitespaceCandidate.candidateSha256 =
+    computeThreadCandidateSha256(whitespaceCandidate);
+  writeFileSync(
+    path.join(isolatedPlugin, "whitespace-candidate.json"),
+    `${JSON.stringify(whitespaceCandidate)}\n`,
+  );
+  writeFileSync(
+    path.join(isolatedPlugin, "whitespace-brief.json"),
+    `${JSON.stringify(whitespaceCandidate.brief)}\n`,
+  );
+  const whitespaceAccepted = run(
+    process.execPath,
+    [
+      "bin/tweet-thread-validate.mjs",
+      "validate",
+      "whitespace-candidate.json",
+      "whitespace-brief.json",
+    ],
+    isolatedPlugin,
+  );
+  assert.equal(whitespaceAccepted.status, 0, whitespaceAccepted.stderr);
+
+  writeFileSync(path.join(isolatedPlugin, "false-brief.json"), "false\n");
+  const falseBriefRejected = run(
+    process.execPath,
+    ["bin/tweet-thread-validate.mjs", "validate", "accepted.json", "false-brief.json"],
+    isolatedPlugin,
+  );
+  assert.equal(falseBriefRejected.status, 1, falseBriefRejected.stderr);
+  assert.ok(
+    JSON.parse(falseBriefRejected.stdout).findings.some(
+      (finding) => finding.code === "brief-mismatch",
+    ),
+  );
+
   const rejectedCandidate = candidate();
   rejectedCandidate.posts[0].text = "forbidden phrase";
   rejectedCandidate.candidateSha256 = computeThreadCandidateSha256(rejectedCandidate);

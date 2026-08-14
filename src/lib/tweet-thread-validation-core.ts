@@ -310,7 +310,10 @@ export function validateThreadCandidateCore(
     };
   }
   const candidateBrief = isRecord(record.brief) ? record.brief : null;
-  if (brief && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))) {
+  if (
+    brief !== undefined
+    && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))
+  ) {
     addFinding(
       findings,
       "brief-mismatch",

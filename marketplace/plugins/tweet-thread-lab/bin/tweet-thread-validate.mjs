@@ -6575,9 +6575,6 @@ import {
   readSync
 } from "node:fs";
 
-// src/lib/tweet-thread-protocol.ts
-import { createHash as createHash2 } from "node:crypto";
-
 // node_modules/.pnpm/canonicalize@3.0.0/node_modules/canonicalize/lib/canonicalize.js
 function canonicalize(object, seen = /* @__PURE__ */ new Set()) {
   if (typeof object === "number" && isNaN(object)) {
@@ -6622,6 +6619,9 @@ function canonicalize(object, seen = /* @__PURE__ */ new Set()) {
   seen.delete(object);
   return result;
 }
+
+// src/lib/tweet-thread-protocol.ts
+import { createHash as createHash2 } from "node:crypto";
 
 // node_modules/.pnpm/typebox@1.3.8/node_modules/typebox/build/system/memory/memory.mjs
 var memory_exports = {};
@@ -15213,7 +15213,7 @@ function validateThreadCandidateCore(candidate, protocolIssues = [], brief) {
     };
   }
   const candidateBrief = isRecord(record.brief) ? record.brief : null;
-  if (brief && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))) {
+  if (brief !== void 0 && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))) {
     addFinding(
       findings,
       "brief-mismatch",
@@ -15498,19 +15498,6 @@ function createStrictJsonSnapshot(input) {
         if (!keySet.has(String(index))) fail();
       }
       consume(keys.length + 1);
-      const descriptors2 = [];
-      for (let index = 0; index < length; index += 1) {
-        let descriptor;
-        try {
-          descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        } catch {
-          fail();
-        }
-        if (descriptor === void 0 || !("value" in descriptor) || descriptor.enumerable !== true) {
-          fail();
-        }
-        descriptors2.push(descriptor);
-      }
       let prototype2;
       try {
         prototype2 = Object.getPrototypeOf(value);
@@ -15520,7 +15507,25 @@ function createStrictJsonSnapshot(input) {
       if (prototype2 !== Array.prototype) fail();
       ancestors.add(value);
       try {
-        return descriptors2.map((descriptor) => visit(descriptor.value, depth + 1));
+        const snapshot = new Array(length);
+        for (let index = 0; index < length; index += 1) {
+          let descriptor;
+          try {
+            descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+          } catch {
+            fail();
+          }
+          if (descriptor === void 0 || !("value" in descriptor) || descriptor.enumerable !== true) {
+            fail();
+          }
+          Object.defineProperty(snapshot, String(index), {
+            configurable: false,
+            enumerable: true,
+            value: visit(descriptor.value, depth + 1),
+            writable: false
+          });
+        }
+        return snapshot;
       } finally {
         ancestors.delete(value);
       }
@@ -15528,19 +15533,6 @@ function createStrictJsonSnapshot(input) {
     if (keys.length > MAX_OBJECT_KEYS) fail();
     if (keys.includes("toJSON")) fail();
     consume(keys.length + 1);
-    const descriptors = /* @__PURE__ */ new Map();
-    for (const key of keys) {
-      let descriptor;
-      try {
-        descriptor = Object.getOwnPropertyDescriptor(value, key);
-      } catch {
-        fail();
-      }
-      if (descriptor === void 0 || !("value" in descriptor) || descriptor.enumerable !== true) {
-        fail();
-      }
-      descriptors.set(key, descriptor);
-    }
     let prototype;
     try {
       prototype = Object.getPrototypeOf(value);
@@ -15551,7 +15543,16 @@ function createStrictJsonSnapshot(input) {
     ancestors.add(value);
     try {
       const snapshot = /* @__PURE__ */ Object.create(null);
-      for (const [key, descriptor] of descriptors) {
+      for (const key of keys) {
+        let descriptor;
+        try {
+          descriptor = Object.getOwnPropertyDescriptor(value, key);
+        } catch {
+          fail();
+        }
+        if (descriptor === void 0 || !("value" in descriptor) || descriptor.enumerable !== true) {
+          fail();
+        }
         Object.defineProperty(snapshot, key, {
           configurable: false,
           enumerable: true,
@@ -15908,21 +15909,6 @@ function serializeCanonicalThreadCandidateSnapshot(candidate) {
 function computeThreadCandidateSnapshotSha256(candidate) {
   return createHash2("sha256").update(serializeCanonicalThreadCandidateSnapshot(candidate), "utf8").digest("hex");
 }
-function trimIfString(value) {
-  return typeof value === "string" ? value.trim() : value;
-}
-function dedupeTrimmedList(value) {
-  if (!Array.isArray(value)) return value;
-  const out = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const entry of value) {
-    const normalized = typeof entry === "string" ? entry.trim() : entry;
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-    out.push(normalized);
-  }
-  return out;
-}
 function collectObjectiveWeightIssues(value, path) {
   if (!isRecord2(value)) return [`${path} must be an object with exact objective weight keys.`];
   const issues = [];
@@ -15985,9 +15971,18 @@ function collectTimestampOrderIssues(value, bound, valuePath, boundPath, order) 
 function collectNonWhitespaceStringIssues(value, path) {
   return typeof value === "string" && value.trim().length === 0 ? [`${path} must contain non-whitespace text.`] : [];
 }
+var MAX_PROTOCOL_ISSUES = 256;
+var MAX_ISSUE_VALUE_LENGTH = 128;
+function boundedIssueValue(value) {
+  return value.length <= MAX_ISSUE_VALUE_LENGTH ? value : `${value.slice(0, MAX_ISSUE_VALUE_LENGTH)}…`;
+}
 function pushDuplicateIssue(seen, next, path, issues) {
   if (seen.has(next)) {
-    issues.push(`${path} must be unique; duplicate value "${next}" found.`);
+    if (issues.length < MAX_PROTOCOL_ISSUES) {
+      issues.push(
+        `${path} must be unique; duplicate value "${boundedIssueValue(next)}" found.`
+      );
+    }
     return;
   }
   seen.add(next);
@@ -16072,29 +16067,6 @@ function collectThreadCandidateIssues(value, path = "ThreadCandidate", includeDe
     }
   }
   return issues;
-}
-function normalizeThreadBrief(input) {
-  const source = snapshotProtocolValue(input, "ThreadBrief");
-  if (!isRecord2(source)) {
-    throw new TweetThreadProtocolValidationError(["ThreadBrief must be an object."]);
-  }
-  const normalized = { ...source };
-  normalized.protocolVersion = trimIfString(source.protocolVersion);
-  normalized.briefId = trimIfString(source.briefId);
-  normalized.topic = trimIfString(source.topic);
-  normalized.audience = trimIfString(source.audience);
-  if (Object.hasOwn(source, "notes")) normalized.notes = trimIfString(source.notes);
-  if (isRecord2(source.objectiveWeights)) {
-    normalized.objectiveWeights = { ...source.objectiveWeights };
-  }
-  if (isRecord2(source.constraints)) {
-    normalized.constraints = { ...source.constraints };
-    normalized.constraints.requiredClaimIds = dedupeTrimmedList(source.constraints.requiredClaimIds);
-    normalized.constraints.bannedPhrases = dedupeTrimmedList(source.constraints.bannedPhrases);
-  }
-  const issues = collectThreadBriefIssues(normalized);
-  if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
-  return normalized;
 }
 function inspectThreadCandidateForValidation(input) {
   const snapshot = snapshotProtocolValue(input, "ThreadCandidate");
@@ -16190,12 +16162,7 @@ function readJsonFile(label, filename) {
 }
 function readBrief(filename) {
   if (filename === void 0) return void 0;
-  try {
-    return normalizeThreadBrief(readJsonFile("brief", filename));
-  } catch (error) {
-    if (error instanceof CliContractError) throw error;
-    throw new CliContractError("brief JSON does not match the protocol contract.");
-  }
+  return readJsonFile("brief", filename);
 }
 function run() {
   const [command, candidatePath, briefPath, ...extra] = process.argv.slice(2);

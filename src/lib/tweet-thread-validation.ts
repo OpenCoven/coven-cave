@@ -5,7 +5,6 @@ import {
 } from "./tweet-thread-protocol.ts";
 import type {
   DeterministicFinding,
-  ThreadBrief,
   ThreadPostMeasurement,
   ThreadValidationResult,
 } from "./tweet-thread-protocol.ts";
@@ -41,7 +40,7 @@ export function createDeterministicFinding(
 
 export function validateThreadCandidate(
   candidate: unknown,
-  brief?: ThreadBrief,
+  brief?: unknown,
 ): ThreadValidationResult {
   const inspected = inspectThreadCandidateForValidation(candidate);
   let suppliedBriefSnapshot: unknown;

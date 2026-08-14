@@ -254,9 +254,7 @@ interface KnownSnapshotField {
 }
 
 interface CapturedKnownRecord {
-  readonly source: object;
-  readonly descriptors: PropertyDescriptorMap;
-  readonly depth: number;
+  readonly snapshots: Readonly<Record<string, unknown>>;
 }
 
 function fail(code: TweetThreadBlindingErrorCode, message: string): never {
@@ -363,37 +361,27 @@ function createStrictJsonSnapshotter() {
       }
       consumeBudget(1 + keys.length, code, message);
 
-      const descriptors: PropertyDescriptor[] = new Array(length);
-      for (let index = 0; index < length; index += 1) {
-        let descriptor: PropertyDescriptor | undefined;
-        try {
-          descriptor = Object.getOwnPropertyDescriptor(current, String(index));
-        } catch {
-          fail(code, message);
-        }
-        if (
-          descriptor === undefined
-          || !("value" in descriptor)
-          || descriptor.enumerable !== true
-        ) {
-          fail(code, message);
-        }
-        descriptors[index] = descriptor;
-      }
-
       ancestors.add(current);
       try {
         const snapshot: unknown[] = new Array(length);
         for (let index = 0; index < length; index += 1) {
+          let descriptor: PropertyDescriptor | undefined;
+          try {
+            descriptor = Object.getOwnPropertyDescriptor(current, String(index));
+          } catch {
+            fail(code, message);
+          }
+          if (
+            descriptor === undefined
+            || !("value" in descriptor)
+            || descriptor.enumerable !== true
+          ) {
+            fail(code, message);
+          }
           Object.defineProperty(snapshot, String(index), {
             configurable: false,
             enumerable: true,
-            value: visit(
-              (descriptors[index] as PropertyDescriptor & { value: unknown }).value,
-              code,
-              message,
-              depth + 1,
-            ),
+            value: visit(descriptor.value, code, message, depth + 1),
             writable: false,
           });
         }
@@ -427,34 +415,23 @@ function createStrictJsonSnapshotter() {
       fail(code, message);
     }
 
-    const descriptors: PropertyDescriptorMap = Object.create(null);
-    for (const key of keys as string[]) {
-      let descriptor: PropertyDescriptor | undefined;
-      try {
-        descriptor = Object.getOwnPropertyDescriptor(current, key);
-      } catch {
-        fail(code, message);
-      }
-      if (
-        descriptor === undefined
-        || !("value" in descriptor)
-        || descriptor.enumerable !== true
-      ) {
-        fail(code, message);
-      }
-      Object.defineProperty(descriptors, key, {
-        configurable: false,
-        enumerable: true,
-        value: descriptor,
-        writable: false,
-      });
-    }
-
     ancestors.add(current);
     try {
       const snapshot: UnknownRecord = Object.create(null) as UnknownRecord;
       for (const key of keys as string[]) {
-        const descriptor = descriptors[key]!;
+        let descriptor: PropertyDescriptor | undefined;
+        try {
+          descriptor = Object.getOwnPropertyDescriptor(current, key);
+        } catch {
+          fail(code, message);
+        }
+        if (
+          descriptor === undefined
+          || !("value" in descriptor)
+          || descriptor.enumerable !== true
+        ) {
+          fail(code, message);
+        }
         Object.defineProperty(snapshot, key, {
           configurable: false,
           enumerable: true,
@@ -474,6 +451,11 @@ function createStrictJsonSnapshotter() {
     fallbackCode: TweetThreadBlindingErrorCode,
     fallbackMessage: string,
     depth = 0,
+    snapshotValue?: (
+      field: KnownSnapshotField,
+      value: unknown,
+      depth: number,
+    ) => unknown,
   ): CapturedKnownRecord => {
     if (
       depth > STRICT_SNAPSHOT_MAX_DEPTH
@@ -508,29 +490,6 @@ function createStrictJsonSnapshotter() {
     consumeBudget(1 + keys.length, fallbackCode, fallbackMessage);
 
     const expectedKeys = new Set(fields.map((field) => field.key));
-    const descriptors: PropertyDescriptorMap = Object.create(null);
-    for (const field of fields) {
-      let descriptor: PropertyDescriptor | undefined;
-      try {
-        descriptor = Object.getOwnPropertyDescriptor(value, field.key);
-      } catch {
-        fail(field.code, field.message);
-      }
-      if (
-        descriptor === undefined
-        || !("value" in descriptor)
-        || descriptor.enumerable !== true
-      ) {
-        fail(field.code, field.message);
-      }
-      Object.defineProperty(descriptors, field.key, {
-        configurable: false,
-        enumerable: true,
-        value: descriptor,
-        writable: false,
-      });
-    }
-
     let prototype: object | null;
     try {
       prototype = Object.getPrototypeOf(value);
@@ -540,25 +499,48 @@ function createStrictJsonSnapshotter() {
     if (prototype !== Object.prototype && prototype !== null) {
       fail(fallbackCode, fallbackMessage);
     }
+    const snapshots: Record<string, unknown> = Object.create(null);
+    ancestors.add(value);
+    try {
+      for (const field of fields) {
+        let descriptor: PropertyDescriptor | undefined;
+        try {
+          descriptor = Object.getOwnPropertyDescriptor(value, field.key);
+        } catch {
+          fail(field.code, field.message);
+        }
+        if (
+          descriptor === undefined
+          || !("value" in descriptor)
+          || descriptor.enumerable !== true
+        ) {
+          fail(field.code, field.message);
+        }
+        Object.defineProperty(snapshots, field.key, {
+          configurable: false,
+          enumerable: true,
+          value: snapshotValue
+            ? snapshotValue(field, descriptor.value, depth + 1)
+            : visit(descriptor.value, field.code, field.message, depth + 1),
+          writable: false,
+        });
+      }
+    } finally {
+      ancestors.delete(value);
+    }
     if (
       keys.length !== fields.length
       || keys.some((key) => !expectedKeys.has(key as string))
     ) {
       fail(fallbackCode, fallbackMessage);
     }
-    return { source: value, descriptors, depth };
+    return { snapshots: Object.freeze(snapshots) };
   };
 
   const snapshotCapturedField = <T>(
     captured: CapturedKnownRecord,
     field: KnownSnapshotField,
-  ): T =>
-    visit(
-      (captured.descriptors[field.key] as PropertyDescriptor & { value: unknown }).value,
-      field.code,
-      field.message,
-      captured.depth + 1,
-    ) as T;
+  ): T => captured.snapshots[field.key] as T;
 
   return {
     captureKnownRecord,
@@ -1712,6 +1694,17 @@ export function createBlindedScorecardSetCommitment(
     snapshot.envelope,
     "INVALID_SCORECARD_SET_COMMITMENT",
   );
+  if (
+    snapshot.scorecards.some(
+      (scorecard) =>
+        Date.parse(scorecard.scoredAt) > Date.parse(snapshot.committedAt),
+    )
+  ) {
+    fail(
+      "INVALID_SCORECARD_SET_COMMITMENT",
+      "Every blinded scorecard must be scored at or before the set commitment.",
+    );
+  }
   const unsignedCommitment: Omit<
     BlindedScorecardSetCommitment,
     "commitmentHmac"
@@ -1742,6 +1735,30 @@ export function revealBlindedTweetThreadTrial(
     REVEAL_INPUT_FIELDS,
     "INVALID_PUBLIC_TRIAL",
     "The reveal input must contain only the known own data properties.",
+    0,
+    (field, value) => {
+      if (field.key === "publicTrial") {
+        const captured = capturePublicTrial(snapshotter, value);
+        return {
+          ...snapshotPublicTrialControls(snapshotter, captured),
+          arms: snapshotter.snapshotCapturedField(
+            captured,
+            PUBLIC_TRIAL_FIELDS[6],
+          ),
+        };
+      }
+      if (field.key === "envelope") {
+        const captured = captureEnvelope(snapshotter, value);
+        return {
+          ...snapshotEnvelopeControls(snapshotter, captured),
+          mapping: snapshotter.snapshotCapturedField(
+            captured,
+            ENVELOPE_FIELDS[5],
+          ),
+        };
+      }
+      return snapshotter.snapshot(value, field.code, field.message);
+    },
   );
   const observedVoteCount = snapshotter.snapshotCapturedField<number>(
     capturedInput,
@@ -1755,44 +1772,13 @@ export function revealBlindedTweetThreadTrial(
     capturedInput,
     REVEAL_INPUT_FIELDS[2],
   );
-  const publicTrialCaptured = capturePublicTrial(
-    snapshotter,
-    (
-      capturedInput.descriptors.publicTrial as PropertyDescriptor & {
-        value: unknown;
-      }
-    ).value,
+  const publicTrial = snapshotter.snapshotCapturedField<
+    PublicBlindedTweetThreadTrial
+  >(capturedInput, REVEAL_INPUT_FIELDS[3]);
+  const envelope = snapshotter.snapshotCapturedField<BlindingEnvelope>(
+    capturedInput,
+    REVEAL_INPUT_FIELDS[4],
   );
-  const envelopeCaptured = captureEnvelope(
-    snapshotter,
-    (
-      capturedInput.descriptors.envelope as PropertyDescriptor & {
-        value: unknown;
-      }
-    ).value,
-  );
-  const publicTrialControls = snapshotPublicTrialControls(
-    snapshotter,
-    publicTrialCaptured,
-  );
-  const envelopeControls = snapshotEnvelopeControls(
-    snapshotter,
-    envelopeCaptured,
-  );
-  const publicTrial: PublicBlindedTweetThreadTrial = {
-    ...publicTrialControls,
-    arms: snapshotter.snapshotCapturedField(
-      publicTrialCaptured,
-      PUBLIC_TRIAL_FIELDS[6],
-    ),
-  };
-  const envelope: BlindingEnvelope = {
-    ...envelopeControls,
-    mapping: snapshotter.snapshotCapturedField(
-      envelopeCaptured,
-      ENVELOPE_FIELDS[5],
-    ),
-  };
   const scorecardSetCommitment = snapshotter.snapshotCapturedField<
     BlindedScorecardSetCommitment
   >(
@@ -1867,6 +1853,18 @@ export function revealBlindedThreadScorecards(
     snapshot.secret,
     snapshot.scorecards,
   );
+  if (
+    snapshot.scorecards.some(
+      (scorecard) =>
+        Date.parse(scorecard.scoredAt)
+          > Date.parse(snapshot.scorecardSetCommitment.committedAt),
+    )
+  ) {
+    fail(
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+      "Every blinded scorecard must predate its committed scorecard set.",
+    );
+  }
   const reveal = revealBlindedTweetThreadTrial({
     publicTrial: snapshot.publicTrial,
     envelope: snapshot.envelope,
