@@ -170,3 +170,37 @@ test("only reading content is scaled — chrome keeps its own size", () => {
     "the control itself must NOT scale, or A+ walks out from under the pointer",
   );
 });
+
+test("the sticky controls share the document column width and gutters", () => {
+  const sharedCss = readFileSync(new URL("../styles/document-reader.css", import.meta.url), "utf8");
+  const researchCss = readFileSync(new URL("../styles/research-reader.css", import.meta.url), "utf8");
+
+  assert.match(
+    sharedCss,
+    /\.document-reader__toolbar\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--document-reader-column-width\)\)[\s\S]*?margin:\s*0 auto[\s\S]*?padding:\s*0 var\(--document-reader-column-gutter\) var\(--space-2\)/,
+  );
+  assert.match(
+    sharedCss,
+    /\.document-reader__column\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--document-reader-column-width\)\)[\s\S]*?padding:\s*0 var\(--document-reader-column-gutter\)/,
+  );
+  assert.match(
+    sharedCss,
+    /\.document-reader--compact\s*\{[\s\S]*?--document-reader-column-width:\s*48rem[\s\S]*?--document-reader-column-gutter:\s*var\(--space-4\)/,
+  );
+  assert.match(
+    researchCss,
+    /\.research-reader \.document-reader\s*\{[\s\S]*?--document-reader-column-width:\s*880px[\s\S]*?--document-reader-column-gutter:\s*var\(--space-12\)/,
+  );
+  assert.match(
+    researchCss,
+    /\.research-reader:not\(\[data-expanded="true"\]\) \.document-reader\s*\{[\s\S]*?--document-reader-column-width:\s*760px/,
+  );
+  assert.match(
+    researchCss,
+    /\.rr-doc__column\s*\{[\s\S]*?padding:\s*0 var\(--document-reader-column-gutter\)/,
+  );
+  assert.match(
+    researchCss,
+    /@container \(max-width:\s*30rem\)\s*\{[\s\S]*?\.research-reader \.document-reader__toolbar,\s*\.research-reader \.rr-doc__column\s*\{[\s\S]*?padding-inline:\s*var\(--space-3\)/,
+  );
+});
