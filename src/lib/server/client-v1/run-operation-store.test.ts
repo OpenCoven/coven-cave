@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { pathToFileURL } from "node:url";
@@ -17,6 +17,7 @@ const {
   pruneExpiredClientRunOperations,
   reserveClientRunOperation,
   setClientRunOperationBeforeLaunchHookForTest,
+  setClientRunOperationCleanupCursorPathHelpersForTest,
   setClientRunOperationCleanupSidecarsHookForTest,
 } = await import("./run-operation-store.ts");
 const { operationLockDbPath } = await import("./operation-transaction-lock.ts");
@@ -28,12 +29,14 @@ const requestHash = "a".repeat(64);
 
 after(async () => {
   setClientRunOperationBeforeLaunchHookForTest(null);
+  setClientRunOperationCleanupCursorPathHelpersForTest(null);
   setClientRunOperationCleanupSidecarsHookForTest(null);
   await rm(root, { recursive: true, force: true });
 });
 
 beforeEach(async () => {
   setClientRunOperationBeforeLaunchHookForTest(null);
+  setClientRunOperationCleanupCursorPathHelpersForTest(null);
   setClientRunOperationCleanupSidecarsHookForTest(null);
   await rm(root, { recursive: true, force: true });
   await mkdir(root, { recursive: true });
@@ -343,6 +346,42 @@ test("the cleanup cursor survives a process restart", async () => {
   await runCleanupInSubprocess(now);
 
   assert.equal(existsSync(expiredPath), false);
+});
+
+test("Windows cursor paths persist as POSIX keys and resume after restart", async () => {
+  const { expiredPath, now } = await seedRotatingCleanupCandidates();
+  setClientRunOperationCleanupCursorPathHelpersForTest(path.win32);
+
+  assert.equal((await pruneExpiredClientRunOperations(now)).recordsRemoved, 0);
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(root, ".run-operation-cleanup-cursor.json"), "utf8")),
+    {
+      version: 1,
+      lastCandidate: `${credentialId}/${operationIdAt(63)}.json`,
+    },
+  );
+
+  setClientRunOperationCleanupCursorPathHelpersForTest(null);
+  await runCleanupInSubprocess(now);
+  assert.equal(existsSync(expiredPath), false);
+});
+
+test("cleanup rejects traversal and absolute cursor keys", async () => {
+  const record = await reserve();
+  const validKey = `${credentialId}/${operationId}.json`;
+  const cursorPath = path.join(root, ".run-operation-cleanup-cursor.json");
+  const invalidKeys = [
+    `../${validKey}`,
+    `/${validKey}`,
+    `C:\\${validKey.replace("/", "\\")}`,
+  ];
+
+  for (const lastCandidate of invalidKeys) {
+    await writeFile(cursorPath, JSON.stringify({ version: 1, lastCandidate }));
+    const result = await pruneExpiredClientRunOperations(record.expiresAt - 1);
+    assert.equal(result.failures, 1, `${lastCandidate} is rejected`);
+    assert.ok(existsSync(clientRunOperationStorePath(operationId, credentialId)));
+  }
 });
 
 test("retention removes an expired operation JSON record and all adjacent SQLite sidecars", async () => {
