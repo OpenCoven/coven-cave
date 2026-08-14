@@ -284,7 +284,7 @@ assert.match(
 
 // Pins: send route validates mentions and appends the prompt block.
 const mentionSendSource = readFileSync(
-  new URL("../lib/server/chat-send-service.ts", import.meta.url),
+  new URL("../app/api/chat/send/route.ts", import.meta.url),
   "utf8",
 );
 assert.match(

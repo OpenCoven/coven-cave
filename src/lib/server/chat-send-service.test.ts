@@ -127,9 +127,18 @@ test("the route exports one canonical send entrypoint for HTTP and client caller
     fileURLToPath(new URL("../../app/api/chat/send/route.ts", import.meta.url)),
     "utf8",
   );
+  const service = await readFile(
+    fileURLToPath(new URL("./chat-send-service.ts", import.meta.url)),
+    "utf8",
+  );
   assert.match(route, /export async function executeChatSend\(req: Request\)/);
   assert.match(
     route,
     /export async function POST\(req: Request\): Promise<Response> \{\s*return executeChatSend\(req\);\s*\}/,
+  );
+  assert.match(
+    service,
+    /import \{ executeChatSend as executeCanonicalChatSend \} from "@\/app\/api\/chat\/send\/route";[\s\S]*export async function executeChatSend\(req: Request\): Promise<Response> \{\s*return executeCanonicalChatSend\(req\);\s*\}/,
+    "client callers retain the stable service boundary while the route owns implementation",
   );
 });
