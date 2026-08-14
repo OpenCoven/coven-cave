@@ -95,7 +95,10 @@ const workspace = await readFile(path.join(root, "src/components/workspace.tsx")
 // The right companion rail was removed; Salem was re-homed into the
 // drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-assert.match(workspace, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem launcher must open Salem in the drag-to-split pane");
+// cave-x6rw routes launcher opens through a normalized pane request instead of a
+// bare {kind} literal. Same contract — the Salem launcher opens Salem in the
+// drag-to-split pane — asserted on the new call shape (cave-ktvy0).
+assert.match(workspace, /normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), "salem"\)[\s\S]{0,120}?addSplitTarget\(request\)/, "Salem launcher must open Salem in the drag-to-split pane");
 assert.match(workspace, /import \{[\s\S]*SalemChatPanel[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
 assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
