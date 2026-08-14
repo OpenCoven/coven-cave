@@ -60,7 +60,7 @@ assert.equal(await captureWorkBranch(null), null);
 
 // ── 4. send-route wiring: snapshot recorded at every transcript save ─────────
 const sendRoute = readFileSync(
-  fileURLToPath(new URL("../../app/api/chat/send/route.ts", import.meta.url)),
+  fileURLToPath(new URL("./chat-send-service.ts", import.meta.url)),
   "utf8",
 );
 const captures = sendRoute.match(

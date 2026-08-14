@@ -94,7 +94,7 @@ id_ed25519
 id_ecdsa
 id_dsa
 secrets/
-credentials/
+/credentials/
 .netrc
 
 # Git worktrees
@@ -147,3 +147,8 @@ __verify-chat-detail.mjs
 .psyche*
 /.xcode-source-packages
 /.demo
+
+# in-worktree scratch dirs test files create for isolated fixtures/stores
+# (never os.tmpdir(), so they stay inside the sandboxed test filesystem
+# boundary); each test cleans up its own exact created subdirectory.
+/.test-tmp

@@ -20,6 +20,77 @@ const GH = "https://api.github.com";
 const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 const EVENTS = new Set(["APPROVE", "REQUEST_CHANGES", "COMMENT"]);
 
+export type GitHubReviewInput = {
+  repo: string;
+  number: number;
+  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+  body?: string;
+};
+export type GitHubReviewResult =
+  | {
+      ok: true;
+      review: {
+        id: string;
+        state: string;
+        url: string | null;
+      };
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      reason: "auth_required" | "upstream" | "network";
+    };
+
+export async function executeGitHubReview(input: GitHubReviewInput): Promise<GitHubReviewResult> {
+  const token = resolveGitHubToken();
+  if (!token) {
+    return { ok: false, status: 401, error: "auth_required", reason: "auth_required" };
+  }
+
+  try {
+    const res = await fetch(`${GH}/repos/${input.repo}/pulls/${input.number}/reviews`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      body: JSON.stringify({ event: input.event, ...(input.body ? { body: input.body } : {}) }),
+    });
+    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok || !data) {
+      const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
+      return { ok: false, status: res.status, error: message, reason: "upstream" };
+    }
+    return {
+      ok: true,
+      review: {
+        id: String(data.id ?? ""),
+        state: String(data.state ?? input.event),
+        url: typeof data.html_url === "string" ? data.html_url : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      error: error instanceof Error ? error.message : "failed to submit review",
+      reason: "network",
+    };
+  }
+}
+
+function toLegacyResponse(result: GitHubReviewResult): Response {
+  if (result.ok) return NextResponse.json(result);
+  return NextResponse.json(
+    { ok: false, error: result.error },
+    { status: result.reason === "auth_required" ? 401 : result.status === 403 ? 403 : 502 },
+  );
+}
+
 export async function POST(req: Request) {
   let body: { repo?: unknown; number?: unknown; event?: unknown; body?: unknown };
   try {
@@ -46,43 +117,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "review body required" }, { status: 400 });
   }
 
-  const token = resolveGitHubToken();
-  if (!token) {
-    return NextResponse.json({ ok: false, error: "auth_required" }, { status: 401 });
-  }
-
-  try {
-    // repo passed REPO_RE and number is a positive integer — safe to interpolate.
-    const res = await fetch(`${GH}/repos/${repo}/pulls/${number}/reviews`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      body: JSON.stringify({ event, ...(text ? { body: text } : {}) }),
-    });
-    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!res.ok || !data) {
-      // Surface GitHub's own message verbatim (e.g. "Can not approve your own
-      // pull request") — the card renders it as the actionable error.
-      const message = typeof data?.message === "string" ? data.message : `github error (${res.status})`;
-      return NextResponse.json({ ok: false, error: message }, { status: res.status === 403 ? 403 : 502 });
-    }
-    return NextResponse.json({
-      ok: true,
-      review: {
-        id: String(data.id ?? ""),
-        state: String(data.state ?? event),
-        url: typeof data.html_url === "string" ? data.html_url : null,
-      },
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "failed to submit review" },
-      { status: 502 },
-    );
-  }
+  return toLegacyResponse(await executeGitHubReview({
+    repo,
+    number,
+    event: event as GitHubReviewInput["event"],
+    ...(text ? { body: text } : {}),
+  }));
 }

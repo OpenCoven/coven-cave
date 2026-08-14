@@ -7,6 +7,8 @@ import {
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
   LOCAL_PEER_HEADER,
+  CLIENT_V1_LOCAL_HEADER,
+  CLIENT_V1_ADMIN_HEADER,
   SAFE_CONTENT_TYPES,
   timingSafeEqualString,
   isLoopbackHost,
@@ -25,6 +27,9 @@ import {
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
+  isClientV1Path,
+  isClientV1AdminPath,
+  hasEncodedClientV1PathOctet,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
@@ -210,7 +215,51 @@ function nextWithMobileAccessMarker(req: NextRequest, mobileAccessAuthenticated:
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
+// Stamps the unforgeable client-v1 internal marker onto the forwarded
+// request so route-level auth (`requireClientPrincipal`) can verify — in
+// constant time, against the same per-boot secret — that THIS proxy already
+// established a direct loopback peer for this request. Only ever called from
+// the branch below, which has already required `trustedLocalPeer === true`,
+// so `COVEN_CAVE_LOCAL_PEER_SECRET` is guaranteed to be set here (that's what
+// `isTrustedLocalPeer` verified). Any client-supplied copy of either marker
+// header is always deleted first — `CLIENT_V1_LOCAL_HEADER` is additionally
+// stripped from `req` itself at the top of `proxy()`, before this function
+// (or any other return path) can ever run.
+function nextWithClientV1Marker(req: NextRequest) {
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.delete(MOBILE_ACCESS_HEADER);
+  requestHeaders.delete(CLIENT_V1_LOCAL_HEADER);
+  requestHeaders.delete(CLIENT_V1_ADMIN_HEADER);
+  requestHeaders.set(CLIENT_V1_LOCAL_HEADER, process.env.COVEN_CAVE_LOCAL_PEER_SECRET ?? "");
+  return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
+function nextWithClientV1AdminMarker(req: NextRequest) {
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.delete(MOBILE_ACCESS_HEADER);
+  requestHeaders.delete(CLIENT_V1_LOCAL_HEADER);
+  requestHeaders.delete(CLIENT_V1_ADMIN_HEADER);
+  requestHeaders.set(CLIENT_V1_ADMIN_HEADER, process.env.COVEN_CAVE_LOCAL_PEER_SECRET ?? "");
+  return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
 export async function proxy(req: NextRequest) {
+  // Any caller-supplied copy of the client-v1 internal marker must never
+  // survive into trust evaluation — delete it before anything else runs so
+  // EVERY return path below (including every early return) forwards a
+  // request that cannot carry a forged stamp. Only `nextWithClientV1Marker`
+  // ever sets this header again, and only after re-verifying loopback peer
+  // status itself.
+  req.headers.delete(CLIENT_V1_LOCAL_HEADER);
+  req.headers.delete(CLIENT_V1_ADMIN_HEADER);
+
+  // URL decoders do not agree on when or how often to decode path octets.
+  // Client-v1 parameters are UUIDs or fixed safe literals, so encoding has no
+  // legitimate use here. Reject it before deciding whether the path is admin.
+  if (hasEncodedClientV1PathOctet(req.nextUrl.pathname)) {
+    return jsonError(400, "encoded client-v1 paths are not allowed");
+  }
+
   const mobileAccessToken = configuredMobileAccessToken();
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   const sidecarTokenMatches = (supplied: string | null | undefined) => {
@@ -333,6 +382,33 @@ export async function proxy(req: NextRequest) {
     }
   }
 
+  // The standalone OpenCoven Chat client facade (cave-client-v1 plan). Every
+  // NON-admin `/api/client/v1/*` route bypasses the private sidecar token
+  // entirely — but only for a peer THIS proxy has itself proven is a direct,
+  // unforwarded loopback connection (never a verified remote ingress: a
+  // mobile invite or an allowlisted tailnet device is authenticated, but it
+  // is not loopback, and this native-client bypass is loopback-only by
+  // design). Admin routes (`/api/client/v1/admin/*`) are deliberately
+  // excluded from this branch — `isClientV1AdminPath` — and fall straight
+  // through to every existing host/origin/referer/content-type/sidecar-token
+  // check below, exactly as before this facade existed.
+  //
+  // This branch runs BEFORE sidecar-token enforcement (headerCsrfTrusted,
+  // the Origin/Referer CSRF gate, and the sidecarToken checks below never run
+  // for a request that takes it): a native client on loopback does not
+  // participate in browser CSRF at all, and per-request bearer authentication
+  // (`requireClientPrincipal`, gated on the marker stamped below) is what
+  // actually authorizes each individual request from here on.
+  if (isClientV1Path(req.nextUrl.pathname) && !isClientV1AdminPath(req.nextUrl.pathname)) {
+    if (!trustedLocalPeer || remoteIngress) {
+      return jsonError(403, "forbidden peer: client v1 requires a direct loopback peer");
+    }
+    if (!hasSafeContentType(req)) {
+      return jsonError(415, "unsupported content-type");
+    }
+    return nextWithClientV1Marker(req);
+  }
+
   // A request bearing the sidecar token in the CUSTOM HEADER (x-coven-cave-token)
   // can be sent by native/mobile clients over Tailscale Serve, where the proxy
   // forwards `Host: 127.0.0.1` but preserves the real ts.net source in Origin.
@@ -391,8 +467,23 @@ export async function proxy(req: NextRequest) {
     if (process.env.COVEN_CAVE_BUNDLE === "1") {
       return jsonError(500, "missing sidecar auth token");
     }
+    // `/api/client/v1/admin/*` is carved out of the tokenless remote-ingress
+    // allowance below, same as it is carved out of the configured-token
+    // remote-ingress exemption further down (via `isClientV1AdminPath`). A
+    // verified mobile invite or allowlisted tailnet device is still not
+    // loopback, and admin must stay reachable tokenlessly ONLY from a direct,
+    // unforwarded loopback peer during local development — never over
+    // verified remote ingress. This check runs BEFORE the general
+    // `isTokenlessApiPeerAllowed` allowance so admin+remoteIngress is denied
+    // even though that general check alone would let it through.
+    if (remoteIngress && isClientV1AdminPath(req.nextUrl.pathname)) {
+      return jsonError(403, "forbidden peer: client v1 admin requires a direct loopback peer");
+    }
     if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {
       return jsonError(403, "forbidden peer: missing trusted local peer or verified remote ingress");
+    }
+    if (isClientV1AdminPath(req.nextUrl.pathname)) {
+      return nextWithClientV1AdminMarker(req);
     }
     return nextWithMobileAccessMarker(req, remoteIngress);
   }
@@ -405,9 +496,20 @@ export async function proxy(req: NextRequest) {
     // bundle — the phone can never learn that token — which is exactly the
     // "packaged app cannot pair" failure (cave-gzje). CSRF stays covered: the
     // Origin/Referer gates above ran for every non-header-trusted request.
+    //
+    // `/api/client/v1/admin/*` is deliberately carved OUT of that remote-ingress
+    // exemption: it is not one of the earlier client-v1 non-admin
+    // marker/bearer-bypass routes (that branch above already excludes admin
+    // paths via `isClientV1AdminPath`), and it must never be reachable by a
+    // verified mobile invite or tailnet peer alone. Admin stays behind the
+    // private sidecar token, full stop — the same as every route did before
+    // remote ingress existed.
     return jsonError(401, "unauthorized");
   }
 
+  if (isClientV1AdminPath(req.nextUrl.pathname)) {
+    return nextWithClientV1AdminMarker(req);
+  }
   return nextWithMobileAccessMarker(req, remoteIngress);
 }
 

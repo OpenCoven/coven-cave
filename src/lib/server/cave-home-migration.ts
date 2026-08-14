@@ -44,12 +44,33 @@ export type CaveHomeMigrationEntry = CaveHomeReconciliationEntry;
 export type CaveHomeMigrationDirMerge = CaveHomeReconciliationResult["merged"][number];
 export type CaveHomeMigrationResult = CaveHomeReconciliationResult;
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __caveHomeRecoveredStores: Set<string> | undefined;
+}
+
+function recoveredStores(): Set<string> {
+  return globalThis.__caveHomeRecoveredStores ??= new Set<string>();
+}
+
+export function caveHomeStoreNeedsRecoveryNormalization(legacy: string): boolean {
+  return recoveredStores().has(legacy);
+}
+
+export function markCaveHomeStoreRecoveryNormalized(legacy: string): void {
+  recoveredStores().delete(legacy);
+}
+
 /**
  * Run lossless reconciliation. All filesystem mutation is serialized through
  * a cross-process lock and committed to the durable migration journal.
  */
 export async function migrateCaveHome(options: ReconciliationOptions = {}): Promise<CaveHomeMigrationResult> {
   const result = await reconcileCaveHome(CAVE_HOME_MIGRATIONS, options);
+  for (const legacy of result.moved) recoveredStores().add(legacy);
+  if (options.action === "recover-legacy" && options.legacy && result.resolved.includes(options.legacy)) {
+    recoveredStores().add(options.legacy);
+  }
   for (const error of result.errors) console.warn(`[cave-home-migration] ${error.legacy}: ${error.error}`);
   return result;
 }

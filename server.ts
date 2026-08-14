@@ -1,10 +1,20 @@
 import { execFile } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
@@ -181,6 +191,15 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
   // awaiting any JavaScript cleanup, and repeat in finally so an exception or
   // hung persistence path can never skip this OS boundary.
   terminatePtySessions();
+  // Stdin EOF/error is this sidecar's ONLY normal-shutdown path (packaged
+  // Unix builds never receive SIGTERM/SIGINT from the Tauri GUI) — without
+  // this call the ownership-safe cleanup below only ran on those signals,
+  // so a routine app quit left a stale client-v1-discovery.json behind for
+  // Chat to (wrongly) keep discovering. Declared later in this file but
+  // safe to call here: it's a hoisted function declaration, and it already
+  // swallows every expected fs error itself, so it can never block or
+  // delay the SIGKILL that must still land regardless of its outcome.
+  removeClientV1DiscoveryRecordIfOwned();
   try {
     const terminateDirectRuns = globalThis.__covenCaveTerminateCopilotFlowRuns;
     if (terminateDirectRuns) {
@@ -1221,6 +1240,335 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
+// ── Client v1 discovery record (cave-client-v1 plan) ──────────────────────
+// Chat (the standalone native OpenCoven Chat client) discovers a running Cave
+// install by reading `~/.coven/cave/client-v1-discovery.json` — NOT by
+// probing ports. This file is the PRIMARY installed-service discovery
+// contract: written only after `server.listen` below succeeds, atomically
+// (same-directory temp file, then rename), mode 0600, and removed on
+// shutdown ONLY if the on-disk record's nonce still matches the one THIS
+// process wrote — so a signal handler racing a newer Cave process (this one
+// died without cleaning up, a fresh one started and wrote its own record)
+// can never clobber that newer record.
+//
+// Every publish (writer) and every cleanup (read/compare/unlink) is
+// serialized cross-process by a `BEGIN IMMEDIATE` transaction on a SQLite
+// lock database adjacent to the record itself (`<record>.lock.sqlite`, via
+// Node 24's built-in `node:sqlite` `DatabaseSync`) — see
+// `withClientV1DiscoveryLock` below. This replaces a previous protocol that
+// closed the compare-read-then-unlink TOCTOU race by atomically claiming the
+// final path into a per-call quarantine name before ever inspecting it. That
+// approach worked but depended entirely on this module's own rename/link
+// bookkeeping to prove ownership at every step; a lock-based design is
+// simpler to reason about and lets both the writer and the cleanup share one
+// real cross-process mutex instead of two sides of a rename dance. SQLite's
+// own file lock (a POSIX advisory lock, or the platform equivalent) is
+// acquired and released entirely by the kernel — a process that dies while
+// holding it (however it dies, including SIGKILL) has that lock released
+// automatically, with no owner record to reclaim and no staleness heuristic
+// to get wrong. The lock database's own content (a trivial single-row
+// metadata table) is never read back for any decision — it exists purely as
+// a mutex primitive; the discovery JSON file remains the sole source of
+// truth for the actual record.
+//
+// Inlined (not imported from src/lib) because server.ts is transpiled
+// standalone via esbuild with `--bundle=false` (see build:server) and cannot
+// resolve `src/` imports once unpacked from the packaged bundle. Mirrors
+// `heapDiagnosticsDir()` below for the same reason: COVEN_HOME/COVEN_CAVE_HOME
+// resolution is duplicated rather than imported from `@/lib/coven-paths`.
+type ClientV1Discovery = {
+  version: 1;
+  endpoint: string;
+  pid: number;
+  nonce: string;
+  startedAt: string;
+};
+
+function clientV1DiscoveryPath(): string {
+  const override = process.env.COVEN_CAVE_CLIENT_V1_DISCOVERY_PATH;
+  if (override && override.trim()) return override.trim();
+  const covenHomeDir = process.env.COVEN_HOME || join(homedir(), ".coven");
+  const caveHomeDir = process.env.COVEN_CAVE_HOME || join(covenHomeDir, "cave");
+  return join(caveHomeDir, "client-v1-discovery.json");
+}
+
+// Builds the `http://host:port` endpoint string an IPv6 loopback literal
+// (`::1`) needs bracketed for — `http://::1:3020` is not a parseable URL (the
+// second `:` is ambiguous with a port separator), but `http://[::1]:3020` is.
+// IPv4 (`127.0.0.1`) and hostnames (`localhost`) are left exactly as-is: only
+// an address containing `:` (the unambiguous IPv6 tell — no valid IPv4
+// address or DNS hostname ever contains one) gets bracketed. Round-tripped
+// through `new URL()` as a belt-and-suspenders validity check — never
+// through `.toString()`/`.href`, which would normalize in ways (e.g. a
+// trailing slash) this record's `endpoint` field must not carry.
+function formatDiscoveryEndpoint(discoveryHostname: string, discoveryPort: number): string {
+  const alreadyBracketed = discoveryHostname.startsWith("[") && discoveryHostname.endsWith("]");
+  const host =
+    !alreadyBracketed && discoveryHostname.includes(":") ? `[${discoveryHostname}]` : discoveryHostname;
+  const endpoint = `http://${host}:${discoveryPort}`;
+  // Throws for anything malformed — belt-and-suspenders, since
+  // `discoveryHostname` always comes from `loopbackHostname()` below.
+  new URL(endpoint);
+  return endpoint;
+}
+
+// The nonce THIS process's discovery record was written with, if any. The
+// shutdown cleanup below reads this back (never trusting its own memory of
+// "did I write one" alone) by comparing it against whatever nonce is
+// actually on disk right now, so ownership is proven at cleanup time, not
+// merely assumed from having written once earlier in this process's life.
+let clientV1DiscoveryNonce: string | null = null;
+
+// The lock database lives adjacent to the discovery record it guards — never
+// a single fixed, shared-across-records path — so an operator override
+// (`COVEN_CAVE_CLIENT_V1_DISCOVERY_PATH`, also used freely by tests) never
+// contends with any other record's lock.
+function clientV1DiscoveryLockDbPath(file: string): string {
+  return `${file}.lock.sqlite`;
+}
+
+// Overridable so tests can shrink the wait a contended acquisition blocks
+// for — production's default is generous because contention here is rare
+// (a publish or a cleanup, never a request handler) and each critical
+// section only performs a few small filesystem calls.
+const CLIENT_V1_DISCOVERY_LOCK_BUSY_TIMEOUT_MS = (() => {
+  const override = Number(process.env.COVEN_CAVE_CLIENT_V1_DISCOVERY_LOCK_BUSY_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : 5_000;
+})();
+
+type ClientV1DiscoveryLock = { database: DatabaseSync };
+
+/**
+ * Acquires the cross-process discovery lock: a `BEGIN IMMEDIATE` transaction
+ * against the SQLite database adjacent to `file`. Every publish and every
+ * cleanup pass through this exact function, so at most one of them is ever
+ * inside the critical section it guards at a time, across every process on
+ * the machine. `PRAGMA busy_timeout` lets SQLite's own (synchronous, native)
+ * busy handler do the waiting rather than a hand-rolled retry/backoff loop —
+ * there is no bespoke staleness heuristic anywhere in this path: a lock left
+ * held by a crashed process is released by the OS the instant that
+ * process's file descriptors are torn down, and this call simply blocks
+ * (bounded by the timeout above) until that happens.
+ */
+function acquireClientV1DiscoveryLock(file: string): ClientV1DiscoveryLock {
+  const lockDbPath = clientV1DiscoveryLockDbPath(file);
+  mkdirSync(dirname(lockDbPath), { recursive: true });
+  let database: DatabaseSync | null = null;
+  try {
+    database = new DatabaseSync(lockDbPath);
+    try {
+      chmodSync(lockDbPath, 0o600);
+    } catch {
+      // Windows ignores POSIX modes; not fatal — the lock still functions,
+      // it's just not permission-restricted on that platform. The lock
+      // database holds no secrets either way (see module doc comment).
+    }
+    database.exec(`PRAGMA busy_timeout = ${CLIENT_V1_DISCOVERY_LOCK_BUSY_TIMEOUT_MS}`);
+    database.exec("PRAGMA journal_mode = DELETE");
+    // A trivial, idempotent bootstrap — never read back for any decision.
+    // It exists purely so a brand-new lock database file always has
+    // something in it, exercising the exact same statements whether this is
+    // the first writer this file has ever seen or the thousandth.
+    database.exec(
+      "CREATE TABLE IF NOT EXISTS lock_meta (id INTEGER PRIMARY KEY CHECK (id = 1), initialized_at TEXT NOT NULL);",
+    );
+    database.exec(
+      "INSERT OR IGNORE INTO lock_meta (id, initialized_at) VALUES (1, datetime('now'));",
+    );
+    database.exec("BEGIN IMMEDIATE");
+    return { database };
+  } catch (error) {
+    if (database) {
+      try {
+        if (database.isTransaction) database.exec("ROLLBACK");
+      } catch {
+        // Closing below still releases every SQLite-held lock regardless.
+      }
+      try {
+        database.close();
+      } catch {
+        // Nothing further to do — the process tearing down its own file
+        // descriptor still releases any OS-level lock it held.
+      }
+    }
+    throw error;
+  }
+}
+
+function releaseClientV1DiscoveryLock(lock: ClientV1DiscoveryLock): void {
+  try {
+    if (lock.database.isTransaction) lock.database.exec("ROLLBACK");
+  } catch {
+    // Best-effort — close() below still releases the OS-level lock either
+    // way, which is the only guarantee this module actually depends on.
+  }
+  try {
+    lock.database.close();
+  } catch {
+    // Nothing further to do.
+  }
+}
+
+/**
+ * Runs `operation` as the sole occupant of this discovery record's
+ * cross-process critical section. Lock ACQUISITION failures (a lock
+ * directory that can't be created, a corrupt/unopenable lock database, a
+ * busy_timeout expiring against a wedged holder, etc.) fail safe: `operation`
+ * is never invoked and whatever currently sits at `file` is left completely
+ * untouched — a publish that can't prove itself serialized against a
+ * concurrent cleanup must not write, and a cleanup that can't prove itself
+ * serialized against a concurrent publish must not delete. There is no
+ * fallback "proceed unlocked" path anywhere in this module.
+ */
+function withClientV1DiscoveryLock<T>(file: string, operation: () => T): T {
+  const lock = acquireClientV1DiscoveryLock(file);
+  try {
+    return operation();
+  } finally {
+    releaseClientV1DiscoveryLock(lock);
+  }
+}
+
+function writeClientV1DiscoveryRecord(discoveryHostname: string, discoveryPort: number): void {
+  const file = clientV1DiscoveryPath();
+  try {
+    withClientV1DiscoveryLock(file, () => {
+      const nonce = randomBytes(16).toString("hex");
+      // Same-directory temp file + rename: rename(2) is atomic on POSIX, so a
+      // concurrent reader (Chat, polling for this file) never observes a
+      // half-written record. The temp name is unique per write (pid + nonce)
+      // so two Cave processes racing to write (serialized by the lock above
+      // for the parts that touch `file` itself, but each still computing its
+      // own temp path) never collide on a shared name.
+      const tmp = `${file}.${process.pid}.${nonce}.tmp`;
+      // Tracks whether the rename below actually completed — i.e. whether
+      // the record at `file` is this process's own publication. Only past
+      // that point is `clientV1DiscoveryNonce` set, and only past that point
+      // does a later failure's cleanup target the FINAL path rather than the
+      // temp one.
+      let published = false;
+      try {
+        const record: ClientV1Discovery = {
+          version: 1,
+          endpoint: formatDiscoveryEndpoint(discoveryHostname, discoveryPort),
+          pid: process.pid,
+          nonce,
+          startedAt: new Date().toISOString(),
+        };
+        writeFileSync(tmp, JSON.stringify(record, null, 2), { mode: 0o600 });
+        renameSync(tmp, file);
+        // Ownership must be recorded THE INSTANT the rename succeeds —
+        // before any later step (chmod) that could itself throw — so that if
+        // such a later step fails, its cleanup path can still prove (and
+        // safely remove) the record this process just published, rather
+        // than leaving an orphaned file that nothing ever considers itself
+        // responsible for.
+        published = true;
+        clientV1DiscoveryNonce = nonce;
+        // Belt-and-suspenders: writeFileSync's `mode` option only applies at
+        // file CREATION. If an older Cave build (or a manual edit) left a
+        // world-readable file at this path, the rename above would inherit
+        // that file's identity but the mode passed to writeFileSync only
+        // governed the temp file, not necessarily the final path pre-rename
+        // on every platform — chmod after the rename makes 0600
+        // unconditional.
+        chmodSync(file, 0o600);
+      } catch (err) {
+        if (!published) {
+          // The rename never completed (or an earlier step — write — failed
+          // first): the only artifact that could exist is our own temp
+          // file, at the exact same-directory path constructed above. Remove
+          // exactly that path and nothing else; the final `file` was never
+          // touched, so it is left exactly as it was found (absent, or a
+          // prior process's still-valid record).
+          try {
+            unlinkSync(tmp);
+          } catch {
+            // Never existed (the write itself failed before creating it) or
+            // already gone — nothing further to clean up.
+          }
+        } else {
+          // The rename succeeded (this nonce is now canonical) but a later
+          // step (chmod) failed AFTER ownership was already recorded.
+          // Removal is a plain read/compare/unlink — no rename-into-
+          // quarantine dance needed — because this call is ALREADY inside
+          // the same lock transaction the writer itself is holding: nothing
+          // else can be racing this exact record right now.
+          clientV1DiscoveryNonce = null;
+          removeClientV1DiscoveryRecordLocked(file, nonce);
+        }
+        throw err;
+      }
+    });
+  } catch (err) {
+    // Discovery is a convenience for native clients, never a boot
+    // requirement — Cave's own UI never reads this file, so a write failure
+    // (including a failure merely to acquire the lock) must not take the
+    // server down with it.
+    console.warn("[client-v1-discovery] failed to write discovery record", err);
+  }
+}
+
+/**
+ * Reads whatever currently sits at `file` and removes it ONLY if its nonce
+ * still matches `ownNonce`. Must only ever be called while this exact
+ * record's discovery lock is already held — either by an already-open
+ * publish transaction cleaning up after its own late failure (see above), or
+ * by `removeClientV1DiscoveryRecordIfOwned` below, which acquires the lock
+ * fresh before calling this. The lock is what makes this plain
+ * read/compare/unlink race-free: no other process can publish or clean up
+ * the SAME record while it's held, closing the compare-then-unlink TOCTOU
+ * window without any rename-into-quarantine dance. Missing, corrupt,
+ * otherwise-unreadable content, or a mismatched nonce (a successor already
+ * published its own record here) all preserve whatever is on disk rather
+ * than guessing.
+ */
+function removeClientV1DiscoveryRecordLocked(file: string, ownNonce: string): void {
+  let current: Partial<ClientV1Discovery> | null = null;
+  try {
+    current = JSON.parse(readFileSync(file, "utf8")) as Partial<ClientV1Discovery>;
+  } catch {
+    // Missing (already gone), corrupt, or otherwise unreadable — ownership
+    // can never be proven, so nothing here is touched.
+    return;
+  }
+  if (current.nonce !== ownNonce) {
+    // A successor process already published its own record at this path —
+    // it must never be removed.
+    return;
+  }
+  try {
+    unlinkSync(file);
+  } catch {
+    // Already gone — nothing further to clean up.
+  }
+}
+
+/** Deletes the discovery record, but ONLY if the on-disk nonce still belongs to this process. */
+function removeClientV1DiscoveryRecordIfOwned(): void {
+  if (!clientV1DiscoveryNonce) return;
+  const ownNonce = clientV1DiscoveryNonce;
+  clientV1DiscoveryNonce = null;
+  const file = clientV1DiscoveryPath();
+  try {
+    withClientV1DiscoveryLock(file, () => {
+      removeClientV1DiscoveryRecordLocked(file, ownNonce);
+    });
+  } catch (err) {
+    // Lock acquisition failure fails safe: the canonical record is left
+    // exactly as it was found rather than risking an unserialized
+    // read/compare/unlink against a concurrent publish or cleanup.
+    console.warn("[client-v1-discovery] failed to acquire discovery lock during cleanup", err);
+  }
+}
+
+function clientV1DiscoveryShutdownHandler(): void {
+  removeClientV1DiscoveryRecordIfOwned();
+  process.exit(0);
+}
+process.on("SIGTERM", clientV1DiscoveryShutdownHandler);
+process.on("SIGINT", clientV1DiscoveryShutdownHandler);
+
 // Keep idle HTTP/1.1 connections open longer than clients hold them for
 // reuse. Node's 5s default races connection pooling in URLSession (the iOS
 // app) and `tailscale serve`'s upstream proxying — the server closes an idle
@@ -1231,7 +1579,16 @@ server.keepAliveTimeout = 75_000;
 server.headersTimeout = 80_000;
 
 server.listen(port, hostname, () => {
-  console.log(`> Ready on http://${hostname}:${port}`);
+  // The actual bound port, not the one requested — `server.address()` is
+  // authoritative (e.g. an ephemeral `port: 0` resolves to whatever the OS
+  // actually assigned), so the discovery record must reflect what native
+  // clients can really reach, never what this process merely asked for.
+  const address = server.address();
+  const boundPort = typeof address === "object" && address ? address.port : port;
+  console.log(`> Ready on http://${hostname}:${boundPort}`);
+  // Only after listen has actually succeeded — a discovery record must never
+  // point native clients at a port this process never bound.
+  writeClientV1DiscoveryRecord(hostname, boundPort);
 });
 
 // Prime the tailnet allowlist immediately, then keep it fresh. unref() so the
@@ -1243,6 +1600,14 @@ if (allowedTailnetNodeIds().size > 0) {
 
 server.once("error", (err: NodeJS.ErrnoException) => {
   console.error(err);
+  // A bind/runtime error can fire either before `listen`'s callback ever ran
+  // (nothing to clean up yet — this is a safe no-op) or, since this handler
+  // stays registered for the server's whole life, after a successful listen
+  // already published a discovery record. Either way, ownership-safe
+  // cleanup must run before this process exits — an immediate `process.exit`
+  // here would otherwise skip it and leave a stale record pointing at a now-
+  // dead process, exactly like every other shutdown path below.
+  removeClientV1DiscoveryRecordIfOwned();
   process.exit(1);
 });
 

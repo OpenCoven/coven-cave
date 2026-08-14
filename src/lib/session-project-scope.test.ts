@@ -57,8 +57,13 @@ const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8");
 
 test("the sessions/list route scopes by familiar grants", () => {
   const route = read("src/app/api/sessions/list/route.ts");
-  assert.match(route, /filterProjectsForFamiliar/, "imports the grant filter");
-  assert.match(route, /scopeSessionsToFamiliarProjects/, "applies the session scope helper");
+  // The grant-filter/scope-helper calls moved into the shared canonical
+  // projection (`computeCanonicalSessionList`) in
+  // @/lib/server/client-v1/read-model.ts (cave-client-v1 plan, Task 5); the
+  // route itself still parses the familiarId query param and delegates.
+  const readModel = read("src/lib/server/client-v1/read-model.ts");
+  assert.match(readModel, /filterProjectsForFamiliar/, "imports the grant filter");
+  assert.match(readModel, /scopeSessionsToFamiliarProjects/, "applies the session scope helper");
   assert.match(route, /searchParams\.get\("familiarId"\)/, "reads the familiarId param");
 });
 
@@ -82,7 +87,7 @@ test("chat surface consumers pass the active familiar scope", () => {
 });
 
 test("chat/send still gates project access for the acting familiar", () => {
-  const send = read("src/app/api/chat/send/route.ts");
+  const send = read("src/lib/server/chat-send-service.ts");
   assert.match(send, /authorizeChatProjectLaunch/, "chat/send uses the shared project launch gate");
   assert.match(
     send,

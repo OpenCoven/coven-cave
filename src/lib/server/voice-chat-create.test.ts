@@ -33,6 +33,7 @@ test("creates an empty conversation with call origin and returns the id", async 
   assert.equal(conv.origin, "call");
   assert.deepEqual(conv.turns, []);
   assert.equal(conv.runtime, undefined);
+  assert.equal(conv.projectRoot, null, "explicit projectless provenance is persisted independently of runtime");
   assert.deepEqual(recorded, [{ sessionId: "test-session-id", familiarId: "fam-1" }]);
   assert.deepEqual(titles, [{ sessionId: "test-session-id", title: "New chat" }]);
 });
@@ -42,6 +43,7 @@ test("records the project root as a local runtime", async () => {
   const result = await createVoiceChatSession(deps, { familiarId: "fam-1", projectRoot: "/tmp/proj" });
   assert.equal(result.ok, true);
   assert.equal(saved[0].runtime, "local:/tmp/proj");
+  assert.equal(saved[0].projectRoot, "/tmp/proj");
 });
 
 test("unknown familiar -> familiar_not_found, nothing persisted", async () => {

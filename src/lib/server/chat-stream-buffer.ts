@@ -38,11 +38,22 @@ type RunBuffer = {
   tailListeners: Set<(event: BufferedStreamEvent) => void>;
   finishListeners: Set<() => void>;
   reapTimer: NodeJS.Timeout | null;
+  /** The first (and only) terminal-kind (`done`/`error`) entry ever recorded
+   *  — real or synthesized. Once set it is never replaced: it is what makes
+   *  `ensureTerminalFailure` idempotent across concurrent callers. */
+  terminalEntry: BufferedStreamEvent | null;
 };
 
 // Mirrors the PTY scrollback discipline (server.ts SCROLLBACK_LIMIT_BYTES):
 // enough for a long reply, bounded so a runaway turn can't grow the heap.
-const RING_MAX_BYTES = 512 * 1024;
+export const RUN_STREAM_RING_MAX_BYTES = 512 * 1024;
+export const RUN_STREAM_RING_MAX_EVENTS = 1_024;
+export const RUN_STREAM_EVENT_MAX_BYTES = 128 * 1024;
+const OVERSIZED_EVENT: StreamEvent = {
+  kind: "error",
+  code: "stream_event_too_large",
+  message: "The run failed.",
+};
 // A finished run lingers briefly so a phone that reconnects moments after the
 // turn ended still drains the tail from the buffer; after this, resync from
 // the persisted transcript is the (existing) recovery path.
@@ -50,10 +61,122 @@ const FINISHED_RETENTION_MS = 2 * 60_000;
 
 const buffers = new Map<string, RunBuffer>();
 
+/** The default sanitized code for a synthetic `run.failed` this module
+ *  inserts on its own initiative (no upstream reason is ever forwarded —
+ *  only this fixed, safe code). */
+const SYNTHETIC_TERMINAL_FAILURE_CODE = "upstream_disconnected";
+
+function isTerminalStreamEvent(event: StreamEvent): boolean {
+  return event.kind === "done" || event.kind === "error";
+}
+
+function syntheticTerminalFailureEvent(code: string): StreamEvent {
+  return { kind: "error", code, message: "The run failed." };
+}
+
+/** Shared append path for every write into a buffer's ring — the real
+ *  producer's `record()` and the synthetic terminal insertion both funnel
+ *  through here so oversize handling, eviction, terminal tracking, and live
+ *  tail notification only exist once. */
+function appendToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEvent {
+  let finalEvent: StreamEvent = event;
+  let json: string;
+  try {
+    json = JSON.stringify(event);
+    if (Buffer.byteLength(json, "utf8") > RUN_STREAM_EVENT_MAX_BYTES) {
+      finalEvent = OVERSIZED_EVENT;
+      json = JSON.stringify(OVERSIZED_EVENT);
+    }
+  } catch {
+    finalEvent = OVERSIZED_EVENT;
+    json = JSON.stringify(OVERSIZED_EVENT);
+  }
+  const entry: BufferedStreamEvent = { seq: buffer.nextSeq++, json };
+  buffer.events.push(entry);
+  buffer.bytes += Buffer.byteLength(entry.json, "utf8");
+  while (
+    (buffer.bytes > RUN_STREAM_RING_MAX_BYTES
+      || buffer.events.length > RUN_STREAM_RING_MAX_EVENTS)
+    && buffer.events.length > 1
+  ) {
+    const dropped = buffer.events.shift();
+    if (dropped) buffer.bytes -= Buffer.byteLength(dropped.json, "utf8");
+  }
+  if (!buffer.terminalEntry && isTerminalStreamEvent(finalEvent)) buffer.terminalEntry = entry;
+  for (const listener of buffer.tailListeners) listener(entry);
+  return entry;
+}
+
+function finalizeBuffer(buffer: RunBuffer): void {
+  if (buffer.done) return;
+  buffer.done = true;
+  buffer.liveTails = 0;
+  for (const listener of buffer.finishListeners) listener();
+  buffer.tailListeners.clear();
+  buffer.finishListeners.clear();
+  buffer.hooks = null;
+  buffer.reapTimer = setTimeout(() => {
+    for (const key of buffer.keys) {
+      if (buffers.get(key) === buffer) buffers.delete(key);
+    }
+  }, FINISHED_RETENTION_MS);
+  buffer.reapTimer.unref?.();
+}
+
+/**
+ * The single atomic path that guarantees a buffer's canonical history ends
+ * in exactly one terminal event before it is ever marked done. Both the
+ * producer's own `finish()` and any consumer that discovers a truncated or
+ * malformed upstream (with no terminal ever recorded) route through this —
+ * whichever caller reaches it first inserts the ONE synthetic `run.failed`
+ * this buffer will ever carry; every other caller (a concurrently attached
+ * live tail, a later resume, or the real producer's own `finish()`) sees
+ * that same entry rather than appending a second one. A buffer that already
+ * has a real terminal (`done`/`error`) recorded — or a previously
+ * synthesized one — is never touched again, and a buffer already marked
+ * done is returned as-is (never re-finalized).
+ */
+function ensureBufferTerminalFailure(
+  buffer: RunBuffer,
+  code: string,
+): BufferedStreamEvent | null {
+  if (buffer.done) return buffer.terminalEntry;
+  if (!buffer.terminalEntry) appendToRing(buffer, syntheticTerminalFailureEvent(code));
+  const entry = buffer.terminalEntry;
+  finalizeBuffer(buffer);
+  return entry;
+}
+
+/**
+ * Registry-level counterpart to `RunBufferHandle.finish()` for a consumer
+ * (not the producer) that discovers its own upstream/raw canonical read
+ * ended, errored, or was cancelled without ever observing a canonical
+ * terminal event. See `ensureBufferTerminalFailure` for the atomicity
+ * guarantee. Returns null for an unknown key.
+ */
+export function ensureTerminalFailure(
+  key: string,
+  code: string = SYNTHETIC_TERMINAL_FAILURE_CODE,
+): BufferedStreamEvent | null {
+  const buffer = buffers.get(key);
+  if (!buffer) return null;
+  return ensureBufferTerminalFailure(buffer, code);
+}
+
 export type RunBufferHandle = {
   /** Records the event and returns its seq — the SSE `id:` the original
-   *  stream emits so any client holds a valid resume cursor. */
-  record: (event: StreamEvent) => number;
+   *  stream emits so any client holds a valid resume cursor. Returns
+   *  `undefined` when the event was ignored instead of appended: the buffer
+   *  is already done, or a terminal (`done`/`error`) was already recorded
+   *  (real or synthetic) and this canonical history is closed. `seq` is
+   *  never assigned and `bytes` never grows for an ignored event — the
+   *  producer can check for `undefined` to learn its event never landed
+   *  (e.g. to stop emitting further chunks), but every existing caller that
+   *  forwards the return value straight into `chatSse(event, seq)` keeps
+   *  working unchanged since that `seq` parameter is already optional. */
+  record: (event: StreamEvent) => number | undefined;
+  addKeys: (keys: Array<string | null | undefined>) => void;
+  setHooks: (hooks: RunStreamHooks | null) => void;
   finish: () => void;
 };
 
@@ -77,6 +200,7 @@ export function openRunBuffer(
     tailListeners: new Set(),
     finishListeners: new Set(),
     reapTimer: null,
+    terminalEntry: null,
   };
   for (const key of keys) {
     if (!key) continue;
@@ -90,45 +214,52 @@ export function openRunBuffer(
 
   return {
     record: (event: StreamEvent) => {
-      if (buffer.done) return buffer.nextSeq - 1;
-      const entry: BufferedStreamEvent = {
-        seq: buffer.nextSeq++,
-        json: JSON.stringify(event),
-      };
-      buffer.events.push(entry);
-      buffer.bytes += Buffer.byteLength(entry.json, "utf8");
-      while (buffer.bytes > RING_MAX_BYTES && buffer.events.length > 1) {
-        const dropped = buffer.events.shift();
-        if (dropped) buffer.bytes -= Buffer.byteLength(dropped.json, "utf8");
+      // Once the canonical history already carries a terminal event — real
+      // or synthetic, whether or not `finish()` has run yet — every later
+      // event (another terminal from a racing producer, or ordinary
+      // nonterminal chatter that arrives after) is rejected outright: no
+      // seq is consumed, no bytes are added, no listener fires. This is
+      // what keeps "exactly one terminal, ever" true even in the window
+      // between a real `done`/`error` landing and `finish()` closing the
+      // buffer, not just after `finish()`.
+      if (buffer.done || buffer.terminalEntry) return undefined;
+      return appendToRing(buffer, event).seq;
+    },
+    addKeys: (keys) => {
+      if (buffer.done) return;
+      for (const key of keys) {
+        if (!key || buffer.keys.includes(key)) continue;
+        buffers.set(key, buffer);
+        buffer.keys.push(key);
       }
-      for (const listener of buffer.tailListeners) listener(entry);
-      return entry.seq;
+    },
+    setHooks: (hooks) => {
+      if (!buffer.done) buffer.hooks = hooks;
     },
     finish: () => {
-      if (buffer.done) return;
-      buffer.done = true;
-      buffer.liveTails = 0;
-      for (const listener of buffer.finishListeners) listener();
-      buffer.tailListeners.clear();
-      buffer.finishListeners.clear();
-      buffer.hooks = null;
-      buffer.reapTimer = setTimeout(() => {
-        for (const key of buffer.keys) {
-          if (buffers.get(key) === buffer) buffers.delete(key);
-        }
-      }, FINISHED_RETENTION_MS);
-      buffer.reapTimer.unref?.();
+      // Every closure path (normal completion, abort, upstream error) lands
+      // here — if the producer never recorded a terminal (`done`/`error`)
+      // event, a truncated run would otherwise mark the buffer done with no
+      // way for any subscriber, live or resumed, to learn it ended. Route
+      // through the same atomic helper a consumer-side discovery would use
+      // so both converge on one canonical synthetic terminal.
+      ensureBufferTerminalFailure(buffer, SYNTHETIC_TERMINAL_FAILURE_CODE);
     },
   };
 }
 
 export type RunStreamSubscription = {
+  /** Retained events through the cursor, used only to reconstruct state. */
+  seed: BufferedStreamEvent[];
   /** Events with seq > cursor that are still retained, oldest first. */
   replay: BufferedStreamEvent[];
   /** Non-null when the cursor pre-dates the retained ring: events up to and
    *  including this seq were evicted — the client should full-resync after
    *  draining. */
   gapBeforeSeq: number | null;
+  /** Cursor was beyond the latest canonical event at subscription time. */
+  cursorAhead: boolean;
+  latestSeq: number;
   /** True when the run already finished — no live tail follows the replay. */
   done: boolean;
   unsubscribe: () => void;
@@ -150,11 +281,36 @@ export function subscribeRunStream(
   if (!buffer) return null;
 
   const oldestRetained = buffer.events[0]?.seq ?? buffer.nextSeq;
+  const latestSeq = buffer.nextSeq - 1;
+  const cursorAhead = cursor > latestSeq;
   const gapBeforeSeq = cursor + 1 < oldestRetained && buffer.nextSeq > 1 ? oldestRetained - 1 : null;
   const replay = buffer.events.filter((entry) => entry.seq > cursor);
+  const seed = gapBeforeSeq === null
+    ? buffer.events.filter((entry) => entry.seq <= cursor)
+    : [];
+
+  if (cursorAhead) {
+    return {
+      seed: [],
+      replay: [],
+      gapBeforeSeq: null,
+      cursorAhead: true,
+      latestSeq,
+      done: true,
+      unsubscribe: () => {},
+    };
+  }
 
   if (buffer.done) {
-    return { replay, gapBeforeSeq, done: true, unsubscribe: () => {} };
+    return {
+      seed,
+      replay,
+      gapBeforeSeq,
+      cursorAhead: false,
+      latestSeq,
+      done: true,
+      unsubscribe: () => {},
+    };
   }
 
   buffer.tailListeners.add(onEvent);
@@ -164,8 +320,11 @@ export function subscribeRunStream(
 
   let unsubscribed = false;
   return {
+    seed,
     replay,
     gapBeforeSeq,
+    cursorAhead: false,
+    latestSeq,
     done: false,
     unsubscribe: () => {
       if (unsubscribed) return;
@@ -177,6 +336,16 @@ export function subscribeRunStream(
       if (buffer.liveTails === 0 && !buffer.done) buffer.hooks?.detach();
     },
   };
+}
+
+/** Add an internal lookup key to an existing canonical run buffer. The alias
+ * points at the same bounded ring and is reaped with it. */
+export function aliasRunBuffer(existingKey: string, alias: string): boolean {
+  const buffer = buffers.get(existingKey);
+  if (!buffer) return false;
+  if (!buffer.keys.includes(alias)) buffer.keys.push(alias);
+  buffers.set(alias, buffer);
+  return true;
 }
 
 /** Test-only: drop all per-process state (and pending reap timers). */
