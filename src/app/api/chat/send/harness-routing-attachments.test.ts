@@ -131,9 +131,16 @@ assert.doesNotMatch(
   "Read-only skill resources must not be accepted by the write-boundary sentinel",
 );
 
+const grantDirsInitializerMatch = chatRoute.match(
+  /const grantDirs\s*=\s*([\s\S]*?);/,
+);
+assert.ok(
+  grantDirsInitializerMatch,
+  "The chat route should define a grantDirs initializer",
+);
 assert.doesNotMatch(
-  chatRoute,
-  /const grantDirs = !sshRuntime[\s\S]*?\.\.\.runtimeResourceRoots/,
+  grantDirsInitializerMatch[1],
+  /\bruntimeResourceRoots\b/,
   "Read-only skill resources must not be promoted to writable harness grants",
 );
 
