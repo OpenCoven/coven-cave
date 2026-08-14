@@ -260,3 +260,95 @@ test("scanner rules choose plain vs markdown render modes correctly", () => {
   assert.ok(settledAmbiguous.committedBlocks.every((block) => block.kind === "markdown"));
   assert.ok(settledAmbiguous.committedBlocks.every((block) => block.kind !== "markdown" || block.renderMode === "markdown"));
 });
+
+test("unterminated whitespace tails do not terminate paragraphs", () => {
+  const source = "A paragraph\n  ";
+  const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+
+  assert.deepEqual(partition.committedBlocks, []);
+  assert.deepEqual(partition.activeBlock, {
+    id: `t:0-${source.length}`,
+    kind: "markdown",
+    source,
+    renderMode: "markdown",
+  });
+  assert.equal(partition.committedText, "");
+});
+
+test("extra blank lines become separate stable blocks instead of rewriting prior blocks", () => {
+  const first = partitionStreamingMarkdown("A\n\n", { turnId: "t", settled: false });
+  assert.deepEqual(first.committedBlocks, [{
+    id: "t:0-3",
+    kind: "markdown",
+    source: "A\n\n",
+    renderMode: "markdown",
+  }]);
+
+  const secondSource = "A\n\n\n";
+  const second = partitionStreamingMarkdown(secondSource, { turnId: "t", settled: false });
+  assert.deepEqual(second.committedBlocks, [
+    {
+      id: "t:0-3",
+      kind: "markdown",
+      source: "A\n\n",
+      renderMode: "markdown",
+    },
+    {
+      id: "t:3-4",
+      kind: "markdown",
+      source: "\n",
+      renderMode: "markdown",
+    },
+  ]);
+  assert.equal(second.activeBlock, null);
+  assert.equal(second.committedText, secondSource);
+});
+
+test("four-space thematic lookalikes stay indented code until terminated", () => {
+  const source = "    ---";
+  const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+
+  assert.deepEqual(partition.committedBlocks, []);
+  assert.deepEqual(partition.activeBlock, {
+    id: `t:0-${source.length}`,
+    kind: "markdown",
+    source,
+    renderMode: "plain",
+  });
+});
+
+test("table delimiter columns must match the header columns", () => {
+  const source = "| A | B |\n| --- |\n| 1 | 2 |\n\n";
+  const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+
+  assert.deepEqual(partition.committedBlocks, []);
+  assert.deepEqual(partition.activeBlock, {
+    id: `t:0-${source.length}`,
+    kind: "markdown",
+    source,
+    renderMode: "plain",
+  });
+  assert.equal(partition.committedText, "");
+});
+
+test("fence closing markers must match the opening marker character", () => {
+  const backtickSource = "```ts\nconst x = 1\n~~~\n";
+  const backtick = partitionStreamingMarkdown(backtickSource, { turnId: "t", settled: false });
+  assert.deepEqual(backtick.committedBlocks, []);
+  assert.deepEqual(backtick.activeBlock, {
+    id: `t:0-${backtickSource.length}`,
+    kind: "markdown",
+    source: backtickSource,
+    renderMode: "plain",
+  });
+
+  const tildeSource = "~~~\nconst x = 1\n```\n";
+  const tilde = partitionStreamingMarkdown(tildeSource, { turnId: "t", settled: false });
+  assert.deepEqual(tilde.committedBlocks, []);
+  assert.deepEqual(tilde.activeBlock, {
+    id: `t:0-${tildeSource.length}`,
+    kind: "markdown",
+    source: tildeSource,
+    renderMode: "plain",
+  });
+});

@@ -88,6 +88,10 @@ function isBlankLine(line: Line): boolean {
   return /^\s*$/.test(lineBody(line).replace(/\r$/, ""));
 }
 
+function isStructuralBlankLine(line: Line): boolean {
+  return line.hasNewline && isBlankLine(line);
+}
+
 function isHeadingLine(line: Line): boolean {
   return /^ {0,3}#{1,6}(?:\s+.*)?$/.test(lineBody(line).replace(/\r$/, ""));
 }
@@ -128,21 +132,48 @@ function isBlockquoteLine(line: Line): boolean {
   return /^ {0,3}>/.test(lineBody(line).replace(/\r$/, ""));
 }
 
-function looksLikeTableHeader(line: Line): boolean {
-  const body = lineBody(line).replace(/\r$/, "");
-  return !/^[ \t]/.test(body) && body.includes("|");
-}
-
-function isTableDelimiterLine(line: Line): boolean {
-  const body = lineBody(line).replace(/\r$/, "").trim();
-  const normalized = body.replace(/^\||\|$/g, "");
-  const cells = normalized.split("|").map((cell) => cell.trim());
-  return cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell));
-}
-
 function isTableBodyLine(line: Line): boolean {
   const body = lineBody(line).replace(/\r$/, "");
   return !/^[ \t]/.test(body) && body.includes("|");
+}
+
+function splitTableCells(body: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let trailingBackslashes = 0;
+
+  for (const character of body) {
+    if (character === "|" && trailingBackslashes % 2 === 0) {
+      cells.push(current);
+      current = "";
+      trailingBackslashes = 0;
+      continue;
+    }
+
+    current += character;
+    trailingBackslashes = character === "\\" ? trailingBackslashes + 1 : 0;
+  }
+
+  cells.push(current);
+
+  if (body.startsWith("|")) cells.shift();
+  if (body.endsWith("|")) cells.pop();
+
+  return cells.map((cell) => cell.trim());
+}
+
+function getTableHeaderCellCount(line: Line): number | null {
+  const body = lineBody(line).replace(/\r$/, "");
+  if (/^[ \t]/.test(body) || !body.includes("|")) return null;
+  return splitTableCells(body).length;
+}
+
+function getTableDelimiterCellCount(line: Line): number | null {
+  const body = lineBody(line).replace(/\r$/, "").trim();
+  if (!body) return null;
+  const cells = splitTableCells(body);
+  if (cells.length === 0 || !cells.every((cell) => /^:?-{1,}:?$/.test(cell))) return null;
+  return cells.length;
 }
 
 function makeMarkdownBlock(
@@ -173,14 +204,8 @@ function makeListBlock(
   };
 }
 
-function consumeBlankLines(lines: Line[], startIndex: number): { nextLineIndex: number; end: number } {
-  let index = startIndex;
-  let end = lines[startIndex].end;
-  while (index + 1 < lines.length && isBlankLine(lines[index + 1])) {
-    index += 1;
-    end = lines[index].end;
-  }
-  return { nextLineIndex: index + 1, end };
+function consumeStructuralBlankLine(line: Line, startIndex: number): { nextLineIndex: number; end: number } {
+  return { nextLineIndex: startIndex + 1, end: line.end };
 }
 
 function parseFence(source: string, lines: Line[], startIndex: number): ParseResult | null {
@@ -201,21 +226,33 @@ function parseFence(source: string, lines: Line[], startIndex: number): ParseRes
 }
 
 function parseTable(source: string, lines: Line[], startIndex: number): ParseResult | null {
-  if (!looksLikeTableHeader(lines[startIndex])) return null;
-  if (startIndex + 1 >= lines.length || !isTableDelimiterLine(lines[startIndex + 1])) return null;
+  const headerCellCount = getTableHeaderCellCount(lines[startIndex]);
+  if (headerCellCount === null) return null;
+  if (startIndex + 1 >= lines.length) return null;
+
+  const delimiterCellCount = getTableDelimiterCellCount(lines[startIndex + 1]);
+  if (delimiterCellCount === null) return null;
+  if (delimiterCellCount !== headerCellCount) {
+    return { complete: false, block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain") };
+  }
+
   let index = startIndex + 2;
   let bodyRows = 0;
   while (index < lines.length && isTableBodyLine(lines[index])) {
+    const bodyCellCount = getTableHeaderCellCount(lines[index]);
+    if (bodyCellCount !== headerCellCount) {
+      return { complete: false, block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain") };
+    }
     bodyRows += 1;
     index += 1;
   }
   if (bodyRows < 1) {
     return { complete: false, block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain") };
   }
-  if (index >= lines.length || !isBlankLine(lines[index])) {
+  if (index >= lines.length || !isStructuralBlankLine(lines[index])) {
     return { complete: false, block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain") };
   }
-  const blankTail = consumeBlankLines(lines, index);
+  const blankTail = consumeStructuralBlankLine(lines[index], index);
   return {
     complete: true,
     nextLineIndex: blankTail.nextLineIndex,
@@ -232,13 +269,13 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
   let index = startIndex + 1;
 
   while (index < lines.length) {
-    if (isBlankLine(lines[index])) {
+    if (isStructuralBlankLine(lines[index])) {
       committedItems.push({
         start: itemStart,
         end: lines[index].start,
         source: source.slice(itemStart, lines[index].start),
       });
-      const blankTail = consumeBlankLines(lines, index);
+      const blankTail = consumeStructuralBlankLine(lines[index], index);
       return {
         complete: true,
         nextLineIndex: blankTail.nextLineIndex,
@@ -286,11 +323,11 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
 function parseBlockquote(source: string, lines: Line[], startIndex: number): ParseResult | null {
   if (!isBlockquoteLine(lines[startIndex])) return null;
   let index = startIndex + 1;
-  while (index < lines.length && !isBlankLine(lines[index])) index += 1;
+  while (index < lines.length && !isStructuralBlankLine(lines[index])) index += 1;
   if (index >= lines.length) {
     return { complete: false, block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain") };
   }
-  const blankTail = consumeBlankLines(lines, index);
+  const blankTail = consumeStructuralBlankLine(lines[index], index);
   return {
     complete: true,
     nextLineIndex: blankTail.nextLineIndex,
@@ -301,11 +338,11 @@ function parseBlockquote(source: string, lines: Line[], startIndex: number): Par
 function parseIndentedCode(source: string, lines: Line[], startIndex: number): ParseResult | null {
   if (!isIndentedCodeLine(lines[startIndex])) return null;
   let index = startIndex + 1;
-  while (index < lines.length && !isBlankLine(lines[index])) index += 1;
+  while (index < lines.length && !isStructuralBlankLine(lines[index])) index += 1;
   if (index >= lines.length) {
     return { complete: false, block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain") };
   }
-  const blankTail = consumeBlankLines(lines, index);
+  const blankTail = consumeStructuralBlankLine(lines[index], index);
   return {
     complete: true,
     nextLineIndex: blankTail.nextLineIndex,
@@ -330,14 +367,14 @@ function parseHeadingOrThematic(source: string, lines: Line[], startIndex: numbe
 
 function parseParagraph(source: string, lines: Line[], startIndex: number): ParseResult {
   let index = startIndex + 1;
-  while (index < lines.length && !isBlankLine(lines[index])) index += 1;
+  while (index < lines.length && !isStructuralBlankLine(lines[index])) index += 1;
   if (index >= lines.length) {
     return {
       complete: false,
       block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "markdown"),
     };
   }
-  const blankTail = consumeBlankLines(lines, index);
+  const blankTail = consumeStructuralBlankLine(lines[index], index);
   return {
     complete: true,
     nextLineIndex: blankTail.nextLineIndex,
@@ -347,11 +384,11 @@ function parseParagraph(source: string, lines: Line[], startIndex: number): Pars
 
 function parseNextBlock(source: string, lines: Line[], startIndex: number): ParseResult {
   return (
-    parseHeadingOrThematic(source, lines, startIndex)
-    ?? parseFence(source, lines, startIndex)
+    parseFence(source, lines, startIndex)
     ?? parseList(source, lines, startIndex)
     ?? parseTable(source, lines, startIndex)
     ?? parseIndentedCode(source, lines, startIndex)
+    ?? parseHeadingOrThematic(source, lines, startIndex)
     ?? parseBlockquote(source, lines, startIndex)
     ?? parseParagraph(source, lines, startIndex)
   );
@@ -402,8 +439,8 @@ export function partitionStreamingMarkdown(
   let lineIndex = 0;
 
   while (lineIndex < lines.length) {
-    if (isBlankLine(lines[lineIndex])) {
-      const blankTail = consumeBlankLines(lines, lineIndex);
+    if (isStructuralBlankLine(lines[lineIndex])) {
+      const blankTail = consumeStructuralBlankLine(lines[lineIndex], lineIndex);
       committedInternal.push(makeMarkdownBlock(source, lines[lineIndex].start, blankTail.end, "markdown"));
       lineIndex = blankTail.nextLineIndex;
       continue;
