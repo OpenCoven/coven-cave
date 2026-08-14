@@ -38,12 +38,20 @@ const ciSource = await readFile(new URL("../.github/workflows/ci.yml", import.me
 const ciWorkflow = parse(ciSource);
 assert.deepEqual(
   Object.keys(ciWorkflow.jobs),
-  ["paths", "ios", "build"],
-  "routine CI classifies once, runs path-aware iOS validation, then reports through the required job",
+  ["paths", "ios", "frontend-static", "frontend-tests", "frontend-bundle", "build"],
+  "routine CI classifies once, fans frontend validation out, then reports through the required job",
 );
 assert.equal(ciWorkflow.jobs.build.name, "Frontend build");
-assert.deepEqual(ciWorkflow.jobs.build.needs, ["paths", "ios"]);
+assert.deepEqual(ciWorkflow.jobs.build.needs, [
+  "paths",
+  "ios",
+  "frontend-static",
+  "frontend-tests",
+  "frontend-bundle",
+]);
 assert.equal(ciWorkflow.jobs.ios.name, "iOS build");
+assert.deepEqual(ciWorkflow.jobs["frontend-tests"].strategy.matrix.suite, ["app", "api", "mobile"]);
+assert.equal(ciWorkflow.jobs["frontend-tests"].strategy["fail-fast"], false);
 assert.equal(
   ciWorkflow["run-name"],
   "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}",
@@ -79,6 +87,12 @@ const expectedJobGuards = {
   paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
   ios:
     "needs.paths.outputs.ios == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+  "frontend-static":
+    "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+  "frontend-tests":
+    "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+  "frontend-bundle":
+    "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
   build:
     "always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
 };
@@ -104,6 +118,9 @@ const prerequisite = ciWorkflow.jobs.build.steps.find(
 );
 assert.ok(prerequisite, "the required Frontend build aggregates prerequisite job results");
 assert.match(prerequisite.run, /test "\$IOS_RESULT" = "success"/);
+assert.match(prerequisite.run, /test "\$FRONTEND_STATIC_RESULT" = "success"/);
+assert.match(prerequisite.run, /test "\$FRONTEND_TESTS_RESULT" = "success"/);
+assert.match(prerequisite.run, /test "\$FRONTEND_BUNDLE_RESULT" = "success"/);
 
 const releaseSource = await readFile(
   new URL("../.github/workflows/release.yml", import.meta.url),
