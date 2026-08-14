@@ -154,6 +154,12 @@ export const SUITES = {
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/x-api.test.ts",
+    "src/lib/tweet-thread-protocol.test.ts",
+    "src/lib/tweet-thread-validation.test.ts",
+    "src/lib/tweet-thread-scoring.test.ts",
+    "src/lib/tweet-thread-blinding.test.ts",
+    "scripts/tweet-thread-protocol-drift.test.mjs",
+    "scripts/tweet-thread-validator.test.mjs",
     "src/lib/server/familiar-avatar-mutation.test.ts",
     "src/lib/server/x-app-config.test.ts",
     "src/lib/server/x-client.test.ts",
@@ -1714,6 +1720,7 @@ export const SUITES = {
 const STRIP_TYPES_MJS = new Set([
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
+  "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
