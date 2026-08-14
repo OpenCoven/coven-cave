@@ -1,0 +1,42 @@
+{
+  "name": "tweet-thread-lab",
+  "version": "0.1.0",
+  "description": "Generate, optimize, compare, validate, and prepare evidence-backed X/Twitter threads as portable, cross-harness run artifacts without publishing them.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "x",
+    "twitter",
+    "thread",
+    "optimization",
+    "evaluation",
+    "portable-artifacts"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "network"
+  ],
+  "skills": "./skills/",
+  "marketplaceId": "opencoven/tweet-thread-lab",
+  "x-coven": {
+    "displayName": "Tweet Thread Lab",
+    "category": "Social",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave/tree/main/marketplace/plugins/tweet-thread-lab"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

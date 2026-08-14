@@ -20,3 +20,11 @@
 # issues.jsonl is deliberately NOT routed here: its records are mutable, so
 # first-occurrence-wins could keep a stale issue state. A conflict is right.
 .beads/interactions.jsonl merge=beads-jsonl
+
+# Portable tweet-thread artifacts are byte-checked and must stay LF-normalized.
+marketplace/plugins/tweet-thread-lab/bin/tweet-thread-validate.mjs text eol=lf
+marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/SKILL.md text eol=lf
+marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/*.md text eol=lf
+marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/*.json text eol=lf
+workflows/optimize-tweet-thread.yaml text eol=lf
+workflows/optimize-tweet-thread.cave.json text eol=lf

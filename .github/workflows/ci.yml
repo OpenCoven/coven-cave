@@ -13,9 +13,25 @@ on:
   pull_request:
     branches: [main]
 
+# A recovery dispatch resolves to the SAME group as the pull_request run it is
+# rescuing — `github.event.pull_request` is null for a dispatch, so the group
+# falls through to `inputs.expected_sha`, which is that exact head. With
+# cancel-in-progress on, the dispatch therefore CANCELS the run it came to
+# replace (cave-f22tp).
+#
+# Observed 2026-08-14 on #4618: head 11aceeb89 collected three cancelled runs
+# and no verdict — a pull_request run killed ~60 minutes in, then two dispatches
+# killed in turn. The cancellations are also self-perpetuating, because
+# ci-recovery's `cancelled_latest_run` wedge test (cave-geaji) reads a
+# cancellation as proof that recovery is needed, so each cooldown fires another
+# dispatch. The required check can never report while that runs.
+#
+# So a dispatch never cancels: with cancel-in-progress false it QUEUES behind
+# the in-flight run for that head and starts only once the group frees. A push
+# still supersedes its predecessor, which is the behaviour this setting is for.
 concurrency:
   group: ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read

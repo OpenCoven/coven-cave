@@ -20,7 +20,7 @@ assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
   "settled path keeps GitHub splitting after artifacts while image groups remain intact across both boundaries",
 );
 assert.match(
@@ -166,6 +166,11 @@ assert.match(
   mergeRoute,
   /const ref = typeof pr\?\.head\?\.ref === "string"/,
   "the branch to delete comes from GitHub's own PR object",
+);
+assert.match(
+  mergeRoute,
+  /headRepo\.toLowerCase\(\) !== repo\.toLowerCase\(\)/,
+  "fork PR cleanup cannot target a same-named branch in the base repository",
 );
 assert.match(
   composer,

@@ -13,10 +13,11 @@
  * landed merge into an `ok: false` the caller might retry.
  *
  * The branch name is NOT taken from the request. It is read back from GitHub's
- * own PR object after the merge, for two reasons: a caller cannot steer this
- * route at an arbitrary ref path (CodeQL js/request-forgery — and a regex test
- * is not a sanitiser), and a caller that sent a stale or simply wrong ref would
- * otherwise have deleted a branch nobody asked about.
+ * own PR object after the merge, and deletion is allowed only when GitHub says
+ * the head repository is the base repository. That prevents a fork author from
+ * steering cleanup toward a same-named branch in the base repository. Reading
+ * the ref from GitHub also prevents a caller from supplying a stale or arbitrary
+ * ref path (CodeQL js/request-forgery).
  *
  * Requires a PAT — never echoed, never logged.
  */
@@ -107,8 +108,31 @@ export async function POST(req: Request) {
           headers: ghHeaders(token),
           cache: "no-store",
         });
-        const pr = (await prRes.json().catch(() => null)) as { head?: { ref?: unknown } } | null;
+        const pr = (await prRes.json().catch(() => null)) as {
+          head?: { ref?: unknown; repo?: { full_name?: unknown } | null };
+        } | null;
         const ref = typeof pr?.head?.ref === "string" ? pr.head.ref.trim() : "";
+        const headRepo = typeof pr?.head?.repo?.full_name === "string" ? pr.head.repo.full_name.trim() : "";
+        if (!headRepo) {
+          branchDeleteError = "could not read head repository";
+          return NextResponse.json({
+            ok: true,
+            merged: true,
+            sha: typeof data.sha === "string" ? data.sha : null,
+            branchDeleted: false,
+            branchDeleteError,
+          });
+        }
+        if (headRepo.toLowerCase() !== repo.toLowerCase()) {
+          branchDeleteError = "head branch belongs to a different repository";
+          return NextResponse.json({
+            ok: true,
+            merged: true,
+            sha: typeof data.sha === "string" ? data.sha : null,
+            branchDeleted: false,
+            branchDeleteError,
+          });
+        }
         if (!isSafeBranch(ref)) {
           branchDeleteError = ref ? "branch name is not one this route will delete" : "could not read the head branch";
           return NextResponse.json({

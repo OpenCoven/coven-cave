@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -166,6 +167,7 @@ try {
     shim,
     `@echo off\r\n"%~dp0\\node_modules\\@github\\copilot\\index.js" %*\r\n`,
   );
+  const canonicalShimEntry = realpathSync(shimEntry);
   let evaluatedWindowsCommand: string | undefined;
   const windowsPlan = await resolveCopilotRuntimeLaunch(shim, {
     platform: "win32",
@@ -187,12 +189,12 @@ try {
   );
   assert.deepEqual(
     windowsPlan.fixedArgs,
-    [shimEntry],
+    [canonicalShimEntry],
     "a Windows npm shim keeps the exact transformed fixed args",
   );
   assert.deepEqual(
     windowsPlan.requiredFiles,
-    [shimEntry],
+    [canonicalShimEntry],
     "a converted Windows npm shim preflights its fixed JavaScript entry",
   );
   assert.equal(

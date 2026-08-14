@@ -24,6 +24,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Working in this repo
 
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
+- [`source-text-pins.md`](source-text-pins.md) — what a source-reading test may assert (a contract) and may not (arity, formatting, distance), the extraction rule, and why every repair must be mutation-tested
 - [`workflows/`](workflows) — branching, release, and PR mechanics
 
 ### Platform and runtime
@@ -83,6 +84,7 @@ Active initiatives. Parts have shipped; parts have not. Each states which.
 - [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the reliability program (`cave-58eoq`); Windows supervision and authenticated native readiness have shipped
 - [`golden-paths.md`](golden-paths.md) — the eight journeys the Cave must make effortless, with per-item shipped/broken status
 - [`craft-ux.md`](craft-ux.md) — a friction inventory of the craft authoring flow with a reuse-first enablement plan
+- [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and product contract for download → first successful familiar response, separating confirmed behavior from proposals still needing usability and packaged-app testing
 
 ---
 

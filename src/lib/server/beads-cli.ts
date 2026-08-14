@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { caveToolSpawnEnv } from "@/lib/coven-bin";
+import { caveToolSpawnEnv } from "../coven-bin.ts";
 
 const execFileAsync = promisify(execFile);
 const BD_TIMEOUT_MS = 30_000;
