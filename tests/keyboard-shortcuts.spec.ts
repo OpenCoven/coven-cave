@@ -53,6 +53,7 @@ test.describe("keyboard shortcuts sheet", () => {
     }
     // Representative rows, including one from the #1605 additions.
     await expect(sheet(page).getByText("Open the command palette")).toBeVisible();
+    await expect(sheet(page).getByText("Toggle the right Chat panel")).toBeVisible();
     await expect(sheet(page).getByText("Recall prompt history (home composer, empty input)")).toBeVisible();
     // Removed-with-the-group row must NOT resurface (cave-7c9i).
     await expect(sheet(page).getByText("Broadcast input to every visible pane")).toBeHidden();

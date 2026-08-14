@@ -56,6 +56,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌘K", description: "Open the command palette" },
       { keys: "⌘B", description: "Toggle the left sidebar" },
       { keys: "⌘\\", description: "Toggle the list panel" },
+      { keys: "⇧⌘B", description: "Toggle the right Chat panel" },
       { keys: "⌘1–⌘5", description: "Jump to a surface (Home, Chat, Tasks, Rituals, Browser)" },
       { keys: "⌘9", description: "Jump to Projects (Chat surface)" },
       { keys: "⌘[ / ⌘]", description: "Previous / next surface" },
