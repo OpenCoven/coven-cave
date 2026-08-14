@@ -39,7 +39,7 @@ for (const alias of ["groupchat", "journal", "flow"]) {
 assert.equal(MODE_ALIASES["familiar-work-queue"], "board");
 assert.match(
   workspace,
-  /mode === "board" \|\| mode === "familiar-work-queue"[\s\S]{0,400}?<BoardView\s+key=\{mode\}\s+initialTab=\{mode === "familiar-work-queue" \? "queue" : "tasks"\}/,
+  /mode === "board" \|\| mode === "familiar-work-queue"[\s\S]{0,400}?<BoardView\s+key=\{mode\}\s+initialTab=\{mode === "familiar-work-queue"[^}]*\? "queue" : "tasks"\}/,
   "the familiar-work-queue alias renders the Tasks surface on its Queue tab (keyed remount)",
 );
 assert.match(
@@ -51,7 +51,7 @@ assert.match(
 assert.equal(MODE_ALIASES.calendar, "inbox");
 assert.match(
   workspace,
-  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar" \? "calendar" : "overview"\}/,
+  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar"[^}]*\? "calendar" : "overview"\}/,
   "the calendar alias renders the Rituals surface on its Calendar tab (keyed remount)",
 );
 
