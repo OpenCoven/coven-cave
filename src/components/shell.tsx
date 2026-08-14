@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -432,6 +432,30 @@ function ShellInner({
     } catch {}
   };
 
+  const applyPreferredRightChatWidth = useCallback(() => {
+    const group = groupRef.current;
+    const groupElement = groupElementRef.current;
+    if (!group || !groupElement) return;
+    const layout = group.getLayout();
+    const detail = layout.detail;
+    const current = layout["right-chat"];
+    if (typeof detail !== "number" || typeof current !== "number") return;
+    const groupSize = Array.from(groupElement.children).reduce(
+      (size, child) =>
+        size +
+        (child instanceof HTMLElement && child.hasAttribute("data-panel")
+          ? child.offsetWidth
+          : 0),
+      0,
+    );
+    if (!Number.isFinite(groupSize) || groupSize <= 0) return;
+    const desired = Number.parseFloat(((preferredRightChatWidth / groupSize) * 100).toFixed(3));
+    if (Math.abs(desired - current) < 0.05) return;
+    const nextDetail = Number.parseFloat((detail - (desired - current)).toFixed(3));
+    if (nextDetail <= 0) return;
+    group.setLayout({ ...layout, detail: nextDetail, "right-chat": desired });
+  }, [preferredRightChatWidth]);
+
   const openRightChat = () => {
     if (!hasRightChat) return;
     if (isMobile) {
@@ -453,7 +477,13 @@ function ShellInner({
         navRef.current?.collapse();
         setNavOpen(false);
       }
+      applyPreferredRightChatWidth();
       rightChatRef.current?.expand();
+      rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+      requestAnimationFrame(() => {
+        applyPreferredRightChatWidth();
+        rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+      });
     }
     setRightChatOpen(true);
     writeRightChatOpenPref(true);
@@ -801,7 +831,10 @@ function ShellInner({
       panelIds,
       savedLayout: defaultLayout,
       groupSize,
-      defaultPanelPixels: { ...(!twoPane && { list: 260 }) },
+      defaultPanelPixels: {
+        ...(!twoPane && { list: 260 }),
+        ...(desktopRightChat && { "right-chat": preferredRightChatWidth }),
+      },
       preferredNavPixels: preferredNavWidth,
       // Matches the Panel's collapsedSize below — Chat collapses to the rail
       // now, not to zero, so the restored layout must describe the same width.
@@ -834,7 +867,9 @@ function ShellInner({
     defaultLayout,
     twoPane,
     navPolicy,
+    desktopRightChat,
     preferredNavWidth,
+    preferredRightChatWidth,
   ]);
 
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
@@ -902,9 +937,12 @@ function ShellInner({
 
   useLayoutEffect(() => {
     if (!settled || !desktopRightChat) return;
-    rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+    applyPreferredRightChatWidth();
+    if (rightChatOpen) {
+      rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+    }
     applyPanelOpenState(rightChatRef.current, rightChatOpen);
-  }, [desktopRightChat, groupId, preferredRightChatWidth, rightChatOpen, settled]);
+  }, [applyPreferredRightChatWidth, desktopRightChat, groupId, preferredRightChatWidth, rightChatOpen, settled]);
 
   useEffect(() => {
     onNavOpenChange?.(navOpen);
@@ -1210,7 +1248,9 @@ function ShellInner({
             collapsible
             collapsedSize={0}
             panelRef={rightChatRef}
-            onResize={(size) => setRightChatOpen((size.inPixels ?? 0) >= RIGHT_CHAT_MIN_PX)}
+            onResize={(size) => {
+              if ((size.inPixels ?? 0) <= 0) setRightChatOpen(false);
+            }}
           >
             <div id="shell-right-chat-panel" className="shell-right-chat">
               {rightChat}

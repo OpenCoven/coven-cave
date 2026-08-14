@@ -37,6 +37,7 @@ const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the a
 const SETUP_FOCUS_VISIBILITY_TEST =
   /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
+const MOBILE_SURFACE_SPECS = /(?:mobile\/.*|right-chat-panel)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 
@@ -169,14 +170,14 @@ export default defineConfig({
     {
       name: "pixel-5",
       dependencies: ["preferences-iphone-13"],
-      testMatch: /mobile\/.*\.spec\.ts/,
+      testMatch: MOBILE_SURFACE_SPECS,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Pixel 5"] },
     },
     {
       name: "iphone-13",
       dependencies: ["preferences-iphone-13"],
-      testMatch: /mobile\/.*\.spec\.ts/,
+      testMatch: MOBILE_SURFACE_SPECS,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["iPhone 13"] },
     },
