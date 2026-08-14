@@ -224,9 +224,13 @@ assert.match(
   /import \{ deactivateAllNativeBrowserWebviews \} from "@\/lib\/native-browser-lifecycle"/,
   "Workspace uses the shared native browser cleanup helper",
 );
+// cave-x6rw normalized split payloads into WorkspacePaneRequest, collapsing the
+// old discriminated union (kind === "browser" | kind === "page" && mode ===
+// "browser") into a single pageId. Same contract: the browser counts as visible
+// from the primary mode OR any split pane (cave-ktvy0).
 assert.match(
   workspace,
-  /mode === "browser" \|\|[\s\S]{0,180}target\.kind === "browser" \|\| \(target\.kind === "page" && target\.mode === "browser"\)/,
+  /mode === "browser" \|\|[\s\S]{0,180}target\.pageId === "browser"/,
   "Workspace tracks browser visibility across primary and split panes",
 );
 assert.match(
