@@ -165,7 +165,14 @@ export default defineConfig({
       // burns ~4.5 minutes locally. Doubled by `retries: 1` and multiplied on
       // CI's slower runners, that is what pushed the job past its 60-minute cap
       // so every PR reported a bare "cancelled" with no failing test (cave-3wmla).
-      testIgnore: /mobile\/.*\.spec\.ts/,
+      //
+      // Anchor on the `tests/mobile/` SEGMENT, not a bare `mobile/`: Playwright
+      // matches testIgnore against the ABSOLUTE path, so a loose pattern also
+      // matches any checkout whose own directory contains "mobile" — a worktree
+      // named `…-ignores-mobile` silently ignored EVERY desktop spec and the
+      // project collected 0 tests. That would still have looked green on CI,
+      // whose runner path has no such segment.
+      testIgnore: /[\\/]tests[\\/]mobile[\\/]/,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Desktop Chrome"] },
     },
