@@ -6,6 +6,7 @@ const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.me
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./opencoven-submission-page.tsx", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 
 // The mode + page remain (reachable programmatically), but Submissions is hidden
 // from the sidebar nav — it should no longer be listed as a Tools surface.
@@ -15,7 +16,10 @@ assert.doesNotMatch(
   /\{ id: "submissions",/,
   "The navigation registry should NOT expose Submissions as a nav item",
 );
-assert.match(workspace, /submissions:\s*"Submissions"/, "Workspace h1 title map should cover submissions mode");
+// cave-x6rw moved surface titles from the inline WORKSPACE_MODE_TITLES map into
+// the page registry; its own test asserts the map is gone. Same contract, new
+// home (cave-ktvy0).
+assert.match(pageRegistry, /submissions: \{[\s\S]*?title: "Submissions"/, "the page registry should cover submissions mode");
 assert.match(workspace, /mode === "submissions" \?\s*\(\s*<OpenCovenSubmissionPage/, "Workspace should render the OpenCoven submission page directly");
 assert.match(page, /OpenCovenSubmissionPanel/, "Submission page should own the reusable submission panel");
 assert.match(page, /Submit once to OpenCoven/, "Submission page should state the corrected product flow");
