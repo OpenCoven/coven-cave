@@ -1179,9 +1179,14 @@ export function Workspace() {
 
     if (splitTarget) {
       const secondary = normalizeWorkspacePaneRequest("workspace-secondary-link", splitTarget);
+      // Compare against the EFFECTIVE primary, not just an explicit ?mode=.
+      // `?split=home` with no mode still lands beside the default surface, so
+      // keying only off `primary` let a page split against itself (cave-ktvy0).
+      const effectivePrimary = primary ?? normalizeWorkspacePaneRequest("primary", mode);
       if (
         secondary &&
-        (!primary || workspacePaneRequestKey(primary) !== workspacePaneRequestKey(secondary))
+        (!effectivePrimary ||
+          workspacePaneRequestKey(effectivePrimary) !== workspacePaneRequestKey(secondary))
       ) {
         addSplitTarget(secondary, readSplitSideParam());
       }
@@ -2647,7 +2652,19 @@ export function Workspace() {
     [setMode, splitTargets],
   );
 
+  // Skip the mount pass. A `?mode=X&split=Y` deep link resolves in an effect
+  // that queues setMode(X) and the split together, so on the first commit this
+  // effect still sees the DEFAULT mode ("home") as the primary and strips a
+  // freshly deep-linked `split=home` before the mode update lands. Splits can
+  // only exist on mount because that deep link put them there, and it already
+  // refuses a secondary whose key matches the primary — so there is nothing for
+  // this pass to dedupe (cave-ktvy0).
+  const splitDedupeArmedRef = useRef(false);
   useEffect(() => {
+    if (!splitDedupeArmedRef.current) {
+      splitDedupeArmedRef.current = true;
+      return;
+    }
     const primary = primaryPaneRequest ?? normalizeWorkspacePaneRequest("primary", mode);
     if (!primary) return;
     const primaryKey = workspacePaneRequestKey(primary);
