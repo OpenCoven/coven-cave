@@ -23,6 +23,13 @@ const RFC3339_UTC_MILLIS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const MINIMUM_ARM_COUNT = 2;
 const MAXIMUM_ARM_COUNT = 32;
 
+// These limits admit the protocol maximum of 32 arms with 512 evidence items
+// each while bounding hostile descriptor graphs before recursive traversal.
+const STRICT_SNAPSHOT_MAX_DEPTH = 64;
+const STRICT_SNAPSHOT_MAX_NODE_PROPERTY_BUDGET = 1_000_000;
+const STRICT_SNAPSHOT_MAX_OBJECT_KEYS = 1_024;
+const STRICT_SNAPSHOT_MAX_ARRAY_LENGTH = 1_024;
+
 export type TweetThreadBlindingErrorCode =
   | "INVALID_TRIAL_ID"
   | "INVALID_SECRET"
@@ -144,6 +151,18 @@ export interface BlindedTweetThreadReveal {
 
 type UnknownRecord = Record<string, unknown>;
 
+interface KnownSnapshotField {
+  readonly key: string;
+  readonly code: TweetThreadBlindingErrorCode;
+  readonly message: string;
+}
+
+interface CapturedKnownRecord {
+  readonly source: object;
+  readonly descriptors: PropertyDescriptorMap;
+  readonly depth: number;
+}
+
 function fail(code: TweetThreadBlindingErrorCode, message: string): never {
   throw new TweetThreadBlindingError(code, message);
 }
@@ -159,27 +178,46 @@ function hasExactKeys(value: UnknownRecord, expected: readonly string[]): boolea
     && actual.every((key, index) => key === wanted[index]);
 }
 
-function strictJsonSnapshot<T>(
-  value: T,
-  code: TweetThreadBlindingErrorCode,
-  message: string,
-): T {
+function createStrictJsonSnapshotter() {
   const ancestors = new WeakSet<object>();
-  const invalid = (): never => fail(code, message);
+  let nodePropertyBudget = 0;
 
-  const visit = (current: unknown): unknown => {
+  const consumeBudget = (
+    amount: number,
+    code: TweetThreadBlindingErrorCode,
+    message: string,
+  ): void => {
+    if (
+      amount > STRICT_SNAPSHOT_MAX_NODE_PROPERTY_BUDGET - nodePropertyBudget
+    ) {
+      fail(code, message);
+    }
+    nodePropertyBudget += amount;
+  };
+
+  const visit = (
+    current: unknown,
+    code: TweetThreadBlindingErrorCode,
+    message: string,
+    depth: number,
+  ): unknown => {
+    if (depth > STRICT_SNAPSHOT_MAX_DEPTH) {
+      fail(code, message);
+    }
     if (
       current === null
       || typeof current === "string"
       || typeof current === "boolean"
     ) {
+      consumeBudget(1, code, message);
       return current;
     }
     if (typeof current === "number") {
-      return Number.isFinite(current) ? current : invalid();
+      consumeBudget(1, code, message);
+      return Number.isFinite(current) ? current : fail(code, message);
     }
-    if (typeof current !== "object") return invalid();
-    if (ancestors.has(current)) return invalid();
+    if (typeof current !== "object") fail(code, message);
+    if (ancestors.has(current)) fail(code, message);
 
     let array: boolean;
     let prototype: object | null;
@@ -189,15 +227,19 @@ function strictJsonSnapshot<T>(
       prototype = Object.getPrototypeOf(current);
       descriptors = Object.getOwnPropertyDescriptors(current);
     } catch {
-      return invalid();
+      fail(code, message);
     }
 
     const keys = Reflect.ownKeys(descriptors);
-    if (keys.some((key) => typeof key === "symbol")) return invalid();
+    if (keys.some((key) => typeof key === "symbol")) fail(code, message);
+    if (!array && keys.length > STRICT_SNAPSHOT_MAX_OBJECT_KEYS) {
+      fail(code, message);
+    }
+    consumeBudget(1 + keys.length, code, message);
     ancestors.add(current);
     try {
       if (array) {
-        if (prototype !== Array.prototype) return invalid();
+        if (prototype !== Array.prototype) fail(code, message);
         const lengthDescriptor = descriptors.length;
         if (
           lengthDescriptor === undefined
@@ -205,12 +247,12 @@ function strictJsonSnapshot<T>(
           || lengthDescriptor.enumerable === true
           || !Number.isSafeInteger(lengthDescriptor.value)
           || lengthDescriptor.value < 0
-          || lengthDescriptor.value > 0xffff_ffff
+          || lengthDescriptor.value > STRICT_SNAPSHOT_MAX_ARRAY_LENGTH
         ) {
-          return invalid();
+          fail(code, message);
         }
         const length = lengthDescriptor.value as number;
-        if (keys.length !== length + 1) return invalid();
+        if (keys.length !== length + 1) fail(code, message);
         const snapshot: unknown[] = new Array(length);
         for (let index = 0; index < length; index += 1) {
           const descriptor = descriptors[String(index)];
@@ -219,24 +261,26 @@ function strictJsonSnapshot<T>(
             || !("value" in descriptor)
             || descriptor.enumerable !== true
           ) {
-            return invalid();
+            fail(code, message);
           }
-          snapshot[index] = visit(descriptor.value);
+          snapshot[index] = visit(descriptor.value, code, message, depth + 1);
         }
         return Object.freeze(snapshot);
       }
 
-      if (prototype !== Object.prototype && prototype !== null) return invalid();
+      if (prototype !== Object.prototype && prototype !== null) {
+        fail(code, message);
+      }
       const snapshot: UnknownRecord = Object.create(null) as UnknownRecord;
       for (const key of keys as string[]) {
         const descriptor = descriptors[key]!;
         if (!("value" in descriptor) || descriptor.enumerable !== true) {
-          return invalid();
+          fail(code, message);
         }
         Object.defineProperty(snapshot, key, {
           configurable: false,
           enumerable: true,
-          value: visit(descriptor.value),
+          value: visit(descriptor.value, code, message, depth + 1),
           writable: false,
         });
       }
@@ -246,7 +290,94 @@ function strictJsonSnapshot<T>(
     }
   };
 
-  return visit(value) as T;
+  const captureKnownRecord = (
+    value: unknown,
+    fields: readonly KnownSnapshotField[],
+    fallbackCode: TweetThreadBlindingErrorCode,
+    fallbackMessage: string,
+    depth = 0,
+  ): CapturedKnownRecord => {
+    if (
+      depth > STRICT_SNAPSHOT_MAX_DEPTH
+      || value === null
+      || typeof value !== "object"
+      || Array.isArray(value)
+    ) {
+      fail(fallbackCode, fallbackMessage);
+    }
+
+    let descriptors: PropertyDescriptorMap;
+    let prototype: object | null;
+    try {
+      descriptors = Object.getOwnPropertyDescriptors(value);
+      prototype = Object.getPrototypeOf(value);
+    } catch {
+      fail(fallbackCode, fallbackMessage);
+    }
+    if (prototype !== Object.prototype && prototype !== null) {
+      fail(fallbackCode, fallbackMessage);
+    }
+
+    const keys = Reflect.ownKeys(descriptors);
+    if (
+      keys.some((key) => typeof key === "symbol")
+      || keys.length > STRICT_SNAPSHOT_MAX_OBJECT_KEYS
+    ) {
+      fail(fallbackCode, fallbackMessage);
+    }
+    consumeBudget(1 + keys.length, fallbackCode, fallbackMessage);
+
+    const expectedKeys = new Set(fields.map((field) => field.key));
+    for (const field of fields) {
+      const descriptor = descriptors[field.key];
+      if (
+        descriptor === undefined
+        || !("value" in descriptor)
+        || descriptor.enumerable !== true
+      ) {
+        fail(field.code, field.message);
+      }
+    }
+    if (
+      keys.length !== fields.length
+      || keys.some((key) => !expectedKeys.has(key as string))
+    ) {
+      fail(fallbackCode, fallbackMessage);
+    }
+    return { source: value, descriptors, depth };
+  };
+
+  const snapshotCapturedField = <T>(
+    captured: CapturedKnownRecord,
+    field: KnownSnapshotField,
+  ): T =>
+    visit(
+      (captured.descriptors[field.key] as PropertyDescriptor & { value: unknown }).value,
+      field.code,
+      field.message,
+      captured.depth + 1,
+    ) as T;
+
+  return {
+    captureKnownRecord,
+    snapshotCapturedField,
+    snapshot<T>(
+      value: T,
+      code: TweetThreadBlindingErrorCode,
+      message: string,
+      depth = 0,
+    ): T {
+      return visit(value, code, message, depth) as T;
+    },
+  };
+}
+
+function strictJsonSnapshot<T>(
+  value: T,
+  code: TweetThreadBlindingErrorCode,
+  message: string,
+): T {
+  return createStrictJsonSnapshotter().snapshot(value, code, message);
 }
 
 function isNonWhitespaceString(value: unknown): value is string {
@@ -625,21 +756,240 @@ function sameStoppingRule(
     && left.closesAt === right.closesAt;
 }
 
+const CREATE_INPUT_FIELDS = [
+  {
+    key: "trialId",
+    code: "INVALID_TRIAL_ID",
+    message: "trialId must be an own data property.",
+  },
+  {
+    key: "seed",
+    code: "INVALID_SEED",
+    message: "The shuffle seed must be an own data property.",
+  },
+  {
+    key: "secret",
+    code: "INVALID_SECRET",
+    message: "The blinding secret must be an own data property.",
+  },
+  {
+    key: "stoppingRule",
+    code: "INVALID_STOPPING_RULE",
+    message: "The stopping rule must be plain JSON data.",
+  },
+  {
+    key: "candidates",
+    code: "INVALID_CANDIDATE",
+    message: "Candidate inputs must be plain JSON data.",
+  },
+] as const satisfies readonly KnownSnapshotField[];
+
+const PUBLIC_TRIAL_FIELDS = [
+  {
+    key: "protocolVersion",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public trial protocol must be an own data property.",
+  },
+  {
+    key: "trialId",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public trial identifier must be an own data property.",
+  },
+  {
+    key: "seedHash",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public seed hash must be an own data property.",
+  },
+  {
+    key: "revealCommitment",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public reveal commitment must be an own data property.",
+  },
+  {
+    key: "stoppingRule",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public stopping rule must be plain JSON data.",
+  },
+  {
+    key: "arms",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public arms must be plain JSON data.",
+  },
+] as const satisfies readonly KnownSnapshotField[];
+
+const ENVELOPE_FIELDS = [
+  {
+    key: "protocolVersion",
+    code: "INVALID_BLINDING_ENVELOPE",
+    message: "The envelope protocol must be an own data property.",
+  },
+  {
+    key: "trialId",
+    code: "INVALID_BLINDING_ENVELOPE",
+    message: "The envelope trial identifier must be an own data property.",
+  },
+  {
+    key: "publicTrialSha256",
+    code: "INVALID_BLINDING_ENVELOPE",
+    message: "The public trial SHA-256 must be an own data property.",
+  },
+  {
+    key: "revealCommitment",
+    code: "INVALID_BLINDING_ENVELOPE",
+    message: "The envelope reveal commitment must be an own data property.",
+  },
+  {
+    key: "revealThresholds",
+    code: "INVALID_BLINDING_ENVELOPE",
+    message: "The envelope reveal thresholds must be plain JSON data.",
+  },
+  {
+    key: "mapping",
+    code: "INVALID_BLINDING_ENVELOPE",
+    message: "The envelope mapping must be plain JSON data.",
+  },
+] as const satisfies readonly KnownSnapshotField[];
+
+const REVEAL_INPUT_FIELDS = [
+  {
+    key: "observedVoteCount",
+    code: "INVALID_VOTE_COUNT",
+    message: "observedVoteCount must be an own data property.",
+  },
+  {
+    key: "currentTime",
+    code: "INVALID_CURRENT_TIME",
+    message: "currentTime must be an own data property.",
+  },
+  {
+    key: "secret",
+    code: "INVALID_SECRET",
+    message: "The reveal secret must be an own data property.",
+  },
+  {
+    key: "publicTrial",
+    code: "INVALID_PUBLIC_TRIAL",
+    message: "The public trial must be plain JSON data.",
+  },
+  {
+    key: "envelope",
+    code: "INVALID_BLINDING_ENVELOPE",
+    message: "The blinding envelope must be plain JSON data.",
+  },
+] as const satisfies readonly KnownSnapshotField[];
+
+type StrictJsonSnapshotter = ReturnType<typeof createStrictJsonSnapshotter>;
+
+function capturePublicTrial(
+  snapshotter: StrictJsonSnapshotter,
+  value: unknown,
+): CapturedKnownRecord {
+  return snapshotter.captureKnownRecord(
+    value,
+    PUBLIC_TRIAL_FIELDS,
+    "INVALID_PUBLIC_TRIAL",
+    "The public trial must contain only the known own data properties.",
+  );
+}
+
+function snapshotPublicTrialControls(
+  snapshotter: StrictJsonSnapshotter,
+  captured: CapturedKnownRecord,
+): Omit<PublicBlindedTweetThreadTrial, "arms"> {
+  return {
+    protocolVersion: snapshotter.snapshotCapturedField(
+      captured,
+      PUBLIC_TRIAL_FIELDS[0],
+    ),
+    trialId: snapshotter.snapshotCapturedField(
+      captured,
+      PUBLIC_TRIAL_FIELDS[1],
+    ),
+    seedHash: snapshotter.snapshotCapturedField(
+      captured,
+      PUBLIC_TRIAL_FIELDS[2],
+    ),
+    revealCommitment: snapshotter.snapshotCapturedField(
+      captured,
+      PUBLIC_TRIAL_FIELDS[3],
+    ),
+    stoppingRule: snapshotter.snapshotCapturedField(
+      captured,
+      PUBLIC_TRIAL_FIELDS[4],
+    ),
+  };
+}
+
+function captureEnvelope(
+  snapshotter: StrictJsonSnapshotter,
+  value: unknown,
+): CapturedKnownRecord {
+  return snapshotter.captureKnownRecord(
+    value,
+    ENVELOPE_FIELDS,
+    "INVALID_BLINDING_ENVELOPE",
+    "The blinding envelope must contain only the known own data properties.",
+  );
+}
+
+function snapshotEnvelopeControls(
+  snapshotter: StrictJsonSnapshotter,
+  captured: CapturedKnownRecord,
+): Omit<BlindingEnvelope, "mapping"> {
+  return {
+    protocolVersion: snapshotter.snapshotCapturedField(
+      captured,
+      ENVELOPE_FIELDS[0],
+    ),
+    trialId: snapshotter.snapshotCapturedField(
+      captured,
+      ENVELOPE_FIELDS[1],
+    ),
+    publicTrialSha256: snapshotter.snapshotCapturedField(
+      captured,
+      ENVELOPE_FIELDS[2],
+    ),
+    revealCommitment: snapshotter.snapshotCapturedField(
+      captured,
+      ENVELOPE_FIELDS[3],
+    ),
+    revealThresholds: snapshotter.snapshotCapturedField(
+      captured,
+      ENVELOPE_FIELDS[4],
+    ),
+  };
+}
+
 export function createBlindedTweetThreadTrial(
   input: CreateBlindedTweetThreadTrialInput,
 ): CreateBlindedTweetThreadTrialResult {
-  const trialId = input.trialId;
-  const candidateInput = strictJsonSnapshot(
-    input.candidates,
-    "INVALID_CANDIDATE",
-    "Candidate inputs must be plain JSON data.",
+  const snapshotter = createStrictJsonSnapshotter();
+  const capturedInput = snapshotter.captureKnownRecord(
+    input,
+    CREATE_INPUT_FIELDS,
+    "INVALID_TRIAL_ID",
+    "The blinded trial input must contain only the known own data properties.",
   );
-  const seed = input.seed;
-  const secret = input.secret;
-  const stoppingRule = strictJsonSnapshot(
-    input.stoppingRule,
-    "INVALID_STOPPING_RULE",
-    "The stopping rule must be plain JSON data.",
+  const trialId = snapshotter.snapshotCapturedField<string>(
+    capturedInput,
+    CREATE_INPUT_FIELDS[0],
+  );
+  const seed = snapshotter.snapshotCapturedField<string>(
+    capturedInput,
+    CREATE_INPUT_FIELDS[1],
+  );
+  const capturedSecret = snapshotter.snapshotCapturedField<string>(
+    capturedInput,
+    CREATE_INPUT_FIELDS[2],
+  );
+  const stoppingRule =
+    snapshotter.snapshotCapturedField<TweetThreadTrialStoppingRule>(
+      capturedInput,
+      CREATE_INPUT_FIELDS[3],
+    );
+  const candidateInput = snapshotter.snapshotCapturedField<unknown[]>(
+    capturedInput,
+    CREATE_INPUT_FIELDS[4],
   );
   if (
     typeof trialId !== "string"
@@ -648,7 +998,7 @@ export function createBlindedTweetThreadTrial(
   ) {
     fail("INVALID_TRIAL_ID", "trialId must be a strict stable trial identifier.");
   }
-  if (!isNonWhitespaceString(secret)) {
+  if (!isNonWhitespaceString(capturedSecret)) {
     fail("INVALID_SECRET", "The blinding secret must be a non-empty string.");
   }
   if (!isNonWhitespaceString(seed)) {
@@ -687,7 +1037,7 @@ export function createBlindedTweetThreadTrial(
     )
     .map((candidate) => {
       const armToken = deriveArmToken(
-        secret,
+        capturedSecret,
         trialId,
         candidate.candidateSha256,
       );
@@ -738,7 +1088,7 @@ export function createBlindedTweetThreadTrial(
     ]),
   );
   const committedReveal = revealCommitment(
-    secret,
+    capturedSecret,
     publicTrialWithoutCommitment,
     mapping,
     committedStoppingRule,
@@ -761,19 +1111,63 @@ export function createBlindedTweetThreadTrial(
 export function revealBlindedTweetThreadTrial(
   input: RevealBlindedTweetThreadTrialInput,
 ): BlindedTweetThreadReveal {
-  const publicTrial = strictJsonSnapshot(
-    input.publicTrial,
+  const snapshotter = createStrictJsonSnapshotter();
+  const capturedInput = snapshotter.captureKnownRecord(
+    input,
+    REVEAL_INPUT_FIELDS,
     "INVALID_PUBLIC_TRIAL",
-    "The public trial must be plain JSON data.",
+    "The reveal input must contain only the known own data properties.",
   );
-  const envelope = strictJsonSnapshot(
-    input.envelope,
-    "INVALID_BLINDING_ENVELOPE",
-    "The blinding envelope must be plain JSON data.",
+  const observedVoteCount = snapshotter.snapshotCapturedField<number>(
+    capturedInput,
+    REVEAL_INPUT_FIELDS[0],
   );
-  const observedVoteCount = input.observedVoteCount;
-  const currentTime = input.currentTime;
-  const secret = input.secret;
+  const currentTime = snapshotter.snapshotCapturedField<string>(
+    capturedInput,
+    REVEAL_INPUT_FIELDS[1],
+  );
+  const capturedSecret = snapshotter.snapshotCapturedField<string>(
+    capturedInput,
+    REVEAL_INPUT_FIELDS[2],
+  );
+  const publicTrialCaptured = capturePublicTrial(
+    snapshotter,
+    (
+      capturedInput.descriptors.publicTrial as PropertyDescriptor & {
+        value: unknown;
+      }
+    ).value,
+  );
+  const envelopeCaptured = captureEnvelope(
+    snapshotter,
+    (
+      capturedInput.descriptors.envelope as PropertyDescriptor & {
+        value: unknown;
+      }
+    ).value,
+  );
+  const publicTrialControls = snapshotPublicTrialControls(
+    snapshotter,
+    publicTrialCaptured,
+  );
+  const envelopeControls = snapshotEnvelopeControls(
+    snapshotter,
+    envelopeCaptured,
+  );
+  const publicTrial: PublicBlindedTweetThreadTrial = {
+    ...publicTrialControls,
+    arms: snapshotter.snapshotCapturedField(
+      publicTrialCaptured,
+      PUBLIC_TRIAL_FIELDS[5],
+    ),
+  };
+  const envelope: BlindingEnvelope = {
+    ...envelopeControls,
+    mapping: snapshotter.snapshotCapturedField(
+      envelopeCaptured,
+      ENVELOPE_FIELDS[5],
+    ),
+  };
 
   assertValidPublicTrial(publicTrial);
   assertValidEnvelope(envelope);
@@ -783,7 +1177,7 @@ export function revealBlindedTweetThreadTrial(
   if (!isStrictRfc3339Timestamp(currentTime)) {
     fail("INVALID_CURRENT_TIME", "currentTime must be a real RFC3339 UTC timestamp with milliseconds.");
   }
-  if (!isNonWhitespaceString(secret)) {
+  if (!isNonWhitespaceString(capturedSecret)) {
     fail("INVALID_SECRET", "The reveal secret must be a non-empty string.");
   }
   if (publicTrial.trialId !== envelope.trialId) {
@@ -819,7 +1213,7 @@ export function revealBlindedTweetThreadTrial(
     ...publicTrialWithoutCommitment
   } = publicTrial;
   const computedRevealCommitment = revealCommitment(
-    secret,
+    capturedSecret,
     publicTrialWithoutCommitment,
     envelope.mapping,
     envelope.revealThresholds,

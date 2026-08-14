@@ -122,6 +122,27 @@ function bulkCandidates(count: number): ThreadCandidate[] {
     candidate(`candidate-bulk-${index}`, `bulk-${index}`));
 }
 
+function candidateWithEvidenceCount(
+  candidateId: string,
+  label: string,
+  evidenceCount: number,
+): ThreadCandidate {
+  const value = candidate(candidateId, label);
+  const content: ThreadCandidateCanonicalContent = {
+    ...value,
+    evidence: Array.from({ length: evidenceCount }, (_, index) => ({
+      ...value.evidence[0]!,
+      evidenceId: `evidence-${label}-${index}`,
+      claimId: index === 0 ? `claim-${label}` : `claim-${label}-${index}`,
+    })),
+  };
+  delete (content as Partial<ThreadCandidate>).candidateSha256;
+  return {
+    ...content,
+    candidateSha256: computeThreadCandidateSha256(content),
+  };
+}
+
 function expectedToken(candidateSha256: string): string {
   return `arm-${createHmac("sha256", SECRET)
     .update(`tweet-thread-arm\u0000${TRIAL_ID}\u0000${candidateSha256}`, "utf8")
@@ -919,6 +940,245 @@ function expectInvalidPublicMutation(
     "INVALID_BLINDING_ENVELOPE",
   );
   assert.equal(candidateReferenceReads, 0);
+}
+
+{
+  const expected = createTrial();
+  const input: Parameters<typeof createBlindedTweetThreadTrial>[0] = {
+    trialId: TRIAL_ID,
+    candidates: [],
+    seed: SEED,
+    secret: SECRET,
+    stoppingRule: {
+      minimumVotes: 12,
+      closesAt: CLOSES_AT,
+    },
+  };
+  input.candidates = new Proxy([...CANDIDATES], {
+    ownKeys(target) {
+      input.seed = "mutated-seed";
+      Reflect.set(input, "secret", "mutated-secret");
+      input.stoppingRule.minimumVotes = 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  assert.deepEqual(
+    createBlindedTweetThreadTrial(input),
+    expected,
+    "creation snapshots seed, secret, and stopping rule before candidate traversal",
+  );
+}
+
+{
+  const base = createTrial();
+  const original = structuredClone(base.publicTrial);
+  let attackedPublicTrial: PublicBlindedTweetThreadTrial;
+  const arms = new Proxy(original.arms, {
+    ownKeys(target) {
+      attackedPublicTrial.stoppingRule.minimumVotes = 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  attackedPublicTrial = {
+    arms,
+    protocolVersion: original.protocolVersion,
+    trialId: original.trialId,
+    seedHash: original.seedHash,
+    revealCommitment: original.revealCommitment,
+    stoppingRule: original.stoppingRule,
+  };
+  assert.deepEqual(
+    reveal(attackedPublicTrial, base.envelope, 12),
+    reveal(base.publicTrial, base.envelope, 12),
+    "public trial controls are snapshotted before arms regardless of key order",
+  );
+}
+
+{
+  const base = createTrial();
+  const attackedEnvelopeSource = structuredClone(base.envelope);
+  let attackedEnvelope: BlindingEnvelope;
+  const mapping = new Proxy(attackedEnvelopeSource.mapping, {
+    ownKeys(target) {
+      attackedEnvelope.revealThresholds.minimumVotes = 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  attackedEnvelope = {
+    mapping,
+    protocolVersion: attackedEnvelopeSource.protocolVersion,
+    trialId: attackedEnvelopeSource.trialId,
+    publicTrialSha256: attackedEnvelopeSource.publicTrialSha256,
+    revealCommitment: attackedEnvelopeSource.revealCommitment,
+    revealThresholds: attackedEnvelopeSource.revealThresholds,
+  };
+  assert.deepEqual(
+    reveal(base.publicTrial, attackedEnvelope, 12),
+    reveal(base.publicTrial, base.envelope, 12),
+    "envelope thresholds are snapshotted before mapping regardless of key order",
+  );
+}
+
+{
+  const base = createTrial();
+  const attackedPublicTrial = structuredClone(base.publicTrial);
+  const attackedEnvelope = structuredClone(base.envelope);
+  attackedPublicTrial.arms = new Proxy(attackedPublicTrial.arms, {
+    ownKeys(target) {
+      attackedEnvelope.revealThresholds.minimumVotes = 1;
+      attackedEnvelope.revealCommitment = "0".repeat(64);
+      return Reflect.ownKeys(target);
+    },
+  });
+  assert.deepEqual(
+    reveal(attackedPublicTrial, attackedEnvelope, 12),
+    reveal(base.publicTrial, base.envelope, 12),
+    "reveal snapshots both sibling commitments and thresholds before nested payloads",
+  );
+}
+
+{
+  const base = createTrial();
+  const input: Parameters<typeof revealBlindedTweetThreadTrial>[0] = {
+    publicTrial: base.publicTrial,
+    envelope: base.envelope,
+    observedVoteCount: 0,
+    currentTime: GENERATED_AT,
+    secret: SECRET,
+  };
+  input.publicTrial = new Proxy(base.publicTrial, {
+    ownKeys(target) {
+      input.observedVoteCount = 12;
+      input.currentTime = CLOSES_AT;
+      return Reflect.ownKeys(target);
+    },
+  });
+  expectCode(
+    () => revealBlindedTweetThreadTrial(input),
+    "REVEAL_LOCKED",
+  );
+}
+
+{
+  const base = createTrial();
+  const input: Parameters<typeof revealBlindedTweetThreadTrial>[0] = {
+    publicTrial: base.publicTrial,
+    envelope: base.envelope,
+    observedVoteCount: 12,
+    currentTime: GENERATED_AT,
+    secret: SECRET,
+  };
+  input.publicTrial = new Proxy(base.publicTrial, {
+    ownKeys(target) {
+      Reflect.set(input, "secret", "mutated-secret");
+      return Reflect.ownKeys(target);
+    },
+  });
+  assert.deepEqual(
+    revealBlindedTweetThreadTrial(input),
+    reveal(base.publicTrial, base.envelope, 12),
+    "reveal uses the secret captured before public trial traversal",
+  );
+}
+
+{
+  let deep: unknown = "leaf";
+  for (let index = 0; index < 10_000; index += 1) {
+    deep = { next: deep };
+  }
+  expectCode(
+    () => createTrial({ candidates: [deep, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+}
+
+{
+  let nestedTrapCalls = 0;
+  const trappedValue = new Proxy({ value: true }, {
+    ownKeys(target) {
+      nestedTrapCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  const hugeObject = Object.fromEntries(
+    Array.from({ length: 1_025 }, (_, index) => [`key-${index}`, trappedValue]),
+  );
+  expectCode(
+    () => createTrial({ candidates: [hugeObject, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    nestedTrapCalls,
+    0,
+    "object key budgets reject before traversing property values",
+  );
+}
+
+{
+  let nestedTrapCalls = 0;
+  const trappedEvidence = new Proxy(structuredClone(CANDIDATES[0].evidence[0]!), {
+    ownKeys(target) {
+      nestedTrapCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  const oversizedEvidence = structuredClone(CANDIDATES[0]);
+  oversizedEvidence.evidence = Array.from(
+    { length: 1_025 },
+    () => trappedEvidence,
+  );
+  expectCode(
+    () => createTrial({ candidates: [oversizedEvidence, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    nestedTrapCalls,
+    0,
+    "array length budgets reject before traversing entries",
+  );
+}
+
+{
+  let lateTrapCalls = 0;
+  const leaf = Array.from({ length: 512 }, () => "leaf");
+  const lateLeaf = new Proxy(leaf, {
+    ownKeys(target) {
+      lateTrapCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  const budgetBomb = Array.from({ length: 1_024 }, () => leaf);
+  budgetBomb[budgetBomb.length - 1] = lateLeaf;
+  expectCode(
+    () => createTrial({ candidates: [budgetBomb, CANDIDATES[1]] }),
+    "INVALID_CANDIDATE",
+  );
+  assert.equal(
+    lateTrapCalls,
+    0,
+    "the total node/property budget stops traversal before late payloads",
+  );
+}
+
+{
+  const maximumEvidenceTrial = createTrial({
+    candidates: Array.from({ length: 32 }, (_, index) =>
+      candidateWithEvidenceCount(
+        `candidate-max-evidence-${index}`,
+        `max-evidence-${index}`,
+        512,
+      )),
+    stoppingRule: { minimumVotes: 1 },
+  });
+  assert.equal(maximumEvidenceTrial.publicTrial.arms.length, 32);
+  assert.equal(
+    reveal(
+      maximumEvidenceTrial.publicTrial,
+      maximumEvidenceTrial.envelope,
+      1,
+    ).arms.length,
+    32,
+  );
 }
 
 {
