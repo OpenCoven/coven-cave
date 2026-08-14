@@ -302,6 +302,63 @@ for (const [minPosts, maxPosts] of [[3, 4], [1, 1]] as const) {
   );
 }
 
+for (const invalid of [
+  (() => {
+    const longClaimId = `claim-${"x".repeat(2_100)}`;
+    const input = candidate() as unknown as Record<string, unknown>;
+    input.posts = [{
+      postId: "post-1",
+      text: "A malformed claim identifier still produces a bounded hard failure.",
+      claimIds: [longClaimId],
+    }];
+    return {
+      input,
+      code: "protocol-invalid",
+      prefix: "ThreadCandidate.posts[0].claimIds references missing evidence ledger claim",
+    };
+  })(),
+  (() => {
+    const longPhrase = `forbidden-${"x".repeat(2_100)}`;
+    const input = candidate((content) => {
+      content.brief = brief({ bannedPhrases: [longPhrase] });
+      content.posts[1]!.text = `This post contains ${longPhrase}.`;
+    });
+    return {
+      input,
+      code: "banned-phrase",
+      prefix: 'post-2 contains banned phrase "forbidden-',
+    };
+  })(),
+]) {
+  const result = validateThreadCandidate(invalid.input);
+  assert.equal(result.accepted, false);
+  assert.ok(
+    result.findings.every((finding) => Value.Check(DeterministicFindingSchema, finding)),
+    "every validator finding remains schema-valid for oversized malformed input",
+  );
+  const boundedFinding = result.findings.find((finding) =>
+    finding.code === invalid.code && finding.message.startsWith(invalid.prefix)
+  );
+  assert.ok(boundedFinding, `preserves the meaningful ${invalid.code} prefix`);
+  assert.ok(boundedFinding.message.endsWith("… [truncated]"));
+}
+
+{
+  const insideLargerWord = validateThreadCandidate(candidate((content) => {
+    content.brief = brief({ bannedPhrases: ["रत"] });
+    content.posts[1]!.text = "भारत";
+  }));
+  assert.equal(insideLargerWord.accepted, true);
+  assert.equal(codes(insideLargerWord).includes("banned-phrase"), false);
+
+  const standalone = validateThreadCandidate(candidate((content) => {
+    content.brief = brief({ bannedPhrases: ["रत"] });
+    content.posts[1]!.text = "यह रत है";
+  }));
+  assert.equal(standalone.accepted, false);
+  assert.equal(codes(standalone).includes("banned-phrase"), true);
+}
+
 {
   const input = candidate();
   const contradictoryBrief = structuredClone(input.brief);

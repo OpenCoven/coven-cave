@@ -14,7 +14,8 @@ const POST_ID_RE = /^post-[1-9][0-9]*$/;
 const X_POST_ID_RE = /^[1-9][0-9]*$/;
 const X_THREAD_URL_RE = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[1-9][0-9]*$/;
 const HTTP_URL_RE = /^https?:\/\/[^\s/?#]+(?:[/?#]|$)/;
-const WORD_CHARACTER_RE = /[\p{L}\p{N}_]/u;
+const WORD_CONTINUATION_CHARACTER_CLASS = "\\p{L}\\p{N}\\p{M}\\p{Pc}";
+const WORD_CONTINUATION_CHARACTER_RE = new RegExp(`[${WORD_CONTINUATION_CHARACTER_CLASS}]`, "u");
 const THREAD_OBSERVATION_METRIC_NAMES = [
   "impressions",
   "likes",
@@ -369,8 +370,12 @@ export function containsBannedPhrase(text: string, phrase: string): boolean {
   const [firstCharacter] = normalizedPhrase;
   const lastCharacter = Array.from(normalizedPhrase).at(-1);
   const escapedPhrase = normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const startBoundary = firstCharacter && WORD_CHARACTER_RE.test(firstCharacter) ? "(?<![\\p{L}\\p{N}_])" : "";
-  const endBoundary = lastCharacter && WORD_CHARACTER_RE.test(lastCharacter) ? "(?![\\p{L}\\p{N}_])" : "";
+  const startBoundary = firstCharacter && WORD_CONTINUATION_CHARACTER_RE.test(firstCharacter)
+    ? `(?<![${WORD_CONTINUATION_CHARACTER_CLASS}])`
+    : "";
+  const endBoundary = lastCharacter && WORD_CONTINUATION_CHARACTER_RE.test(lastCharacter)
+    ? `(?![${WORD_CONTINUATION_CHARACTER_CLASS}])`
+    : "";
   return new RegExp(`${startBoundary}${escapedPhrase}${endBoundary}`, "u").test(normalizedText);
 }
 

@@ -786,6 +786,31 @@ assert.equal(
   true,
   "Unicode compatibility-equivalent banned phrases match",
 );
+assert.equal(
+  (bannedPhraseMatcher as (text: string, phrase: string) => boolean)("भारत", "रत"),
+  false,
+  "combining marks continue a larger Devanagari word before a banned phrase",
+);
+assert.equal(
+  (bannedPhraseMatcher as (text: string, phrase: string) => boolean)("भारत", "भ"),
+  false,
+  "combining marks continue a larger Devanagari word after a banned phrase",
+);
+assert.equal(
+  (bannedPhraseMatcher as (text: string, phrase: string) => boolean)("यह रत है", "रत"),
+  true,
+  "Devanagari banned phrases still match as standalone words",
+);
+assert.equal(
+  (bannedPhraseMatcher as (text: string, phrase: string) => boolean)("art‿work", "art"),
+  false,
+  "connector punctuation continues a word after a banned phrase",
+);
+assert.equal(
+  (bannedPhraseMatcher as (text: string, phrase: string) => boolean)("work‿art", "art"),
+  false,
+  "connector punctuation continues a word before a banned phrase",
+);
 
 const altTextPolicyError = expectValidationError(
   () => assertValidThreadCandidate({

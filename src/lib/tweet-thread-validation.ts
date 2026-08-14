@@ -24,6 +24,8 @@ const STYLED_UNICODE_ALPHABET_RE = /[\u{1D400}-\u{1D7FF}\uFF21-\uFF3A\uFF41-\uFF
 const REPEATED_EMOJI_RE = /(\p{Extended_Pictographic})(?:\uFE0E|\uFE0F)?(?:\1(?:\uFE0E|\uFE0F)?){3,}/gu;
 const IMAGE_DEPENDENT_RE = /\b(?:(?:only\s+)?(?:shown|visible|available|provided)\s+in|see)\s+(?:the\s+)?(?:image|chart|screenshot|graphic|diagram)\b/u;
 const GENERIC_ALT_TEXT = new Set(["image", "chart", "screenshot", "graphic", "photo", "diagram"]);
+const FINDING_MESSAGE_MAX_LENGTH = 2_000;
+const FINDING_MESSAGE_TRUNCATION_MARKER = "… [truncated]";
 
 export interface ThreadPostMeasurement {
   postId: string;
@@ -68,6 +70,16 @@ function claimReference(issue: string): string | undefined {
   return issue.match(/claim "([^"]+)"/u)?.[1];
 }
 
+function boundFindingMessage(message: string): string {
+  const characters = Array.from(message);
+  if (characters.length <= FINDING_MESSAGE_MAX_LENGTH) return message;
+  const markerLength = Array.from(FINDING_MESSAGE_TRUNCATION_MARKER).length;
+  return characters
+    .slice(0, FINDING_MESSAGE_MAX_LENGTH - markerLength)
+    .join("")
+    .concat(FINDING_MESSAGE_TRUNCATION_MARKER);
+}
+
 function addFinding(
   findings: Map<string, DeterministicFinding>,
   code: string,
@@ -76,23 +88,26 @@ function addFinding(
   references: { postId?: string; claimId?: string } = {},
 ): void {
   const key = [code, severity, references.postId ?? "", references.claimId ?? "", message];
-  const finding: DeterministicFinding = {
+  let finding: DeterministicFinding = {
     findingId: findingId(key),
     code,
     severity,
-    message,
+    message: boundFindingMessage(message),
   };
-  if (
-    references.postId
-    && Value.Check(DeterministicFindingSchema, { ...finding, postId: references.postId })
-  ) {
-    finding.postId = references.postId;
+  if (references.postId) {
+    const withPostId = { ...finding, postId: references.postId };
+    if (Value.Check(DeterministicFindingSchema, withPostId)) {
+      finding = withPostId;
+    }
   }
-  if (
-    references.claimId
-    && Value.Check(DeterministicFindingSchema, { ...finding, claimId: references.claimId })
-  ) {
-    finding.claimId = references.claimId;
+  if (references.claimId) {
+    const withClaimId = { ...finding, claimId: references.claimId };
+    if (Value.Check(DeterministicFindingSchema, withClaimId)) {
+      finding = withClaimId;
+    }
+  }
+  if (!Value.Check(DeterministicFindingSchema, finding)) {
+    throw new TypeError(`Validator constructed an invalid hard failure for code "${code}".`);
   }
   findings.set(finding.findingId, finding);
 }
