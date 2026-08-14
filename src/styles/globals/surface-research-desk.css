@@ -812,7 +812,37 @@
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 1px;
 }
-.research-desk-refine .ui-btn { align-self: flex-start; }
+.research-desk-refine__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.research-desk-refine__status {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+.research-desk-refine__suggestion {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+}
+.research-desk-refine__suggestion > p,
+.research-desk-refine__suggestion blockquote {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+}
+.research-desk-refine__suggestion > p { color: var(--text-secondary); }
+.research-desk-refine__suggestion blockquote { color: var(--text-primary); }
+.research-desk-refine__suggestion > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
 
 /* ── Sticky action bar (design 168–175): main actions left, end action
    right; sticks to the bottom of the scrolling center column. ── */
