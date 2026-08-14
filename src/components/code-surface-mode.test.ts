@@ -17,10 +17,10 @@ import { readFile } from "node:fs/promises";
 // shape.
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
-const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const githubView = await readFile(new URL("./github-view.tsx", import.meta.url), "utf8");
 const lazySurfaces = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
@@ -75,8 +75,8 @@ assert.match(
 
 assert.match(
   pageRegistry,
-  /id: "code"[\s\S]*?title: "Code"/,
-  "WORKSPACE_MODE_PAGES names the Code surface (canonical-nav agreement)",
+  /code: \{\s*id: "code",\s*title: "Code",\s*canonicalId: CODE_ROLE_SURFACE_MODE,/,
+  "the page registry names the Code alias and maps it to the canonical role surface",
 );
 assert.match(
   workspace,

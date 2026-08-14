@@ -60,14 +60,6 @@ assert.match(
 const source = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const wiring = await readFile(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");
 
-function sliceBetween(text: string, startNeedle: string, endNeedle: string): string {
-  const start = text.indexOf(startNeedle);
-  assert.notEqual(start, -1, `Expected to find "${startNeedle}"`);
-  const end = text.indexOf(endNeedle, start);
-  assert.notEqual(end, -1, `Expected to find "${endNeedle}" after "${startNeedle}"`);
-  return text.slice(start, end);
-}
-
 assert.match(
   wiring,
   /function useWireCopyButtons\([\s\S]*?wireCopyButtons\(el\)/,
@@ -86,7 +78,8 @@ assert.match(
   "SyntaxBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
 );
 
-const markdownBlock = sliceBetween(source, "export function MarkdownBlock(", "\nfunction escHtml(");
+const markdownBlock =
+  /export function MarkdownBlock\([\s\S]*?\n\}\n\nfunction escHtml/.exec(source)?.[0] ?? "";
 assert.match(
   markdownBlock,
   /useWireCopyButtons\(/,

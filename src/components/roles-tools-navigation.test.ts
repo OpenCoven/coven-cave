@@ -21,6 +21,7 @@ const rolesRoute = [
   await readFile(new URL("../lib/server/role-entries.ts", import.meta.url), "utf8"),
 ].join("\n");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const workspacePageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
 const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
@@ -42,7 +43,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /initialSection=\{[\s\S]*?mode === "roles"[\s\S]*?\? "roles"[\s\S]*?: mode === "capabilities"[\s\S]*?\? "capabilities"[\s\S]*?: "browse"[\s\S]*?\}/,
+  /initialSection=\{\s*mode === "roles" \|\| variant === "roles"\s*\? "roles"\s*: mode === "capabilities" \|\| variant === "capabilities"\s*\? "capabilities"\s*: "browse"\s*\}/,
   "Deep-link modes should map onto the hub's sections",
 );
 assert.doesNotMatch(
@@ -316,9 +317,9 @@ assert.match(
   "Workspace detail must render a visually-hidden h1 naming the active surface (axe page-has-heading-one) — including Role Surface rooms",
 );
 assert.match(
-  workspace,
-  /workspacePageDefinition\(primaryPaneRequest\?\.requestedPageId \?\? mode\)/,
-  "The h1 title must derive from the page registry (workspacePageDefinition enforces exhaustiveness)",
+  workspacePageRegistry,
+  /const WORKSPACE_MODE_PAGES = freezePageMap\(\{[\s\S]*\} satisfies Record<WorkspaceMode, WorkspacePageDefinition>\);/,
+  "The page registry title map must cover every WorkspaceMode (Record enforces exhaustiveness)",
 );
 
 assert.match(

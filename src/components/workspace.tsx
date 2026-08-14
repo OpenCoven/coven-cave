@@ -409,6 +409,8 @@ export function Workspace() {
   // before, so restored sessions and share links still land where they point.
   const [mode, setModeRaw] = useState<CaveMode>("home");
   const [primaryPaneRequest, setPrimaryPaneRequest] = useState<WorkspacePaneRequest | null>(null);
+  const primaryPaneRequestRef = useRef(primaryPaneRequest);
+  primaryPaneRequestRef.current = primaryPaneRequest;
   const modeRef = useRef<CaveMode>("home");
   const navigationRestoreRef = useRef(false);
   const suppressInitialChatHistoryPushRef = useRef(false);
@@ -422,6 +424,7 @@ export function Workspace() {
   const pendingChatNavigationDirectionRef = useRef<number | null>(null);
   const chatHashRestoredForCurrentModeRef = useRef(false);
   const commitMode = useCallback((next: CaveMode, historyDestination: CaveMode = next) => {
+    primaryPaneRequestRef.current = null;
     setPrimaryPaneRequest(null);
     modeRef.current = next;
     setModeRaw(next);
@@ -1174,7 +1177,10 @@ export function Workspace() {
       : null;
     if (primary && target) {
       if (isWorkspaceMode(target) || isRoleSurfaceMode(target)) setMode(target);
-      else setPrimaryPaneRequest(primary);
+      else {
+        primaryPaneRequestRef.current = primary;
+        setPrimaryPaneRequest(primary);
+      }
     }
 
     if (splitTarget) {
@@ -2648,7 +2654,8 @@ export function Workspace() {
   );
 
   useEffect(() => {
-    const primary = primaryPaneRequest ?? normalizeWorkspacePaneRequest("primary", mode);
+    const primary = primaryPaneRequestRef.current
+      ?? normalizeWorkspacePaneRequest("primary", modeRef.current);
     if (!primary) return;
     const primaryKey = workspacePaneRequestKey(primary);
     setSplitTargets((prev) => prev.filter((target) => workspacePaneRequestKey(target) !== primaryKey));

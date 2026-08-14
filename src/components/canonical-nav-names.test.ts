@@ -2,7 +2,7 @@
 // Canonical navigation vocabulary (issue #3283, bead cave-m4ih.1): one surface,
 // one user-facing name, on every platform. The lightweight workspace navigation
 // registry is the source of truth; the desktop sidebar, mobile bottom tabs, and
-// workspace sr-title map
+// workspace page registry
 // must agree with it for every destination they share. This pin exists because
 // the same surface previously shipped as "Tasks" (desktop) / "Board" (mobile)
 // and "Rituals" (desktop) / "Rites" (mobile) at the same time.
@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
-const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 // Extract `id -> label` pairs from `{ id: "...", label: "..." }` object rows.
 function extractLabels(source, blockName, blockRe) {
@@ -76,41 +76,34 @@ assert.deepEqual(
   "sidebar primary cluster (→ mobile tabs) should be the four daily destinations",
 );
 
-// ── The sr-only h1 / split-tile title map agrees for sidebar destinations ────
-// workspace.tsx migrated from a hand-written WORKSPACE_MODE_TITLES map to
-// deriving titles from workspacePageDefinition (workspace-page-registry.ts);
-// the canonical label check now targets the page registry directly.
-const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
-// Extract id/title pairs from the WORKSPACE_MODE_PAGES block (ends before SUPPLEMENTAL_PAGES).
-const pageRegistryBlock = pageRegistry.slice(
-  pageRegistry.indexOf("const WORKSPACE_MODE_PAGES"),
-  pageRegistry.indexOf("\nconst SUPPLEMENTAL_PAGES"),
-);
-assert.ok(pageRegistryBlock.length > 0, "WORKSPACE_MODE_PAGES should be extractable from workspace-page-registry.ts");
-const modeTitles = new Map();
-for (const m of pageRegistryBlock.matchAll(/\bid\s*:\s*"([a-z-]+)"[\s\S]*?\btitle\s*:\s*"([^"]+)"/g)) {
-  modeTitles.set(m[1], m[2]);
+// ── Page definitions agree with the navigation vocabulary ───────────────────
+const pagesBlock = pageRegistry.match(
+  /const WORKSPACE_MODE_PAGES = freezePageMap\(\{[\s\S]*?\n\} satisfies Record<WorkspaceMode, WorkspacePageDefinition>\);/,
+)?.[0];
+assert.ok(pagesBlock, "WORKSPACE_MODE_PAGES should be extractable");
+const pageDefinitions = new Map();
+for (const m of pagesBlock.matchAll(
+  /(?:^|\n)\s*"?([a-z-]+)"?: \{\s*id: "([^"]+)",\s*title: "([^"]+)",\s*canonicalId: ([^,\n]+),/g,
+)) {
+  pageDefinitions.set(m[1], {
+    id: m[2],
+    title: m[3],
+    canonicalId: m[4].trim().replaceAll('"', ""),
+  });
 }
-assert.ok(modeTitles.size > 0, "WORKSPACE_MODE_PAGES should declare id/title rows");
 for (const [id, canonical] of registryLabels) {
-  const title = modeTitles.get(id);
-  if (title === undefined) continue;
+  const definition = pageDefinitions.get(id);
+  if (definition === undefined) continue;
   assert.equal(
-    title,
+    definition.title,
     canonical,
-    `workspace-page-registry["${id}"].title must use the canonical navigation label "${canonical}", got "${title}"`,
+    `WORKSPACE_MODE_PAGES["${id}"] must use the canonical navigation label "${canonical}", got "${definition.title}"`,
   );
 }
 
-// Alias modes that render another surface's view keep that surface's name —
-// they must never introduce a new peer vocabulary (issue #3283 acceptance:
-// "Compatibility aliases do not appear as peer destinations").
-// The canonical relationship is tracked via canonicalId in the page registry.
-const canonicalIds = new Map();
-for (const m of pageRegistryBlock.matchAll(/\bid\s*:\s*"([a-z-]+)"[\s\S]*?\bcanonicalId\s*:\s*"([a-z-]+)"/g)) {
-  canonicalIds.set(m[1], m[2]);
-}
-assert.equal(canonicalIds.get("calendar"), "inbox", "calendar is a tab of Rituals, not a new name");
-assert.equal(canonicalIds.get("familiar-work-queue"), "board", "the work queue is a tab of Tasks, not a new name");
+// Alias pages retain distinct, descriptive titles while resolving to the
+// canonical surface instead of introducing peer navigation destinations.
+assert.equal(pageDefinitions.get("calendar")?.canonicalId, "inbox", "calendar is a tab of Rituals");
+assert.equal(pageDefinitions.get("familiar-work-queue")?.canonicalId, "board", "the work queue is a tab of Tasks");
 
 console.log("canonical-nav-names: ok");
