@@ -705,6 +705,7 @@ export const SUITES = {
     "src/lib/use-attachment-staging.test.ts",
     "src/lib/slash-command-inline.test.ts",
     "src/lib/use-inline-slash-menus.test.ts",
+    "src/lib/use-inline-slash-menus-behavior.test.tsx",
     "src/lib/prompt-enhancer.test.ts",
     "src/lib/prompt-placeholders.test.ts",
     "src/lib/prompt-prefs.test.ts",
@@ -1993,6 +1994,8 @@ const VITEST_TESTS = new Set([
   // renders the hook through react-test-renderer
   "src/lib/use-surface-history.test.tsx",
   "src/lib/use-focus-trap-stack.test.tsx",
+  // drives the inline slash menu's keydown path through react-test-renderer
+  "src/lib/use-inline-slash-menus-behavior.test.tsx",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
