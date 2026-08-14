@@ -12,7 +12,10 @@ assert.match(src, /function splitTextForArtifacts/, "has the text→segments spl
 assert.match(src, /<ChatArtifactViewer\b/, "renders the viewer as a block segment");
 assert.match(
   src,
-  /splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]\)/,
+  // Pin the nesting ORDER (artifacts wrap images wrap specs), not each call's
+  // arity — splitSegmentsForSpecs later gained an onOpenUrl argument and the
+  // trailing `\)` turned a compatible change into a red main (cave-ktvy0).
+  /splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\]/,
   "splits remaining prose after image decks, without crossing an inline carousel",
 );
 assert.match(
