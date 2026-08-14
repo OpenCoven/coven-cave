@@ -688,6 +688,19 @@ a server-side deletion — it removes the local tracking ref too — and if a
 `fetch --prune` has already run the signal is gone, in which case the hook falls
 back to its previous behaviour: a resurrected branch, never a lost commit.
 
+⚠️ **That same surviving tracking ref is what made this path unreachable for a
+day.** The at-risk test was `rev-list HEAD --not --remotes`, and `--remotes`
+trusts every `refs/remotes/*` to still exist on the remote. So the instant a
+squash merge auto-deleted the branch, the stale ref satisfied `--remotes`, the
+head read as *fully retained*, and the unit was skipped before the
+deleted-branch check above was ever consulted — the archive fired only if a
+`fetch --prune` happened to have run first. Verified on 2026-08-14: two
+worktrees retired minutes after their PRs merged, and the hook logged nothing
+for either. The skip test now recounts while ignoring the branch's **own**
+tracking ref, and only then asks the remote whether the branch is really gone —
+so a head still covered by any other ref costs no network call, and a pass with
+nothing genuinely at risk stays offline as before.
+
 Throttled to once a minute (`.claude/worktree-retention-push.stamp`) and capped
 at 3 pushes per pass to bound the latency added to one tool call; pushed
 worktrees drop out of the at-risk set, so successive passes reach the rest.
