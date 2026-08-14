@@ -192,6 +192,7 @@ function validObservation(candidateSha256 = SHA_A) {
     protocolVersion: TWEET_THREAD_PROTOCOL_VERSION,
     observationId: "observation-portable-launch",
     candidateSha256,
+    publishReceiptId: "publish-portable-launch",
     source: "x",
     retrievedAt: OTHER_TIMESTAMP,
     exposedAt: OTHER_TIMESTAMP,
@@ -200,8 +201,10 @@ function validObservation(candidateSha256 = SHA_A) {
       likes: 80,
       reposts: 12,
       replies: 4,
+      quotes: 2,
       bookmarks: 7,
     },
+    missingMetricReasons: [],
     note: "Healthy early distribution.",
   };
 }
@@ -554,6 +557,7 @@ assert.ok(
 assert.doesNotThrow(() => assertValidThreadRunManifest({
   ...validManifest(),
   publishReceipts: [validPartialPublishReceipt()],
+  observations: [{ ...validObservation(), publishReceiptId: "publish-portable-launch-partial" }],
 }));
 assert.equal(
   Value.Check(PublishReceiptSchema, { ...validPartialPublishReceipt(), errorCode: " \t " }),
@@ -631,7 +635,7 @@ assert.equal(
     remotePostIds: ["1888888888888888888"],
   }),
   false,
-  "uncertain receipts forbid publication evidence",
+  "uncertain receipts require all remote evidence fields when any are present",
 );
 assert.ok(Value.Check(ThreadObservationSchema, validObservation()));
 assert.equal(
@@ -733,7 +737,7 @@ for (const status of ["failed", "uncertain"] as const) {
     `${status} receipts reject blank error codes`,
   );
 }
-for (const metric of ["impressions", "likes", "reposts", "replies", "bookmarks"] as const) {
+for (const metric of ["impressions", "likes", "reposts", "replies", "quotes", "bookmarks"] as const) {
   assert.equal(
     Value.Check(ThreadObservationSchema, {
       ...validObservation(),
@@ -876,3 +880,421 @@ const bindingError = expectValidationError(
   }),
 );
 assert.match(bindingError.issues.join("\n"), /candidate sha|approval|publish/i);
+
+const invariantFailures: string[] = [];
+function checkInvariant(label: string, check: () => void): void {
+  try {
+    check();
+  } catch (error) {
+    invariantFailures.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+const EARLIER_TIMESTAMP = "2026-08-14T12:04:00.000Z";
+const LATER_TIMESTAMP = "2026-08-14T12:10:00.000Z";
+
+function approvalAt(
+  approvalId: string,
+  decision: "approved" | "rejected",
+  decidedAt: string,
+  candidateSha256 = SHA_A,
+) {
+  return {
+    ...validApproval(candidateSha256),
+    approvalId,
+    decision,
+    decidedAt,
+  };
+}
+
+function validObservationForReceipt(candidateSha256 = SHA_A, publishReceiptId = "publish-portable-launch") {
+  return {
+    ...validObservation(candidateSha256),
+    publishReceiptId,
+  };
+}
+
+function validBoundManifest() {
+  return {
+    ...validManifest(),
+    observations: [validObservationForReceipt()],
+  };
+}
+
+function uncertainReceiptWithKnownPrefix(candidateSha256 = SHA_A) {
+  return {
+    ...receiptWithoutOutcome("uncertain", "reply-dispatch-ambiguous"),
+    receiptId: "publish-portable-launch-uncertain",
+    candidateSha256,
+    publishedAt: OTHER_TIMESTAMP,
+    threadUrl: "https://x.com/opencoven/status/1888888888888888888",
+    remotePostIds: ["1888888888888888888"],
+  } as const;
+}
+
+checkInvariant("uncertain receipts preserve a known successful prefix", () => {
+  assert.equal(Value.Check(PublishReceiptSchema, uncertainReceiptWithKnownPrefix()), true);
+  assert.doesNotThrow(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    publishReceipts: [uncertainReceiptWithKnownPrefix()],
+    observations: [validObservationForReceipt(SHA_A, "publish-portable-launch-uncertain")],
+  }));
+});
+
+checkInvariant("uncertain known prefixes bind the root URL to the first remote ID", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    publishReceipts: [{
+      ...uncertainReceiptWithKnownPrefix(),
+      threadUrl: "https://x.com/opencoven/status/1999999999999999999",
+    }],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /publishReceipts\[0\]\.threadUrl.*remotePostIds\[0\]/i);
+});
+
+checkInvariant("uncertain known prefixes remain shorter than the candidate", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    publishReceipts: [{
+      ...uncertainReceiptWithKnownPrefix(),
+      remotePostIds: ["1888888888888888888", "1888888888888888889"],
+    }],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /publishReceipts\[0\]\.remotePostIds.*less than.*candidate posts/i);
+});
+
+checkInvariant("uncertain receipts require either all remote evidence or none", () => {
+  assert.equal(Value.Check(PublishReceiptSchema, {
+    ...receiptWithoutOutcome("uncertain", "reply-dispatch-ambiguous"),
+    publishedAt: OTHER_TIMESTAMP,
+  }), false);
+});
+
+checkInvariant("publication requires an approval at or before the attempt", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+
+  const laterApprovalError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [approvalAt("approval-after-attempt", "approved", LATER_TIMESTAMP)],
+    observations: [],
+  }));
+  assert.match(laterApprovalError.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+});
+
+checkInvariant("a later rejection before the attempt revokes publication approval", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [
+      approvalAt("approval-first", "approved", EARLIER_TIMESTAMP),
+      approvalAt("approval-later", "rejected", OTHER_TIMESTAMP),
+    ],
+    observations: [],
+  }));
+  assert.match(error.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+});
+
+checkInvariant("the latest approval chronology can restore publication approval", () => {
+  assert.doesNotThrow(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [
+      approvalAt("approval-first", "rejected", EARLIER_TIMESTAMP),
+      approvalAt("approval-later", "approved", OTHER_TIMESTAMP),
+    ],
+  }));
+});
+
+checkInvariant("same-timestamp approval ties use later array order", () => {
+  const rejectedLastError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [
+      approvalAt("approval-tie-first", "approved", OTHER_TIMESTAMP),
+      approvalAt("approval-tie-last", "rejected", OTHER_TIMESTAMP),
+    ],
+    observations: [],
+  }));
+  assert.match(rejectedLastError.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+
+  assert.doesNotThrow(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    approvals: [
+      approvalAt("approval-tie-first", "rejected", OTHER_TIMESTAMP),
+      approvalAt("approval-tie-last", "approved", OTHER_TIMESTAMP),
+    ],
+  }));
+});
+
+checkInvariant("all active publication states require approval", () => {
+  for (const receipt of [
+    receiptWithoutOutcome("publishing"),
+    validPublishReceipt(),
+    validPartialPublishReceipt(),
+    uncertainReceiptWithKnownPrefix(),
+    receiptWithoutOutcome("uncertain", "dispatch-ambiguous"),
+  ]) {
+    const error = expectValidationError(() => assertValidThreadRunManifest({
+      ...validBoundManifest(),
+      approvals: [],
+      publishReceipts: [receipt],
+      observations: [],
+    }));
+    assert.match(error.issues.join("\n"), /publishReceipts\[0\].*latest approval.*approved/i);
+  }
+});
+
+checkInvariant("observations declare receipt identity and complete metric availability", () => {
+  assert.equal(Value.Check(ThreadObservationSchema, validObservationForReceipt()), true);
+  assert.equal(Value.Check(ThreadObservationSchema, {
+    ...validObservationForReceipt(),
+    metrics: { ...validObservationForReceipt().metrics, quotes: -1 },
+  }), false);
+  assert.equal(Value.Check(ThreadObservationSchema, {
+    ...validObservationForReceipt(),
+    metrics: { ...validObservationForReceipt().metrics, quotes: 1.5 },
+  }), false);
+});
+
+checkInvariant("missing metric reasons are strict and use declared metric names", () => {
+  const observation = {
+    ...validObservationForReceipt(),
+    metrics: { impressions: 100 },
+    missingMetricReasons: [
+      { metric: "likes", reason: "not-returned" },
+      { metric: "reposts", reason: "not-returned" },
+      { metric: "replies", reason: "not-returned" },
+      { metric: "quotes", reason: "not-returned" },
+      { metric: "bookmarks", reason: "not-returned" },
+    ],
+  };
+  assert.equal(Value.Check(ThreadObservationSchema, observation), true);
+  assert.equal(Value.Check(ThreadObservationSchema, {
+    ...observation,
+    missingMetricReasons: [
+      ...observation.missingMetricReasons,
+      { metric: "views", reason: "not-returned" },
+    ],
+  }), false);
+  assert.equal(Value.Check(ThreadObservationSchema, {
+    ...observation,
+    missingMetricReasons: observation.missingMetricReasons.map((reason, index) =>
+      index === 0 ? { ...reason, detail: "unknown key" } : reason),
+  }), false);
+});
+
+checkInvariant("every unavailable metric has exactly one reason", () => {
+  const missingReasonError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    observations: [{
+      ...validObservationForReceipt(),
+      metrics: { impressions: 100 },
+      missingMetricReasons: [
+        { metric: "likes", reason: "not-returned" },
+        { metric: "reposts", reason: "not-returned" },
+        { metric: "replies", reason: "not-returned" },
+        { metric: "quotes", reason: "not-returned" },
+      ],
+    }],
+  }));
+  assert.match(missingReasonError.issues.join("\n"), /observations\[0\]\.missingMetricReasons.*bookmarks/i);
+
+  const duplicateReasonError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    observations: [{
+      ...validObservationForReceipt(),
+      metrics: { impressions: 100 },
+      missingMetricReasons: [
+        { metric: "likes", reason: "not-returned" },
+        { metric: "likes", reason: "scope-denied" },
+        { metric: "reposts", reason: "not-returned" },
+        { metric: "replies", reason: "not-returned" },
+        { metric: "quotes", reason: "not-returned" },
+        { metric: "bookmarks", reason: "not-returned" },
+      ],
+    }],
+  }));
+  assert.match(duplicateReasonError.issues.join("\n"), /observations\[0\]\.missingMetricReasons\[1\]\.metric.*unique/i);
+});
+
+checkInvariant("observations cannot be empty metric shells", () => {
+  const error = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    observations: [{
+      ...validObservationForReceipt(),
+      metrics: {},
+      missingMetricReasons: [],
+    }],
+  }));
+  assert.match(error.issues.join("\n"), /observations\[0\].*metrics.*missingMetricReasons/i);
+});
+
+checkInvariant("observations bind to a receipt with matching candidate and remote evidence", () => {
+  const missingReceiptError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    observations: [validObservationForReceipt(SHA_A, "publish-missing")],
+  }));
+  assert.match(missingReceiptError.issues.join("\n"), /observations\[0\]\.publishReceiptId.*missing/i);
+
+  const secondCandidate = {
+    ...validCandidate(),
+    candidateId: "candidate-portable-launch-second",
+    candidateSha256: SHA_B,
+  };
+  const mismatchedCandidateError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    candidates: [validCandidate(), secondCandidate],
+    observations: [validObservationForReceipt(SHA_B)],
+  }));
+  assert.match(mismatchedCandidateError.issues.join("\n"), /observations\[0\]\.publishReceiptId.*candidateSha256/i);
+
+  for (const receipt of [
+    receiptWithoutOutcome("publishing"),
+    receiptWithoutOutcome("uncertain", "dispatch-ambiguous"),
+  ]) {
+    const noEvidenceError = expectValidationError(() => assertValidThreadRunManifest({
+      ...validBoundManifest(),
+      publishReceipts: [receipt],
+      observations: [validObservationForReceipt(SHA_A, receipt.receiptId)],
+    }));
+    assert.match(noEvidenceError.issues.join("\n"), /observations\[0\]\.publishReceiptId.*remote evidence/i);
+  }
+});
+
+checkInvariant("receipt and observation chronology is monotonic", () => {
+  for (const receipt of [
+    {
+      ...validPublishReceipt(),
+      attemptedAt: OTHER_TIMESTAMP,
+      publishedAt: EARLIER_TIMESTAMP,
+    },
+    {
+      ...validPartialPublishReceipt(),
+      attemptedAt: OTHER_TIMESTAMP,
+      publishedAt: EARLIER_TIMESTAMP,
+    },
+    {
+      ...uncertainReceiptWithKnownPrefix(),
+      attemptedAt: OTHER_TIMESTAMP,
+      publishedAt: EARLIER_TIMESTAMP,
+    },
+  ]) {
+    const receiptChronologyError = expectValidationError(() => assertValidThreadRunManifest({
+      ...validBoundManifest(),
+      publishReceipts: [receipt],
+      observations: [],
+    }));
+    assert.match(receiptChronologyError.issues.join("\n"), /publishReceipts\[0\]\.publishedAt.*attemptedAt/i);
+  }
+
+  const retrievalChronologyError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    observations: [{
+      ...validObservationForReceipt(),
+      exposedAt: OTHER_TIMESTAMP,
+      retrievedAt: EARLIER_TIMESTAMP,
+    }],
+  }));
+  assert.match(retrievalChronologyError.issues.join("\n"), /observations\[0\]\.retrievedAt.*exposedAt/i);
+
+  const exposureChronologyError = expectValidationError(() => assertValidThreadRunManifest({
+    ...validBoundManifest(),
+    publishReceipts: [{
+      ...validPublishReceipt(),
+      attemptedAt: EARLIER_TIMESTAMP,
+      publishedAt: OTHER_TIMESTAMP,
+    }],
+    observations: [{
+      ...validObservationForReceipt(),
+      exposedAt: EARLIER_TIMESTAMP,
+      retrievedAt: OTHER_TIMESTAMP,
+    }],
+  }));
+  assert.match(exposureChronologyError.issues.join("\n"), /observations\[0\]\.exposedAt.*publishReceipts\[0\]\.publishedAt/i);
+});
+
+checkInvariant("stable manifest IDs report the duplicate occurrence path", () => {
+  const duplicateFinding = {
+    findingId: "finding-duplicate",
+    code: "duplicate",
+    severity: "warn",
+    message: "Duplicate finding identity.",
+  } as const;
+  const duplicateCases = [
+    {
+      path: "candidates[1].candidateId",
+      manifest: {
+        ...validBoundManifest(),
+        candidates: [
+          validCandidate(),
+          { ...validCandidate(), candidateSha256: SHA_B },
+        ],
+        observations: [],
+      },
+    },
+    {
+      path: "scorecards[1].scorecardId",
+      manifest: {
+        ...validBoundManifest(),
+        scorecards: [validScorecard(), validScorecard()],
+        observations: [],
+      },
+    },
+    {
+      path: "scorecards[0].dimensions.provenance.findings[0].findingId",
+      manifest: {
+        ...validBoundManifest(),
+        scorecards: [{
+          ...validScorecard(),
+          dimensions: {
+            ...validScorecard().dimensions,
+            factuality: { ...validScorecard().dimensions.factuality, findings: [duplicateFinding] },
+            provenance: { ...validScorecard().dimensions.provenance, findings: [duplicateFinding] },
+          },
+        }],
+        observations: [],
+      },
+    },
+    {
+      path: "approvals[1].approvalId",
+      manifest: {
+        ...validBoundManifest(),
+        approvals: [validApproval(), validApproval()],
+        observations: [],
+      },
+    },
+    {
+      path: "publishReceipts[1].receiptId",
+      manifest: {
+        ...validBoundManifest(),
+        publishReceipts: [validPublishReceipt(), validPublishReceipt()],
+        observations: [],
+      },
+    },
+    {
+      path: "observations[1].observationId",
+      manifest: {
+        ...validBoundManifest(),
+        observations: [validObservationForReceipt(), validObservationForReceipt()],
+      },
+    },
+  ] as const;
+
+  for (const { path, manifest } of duplicateCases) {
+    const error = expectValidationError(() => assertValidThreadRunManifest(manifest));
+    assert.ok(
+      error.issues.some((issue) => issue.includes(`ThreadRunManifest.${path}`) && issue.includes("must be unique")),
+      `duplicate ${path} reports its precise path`,
+    );
+  }
+});
+
+assert.deepStrictEqual(
+  invariantFailures,
+  [],
+  `Foundational protocol invariants failed:\n${invariantFailures.join("\n")}`,
+);

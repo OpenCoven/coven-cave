@@ -13,6 +13,14 @@ const POST_ID_RE = /^post-[1-9][0-9]*$/;
 const X_POST_ID_RE = /^[1-9][0-9]*$/;
 const X_THREAD_URL_RE = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[1-9][0-9]*$/;
 const WORD_CHARACTER_RE = /[\p{L}\p{N}_]/u;
+const THREAD_OBSERVATION_METRIC_NAMES = [
+  "impressions",
+  "likes",
+  "reposts",
+  "replies",
+  "quotes",
+  "bookmarks",
+] as const;
 
 const boundedString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength });
@@ -189,6 +197,12 @@ const publishReceiptBaseProperties = () => ({
   attemptedAt: timestampString(),
 });
 
+const publishReceiptRemoteEvidenceProperties = () => ({
+  publishedAt: timestampString(),
+  threadUrl: xThreadUrlSchema(),
+  remotePostIds: Type.Array(xPostIdSchema(), { minItems: 1, maxItems: 50, uniqueItems: true }),
+});
+
 export const PublishReceiptSchema = Type.Union([
   Type.Object({
     ...publishReceiptBaseProperties(),
@@ -197,16 +211,12 @@ export const PublishReceiptSchema = Type.Union([
   Type.Object({
     ...publishReceiptBaseProperties(),
     status: Type.Literal("published"),
-    publishedAt: timestampString(),
-    threadUrl: xThreadUrlSchema(),
-    remotePostIds: Type.Array(xPostIdSchema(), { minItems: 1, maxItems: 50, uniqueItems: true }),
+    ...publishReceiptRemoteEvidenceProperties(),
   }, { additionalProperties: false }),
   Type.Object({
     ...publishReceiptBaseProperties(),
     status: Type.Literal("partial"),
-    publishedAt: timestampString(),
-    threadUrl: xThreadUrlSchema(),
-    remotePostIds: Type.Array(xPostIdSchema(), { minItems: 1, maxItems: 50, uniqueItems: true }),
+    ...publishReceiptRemoteEvidenceProperties(),
     errorCode: boundedNonWhitespaceString(120),
   }, { additionalProperties: false }),
   Type.Object({
@@ -219,6 +229,12 @@ export const PublishReceiptSchema = Type.Union([
     status: Type.Literal("uncertain"),
     errorCode: boundedNonWhitespaceString(120),
   }, { additionalProperties: false }),
+  Type.Object({
+    ...publishReceiptBaseProperties(),
+    status: Type.Literal("uncertain"),
+    ...publishReceiptRemoteEvidenceProperties(),
+    errorCode: boundedNonWhitespaceString(120),
+  }, { additionalProperties: false }),
 ]);
 export type PublishReceipt = Static<typeof PublishReceiptSchema>;
 
@@ -227,18 +243,39 @@ export const ThreadObservationMetricsSchema = Type.Object({
   likes: Type.Optional(Type.Integer({ minimum: 0 })),
   reposts: Type.Optional(Type.Integer({ minimum: 0 })),
   replies: Type.Optional(Type.Integer({ minimum: 0 })),
+  quotes: Type.Optional(Type.Integer({ minimum: 0 })),
   bookmarks: Type.Optional(Type.Integer({ minimum: 0 })),
 }, { additionalProperties: false });
 export type ThreadObservationMetrics = Static<typeof ThreadObservationMetricsSchema>;
+
+export const ThreadObservationMetricNameSchema = Type.Union([
+  Type.Literal("impressions"),
+  Type.Literal("likes"),
+  Type.Literal("reposts"),
+  Type.Literal("replies"),
+  Type.Literal("quotes"),
+  Type.Literal("bookmarks"),
+]);
+export type ThreadObservationMetricName = typeof THREAD_OBSERVATION_METRIC_NAMES[number];
+
+export const ThreadObservationMissingMetricReasonSchema = Type.Object({
+  metric: ThreadObservationMetricNameSchema,
+  reason: boundedNonWhitespaceString(500),
+}, { additionalProperties: false });
+export type ThreadObservationMissingMetricReason = Static<typeof ThreadObservationMissingMetricReasonSchema>;
 
 export const ThreadObservationSchema = Type.Object({
   protocolVersion: protocolVersionLiteral(),
   observationId: stableId("observation"),
   candidateSha256: sha256Schema(),
+  publishReceiptId: stableId("publish"),
   source: Type.Literal("x"),
   retrievedAt: timestampString(),
   exposedAt: timestampString(),
   metrics: ThreadObservationMetricsSchema,
+  missingMetricReasons: Type.Array(ThreadObservationMissingMetricReasonSchema, {
+    maxItems: THREAD_OBSERVATION_METRIC_NAMES.length,
+  }),
   note: Type.Optional(Type.String({ maxLength: 2_000 })),
 }, { additionalProperties: false });
 export type ThreadObservation = Static<typeof ThreadObservationSchema>;
@@ -360,6 +397,54 @@ function pushDuplicateIssue(seen: Set<string>, next: string, path: string, issue
     return;
   }
   seen.add(next);
+}
+
+function collectStableIdIssues(
+  values: readonly unknown[],
+  property: string,
+  path: string,
+  issues: string[],
+): void {
+  const seen = new Set<string>();
+  for (const [index, value] of values.entries()) {
+    if (!isRecord(value) || typeof value[property] !== "string") continue;
+    pushDuplicateIssue(seen, value[property], `${path}[${index}].${property}`, issues);
+  }
+}
+
+type PublishReceiptWithRemoteEvidence = PublishReceipt & {
+  publishedAt: string;
+  threadUrl: string;
+  remotePostIds: string[];
+};
+
+function hasKnownRemoteEvidence(receipt: PublishReceipt): receipt is PublishReceiptWithRemoteEvidence {
+  return "publishedAt" in receipt && "threadUrl" in receipt && "remotePostIds" in receipt;
+}
+
+function publicationRequiresApproval(receipt: PublishReceipt): boolean {
+  return receipt.status === "publishing"
+    || receipt.status === "published"
+    || receipt.status === "partial"
+    || receipt.status === "uncertain";
+}
+
+function latestApprovalAtOrBefore(
+  approvals: readonly ApprovalRecord[],
+  candidateSha256: string,
+  attemptedAt: string,
+): ApprovalRecord | undefined {
+  const attemptedAtMs = Date.parse(attemptedAt);
+  let latest: ApprovalRecord | undefined;
+  let latestMs = Number.NEGATIVE_INFINITY;
+  for (const approval of approvals) {
+    if (approval.candidateSha256 !== candidateSha256) continue;
+    const decidedAtMs = Date.parse(approval.decidedAt);
+    if (decidedAtMs > attemptedAtMs || decidedAtMs < latestMs) continue;
+    latest = approval;
+    latestMs = decidedAtMs;
+  }
+  return latest;
 }
 
 function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"): string[] {
@@ -545,6 +630,26 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
   if (issues.length > 0) throw new TweetThreadProtocolValidationError(issues);
 
   const manifest = input as ThreadRunManifest;
+  collectStableIdIssues(manifest.candidates, "candidateId", "ThreadRunManifest.candidates", issues);
+  collectStableIdIssues(manifest.scorecards, "scorecardId", "ThreadRunManifest.scorecards", issues);
+  collectStableIdIssues(manifest.approvals, "approvalId", "ThreadRunManifest.approvals", issues);
+  collectStableIdIssues(manifest.publishReceipts, "receiptId", "ThreadRunManifest.publishReceipts", issues);
+  collectStableIdIssues(manifest.observations, "observationId", "ThreadRunManifest.observations", issues);
+
+  const findingIds = new Set<string>();
+  for (const [scorecardIndex, scorecard] of manifest.scorecards.entries()) {
+    for (const [dimensionName, dimension] of Object.entries(scorecard.dimensions)) {
+      for (const [findingIndex, finding] of dimension.findings.entries()) {
+        pushDuplicateIssue(
+          findingIds,
+          finding.findingId,
+          `ThreadRunManifest.scorecards[${scorecardIndex}].dimensions.${dimensionName}.findings[${findingIndex}].findingId`,
+          issues,
+        );
+      }
+    }
+  }
+
   const candidateBySha = new Map<string, ThreadCandidate>();
   for (const [index, candidate] of manifest.candidates.entries()) {
     if (!isDeepStrictEqual(candidate.brief, manifest.brief)) {
@@ -575,30 +680,96 @@ export function assertValidThreadRunManifest(input: unknown): ThreadRunManifest 
     }
   }
 
+  const receiptById = new Map<string, PublishReceipt>();
   for (const [index, receipt] of manifest.publishReceipts.entries()) {
+    if (!receiptById.has(receipt.receiptId)) receiptById.set(receipt.receiptId, receipt);
     const candidate = candidateBySha.get(receipt.candidateSha256);
     if (!candidate) {
       issues.push(`ThreadRunManifest.publishReceipts[${index}] candidate sha "${receipt.candidateSha256}" does not match any candidate.`);
       continue;
     }
-    if (receipt.status === "published" || receipt.status === "partial") {
-      const receiptPath = `ThreadRunManifest.publishReceipts[${index}]`;
+    const receiptPath = `ThreadRunManifest.publishReceipts[${index}]`;
+    if (publicationRequiresApproval(receipt)) {
+      const latestApproval = latestApprovalAtOrBefore(
+        manifest.approvals,
+        receipt.candidateSha256,
+        receipt.attemptedAt,
+      );
+      if (latestApproval?.decision !== "approved") {
+        issues.push(`${receiptPath} requires the candidate's latest approval at or before attemptedAt to be approved.`);
+      }
+    }
+    if (hasKnownRemoteEvidence(receipt)) {
       const threadStatusId = receipt.threadUrl.slice(receipt.threadUrl.lastIndexOf("/") + 1);
       if (threadStatusId !== receipt.remotePostIds[0]) {
         issues.push(`${receiptPath}.threadUrl status ID must equal ${receiptPath}.remotePostIds[0].`);
       }
+      if (Date.parse(receipt.publishedAt) < Date.parse(receipt.attemptedAt)) {
+        issues.push(`${receiptPath}.publishedAt must be greater than or equal to ${receiptPath}.attemptedAt.`);
+      }
       if (receipt.status === "published" && receipt.remotePostIds.length !== candidate.posts.length) {
         issues.push(`${receiptPath}.remotePostIds count must equal the associated candidate posts count for a published receipt.`);
       }
-      if (receipt.status === "partial" && receipt.remotePostIds.length >= candidate.posts.length) {
-        issues.push(`${receiptPath}.remotePostIds count must be less than the associated candidate posts count for a partial receipt.`);
+      if (
+        (receipt.status === "partial" || receipt.status === "uncertain")
+        && receipt.remotePostIds.length >= candidate.posts.length
+      ) {
+        issues.push(`${receiptPath}.remotePostIds count must be less than the associated candidate posts count for a ${receipt.status} receipt.`);
       }
     }
   }
 
   for (const [index, observation] of manifest.observations.entries()) {
+    const observationPath = `ThreadRunManifest.observations[${index}]`;
     if (!candidateBySha.has(observation.candidateSha256)) {
-      issues.push(`ThreadRunManifest.observations[${index}] candidate sha "${observation.candidateSha256}" does not match any candidate.`);
+      issues.push(`${observationPath} candidate sha "${observation.candidateSha256}" does not match any candidate.`);
+    }
+
+    const presentMetrics = new Set(
+      THREAD_OBSERVATION_METRIC_NAMES.filter((metric) => observation.metrics[metric] !== undefined),
+    );
+    const missingMetricReasons = new Set<ThreadObservationMetricName>();
+    for (const [reasonIndex, missingReason] of observation.missingMetricReasons.entries()) {
+      const reasonPath = `${observationPath}.missingMetricReasons[${reasonIndex}].metric`;
+      if (missingMetricReasons.has(missingReason.metric)) {
+        issues.push(`${reasonPath} must be unique; duplicate value "${missingReason.metric}" found.`);
+        continue;
+      }
+      missingMetricReasons.add(missingReason.metric);
+      if (presentMetrics.has(missingReason.metric)) {
+        issues.push(`${reasonPath} must name an unavailable metric, but "${missingReason.metric}" is present.`);
+      }
+    }
+    for (const metric of THREAD_OBSERVATION_METRIC_NAMES) {
+      if (!presentMetrics.has(metric) && !missingMetricReasons.has(metric)) {
+        issues.push(`${observationPath}.missingMetricReasons must include unavailable metric "${metric}".`);
+      }
+    }
+    if (presentMetrics.size === 0 && missingMetricReasons.size === 0) {
+      issues.push(`${observationPath} must include at least one value in metrics or one missingMetricReasons entry.`);
+    }
+
+    if (Date.parse(observation.retrievedAt) < Date.parse(observation.exposedAt)) {
+      issues.push(`${observationPath}.retrievedAt must be greater than or equal to ${observationPath}.exposedAt.`);
+    }
+
+    const receipt = receiptById.get(observation.publishReceiptId);
+    if (!receipt) {
+      issues.push(`${observationPath}.publishReceiptId references missing receipt "${observation.publishReceiptId}".`);
+      continue;
+    }
+    if (receipt.candidateSha256 !== observation.candidateSha256) {
+      issues.push(`${observationPath}.publishReceiptId references a receipt whose candidateSha256 does not match the observation.`);
+    }
+    if (!hasKnownRemoteEvidence(receipt)) {
+      issues.push(`${observationPath}.publishReceiptId must reference a published, partial, or uncertain receipt with known remote evidence.`);
+      continue;
+    }
+    if (Date.parse(observation.exposedAt) < Date.parse(receipt.publishedAt)) {
+      const receiptIndex = manifest.publishReceipts.indexOf(receipt);
+      issues.push(
+        `${observationPath}.exposedAt must be greater than or equal to ThreadRunManifest.publishReceipts[${receiptIndex}].publishedAt.`,
+      );
     }
   }
 
