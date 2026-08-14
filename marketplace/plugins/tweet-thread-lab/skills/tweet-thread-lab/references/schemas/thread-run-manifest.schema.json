@@ -1,0 +1,1778 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "approvals": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "approvalId": {
+            "maxLength": 128,
+            "minLength": 10,
+            "pattern": "^approval-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "candidateSha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "decidedAt": {
+            "format": "date-time",
+            "maxLength": 24,
+            "minLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "const": "approved",
+                "type": "string"
+              },
+              {
+                "const": "rejected",
+                "type": "string"
+              }
+            ]
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "protocolVersion": {
+            "const": "opencoven.tweet-thread.v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "approvalId",
+          "candidateSha256",
+          "decision",
+          "actor",
+          "decidedAt"
+        ],
+        "type": "object"
+      },
+      "maxItems": 64,
+      "type": "array"
+    },
+    "brief": {
+      "additionalProperties": false,
+      "properties": {
+        "audience": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "briefId": {
+          "maxLength": 128,
+          "minLength": 7,
+          "pattern": "^brief-[a-z0-9-]+$",
+          "type": "string"
+        },
+        "constraints": {
+          "additionalProperties": false,
+          "properties": {
+            "bannedPhrases": {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "maxItems": 128,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "maxPosts": {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "minPosts": {
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "requireAltText": {
+              "type": "boolean"
+            },
+            "requiredClaimIds": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 7,
+                "pattern": "^claim-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "maxItems": 128,
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "minPosts",
+            "maxPosts",
+            "requiredClaimIds",
+            "bannedPhrases",
+            "requireAltText"
+          ],
+          "type": "object"
+        },
+        "notes": {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "objectiveWeights": {
+          "additionalProperties": false,
+          "properties": {
+            "accessibility": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "coherence": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "engagement": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "factuality": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "provenance": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "voice": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "factuality",
+            "provenance",
+            "accessibility",
+            "voice",
+            "coherence",
+            "engagement"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": "opencoven.tweet-thread.v1",
+          "type": "string"
+        },
+        "topic": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "briefId",
+        "topic",
+        "audience",
+        "objectiveWeights",
+        "constraints"
+      ],
+      "type": "object"
+    },
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "brief": {
+            "additionalProperties": false,
+            "properties": {
+              "audience": {
+                "maxLength": 500,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "briefId": {
+                "maxLength": 128,
+                "minLength": 7,
+                "pattern": "^brief-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "constraints": {
+                "additionalProperties": false,
+                "properties": {
+                  "bannedPhrases": {
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    "maxItems": 128,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "maxPosts": {
+                    "maximum": 50,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "minPosts": {
+                    "maximum": 50,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "requireAltText": {
+                    "type": "boolean"
+                  },
+                  "requiredClaimIds": {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 7,
+                      "pattern": "^claim-[a-z0-9-]+$",
+                      "type": "string"
+                    },
+                    "maxItems": 128,
+                    "type": "array",
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "minPosts",
+                  "maxPosts",
+                  "requiredClaimIds",
+                  "bannedPhrases",
+                  "requireAltText"
+                ],
+                "type": "object"
+              },
+              "notes": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "objectiveWeights": {
+                "additionalProperties": false,
+                "properties": {
+                  "accessibility": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "coherence": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "engagement": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "factuality": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "provenance": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "voice": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "factuality",
+                  "provenance",
+                  "accessibility",
+                  "voice",
+                  "coherence",
+                  "engagement"
+                ],
+                "type": "object"
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "topic": {
+                "maxLength": 500,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "briefId",
+              "topic",
+              "audience",
+              "objectiveWeights",
+              "constraints"
+            ],
+            "type": "object"
+          },
+          "candidateId": {
+            "maxLength": 128,
+            "minLength": 11,
+            "pattern": "^candidate-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "candidateSha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "claimId": {
+                  "maxLength": 128,
+                  "minLength": 7,
+                  "pattern": "^claim-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "evidenceId": {
+                  "maxLength": 128,
+                  "minLength": 10,
+                  "pattern": "^evidence-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "protocolVersion": {
+                  "const": "opencoven.tweet-thread.v1",
+                  "type": "string"
+                },
+                "retrievedAt": {
+                  "format": "date-time",
+                  "maxLength": 24,
+                  "minLength": 24,
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                  "type": "string"
+                },
+                "sourceLabel": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "sourceUrl": {
+                  "format": "url",
+                  "maxLength": 2000,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "summary": {
+                  "maxLength": 2000,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "protocolVersion",
+                "evidenceId",
+                "claimId",
+                "summary",
+                "sourceLabel",
+                "retrievedAt"
+              ],
+              "type": "object"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "type": "array"
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "maxLength": 24,
+            "minLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          },
+          "posts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "claimIds": {
+                  "items": {
+                    "maxLength": 128,
+                    "minLength": 7,
+                    "pattern": "^claim-[a-z0-9-]+$",
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "media": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "altText": {
+                        "maxLength": 1000,
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      },
+                      "description": {
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "description"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 4,
+                  "type": "array"
+                },
+                "postId": {
+                  "maxLength": 32,
+                  "minLength": 6,
+                  "pattern": "^post-[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "text": {
+                  "maxLength": 25000,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "postId",
+                "text",
+                "claimIds"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "protocolVersion": {
+            "const": "opencoven.tweet-thread.v1",
+            "type": "string"
+          },
+          "voiceProfile": {
+            "additionalProperties": false,
+            "properties": {
+              "displayName": {
+                "maxLength": 120,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "do": {
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "dont": {
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "tone": {
+                "maxLength": 500,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "voiceProfileId": {
+                "maxLength": 128,
+                "minLength": 7,
+                "pattern": "^voice-[a-z0-9-]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "voiceProfileId",
+              "displayName",
+              "tone",
+              "do",
+              "dont"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "candidateId",
+          "candidateSha256",
+          "brief",
+          "voiceProfile",
+          "evidence",
+          "posts",
+          "generatedAt"
+        ],
+        "type": "object"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "type": "array"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "maxLength": 24,
+      "minLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "manifestId": {
+      "maxLength": 128,
+      "minLength": 10,
+      "pattern": "^manifest-[a-z0-9-]+$",
+      "type": "string"
+    },
+    "observations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateSha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "exposedAt": {
+            "format": "date-time",
+            "maxLength": 24,
+            "minLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": false,
+            "properties": {
+              "bookmarks": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "impressions": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "likes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "quotes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "replies": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "reposts": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "missingMetricReasons": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "metric": {
+                  "anyOf": [
+                    {
+                      "const": "impressions",
+                      "type": "string"
+                    },
+                    {
+                      "const": "likes",
+                      "type": "string"
+                    },
+                    {
+                      "const": "reposts",
+                      "type": "string"
+                    },
+                    {
+                      "const": "replies",
+                      "type": "string"
+                    },
+                    {
+                      "const": "quotes",
+                      "type": "string"
+                    },
+                    {
+                      "const": "bookmarks",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "reason": {
+                  "maxLength": 500,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "metric",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "observationId": {
+            "maxLength": 128,
+            "minLength": 13,
+            "pattern": "^observation-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "protocolVersion": {
+            "const": "opencoven.tweet-thread.v1",
+            "type": "string"
+          },
+          "publishReceiptId": {
+            "maxLength": 128,
+            "minLength": 9,
+            "pattern": "^publish-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "retrievedAt": {
+            "format": "date-time",
+            "maxLength": 24,
+            "minLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          },
+          "source": {
+            "const": "x",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "observationId",
+          "candidateSha256",
+          "publishReceiptId",
+          "source",
+          "retrievedAt",
+          "exposedAt",
+          "metrics",
+          "missingMetricReasons"
+        ],
+        "type": "object"
+      },
+      "maxItems": 256,
+      "type": "array"
+    },
+    "protocolVersion": {
+      "const": "opencoven.tweet-thread.v1",
+      "type": "string"
+    },
+    "publishReceipts": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attemptedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "candidateSha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "platform": {
+                "const": "x",
+                "type": "string"
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "receiptId": {
+                "maxLength": 128,
+                "minLength": 9,
+                "pattern": "^publish-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "status": {
+                "const": "publishing",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "receiptId",
+              "candidateSha256",
+              "platform",
+              "attemptedAt",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attemptedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "candidateSha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "platform": {
+                "const": "x",
+                "type": "string"
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "receiptId": {
+                "maxLength": 128,
+                "minLength": 9,
+                "pattern": "^publish-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "remotePostIds": {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "status": {
+                "const": "published",
+                "type": "string"
+              },
+              "threadUrl": {
+                "format": "url",
+                "maxLength": 2000,
+                "minLength": 1,
+                "pattern": "^https:\\/\\/x\\.com\\/[A-Za-z0-9_]{1,15}\\/status\\/[1-9][0-9]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "receiptId",
+              "candidateSha256",
+              "platform",
+              "attemptedAt",
+              "status",
+              "publishedAt",
+              "threadUrl",
+              "remotePostIds"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attemptedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "candidateSha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "errorCode": {
+                "maxLength": 120,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "platform": {
+                "const": "x",
+                "type": "string"
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "receiptId": {
+                "maxLength": 128,
+                "minLength": 9,
+                "pattern": "^publish-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "remotePostIds": {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "status": {
+                "const": "partial",
+                "type": "string"
+              },
+              "threadUrl": {
+                "format": "url",
+                "maxLength": 2000,
+                "minLength": 1,
+                "pattern": "^https:\\/\\/x\\.com\\/[A-Za-z0-9_]{1,15}\\/status\\/[1-9][0-9]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "receiptId",
+              "candidateSha256",
+              "platform",
+              "attemptedAt",
+              "status",
+              "publishedAt",
+              "threadUrl",
+              "remotePostIds",
+              "errorCode"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attemptedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "candidateSha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "errorCode": {
+                "maxLength": 120,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "platform": {
+                "const": "x",
+                "type": "string"
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "receiptId": {
+                "maxLength": 128,
+                "minLength": 9,
+                "pattern": "^publish-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "status": {
+                "const": "failed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "receiptId",
+              "candidateSha256",
+              "platform",
+              "attemptedAt",
+              "status",
+              "errorCode"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attemptedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "candidateSha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "errorCode": {
+                "maxLength": 120,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "platform": {
+                "const": "x",
+                "type": "string"
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "receiptId": {
+                "maxLength": 128,
+                "minLength": 9,
+                "pattern": "^publish-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "status": {
+                "const": "uncertain",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "receiptId",
+              "candidateSha256",
+              "platform",
+              "attemptedAt",
+              "status",
+              "errorCode"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attemptedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "candidateSha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "errorCode": {
+                "maxLength": 120,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "platform": {
+                "const": "x",
+                "type": "string"
+              },
+              "protocolVersion": {
+                "const": "opencoven.tweet-thread.v1",
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "maxLength": 24,
+                "minLength": 24,
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "receiptId": {
+                "maxLength": 128,
+                "minLength": 9,
+                "pattern": "^publish-[a-z0-9-]+$",
+                "type": "string"
+              },
+              "remotePostIds": {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[1-9][0-9]*$",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "status": {
+                "const": "uncertain",
+                "type": "string"
+              },
+              "threadUrl": {
+                "format": "url",
+                "maxLength": 2000,
+                "minLength": 1,
+                "pattern": "^https:\\/\\/x\\.com\\/[A-Za-z0-9_]{1,15}\\/status\\/[1-9][0-9]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "receiptId",
+              "candidateSha256",
+              "platform",
+              "attemptedAt",
+              "status",
+              "publishedAt",
+              "threadUrl",
+              "remotePostIds",
+              "errorCode"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "maxItems": 64,
+      "type": "array"
+    },
+    "runId": {
+      "maxLength": 128,
+      "minLength": 5,
+      "pattern": "^run-[a-z0-9-]+$",
+      "type": "string"
+    },
+    "scorecards": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateSha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "dimensions": {
+            "additionalProperties": false,
+            "properties": {
+              "accessibility": {
+                "additionalProperties": false,
+                "properties": {
+                  "dimension": {
+                    "const": "accessibility",
+                    "type": "string"
+                  },
+                  "findings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "claimId": {
+                          "maxLength": 128,
+                          "minLength": 7,
+                          "pattern": "^claim-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "code": {
+                          "maxLength": 120,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "findingId": {
+                          "maxLength": 128,
+                          "minLength": 9,
+                          "pattern": "^finding-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "message": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "postId": {
+                          "maxLength": 32,
+                          "minLength": 6,
+                          "pattern": "^post-[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "anyOf": [
+                            {
+                              "const": "info",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "fail",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "findingId",
+                        "code",
+                        "severity",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 128,
+                    "type": "array"
+                  },
+                  "rationale": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "score": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "dimension",
+                  "score",
+                  "rationale",
+                  "findings"
+                ],
+                "type": "object"
+              },
+              "coherence": {
+                "additionalProperties": false,
+                "properties": {
+                  "dimension": {
+                    "const": "coherence",
+                    "type": "string"
+                  },
+                  "findings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "claimId": {
+                          "maxLength": 128,
+                          "minLength": 7,
+                          "pattern": "^claim-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "code": {
+                          "maxLength": 120,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "findingId": {
+                          "maxLength": 128,
+                          "minLength": 9,
+                          "pattern": "^finding-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "message": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "postId": {
+                          "maxLength": 32,
+                          "minLength": 6,
+                          "pattern": "^post-[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "anyOf": [
+                            {
+                              "const": "info",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "fail",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "findingId",
+                        "code",
+                        "severity",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 128,
+                    "type": "array"
+                  },
+                  "rationale": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "score": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "dimension",
+                  "score",
+                  "rationale",
+                  "findings"
+                ],
+                "type": "object"
+              },
+              "engagement": {
+                "additionalProperties": false,
+                "properties": {
+                  "dimension": {
+                    "const": "engagement",
+                    "type": "string"
+                  },
+                  "findings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "claimId": {
+                          "maxLength": 128,
+                          "minLength": 7,
+                          "pattern": "^claim-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "code": {
+                          "maxLength": 120,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "findingId": {
+                          "maxLength": 128,
+                          "minLength": 9,
+                          "pattern": "^finding-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "message": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "postId": {
+                          "maxLength": 32,
+                          "minLength": 6,
+                          "pattern": "^post-[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "anyOf": [
+                            {
+                              "const": "info",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "fail",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "findingId",
+                        "code",
+                        "severity",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 128,
+                    "type": "array"
+                  },
+                  "rationale": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "score": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "dimension",
+                  "score",
+                  "rationale",
+                  "findings"
+                ],
+                "type": "object"
+              },
+              "factuality": {
+                "additionalProperties": false,
+                "properties": {
+                  "dimension": {
+                    "const": "factuality",
+                    "type": "string"
+                  },
+                  "findings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "claimId": {
+                          "maxLength": 128,
+                          "minLength": 7,
+                          "pattern": "^claim-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "code": {
+                          "maxLength": 120,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "findingId": {
+                          "maxLength": 128,
+                          "minLength": 9,
+                          "pattern": "^finding-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "message": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "postId": {
+                          "maxLength": 32,
+                          "minLength": 6,
+                          "pattern": "^post-[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "anyOf": [
+                            {
+                              "const": "info",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "fail",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "findingId",
+                        "code",
+                        "severity",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 128,
+                    "type": "array"
+                  },
+                  "rationale": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "score": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "dimension",
+                  "score",
+                  "rationale",
+                  "findings"
+                ],
+                "type": "object"
+              },
+              "provenance": {
+                "additionalProperties": false,
+                "properties": {
+                  "dimension": {
+                    "const": "provenance",
+                    "type": "string"
+                  },
+                  "findings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "claimId": {
+                          "maxLength": 128,
+                          "minLength": 7,
+                          "pattern": "^claim-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "code": {
+                          "maxLength": 120,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "findingId": {
+                          "maxLength": 128,
+                          "minLength": 9,
+                          "pattern": "^finding-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "message": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "postId": {
+                          "maxLength": 32,
+                          "minLength": 6,
+                          "pattern": "^post-[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "anyOf": [
+                            {
+                              "const": "info",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "fail",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "findingId",
+                        "code",
+                        "severity",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 128,
+                    "type": "array"
+                  },
+                  "rationale": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "score": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "dimension",
+                  "score",
+                  "rationale",
+                  "findings"
+                ],
+                "type": "object"
+              },
+              "voice": {
+                "additionalProperties": false,
+                "properties": {
+                  "dimension": {
+                    "const": "voice",
+                    "type": "string"
+                  },
+                  "findings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "claimId": {
+                          "maxLength": 128,
+                          "minLength": 7,
+                          "pattern": "^claim-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "code": {
+                          "maxLength": 120,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "findingId": {
+                          "maxLength": 128,
+                          "minLength": 9,
+                          "pattern": "^finding-[a-z0-9-]+$",
+                          "type": "string"
+                        },
+                        "message": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "pattern": "\\S",
+                          "type": "string"
+                        },
+                        "postId": {
+                          "maxLength": 32,
+                          "minLength": 6,
+                          "pattern": "^post-[1-9][0-9]*$",
+                          "type": "string"
+                        },
+                        "severity": {
+                          "anyOf": [
+                            {
+                              "const": "info",
+                              "type": "string"
+                            },
+                            {
+                              "const": "warn",
+                              "type": "string"
+                            },
+                            {
+                              "const": "fail",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "findingId",
+                        "code",
+                        "severity",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 128,
+                    "type": "array"
+                  },
+                  "rationale": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "score": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "dimension",
+                  "score",
+                  "rationale",
+                  "findings"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "factuality",
+              "provenance",
+              "accessibility",
+              "voice",
+              "coherence",
+              "engagement"
+            ],
+            "type": "object"
+          },
+          "protocolVersion": {
+            "const": "opencoven.tweet-thread.v1",
+            "type": "string"
+          },
+          "scorecardId": {
+            "maxLength": 128,
+            "minLength": 11,
+            "pattern": "^scorecard-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "scoredAt": {
+            "format": "date-time",
+            "maxLength": 24,
+            "minLength": 24,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "scorecardId",
+          "candidateSha256",
+          "scoredAt",
+          "dimensions"
+        ],
+        "type": "object"
+      },
+      "maxItems": 64,
+      "type": "array"
+    },
+    "voiceProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "do": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "dont": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "protocolVersion": {
+          "const": "opencoven.tweet-thread.v1",
+          "type": "string"
+        },
+        "tone": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "voiceProfileId": {
+          "maxLength": 128,
+          "minLength": 7,
+          "pattern": "^voice-[a-z0-9-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "voiceProfileId",
+        "displayName",
+        "tone",
+        "do",
+        "dont"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "manifestId",
+    "runId",
+    "createdAt",
+    "brief",
+    "voiceProfile",
+    "candidates",
+    "scorecards",
+    "approvals",
+    "publishReceipts",
+    "observations"
+  ],
+  "type": "object"
+}

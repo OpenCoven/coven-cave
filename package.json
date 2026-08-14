@@ -33,6 +33,8 @@
     "mobile:tailscale:stop": "bash scripts/mobile-tailscale.sh stop",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "icons:subset": "node scripts/generate-icon-subset.mjs",
+    "protocol:tweet-thread": "node scripts/generate-tweet-thread-protocol.mjs",
+    "protocol:tweet-thread:check": "node scripts/generate-tweet-thread-protocol.mjs --check",
     "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs",
     "build": "next build && pnpm build:server",
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
