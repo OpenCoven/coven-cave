@@ -24,6 +24,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Working in this repo
 
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
+- [`source-text-pins.md`](source-text-pins.md) — what a source-reading test may assert (a contract) and may not (arity, formatting, distance), the extraction rule, and why every repair must be mutation-tested
 - [`workflows/`](workflows) — branching, release, and PR mechanics
 
 ### Platform and runtime
