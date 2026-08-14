@@ -268,6 +268,38 @@ function makeAmbiguousListTailOrMarkdown(
   };
 }
 
+function completeListWithTailAtBlankLine(
+  source: string,
+  lines: Line[],
+  startIndex: number,
+  listStart: number,
+  ordered: boolean,
+  committedItems: InternalListItem[],
+  itemStart: number,
+): ParseResult | null {
+  for (let index = startIndex; index < lines.length; index += 1) {
+    if (!isStructuralBlankLine(lines[index])) continue;
+    committedItems.push({
+      start: itemStart,
+      end: lines[index].start,
+      source: source.slice(itemStart, lines[index].start),
+    });
+    const blankTail = consumeStructuralBlankLine(lines[index], index);
+    return {
+      complete: true,
+      nextLineIndex: blankTail.nextLineIndex,
+      block: makeListBlock(
+        source,
+        listStart,
+        blankTail.end,
+        ordered,
+        committedItems,
+      ),
+    };
+  }
+  return null;
+}
+
 function parseFence(source: string, lines: Line[], startIndex: number): ParseResult | null {
   const fence = parseFenceOpening(lines[startIndex]);
   if (!fence) return null;
@@ -330,6 +362,7 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
   const committedItems: InternalListItem[] = [];
   let itemStart = lines[startIndex].start;
   let index = startIndex + 1;
+  let nestedTail = false;
 
   while (index < lines.length) {
     if (isStructuralBlankLine(lines[index])) {
@@ -352,9 +385,26 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
       };
     }
 
+    if (nestedTail) {
+      index += 1;
+      continue;
+    }
+
     const nextMarker = parseListMarker(lines[index]);
     if (nextMarker && nextMarker.ordered === marker.ordered) {
       if (nextMarker.markerIndent >= marker.contentIndent) {
+        if (committedItems.length > 0) {
+          const completed = completeListWithTailAtBlankLine(
+            source,
+            lines,
+            index + 1,
+            lines[startIndex].start,
+            marker.ordered,
+            committedItems,
+            itemStart,
+          );
+          if (completed) return completed;
+        }
         return makeAmbiguousListTailOrMarkdown(
           source,
           lines[startIndex].start,
@@ -381,13 +431,28 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
         || (nestedMarker.ordered !== marker.ordered && nestedMarker.markerIndent > marker.markerIndent)
       )
     ) {
-      return makeAmbiguousListTailOrMarkdown(
+      if (committedItems.length === 0) {
+        return makeAmbiguousListTailOrMarkdown(
+          source,
+          lines[startIndex].start,
+          marker.ordered,
+          committedItems,
+          itemStart,
+        );
+      }
+      const completed = completeListWithTailAtBlankLine(
         source,
+        lines,
+        index + 1,
         lines[startIndex].start,
         marker.ordered,
         committedItems,
         itemStart,
       );
+      if (completed) return completed;
+      nestedTail = true;
+      index += 1;
+      continue;
     }
 
     index += 1;
@@ -535,6 +600,11 @@ function toSettledPublicBlock(turnId: string, block: InternalBlock): StreamingCo
     : toPublicBlock(turnId, finalized);
 }
 
+function getCommittedPrefixText(block: InternalBlock): string {
+  if (block.kind !== "list") return "";
+  return block.committedItems.map((item) => item.source).join("");
+}
+
 export function partitionStreamingMarkdown(
   source: string,
   options: PartitionOptions,
@@ -563,7 +633,7 @@ export function partitionStreamingMarkdown(
       return {
         committedBlocks: committedInternal.map((block) => toPublicBlock(options.turnId, block)),
         activeBlock: toPublicBlock(options.turnId, result.block),
-        committedText: committedInternal.map((block) => block.source).join(""),
+        committedText: committedInternal.map((block) => block.source).join("") + getCommittedPrefixText(result.block),
       };
     }
 

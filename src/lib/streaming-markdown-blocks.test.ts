@@ -170,6 +170,19 @@ test("top-level lists stay stable containers with stable item ids", () => {
   });
 });
 
+test("committedText includes the committed prefix of an active list", () => {
+  for (const [source, committedText] of [
+    ["- one\n- tw", "- one\n"],
+    ["1. one\n2. tw", "1. one\n"],
+    ["Lead\n\n- one\n- two\ncontinuation", "Lead\n\n- one\n"],
+    ["Lead\n\n1. one\n2. two\n continuation", "Lead\n\n1. one\n"],
+  ] as const) {
+    const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+    assert.equal(partition.activeBlock?.kind, "list");
+    assert.equal(partition.committedText, committedText);
+  }
+});
+
 test("spaced thematic breaks outrank list parsing and commit through their newline", () => {
   for (const marker of ["* * *\n", "- - -\n"] as const) {
     const source = `${marker}Tail`;
@@ -562,6 +575,72 @@ test("incremental nested tails retain active list identity and committed sibling
     assert.equal(settled.activeBlock, null);
     assert.equal(settled.committedText, afterSource);
     assert.equal(settled.committedBlocks.map((block) => block.source).join(""), afterSource);
+  }
+});
+
+test("nested and continuation tails stop at blank-line list boundaries", () => {
+  for (const [source, ordered, committedItems, activeSource] of [
+    [
+      "- one\n- parent\n  - child\n\nAfter",
+      false,
+      [
+        { id: "t:0-item-0", source: "- one\n" },
+        { id: "t:0-item-1", source: "- parent\n  - child\n" },
+      ],
+      "After",
+    ],
+    [
+      "- one\n- parent\n  1. child\n    - grandchild\n\nAfter",
+      false,
+      [
+        { id: "t:0-item-0", source: "- one\n" },
+        { id: "t:0-item-1", source: "- parent\n  1. child\n    - grandchild\n" },
+      ],
+      "After",
+    ],
+    [
+      "1. one\n2. parent\n   - child\n      1. grandchild\n\nAfter",
+      true,
+      [
+        { id: "t:0-item-0", source: "1. one\n" },
+        { id: "t:0-item-1", source: "2. parent\n   - child\n      1. grandchild\n" },
+      ],
+      "After",
+    ],
+    [
+      "- one\n- two\n  continuation\n\nAfter\n\nTail",
+      false,
+      [
+        { id: "t:0-item-0", source: "- one\n" },
+        { id: "t:0-item-1", source: "- two\n  continuation\n" },
+      ],
+      "Tail",
+    ],
+  ] as const) {
+    const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+    assert.deepEqual(partition.committedBlocks, [
+      {
+        id: "t:0-list",
+        kind: "list",
+        ordered,
+        committedItems,
+        source: source.slice(0, source.indexOf("\n\n") + 2),
+      },
+      ...(source.endsWith("After\n\nTail")
+        ? [{
+          id: `t:${"- one\n- two\n  continuation\n\n".length}-${"- one\n- two\n  continuation\n\nAfter\n\n".length}`,
+          kind: "markdown" as const,
+          source: "After\n\n",
+          renderMode: "markdown" as const,
+        }]
+        : []),
+    ]);
+    assert.deepEqual(partition.activeBlock, {
+      id: `t:${source.length - activeSource.length}-${source.length}`,
+      kind: "markdown",
+      source: activeSource,
+      renderMode: "markdown",
+    });
   }
 });
 
