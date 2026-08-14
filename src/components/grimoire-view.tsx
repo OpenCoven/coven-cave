@@ -143,7 +143,7 @@ type GrimoireGraphScan = {
   refreshGraph: () => void;
 };
 
-function useGrimoireGraphScan(): GrimoireGraphScan {
+function useGrimoireGraphScan(familiarScope: ReadonlySet<string>): GrimoireGraphScan {
   const [state, setState] = useState<Omit<GrimoireGraphScan, "refreshGraph">>({
     scan: null,
     scanning: true,
@@ -151,12 +151,24 @@ function useGrimoireGraphScan(): GrimoireGraphScan {
   });
   const [scanTick, setScanTick] = useState(0);
 
+  // Key the scan on the scope's VALUE, not the Set's identity. `scopeFamiliarIds`
+  // is a new Set on most parent renders, so depending on it directly would
+  // refetch the whole corpus on every render rather than when the selection
+  // actually changes (cave-z6xvd).
+  const scopeKey = useMemo(() => [...familiarScope].sort().join(","), [familiarScope]);
+
   useEffect(() => {
     const controller = new AbortController();
     setState((s) => ({ ...s, scanning: true }));
     void (async () => {
       try {
-        const res = await fetch("/api/grimoire/graph", { cache: "no-store", signal: controller.signal });
+        // Scoping server-side means the cap applies to THIS familiar's files
+        // rather than the coven's, so a scoped view is complete up to the cap
+        // instead of showing its (F/T) slice.
+        const params = scopeKey
+          ? `?${scopeKey.split(",").map((id) => `familiarId=${encodeURIComponent(id)}`).join("&")}`
+          : "";
+        const res = await fetch(`/api/grimoire/graph${params}`, { cache: "no-store", signal: controller.signal });
         const json = await res.json();
         if (controller.signal.aborted) return;
         if (json.ok && Array.isArray(json.nodes) && Array.isArray(json.edges)) {
@@ -179,7 +191,7 @@ function useGrimoireGraphScan(): GrimoireGraphScan {
       }
     })();
     return () => controller.abort();
-  }, [scanTick]);
+  }, [scanTick, scopeKey]);
 
   const refreshGraph = useCallback(() => setScanTick((t) => t + 1), []);
   return { ...state, refreshGraph };
@@ -752,7 +764,9 @@ export function GrimoireView({
     },
     [controlledView, onViewChange],
   );
-  const { scan, scanning, scanError, refreshGraph } = useGrimoireGraphScan();
+  const { scan, scanning, scanError, refreshGraph } = useGrimoireGraphScan(
+    scopeFamiliarIds ?? EMPTY_FAMILIAR_SCOPE,
+  );
   const [collapsedSections, setCollapsedSections] = useState<Record<RailSectionId, boolean>>(
     readCollapsedSections,
   );
