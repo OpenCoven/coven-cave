@@ -3,6 +3,7 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { withConversationTransactionLock } from "./server/conversation-transaction-lock.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
@@ -540,9 +541,16 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
   }
 }
 
-/** Serialize read-modify-write operations for one conversation. Atomic file
- * replacement prevents torn JSON; this lock additionally prevents two valid
- * snapshots (for example model PATCH and turn completion) losing each other. */
+/**
+ * Serializes read-modify-write operations for one conversation. The
+ * same-process queue is acquired first, then the matching transcript's
+ * cross-process SQLite fence. Atomic replacement prevents torn JSON; this
+ * lock additionally prevents two valid snapshots (for example model PATCH and
+ * turn completion) losing each other across either process boundary.
+ *
+ * Do not call this reentrantly for the same session: callers must take the
+ * conversation lock before any cave-state transaction, never the reverse.
+ */
 export async function withConversationLock<T>(
   sessionId: string,
   operation: () => Promise<T>,
@@ -557,7 +565,10 @@ export async function withConversationLock<T>(
   conversationLockTails.set(sessionId, tail);
   await previous.catch(() => undefined);
   try {
-    return await operation();
+    return await withConversationTransactionLock(
+      { storePath: pathFor(sessionId), label: `conversation:${sessionId}` },
+      operation,
+    );
   } finally {
     release();
     if (conversationLockTails.get(sessionId) === tail) {
