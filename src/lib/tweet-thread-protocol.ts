@@ -8,6 +8,7 @@ const RFC3339_UTC_MILLIS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const CLAIM_ID_RE = /^claim-[a-z0-9-]+$/;
 const POST_ID_RE = /^post-[1-9][0-9]*$/;
+const WORD_CHARACTER_RE = /[\p{L}\p{N}_]/u;
 
 const boundedString = (maxLength: number) =>
   Type.String({ minLength: 1, maxLength });
@@ -255,6 +256,19 @@ function dedupeTrimmedList(value: unknown): unknown {
   return out;
 }
 
+function containsBannedPhrase(text: string, phrase: string): boolean {
+  const normalizedText = text.toLowerCase();
+  const normalizedPhrase = phrase.trim().toLowerCase();
+  if (normalizedPhrase.length === 0) return false;
+
+  const [firstCharacter] = normalizedPhrase;
+  const lastCharacter = Array.from(normalizedPhrase).at(-1);
+  const escapedPhrase = normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const startBoundary = firstCharacter && WORD_CHARACTER_RE.test(firstCharacter) ? "(?<![\\p{L}\\p{N}_])" : "";
+  const endBoundary = lastCharacter && WORD_CHARACTER_RE.test(lastCharacter) ? "(?![\\p{L}\\p{N}_])" : "";
+  return new RegExp(`${startBoundary}${escapedPhrase}${endBoundary}`, "u").test(normalizedText);
+}
+
 function collectObjectiveWeightIssues(value: unknown, path: string): string[] {
   if (!isRecord(value)) return [`${path} must be an object with exact objective weight keys.`];
   const issues: string[] = [];
@@ -330,6 +344,7 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
   }
 
   const postIds = new Set<string>();
+  const postedClaimIds = new Set<string>();
   for (const [index, post] of value.posts.entries()) {
     if (!isRecord(post)) continue;
     if (typeof post.postId === "string") {
@@ -337,8 +352,16 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
     }
     if (Array.isArray(post.claimIds)) {
       for (const claimId of post.claimIds) {
+        if (typeof claimId === "string") postedClaimIds.add(claimId);
         if (typeof claimId === "string" && !evidenceClaimIds.has(claimId)) {
           issues.push(`${path}.posts[${index}].claimIds references missing evidence ledger claim "${claimId}".`);
+        }
+      }
+    }
+    if (typeof post.text === "string" && constraints && Array.isArray(constraints.bannedPhrases)) {
+      for (const phrase of constraints.bannedPhrases) {
+        if (typeof phrase === "string" && containsBannedPhrase(post.text, phrase)) {
+          issues.push(`${path}.posts[${index}].text contains banned phrase "${phrase.trim()}".`);
         }
       }
     }
@@ -349,6 +372,14 @@ function collectThreadCandidateIssues(value: unknown, path = "ThreadCandidate"):
         if (typeof altText !== "string" || altText.trim().length === 0) {
           issues.push(`${path}.posts[${index}].media[${mediaIndex}] must include non-empty alt text when requireAltText is true.`);
         }
+      }
+    }
+  }
+
+  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
+    for (const claimId of constraints.requiredClaimIds) {
+      if (typeof claimId === "string" && !postedClaimIds.has(claimId)) {
+        issues.push(`${path}.brief.constraints.requiredClaimIds claim "${claimId}" must appear in at least one post.`);
       }
     }
   }

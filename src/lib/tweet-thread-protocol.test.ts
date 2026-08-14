@@ -407,6 +407,35 @@ const missingLedgerReferenceError = expectValidationError(
 );
 assert.match(missingLedgerReferenceError.issues.join("\n"), /claim-missing/);
 
+const omittedRequiredClaimError = expectValidationError(
+  () => assertValidThreadCandidate({
+    ...validCandidate(),
+    posts: validPosts().map((post) => ({ ...post, claimIds: ["claim-second-proof"] })),
+  }),
+);
+assert.match(omittedRequiredClaimError.issues.join("\n"), /requiredClaimIds.*claim-source-of-truth/i);
+
+assert.doesNotThrow(
+  () => assertValidThreadCandidate({
+    ...validCandidate(),
+    posts: [
+      { ...validPosts()[0], text: "The unjust vibingly named draft still cites its source." },
+      validPosts()[1],
+    ],
+  }),
+  "banned phrases do not match inside larger words",
+);
+const bannedPhraseError = expectValidationError(
+  () => assertValidThreadCandidate({
+    ...validCandidate(),
+    posts: [
+      { ...validPosts()[0], text: "The draft is JUST VIBING instead of citing its source." },
+      validPosts()[1],
+    ],
+  }),
+);
+assert.match(bannedPhraseError.issues.join("\n"), /posts\[0\].*banned phrase.*just vibing/i);
+
 const altTextPolicyError = expectValidationError(
   () => assertValidThreadCandidate({
     ...validCandidate(),
