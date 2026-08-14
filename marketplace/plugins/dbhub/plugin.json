@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/dbhub",
   "x-coven": {
     "displayName": "DBHub",

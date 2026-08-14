@@ -32,6 +32,7 @@ import { Icon } from "@/lib/icon";
 import {
   allowedResearchActions,
   describeResearchSchedule,
+  RESEARCH_DIRECTION_MAX_LENGTH,
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
@@ -43,6 +44,7 @@ import {
   type ResearchMissionAction,
   type ResearchMissionActionInput,
 } from "@/lib/research-missions";
+import { generateResearchRefineDirection } from "@/lib/research-refine-direction";
 import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { fetchResearchWorkspacePath } from "./research-artifact-actions";
@@ -104,6 +106,22 @@ const END_ACTIONS: ReadonlySet<ResearchMissionAction> = new Set(["cancel", "arch
 
 const LIVE_STATUSES = new Set<ResearchMission["status"]>(["queued", "planning", "running"]);
 
+function newDirectionRunId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `research-direction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function stopDirectionRun(runId: string | null) {
+  if (!runId) return;
+  void fetch("/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId }),
+  }).catch(() => {
+    // The local abort still retires the UI generation if the stop route is unavailable.
+  });
+}
+
 export function ResearchMissionDetail({
   mission,
   showEvidence,
@@ -124,6 +142,8 @@ export function ResearchMissionDetail({
   useMinuteTick();
   const [busy, setBusy] = useState(false);
   const [direction, setDirection] = useState("");
+  const [directionDrafting, setDirectionDrafting] = useState(false);
+  const [directionSuggestion, setDirectionSuggestion] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [diagnosticsCopiedFor, setDiagnosticsCopiedFor] = useState<string | null>(null);
@@ -157,6 +177,11 @@ export function ResearchMissionDetail({
   // the user switched missions is discarded instead of applying its
   // busy/error/announce state to the wrong mission's view.
   const missionIdRef = useRef(missionId);
+  const directionRef = useRef(direction);
+  directionRef.current = direction;
+  const directionAbortRef = useRef<AbortController | null>(null);
+  const directionRunIdRef = useRef<string | null>(null);
+  const directionGenerationRef = useRef(0);
   const workspaceCopyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const diagnosticsCopyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -165,11 +190,25 @@ export function ResearchMissionDetail({
   // check missionIdRef and discard), so the fresh mission starts unblocked.
   useEffect(() => {
     missionIdRef.current = missionId;
+    directionGenerationRef.current += 1;
+    stopDirectionRun(directionRunIdRef.current);
+    directionRunIdRef.current = null;
+    directionAbortRef.current?.abort();
+    directionAbortRef.current = null;
     setBusy(false);
+    setDirectionDrafting(false);
+    setDirectionSuggestion(null);
     setRetryRoot(null);
     setActionError(null);
     setDirection("");
   }, [missionId]);
+
+  useEffect(() => () => {
+    directionGenerationRef.current += 1;
+    stopDirectionRun(directionRunIdRef.current);
+    directionRunIdRef.current = null;
+    directionAbortRef.current?.abort();
+  }, []);
 
   // A diagnostics dialog belongs to the selected run. Close it when the user
   // moves to another mission so its details cannot be mistaken for the new
@@ -330,6 +369,70 @@ export function ResearchMissionDetail({
       announce(`Research ${input.action} applied.`);
     },
   );
+  const draftDirection = async () => {
+    if (directionDrafting || busy) return;
+    const startedFor = mission.id;
+    const baseDraft = directionRef.current;
+    directionGenerationRef.current += 1;
+    const generation = directionGenerationRef.current;
+    directionAbortRef.current?.abort();
+    const controller = new AbortController();
+    directionAbortRef.current = controller;
+    const runId = newDirectionRunId();
+    directionRunIdRef.current = runId;
+    setDirectionDrafting(true);
+    setDirectionSuggestion(null);
+    setActionError(null);
+    try {
+      const result = await generateResearchRefineDirection({
+        mission,
+        currentDraft: baseDraft,
+        runId,
+        signal: controller.signal,
+      });
+      if (
+        generation !== directionGenerationRef.current
+        || missionIdRef.current !== startedFor
+      ) {
+        return;
+      }
+      if (result.error) {
+        if (result.error === "cancelled") return;
+        const message = `The familiar could not draft a direction: ${result.error}.`;
+        setActionError(message);
+        announce(message);
+        return;
+      }
+      if (directionRef.current === baseDraft) {
+        setDirection(result.text);
+        announce("Refined direction drafted.");
+      } else {
+        setDirectionSuggestion(result.text);
+        announce("Direction ready — your edits were kept.");
+      }
+    } catch (error) {
+      if (
+        generation !== directionGenerationRef.current
+        || missionIdRef.current !== startedFor
+      ) {
+        return;
+      }
+      const message = error instanceof Error
+        ? `The familiar could not draft a direction: ${error.message}.`
+        : "The familiar could not draft a direction.";
+      setActionError(message);
+      announce(message);
+    } finally {
+      if (
+        generation === directionGenerationRef.current
+        && missionIdRef.current === startedFor
+      ) {
+        directionAbortRef.current = null;
+        directionRunIdRef.current = null;
+        setDirectionDrafting(false);
+      }
+    }
+  };
   const runAutomationAction = async (action: "pause" | "resume" | "run-now") => {
     const automation = mission.automation;
     if (!automation) return;
@@ -744,8 +847,8 @@ export function ResearchMissionDetail({
             </div>
           ) : null}
 
-          {/* ── Refine box: the design's "✦ Refine direction before continuing"
-                wired to the existing refine action. ── */}
+          {/* ── Refine box: the familiar may propose the next-pass direction,
+                but only the separate reviewed action continues the mission. ── */}
           {actions.includes("refine") ? (
             <div className="research-desk-refine">
               <span className="research-desk-refine__kicker">
@@ -754,18 +857,65 @@ export function ResearchMissionDetail({
               </span>
               <textarea
                 value={direction}
-                onChange={(event) => setDirection(event.target.value)}
+                onChange={(event) => {
+                  setDirection(event.target.value);
+                  setDirectionSuggestion(null);
+                }}
                 placeholder="What should the next iteration prioritize?"
                 aria-label="Refined research direction"
+                maxLength={RESEARCH_DIRECTION_MAX_LENGTH}
               />
-              <Button
-                size="xs"
-                variant="secondary"
-                disabled={busy || !direction.trim()}
-                onClick={() => void runAction({ action: "refine", direction })}
-              >
-                Refine and continue
-              </Button>
+              <div className="research-desk-refine__actions">
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  leadingIcon="ph:sparkle"
+                  loading={directionDrafting}
+                  disabled={busy}
+                  onClick={() => void draftDirection()}
+                >
+                  {direction.trim() ? "Redraft with familiar" : "Draft with familiar"}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  disabled={busy || directionDrafting || !direction.trim()}
+                  onClick={() => void runAction({ action: "refine", direction })}
+                >
+                  Refine and continue
+                </Button>
+              </div>
+              {directionDrafting ? (
+                <p className="research-desk-refine__status" role="status">
+                  Reading the checkpoint and choosing the highest-value next pass…
+                </p>
+              ) : null}
+              {directionSuggestion ? (
+                <div className="research-desk-refine__suggestion">
+                  <p>Your draft changed while the familiar was working. Apply its direction?</p>
+                  <blockquote>{directionSuggestion}</blockquote>
+                  <div>
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onClick={() => {
+                        setDirection(directionSuggestion);
+                        setDirectionSuggestion(null);
+                        announce("Familiar direction applied.");
+                      }}
+                    >
+                      Apply direction
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => setDirectionSuggestion(null)}
+                    >
+                      Keep mine
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

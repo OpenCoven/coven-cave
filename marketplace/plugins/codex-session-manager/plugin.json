@@ -19,6 +19,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/codex-session-manager",
   "x-coven": {
     "displayName": "Codex Session Manager",

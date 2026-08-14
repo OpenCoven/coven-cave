@@ -64,6 +64,7 @@ test("familiar-local skill entrypoints are advertised from the already-granted w
   assert.match(block, /## Familiar-local skills/);
   assert.match(block, /skills\/imagegen\/SKILL\.md/);
   assert.match(block, /local same-name skill takes precedence over a generic skill/);
+  assert.match(block, /If invocation by name is unavailable, read the listed SKILL\.md directly/);
 });
 
 test("a symlinked skills root cannot advertise entrypoints outside the familiar workspace", async (t) => {

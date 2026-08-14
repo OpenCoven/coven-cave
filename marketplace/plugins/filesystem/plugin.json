@@ -19,6 +19,7 @@
     "write_files",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/filesystem",
   "x-coven": {
     "displayName": "Filesystem",

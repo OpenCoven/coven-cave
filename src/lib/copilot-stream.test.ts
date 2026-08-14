@@ -334,6 +334,7 @@ const freshArgs = buildCopilotStreamArgs({
   model: "openai/gpt-5.5",
   permissionMode: "full",
   addDirs: ["/Users/example/projects/alpha", "", "/Users/example/.coven/workspaces/familiars/sage"],
+  pluginDirs: ["/Applications/CovenCave.app/marketplace/plugins/coven-memory"],
 });
 assert.deepEqual(
   freshArgs,
@@ -347,6 +348,8 @@ assert.deepEqual(
     "/Users/example/projects/alpha",
     "--add-dir",
     "/Users/example/.coven/workspaces/familiars/sage",
+    "--plugin-dir",
+    "/Applications/CovenCave.app/marketplace/plugins/coven-memory",
     "--allow-all",
     "--output-format",
     "json",

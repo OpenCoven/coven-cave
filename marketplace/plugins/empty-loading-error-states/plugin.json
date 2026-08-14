@@ -21,6 +21,7 @@
   "capabilities": [
     "read_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/empty-loading-error-states",
   "x-coven": {
     "displayName": "Empty, Loading & Error States",

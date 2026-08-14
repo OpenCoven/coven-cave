@@ -16,6 +16,7 @@
     "research",
     "workflows"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/archivists-index",
   "x-coven": {
     "displayName": "Archivist's Index",
