@@ -25,6 +25,8 @@ import {
   decidePairingRequest,
   finalizeApprovedPairingClaim,
   isPairingRequestExpired,
+  listPendingPairingRequests,
+  PAIRING_CLAIM_STALE_MS,
   readPairingRequest,
   resetPairingRequestsForTest,
   rollbackApprovedPairingClaim,
@@ -147,9 +149,9 @@ test("no finalize ever runs before issueCredential has actually resolved success
   decidePairingRequest(request.id, "approved");
 
   let finalizeCalls = 0;
-  const spyingFinalize: PairingExchangeDeps["finalize"] = (id, claimId, now) => {
+  const spyingFinalize: PairingExchangeDeps["finalize"] = (id, claimId, now, options) => {
     finalizeCalls += 1;
-    return finalizeApprovedPairingClaim(id, claimId, now);
+    return finalizeApprovedPairingClaim(id, claimId, now, options);
   };
 
   let releaseIssue!: () => void;
@@ -224,7 +226,7 @@ test("two concurrent exact retries against the same approved request yield one t
   }
 });
 
-test("a rollback that lands after the claim's original TTL has passed finishes the request; the caller sees a generic expired result on retry, never a resurrection", async () => {
+test("an issuance failure whose rollback lands after the original TTL reports terminal expiry, never retryability or resurrection", async () => {
   const { request, secret } = createPairingRequest(input(), 1_000);
   decidePairingRequest(request.id, "approved", 1_100);
 
@@ -256,7 +258,7 @@ test("a rollback that lands after the claim's original TTL has passed finishes t
     1_200,
     deps,
   );
-  assert.deepEqual(result, { kind: "issue_failed" });
+  assert.deepEqual(result, { kind: "expired" });
 
   assert.equal(readPairingRequest(request.id, secret, pastTtl + 10), null);
   assert.equal(isPairingRequestExpired(request.id, secret, pastTtl + 10), true);
@@ -320,6 +322,91 @@ test("a wrong secret, a still-pending request, and a denied request are classifi
     deps,
   );
   assert.equal(real.kind, "ok");
+});
+
+test("a stale-pruned claim cannot turn a completed issuance into a misleading success", async () => {
+  const { request, secret } = createPairingRequest(input(), 1_000);
+  decidePairingRequest(request.id, "approved", 1_100);
+
+  let releaseIssue!: () => void;
+  const issueGate = new Promise<void>((resolve) => {
+    releaseIssue = resolve;
+  });
+  const deferredIssue: PairingExchangeDeps["issueCredential"] = async (approved) => {
+    await issueGate;
+    return fakeCredential(approved as ApprovedPairing);
+  };
+  const key = exchangeKey("7f4145de-9b43-4abc-876d-81ef63de60e0");
+  const exchange = exchangePairingRequest(
+    request.id,
+    secret,
+    key,
+    exchangeRequestHash(request.id),
+    1_200,
+    depsWithIssue(deferredIssue),
+  );
+
+  for (let index = 0; index < 3; index += 1) await Promise.resolve();
+  listPendingPairingRequests(1_200 + PAIRING_CLAIM_STALE_MS);
+  releaseIssue();
+
+  const result = await exchange;
+  assert.deepEqual(result, { kind: "expired" });
+  assert.equal("token" in result, false, "a terminal settlement must never reveal a credential");
+  assert.deepEqual(
+    await exchangePairingRequest(
+      request.id,
+      secret,
+      key,
+      exchangeRequestHash(request.id),
+      1_200 + PAIRING_CLAIM_STALE_MS + 1,
+      depsWithIssue(async (approved) => fakeCredential(approved as ApprovedPairing)),
+    ),
+    { kind: "expired" },
+  );
+});
+
+test("a missing rollback settlement makes issuance failure terminal rather than retryable", async () => {
+  const { request, secret } = createPairingRequest(input());
+  decidePairingRequest(request.id, "approved");
+  const deps: PairingExchangeDeps = {
+    ...depsWithIssue(async () => {
+      throw new Error("simulated credential store write failure");
+    }),
+    rollback: () => ({ kind: "missing" }),
+  };
+
+  const result = await exchangePairingRequest(
+    request.id,
+    secret,
+    exchangeKey("8f4145de-9b43-4abc-876d-81ef63de60e0"),
+    exchangeRequestHash(request.id),
+    1_000,
+    deps,
+  );
+  assert.deepEqual(result, { kind: "conflict" });
+});
+
+test("a finalize storage failure never reports or reveals a credential", async () => {
+  const { request, secret } = createPairingRequest(input());
+  decidePairingRequest(request.id, "approved");
+  const deps: PairingExchangeDeps = {
+    ...depsWithIssue(async (approved) => fakeCredential(approved as ApprovedPairing)),
+    finalize: () => {
+      throw new Error("simulated pairing settlement storage failure");
+    },
+  };
+
+  const result = await exchangePairingRequest(
+    request.id,
+    secret,
+    exchangeKey("9f4145de-9b43-4abc-876d-81ef63de60e0"),
+    exchangeRequestHash(request.id),
+    1_000,
+    deps,
+  );
+  assert.deepEqual(result, { kind: "conflict" });
+  assert.equal("token" in result, false);
 });
 
 console.log("pairing-exchange.test.ts: ok");
