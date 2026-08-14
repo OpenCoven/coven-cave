@@ -237,7 +237,8 @@
       "id": 7,
       "data": {
         "type": "reconcile_required",
-        "conversationId": "fixture-conversation"
+        "conversationId": "fixture-conversation",
+        "reason": "assistant_rewrite"
       }
     },
     "runFailed": {

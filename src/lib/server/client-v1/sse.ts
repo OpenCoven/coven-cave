@@ -8,12 +8,23 @@ import type { StreamEvent } from "@/lib/stream-events";
 import type { ClientV1ErrorCode } from "./contract.ts";
 import type { JsonValue } from "./idempotency-store.ts";
 
+type ClientReconcileReason =
+  | "assistant_rewrite"
+  | "assistant_content_unavailable"
+  | "incomplete_history"
+  | "cursor_ahead"
+  | "stream_unavailable";
+
 export type ClientStreamEvent =
   | { type: "run.started"; runId: string; conversationId: string }
   | { type: "message.delta"; text: string }
   | { type: "progress"; id: string; label: string; detail?: string; status: string }
   | { type: "tool"; payload: Record<string, unknown> }
-  | { type: "reconcile_required"; conversationId: string }
+  | {
+    type: "reconcile_required";
+    conversationId: string;
+    reason: ClientReconcileReason;
+  }
   | { type: "run.completed"; conversationId: string }
   | { type: "run.failed"; code: string; message: string };
 
@@ -34,6 +45,22 @@ const SAFE_FAILURE_CODE_RE = /^[a-z][a-z0-9_-]{0,63}$/;
 // canonical event remains valid on the initial stream too.
 const SSE_FRAME_METADATA_MAX_BYTES = 1024;
 const UPSTREAM_FRAME_MAX_BYTES = RUN_STREAM_EVENT_MAX_BYTES + SSE_FRAME_METADATA_MAX_BYTES;
+
+function clientReconcileEvent(
+  conversationId: string,
+  reason: ClientReconcileReason,
+): Extract<ClientStreamEvent, { type: "reconcile_required" }> {
+  return { type: "reconcile_required", conversationId, reason };
+}
+
+function isAssistantTextMutation(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const event = value as { kind?: unknown; text?: unknown };
+  return (
+    (event.kind === "assistant_chunk" && typeof event.text === "string" && event.text.length > 0)
+    || (event.kind === "assistant_replace" && typeof event.text === "string")
+  );
+}
 
 type Translation = {
   event: ClientStreamEvent | null;
@@ -119,10 +146,7 @@ export function createClientStreamTranslator(context: ClientStreamContext) {
             terminal = true;
             assistantText = "";
             return {
-              event: {
-                type: "reconcile_required",
-                conversationId: context.conversationId,
-              },
+              event: clientReconcileEvent(context.conversationId, "assistant_rewrite"),
               terminal: true,
             };
           }
@@ -340,19 +364,17 @@ export function encodeClientStreamEvent(seq: number, event: ClientStreamEvent): 
 }
 
 /**
- * A synthetic reconciliation has no canonical run-buffer entry. Its frame
- * repeats the caller's last committed canonical cursor rather than claiming
- * `cursor + 1`, which may become the next real event. A reconnect therefore
- * continues at the still-unconsumed canonical sequence.
+ * A synthetic reconciliation has no canonical run-buffer entry, so it must
+ * not carry an SSE `id:`. That keeps Last-Event-ID pinned to the last
+ * canonical event while later canonical events can be replayed in this
+ * response. Clients must reconcile the conversation before trusting assistant
+ * content after this marker; the reason is protocol metadata, not a cursor.
  */
 export function encodeClientReconcileEvent(
-  cursor: number,
   conversationId: string,
+  reason: ClientReconcileReason,
 ): Uint8Array {
-  return encodeClientStreamEvent(cursor, {
-    type: "reconcile_required",
-    conversationId,
-  });
+  return encoder.encode(`data: ${JSON.stringify(clientReconcileEvent(conversationId, reason))}\n\n`);
 }
 
 function sseHeaders(): HeadersInit {
@@ -494,6 +516,7 @@ export function createResumedRunStream(
       let replayIndex = 0;
       let pendingLive: { seq: number; json: string } | null = null;
       let finished = false;
+      let reconciliationRequired = false;
       const translator = createClientStreamTranslator(context);
       const close = () => {
         if (closed) return;
@@ -536,27 +559,6 @@ export function createResumedRunStream(
           return false;
         }
       };
-      const replayHasReplacementCheckpointBeforeAssistantMutation = () => {
-        if (!subscription) return false;
-        // A previous synthetic reconciliation can close immediately before
-        // the producer appends its authoritative replacement. That retained
-        // replacement is a new canonical checkpoint, so replay it instead of
-        // issuing another synthetic frame that would keep the cursor pinned.
-        for (const entry of subscription.replay) {
-          try {
-            const event = JSON.parse(entry.json) as { kind?: unknown; text?: unknown };
-            if (event.kind === "assistant_replace") return typeof event.text === "string";
-            if (
-              event.kind === "assistant_chunk"
-              && (typeof event.text !== "string" || event.text.length > 0)
-            ) return false;
-          } catch {
-            return false;
-          }
-        }
-        return false;
-      };
-
       const nextEvent = () => {
         if (subscription && replayIndex < subscription.replay.length) {
           return { event: subscription.replay[replayIndex], replay: true };
@@ -584,14 +586,37 @@ export function createResumedRunStream(
             return;
           }
           let translated: Translation;
+          let rawEvent: unknown;
           try {
-            translated = translator.translate(JSON.parse(next.event.json));
+            rawEvent = JSON.parse(next.event.json);
           } catch {
             consumeNext(next.replay);
             fail(next.event.seq);
             return;
           }
           consumeNext(next.replay);
+          // A reconciliation marker means the client cannot safely append
+          // text whose prior assistant state was evicted. Preserve every
+          // canonical cursor position with a marker, but make the client
+          // obtain assistant content from its required reconciliation.
+          if (reconciliationRequired && isAssistantTextMutation(rawEvent)) {
+            if (next.event.seq <= cursor || next.event.seq <= lastEmittedSeq) {
+              fail(lastEmittedSeq + 1);
+              return;
+            }
+            try {
+              controller.enqueue(encodeClientStreamEvent(
+                next.event.seq,
+                clientReconcileEvent(context.conversationId, "assistant_content_unavailable"),
+              ));
+            } catch {
+              close();
+              return;
+            }
+            lastEmittedSeq = next.event.seq;
+            return;
+          }
+          translated = translator.translate(rawEvent);
           if (!translated.event) {
             if (translated.terminal) close();
             continue;
@@ -645,9 +670,8 @@ export function createResumedRunStream(
       if (subscription.cursorAhead) {
         try {
           controller.enqueue(
-            encodeClientReconcileEvent(subscription.latestSeq, context.conversationId),
+            encodeClientReconcileEvent(context.conversationId, "cursor_ahead"),
           );
-          lastEmittedSeq = subscription.latestSeq;
         } catch {
           // The transport already closed.
         }
@@ -655,21 +679,19 @@ export function createResumedRunStream(
         cleanup = close;
         return;
       }
-      const reconcileSeq = subscription.gapBeforeSeq
-        ?? (subscription.translatorSeedComplete
-          || replayHasReplacementCheckpointBeforeAssistantMutation()
-          ? null
-          : cursor);
-      if (reconcileSeq !== null) {
+      if (
+        subscription.gapBeforeSeq !== null
+        || (
+          !subscription.translatorSeedComplete
+          && (subscription.replay.length > 0 || !subscription.done)
+        )
+      ) {
         try {
-          controller.enqueue(encodeClientReconcileEvent(reconcileSeq, context.conversationId));
-          lastEmittedSeq = reconcileSeq;
+          controller.enqueue(encodeClientReconcileEvent(context.conversationId, "incomplete_history"));
+          reconciliationRequired = true;
         } catch {
           // The transport already closed.
         }
-        close();
-        cleanup = close;
-        return;
       }
       for (const event of subscription.seed) {
         if (!seedTranslator(event.json)) {
