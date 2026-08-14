@@ -28,6 +28,13 @@ export async function GET(req: Request) {
   if (familiarId && !isValidFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "invalid familiar id", sessions: [] }, { status: 400 });
   }
-  const result = await getCanonicalSessionList(includeArchived, familiarId, collapseFamiliarWorkspace);
-  return NextResponse.json(result.payload, result.init);
+  try {
+    const result = await getCanonicalSessionList(includeArchived, familiarId, collapseFamiliarWorkspace);
+    return NextResponse.json(result.payload, result.init);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "sessions are temporarily unavailable", sessions: [] },
+      { status: 503 },
+    );
+  }
 }
