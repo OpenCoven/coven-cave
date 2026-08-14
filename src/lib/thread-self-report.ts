@@ -668,7 +668,19 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
   const blockerFreq = new Map<string, number>();
   const blockerData = new Map<string, ThreadSelfReport["persistentBlockers"][number]>();
 
-  const sorted = [...reports].sort(
+  // Defensive at the boundary, not because storage is untrusted — listSelfReports
+  // already drops rows failing isThreadSelfReport — but because this value
+  // arrives over the wire, where a type annotation is erased and cannot hold.
+  // A redaction budget once replaced the whole array with the string
+  // "[redacted]"; spreading that yields characters, whose `reportedAt` parses
+  // to NaN, so the comparator fell through to `b.id.localeCompare` and threw
+  // inside Array.sort — taking the entire Analytics surface down (cave-p9dsb).
+  // Unmeasured is a legitimate result here; a thrown comparator is not.
+  const usable = (Array.isArray(reports) ? reports : []).filter(
+    (report): report is ThreadSelfReport =>
+      Boolean(report) && typeof report === "object" && typeof report.id === "string",
+  );
+  const sorted = [...usable].sort(
     (a, b) =>
       new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime() ||
       b.id.localeCompare(a.id),
@@ -720,7 +732,7 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     }
   }
 
-  const total = reports.length || 1;
+  const total = usable.length || 1;
   const rankedBlockers: RankedBlocker[] = [...blockerFreq.entries()]
     .map(([id, frequency]) => {
       const data = blockerData.get(id)!;
@@ -729,10 +741,10 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     .sort((a, b) => b.rankScore - a.rankScore);
 
   return {
-    averageConfidence: libAvg(reports.map((r) => r.overallConfidence)),
-    averageToolReliability: libAvg(reports.map((r) => r.toolReliability.score)),
-    averageMemoryRecall: libAvg(reports.map((r) => r.memoryRecallScore)),
-    averageFileLocatability: libAvg(reports.map((r) => r.fileLocatabilityScore)),
+    averageConfidence: libAvg(usable.map((r) => r.overallConfidence)),
+    averageToolReliability: libAvg(usable.map((r) => r.toolReliability.score)),
+    averageMemoryRecall: libAvg(usable.map((r) => r.memoryRecallScore)),
+    averageFileLocatability: libAvg(usable.map((r) => r.fileLocatabilityScore)),
     contextCounts,
     skillsUsedMost: [...skillsUsed.entries()]
       .sort((a, b) => b[1] - a[1])
