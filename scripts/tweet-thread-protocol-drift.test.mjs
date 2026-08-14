@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -56,6 +57,77 @@ const scratchRoot = new URL(`.tweet-thread-protocol-test-${process.pid}/`, impor
 const missingDirectory = new URL("missing/", scratchRoot);
 const generatedDirectory = new URL("generated/", scratchRoot);
 const failureDirectory = new URL("failure/", scratchRoot);
+const missingRollbackDirectory = new URL("missing-rollback/", scratchRoot);
+const rollbackFailureDirectory = new URL("rollback-failure/", scratchRoot);
+
+function seedSentinelSchemas(directory, filenames = [...schemaFiles.keys()]) {
+  mkdirSync(directory, { recursive: true });
+  return new Map(
+    filenames.map((filename, index) => {
+      const bytes = Buffer.from(`sentinel-${index}-${filename}\0`, "utf8");
+      writeFileSync(new URL(filename, directory), bytes);
+      return [filename, bytes];
+    }),
+  );
+}
+
+function assertSchemaBytes(directory, expectedFiles) {
+  for (const [filename, expectedBytes] of expectedFiles) {
+    assert.deepEqual(
+      readFileSync(new URL(filename, directory)),
+      expectedBytes,
+      `${filename} must be restored byte-for-byte after publication fails`,
+    );
+  }
+}
+
+function assertNoTransactionFiles(directory) {
+  assert.deepEqual(
+    readdirSync(directory).filter(
+      (filename) => filename.includes(".tmp-") || filename.includes(".bak-"),
+    ),
+    [],
+    "failed generation must clean up every temporary and backup file",
+  );
+}
+
+function failSecondInstall() {
+  const injectedError = new Error("injected second schema install failure");
+  let installedFiles = 0;
+  return {
+    injectedError,
+    operations: {
+      rename(source, destination) {
+        if (source.pathname.includes(".tmp-")) {
+          if (installedFiles === 1) throw injectedError;
+          installedFiles += 1;
+        }
+        renameSync(source, destination);
+      },
+    },
+    installedFiles: () => installedFiles,
+  };
+}
+
+function failSecondInstallAndRollbackRemoval() {
+  const failure = failSecondInstall();
+  const rollbackError = new Error("injected rollback removal failure");
+  let removalFailed = false;
+  return {
+    ...failure,
+    rollbackError,
+    operations: {
+      ...failure.operations,
+      remove(target) {
+        if (!removalFailed && target.pathname.endsWith("thread-brief.schema.json")) {
+          removalFailed = true;
+          throw rollbackError;
+        }
+        rmSync(target, { recursive: true, force: true });
+      },
+    },
+  };
+}
 
 rmSync(scratchRoot, { recursive: true, force: true });
 try {
@@ -77,9 +149,11 @@ try {
     "freshly generated schemas must pass check mode",
   );
   assert.equal(
-    readdirSync(generatedDirectory).some((filename) => filename.includes(".tmp-")),
+    readdirSync(generatedDirectory).some(
+      (filename) => filename.includes(".tmp-") || filename.includes(".bak-"),
+    ),
     false,
-    "successful generation must leave no temporary files",
+    "successful generation must leave no temporary or backup files",
   );
 
   const driftedFile = new URL("thread-scorecard.schema.json", generatedDirectory);
@@ -96,17 +170,62 @@ try {
     "check mode must not rewrite drifted files",
   );
 
-  mkdirSync(new URL("thread-candidate.schema.json/", failureDirectory), {
-    recursive: true,
-  });
-  assert.throws(
-    () => writeProtocolSchemas(failureDirectory),
-    "generation must surface an atomic rename failure",
+  const originalFiles = seedSentinelSchemas(failureDirectory);
+  const existingFailure = failSecondInstall();
+  let publicationError;
+  try {
+    writeProtocolSchemas(failureDirectory, existingFailure.operations);
+  } catch (error) {
+    publicationError = error;
+  }
+  assertSchemaBytes(failureDirectory, originalFiles);
+  assert.equal(
+    existingFailure.installedFiles(),
+    1,
+    "failure injection must occur after one new schema has been installed",
   );
   assert.equal(
-    readdirSync(failureDirectory).some((filename) => filename.includes(".tmp-")),
+    publicationError,
+    existingFailure.injectedError,
+    "generation must surface the original publication failure",
+  );
+  assertNoTransactionFiles(failureDirectory);
+
+  const [missingFilename, ...existingFilenames] = schemaFiles.keys();
+  const missingStateFiles = seedSentinelSchemas(
+    missingRollbackDirectory,
+    existingFilenames,
+  );
+  const missingFailure = failSecondInstall();
+  assert.throws(
+    () => writeProtocolSchemas(missingRollbackDirectory, missingFailure.operations),
+    (error) => error === missingFailure.injectedError,
+    "generation must surface a failure after installing a previously missing schema",
+  );
+  assert.equal(
+    missingFailure.installedFiles(),
+    1,
+    "missing-state rollback must fail after one new schema has been installed",
+  );
+  assert.equal(
+    existsSync(new URL(missingFilename, missingRollbackDirectory)),
     false,
-    "failed generation must clean up temporary files",
+    "rollback must remove a schema whose destination was missing before publication",
+  );
+  assertSchemaBytes(missingRollbackDirectory, missingStateFiles);
+  assertNoTransactionFiles(missingRollbackDirectory);
+
+  seedSentinelSchemas(rollbackFailureDirectory);
+  const rollbackFailure = failSecondInstallAndRollbackRemoval();
+  assert.throws(
+    () => writeProtocolSchemas(rollbackFailureDirectory, rollbackFailure.operations),
+    (error) =>
+      error instanceof AggregateError &&
+      error.errors.includes(rollbackFailure.injectedError) &&
+      error.errors.includes(rollbackFailure.rollbackError) &&
+      error.message.includes(rollbackFailure.injectedError.message) &&
+      error.message.includes(rollbackFailure.rollbackError.message),
+    "a rollback failure must report both the publication and rollback errors",
   );
 } finally {
   rmSync(scratchRoot, { recursive: true, force: true });

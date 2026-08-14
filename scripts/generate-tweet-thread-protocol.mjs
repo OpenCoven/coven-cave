@@ -3,7 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
-  unlinkSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -63,22 +63,123 @@ export function checkProtocolSchemas(outputDirectory = PROTOCOL_SCHEMA_DIRECTORY
   return problems;
 }
 
-export function writeProtocolSchemas(outputDirectory = PROTOCOL_SCHEMA_DIRECTORY) {
+function defaultRemove(target) {
+  rmSync(target, { recursive: true, force: true });
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function throwPublicationError(publicationError, rollbackErrors) {
+  if (rollbackErrors.length === 0) throw publicationError;
+  throw new AggregateError(
+    [publicationError, ...rollbackErrors],
+    `Tweet thread protocol schema publication failed: ${errorMessage(publicationError)}; rollback also failed: ${rollbackErrors.map(errorMessage).join("; ")}`,
+    { cause: publicationError },
+  );
+}
+
+export function writeProtocolSchemas(
+  outputDirectory = PROTOCOL_SCHEMA_DIRECTORY,
+  fileOperations = {},
+) {
+  const rename = fileOperations.rename ?? renameSync;
+  const remove = fileOperations.remove ?? defaultRemove;
   mkdirSync(outputDirectory, { recursive: true });
-  const temporaryFiles = [];
+  const files = [...PROTOCOL_SCHEMA_FILES].map(([filename, schema]) => ({
+    backupCreated: false,
+    backupUrl: new URL(
+      `.${filename}.bak-${process.pid}-${randomUUID()}`,
+      outputDirectory,
+    ),
+    destinationExisted: existsSync(new URL(filename, outputDirectory)),
+    destinationUrl: new URL(filename, outputDirectory),
+    installed: false,
+    schema,
+    temporaryUrl: new URL(
+      `.${filename}.tmp-${process.pid}-${randomUUID()}`,
+      outputDirectory,
+    ),
+  }));
+
   try {
-    for (const [filename, schema] of PROTOCOL_SCHEMA_FILES) {
-      const destinationUrl = new URL(filename, outputDirectory);
-      const temporaryUrl = new URL(`.${filename}.tmp-${process.pid}-${randomUUID()}`, outputDirectory);
-      temporaryFiles.push(temporaryUrl);
-      writeFileSync(temporaryUrl, serializeProtocolSchema(schema), "utf8");
-      renameSync(temporaryUrl, destinationUrl);
+    for (const file of files) {
+      writeFileSync(
+        file.temporaryUrl,
+        serializeProtocolSchema(file.schema),
+        "utf8",
+      );
     }
   } catch (error) {
-    for (const temporaryUrl of temporaryFiles) {
-      if (existsSync(temporaryUrl)) unlinkSync(temporaryUrl);
+    const cleanupErrors = [];
+    for (const file of files) {
+      if (!existsSync(file.temporaryUrl)) continue;
+      try {
+        remove(file.temporaryUrl);
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
     }
-    throw error;
+    throwPublicationError(error, cleanupErrors);
+  }
+
+  try {
+    for (const file of files) {
+      if (!file.destinationExisted) continue;
+      rename(file.destinationUrl, file.backupUrl);
+      file.backupCreated = true;
+    }
+    for (const file of files) {
+      rename(file.temporaryUrl, file.destinationUrl);
+      file.installed = true;
+    }
+  } catch (error) {
+    const rollbackErrors = [];
+    for (const file of files.toReversed()) {
+      if (!file.installed || !existsSync(file.destinationUrl)) continue;
+      try {
+        remove(file.destinationUrl);
+        file.installed = false;
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    for (const file of files.toReversed()) {
+      if (!file.backupCreated || !existsSync(file.backupUrl)) continue;
+      try {
+        rename(file.backupUrl, file.destinationUrl);
+        file.backupCreated = false;
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    for (const file of files) {
+      if (!existsSync(file.temporaryUrl)) continue;
+      try {
+        remove(file.temporaryUrl);
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    throwPublicationError(error, rollbackErrors);
+  }
+
+  const cleanupErrors = [];
+  for (const file of files) {
+    if (!file.backupCreated || !existsSync(file.backupUrl)) continue;
+    try {
+      remove(file.backupUrl);
+      file.backupCreated = false;
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+  }
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(
+      cleanupErrors,
+      `Tweet thread protocol schemas were published, but backup cleanup failed: ${cleanupErrors.map(errorMessage).join("; ")}`,
+    );
   }
 }
 
