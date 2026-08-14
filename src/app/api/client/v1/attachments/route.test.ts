@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm, utimes } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 
@@ -22,6 +22,8 @@ await mkdir(attachmentRoot, { recursive: true });
 
 const { POST } = await import("./route.ts");
 const {
+  CLIENT_ATTACHMENT_MAX_RECORDS,
+  CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL,
   CLIENT_ATTACHMENT_MAX_REQUEST_BYTES,
   resolveAndBindClientAttachments,
 } = await import("@/lib/server/client-v1/attachment-service.ts");
@@ -252,6 +254,51 @@ test("a same-key ledger replay never returns 201 for a missing bound payload", a
   const replay = await POST(request(uploadForm(files), { bearer: issued.token, idempotencyKey }));
   assert.equal(replay.status, 409, await replay.clone().text());
   assert.equal((await replay.json()).error.code, "conflict");
+});
+
+test("a cached capacity failure remains a 409 and cannot create an unreported upload after capacity frees", async () => {
+  const issued = await issueCredential({
+    appName: "OpenCoven Chat",
+    installationId: crypto.randomUUID(),
+    scopes: ["attachments:write"],
+  });
+  const occupiedOwners = Array.from({ length: 10 }, () => crypto.randomUUID());
+  const createdAt = Date.now();
+  const attachments = Array.from({ length: CLIENT_ATTACHMENT_MAX_RECORDS }, (_value, index) => {
+    const hex = index.toString(16);
+    return {
+      attachmentId: `${hex.padStart(8, "0")}-9b43-4abc-876d-${hex.padStart(12, "0")}.txt`,
+      credentialId: occupiedOwners[Math.floor(index / CLIENT_ATTACHMENT_MAX_RECORDS_PER_CREDENTIAL)],
+      createdAt,
+      conversationId: null,
+    };
+  });
+  await writeFile(
+    process.env.COVEN_CAVE_CLIENT_ATTACHMENT_STORE_PATH!,
+    JSON.stringify({ version: 1, attachments }),
+  );
+  const idempotencyKey = "cf4145de-9b43-4abc-876d-81ef63de60e0";
+  const files = [{ name: "capacity.txt", type: "text/plain", bytes: textBytes }];
+
+  const first = await POST(request(uploadForm(files), { bearer: issued.token, idempotencyKey }));
+  assert.equal(first.status, 409, await first.clone().text());
+  assert.equal((await first.json()).error.code, "conflict");
+
+  await writeFile(
+    process.env.COVEN_CAVE_CLIENT_ATTACHMENT_STORE_PATH!,
+    JSON.stringify({ version: 1, attachments: [] }),
+  );
+  const replay = await POST(request(uploadForm(files), { bearer: issued.token, idempotencyKey }));
+  assert.equal(replay.status, 409, await replay.clone().text());
+  assert.equal((await replay.json()).error.code, "conflict");
+  assert.deepEqual(
+    JSON.parse(await readFile(
+      process.env.COVEN_CAVE_CLIENT_ATTACHMENT_STORE_PATH!,
+      "utf8",
+    )).attachments,
+    [],
+  );
+  assert.deepEqual(await readdir(attachmentRoot), []);
 });
 
 test("upload rejects a multipart body whose raw request bytes exceed 25 MiB even when file bytes stay under the cap", async () => {

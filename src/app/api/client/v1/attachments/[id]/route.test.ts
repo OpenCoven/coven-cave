@@ -64,7 +64,7 @@ async function uploadForOwner(ownerCredentialId: string) {
     parsed,
     ownerCredentialId,
     "11111111-2222-4333-8444-555555555555",
-    10,
+    Date.now(),
   );
   return stored;
 }
