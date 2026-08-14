@@ -24,21 +24,7 @@ export type PageDragDetail = {
   label: string;
 };
 
-/** Pages that should never be openable in a split (heavy/stateful surfaces, or
- *  modes that redirect out of the workspace — journal is a tab inside Memories).
- *  Role Surface rooms (`surface:<id>`) are excluded for the same reason they
- *  always were: they are per-familiar workspaces, not draggable pages.
- *
- *  cave-x6rw replaced this predicate with a bare registry lookup, which made
- *  every registered page splittable — including terminal, journal and every
- *  surface:* room. The registry gate is the right addition (only known pages
- *  can be dragged); it just is not a substitute for the exclusions, and the
- *  registry cannot express one today: its `split` field is "always" |
- *  "contextual", with no "none", and nothing reads it (see cave-ktvy0). */
-const NON_SPLITTABLE = new Set(["terminal", "journal"]);
-
 export function isSplittablePage(mode: string): boolean {
-  if (NON_SPLITTABLE.has(mode) || mode.startsWith("surface:")) return false;
   return workspacePageDefinition(mode) !== null;
 }
 
