@@ -2043,7 +2043,7 @@ export async function POST(req: Request) {
   // Neither the Responses API nor the direct CLI exposes a documented,
   // enforceable equivalent of Cave's read-only sandbox. Reject both transports
   // rather than silently launching Hermes with full local access.
-  if (hermesDirect && body.permissionMode === "read") {
+  if ((hermesDirect || hermesApi) && body.permissionMode === "read") {
     return new Response(
       JSON.stringify({
         ok: false,
