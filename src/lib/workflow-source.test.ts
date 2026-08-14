@@ -505,10 +505,25 @@ await (async () => {
     });
     assert.deepEqual(threadManifest.permissions, ["file.read", "file.write"]);
     assert.deepEqual(
-      threadManifest.steps.map((step: { id: string }) => step.id),
-      ["input", "evidence", "candidates", "validate", "judge", "revise", "approval", "output"],
+      threadManifest.steps.map(
+        (step: { id: string; kind: string; uses?: string; requires?: string[] }) => ({
+          id: step.id,
+          kind: step.kind,
+          uses: step.uses,
+          requires: step.requires,
+        }),
+      ),
+      [
+        { id: "input", kind: "input", uses: undefined, requires: undefined },
+        { id: "evidence", kind: "agent", uses: "research", requires: ["input"] },
+        { id: "candidates", kind: "skill", uses: "tweet-thread-lab", requires: ["evidence"] },
+        { id: "validate", kind: "tool", uses: "cave.output", requires: ["candidates"] },
+        { id: "judge", kind: "agent", uses: "reviewer", requires: ["validate"] },
+        { id: "revise", kind: "skill", uses: "tweet-thread-lab", requires: ["judge"] },
+        { id: "approval", kind: "human-gate", uses: "valentina", requires: ["revise"] },
+        { id: "output", kind: "output", uses: undefined, requires: ["approval"] },
+      ],
     );
-    assert.equal(threadManifest.steps.find((step: { id: string }) => step.id === "approval")?.uses, "valentina");
     assert.equal(threadManifest.steps.some((step: { id: string }) => /publish/i.test(step.id)), false);
     assert.equal(threadLayout.version, 1);
     assert.deepEqual(

@@ -373,12 +373,23 @@ assert.equal(threadLabCodexManifest.skills, "./skills/");
 
 const threadLabSkillRoot = path.join(productionThreadLabRoot, "skills", "tweet-thread-lab");
 const threadLabSkill = readFileSync(path.join(threadLabSkillRoot, "SKILL.md"), "utf8");
+const threadLabProtocol = readFileSync(path.join(threadLabSkillRoot, "references", "protocol.md"), "utf8");
 assert.match(threadLabSkill, /^## When to use$/m);
 assert.match(threadLabSkill, /^## Inputs$/m);
 assert.match(threadLabSkill, /^## Steps$/m);
 assert.match(threadLabSkill, /^## Hard gates$/m);
 assert.match(threadLabSkill, /^## Artifacts$/m);
 assert.match(threadLabSkill, /^## Verification$/m);
+for (const document of [threadLabSkill, threadLabProtocol]) {
+  assert.match(document, /`strategies\.json`/);
+  assert.match(document, /`execution-log\.jsonl`/);
+}
+assert.doesNotMatch(threadLabSkill, /candidate with its strategy/i);
+assert.doesNotMatch(threadLabSkill, /manifest .*exposes failures or partial state/i);
+assert.doesNotMatch(
+  threadLabProtocol,
+  /manifest with every candidate, scorecard, approval, failure, and partial state/i,
+);
 for (const reference of ["protocol.md", "rubric.md"]) {
   assert.ok(existsSync(path.join(threadLabSkillRoot, "references", reference)), `${reference} is bundled`);
 }

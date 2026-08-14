@@ -11,6 +11,8 @@ runs/<run-id>/
   brief.json
   evidence.json
   voice-profile.json
+  strategies.json
+  execution-log.jsonl
   candidates/<candidate-id>.json
   deterministic/<candidate-id>.json
   judge/<scorecard-id>.json
@@ -18,7 +20,43 @@ runs/<run-id>/
   approval.json
 ```
 
-Preserve failed or partial artifacts. Never replace a failed write with an apparently complete manifest. Record missing paths, errors, and uncertainty in the handoff.
+Create both sidecars for every run. Preserve failed or partial artifacts. Never replace a failed write with an apparently complete manifest. Append missing paths, errors, uncertainty, and stopping decisions to `execution-log.jsonl`.
+
+## Portable sidecars
+
+`strategies.json` is a run-level map keyed by candidate ID. Each record binds the declared strategy to the exact materialized candidate SHA-256:
+
+```json
+{
+  "protocolVersion": "opencoven.tweet-thread.v1",
+  "runId": "run-example",
+  "strategies": {
+    "candidate-evidence-led": {
+      "candidateSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "strategyId": "strategy-evidence-led",
+      "name": "evidence-led",
+      "round": 0,
+      "extensions": {
+        "com.example.harness/private": {
+          "harnessId": "harness-example",
+          "modelId": "model-example",
+          "contextId": "context-example"
+        }
+      }
+    }
+  }
+}
+```
+
+Candidate IDs are unique keys, SHA-256 values must match the candidate files, `round` is a non-negative integer, and a run has at most 128 strategy records. `protocolVersion`, `runId`, `candidateSha256`, `strategyId`, `name`, and `round` are portable fields. `extensions` is optional; extension keys must use an owned reverse-DNS or URI-style namespace. Harness, model, prompt, agent, and context identifiers belong only in a private namespace such as `com.example.harness/private`. Exclude the entire strategy sidecar and all private extensions from blinded public trial and judge inputs.
+
+`execution-log.jsonl` is append-only. Each UTF-8 line is one compact JSON object:
+
+```json
+{"protocolVersion":"opencoven.tweet-thread.v1","runId":"run-example","eventId":"event-0001","sequence":1,"recordedAt":"2026-08-14T12:00:00.000Z","kind":"partial-materialization","message":"Candidate write stopped before rename.","candidateId":"candidate-evidence-led","path":"candidates/candidate-evidence-led.json","code":"WRITE_INCOMPLETE","decision":"stop"}
+```
+
+Required fields are `protocolVersion`, `runId`, `eventId`, positive monotonic `sequence`, millisecond UTC `recordedAt`, `kind`, and `message`. `kind` is one of `failure`, `partial-materialization`, `missing-path`, `uncertainty`, or `stopping-decision`. Optional portable fields are `candidateId`, `candidateSha256`, run-relative `path`, `code`, and `decision` (`continue` or `stop`). Optional extensions follow the same namespacing rule as `strategies.json`; secrets and private stack traces do not belong in the log. Limit each line to 16 KiB, `message` to 2,000 characters, and a run to 1,024 events. If the cap is reached, use the final admissible event for a `stopping-decision` and stop rather than dropping evidence.
 
 ## IDs and hashes
 
@@ -38,14 +76,15 @@ Preserve failed or partial artifacts. Never replace a failed write with an appar
 
 ## Materialization sequence
 
-1. Write and validate the brief, evidence, and voice profile.
-2. Generate three strategy-declared candidates unless the brief specifies another bounded count.
-3. Write candidates before evaluation.
-4. Run deterministic validation and save results separately from judge scorecards.
-5. Blind candidates for judging. Keep the private mapping outside judge context.
-6. Save scorecards, rank eligible candidates, and perform bounded revisions.
-7. Write the manifest with every candidate, scorecard, approval, failure, and partial state available at that point.
-8. Write `approval.json` only from an exact human decision bound to the selected candidate hash.
+1. Create an empty `execution-log.jsonl`, then write and validate the brief, evidence, and voice profile.
+2. Generate three candidates from declared strategies unless the brief specifies another bounded count.
+3. Give every candidate a stable ID, canonicalize and hash it, and write only fields accepted by `thread-candidate.schema.json`.
+4. Write or update `strategies.json` so each successful candidate ID maps to its exact SHA-256 and declared strategy. Log failed generations or writes instead of inventing candidate fields.
+5. Run deterministic validation and save results separately from judge scorecards. Append failures, partial materialization, missing paths, and uncertainty to the execution log.
+6. Blind candidates for judging. Keep `strategies.json`, its private extensions, and the private arm mapping outside judge context.
+7. Save scorecards, rank eligible candidates, perform bounded revisions, and append every stopping decision.
+8. Write `manifest.json` with only the strict schema fields: `protocolVersion`, `manifestId`, `runId`, `createdAt`, `brief`, `voiceProfile`, `candidates`, `scorecards`, `approvals`, `publishReceipts`, and `observations`. Use the candidate IDs, candidate SHA-256 values, scorecard IDs, approval IDs, receipt IDs, and observation IDs already supported by those artifacts; do not add strategy, generation-context, failure, partial-state, path, or sidecar fields.
+9. Write `approval.json` only from an exact human decision bound to the selected candidate hash.
 
 ## Deterministic validation and scoring
 
@@ -69,4 +108,4 @@ Approval is the terminal action in this package. Require an exact human decision
 
 ## Compatibility
 
-Artifacts are harness-neutral JSON and Markdown. Consumers may add files but must not change v1 field meaning, accepted IDs, normalization, hash input, hard gates, or approval semantics. Unknown extensions must remain namespaced and ignorable. Cite the run ID and protocol version whenever artifacts move between harnesses.
+Artifacts are harness-neutral JSON, JSONL, and Markdown. Canonical candidates, scorecards, and manifests remain closed schemas: consumers must not add strategy, generation-context, execution, failure, partial-state, or sidecar fields to them. Consumers may add files and may extend the two sidecars only under an owned key inside `extensions`; unknown namespaced extensions must remain ignorable. Sidecars bind back to canonical artifacts through existing run IDs, candidate IDs, and candidate SHA-256 values, not new manifest fields. Consumers must not change v1 field meaning, accepted IDs, normalization, hash input, hard gates, or approval semantics. Cite the run ID and protocol version whenever artifacts move between harnesses.

@@ -40,7 +40,7 @@ steps:
   - id: validate
     kind: tool
     name: Deterministic validation
-    uses: cave.exec
+    uses: cave.output
     summary: Run repository tweet-thread schema, X-length, accessibility, provenance, hash, and hard-gate checks.
     requires:
       - candidates

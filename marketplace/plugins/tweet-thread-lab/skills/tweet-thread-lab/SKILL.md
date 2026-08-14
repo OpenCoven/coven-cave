@@ -23,13 +23,14 @@ description: Use when generating, optimizing, comparing, validating, or preparin
 1. Create or reuse one run directory following the protocol layout. Preserve prior artifacts.
 2. Materialize the brief, evidence, voice profile, run ID, and protocol version before drafting.
 3. Generate three candidates by default using declared strategies: `evidence-led`, `narrative-arc`, and `contrarian-comparison`.
-4. Materialize every candidate with its strategy, stable ID, canonical SHA-256, and generation context.
-5. Run deterministic validation and scoring. Record all findings, including failures and uncertainty.
-6. Blind candidate identity before judging. Use a separate judge context or harness when available; never knowingly identify a candidate to its judge.
-7. Materialize one judge scorecard per judged candidate across all six rubric dimensions.
-8. Rank eligible candidates by Pareto status, weighted score, and the protocol tie order.
-9. Revise only within the declared iteration, time, agent, and cost bounds. Apply the stopping rules after each round.
-10. Materialize the run manifest and approval artifact. Stop at exact human approval.
+4. Materialize every candidate with only the fields accepted by `thread-candidate.schema.json`: protocol version, candidate ID and SHA-256, brief, voice profile, evidence, posts, and generation timestamp.
+5. Bind each materialized candidate ID and SHA-256 to its declared strategy in `strategies.json`. Keep harness, model, and context identifiers out of candidates and under private namespaced strategy extensions when needed.
+6. Run deterministic validation and scoring. Append failures, partial materialization, missing paths, uncertainty, and stopping decisions to `execution-log.jsonl`.
+7. Blind candidate identity before judging. Use a separate judge context or harness when available; never knowingly identify a candidate to its judge.
+8. Materialize one judge scorecard per judged candidate across all six rubric dimensions.
+9. Rank eligible candidates by Pareto status, weighted score, and the protocol tie order.
+10. Revise only within the declared iteration, time, agent, and cost bounds. Apply the stopping rules after each round and log the decision.
+11. Materialize the strict run manifest using only its supported fields and collections. Materialize `approval.json` only for an exact human decision, then stop.
 
 ## Hard gates
 
@@ -42,7 +43,9 @@ description: Use when generating, optimizing, comparing, validating, or preparin
 
 ## Artifacts
 
-- Write `brief.json`, `evidence.json`, `voice-profile.json`, candidate files, deterministic result files, judge scorecards, `manifest.json`, and `approval.json`.
+- Write `brief.json`, `evidence.json`, `voice-profile.json`, `strategies.json`, `execution-log.jsonl`, candidate files, deterministic result files, judge scorecards, `manifest.json`, and, after a human decision, `approval.json`.
+- Keep candidate strategy and generation context in `strategies.json`; keep execution failures and partial state in `execution-log.jsonl`.
+- Keep `manifest.json` limited to `protocolVersion`, `manifestId`, `runId`, `createdAt`, `brief`, `voiceProfile`, `candidates`, `scorecards`, `approvals`, `publishReceipts`, and `observations`. Bind portable artifacts through their existing IDs and candidate hashes rather than adding fields.
 - Cite the `runId`, `protocolVersion`, candidate ID, candidate SHA-256, and scorecard IDs in handoffs.
 - Keep artifacts valid against the checked-in schemas and portable across harnesses.
 
@@ -51,6 +54,8 @@ description: Use when generating, optimizing, comparing, validating, or preparin
 - Recompute candidate hashes after every revision.
 - Re-run deterministic validation before ranking or approval.
 - Confirm judge inputs are blinded and scorecards bind to candidate hashes.
-- Confirm the manifest references every materialized artifact and exposes failures or partial state.
+- Validate candidates and the manifest against their strict schemas.
+- Verify `strategies.json` separately: every record names one materialized candidate ID and exact SHA-256, and private strategy extensions were excluded from blinded public trials.
+- Verify `execution-log.jsonl` separately: records are ordered, bounded, append-only, and cover every known failure, partial artifact, missing path, uncertainty, and stopping decision.
 - Confirm approval records the exact selected hash and a human actor.
 - End with approval status and next safe action; do not publish.
