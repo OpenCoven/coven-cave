@@ -220,6 +220,114 @@ function logCleanupFailure(label: string, phase: string, error: unknown): void {
   console.error(`[operation-transaction-lock] ${label}: ${phase} failed after lock acquisition (${message})`);
 }
 
+export type OperationTransactionLock = {
+  /** Commit the mutex transaction and close its SQLite handle. */
+  release: () => Promise<void>;
+  /** Roll back the mutex transaction and close its SQLite handle. */
+  abort: () => Promise<void>;
+};
+
+async function acquireOperationTransactionLockInternal(
+  options: OperationTransactionLockOptions,
+  tryOnly: boolean,
+): Promise<OperationTransactionLock | null> {
+  const label = options.label ?? "client-v1-idempotency-store";
+  const lockDbPath = resolveLockDbPath(options.storePath);
+  await ensureLockDbDirectory(lockDbPath);
+
+  const DatabaseSyncCtor = await loadDatabaseSyncCtor();
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const db = new DatabaseSyncCtor(lockDbPath, { timeout: 0 });
+  let transactionOpen = false;
+  try {
+    if (tryOnly) {
+      try {
+        configureLockDb(db);
+        db.exec("BEGIN IMMEDIATE;");
+      } catch (error) {
+        if (isLockContention(error)) {
+          try {
+            db.close();
+          } catch (closeError) {
+            logCleanupFailure(label, "close-after-contended-acquisition", closeError);
+          }
+          return null;
+        }
+        throw error;
+      }
+    } else {
+      // Bootstrapping and acquisition both retry without blocking this
+      // process's event loop while another owner has the SQLite mutex.
+      await withNonblockingRetry(deadline, "bootstrap", () => configureLockDb(db));
+      await withNonblockingRetry(deadline, "acquisition", () => db.exec("BEGIN IMMEDIATE;"));
+    }
+    transactionOpen = true;
+  } catch (error) {
+    try {
+      db.close();
+    } catch (closeError) {
+      logCleanupFailure(label, "close-after-failed-acquisition", closeError);
+    }
+    throw error;
+  }
+
+  let finished = false;
+  const finish = async (commit: boolean): Promise<void> => {
+    if (finished) return;
+    finished = true;
+    if (transactionOpen) {
+      try {
+        db.exec(commit ? "COMMIT;" : "ROLLBACK;");
+        transactionOpen = false;
+      } catch (finishError) {
+        logCleanupFailure(label, commit ? "commit" : "rollback", finishError);
+        try {
+          db.exec("ROLLBACK;");
+        } catch (rollbackError) {
+          logCleanupFailure(
+            label,
+            commit ? "rollback-after-failed-commit" : "rollback-after-failed-rollback",
+            rollbackError,
+          );
+        }
+        transactionOpen = false;
+      }
+    }
+    try {
+      db.close();
+    } catch (closeError) {
+      logCleanupFailure(label, "close", closeError);
+    }
+  };
+
+  return {
+    release: () => finish(true),
+    abort: () => finish(false),
+  };
+}
+
+/**
+ * Acquires a lock whose lifetime must span independently scoped work. Call
+ * `release` after successful durable work, or `abort` if that work throws.
+ */
+export async function acquireOperationTransactionLock(
+  options: OperationTransactionLockOptions,
+): Promise<OperationTransactionLock> {
+  const lock = await acquireOperationTransactionLockInternal(options, false);
+  if (!lock) throw new Error("operation lock acquisition unexpectedly returned no lock");
+  return lock;
+}
+
+/**
+ * Attempts one nonblocking acquisition. `null` means a concurrent owner has
+ * the lock; filesystem and non-contention SQLite failures still throw.
+ */
+export function tryAcquireOperationTransactionLock(
+  options: OperationTransactionLockOptions,
+): Promise<OperationTransactionLock | null> {
+  return acquireOperationTransactionLockInternal(options, true);
+}
+
 /**
  * Runs `operation` as the sole occupant of the operation ledger's
  * cross-process critical section, guarded by a `BEGIN IMMEDIATE` SQLite
@@ -241,70 +349,13 @@ export async function withOperationTransactionLock<T>(
   options: OperationTransactionLockOptions,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const label = options.label ?? "client-v1-idempotency-store";
-  const lockDbPath = resolveLockDbPath(options.storePath);
-  await ensureLockDbDirectory(lockDbPath);
-
-  const DatabaseSyncCtor = await loadDatabaseSyncCtor();
-  const deadline = Date.now() + timeoutMs;
-
-  // `timeout: 0` — fail immediately on contention. See `withNonblockingRetry`
-  // for why all waiting is done via an explicit async loop instead.
-  const db = new DatabaseSyncCtor(lockDbPath, { timeout: 0 });
-  let transactionOpen = false;
+  const lock = await acquireOperationTransactionLock(options);
   try {
-    // Bootstrapping a brand-new lock file is exactly when several
-    // processes are most likely to race each other, so this call — though
-    // unconditional and idempotent for a database that's already
-    // configured — always runs inside the same nonblocking retry loop as
-    // acquisition itself, finishing off a partially-bootstrapped file an
-    // earlier crash may have left behind before proceeding.
-    await withNonblockingRetry(deadline, "bootstrap", () => configureLockDb(db));
-    await withNonblockingRetry(deadline, "acquisition", () => db.exec("BEGIN IMMEDIATE;"));
-    transactionOpen = true;
-
-    let result: T;
-    try {
-      result = await operation();
-    } catch (operationError) {
-      try {
-        db.exec("ROLLBACK;");
-      } catch (rollbackError) {
-        logCleanupFailure(label, "rollback-after-operation-failure", rollbackError);
-      }
-      transactionOpen = false;
-      throw operationError;
-    }
-
-    try {
-      db.exec("COMMIT;");
-      transactionOpen = false;
-    } catch (commitError) {
-      logCleanupFailure(label, "commit", commitError);
-      try {
-        db.exec("ROLLBACK;");
-      } catch (rollbackError) {
-        logCleanupFailure(label, "rollback-after-failed-commit", rollbackError);
-      }
-      transactionOpen = false;
-      // Deliberately falls through to `return result` below: `operation`
-      // already succeeded (and, for every current caller, already durably
-      // wrote the operation ledger) before this lock's own commit failed.
-    }
+    const result = await operation();
+    await lock.release();
     return result;
-  } finally {
-    if (transactionOpen) {
-      try {
-        db.exec("ROLLBACK;");
-      } catch (rollbackError) {
-        logCleanupFailure(label, "rollback-in-finally", rollbackError);
-      }
-    }
-    try {
-      db.close();
-    } catch (closeError) {
-      logCleanupFailure(label, "close", closeError);
-    }
+  } catch (error) {
+    await lock.abort();
+    throw error;
   }
 }
