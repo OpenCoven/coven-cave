@@ -638,6 +638,11 @@ assert.match(
   /const runtimeAccessFingerprint = buildRuntimeAccessFingerprint\(/,
   "Every local turn should fingerprint the effective project grants handed to the harness",
 );
+assert.match(
+  chatRoute,
+  /hostCapabilities: body\.sessionId\s*\?\s*await activeHostCapabilities\(\{ familiarId: body\.familiarId, sessionId: body\.sessionId \}\)/,
+  "effective session-bound host capabilities participate in native-session refresh",
+);
 
 assert.match(
   chatRoute,

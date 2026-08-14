@@ -73,6 +73,17 @@ assert.equal(
     }),
     "a newly approved root invalidates the native sandbox fingerprint",
   );
+  assert.notEqual(
+    first,
+    buildRuntimeAccessFingerprint({
+      primaryRoot: repo,
+      grantedProjectRoots: [docs],
+      projectRootAccess: { [docs]: "read" },
+      additionalRoots: [skills],
+      hostCapabilities: ["windows.hyperv.audit.read"],
+    }),
+    "a changed host capability set invalidates the native sandbox fingerprint",
+  );
 }
 
 await assert.rejects(

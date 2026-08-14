@@ -45,6 +45,9 @@ export type RuntimeAccessFingerprintInput = {
   grantedProjectRoots: readonly string[];
   projectRootAccess?: Readonly<Record<string, ProjectAccessLevel>>;
   additionalRoots?: readonly string[];
+  /** OS-host capabilities are a separate authority plane from directory
+   * grants. A native session must be replaced when their effective set changes. */
+  hostCapabilities?: readonly string[];
 };
 
 function canonicalFingerprintRoot(value: string): string {
@@ -72,11 +75,12 @@ export function buildRuntimeAccessFingerprint(input: RuntimeAccessFingerprintInp
     roots.set(canonical, input.projectRootAccess?.[root] ?? "write");
   }
   return JSON.stringify({
-    version: 1,
+    version: 2,
     primaryRoot,
     roots: [...roots.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([root, access]) => ({ root, access })),
+    hostCapabilities: [...new Set((input.hostCapabilities ?? []).map((item) => item.trim()).filter(Boolean))].sort(),
   });
 }
 

@@ -242,6 +242,7 @@ import {
   listAccessibleProjects,
 } from "@/lib/project-permissions";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import { activeHostCapabilities } from "@/lib/host-capabilities";
 import {
   buildTaskContext,
   buildTaskAwarePrompt,
@@ -2736,6 +2737,12 @@ export async function POST(req: Request) {
     grantedProjectRoots,
     projectRootAccess: grantedProjectRootAccess,
     additionalRoots: resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : [],
+    // Host authority is session-bound and deliberately separate from the
+    // project-directory grants above. The broker PR consumes these capabilities;
+    // this generic layer only makes authority changes force a fresh session.
+    hostCapabilities: body.sessionId
+      ? await activeHostCapabilities({ familiarId: body.familiarId, sessionId: body.sessionId })
+      : [],
   });
   // The accepted Hermes 1.0.3 adapter binds prompts natively with `--query`.
   // Cave still spawns Hermes directly for local chats because this path owns

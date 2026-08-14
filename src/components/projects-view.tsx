@@ -56,6 +56,7 @@ import { StandardSelect } from "@/components/ui/select";
 import { Tabs } from "@/components/ui/tabs";
 import { AccessGroupsSection } from "@/components/access-groups-section";
 import { FamiliarStudioProjectsTab } from "@/components/familiar-studio-projects-tab";
+import { HostAccessSection } from "@/components/host-access-section";
 import { ProjectSettingsModal } from "@/components/project-settings-modal";
 import { useAddProjectFlow } from "@/components/project-picker";
 
@@ -68,12 +69,12 @@ import { useAddProjectFlow } from "@/components/project-picker";
  * set of familiars at once — were buried two levels inside that settings tab
  * where nobody found them. One surface, three peers.
  */
-type ProjectsPane = "access" | "groups" | "activity";
+type ProjectsPane = "access" | "host" | "groups" | "activity";
 
 const PANE_STORAGE_KEY = "cave:projects:pane";
 
 function isPane(value: unknown): value is ProjectsPane {
-  return value === "access" || value === "groups" || value === "activity";
+  return value === "access" || value === "host" || value === "groups" || value === "activity";
 }
 
 type ProjectsViewProps = {
@@ -1066,6 +1067,8 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
                 ? `What ${familiar ? familiarLabel(familiar) : "this familiar"} may read and write. Click a project’s pill to cycle — none, read, full.`
                 : pane === "groups"
                   ? "Grant a set of projects to a set of familiars at once. A familiar’s access is the most permissive of its own grants and its groups’."
+                  : pane === "host"
+                    ? "Operating-system access is separate from project access. Host capabilities require a direct human approval and expire automatically."
                   : `Where ${familiar ? familiarLabel(familiar) : "this familiar"}’s access came from — inherited groups, requests, and every change on record.`}
             </p>
           </div>
@@ -1108,6 +1111,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
             onChange={pickPane}
             items={[
               { id: "access", label: "Access", icon: "ph:sliders-horizontal", title: "Per-familiar project grants" },
+              { id: "host", label: "Host access", icon: "ph:hard-drives", title: "Session-bound operating-system capabilities" },
               {
                 id: "groups",
                 label: "Groups",
@@ -1275,6 +1279,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
           className="projects-access-pane"
         >
           {pane === "access" ? body : null}
+          {pane === "host" ? <HostAccessSection familiarId={familiar?.id} /> : null}
           {pane === "groups" ? <AccessGroupsSection familiars={resolvedFamiliars} /> : null}
           {pane === "activity" ? (
             resolvedFamiliar ? (
