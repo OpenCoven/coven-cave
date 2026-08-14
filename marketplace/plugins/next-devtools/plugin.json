@@ -20,6 +20,7 @@
     "shell",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/next-devtools",
   "x-coven": {
     "displayName": "Next.js DevTools",

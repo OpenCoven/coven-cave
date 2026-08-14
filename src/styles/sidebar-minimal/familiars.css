@@ -199,12 +199,21 @@
   background: var(--border-hairline);
 }
 
+/* The destination row's final geometry (this block is the last declaration of
+   it in the cascade, so it — not navigation-recents.css — is what ships).
+   --rail-control / --rail-lead are the shared rail constants: the row is the
+   same height as its collapsed square and leads its icon at the same offset,
+   so peeking the rail open never moves a glyph (issue 4351). `flex: none` matters
+   for the same reason — .sidebar-nav-scroll is a flex column, so without it an
+   overflowing list silently compressed every row below its min-height and the
+   rail's fixed 32px squares no longer matched the panel's pitch. */
 .sidebar-folder-row,
 .sidebar-actions--footer .sidebar-action-row {
+  flex: none;
   gap: 6px;
-  min-height: 30px;
+  min-height: var(--rail-control);
   border-radius: var(--radius-control);
-  padding: 0 var(--space-2);
+  padding: 0 var(--rail-lead);
   color: var(--text-secondary);
 }
 
@@ -227,8 +236,7 @@
   color: var(--text-primary);
 }
 
-.sidebar-foot-bell > .relative,
-.sidebar-foot-icon-cell {
+.sidebar-foot-bell > .relative {
   display: grid;
   width: 28px;
   height: 28px;
@@ -236,25 +244,33 @@
   place-items: center;
 }
 
-
-@media (max-height: 760px) {
-  .sidebar-minimal {
-    gap: 7px;
-    padding-top: var(--space-2);
-  }
-
-  .sidebar-nav-scroll {
-    gap: var(--space-2);
-  }
-
-  .sidebar-folder-row,
-  .sidebar-actions--footer .sidebar-action-row,
-  .sidebar-foot-bell,
-  .sidebar-foot-btn,
-  .sidebar-foot-icon-btn {
-    min-height: 31px;
-  }
+/* The footer glyph's cell is exactly the glyph. A wider cell would centre the
+   icon inside it and push it off the rail's icon column, which is the one
+   thing the footer rows must not do (issue 4351). */
+.sidebar-foot-icon-cell {
+  display: grid;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  flex: 0 0 var(--icon-md);
+  place-items: center;
 }
+
+
+/* A short-viewport (max-height: 760px) block used to live here. It set
+   per-selector min-heights of 31px plus a looser .sidebar-nav-scroll gap and a
+   blanket .sidebar-minimal gap/padding-top — and all of it reached the expanded
+   panel ONLY, because the rail's own .shell-nav--rail rules are more specific
+   and won. At 1280x720 that split the two states apart again (rows 32px/4px
+   apart in the rail against 31px/8px in the panel), which walked the footer 6px
+   on hover-peek — the drift issue 4351 is about.
+
+   It is gone rather than re-scoped: 31px was 1px TALLER than the base row it
+   claimed to compact, the wider gap made a short column looser rather than
+   denser, and the blanket .sidebar-minimal gap contradicted that rule's own
+   contract, where each band carries its own margin precisely so the column
+   cannot shift. If short viewports need a denser rail again, override
+   --rail-control on .shell-nav (see shell-navigation.css) — one knob that both
+   states read — rather than per-selector heights that only one state sees. */
 
 @media (max-width: 1023px) {
   .sidebar-minimal .sidebar-header,

@@ -353,6 +353,16 @@ assert.match(
   /copilotIdentityPreamble\(\s*\n?\s*body\.familiarId,/,
   "The direct copilot spawn bypasses `coven run --familiar`, so the route must mirror coven's identity preamble itself",
 );
+assert.match(
+  chatRoute,
+  /const copilotPluginDirs = copilotDirect[\s\S]*?resolveBundledCopilotPluginDirs\(\)[\s\S]*?pluginDirs: copilotPluginDirs/,
+  "direct Copilot turns load Cave's validated bundled memory skills through native plugin argv",
+);
+assert.match(
+  chatRoute,
+  /buildPromptWithRuntimeScope\(\s*buildPromptWithDeliveryEvidenceContract\(\s*buildPromptWithCovenIdentityCanon\(/,
+  "every chat turn receives the host-authored completion evidence contract inside the runtime boundary",
+);
 
 assert.match(
   chatRoute,

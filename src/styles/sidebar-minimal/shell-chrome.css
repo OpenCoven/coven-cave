@@ -281,12 +281,13 @@
   /* Softer than a full hairline — the footer should read as a calm boundary,
      not a hard rule competing with the nav. */
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
-  /* Compact icon row: Dashboard · Notifications · Settings share one line as
-     equal-width icon buttons (labels are tooltips). Reclaims the vertical space
-     three stacked labeled rows used to take. The rail + mobile drawer restore a
-     vertical stack below. */
+  /* Stacked labeled rows, the same shape as the destinations above. This was a
+     compact one-line icon row that reclaimed vertical space, but it was also
+     the single worst offender in issue 4351: the collapsed rail has to stack these
+     buttons, so on hover-peek Dashboard flew 39px right and Settings 138px.
+     One column in both states costs ~34px and moves nothing. */
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: var(--space-1);
 }
 
@@ -295,12 +296,11 @@
   position: relative;
   display: flex;
   align-items: center;
-  /* Compact row: each button is an equal-width, centered icon target. */
-  justify-content: center;
-  flex: 1;
+  justify-content: flex-start;
+  flex: none;
   min-width: 0;
-  gap: 10px;
-  padding: 0 var(--space-2);
+  gap: 6px;
+  padding: 0 var(--rail-lead);
   border-radius: var(--radius-control);
   border: 0;
   background: transparent;
@@ -309,7 +309,7 @@
   cursor: pointer;
   text-align: left;
   transition: background 0.12s ease, color 0.12s ease;
-  min-height: 34px;
+  min-height: var(--rail-control);
 }
 
 .sidebar-foot-icon-btn {
@@ -368,8 +368,7 @@
 }
 
 .sidebar-foot-label {
-  /* Tooltip-only in the compact icon row; the rail/mobile drawer re-show it. */
-  display: none;
+  /* Visible in the expanded panel (the rail hides it, like every other label). */
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencoven.ai/schemas/onboarding-feedback-import.schema.json",
+  "title": "De-identified Cave onboarding feedback",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "source",
+      "observedAt",
+      "stage",
+      "classification",
+      "severity",
+      "platform",
+      "issueKey"
+    ],
+    "properties": {
+      "source": {
+        "enum": [
+          "github",
+          "beads",
+          "office_hours",
+          "discord",
+          "usability_test"
+        ]
+      },
+      "observedAt": {
+        "type": "string",
+        "format": "date"
+      },
+      "stage": {
+        "enum": [
+          "download",
+          "install",
+          "first_launch",
+          "system_check",
+          "runtime_connection",
+          "familiar",
+          "project",
+          "permissions",
+          "first_task",
+          "recovery",
+          "continued_use"
+        ]
+      },
+      "classification": {
+        "enum": [
+          "documentation",
+          "terminology",
+          "automation",
+          "product_bug",
+          "platform_bug",
+          "runtime_integration",
+          "permission_confusion",
+          "missing_feedback",
+          "knowledge_gap",
+          "unsupported"
+        ]
+      },
+      "severity": {
+        "enum": [
+          "blocker",
+          "major",
+          "minor"
+        ]
+      },
+      "platform": {
+        "enum": [
+          "macos",
+          "windows",
+          "linux",
+          "all",
+          "unknown"
+        ]
+      },
+      "issueKey": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "workaround": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "proposedFix": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "owner": {
+        "type": "string",
+        "description": "A team or product area, never a person's name or account handle.",
+        "maxLength": 100
+      },
+      "successMetric": {
+        "type": "string",
+        "maxLength": 300
+      }
+    },
+    "additionalProperties": false
+  }
+}

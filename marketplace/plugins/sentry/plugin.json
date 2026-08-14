@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/sentry",
   "x-coven": {
     "displayName": "Sentry",

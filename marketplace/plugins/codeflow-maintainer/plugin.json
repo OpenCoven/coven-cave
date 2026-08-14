@@ -19,6 +19,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/codeflow-maintainer",
   "x-coven": {
     "displayName": "CodeFlow Maintainer Skill",

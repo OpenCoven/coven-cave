@@ -29,7 +29,13 @@ function exportFilename(title: string): string {
   return `${slug || "familiar-spec"}.md`;
 }
 
-export function ChatSpecCard({ spec }: { spec: SpecBlock }) {
+export function ChatSpecCard({
+  spec,
+  onOpenUrl,
+}: {
+  spec: SpecBlock;
+  onOpenUrl?: (url: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -205,11 +211,18 @@ export function ChatSpecCard({ spec }: { spec: SpecBlock }) {
 
           <div
             ref={documentRef}
-            className="chat-spec-reader__document"
+            className="chat-spec-reader__document focus-ring-inset"
+            role="region"
+            aria-label={`${spec.title} document`}
+            tabIndex={0}
             onScroll={onScroll}
           >
             <article className="chat-spec-reader__measure">
-              <MarkdownBlock text={spec.markdown} className="cave-md--reader" />
+              <MarkdownBlock
+                text={spec.markdown}
+                className="cave-md--reader"
+                onOpenUrl={onOpenUrl}
+              />
             </article>
           </div>
         </div>

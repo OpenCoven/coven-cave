@@ -19,6 +19,7 @@
     "network",
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/brightdata",
   "x-coven": {
     "displayName": "Bright Data",

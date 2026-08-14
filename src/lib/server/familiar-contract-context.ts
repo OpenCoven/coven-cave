@@ -200,6 +200,7 @@ async function familiarLocalSkillsSection(workspace: string): Promise<{
     section: [
       "## Familiar-local skills",
       "These are this familiar's declared skill entrypoints. When a task matches one, load this workspace-local copy before acting; a local same-name skill takes precedence over a generic skill unless the user explicitly requests the generic copy.",
+      "Harness dispatchers may not index workspace-local names. If invocation by name is unavailable, read the listed SKILL.md directly from the granted workspace and follow it; do not treat dispatcher absence alone as a blocker.",
       ...rows,
     ].join("\n"),
     loaded,

@@ -20,6 +20,7 @@
     "write_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/1password",
   "x-coven": {
     "displayName": "1Password Secret Management",

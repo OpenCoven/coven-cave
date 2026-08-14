@@ -142,6 +142,7 @@ import {
 } from "@/lib/hermes-responses-stream";
 import { redactSecretText, redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
+import { buildPromptWithDeliveryEvidenceContract } from "@/lib/delivery-evidence-contract";
 import {
   buildFamiliarContractContext,
   buildPromptWithFamiliarContract,
@@ -181,6 +182,7 @@ import {
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
+import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   dispatchOpenClawGatewayTurn,
@@ -1777,6 +1779,9 @@ export async function POST(req: Request) {
   const openCodeDirect = !sshRuntime && binding.harness === "opencode";
   const grokDirect = !sshRuntime && binding.harness === "grok";
   const copilotDirect = !sshRuntime && binding.harness === "copilot";
+  const copilotPluginDirs = copilotDirect
+    ? await resolveBundledCopilotPluginDirs()
+    : [];
   // Cave's Read-only control is a security promise, not a prompt hint.
   // OpenCode's one-shot CLI exposes no read-only/sandbox flag, so do not even
   // run its capability probes with the familiar-scoped credentials here.
@@ -2595,35 +2600,37 @@ export async function POST(req: Request) {
   // the permission decision and prompt context on the same task snapshot.
   const taskContext = taskCard ? buildTaskContext(taskCard) : null;
   const scopedPrompt = buildPromptWithRuntimeScope(
-    buildPromptWithCovenIdentityCanon(
-      // Sits directly inside the canon so the files land next to the rule that
-      // names them, and ahead of the vault/task/memory data blocks so persona
-      // frames how the familiar reads them. The genuine runtime boundary is
-      // applied outermost and therefore still leads the assembled prompt.
-      buildPromptWithFamiliarContract(
-        buildTaskAwarePrompt(
-          buildPromptWithKnowledgeVault(
-            buildPromptWithFamiliarStartupContext(
-              appendMentionedFilesBlock(
-                buildPromptWithResponseControls(
-                  buildPromptWithAttachments(promptText, attachments, {
-                    imagesSupported,
-                    imageFilePaths,
-                  }),
-                  { modelControls: promptModelControls },
+    buildPromptWithDeliveryEvidenceContract(
+      buildPromptWithCovenIdentityCanon(
+        // Sits directly inside the canon so the files land next to the rule that
+        // names them, and ahead of the vault/task/memory data blocks so persona
+        // frames how the familiar reads them. The genuine runtime boundary is
+        // applied outermost and therefore still leads the assembled prompt.
+        buildPromptWithFamiliarContract(
+          buildTaskAwarePrompt(
+            buildPromptWithKnowledgeVault(
+              buildPromptWithFamiliarStartupContext(
+                appendMentionedFilesBlock(
+                  buildPromptWithResponseControls(
+                    buildPromptWithAttachments(promptText, attachments, {
+                      imagesSupported,
+                      imageFilePaths,
+                    }),
+                    { modelControls: promptModelControls },
+                  ),
+                  mentionedFiles,
                 ),
-                mentionedFiles,
+                [operatorProfileContext, dailyMemoryContext],
               ),
-              [operatorProfileContext, dailyMemoryContext],
+              knowledgeVaultEntries,
+              knowledgeVaultCollections,
             ),
-            knowledgeVaultEntries,
-            knowledgeVaultCollections,
+            taskContext,
           ),
-          taskContext,
+          familiarContractBlock,
         ),
-        familiarContractBlock,
+        body.familiarId,
       ),
-      body.familiarId,
     ),
     runtimeScope,
   );
@@ -2773,6 +2780,7 @@ export async function POST(req: Request) {
         // this stream path supports, same trust basis as the manifest's
         // session/sandbox flags above.
         addDirs: grantDirs,
+        pluginDirs: copilotPluginDirs,
       });
     }
     if (hermesDirect) {

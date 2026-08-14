@@ -17,6 +17,7 @@
   "capabilities": [
     "mcp"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/time",
   "x-coven": {
     "displayName": "Time",

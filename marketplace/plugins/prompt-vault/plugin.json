@@ -20,6 +20,7 @@
     "read_files",
     "shell"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/prompt-vault",
   "x-coven": {
     "displayName": "Prompt Vault",

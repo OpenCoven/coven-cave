@@ -2,9 +2,19 @@
 //
 // The brand asset is a full-bleed white-glyph-on-black square. The app icon
 // convention in this repo (src-tauri/icons/icon.png) is different and must be
-// preserved: a rounded-rect black tile with TRANSPARENT corners, glyph filling
-// ~78% of the canvas. Dropping the raw brand square in would put a hard-edged
+// preserved: a rounded-rect black tile with TRANSPARENT corners and the glyph
+// inset from the edges. Dropping the raw brand square in would put a hard-edged
 // black tile in the macOS Dock and shrink the mark to ~55%.
+//
+// The glyph is sized by the GEOMETRIC MEAN of its bounding box, not by its
+// longest side. Scaling the longest side to a fixed fraction is aspect-blind:
+// the same number means "78% tall" for a portrait mark and "78% wide" for a
+// landscape one, so swapping marks of different proportions silently resizes
+// the icon. That is exactly what happened when the crown replaced the previous
+// emblem — the portrait emblem landed 66% wide, the landscape crown 78% wide,
+// and the crown lost a third of its side margin without anyone changing a
+// number. The geometric mean is invariant to aspect ratio, so GLYPH_FRACTION
+// means the same optical size for any mark shape.
 //
 // Usage: node scripts/compose-app-icon.mjs <brand.png> <out-icon.png> <out-tray-source.png>
 import sharp from "sharp";
@@ -18,7 +28,11 @@ if (!brand || !outIcon || !outTray) {
 const SIZE = 1024;
 // Apple's squircle is ~22.37% of the side; the existing icon reads as ~180/1024.
 const RADIUS = Math.round(SIZE * 0.2237);
-const GLYPH_FRACTION = 0.78;
+// Geometric mean of the glyph bbox as a fraction of the canvas. 0.63 puts the
+// crown at a 17.4% side margin and 16.5% ink coverage, matching the emblem it
+// replaced (17.2% / 15.5%) — measured, not guessed. Raising this crowds the
+// tile: the shipped 0.78-longest-side scaling read as 11.4% / 23.1%.
+const GLYPH_FRACTION = 0.63;
 
 // Trim the brand square's black field down to the glyph's own bounding box so
 // the scale below is measured against the MARK, not the artwork's padding.
@@ -28,10 +42,22 @@ const glyph = await sharp(brand)
 
 console.log(`glyph bbox after trim: ${glyph.info.width}x${glyph.info.height}`);
 
-const target = Math.round(SIZE * GLYPH_FRACTION);
+// Solve for the scale that lands sqrt(w*h) on the requested fraction of the
+// canvas, then resize to those exact dimensions. `fit: "fill"` is safe here
+// precisely because both sides come from one uniform scale factor, so the
+// aspect ratio is preserved by construction rather than by the fit mode.
+const glyphGeoMean = Math.sqrt(glyph.info.width * glyph.info.height);
+const glyphScale = (SIZE * GLYPH_FRACTION) / glyphGeoMean;
+const scaledWidth = Math.round(glyph.info.width * glyphScale);
+const scaledHeight = Math.round(glyph.info.height * glyphScale);
 const scaled = await sharp(glyph.data)
-  .resize(target, target, { fit: "inside", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  .resize(scaledWidth, scaledHeight, { fit: "fill" })
   .toBuffer({ resolveWithObject: true });
+
+console.log(
+  `glyph scaled to ${scaled.info.width}x${scaled.info.height} ` +
+    `(geometric mean ${(100 * Math.sqrt(scaled.info.width * scaled.info.height) / SIZE).toFixed(1)}% of canvas)`,
+);
 
 // Black rounded tile, transparent outside the radius — matches the current icon.
 const tile = Buffer.from(

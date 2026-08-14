@@ -1323,11 +1323,20 @@
 }
 
 /* Backdrop sibling rendered by <MobileDrawer/> via portal whenever a
-   drawer is open. Covers the detail pane and dismisses on tap. */
+   drawer is open. Covers the detail pane and dismisses on tap. A real
+   <button> (not a role="presentation" div) so Escape-independent dismissal
+   is reachable from the keyboard too — the resets below strip the native
+   button chrome (border/padding/font/cursor) so it still reads as a plain
+   full-viewport scrim. */
 .mobile-drawer-backdrop {
   position: fixed;
   inset: 0;
   z-index: 199;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  cursor: default;
   background: var(--backdrop-scrim);
   touch-action: none;
   animation: mobile-drawer-fade-in var(--duration-base) var(--ease-decelerate);

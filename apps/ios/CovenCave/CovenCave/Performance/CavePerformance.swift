@@ -40,19 +40,60 @@ struct CavePerformanceInstrumentationRecord: Equatable {
 }
 
 @MainActor
+final class CavePerformanceSpan {
+    fileprivate let instrumentation: CavePerformanceInstrumentationRecord
+    fileprivate let clock: any CavePerformanceClock
+    fileprivate let startedAt: Duration
+    fileprivate let intervalState: OSSignpostIntervalState
+    fileprivate var finished = false
+
+    fileprivate init(
+        instrumentation: CavePerformanceInstrumentationRecord,
+        clock: any CavePerformanceClock,
+        startedAt: Duration,
+        intervalState: OSSignpostIntervalState
+    ) {
+        self.instrumentation = instrumentation
+        self.clock = clock
+        self.startedAt = startedAt
+        self.intervalState = intervalState
+    }
+}
+
+@MainActor
 final class CavePerformanceRecorder {
-    #if DEBUG
-    private static let sharedEnabledByDefault = true
-    #else
-    private static let sharedEnabledByDefault = false
-    #endif
+    private nonisolated static let enablementEnvironmentKey = "CAVE_PERFORMANCE_INSTRUMENTATION"
+    private nonisolated static let enablementArgument = "--performance-instrumentation"
     // nonisolated: referenced from `init` default arguments, which Swift 6
     // evaluates in a nonisolated context. An immutable Int is safe to read
     // from anywhere; without this the references become errors in the
     // Swift 6 language mode.
     private nonisolated static let defaultDistinctKeyLimit = 128
 
-    static let shared = CavePerformanceRecorder(enabled: sharedEnabledByDefault)
+    static let shared = CavePerformanceRecorder(enabled: sharedEnablement())
+
+    nonisolated static func shouldEnableShared(
+        isDebugBuild: Bool,
+        environment: [String: String],
+        arguments: [String]
+    ) -> Bool {
+        isDebugBuild ||
+            environment[enablementEnvironmentKey] == "1" ||
+            arguments.contains(enablementArgument)
+    }
+
+    private nonisolated static func sharedEnablement() -> Bool {
+        #if DEBUG
+        let isDebugBuild = true
+        #else
+        let isDebugBuild = false
+        #endif
+        return shouldEnableShared(
+            isDebugBuild: isDebugBuild,
+            environment: ProcessInfo.processInfo.environment,
+            arguments: ProcessInfo.processInfo.arguments
+        )
+    }
 
     private final class Storage {
         private let sampleKeyLimit: Int
@@ -163,12 +204,73 @@ final class CavePerformanceRecorder {
         return storage.samples
     }
 
+    func begin(
+        _ name: String,
+        clock: any CavePerformanceClock = ContinuousPerformanceClock()
+    ) -> CavePerformanceSpan? {
+        guard storage != nil, let signposter else {
+            return nil
+        }
+
+        let instrumentation = CavePerformanceInstrumentationRecord(spanName: name)
+        let startedAt = clock.now()
+        let intervalState = signposter.beginInterval(
+            CavePerformanceInstrumentationRecord.intervalName,
+            "\(instrumentation.beginMessage, privacy: .public)"
+        )
+        return CavePerformanceSpan(
+            instrumentation: instrumentation,
+            clock: clock,
+            startedAt: startedAt,
+            intervalState: intervalState
+        )
+    }
+
+    func end(_ span: CavePerformanceSpan?) {
+        guard let span, !span.finished, let storage, let signposter else {
+            return
+        }
+
+        span.finished = true
+        record(storage,
+               name: span.instrumentation.spanName,
+               elapsed: span.clock.now() - span.startedAt)
+        signposter.endInterval(
+            CavePerformanceInstrumentationRecord.intervalName,
+            span.intervalState,
+            "\(span.instrumentation.endMessage, privacy: .public)"
+        )
+    }
+
     func measure<T>(_ name: String, operation: () async throws -> T) async rethrows -> T {
         guard storage != nil, signposter != nil else {
             return try await operation()
         }
 
         return try await measure(name, clock: ContinuousPerformanceClock(), operation: operation)
+    }
+
+    func measureSynchronous<T>(
+        _ name: String,
+        clock: some CavePerformanceClock = ContinuousPerformanceClock(),
+        operation: () throws -> T
+    ) rethrows -> T {
+        guard let storage, let signposter else {
+            return try operation()
+        }
+
+        let instrumentation = CavePerformanceInstrumentationRecord(spanName: name)
+        let start = clock.now()
+        let intervalState = signposter.beginInterval(CavePerformanceInstrumentationRecord.intervalName,
+                                                     "\(instrumentation.beginMessage, privacy: .public)")
+        defer {
+            record(storage, name: instrumentation.spanName, elapsed: clock.now() - start)
+            signposter.endInterval(CavePerformanceInstrumentationRecord.intervalName,
+                                   intervalState,
+                                   "\(instrumentation.endMessage, privacy: .public)")
+        }
+
+        return try operation()
     }
 
     func measure<T>(

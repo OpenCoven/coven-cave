@@ -20,6 +20,7 @@
     "read_files",
     "write_files"
   ],
+  "skills": "./skills/",
   "marketplaceId": "opencoven/threejs-animation",
   "x-coven": {
     "displayName": "Three.js Animation",
