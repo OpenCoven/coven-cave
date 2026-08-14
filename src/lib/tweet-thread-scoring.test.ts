@@ -5,6 +5,7 @@ import { Value } from "typebox/value";
 
 import {
   DeterministicFindingSchema,
+  ThreadScorecardSchema,
   TWEET_THREAD_PROTOCOL_VERSION,
   computeThreadCandidateSha256,
 } from "./tweet-thread-protocol.ts";
@@ -223,6 +224,93 @@ function legacyAuditFindingId(
   ], equalWeights);
   assert.equal(result.ranked.length, 2);
   assert.equal(result.dominated.length, 0);
+}
+
+for (const dimension of DIMENSIONS) {
+  const input = rankingInput(candidate(`candidate-scorecard-fail-${dimension}`));
+  const hardFailure = {
+    findingId: `finding-scorecard-fail-${dimension}`,
+    code: `${dimension}-hard-failure`,
+    severity: "fail" as const,
+    message: `${dimension} failed its hard gate.`,
+    postId: "post-1",
+  };
+  input.scorecard.dimensions[dimension].findings = [hardFailure];
+
+  const result = rankThreadCandidates([input], equalWeights);
+  assert.equal(result.ranked.length, 0, dimension);
+  assert.equal(result.dominated.length, 0, dimension);
+  assert.equal(result.rejected[0]?.candidateId, input.candidate.candidateId, dimension);
+  assert.deepEqual(result.rejected[0]?.findings, [hardFailure], dimension);
+  assert.equal(result.rejected[0]?.eligible, false, dimension);
+  assert.equal(result.rejected[0]?.paretoDominated, false, dimension);
+}
+
+{
+  const input = rankingInput(candidate("candidate-scorecard-audit-findings"));
+  const findings = [
+    {
+      findingId: "finding-scorecard-zeta",
+      code: "voice-audit-note",
+      severity: "info" as const,
+      message: "Voice audit note remains visible.",
+    },
+    {
+      findingId: "finding-scorecard-alpha",
+      code: "provenance-audit-warning",
+      severity: "warn" as const,
+      message: "Provenance warning remains visible.",
+      claimId: "claim-ranking",
+    },
+    {
+      findingId: "finding-scorecard-middle",
+      code: "accessibility-audit-note",
+      severity: "info" as const,
+      message: "Accessibility audit note remains visible.",
+      postId: "post-1",
+    },
+  ];
+  input.scorecard.dimensions.voice.findings = [findings[0]!];
+  input.scorecard.dimensions.provenance.findings = [findings[1]!];
+  input.scorecard.dimensions.accessibility.findings = [findings[2]!];
+
+  const result = rankThreadCandidates([input], equalWeights);
+  assert.equal(result.rejected.length, 0);
+  assert.equal(result.dominated.length, 0);
+  assert.equal(result.ranked[0]?.candidateId, input.candidate.candidateId);
+  assert.deepEqual(result.ranked[0]?.findings, [
+    findings[1],
+    findings[2],
+    findings[0],
+  ]);
+  assert.equal(new Set(result.ranked[0]?.findings.map((finding) => finding.findingId)).size, 3);
+  assert.ok(result.ranked[0]?.findings.every((finding) =>
+    Value.Check(DeterministicFindingSchema, finding)
+  ));
+}
+
+{
+  const input = rankingInput(candidate("candidate-malformed-scorecard-finding"));
+  input.scorecard.dimensions.factuality.findings = [{
+    findingId: "finding-malformed-severity",
+    code: "malformed-severity",
+    severity: "critical",
+    message: "This finding is schema-invalid.",
+  } as unknown as ThreadScorecard["dimensions"]["factuality"]["findings"][number]];
+
+  assert.equal(Value.Check(DeterministicFindingSchema,
+    input.scorecard.dimensions.factuality.findings[0]), false);
+  assert.equal(Value.Check(ThreadScorecardSchema, input.scorecard), false);
+  const result = rankThreadCandidates([input], equalWeights);
+  assert.equal(result.ranked.length, 0);
+  assert.equal(result.dominated.length, 0);
+  assert.equal(result.rejected[0]?.candidateId, input.candidate.candidateId);
+  assert.ok(result.rejected[0]?.findings.some((finding) =>
+    finding.code === "scorecard-protocol-invalid"
+  ));
+  assert.ok(result.rejected[0]?.findings.every((finding) =>
+    Value.Check(DeterministicFindingSchema, finding)
+  ));
 }
 
 for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] as const) {

@@ -103,6 +103,10 @@ function dimensionsFromScorecard(scorecard: ThreadScorecard): ThreadDimensionSco
   ])) as ThreadDimensionScores;
 }
 
+function findingsFromScorecard(scorecard: ThreadScorecard): DeterministicFinding[] {
+  return DIMENSIONS.flatMap((dimension) => scorecard.dimensions[dimension].findings);
+}
+
 function weightedMean(
   dimensions: ThreadDimensionScores,
   weights: ObjectiveWeights,
@@ -550,11 +554,18 @@ function processRankingEnvelope(
     candidateSha256,
     scorecardId,
   );
+  const scorecardFindings = scorecardSchemaValid
+    ? findingsFromScorecard(scorecardValue as ThreadScorecard)
+    : [];
   const validationHasHardGate = !validation.accepted
     || validation.findings.some((finding) => finding.severity === "fail");
+  const scorecardHasHardGate = scorecardFindings.some((finding) =>
+    finding.severity === "fail"
+  );
   const rejected = normalized.findings.length > 0
     || bindingFindings.length > 0
-    || validationHasHardGate;
+    || validationHasHardGate
+    || scorecardHasHardGate;
   const dimensions = scorecardSchemaValid
     ? dimensionsFromScorecard(scorecardValue as ThreadScorecard)
     : null;
@@ -571,6 +582,7 @@ function processRankingEnvelope(
     validation,
     findings: [
       ...validation.findings,
+      ...scorecardFindings,
       ...normalized.findings,
       ...bindingFindings,
     ].sort((left, right) =>
