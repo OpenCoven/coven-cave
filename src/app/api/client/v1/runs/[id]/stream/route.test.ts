@@ -185,7 +185,7 @@ test("stream rejects a non-resumable MAX_SAFE_INTEGER cursor with 400", async ()
   assert.equal((await response.json()).error.code, "invalid_request");
 });
 
-test("stream fallback reconcile preserves the resumable cursor at the upper bound", async () => {
+test("stream fallback reconciliation is id-less at the resumable upper bound", async () => {
   resetRateLimitsForTest();
   await writeConfig();
   const token = await issue();
@@ -201,8 +201,8 @@ test("stream fallback reconcile preserves the resumable cursor at the upper boun
   assert.equal(response.status, 200, await response.clone().text());
   assert.equal(response.headers.get("content-type"), "text/event-stream; charset=utf-8");
   const text = await response.text();
-  assert.match(text, new RegExp(`^id: ${Number.MAX_SAFE_INTEGER - 1}$`, "m"));
-  assert.match(text, /"type":"reconcile_required"/);
+  assert.doesNotMatch(text, /^id:/m);
+  assert.match(text, /"type":"reconcile_required","conversationId":"client-v1-stream-conversation","reason":"stream_unavailable"/);
 });
 
 test("stream reports fresh pre-buffer launching runs as retryable, but keeps stale launch crashes not found", async () => {
