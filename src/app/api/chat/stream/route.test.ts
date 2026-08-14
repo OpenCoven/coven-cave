@@ -198,3 +198,39 @@ test("re-attach disarms the detach-cap kill; the last tail re-arms only after th
   const rearms = send.match(/detach: \(\) => \{\s*if \((?:args\.)?req\.signal\.aborted\) armDetachKill\(\);/g);
   assert.equal(rearms?.length, 3, "detach hooks re-arm only when the original request is gone — a resume tail closing can't kill a still-attached turn");
 });
+
+test("a pre-aborted Gateway request arms one detach kill and completion clears it", () => {
+  const gatewayStart = send.indexOf('if (gatewayDispatch.kind === "accepted")');
+  const gatewayEnd = send.indexOf("const openclawLaunch = openClawLaunchCommand()", gatewayStart);
+  assert.ok(gatewayStart >= 0 && gatewayEnd > gatewayStart);
+  const gateway = send.slice(gatewayStart, gatewayEnd);
+
+  assert.match(
+    gateway,
+    /const armDetachKill = \(\) => \{\s*if \(runHandle\.stopRequested \|\| detachKillTimer != null\) return;[\s\S]*?runBuffer\.setHooks\([\s\S]*?const onAbort = \(\) => armDetachKill\(\);\s*args\.req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\);[\s\S]*?if \(args\.req\.signal\.aborted\) onAbort\(\);/,
+    "the Gateway path checks a pre-aborted signal only after installing its hook and one-shot listener; the timer guard makes that arm idempotent",
+  );
+  assert.match(
+    gateway,
+    /const gatewayResult = await gatewayDispatch\.done;[\s\S]*?args\.req\.signal\.removeEventListener\("abort", onAbort\);\s*if \(detachKillTimer != null\) clearTimeout\(detachKillTimer\);/,
+    "an actively completed Gateway turn removes the listener and clears its detach kill",
+  );
+});
+
+test("a pre-aborted CLI fallback request arms one detach kill and completion clears it", () => {
+  const fallbackStart = send.indexOf("const openclawLaunch = openClawLaunchCommand()");
+  const fallbackEnd = send.indexOf("const failChild =", fallbackStart);
+  assert.ok(fallbackStart >= 0 && fallbackEnd > fallbackStart);
+  const fallback = send.slice(fallbackStart, fallbackEnd);
+
+  assert.match(
+    fallback,
+    /const armDetachKill = \(\) => \{\s*if \(runHandle\.stopRequested \|\| detachKillTimer != null\) return;[\s\S]*?runBuffer\.setHooks\([\s\S]*?const onAbort = \(\) => armDetachKill\(\);\s*args\.req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\);[\s\S]*?if \(args\.req\.signal\.aborted\) onAbort\(\);/,
+    "the CLI fallback checks a pre-aborted signal only after installing its hook and one-shot listener; the timer guard makes that arm idempotent",
+  );
+  assert.match(
+    send.slice(fallbackStart),
+    /const onAbort = \(\) => armDetachKill\(\);\s*args\.req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\);[\s\S]*?args\.req\.signal\.removeEventListener\("abort", onAbort\);\s*if \(detachKillTimer != null\) clearTimeout\(detachKillTimer\);/,
+    "an actively completed CLI fallback turn removes the listener and clears its detach kill",
+  );
+});
