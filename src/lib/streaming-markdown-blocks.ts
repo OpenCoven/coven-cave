@@ -390,10 +390,7 @@ function parseList(source: string, lines: Line[], startIndex: number): ParseResu
       );
     }
 
-    return {
-      complete: false,
-      block: makeMarkdownBlock(source, lines[startIndex].start, source.length, "plain"),
-    };
+    index += 1;
   }
 
   return {
@@ -523,15 +520,6 @@ function toPublicBlock(turnId: string, block: InternalBlock): StreamingContentBl
 
 function finalizeSettledBlock(block: InternalBlock): InternalBlock {
   if (block.kind !== "list") return block;
-  if (block.ambiguousTail) {
-    return {
-      kind: "markdown",
-      start: block.start,
-      end: block.end,
-      source: block.source,
-      renderMode: "plain",
-    };
-  }
   if (!block.activeItem) return block;
   return {
     ...block,

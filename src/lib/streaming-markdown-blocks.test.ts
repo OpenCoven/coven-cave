@@ -492,6 +492,50 @@ test("settlement preserves stable list container and item ids", () => {
   }
 });
 
+test("settlement preserves ambiguous nested list identities for deep mixed-family tails", () => {
+  for (const [source, ordered, committedSource, activeSource] of [
+    [
+      "- one\n- parent\n  1. child\n    - grandchild",
+      false,
+      "- one\n",
+      "- parent\n  1. child\n    - grandchild",
+    ],
+    [
+      "1. one\n2. parent\n   - child\n      1. grandchild",
+      true,
+      "1. one\n",
+      "2. parent\n   - child\n      1. grandchild",
+    ],
+  ] as const) {
+    const pending = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+    if (pending.activeBlock?.kind !== "list") {
+      assert.fail("expected ambiguous nested tail to remain a live list");
+    }
+    assert.deepEqual(pending.activeBlock, {
+      id: "t:0-list",
+      kind: "list",
+      ordered,
+      committedItems: [{ id: "t:0-item-0", source: committedSource }],
+      activeItem: { id: "t:0-item-1", source: activeSource },
+      source,
+    });
+
+    const settled = partitionStreamingMarkdown(source, { turnId: "t", settled: true });
+    assert.equal(settled.activeBlock, null);
+    assert.equal(settled.committedText, source);
+    assert.deepEqual(settled.committedBlocks, [{
+      id: "t:0-list",
+      kind: "list",
+      ordered,
+      committedItems: [
+        { id: "t:0-item-0", source: committedSource },
+        { id: "t:0-item-1", source: activeSource },
+      ],
+      source,
+    }]);
+  }
+});
+
 test("incremental nested tails retain active list identity and committed siblings", () => {
   for (const [beforeSource, afterSource, committedSource, activeSource] of [
     ["- one\n- parent", "- one\n- parent\n  - child", "- one\n", "- parent\n  - child"],
@@ -519,6 +563,59 @@ test("incremental nested tails retain active list identity and committed sibling
     assert.equal(settled.committedText, afterSource);
     assert.equal(settled.committedBlocks.map((block) => block.source).join(""), afterSource);
   }
+});
+
+test("continuation lines extend the live active list item without rewriting identities", () => {
+  for (const [source, activeSource] of [
+    ["- one\n- two\ncontinuation", "- two\ncontinuation"],
+    ["- one\n- two\n  continuation", "- two\n  continuation"],
+    ["- one\n- two\n\t- child", "- two\n\t- child"],
+  ] as const) {
+    const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+    assert.deepEqual(partition.committedBlocks, []);
+    assert.deepEqual(partition.activeBlock, {
+      id: "t:0-list",
+      kind: "list",
+      ordered: false,
+      committedItems: [{ id: "t:0-item-0", source: "- one\n" }],
+      activeItem: { id: "t:0-item-1", source: activeSource },
+      source,
+    });
+
+    const settled = partitionStreamingMarkdown(source, { turnId: "t", settled: true });
+    assert.deepEqual(settled.committedBlocks, [{
+      id: "t:0-list",
+      kind: "list",
+      ordered: false,
+      committedItems: [
+        { id: "t:0-item-0", source: "- one\n" },
+        { id: "t:0-item-1", source: activeSource },
+      ],
+      source,
+    }]);
+  }
+});
+
+test("blank lines still terminate list blocks before later continuation text", () => {
+  const source = "- one\n- two\n\ncontinuation";
+  const partition = partitionStreamingMarkdown(source, { turnId: "t", settled: false });
+
+  assert.deepEqual(partition.committedBlocks, [{
+    id: "t:0-list",
+    kind: "list",
+    ordered: false,
+    committedItems: [
+      { id: "t:0-item-0", source: "- one\n" },
+      { id: "t:0-item-1", source: "- two\n" },
+    ],
+    source: "- one\n- two\n\n",
+  }]);
+  assert.deepEqual(partition.activeBlock, {
+    id: `t:${"- one\n- two\n\n".length}-${source.length}`,
+    kind: "markdown",
+    source: "continuation",
+    renderMode: "markdown",
+  });
 });
 
 test("nested list markers stay ambiguous instead of committing sibling items", () => {
