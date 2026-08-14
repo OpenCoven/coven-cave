@@ -125,9 +125,53 @@ assert.match(
   "Local skill sources should be declared as read-only runtime resources in the boundary prompt",
 );
 
-assert.doesNotMatch(
+function extractAllowedRootsArrayFromCreateBoundarySentinel(source: string) {
+  const sentinelCallIndex = source.indexOf("createBoundarySentinel(");
+  assert.notEqual(
+    sentinelCallIndex,
+    -1,
+    "Expected chat route to construct a write-boundary sentinel",
+  );
+
+  const allowedRootsIndex = source.indexOf("allowedRoots:", sentinelCallIndex);
+  assert.notEqual(
+    allowedRootsIndex,
+    -1,
+    "Expected createBoundarySentinel(...) to define allowedRoots",
+  );
+
+  const arrayStartIndex = source.indexOf("[", allowedRootsIndex);
+  assert.notEqual(
+    arrayStartIndex,
+    -1,
+    "Expected allowedRoots to be defined as an array",
+  );
+
+  let depth = 0;
+  for (let index = arrayStartIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(arrayStartIndex, index + 1);
+      }
+    }
+  }
+
+  assert.fail(
+    "Expected allowedRoots array in createBoundarySentinel(...) to be balanced",
+  );
+}
+
+const boundarySentinelAllowedRoots = extractAllowedRootsArrayFromCreateBoundarySentinel(
   chatRoute,
-  /createBoundarySentinel\([\s\S]*?allowedRoots:[\s\S]*?\.\.\.runtimeResourceRoots/,
+);
+
+assert.doesNotMatch(
+  boundarySentinelAllowedRoots,
+  /\.\.\.runtimeResourceRoots/,
   "Read-only skill resources must not be accepted by the write-boundary sentinel",
 );
 
