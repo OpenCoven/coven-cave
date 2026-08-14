@@ -162,7 +162,11 @@ import {
   addChatRunKeys,
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
-import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
+import {
+  canonicalizeAndRecordRunStreamEvent,
+  openRunBuffer,
+  type RunBufferHandle,
+} from "@/lib/server/chat-stream-buffer";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
@@ -677,8 +681,9 @@ async function maybeQueueOfflineChat(args: {
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => {
       const push = (event: StreamEvent) => {
-        const seq = runBuffer.record(event);
-        controller.enqueue(chatSse(event, seq));
+        const recorded = canonicalizeAndRecordRunStreamEvent(runBuffer, event);
+        if (!recorded) return;
+        controller.enqueue(chatSse(recorded.event, recorded.seq));
       };
       push({ kind: "session", sessionId });
       push({ kind: "user", text: args.promptText });
@@ -733,10 +738,11 @@ function openClawChatResponse(args: {
         // buffer is what makes a dropped client resumable, so it must see
         // events even after the original transport closed. The returned seq
         // rides the SSE `id:` so live clients always hold a resume cursor.
-        const seq = runBuffer?.record(event);
+        const recorded = canonicalizeAndRecordRunStreamEvent(runBuffer, event);
+        if (!recorded) return;
         if (closed || args.req.signal.aborted) return;
         try {
-          controller.enqueue(chatSse(event, seq));
+          controller.enqueue(chatSse(recorded.event, recorded.seq));
         } catch (error) {
           closed = true;
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -3021,10 +3027,11 @@ export async function executeChatSend(req: Request) {
         // buffer is what makes a dropped client resumable, so it must see
         // events even after the original transport closed. The returned seq
         // rides the SSE `id:` so live clients always hold a resume cursor.
-        const seq = runBuffer?.record(e);
+        const recorded = canonicalizeAndRecordRunStreamEvent(runBuffer, e);
+        if (!recorded) return;
         if (closed || req.signal.aborted) return;
         try {
-          controller.enqueue(chatSse(e, seq));
+          controller.enqueue(chatSse(recorded.event, recorded.seq));
         } catch (error) {
           closed = true;
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);

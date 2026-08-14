@@ -425,6 +425,22 @@ test("legacy non-SSE bodies are replaced with fixed safe errors", async () => {
   assert.doesNotMatch(text, /private|path|token|secret/);
 });
 
+test("a legitimate 501 returns the documented non-retryable unsupported code", async () => {
+  const response = translateInitialChatResponse(
+    new Response(null, { status: 501, headers: { "content-type": "application/json" } }),
+    context,
+  );
+  assert.equal(response.status, 501);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "unsupported",
+      message: "This run is not supported.",
+      retryable: false,
+    },
+  });
+});
+
 test("initial translation stays pull-bounded and cancellation aborts upstream", async () => {
   let produced = 0;
   let cancelled = false;
