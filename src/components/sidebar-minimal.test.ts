@@ -555,7 +555,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const splitPageModes = useMemo\([\s\S]{0,220}t\.kind === "page"[\s\S]{0,120}\[splitTargets\],?\s*\n\s*\)/,
+  /const splitPageModes = useMemo\([\s\S]{0,220}\.map\(\(request\) => request\.requestedPageId\)[\s\S]{0,160}\.filter\(\(pageId\): pageId is WorkspaceMode => isWorkspaceMode\(pageId\)\)[\s\S]{0,100}\[splitTargets\],?\s*\n\s*\)/,
   "workspace derives splitPageModes from the live split tiles",
 );
 assert.match(
