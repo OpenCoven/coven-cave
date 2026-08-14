@@ -31,6 +31,11 @@ export const MAX_PAIRING_REQUESTS = 64;
 // stays actionable.
 export const PAIRING_TOMBSTONE_TTL_MS = 2 * 60_000;
 export const PAIRING_EXCHANGE_RETRY_AFTER_MS = 1_000;
+// A claim is an at-most-once issuance lease, not a second request TTL. A
+// crashed issuer is eventually tombstoned instead of being released for
+// another issuer: releasing it could mint two credentials if the original
+// issuer was merely slow.
+export const PAIRING_CLAIM_STALE_MS = PAIRING_TTL_MS;
 
 export type PairingStatus = "pending" | "approved" | "denied";
 
@@ -49,11 +54,13 @@ type PairingRecord = {
   // Set by `claimApprovedPairing` to exclusively reserve this record for one
   // in-flight exchange (claim -> await issueCredential -> finalize), and
   // cleared only by `rollbackApprovedPairingClaim` (still within TTL) or by
-  // deletion (finalize, expiry-while-claimed rollback, or eviction). While
+  // deletion (finalize, stale-claim recovery, or expiry-while-claimed
+  // rollback). While
   // set, no other claim attempt — concurrent OR a replay — can ever succeed,
   // even with the correct secret: exclusivity is checked before anything
   // else touches the record.
   claimId: string | null;
+  claimStartedAt: number | null;
   claimReplayKey: string | null;
   claimReplayRequestHash: string | null;
 };
@@ -228,6 +235,13 @@ function isLive(record: PairingRecord, now: number): boolean {
   return record.consumedAt === null && record.expiresAt > now;
 }
 
+function isStaleClaim(record: PairingRecord, now: number): boolean {
+  return record.claimId !== null && (
+    record.claimStartedAt === null
+    || now >= record.claimStartedAt + PAIRING_CLAIM_STALE_MS
+  );
+}
+
 /** Drop every tombstone whose own (short) prune deadline has passed. */
 function pruneTombstones(now: number): void {
   for (const [id, tombstone] of tombstones) {
@@ -267,13 +281,18 @@ function tombstone(
 }
 
 /**
- * Drop every record whose TTL has passed. Safe to call from any read path
- * (list/read/decide) as well as before a create: it only ever removes
- * records that are already dead, so it can never evict a live request.
+ * Drop every unclaimed record whose TTL has passed, plus claims whose bounded
+ * issuer lease is stale. A claimed record remains durable through its
+ * original request expiry so an issuer awaiting credential persistence can
+ * finalize it and retain exact-request replay.
+ *
+ * A stale claim is tombstoned rather than released: the original issuer could
+ * be slow rather than crashed, and making the request claimable again could
+ * issue two credentials.
  */
 function pruneExpired(now: number): void {
   for (const [id, record] of requests) {
-    if (record.expiresAt <= now) {
+    if (record.expiresAt <= now && (record.claimId === null || isStaleClaim(record, now))) {
       tombstone(record, now);
       requests.delete(id);
     }
@@ -283,12 +302,14 @@ function pruneExpired(now: number): void {
 /**
  * Make room for a new record, called ONLY immediately before a create.
  * First reclaims anything already expired, then — and only if still at or
- * over the cap — evicts the oldest surviving (still-live) records
- * oldest-first. The `>=` guard means eviction stops as soon as inserting one
- * more record would land exactly at `MAX_PAIRING_REQUESTS`, so a create at
- * capacity leaves exactly 64 records afterward, never fewer. This is the
- * only place a live request can ever be evicted — reads, listings, and
- * decisions must never call this, only `pruneExpired`.
+ * over the cap — evicts the oldest surviving unclaimed record oldest-first.
+ * Claims are never capacity-evicted: only their owner may finalize or roll
+ * them back, and stale-claim recovery handles crashed issuers. The `>=`
+ * guard means eviction stops as soon as inserting one more record would land
+ * exactly at `MAX_PAIRING_REQUESTS`, so a create at capacity leaves exactly
+ * 64 records afterward, never fewer. This is the only place a live,
+ * unclaimed request can ever be evicted — reads, listings, and decisions
+ * must never call this, only `pruneExpired`.
  *
  * A record evicted here is still genuinely live (unlike `pruneExpired`'s
  * already-dead records) — a caller could be mid-poll on it right now — so it
@@ -300,11 +321,18 @@ function pruneExpired(now: number): void {
 function makeCapacityForCreate(now: number): void {
   pruneExpired(now);
   while (requests.size >= MAX_PAIRING_REQUESTS) {
-    const oldest = requests.entries().next();
-    if (oldest.done) break;
-    const [id, record] = oldest.value;
+    const oldest = [...requests.entries()].find(([, record]) => record.claimId === null);
+    if (!oldest) throw new PairingCapacityError();
+    const [id, record] = oldest;
     tombstone(record, now);
     requests.delete(id);
+  }
+}
+
+export class PairingCapacityError extends Error {
+  constructor() {
+    super("Pairing capacity is temporarily unavailable.");
+    this.name = "PairingCapacityError";
   }
 }
 
@@ -429,6 +457,7 @@ export function createPairingRequest(
     createReplay,
     decisionReplay: null,
     claimId: null,
+    claimStartedAt: null,
     claimReplayKey: null,
     claimReplayRequestHash: null,
   };
@@ -576,6 +605,7 @@ export function claimApprovedPairing(
     return null;
   }
   record.claimId = randomUUID();
+  record.claimStartedAt = now;
   record.claimReplayKey = null;
   record.claimReplayRequestHash = null;
   return {
@@ -621,7 +651,7 @@ export function claimApprovedPairingWithIdempotency(
     return { kind: "unclaimable" };
   }
   const secretOk = timingSafeEqualString(suppliedHash, record.secretHash);
-  if (!secretOk || !isLive(record, now) || record.status !== "approved") {
+  if (!secretOk) {
     return { kind: "unclaimable" };
   }
   if (record.claimId !== null) {
@@ -631,7 +661,11 @@ export function claimApprovedPairingWithIdempotency(
     }
     return { kind: "unclaimable" };
   }
+  if (!isLive(record, now) || record.status !== "approved") {
+    return { kind: "unclaimable" };
+  }
   record.claimId = randomUUID();
+  record.claimStartedAt = now;
   record.claimReplayKey = idempotencyKey;
   record.claimReplayRequestHash = requestHash;
   return {
@@ -700,6 +734,7 @@ export function rollbackApprovedPairingClaim(
   if (!record || record.claimId !== claimId) return false;
   if (isLive(record, now)) {
     record.claimId = null;
+    record.claimStartedAt = null;
     record.claimReplayKey = null;
     record.claimReplayRequestHash = null;
     return true;
