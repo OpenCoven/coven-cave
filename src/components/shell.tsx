@@ -41,6 +41,17 @@ import {
   resolveShellNavWidth,
   type ShellPanelLayout,
 } from "./shell-layout";
+import {
+  normalizeRightChatOpen,
+  normalizeRightChatWidth,
+  RIGHT_CHAT_DEFAULT_PX,
+  RIGHT_CHAT_MAX_PX,
+  RIGHT_CHAT_MIN_PX,
+  RIGHT_CHAT_OPEN_PREF_KEY,
+  RIGHT_CHAT_WIDTH_PREF_KEY,
+  SHELL_DETAIL_MIN_PX,
+  shouldAutoCollapseNavForRightChat,
+} from "@/lib/shell-right-chat";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -231,6 +242,9 @@ export type ShellHandle = {
   openList: () => void;
   closeList: () => void;
   toggleList: () => void;
+  openRightChat: () => void;
+  closeRightChat: () => void;
+  toggleRightChat: () => void;
   /** Dismiss the nav/list ONLY on mobile (where it's an overlay drawer over the
    *  content). On desktop these are persistent side panels, so selecting an
    *  option inside them must NOT collapse them — these are no-ops there. */
@@ -244,6 +258,7 @@ export type ShellListPolicy = "collapsible" | "persistent";
 type ShellMobileChromeState = {
   navDrawerOpen: boolean;
   listDrawerOpen: boolean;
+  rightChatDrawerOpen: boolean;
 };
 
 type ShellTopBar = ReactNode | ((state: ShellMobileChromeState) => ReactNode);
@@ -261,6 +276,8 @@ function ShellInner({
   onCloseSplitTile,
   onPromoteSplitTile,
   onDropSplitPage,
+  rightChat,
+  onRightChatOpenChange,
   onNavOpenChange,
   navPolicy = "remembered",
   listPolicy = "collapsible",
@@ -279,6 +296,8 @@ function ShellInner({
   onCloseSplitTile?: (id: string) => void;
   onPromoteSplitTile?: (id: string) => void;
   onDropSplitPage?: (mode: string, side: "left" | "right") => void;
+  rightChat?: ReactNode;
+  onRightChatOpenChange?: (open: boolean) => void;
   /** Mobile/tablet-only bottom tab bar. Kept in hydration-stable markup after
    *  `.shell-body`; CSS displays it only at the mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
@@ -296,6 +315,8 @@ function ShellInner({
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
+  const rightChatRef = useRef<PanelImperativeHandle | null>(null);
+  const rightChatToggleRef = useRef<HTMLButtonElement | null>(null);
   // Code-rail ↔ nav coupling bookkeeping (desktop only). When the code rail
   // opens we collapse the nav and remember that WE did it
   // (railAutoCollapsedNavRef); on rail close we restore it — unless the user
@@ -303,12 +324,42 @@ function ShellInner({
   // their intent wins and we leave the nav alone.
   const railAutoCollapsedNavRef = useRef(false);
   const userOverrodeNavRef = useRef(false);
+  const hasRightChat = rightChat != null;
+  const [rightChatOpen, setRightChatOpen] = useState(false);
+  const [preferredRightChatWidth, setPreferredRightChatWidth] = useState(RIGHT_CHAT_DEFAULT_PX);
+  const rightChatAutoCollapsedNavRef = useRef(false);
+  const rightChatNavOverrideRef = useRef(false);
   const [preferredNavWidth, setPreferredNavWidth] = useState(() =>
     resolveShellNavWidth(readNavWidthPref()),
   );
   const [mounted, setMounted] = useState(false);
   useLayoutEffect(() => setMounted(true), []);
   const layoutStorage = mounted ? shellStorage : hydrationShellStorage;
+  const isMobile = useIsMobile();
+  const [mobileDrawer, setMobileDrawer] = useState<MobileDrawerSlot>(null);
+  const twoPane = !list;
+  const hasBottom = !!bottom;
+  const desktopRightChat = hasRightChat && !isMobile;
+
+  useLayoutEffect(() => {
+    if (!mounted || !hasRightChat) return;
+    let open = false;
+    let width = RIGHT_CHAT_DEFAULT_PX;
+    try {
+      open = normalizeRightChatOpen(window.localStorage.getItem(RIGHT_CHAT_OPEN_PREF_KEY));
+      width = normalizeRightChatWidth(window.localStorage.getItem(RIGHT_CHAT_WIDTH_PREF_KEY));
+    } catch {
+      // closed/default is the safe storage-unavailable fallback
+    }
+    setPreferredRightChatWidth(width);
+    setRightChatOpen(open);
+    if (isMobile) {
+      setMobileDrawer(open ? "right-chat" : null);
+    } else {
+      rightChatRef.current?.resize(`${width}px`);
+      applyPanelOpenState(rightChatRef.current, open);
+    }
+  }, [hasRightChat, isMobile, mounted]);
 
   // Mobile drawer: which of the nav/list/agent panels is currently slid in
   // as a full-height overlay. On desktop this stays null and react-resizable-
@@ -317,9 +368,6 @@ function ShellInner({
   // this state drives the `[data-mobile-drawer]` attribute that triggers the
   // slide. We deliberately do NOT call panel.collapse/expand on mobile —
   // that would write to the persisted desktop layout for no benefit.
-  const isMobile = useIsMobile();
-  const [mobileDrawer, setMobileDrawer] = useState<MobileDrawerSlot>(null);
-
   // When the viewport crosses back to desktop, drop any open drawer state so
   // we don't end up with a stale [data-mobile-drawer] attribute applying to
   // a layout that's no longer in mobile mode. On mobile, if a list slot
@@ -360,6 +408,7 @@ function ShellInner({
   const mobileChromeState: ShellMobileChromeState = {
     navDrawerOpen: isMobile && mobileDrawer === "nav",
     listDrawerOpen: isMobile && mobileDrawer === "list",
+    rightChatDrawerOpen: isMobile && mobileDrawer === "right-chat",
   };
   const renderedTopBar = typeof topBar === "function" ? topBar(mobileChromeState) : topBar;
   const panelShortcuts = useMemo(
@@ -367,6 +416,72 @@ function ShellInner({
     [panelShortcutOverrides],
   );
   const leftPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleLeftPanel);
+  const rightPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleRightPanel);
+
+  const writeRightChatOpenPref = (open: boolean) => {
+    try {
+      window.localStorage.setItem(RIGHT_CHAT_OPEN_PREF_KEY, open ? "1" : "0");
+    } catch {}
+  };
+  const writeRightChatWidthPref = (width: number) => {
+    try {
+      window.localStorage.setItem(
+        RIGHT_CHAT_WIDTH_PREF_KEY,
+        String(normalizeRightChatWidth(String(width))),
+      );
+    } catch {}
+  };
+
+  const openRightChat = () => {
+    if (!hasRightChat) return;
+    if (isMobile) {
+      setMobileDrawer("right-chat");
+    } else {
+      const navWidth = navRef.current?.getSize().inPixels ?? NAV_RAIL_PX;
+      const listWidth = twoPane ? 0 : listRef.current?.getSize().inPixels ?? 0;
+      if (
+        shouldAutoCollapseNavForRightChat({
+          viewportWidth: window.innerWidth,
+          navWidth,
+          listWidth,
+          rightChatWidth: preferredRightChatWidth,
+        }) &&
+        navOpen
+      ) {
+        rightChatAutoCollapsedNavRef.current = true;
+        rightChatNavOverrideRef.current = false;
+        navRef.current?.collapse();
+        setNavOpen(false);
+      }
+      rightChatRef.current?.expand();
+    }
+    setRightChatOpen(true);
+    writeRightChatOpenPref(true);
+  };
+
+  const closeRightChat = () => {
+    if (isMobile) {
+      setMobileDrawer((current) => (current === "right-chat" ? null : current));
+      requestAnimationFrame(() => rightChatToggleRef.current?.focus());
+    } else {
+      rightChatRef.current?.collapse();
+      const restoreNav =
+        rightChatAutoCollapsedNavRef.current && !rightChatNavOverrideRef.current;
+      rightChatAutoCollapsedNavRef.current = false;
+      rightChatNavOverrideRef.current = false;
+      if (restoreNav) {
+        navRef.current?.expand();
+        setNavOpen(true);
+      }
+    }
+    setRightChatOpen(false);
+    writeRightChatOpenPref(false);
+  };
+
+  const toggleRightChat = () => {
+    if (rightChatOpen) closeRightChat();
+    else openRightChat();
+  };
 
   useImperativeHandle(ref, () => {
     const toggleDrawer = (slot: NonNullable<MobileDrawerSlot>) => {
@@ -410,22 +525,25 @@ function ShellInner({
         if (listPolicy === "persistent") return;
         togglePanel(listRef.current);
       },
+      openRightChat,
+      closeRightChat,
+      toggleRightChat,
     };
-  }, [isMobile, listPolicy]);
+  }, [closeRightChat, isMobile, listPolicy, openRightChat, toggleRightChat]);
 
-  const twoPane = !list;
-  const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
+  if (desktopRightChat) panelIds.push("right-chat");
   const chatContextual = navPolicy === "chat-contextual";
-  const groupId = chatContextual
+  const baseGroupId = chatContextual
     ? `${SHELL_GROUP_ID}.chat-contextual`
     : twoPane
       ? `${SHELL_GROUP_ID}.two-pane`
       : listPolicy === "persistent"
         ? `${SHELL_GROUP_ID}.persistent-list`
         : SHELL_GROUP_ID;
+  const groupId = desktopRightChat ? `${baseGroupId}.right-chat` : baseGroupId;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -782,9 +900,19 @@ function ShellInner({
     navPrefArmedGroupRef.current = groupId;
   }, [settled, isMobile, groupId, navPolicy]);
 
+  useLayoutEffect(() => {
+    if (!settled || !desktopRightChat) return;
+    rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+    applyPanelOpenState(rightChatRef.current, rightChatOpen);
+  }, [desktopRightChat, groupId, preferredRightChatWidth, rightChatOpen, settled]);
+
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
+
+  useEffect(() => {
+    onRightChatOpenChange?.(hasRightChat ? rightChatOpen : false);
+  }, [hasRightChat, onRightChatOpenChange, rightChatOpen]);
 
   useEffect(() => {
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
@@ -803,6 +931,14 @@ function ShellInner({
       }
     };
     const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const editable =
+        target?.matches("input, textarea, select, [contenteditable='true'], [role='textbox']") ?? false;
+      if (!editable && hasRightChat && matchesPanelShortcut(e, panelShortcuts.toggleRightPanel)) {
+        e.preventDefault();
+        toggleRightChat();
+        return;
+      }
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("nav");
@@ -844,7 +980,7 @@ function ShellInner({
       window.removeEventListener("keydown", bottomToggle);
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasBottom, isMobile, listPolicy, panelShortcuts]);
+  }, [twoPane, hasBottom, hasRightChat, isMobile, listPolicy, panelShortcuts, preferredRightChatWidth, rightChatOpen, toggleRightChat]);
 
   // Couple the left nav to the code rail (desktop only — mobile nav is a
   // drawer, so this must never touch it). When the rail opens we collapse the
@@ -891,6 +1027,9 @@ function ShellInner({
     if (navOpen && railAutoCollapsedNavRef.current) {
       userOverrodeNavRef.current = true;
     }
+    if (navOpen && rightChatAutoCollapsedNavRef.current) {
+      rightChatNavOverrideRef.current = true;
+    }
   }, [navOpen]);
 
   // Clear coupling bookkeeping when the viewport crosses into mobile: the nav
@@ -902,6 +1041,8 @@ function ShellInner({
     if (isMobile) {
       railAutoCollapsedNavRef.current = false;
       userOverrodeNavRef.current = false;
+      rightChatAutoCollapsedNavRef.current = false;
+      rightChatNavOverrideRef.current = false;
     }
   }, [isMobile]);
 
@@ -947,6 +1088,21 @@ function ShellInner({
           const normalizedWidth = resolveShellNavWidth(String(pixelWidth));
           writeNavWidthPref(normalizedWidth);
           setPreferredNavWidth(normalizedWidth);
+        }
+        const rightChatWidth = rightChatRef.current?.getSize().inPixels;
+        if (
+          hasRightChat &&
+          meta.isUserInteraction &&
+          Number.isFinite(rightChatWidth)
+        ) {
+          const open = rightChatWidth! >= RIGHT_CHAT_MIN_PX;
+          setRightChatOpen(open);
+          writeRightChatOpenPref(open);
+          if (open) {
+            const normalized = normalizeRightChatWidth(String(rightChatWidth));
+            setPreferredRightChatWidth(normalized);
+            writeRightChatWidthPref(normalized);
+          }
         }
       }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
@@ -1018,7 +1174,7 @@ function ShellInner({
           <Separator className="shell-separator" />
         </>
       )}
-      <Panel id="detail" className="shell-detail-panel">
+      <Panel id="detail" className="shell-detail-panel" minSize={`${SHELL_DETAIL_MIN_PX}px`}>
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
           {/* Peel-reveal (cave-3vgd): decorative page-curl toward the collapsed
               rail on HTML-in-canvas browsers; a bare Fragment everywhere else
@@ -1042,6 +1198,26 @@ function ShellInner({
           </ShellPeelReveal>
         </main>
       </Panel>
+      {desktopRightChat ? (
+        <>
+          <Separator className="shell-separator" />
+          <Panel
+            id="right-chat"
+            className="shell-right-chat-panel"
+            defaultSize={`${preferredRightChatWidth}px`}
+            minSize={`${RIGHT_CHAT_MIN_PX}px`}
+            maxSize={`${RIGHT_CHAT_MAX_PX}px`}
+            collapsible
+            collapsedSize={0}
+            panelRef={rightChatRef}
+            onResize={(size) => setRightChatOpen((size.inPixels ?? 0) >= RIGHT_CHAT_MIN_PX)}
+          >
+            <div id="shell-right-chat-panel" className="shell-right-chat">
+              {rightChat}
+            </div>
+          </Panel>
+        </>
+      ) : null}
     </Group>
   );
 
@@ -1095,6 +1271,26 @@ function ShellInner({
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   );
+  const rightChatToggle = (
+    hasRightChat ? (
+      <button
+        ref={rightChatToggleRef}
+        type="button"
+        className={`shell-top-toggle shell-top-toggle--right focus-ring${rightChatOpen ? " shell-top-toggle--active" : ""}`}
+        aria-label={rightChatOpen ? "Close Chat panel" : "Open Chat panel"}
+        aria-expanded={rightChatOpen}
+        aria-controls={isMobile ? "shell-right-chat-drawer" : "shell-right-chat-panel"}
+        title={`${rightChatOpen ? "Close" : "Open"} Chat panel (${rightPanelShortcutLabel})`}
+        onClick={toggleRightChat}
+      >
+        <Icon
+          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
+          width={CAVE_ICON_SIZE.shellToggle}
+          height={CAVE_ICON_SIZE.shellToggle}
+        />
+      </button>
+    ) : null
+  );
   // Workspace owns its destination stack, while the other shell surfaces use
   // browser history. Keep the app-scoped boundary controls intact there and
   // reuse the shared browser controls everywhere else.
@@ -1142,6 +1338,7 @@ function ShellInner({
         {navToggle}
         {historyNav}
         <div className="shell-top__bar" data-tauri-drag-region="deep">{renderedTopBar}</div>
+        {rightChatToggle}
       </div>
       <div className="shell-body flex flex-1 min-h-0">
         {hasBottom ? (
@@ -1174,7 +1371,11 @@ function ShellInner({
       {mobileTabs ?? null}
       <MobileDrawer
         open={isMobile ? mobileDrawer : null}
-        onClose={() => setMobileDrawer(null)}
+        onClose={() => {
+          if (mobileDrawer === "right-chat") closeRightChat();
+          else setMobileDrawer(null);
+        }}
+        rightChat={isMobile ? rightChat : undefined}
       />
     </div>
   );
