@@ -34,8 +34,9 @@ assert.match(
   "a stored projects tab resolves to a tab that still exists",
 );
 
-// ── Chat → Projects mounts all three panes ───────────────────────────────────
-assert.match(projectsView, /type ProjectsPane = "access" \| "groups" \| "activity"/, "the surface names three panes");
+// ── Chat → Projects mounts distinct directory and host-authority panes ───────
+assert.match(projectsView, /type ProjectsPane = "access" \| "host" \| "groups" \| "activity"/, "the surface names four panes");
+assert.match(projectsView, /<HostAccessSection familiarId=\{familiar\?\.id\} \/>/, "host authority is distinct from project access");
 assert.match(
   projectsView,
   /<AccessGroupsSection familiars=\{resolvedFamiliars\} \/>/,

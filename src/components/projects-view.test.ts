@@ -274,7 +274,7 @@ test("the settings modal also renames and removes from the registry (issue #3710
 // groups (the only primitive that grants a set of projects to a set of
 // familiars at once) were buried two levels inside that settings tab.
 test("Access, Groups, and Activity are three peer panes", () => {
-  assert.match(view, /type ProjectsPane = "access" \| "groups" \| "activity"/, "the surface names its three panes");
+  assert.match(view, /type ProjectsPane = "access" \| "host" \| "groups" \| "activity"/, "the surface names its four panes");
   assert.match(view, /<Tabs<ProjectsPane>/, "the panes use the shared tabs primitive");
   assert.match(view, /id: "access", label: "Access"/, "Access is a named tab");
   assert.match(view, /id: "groups",\s*label: "Groups",/, "Groups is a named tab, not a section scrolled past");

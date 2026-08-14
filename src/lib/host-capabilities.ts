@@ -59,6 +59,9 @@ export type HostCapabilityAudit = {
   actor?: "loopback" | "mobile";
 };
 type Store = { version: 1; grants: HostCapabilityGrant[]; audit: HostCapabilityAudit[] };
+export class HostCapabilityStoreError extends Error {
+  constructor(message: string) { super(message); this.name = "HostCapabilityStoreError"; }
+}
 
 const DEFAULT_GRANT_MS = 30 * 60 * 1000;
 const MAX_GRANT_MS = 8 * 60 * 60 * 1000;
@@ -71,12 +74,17 @@ function empty(): Store { return { version: 1, grants: [], audit: [] }; }
 async function readStore(): Promise<Store> {
   try {
     const parsed = JSON.parse(await readFile(storePath(), "utf8")) as Partial<Store>;
+    if (!Array.isArray(parsed.grants) || !Array.isArray(parsed.audit)) throw new HostCapabilityStoreError("host capability store is corrupt; refusing to change authority");
     return {
       version: 1,
-      grants: Array.isArray(parsed.grants) ? parsed.grants.filter(validGrant) : [],
-      audit: Array.isArray(parsed.audit) ? parsed.audit.filter(validAudit) : [],
+      grants: parsed.grants.filter(validGrant),
+      audit: parsed.audit.filter(validAudit),
     };
-  } catch { return empty(); }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return empty();
+    if (error instanceof HostCapabilityStoreError) throw error;
+    throw new HostCapabilityStoreError("host capability store is unreadable; refusing to change authority");
+  }
 }
 async function writeStore(store: Store) {
   await mkdir(path.dirname(storePath()), { recursive: true });
@@ -132,9 +140,9 @@ export async function activeHostCapabilities(input: { familiarId: string; sessio
   const grants = await listHostCapabilityGrants();
   return grants.filter((grant) => grant.familiarId === input.familiarId && grant.sessionId === input.sessionId && hostCapabilityById(grant.capability)?.platform === platform).map((grant) => grant.capability).sort();
 }
-export async function grantHostCapability(input: { familiarId: string; sessionId: string; capability: HostCapabilityId; expiresAt?: string; actor: "loopback" | "mobile"; now?: number }) {
+export async function grantHostCapability(input: { familiarId: string; sessionId: string; capability: HostCapabilityId; expiresAt?: string; actor: "loopback" | "mobile"; now?: number; platform?: NodeJS.Platform }) {
   const definition = hostCapabilityById(input.capability);
-  if (!definition || definition.platform !== process.platform) throw new Error("host capability is unavailable on this platform");
+  if (!definition || definition.platform !== (input.platform ?? process.platform)) throw new Error("host capability is unavailable on this platform");
   const now = input.now ?? Date.now();
   const requested = input.expiresAt ? Date.parse(input.expiresAt) : now + DEFAULT_GRANT_MS;
   if (!Number.isFinite(requested) || requested <= now || requested > now + MAX_GRANT_MS) throw new Error("expiry must be in the next eight hours");

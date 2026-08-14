@@ -18,6 +18,7 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
   const [grants, setGrants] = useState<Grant[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState("");
   const load = useCallback(async () => {
     try {
       const response = await fetch("/api/host-capability-grants", { cache: "no-store" });
@@ -39,6 +40,18 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
     } catch { setError("Couldn’t revoke that host capability."); }
     finally { setBusy(null); }
   }, [load]);
+  const approve = useCallback(async (capability: Capability) => {
+    if (!familiarId || !sessionId.trim()) { setError("Choose the session that needs this capability."); return; }
+    setBusy(capability.id);
+    try {
+      const response = await fetch("/api/host-capability-grants", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targetFamiliarId: familiarId, sessionId: sessionId.trim(), capability: capability.id }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(typeof body?.error === "string" ? body.error : "approval failed");
+      await load();
+      setError(null);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Couldn’t approve that host capability."); }
+    finally { setBusy(null); }
+  }, [familiarId, load, sessionId]);
   return (
     <div className="space-y-4">
       <p className="px-1 text-[length:var(--text-sm)] text-[var(--text-muted)]">
@@ -50,9 +63,17 @@ export function HostAccessSection({ familiarId }: { familiarId?: string | null }
           <EmptyState icon="ph:hard-drives" headline="No host capabilities on this platform" subtitle="Project access remains available; host access is platform-specific." compact />
         ) : (
           <div className="divide-y divide-[var(--border-hairline)]">
-            {catalog.map((capability) => <div key={capability.id} className="px-4 py-3">
+            <div className="px-4 py-3">
+              <label className="block text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]" htmlFor="host-access-session">Session ID</label>
+              <input id="host-access-session" value={sessionId} onChange={(event) => setSessionId(event.target.value)} placeholder="Session requesting host access" className="focus-ring mt-1 w-full rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-sunken)] px-2 py-1 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]" />
+              <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">Approval applies only to this familiar and session for 30 minutes. It starts a fresh native session before use.</p>
+            </div>
+            {catalog.map((capability) => <div key={capability.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div>
               <p className="text-[length:var(--text-base)] font-medium text-[var(--text-primary)]">{capability.label}</p>
               <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">{capability.description}</p>
+              </div>
+              <Button variant="secondary" size="xs" disabled={busy === capability.id} onClick={() => void approve(capability)}>{busy === capability.id ? "Approving…" : "Approve"}</Button>
             </div>)}
           </div>
         )}
