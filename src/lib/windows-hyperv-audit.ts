@@ -17,6 +17,7 @@ const MAX_RESULT_BYTES = 512 * 1024;
 const MAX_ROWS = 512;
 const MAX_STRING_LENGTH = 4_096;
 const EXPECTED_PUBLISHER = "CompleteTech";
+const EXPECTED_SIGNER_SUBJECT_PATTERN = "(^|,\\s*)CN=CompleteTech(,|$)";
 const VM_STATES = new Set(["Off", "Running", "Paused", "Saved", "Starting", "Stopping", "Resetting", "Pausing", "Resuming", "Saving"]);
 const SWITCH_TYPES = new Set(["External", "Internal", "Private"]);
 const INTEGRATION_STATUSES = new Set(["OK", "Error", "No Contact", "Lost Communication", "Unknown"]);
@@ -75,7 +76,7 @@ function windowsPowerShellPath(): string {
 async function verifyAuthenticode(helperPath: string, run: HypervAuditRunner = systemRunner): Promise<void> {
   // This immutable script asks Windows to validate the chain and authenticode
   // status. It has no user-provided arguments or shell interpolation.
-  const script = "$s=Get-AuthenticodeSignature -LiteralPath $args[0]; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'CompleteTech'){exit 1}";
+  const script = `$s=Get-AuthenticodeSignature -LiteralPath $args[0]; if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch '${EXPECTED_SIGNER_SUBJECT_PATTERN}'){exit 1}`;
   try {
     await run(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", script, helperPath]);
   } catch {

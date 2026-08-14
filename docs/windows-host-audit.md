@@ -12,7 +12,8 @@ browser endpoint that accepts familiar/session IDs and starts a host process.
 The desktop app invokes the separately deployed, install-managed helper at
 `%ProgramW6432%\CompleteTech\Coven Cave\coven-host-audit.exe` with one fixed
 operation: `hyperv-inventory --format json`. Before every invocation Windows
-must report an Authenticode `Valid` chain and a CompleteTech publisher; any
+must report an Authenticode `Valid` chain and the expected `CN=CompleteTech`
+publisher subject; any
 missing, altered, expired, or differently signed helper fails closed. The
 helper is responsible for requesting UAC only when that inventory needs
 elevation. It may return host, VM, switch, checkpoint, VHD-chain, and

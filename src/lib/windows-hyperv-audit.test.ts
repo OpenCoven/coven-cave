@@ -28,6 +28,7 @@ test("Windows audit is Windows-only and requires the exact unexpired session cap
   const inventory = await runWindowsHypervAudit(authority, { run: async (command, args) => {
     if (command.endsWith("\\WindowsPowerShell\\v1.0\\powershell.exe")) {
       assert.match(args[3] ?? "", /Get-AuthenticodeSignature/);
+      assert.match(args[3] ?? "", /CN=CompleteTech/);
       assert.match(args.at(-1) ?? "", /CompleteTech\\Coven Cave\\coven-host-audit\.exe$/);
       return "";
     }
