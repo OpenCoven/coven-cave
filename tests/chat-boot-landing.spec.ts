@@ -239,10 +239,14 @@ test.describe("chat boot landing", () => {
     await expect(page.getByText("Requesting microphone…")).toBeVisible();
     await voiceDialog.getByRole("button", { name: "End call" }).click();
     await expect(voiceDialog).toHaveCount(0);
-    await page.getByRole("button", { name: "Chat options" }).click();
-    // The unified + menu folds the old Improve section into enhance rows.
-    await expect(page.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
-    await page.keyboard.press("Escape");
+    // The enhance affordance is no longer behind an overflow menu on the landing
+    // surface: the composer surfaces it directly (composer-enhance.tsx), so there
+    // is no "Chat options"/"Session options" trigger to click here — the page
+    // snapshot at turn zero shows `button "Enhance prompt"` and
+    // `button "Enhance options"` inline, both disabled until there is a prompt.
+    // Assert the affordance where it now lives (cave-ktvy0).
+    await expect(page.getByRole("button", { name: "Enhance prompt" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Enhance options" })).toBeVisible();
   });
 });
 
