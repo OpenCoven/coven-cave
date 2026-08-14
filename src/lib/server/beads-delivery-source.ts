@@ -2,12 +2,12 @@ import {
   buildBeadsDeliveryOverview,
   type BeadDeliveryRow,
   type BeadsDeliveryOverview,
-} from "@/lib/beads-delivery";
-import { runBdCommand, type BdResult } from "@/lib/server/beads-cli";
+} from "../beads-delivery.ts";
+import { runBdCommand, type BdResult } from "./beads-cli.ts";
 import {
   resolveSafeBeadsWorkspace,
   type BeadsWorkspaceResolution,
-} from "@/lib/server/beads-workspace";
+} from "./beads-workspace.ts";
 
 const OVERVIEW_CACHE_TTL_MS = 15_000;
 

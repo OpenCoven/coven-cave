@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -336,7 +336,7 @@ try {
   const windowsCodexLaunch = codexLaunchCommand(codexShim, "win32");
   assert.deepEqual(
     { command: windowsCodexLaunch.command, args: [...windowsCodexLaunch.fixedArgs, "exec", "--add-dir", "C:\\workspace&not-a-command"] },
-    { command: process.execPath, args: [codexScript, "exec", "--add-dir", "C:\\workspace&not-a-command"] },
+    { command: process.execPath, args: [await realpath(codexScript), "exec", "--add-dir", "C:\\workspace&not-a-command"] },
     "Windows npm shims launch through Node with a metacharacter path kept as one argv value",
   );
 } finally {
