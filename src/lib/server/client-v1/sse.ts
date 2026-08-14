@@ -59,6 +59,39 @@ export function createClientStreamTranslator(context: ClientStreamContext) {
   let assistantText = "";
   let terminal = false;
   return {
+    /** Reconstructs state for a retained resume seed without emitting an
+     * incremental client event. An authoritative replacement is a checkpoint:
+     * it defines the current assistant text even when it rewrote prior text. */
+    seed(value: unknown): boolean {
+      if (terminal || !value || typeof value !== "object" || Array.isArray(value)) return false;
+      const event = value as Partial<StreamEvent> & Record<string, unknown>;
+      switch (event.kind) {
+        case "session":
+          return typeof event.sessionId === "string";
+        case "assistant_chunk":
+          if (typeof event.text !== "string") return false;
+          assistantText += event.text;
+          return true;
+        case "assistant_replace":
+          if (typeof event.text !== "string") return false;
+          assistantText = event.text;
+          return true;
+        case "progress":
+          return typeof event.label === "string";
+        case "tool_use":
+          return typeof event.name === "string";
+        case "done":
+        case "error":
+          terminal = true;
+          return true;
+        case "user":
+          return typeof event.text === "string";
+        case "attachment":
+          return true;
+        default:
+          return false;
+      }
+    },
     translate(value: unknown): Translation {
       const invalid = () => {
         terminal = true;
@@ -482,14 +515,7 @@ export function createResumedRunStream(
       };
       const seedTranslator = (json: string): boolean => {
         try {
-          const translated = translator.translate(JSON.parse(json));
-          if (
-            translated.event
-            && (translated.event.type === "reconcile_required"
-              || (translated.event.type === "run.failed"
-                && translated.event.code === "invalid_stream_event"))
-          ) return false;
-          return true;
+          return translator.seed(JSON.parse(json));
         } catch {
           return false;
         }
@@ -594,13 +620,15 @@ export function createResumedRunStream(
         cleanup = close;
         return;
       }
-      if (subscription.gapBeforeSeq !== null) {
+      const reconcileSeq = subscription.gapBeforeSeq
+        ?? (subscription.translatorSeedComplete ? null : cursor + 1);
+      if (reconcileSeq !== null) {
         try {
-          controller.enqueue(encodeClientStreamEvent(subscription.gapBeforeSeq, {
+          controller.enqueue(encodeClientStreamEvent(reconcileSeq, {
             type: "reconcile_required",
             conversationId: context.conversationId,
           }));
-          lastEmittedSeq = subscription.gapBeforeSeq;
+          lastEmittedSeq = reconcileSeq;
         } catch {
           // The transport already closed.
         }
