@@ -103,7 +103,7 @@
   pointer-events: none;
 }
 .research-intent-count--near {
-  color: var(--text-warning, var(--text-strong));
+  color: var(--color-warning);
 }
 
 /* ── Slash-command palette (design 548–559): anchored under the textarea. ── */
