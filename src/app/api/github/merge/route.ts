@@ -113,6 +113,16 @@ export async function POST(req: Request) {
         } | null;
         const ref = typeof pr?.head?.ref === "string" ? pr.head.ref.trim() : "";
         const headRepo = typeof pr?.head?.repo?.full_name === "string" ? pr.head.repo.full_name.trim() : "";
+        if (!headRepo) {
+          branchDeleteError = "could not read head repository";
+          return NextResponse.json({
+            ok: true,
+            merged: true,
+            sha: typeof data.sha === "string" ? data.sha : null,
+            branchDeleted: false,
+            branchDeleteError,
+          });
+        }
         if (headRepo.toLowerCase() !== repo.toLowerCase()) {
           branchDeleteError = "head branch belongs to a different repository";
           return NextResponse.json({
