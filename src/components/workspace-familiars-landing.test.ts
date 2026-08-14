@@ -73,7 +73,11 @@ for (const component of [
   "OnboardingOverlay",
   "OpenCovenSubmissionPage",
   "RailInspector",
-  "SalemChatPanel",
+  // cave-x6rw promoted the quick-ask surface to a registered page: workspace
+  // now renders AskSalemView at mode === "salem" (registry id "salem", title
+  // "Ask Salem"). The lazy-boundary contract is unchanged, so this pins the
+  // surface that is actually mounted (cave-ktvy0).
+  "AskSalemView",
   "ShortcutsSheet",
 ]) {
   assert.match(
