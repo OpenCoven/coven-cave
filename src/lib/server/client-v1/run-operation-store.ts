@@ -208,6 +208,20 @@ function isExpired(record: ClientRunOperationRecord, now: number): boolean {
   return now >= record.expiresAt;
 }
 
+/**
+ * A launch record is durable before the canonical stream buffer exists. For
+ * the same bounded window as an in-progress idempotency claim, callers must
+ * treat that state as actively launching rather than as a crashed run.
+ */
+export function clientRunOperationLaunchingRetryAfterMs(
+  record: ClientRunOperationRecord,
+  now: number = Date.now(),
+): number | null {
+  if (record.state !== "launching") return null;
+  const retryAt = record.updatedAt + PENDING_CLAIM_RETRY_MS;
+  return now < retryAt ? retryAt - now : null;
+}
+
 export async function readClientRunOperation(args: {
   operationId: string;
   credentialId: string;
@@ -305,7 +319,7 @@ export async function launchClientRunOperation<T>(args: {
       if (existing.state === "launched") {
         return { kind: "already_launched", record: existing };
       }
-      const launchingAt = Date.now();
+      const launchingAt = now;
       const launching: ClientRunOperationRecord = {
         ...existing,
         state: "launching",

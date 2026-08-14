@@ -4,6 +4,7 @@ import { withAuthorizedClientConversation } from "@/lib/server/client-v1/chat-se
 import { isUuid } from "@/lib/server/client-v1/contract";
 import {
   clientRunBufferKey,
+  clientRunLaunchingInProgress,
   clientRunService,
 } from "@/lib/server/client-v1/run-service";
 import { clientV1Error } from "@/lib/server/client-v1/responses";
@@ -34,13 +35,17 @@ export async function GET(req: Request, context: Context): Promise<Response> {
       false,
     );
   }
-  let metadata;
+  let run;
   try {
-    metadata = await clientRunService.findRun(id, auth.principal.credentialId);
+    run = await clientRunService.inspectRun(id, auth.principal.credentialId);
   } catch {
     return clientV1Error(503, "service_unavailable", "Run metadata is unavailable.", true);
   }
-  if (!metadata) return clientV1Error(404, "not_found", "Run not found.", false);
+  if (run.kind === "launching") {
+    return clientRunLaunchingInProgress(run.metadata, run.retryAfterMs);
+  }
+  if (run.kind !== "found") return clientV1Error(404, "not_found", "Run not found.", false);
+  const metadata = run.metadata;
   const authorized = await withAuthorizedClientConversation(
     metadata.conversationId,
     async () => true,
