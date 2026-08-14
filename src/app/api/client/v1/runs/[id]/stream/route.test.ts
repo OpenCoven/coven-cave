@@ -27,9 +27,12 @@ const { resetRateLimitsForTest } = await import("@/lib/server/client-v1/rate-lim
 const { saveConversation } = await import("@/lib/cave-conversations.ts");
 const {
   claimOperation,
+  COMPLETED_OPERATION_TTL_MS,
   completeOperation,
   hashNormalizedRequest,
+  PENDING_CLAIM_RETRY_MS,
 } = await import("@/lib/server/client-v1/idempotency-store.ts");
+const { clientRunOperationStorePath } = await import("@/lib/server/client-v1/run-operation-store.ts");
 
 after(() => rm(root, { recursive: true, force: true }));
 
@@ -106,6 +109,33 @@ async function seedRun(
   assert.equal(completed.kind, "completed");
 }
 
+async function seedLaunchingRun(
+  runId: string,
+  credentialId: string,
+  conversationId: string,
+  internalRunId: string,
+  stale: boolean,
+) {
+  const updatedAt = Date.now() - (stale ? PENDING_CLAIM_RETRY_MS : 0);
+  const storePath = clientRunOperationStorePath(runId, credentialId);
+  await mkdir(path.dirname(storePath), { recursive: true });
+  await writeFile(
+    storePath,
+    JSON.stringify({
+      version: 1,
+      operationId: runId,
+      credentialId,
+      requestHash: hashNormalizedRequest({ seed: runId }),
+      conversationId,
+      internalRunId,
+      state: "launching",
+      createdAt: updatedAt,
+      updatedAt,
+      expiresAt: updatedAt + COMPLETED_OPERATION_TTL_MS,
+    }),
+  );
+}
+
 async function issue(scopes: readonly string[] = ["chat:read"]) {
   const { token } = await issueCredential({
     appName: "Chat",
@@ -173,4 +203,39 @@ test("stream fallback reconcile stays encodable at the resumable upper bound", a
   const text = await response.text();
   assert.match(text, new RegExp(`^id: ${Number.MAX_SAFE_INTEGER}$`, "m"));
   assert.match(text, /"type":"reconcile_required"/);
+});
+
+test("stream reports fresh pre-buffer launching runs as retryable, but keeps stale launch crashes not found", async () => {
+  resetRateLimitsForTest();
+  const token = await issue();
+  const { credentialId } = await principalFor(token);
+  const conversationId = "client-v1-stream-launching-conversation";
+
+  const freshRunId = crypto.randomUUID();
+  await seedLaunchingRun(
+    freshRunId,
+    credentialId,
+    conversationId,
+    crypto.randomUUID(),
+    false,
+  );
+  const fresh = await GET(...streamRequest(freshRunId, token));
+  assert.equal(fresh.status, 409);
+  assert.ok(Number(fresh.headers.get("Retry-After")) >= 1);
+  const freshBody = await fresh.json();
+  assert.equal(freshBody.error.code, "operation_already_started");
+  assert.equal(freshBody.error.retryable, true);
+  assert.equal(freshBody.error.details.status, "launching");
+
+  const staleRunId = crypto.randomUUID();
+  await seedLaunchingRun(
+    staleRunId,
+    credentialId,
+    conversationId,
+    crypto.randomUUID(),
+    true,
+  );
+  const stale = await GET(...streamRequest(staleRunId, token));
+  assert.equal(stale.status, 404);
+  assert.equal((await stale.json()).error.retryable, false);
 });
