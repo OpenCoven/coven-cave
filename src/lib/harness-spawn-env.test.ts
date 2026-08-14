@@ -238,6 +238,11 @@ assert.match(
   /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
   "reader rewrite runs through the shared runner with its familiar id",
 );
+assert.match(
+  rewriteSource,
+  /"--permission",\s*"read-only",[\s\S]*?"--",\s*rewritePrompt/,
+  "reader rewrite constrains untrusted answer text to a read-only harness run",
+);
 assert.doesNotMatch(rewriteSource, /covenSpawnEnv/);
 
 const automationSource = read("./server/automation-runner.ts");
