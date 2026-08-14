@@ -1696,6 +1696,16 @@ export function createBlindedScorecardSetCommitment(
     snapshot.envelope,
     snapshot.secret,
   );
+  if (
+    snapshot.publicTrial.stoppingRule.closesAt !== undefined
+    && Date.parse(snapshot.committedAt)
+      >= Date.parse(snapshot.publicTrial.stoppingRule.closesAt)
+  ) {
+    fail(
+      "INVALID_SCORECARD_SET_COMMITMENT",
+      "The scorecard set commitment must be created before the time-based stopping unlock.",
+    );
+  }
   const scorecardSha256ByArmToken = scorecardShaMapping(
     snapshot.scorecards,
     snapshot.publicTrial,
@@ -1800,12 +1810,21 @@ export function revealBlindedTweetThreadTrial(
     envelope,
     capturedSecret,
   );
-  verifyScorecardSetCommitment(
+  const verifiedScorecardSetCommitment = verifyScorecardSetCommitment(
     scorecardSetCommitment,
     publicTrial,
     envelope,
     capturedSecret,
   );
+  if (
+    Date.parse(verifiedScorecardSetCommitment.committedAt)
+      > Date.parse(currentTime)
+  ) {
+    fail(
+      "SCORECARD_SET_COMMITMENT_MISMATCH",
+      "The scorecard set commitment must predate identity reveal.",
+    );
+  }
 
   const voteThresholdReached =
     observedVoteCount >= envelope.revealThresholds.minimumVotes;

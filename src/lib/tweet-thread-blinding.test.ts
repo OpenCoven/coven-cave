@@ -1356,6 +1356,16 @@ function expectInvalidPublicMutation(
     committedAt: GENERATED_AT,
     secret: SECRET,
   });
+  expectCode(
+    () => createBlindedScorecardSetCommitment({
+      publicTrial,
+      envelope,
+      scorecards,
+      committedAt: CLOSES_AT,
+      secret: SECRET,
+    }),
+    "INVALID_SCORECARD_SET_COMMITMENT",
+  );
   assert.equal(
     Value.Check(BlindedScorecardSetCommitmentSchema, scorecardSetCommitment),
     true,
