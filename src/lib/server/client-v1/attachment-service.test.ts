@@ -18,6 +18,7 @@ await mkdir(canonicalRoot, { recursive: true });
 const {
   CLIENT_ATTACHMENT_MAX_FILE_BYTES,
   CLIENT_ATTACHMENT_MAX_FILES,
+  CLIENT_ATTACHMENT_MAX_RECORDS,
   CLIENT_ATTACHMENT_MAX_REQUEST_BYTES,
   ClientAttachmentError,
   clientAttachmentIndexPath,
@@ -25,6 +26,7 @@ const {
   parseClientAttachmentForm,
   readClientAttachment,
   resolveAndBindClientAttachments,
+  setClientAttachmentIndexWriteHookForTest,
   saveUploadedClientAttachments,
 } = await import("./attachment-service.ts");
 const {
@@ -92,6 +94,7 @@ const m4aBytes = (() => {
 
 after(() => rm(root, { recursive: true, force: true }));
 beforeEach(async () => {
+  setClientAttachmentIndexWriteHookForTest(null);
   await rm(indexPath, { force: true });
   await rm(`${indexPath}.lock.sqlite3`, { force: true });
   await rm(`${indexPath}.lock.sqlite3-shm`, { force: true });
@@ -100,6 +103,12 @@ beforeEach(async () => {
     await rm(path.join(canonicalRoot, entry), { force: true });
   }
 });
+
+function capacityRecords(count: number): Seed[] {
+  return Array.from({ length: count }, (_value, index) => ({
+    attachmentId: `${index.toString(16).padStart(8, "0")}-9b43-4abc-876d-${index.toString(16).padStart(12, "0")}.txt`,
+  }));
+}
 
 const owner = "4e7f2ed1-5d41-4eed-8123-bf4c93f71df4";
 const otherOwner = "5e7f2ed1-5d41-4eed-8123-bf4c93f71df5";
@@ -299,6 +308,99 @@ test("uploaded attachments persist deterministic bounded receipts, keep a minima
   await resolveAndBindClientAttachments([first[0].id], owner, "conversation-safe");
   const sharedRead = await readClientAttachment(first[0].id, otherOwner);
   assert.equal(sharedRead.mimeType, "image/png", "once bound, the attachment becomes conversation-shared");
+});
+
+test("the index capacity accepts 9,999 -> 10,000 records and rejects 10,000 -> 10,001 before writing files", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "capacity.txt", "text/plain"));
+  await seed(capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS - 1));
+
+  await saveUploadedClientAttachments(
+    [prepared],
+    owner,
+    "11111111-2222-4333-8444-555555555555",
+    10,
+  );
+  assert.equal(
+    JSON.parse(await readFile(indexPath, "utf8")).attachments.length,
+    CLIENT_ATTACHMENT_MAX_RECORDS,
+  );
+  assert.equal((await readdir(canonicalRoot)).length, 2, "the boundary success stores one file and metadata sidecar");
+
+  await rm(indexPath, { force: true });
+  for (const entry of await readdir(canonicalRoot)) await rm(path.join(canonicalRoot, entry), { force: true });
+  await seed(capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS));
+  await assert.rejects(
+    saveUploadedClientAttachments(
+      [prepared],
+      owner,
+      "21111111-2222-4333-8444-555555555555",
+      11,
+    ),
+    (error: unknown) => isClientAttachmentError(error, 409),
+  );
+  assert.equal((await readdir(canonicalRoot)).length, 0, "rejection occurs before canonical persistence");
+  assert.equal(
+    JSON.parse(await readFile(indexPath, "utf8")).attachments.length,
+    CLIENT_ATTACHMENT_MAX_RECORDS,
+    "rejection leaves the index byte-for-byte capacity-safe",
+  );
+});
+
+test("concurrent uploads near capacity serialize to one receipt and preserve the 10,000-record bound", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "concurrent.txt", "text/plain"));
+  await seed(capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS - 1));
+
+  const results = await Promise.allSettled([
+    saveUploadedClientAttachments(
+      [prepared],
+      owner,
+      "31111111-2222-4333-8444-555555555555",
+      10,
+    ),
+    saveUploadedClientAttachments(
+      [prepared],
+      owner,
+      "41111111-2222-4333-8444-555555555555",
+      10,
+    ),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  assert.equal(
+    JSON.parse(await readFile(indexPath, "utf8")).attachments.length,
+    CLIENT_ATTACHMENT_MAX_RECORDS,
+  );
+  assert.equal((await readdir(canonicalRoot)).length, 2, "the rejected upload leaves no canonical orphan");
+});
+
+test("an existing deterministic attachment replays at full capacity without consuming another slot", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "dedupe.txt", "text/plain"));
+  const effectId = "51111111-2222-4333-8444-555555555555";
+  const first = await saveUploadedClientAttachments([prepared], owner, effectId, 10);
+  const firstRecord = JSON.parse(await readFile(indexPath, "utf8")).attachments[0] as Seed;
+  await seed([firstRecord, ...capacityRecords(CLIENT_ATTACHMENT_MAX_RECORDS - 1)]);
+
+  assert.deepEqual(await saveUploadedClientAttachments([prepared], owner, effectId, 11), first);
+  assert.equal(JSON.parse(await readFile(indexPath, "utf8")).attachments.length, CLIENT_ATTACHMENT_MAX_RECORDS);
+});
+
+test("an index commit failure removes canonical files created by the failed upload", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "cleanup.txt", "text/plain"));
+  setClientAttachmentIndexWriteHookForTest(async () => {
+    throw new Error("injected index write failure");
+  });
+
+  await assert.rejects(
+    saveUploadedClientAttachments(
+      [prepared],
+      owner,
+      "61111111-2222-4333-8444-555555555555",
+      10,
+    ),
+    /injected index write failure/,
+  );
+  assert.equal((await readdir(canonicalRoot)).length, 0);
+  await assert.rejects(readFile(indexPath, "utf8"), { code: "ENOENT" });
 });
 
 test("empty attachment binding is a no-op", async () => {
