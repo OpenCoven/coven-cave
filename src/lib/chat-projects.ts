@@ -1,6 +1,11 @@
 import type { SessionRow } from "./types.ts";
 import type { CaveProject } from "./cave-projects.ts";
 import { compareProjectsAlphabetically, normalizeProjectRoot } from "./cave-projects-types.ts";
+import {
+  NO_PROJECT_ORGANIZATION,
+  projectOrganization,
+  type ProjectOrganization,
+} from "./project-organizations.ts";
 
 export type ChatProject = CaveProject;
 export type { CaveProject };
@@ -9,6 +14,7 @@ export type ChatProjectGroup = {
   projectId: string | null;
   projectRoot: string | null;
   projectName: string | null;
+  organization: ProjectOrganization;
   /** Explicit user-set project color, when the root maps to a registered project. */
   projectColor: string | null;
   sessions: SessionRow[];
@@ -334,6 +340,7 @@ export function deriveChatProjectGroups(
         projectId: project?.id ?? null,
         projectRoot,
         projectName: project?.name ?? inferredProjectName,
+        organization: project ? projectOrganization(project) : NO_PROJECT_ORGANIZATION,
         projectColor: project?.color ?? null,
         sessions: sorted,
         defaultFamiliarId: latest?.familiarId ?? null,
