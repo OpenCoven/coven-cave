@@ -83,7 +83,7 @@ import {
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
-export function SettingsShell() {
+export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const isMobile = useIsMobile();
 
@@ -153,7 +153,7 @@ export function SettingsShell() {
   }
   function backToPicker() {
     setPickerView(true);
-    if (typeof window !== "undefined") {
+    if (!embedded && typeof window !== "undefined") {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }
@@ -167,7 +167,7 @@ export function SettingsShell() {
   // then honours the value this effect just clobbered.
   const hashHydratedRef = useRef(false);
   useEffect(() => {
-    if (typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
+    if (embedded || typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
     if (window.location.hash === `#${section}`) return;
     window.history.replaceState(null, "", `#${section}`);
   }, [section, pickerView]);
@@ -175,6 +175,10 @@ export function SettingsShell() {
   // Support hash-based deep-linking. Read it after hydration so SSR and the
   // first client render both start on General.
   useEffect(() => {
+    if (embedded) {
+      hashHydratedRef.current = true;
+      return;
+    }
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
@@ -191,7 +195,7 @@ export function SettingsShell() {
     hashHydratedRef.current = true;
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -201,7 +205,11 @@ export function SettingsShell() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.key === "Escape") {
         e.preventDefault();
-        router.back();
+        if (embedded) {
+          if (isMobile && !pickerView) backToPicker();
+        } else {
+          router.back();
+        }
         return;
       }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -214,10 +222,12 @@ export function SettingsShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, section]);
+  }, [embedded, isMobile, pickerView, router, section]);
 
   return (
-    <div className="settings-shell flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <div
+      className={`settings-shell${embedded ? " settings-shell--embedded h-full" : " h-[100dvh]"} w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
+    >
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
           route. Desktop always pops the route. */}
@@ -231,7 +241,7 @@ export function SettingsShell() {
         // Real window drag on the loopback webview (the CSS app-region hint is
         // inert on external URLs — see the titlebar notes in shell.tsx). The
         // Back button and other controls opt out automatically as clickables.
-        data-tauri-drag-region="deep"
+        data-tauri-drag-region={embedded ? undefined : "deep"}
       >
         <Button
           variant="ghost"

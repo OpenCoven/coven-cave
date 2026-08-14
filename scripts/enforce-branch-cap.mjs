@@ -1,6 +1,14 @@
+import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export const BRANCH_CAP = 40;
+
+// How close to the cap counts as "warn now". A rollback is only surprising
+// because nothing says it is coming: the count is invisible from a checkout,
+// six concurrent sessions each create branches, and the first sign of trouble
+// is a branch that silently stopped existing. Three creations of notice is
+// enough to retire something before it bites (cave-iy3l7).
+export const NEAR_CAP_HEADROOM = 3;
 
 export function decideBranchCap({
   branchCount,
@@ -18,7 +26,14 @@ export function decideBranchCap({
   if (!defaultBranch) throw new Error("default branch is required");
 
   if (branchCount <= maxBranches) {
-    return { action: "allow", branchCount, maxBranches };
+    const headroom = maxBranches - branchCount;
+    return {
+      action: "allow",
+      branchCount,
+      maxBranches,
+      headroom,
+      nearCap: headroom <= NEAR_CAP_HEADROOM,
+    };
   }
   if (createdBranch === defaultBranch) {
     return {
@@ -85,6 +100,18 @@ export async function runBranchCap({
 
   if (decision.action === "allow") {
     log(`Branch count ${decision.branchCount}/${decision.maxBranches}; creation allowed.`);
+    if (decision.nearCap) {
+      // A warning while there is still room to act. Once the cap trips, the
+      // branch is already gone and the advice arrives too late to be advice.
+      const notice =
+        `Branch cap: ${decision.branchCount}/${decision.maxBranches} — ` +
+        `${decision.headroom} ${decision.headroom === 1 ? "creation" : "creations"} of headroom left. ` +
+        `The next branch created past the cap is DELETED automatically. ` +
+        `Free capacity by retiring merged worktrees (\`pnpm wt:status\`, then the archive-tag route ` +
+        `in CLAUDE.md) rather than waiting for the rollback.`;
+      log(`::warning::${notice}`);
+      writeSummary(env, `⚠️ ${notice}`);
+    }
     return 0;
   }
 
@@ -105,11 +132,46 @@ export async function runBranchCap({
     );
   }
 
-  error(
-    `::error::Deleted '${decision.branch}': repository branch cap ` +
-      `${decision.maxBranches} exceeded (${decision.branchCount} branches).`,
-  );
+  // Say what happened, that the work is safe, and what to do — in the message
+  // itself. A session that loses a branch sees only that it stopped existing;
+  // before this it had to know branch-cap.yml existed to explain that
+  // (cave-iy3l7). The deletion is REMOTE ONLY, which is the part that stops
+  // the panic, so it leads.
+  const explanation = [
+    `Deleted the remote branch '${decision.branch}': the repository is at its ` +
+      `${decision.maxBranches}-branch cap (${describeCount(decision)}), and this workflow rolls back ` +
+      `the newly created branch rather than letting the count grow.`,
+    `Your commits are NOT lost — the deletion is remote-only, so your local branch and worktree ` +
+      `still hold them. In a Claude Code session the retention hook also archives an unreachable head ` +
+      `as a \`retention/<branch>-<sha>\` tag, and tags are exempt from the cap.`,
+    `To land the work: free capacity first (retire merged worktrees — \`pnpm wt:status\`, then the ` +
+      `archive-tag route in CLAUDE.md), then push the branch again.`,
+  ].join(" ");
+  error(`::error::${explanation}`);
+  writeSummary(env, `❌ ${explanation}`);
   return 1;
+}
+
+/** The count, honest about the API page limit rather than quietly understating.
+ *  `per_page=100` means a repository past 100 branches reports exactly 100; the
+ *  decision is unaffected (the cap is capped at 99) but the NUMBER would read
+ *  as fact when it is a floor. */
+function describeCount({ branchCount }) {
+  return branchCount >= 100 ? "100+ branches" : `${branchCount} branches`;
+}
+
+/** Mirror a message into the workflow run summary. The `::error::`/`::warning::`
+ *  annotations are easy to miss under a collapsed step; the summary is the part
+ *  of the run page someone actually reads. Best-effort by design — a failure to
+ *  write a summary must never change the enforcement outcome. */
+function writeSummary(env, message) {
+  const target = env.GITHUB_STEP_SUMMARY;
+  if (!target) return;
+  try {
+    appendFileSync(target, `${message}\n`);
+  } catch {
+    // Non-fatal: the annotation above already carries the message.
+  }
 }
 
 function requiredEnv(env, name) {
