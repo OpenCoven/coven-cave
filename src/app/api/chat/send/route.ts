@@ -2353,7 +2353,7 @@ export async function POST(req: Request) {
     ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
   const directReadOnlyEnforcement =
     !sshRuntime &&
-    (Boolean(copilotStream) || grokDirect || (codexDirect && Boolean(codexDirectCapabilities)));
+    (Boolean(copilotStream) || grokDirect || (codexDirect && codexDirectCapabilities?.sandbox === true));
   // Read-only is a security boundary, not a best-effort preference. Refuse the
   // turn unless the selected direct transport enforces it itself or the local
   // Coven transport can forward its native read-only flag. In particular, an
