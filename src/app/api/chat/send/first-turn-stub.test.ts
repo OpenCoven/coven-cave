@@ -90,13 +90,13 @@ assert.match(
 assert.match(
   chatRoute,
   /const stubWrite = createConversationStub\(\{\s*sessionId: conversationId,[\s\S]*?harness: "openclaw",/,
-  "the OpenClaw path must write its stub up front, keyed to the conversation id it mints before spawning",
+  "the native OpenClaw path must write its stub up front, keyed to the conversation id it mints before spawning",
 );
 
 assert.match(
   chatRoute,
-  /if \(gatewayDispatch\.kind === "accepted"\)[\s\S]*?const stubWrite = createConversationStub\(\{[\s\S]*?modelIntent: modelIntentForSend\(args\.body, args\.modelState\),[\s\S]*?userTurn:/,
-  "an accepted Gateway first turn persists its session model intent before the response completes",
+  /if \(gatewayDispatch\.kind === "accepted"\)[\s\S]*?const initialStubState = settleGatewayInitialStub\(\s*createConversationStub\(\{[\s\S]*?modelIntent: modelIntentForSend\(args\.body, args\.modelState\),[\s\S]*?userTurn:/,
+  "an accepted Gateway first turn tracks its stub outcome while persisting session model intent before response completion",
 );
 
 const openClawStubWrites = [
@@ -106,8 +106,13 @@ const openClawStubWrites = [
 ];
 assert.equal(
   openClawStubWrites.length,
-  2,
-  "both OpenClaw transports initialize title ownership only for an authoritative new chat whose stub was created",
+  1,
+  "the native OpenClaw transport initializes title ownership only for an authoritative new chat whose stub was created",
+);
+assert.match(
+  chatRoute,
+  /const initialStubState = settleGatewayInitialStub\(\s*createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\),\s*\);/,
+  "the Gateway transport initializes title ownership while preserving a distinct stub persistence outcome",
 );
 assert.match(
   chatRoute,
@@ -120,8 +125,13 @@ assert.equal(
       /const (?:isFirstExchange|firstExchange) =\s*ownsFirstExchangeTitle && (?:\(!existing \|\| hadFirstTurnStub\)|hadFirstTurnStub);/g,
     ) ?? []
   ).length,
-  3,
-  "both OpenClaw close paths and the generic close path gate first-exchange naming on authoritative new-chat provenance",
+  2,
+  "the native OpenClaw and generic close paths gate first-exchange naming on authoritative new-chat provenance",
+);
+assert.match(
+  chatRoute,
+  /const firstExchange =\s*ownsFirstExchangeTitle && \(createdAfterInitialStubFailure \|\| hadFirstTurnStub\);/,
+  "Gateway first-exchange naming recognizes a recovered initial stub failure without recreating deleted stubs",
 );
 assert.doesNotMatch(
   chatRoute,
@@ -159,8 +169,13 @@ assert.equal(
       /const hadFirstTurnStub = (?:existing\s*\? stripConversationStubTurn\(existing, pendingUserTurnId\)\s*: false|stripConversationStubTurn\(existing, pendingUserTurnId\));/g,
     ) ?? []
   ).length,
-  3,
-  "all save paths must strip the stub turn so the authoritative user turn re-lands cleanly",
+  2,
+  "the native OpenClaw and generic save paths strip the stub turn so the authoritative user turn re-lands cleanly",
+);
+assert.match(
+  chatRoute,
+  /const hadFirstTurnStub = stripConversationStubTurn\(conv, pendingUserTurnId\);/,
+  "Gateway completion strips its successful stub under the helper-owned lock before applying the authoritative turns",
 );
 
 assert.equal(
