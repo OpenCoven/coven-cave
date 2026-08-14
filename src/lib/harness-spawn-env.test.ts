@@ -212,7 +212,7 @@ try {
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-const chatSendSource = read("./server/chat-send-service.ts");
+const chatSendSource = read("../app/api/chat/send/route.ts");
 assert.match(chatSendSource, /env: harnessSpawnEnv\(body\.familiarId\)/, "familiar chat spawn injects only granted keys");
 assert.doesNotMatch(chatSendSource, /covenSpawnEnv/, "chat/send no longer forwards the unscoped spawn env");
 
