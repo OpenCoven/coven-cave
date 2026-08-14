@@ -1,0 +1,555 @@
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+
+import twitterText from "twitter-text";
+
+export interface CoreDeterministicFinding {
+  findingId: string;
+  code: string;
+  severity: "info" | "warn" | "fail";
+  message: string;
+  postId?: string;
+  claimId?: string;
+}
+
+export interface CoreThreadPostMeasurement {
+  postId: string;
+  weightedLength: number;
+  urlCount: number;
+  hashtagCount: number;
+  repeatedHashtagCount: number;
+  repeatedEmojiRuns: number;
+  linkDensity: number;
+}
+
+export interface CoreThreadValidationResult {
+  candidateSha256: string | null;
+  accepted: boolean;
+  findings: CoreDeterministicFinding[];
+  measurements: CoreThreadPostMeasurement[];
+}
+
+const { extractUrls, parseTweet } = twitterText;
+
+const X_POST_WEIGHTED_LENGTH_LIMIT = 280;
+const HASHTAG_RE = /#[\p{L}\p{N}_]+/gu;
+const STYLED_UNICODE_ALPHABET_RE = /[\u{1D400}-\u{1D7FF}\uFF21-\uFF3A\uFF41-\uFF5A]/u;
+const REPEATED_EMOJI_RE = /(\p{Extended_Pictographic})(?:\uFE0E|\uFE0F)?(?:\1(?:\uFE0E|\uFE0F)?){3,}/gu;
+const IMAGE_DEPENDENT_RE = /\b(?:(?:only\s+)?(?:shown|visible|available|provided)\s+in|see)\s+(?:the\s+)?(?:image|chart|screenshot|graphic|diagram)\b/u;
+const GENERIC_ALT_TEXT = new Set(["image", "chart", "screenshot", "graphic", "photo", "diagram"]);
+const FINDING_MESSAGE_MAX_LENGTH = 2_000;
+const FINDING_MESSAGE_TRUNCATION_MARKER = "… [truncated]";
+export const THREAD_VALIDATION_MAX_FINDINGS = 256;
+export const THREAD_VALIDATION_MAX_MEASUREMENTS = 50;
+const THREAD_VALIDATION_LIMITS = {
+  posts: 50,
+  bannedPhrases: 128,
+  evidence: 512,
+  requiredClaimIds: 128,
+  postClaimIds: 32,
+  postMedia: 4,
+} as const;
+
+type UnknownRecord = Record<string, unknown>;
+interface FindingAccumulator {
+  readonly values: Map<string, CoreDeterministicFinding>;
+  truncated: boolean;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeText(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-US");
+}
+
+export function compareOrdinalStrings(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+const WORD_CONTINUATION_CHARACTER_CLASS = "\\p{L}\\p{N}\\p{M}\\p{Pc}\\u200C\\u200D";
+const WORD_CONTINUATION_CHARACTER_RE = new RegExp(`[${WORD_CONTINUATION_CHARACTER_CLASS}]`, "u");
+
+export function containsBannedPhrase(text: string, phrase: string): boolean {
+  const normalizedText = text.normalize("NFKC").toLocaleLowerCase("en-US");
+  const normalizedPhrase = phrase.normalize("NFKC").trim().toLocaleLowerCase("en-US");
+  if (normalizedPhrase.length === 0) return false;
+  const escaped = normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const firstCharacter = Array.from(normalizedPhrase)[0];
+  const lastCharacter = Array.from(normalizedPhrase).at(-1);
+  const startBoundary = firstCharacter && WORD_CONTINUATION_CHARACTER_RE.test(firstCharacter)
+    ? `(?<![${WORD_CONTINUATION_CHARACTER_CLASS}])`
+    : "";
+  const endBoundary = lastCharacter && WORD_CONTINUATION_CHARACTER_RE.test(lastCharacter)
+    ? `(?![${WORD_CONTINUATION_CHARACTER_CLASS}])`
+    : "";
+  return new RegExp(`${startBoundary}${escaped}${endBoundary}`, "u").test(normalizedText);
+}
+
+function findingId(parts: readonly string[]): string {
+  const hash = createHash("sha256").update(parts.join("\u0000"), "utf8").digest("hex").slice(0, 16);
+  return `finding-${hash}`;
+}
+
+function postReference(candidate: UnknownRecord, issue: string): string | undefined {
+  const match = issue.match(/\.posts\[(\d+)\]/u);
+  if (!match || !Array.isArray(candidate.posts)) return undefined;
+  const post = candidate.posts[Number(match[1])];
+  return isRecord(post) && typeof post.postId === "string" ? post.postId : undefined;
+}
+
+function claimReference(issue: string): string | undefined {
+  return issue.match(/claim "([^"]+)"/u)?.[1];
+}
+
+function boundFindingMessage(message: string): string {
+  const characters = Array.from(message);
+  if (characters.length <= FINDING_MESSAGE_MAX_LENGTH) return message;
+  const markerLength = Array.from(FINDING_MESSAGE_TRUNCATION_MARKER).length;
+  return characters
+    .slice(0, FINDING_MESSAGE_MAX_LENGTH - markerLength)
+    .join("")
+    .concat(FINDING_MESSAGE_TRUNCATION_MARKER);
+}
+
+export function createDeterministicFinding(
+  code: string,
+  severity: CoreDeterministicFinding["severity"],
+  message: string,
+  references: { postId?: string; claimId?: string } = {},
+  identityParts: readonly string[] = [
+    code,
+    severity,
+    references.postId ?? "",
+    references.claimId ?? "",
+    message,
+  ],
+): CoreDeterministicFinding {
+  const finding: CoreDeterministicFinding = {
+    findingId: findingId(identityParts),
+    code,
+    severity,
+    message: boundFindingMessage(message),
+  };
+  if (
+    references.postId
+    && references.postId.length <= 32
+    && /^post-[1-9][0-9]*$/u.test(references.postId)
+  ) {
+    finding.postId = references.postId;
+  }
+  if (
+    references.claimId
+    && references.claimId.length <= 128
+    && /^claim-[a-z0-9-]+$/u.test(references.claimId)
+  ) {
+    finding.claimId = references.claimId;
+  }
+  return finding;
+}
+
+function addFinding(
+  findings: FindingAccumulator,
+  code: string,
+  severity: CoreDeterministicFinding["severity"],
+  message: string,
+  references: { postId?: string; claimId?: string } = {},
+  identityParts?: readonly string[],
+): void {
+  const finding = createDeterministicFinding(
+    code,
+    severity,
+    message,
+    references,
+    identityParts,
+  );
+  if (findings.values.has(finding.findingId)) {
+    findings.values.set(finding.findingId, finding);
+    return;
+  }
+  if (findings.values.size >= THREAD_VALIDATION_MAX_FINDINGS - 1) {
+    findings.truncated = true;
+    return;
+  }
+  findings.values.set(finding.findingId, finding);
+}
+
+function collectProtocolFindings(
+  candidate: unknown,
+  findings: FindingAccumulator,
+  issues: readonly string[],
+): void {
+  const record = isRecord(candidate) ? candidate : {};
+  for (const issue of issues) {
+    addFinding(findings, "protocol-invalid", "fail", issue, {
+      postId: postReference(record, issue),
+      claimId: claimReference(issue),
+    });
+  }
+}
+
+function collectCollectionLimitFindings(
+  record: UnknownRecord,
+  findings: FindingAccumulator,
+): boolean {
+  const violations: Array<{ path: string; actual: number; maximum: number }> = [];
+  const candidateBrief = isRecord(record.brief) ? record.brief : null;
+  const constraints = candidateBrief && isRecord(candidateBrief.constraints)
+    ? candidateBrief.constraints
+    : null;
+  const posts = Array.isArray(record.posts) ? record.posts : [];
+  const evidence = Array.isArray(record.evidence) ? record.evidence : [];
+  const bannedPhrases = constraints && Array.isArray(constraints.bannedPhrases)
+    ? constraints.bannedPhrases
+    : [];
+  const requiredClaimIds = constraints && Array.isArray(constraints.requiredClaimIds)
+    ? constraints.requiredClaimIds
+    : [];
+
+  for (const [path, actual, maximum] of [
+    ["ThreadCandidate.posts", posts.length, THREAD_VALIDATION_LIMITS.posts],
+    ["ThreadCandidate.evidence", evidence.length, THREAD_VALIDATION_LIMITS.evidence],
+    [
+      "ThreadCandidate.brief.constraints.bannedPhrases",
+      bannedPhrases.length,
+      THREAD_VALIDATION_LIMITS.bannedPhrases,
+    ],
+    [
+      "ThreadCandidate.brief.constraints.requiredClaimIds",
+      requiredClaimIds.length,
+      THREAD_VALIDATION_LIMITS.requiredClaimIds,
+    ],
+  ] as const) {
+    if (actual > maximum) violations.push({ path, actual, maximum });
+  }
+
+  for (const [index, post] of posts.entries()) {
+    if (!isRecord(post)) continue;
+    const claimIds = Array.isArray(post.claimIds) ? post.claimIds : [];
+    const media = Array.isArray(post.media) ? post.media : [];
+    if (claimIds.length > THREAD_VALIDATION_LIMITS.postClaimIds) {
+      violations.push({
+        path: `ThreadCandidate.posts[${index}].claimIds`,
+        actual: claimIds.length,
+        maximum: THREAD_VALIDATION_LIMITS.postClaimIds,
+      });
+    }
+    if (media.length > THREAD_VALIDATION_LIMITS.postMedia) {
+      violations.push({
+        path: `ThreadCandidate.posts[${index}].media`,
+        actual: media.length,
+        maximum: THREAD_VALIDATION_LIMITS.postMedia,
+      });
+    }
+  }
+
+  for (const violation of violations) {
+    addFinding(
+      findings,
+      "collection-limit",
+      "fail",
+      `${violation.path} has ${violation.actual} items; the validation limit is ${violation.maximum}.`,
+      {},
+      ["collection-limit", violation.path, String(violation.actual), String(violation.maximum)],
+    );
+  }
+  return violations.length > 0;
+}
+
+function finalizeFindings(findings: FindingAccumulator): CoreDeterministicFinding[] {
+  if (findings.truncated) {
+    const truncated = createDeterministicFinding(
+      "validation-output-truncated",
+      "fail",
+      `Validation output exceeded ${THREAD_VALIDATION_MAX_FINDINGS} findings or ${THREAD_VALIDATION_MAX_MEASUREMENTS} measurements and was truncated.`,
+      {},
+      ["validation-output-truncated"],
+    );
+    findings.values.set(truncated.findingId, truncated);
+  }
+  return [...findings.values.values()].sort((left, right) =>
+    compareOrdinalStrings(left.findingId, right.findingId)
+  );
+}
+
+function countRepeatedEmojiRuns(text: string): number {
+  return Array.from(text.matchAll(REPEATED_EMOJI_RE)).length;
+}
+
+function hasTextEquivalent(altText: unknown): boolean {
+  if (typeof altText !== "string") return false;
+  const normalized = normalizeText(altText);
+  return normalized.length >= 12 && !GENERIC_ALT_TEXT.has(normalized);
+}
+
+export function validateThreadCandidateCore(
+  candidate: unknown,
+  protocolIssues: readonly string[] = [],
+  brief?: unknown,
+): CoreThreadValidationResult {
+  const findings: FindingAccumulator = {
+    values: new Map<string, CoreDeterministicFinding>(),
+    truncated: false,
+  };
+  collectProtocolFindings(candidate, findings, protocolIssues);
+
+  const record = isRecord(candidate) ? candidate : {};
+  const collectionLimitFailed = collectCollectionLimitFindings(record, findings);
+  if (collectionLimitFailed) {
+    const orderedFindings = finalizeFindings(findings);
+    return {
+      candidateSha256: typeof record.candidateSha256 === "string"
+        ? record.candidateSha256
+        : null,
+      accepted: false,
+      findings: orderedFindings,
+      measurements: [],
+    };
+  }
+  const candidateBrief = isRecord(record.brief) ? record.brief : null;
+  if (
+    brief !== undefined
+    && (!candidateBrief || !isDeepStrictEqual(candidateBrief, brief))
+  ) {
+    addFinding(
+      findings,
+      "brief-mismatch",
+      "fail",
+      "The supplied brief must exactly match the brief embedded in the candidate.",
+    );
+  }
+
+  const constraints = candidateBrief && isRecord(candidateBrief.constraints)
+    ? candidateBrief.constraints
+    : null;
+  const posts = Array.isArray(record.posts) ? record.posts : [];
+  const evidence = Array.isArray(record.evidence) ? record.evidence : [];
+  const evidenceClaimIds = new Set(
+    evidence.flatMap((item) =>
+      isRecord(item) && typeof item.claimId === "string" ? [item.claimId] : []
+    ),
+  );
+  const postedClaimIds = new Set<string>();
+  const measurements: CoreThreadPostMeasurement[] = [];
+
+  if (
+    constraints
+    && typeof constraints.minPosts === "number"
+    && typeof constraints.maxPosts === "number"
+    && (posts.length < constraints.minPosts || posts.length > constraints.maxPosts)
+  ) {
+    addFinding(
+      findings,
+      "post-count-out-of-range",
+      "fail",
+      `Candidate has ${posts.length} posts; the brief requires ${constraints.minPosts}..${constraints.maxPosts}.`,
+    );
+  }
+
+  for (const [index, postValue] of posts.entries()) {
+    if (!isRecord(postValue)) continue;
+    const expectedPostId = `post-${index + 1}`;
+    const postId = typeof postValue.postId === "string" ? postValue.postId : expectedPostId;
+    if (postId !== expectedPostId) {
+      addFinding(
+        findings,
+        "post-id-sequence",
+        "fail",
+        `Post at index ${index} must use postId "${expectedPostId}", not "${postId}".`,
+        { postId },
+      );
+    }
+
+    if (Array.isArray(postValue.claimIds)) {
+      for (const claimId of postValue.claimIds) {
+        if (typeof claimId !== "string") continue;
+        postedClaimIds.add(claimId);
+        if (!evidenceClaimIds.has(claimId)) {
+          addFinding(
+            findings,
+            "claim-missing-evidence",
+            "fail",
+            `Claim "${claimId}" is used by ${postId} but has no evidence ledger entry.`,
+            { postId, claimId },
+          );
+        }
+      }
+    }
+
+    if (typeof postValue.text !== "string") continue;
+    const text = postValue.text;
+    const parsedTweet = parseTweet(text);
+    const weightedLength = parsedTweet.weightedLength;
+    const urls = extractUrls(text);
+    const hashtags = text.match(HASHTAG_RE) ?? [];
+    const normalizedHashtags = hashtags.map((tag) => normalizeText(tag));
+    const repeatedHashtagCount = normalizedHashtags.length - new Set(normalizedHashtags).size;
+    const repeatedEmojiRuns = countRepeatedEmojiRuns(text);
+    const tokenCount = Math.max(normalizeText(text).split(" ").filter(Boolean).length, 1);
+    const linkDensity = urls.length / tokenCount;
+    if (measurements.length < THREAD_VALIDATION_MAX_MEASUREMENTS) {
+      measurements.push({
+        postId,
+        weightedLength,
+        urlCount: urls.length,
+        hashtagCount: hashtags.length,
+        repeatedHashtagCount,
+        repeatedEmojiRuns,
+        linkDensity,
+      });
+    } else {
+      findings.truncated = true;
+    }
+
+    if (weightedLength > X_POST_WEIGHTED_LENGTH_LIMIT) {
+      addFinding(
+        findings,
+        "post-weighted-length",
+        "fail",
+        `${postId} has official X weighted length ${weightedLength}; the preflight limit is ${X_POST_WEIGHTED_LENGTH_LIMIT}.`,
+        { postId },
+      );
+    }
+    if (!parsedTweet.valid && weightedLength <= X_POST_WEIGHTED_LENGTH_LIMIT) {
+      addFinding(
+        findings,
+        "post-twitter-text-invalid",
+        "fail",
+        `${postId} is not valid according to official twitter-text parsing.`,
+        { postId },
+      );
+    }
+
+    if (
+      protocolIssues.length === 0
+      && constraints
+      && Array.isArray(constraints.bannedPhrases)
+    ) {
+      for (const phrase of constraints.bannedPhrases) {
+        if (typeof phrase !== "string") continue;
+        if (containsBannedPhrase(text, phrase)) {
+          addFinding(
+            findings,
+            "banned-phrase",
+            "fail",
+            `${postId} contains banned phrase "${phrase.trim()}".`,
+            { postId },
+          );
+        }
+      }
+    }
+
+    if (STYLED_UNICODE_ALPHABET_RE.test(text)) {
+      addFinding(
+        findings,
+        "styled-unicode-alphabet",
+        "fail",
+        `${postId} contains styled Unicode alphabet characters that are not reliably accessible.`,
+        { postId },
+      );
+    }
+
+    const media = Array.isArray(postValue.media) ? postValue.media : [];
+    if (constraints?.requireAltText === true) {
+      for (const mediaValue of media) {
+        if (!isRecord(mediaValue)) continue;
+        if (typeof mediaValue.altText !== "string" || mediaValue.altText.trim().length === 0) {
+          addFinding(
+            findings,
+            "missing-alt-text",
+            "fail",
+            `${postId} includes media without required alt text.`,
+            { postId },
+          );
+        }
+      }
+      if (
+        IMAGE_DEPENDENT_RE.test(normalizeText(text))
+        && (
+          media.length === 0
+          || media.some((item) => !isRecord(item) || !hasTextEquivalent(item.altText))
+        )
+      ) {
+        addFinding(
+          findings,
+          "image-dependent-text",
+          "fail",
+          `${postId} makes the message depend on an image without a meaningful text equivalent.`,
+          { postId },
+        );
+      }
+    }
+
+    if (repeatedEmojiRuns > 0) {
+      addFinding(
+        findings,
+        "repeated-emoji",
+        "warn",
+        `${postId} contains ${repeatedEmojiRuns} run(s) of four or more repeated emoji.`,
+        { postId },
+      );
+    }
+    if (hashtags.length > 3) {
+      addFinding(
+        findings,
+        "hashtag-count",
+        "warn",
+        `${postId} contains ${hashtags.length} hashtags; more than three may reduce readability.`,
+        { postId },
+      );
+    }
+    if (repeatedHashtagCount > 0) {
+      addFinding(
+        findings,
+        "hashtag-repetition",
+        "warn",
+        `${postId} repeats ${repeatedHashtagCount} hashtag(s) after normalization.`,
+        { postId },
+      );
+    }
+    if (urls.length >= 2 || linkDensity >= 0.25) {
+      addFinding(
+        findings,
+        "link-density",
+        "warn",
+        `${postId} contains ${urls.length} links across ${tokenCount} text tokens.`,
+        { postId },
+      );
+    }
+  }
+
+  if (constraints && Array.isArray(constraints.requiredClaimIds)) {
+    for (const claimId of constraints.requiredClaimIds) {
+      if (typeof claimId !== "string") continue;
+      if (!evidenceClaimIds.has(claimId)) {
+        addFinding(
+          findings,
+          "claim-missing-evidence",
+          "fail",
+          `Required claim "${claimId}" has no evidence ledger entry.`,
+          { claimId },
+        );
+      }
+      if (!postedClaimIds.has(claimId)) {
+        addFinding(
+          findings,
+          "required-claim-unresolved",
+          "fail",
+          `Required claim "${claimId}" does not appear in any post.`,
+          { claimId },
+        );
+      }
+    }
+  }
+
+  const orderedFindings = finalizeFindings(findings);
+  return {
+    candidateSha256: typeof record.candidateSha256 === "string" ? record.candidateSha256 : null,
+    accepted: !orderedFindings.some((finding) => finding.severity === "fail"),
+    findings: orderedFindings,
+    measurements,
+  };
+}

@@ -144,6 +144,7 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
+  --space-12: 48px;
 
   /* ---- Shell pane widths ----
      Mirrors of the nav/list Panel px props in components/shell.tsx (the

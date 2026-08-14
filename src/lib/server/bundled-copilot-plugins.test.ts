@@ -23,6 +23,8 @@ test("resolves only contained skill-only bundled plugins", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "cave-bundled-plugins-"));
   const valid = await writePlugin(root, "coven-memory");
   await writePlugin(root, "unsafe-hooks", { hooks: "hooks.json" });
+  await writePlugin(root, "unsafe-agents", { agents: "agents/" });
+  await writePlugin(root, "unsafe-mcp", { mcpServers: ".mcp.json" });
   const outside = await mkdtemp(path.join(tmpdir(), "cave-outside-plugin-"));
   await writePlugin(outside, "escaped");
   try {
@@ -33,10 +35,24 @@ test("resolves only contained skill-only bundled plugins", async (t) => {
 
   assert.deepEqual(
     await resolveBundledCopilotPluginDirs(
-      ["coven-memory", "unsafe-hooks", "escaped", "../invalid"],
+      ["coven-memory", "unsafe-hooks", "unsafe-agents", "unsafe-mcp", "escaped", "../invalid"],
       { pluginsRoot: root },
     ),
     [await realpath(valid)],
+  );
+});
+
+test("resolves generated marketplace skill-only bundles", async () => {
+  const root = path.join(process.cwd(), "marketplace", "plugins");
+  assert.deepEqual(
+    await resolveBundledCopilotPluginDirs(
+      ["coven-memory", "tweet-thread-lab"],
+      { pluginsRoot: root },
+    ),
+    [
+      await realpath(path.join(root, "coven-memory")),
+      await realpath(path.join(root, "tweet-thread-lab")),
+    ],
   );
 });
 

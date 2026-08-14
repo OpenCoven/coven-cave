@@ -35,7 +35,7 @@ function fakeKeychain() {
     // Writes must arrive in `-i` stdin command mode only: a secret on argv
     // would be visible to every process on the machine.
     assert.deepEqual(args, ["-i"], "keychain writes must use the security tool's stdin command mode");
-    const match = /^add-generic-password( -U)? -s "([^"]+)" -a "([^"]+)" -w "([^"]+)"\n$/.exec(input);
+    const match = /^add-generic-password( -U)? -T "" -s "([^"]+)" -a "([^"]+)" -w "([^"]+)"\n$/.exec(input);
     assert.ok(match, `unparseable security -i command: ${JSON.stringify(input)}`);
     const [, update, service, account, secret] = match;
     assert.equal(service, SERVICE);
@@ -120,6 +120,12 @@ for (const invocation of keychain.invocations) {
     "no invocation may carry key material on argv",
   );
 }
+assert.ok(
+  keychain.invocations
+    .filter((invocation) => invocation.args[0] === "-i")
+    .every((invocation) => invocation.input.includes(' -T "" ')),
+  "keychain items trust no application, so another security CLI process cannot read them without authorization",
+);
 
 // --- crypto contract ---------------------------------------------------------
 
