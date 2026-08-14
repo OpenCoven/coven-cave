@@ -82,8 +82,8 @@
      scrolls. `lh` is the honest unit here — it tracks the line-height above,
      so the cap stays 12 lines if the type scale moves. The px value is the
      fallback for engines without `lh`. */
-  max-height: 306px;
-  max-height: calc(12lh + (var(--space-3) * 2));
+  max-height: 320px;
+  max-height: calc(12lh + (var(--space-3) * 2) + 14px);
   font-size: var(--text-md);
   line-height: 1.5;
   padding: var(--space-3) 14px;
