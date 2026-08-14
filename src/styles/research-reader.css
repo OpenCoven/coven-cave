@@ -40,7 +40,7 @@
 
 .research-reader .document-reader {
   --document-reader-column-width: 880px;
-  --document-reader-column-gutter: 48px;
+  --document-reader-column-gutter: var(--space-12);
 }
 .research-reader:not([data-expanded="true"]) .document-reader {
   --document-reader-column-width: 760px;

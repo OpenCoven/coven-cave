@@ -189,7 +189,7 @@ test("the sticky controls share the document column width and gutters", () => {
   );
   assert.match(
     researchCss,
-    /\.research-reader \.document-reader\s*\{[\s\S]*?--document-reader-column-width:\s*880px[\s\S]*?--document-reader-column-gutter:\s*48px/,
+    /\.research-reader \.document-reader\s*\{[\s\S]*?--document-reader-column-width:\s*880px[\s\S]*?--document-reader-column-gutter:\s*var\(--space-12\)/,
   );
   assert.match(
     researchCss,
