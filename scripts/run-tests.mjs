@@ -1721,6 +1721,7 @@ export const SUITES = {
     "src/lib/server/chat-send-service.test.ts",
     "src/lib/server/client-v1/attachment-service.test.ts",
     "src/lib/server/client-v1/sse.test.ts",
+    "src/lib/server/client-v1/run-operation-store.test.ts",
     "src/lib/server/client-v1/run-service.test.ts",
     // health/route.ts resolves "@/lib/coven-paths", "@/proxy-helpers", and
     // "@/lib/server/client-v1/{contract,responses}".
@@ -2188,6 +2189,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/chat-send-service.test.ts",
   "src/lib/server/client-v1/attachment-service.test.ts",
   "src/lib/server/client-v1/sse.test.ts",
+  "src/lib/server/client-v1/run-operation-store.test.ts",
   "src/lib/server/client-v1/run-service.test.ts",
   // resolves "@/lib/coven-paths", "@/proxy-helpers", and
   // "@/lib/server/client-v1/{contract,responses}".
