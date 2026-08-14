@@ -336,6 +336,66 @@ for (const invalidKind of ["sha", "schema", "chronology", "finding-reference"] a
 }
 
 {
+  const valid = rankingInput(candidate("candidate-valid-runtime-sibling"));
+  const runtimeBatch = [
+    null,
+    17,
+    valid,
+  ] as unknown as readonly Parameters<typeof rankThreadCandidates>[0][number][];
+  const result = rankThreadCandidates(runtimeBatch, equalWeights);
+  const reversed = rankThreadCandidates([...runtimeBatch].reverse(), equalWeights);
+
+  assert.deepEqual(result, reversed);
+  assert.deepEqual(result.ranked.map((entry) => entry.candidateId), [
+    valid.candidate.candidateId,
+  ]);
+  assert.equal(result.rejected.length, 2);
+  assert.ok(result.rejected.every((entry) =>
+    entry.findings.some((finding) => finding.severity === "fail")
+  ));
+  assert.ok(result.rejected.flatMap((entry) => entry.findings).every((finding) =>
+    Value.Check(DeterministicFindingSchema, finding)
+  ));
+}
+
+{
+  const malformedAlpha = {
+    candidate: {
+      posts: [{ postId: "post-2", text: "Alpha malformed candidate.", claimIds: [] }],
+      evidence: [],
+    },
+    scorecard: {},
+  };
+  const malformedZeta = {
+    candidate: {
+      posts: [{ postId: "post-3", text: "Zeta malformed candidate.", claimIds: [] }],
+      evidence: [],
+    },
+    scorecard: {},
+  };
+  const forward = rankThreadCandidates(
+    [malformedZeta, malformedAlpha] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+  const reverse = rankThreadCandidates(
+    [malformedAlpha, malformedZeta] as unknown as readonly Parameters<
+      typeof rankThreadCandidates
+    >[0][number][],
+    equalWeights,
+  );
+
+  assert.deepEqual(forward, reverse);
+  assert.equal(forward.rejected.length, 2);
+  assert.ok(forward.rejected.every((entry) => entry.candidateId === "candidate-invalid"));
+  assert.notDeepEqual(
+    forward.rejected[0]?.findings.map((finding) => finding.findingId),
+    forward.rejected[1]?.findings.map((finding) => finding.findingId),
+  );
+}
+
+{
   const oversizedId = "x".repeat(2_100);
   const input = rankingInput(candidate("candidate-oversized-audit-id"));
   input.candidate.candidateId = `candidate-${oversizedId}`;

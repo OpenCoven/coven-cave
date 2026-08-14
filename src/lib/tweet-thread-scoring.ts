@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
+
 import { Value } from "typebox/value";
 
 import {
+  compareOrdinalStrings,
   computeThreadCandidateSha256,
   ObjectiveWeightsSchema,
   ThreadCandidateSchema,
@@ -191,7 +194,9 @@ function scorecardReferenceIssues(
       }
     }
   }
-  return findings.sort((left, right) => compareOrdinal(left.findingId, right.findingId));
+  return findings.sort((left, right) =>
+    compareOrdinalStrings(left.findingId, right.findingId)
+  );
 }
 
 function dominates(
@@ -214,19 +219,31 @@ function rankingComparator(
     const rightScore = right.dimensions?.[dimension] ?? Number.NEGATIVE_INFINITY;
     if (leftScore !== rightScore) return rightScore - leftScore;
   }
-  return compareOrdinal(left.candidateId, right.candidateId);
+  return compareOrdinalStrings(left.candidateId, right.candidateId);
 }
 
 function stableAuditComparator(
   left: RankedThreadCandidate,
   right: RankedThreadCandidate,
+  discriminators: ReadonlyMap<RankedThreadCandidate, string>,
 ): number {
-  return compareOrdinal(left.candidateId, right.candidateId)
-    || compareOrdinal(left.candidateSha256, right.candidateSha256)
-    || compareOrdinal(left.scorecardId, right.scorecardId);
+  return compareOrdinalStrings(left.candidateId, right.candidateId)
+    || compareOrdinalStrings(
+      discriminators.get(left) ?? "",
+      discriminators.get(right) ?? "",
+    );
 }
 
 type UnknownRecord = Record<string, unknown>;
+interface NormalizedRankingEnvelope {
+  candidateValue: unknown;
+  scorecardValue: unknown;
+  findings: DeterministicFinding[];
+  auditHash: string;
+}
+
+const AUDIT_MAX_DEPTH = 4;
+const AUDIT_MAX_ITEMS = 32;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -236,10 +253,127 @@ function auditString(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
 
-function compareOrdinal(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+function runtimeKind(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function hashText(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function boundedAuditValue(
+  value: unknown,
+  depth = 0,
+  seen = new WeakSet<object>(),
+): unknown {
+  if (value === null) return { type: "null" };
+  if (typeof value === "string") {
+    return { type: "string", length: value.length, sha256: hashText(value) };
+  }
+  if (typeof value === "number") {
+    return { type: "number", value: Number.isFinite(value) ? value : String(value) };
+  }
+  if (typeof value === "boolean" || typeof value === "undefined") {
+    return { type: typeof value, value };
+  }
+  if (typeof value === "bigint") {
+    return { type: "bigint", sha256: hashText(value.toString()) };
+  }
+  if (typeof value === "symbol" || typeof value === "function") {
+    return { type: typeof value };
+  }
+  if (depth >= AUDIT_MAX_DEPTH) return { type: "object", truncated: true };
+  if (seen.has(value)) return { type: "object", cycle: true };
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const items = value.slice(0, AUDIT_MAX_ITEMS).map((item) =>
+        boundedAuditValue(item, depth + 1, seen)
+      );
+      return { type: "array", length: value.length, items };
+    }
+    const record = value as UnknownRecord;
+    const keys = Object.keys(record).sort(compareOrdinalStrings);
+    return {
+      type: "object",
+      keyCount: keys.length,
+      entries: keys.slice(0, AUDIT_MAX_ITEMS).map((key) => {
+        let child: unknown;
+        try {
+          child = record[key];
+        } catch {
+          child = { inaccessible: true };
+        }
+        return [
+          hashText(key),
+          boundedAuditValue(child, depth + 1, seen),
+        ];
+      }),
+    };
+  } catch {
+    return { type: "object", inaccessible: true };
+  }
+}
+
+function auditEnvelopeHash(value: unknown): string {
+  return hashText(JSON.stringify(boundedAuditValue(value)));
+}
+
+function normalizeRankingEnvelope(value: unknown): NormalizedRankingEnvelope {
+  const findings: DeterministicFinding[] = [];
+  if (!isRecord(value)) {
+    const kind = runtimeKind(value);
+    findings.push(auditFinding(
+      "ranking-input-envelope-invalid",
+      `Ranking input batch entry has runtime type "${kind}"; expected an object envelope.`,
+    ));
+    return {
+      candidateValue: undefined,
+      scorecardValue: undefined,
+      findings,
+      auditHash: auditEnvelopeHash(value),
+    };
+  }
+
+  let candidateValue: unknown;
+  let scorecardValue: unknown;
+  try {
+    candidateValue = value.candidate;
+    scorecardValue = value.scorecard;
+  } catch {
+    findings.push(auditFinding(
+      "ranking-input-envelope-invalid",
+      "Ranking input batch entry properties could not be read.",
+    ));
+  }
+  if (
+    !Object.prototype.hasOwnProperty.call(value, "candidate")
+    || !Object.prototype.hasOwnProperty.call(value, "scorecard")
+  ) {
+    findings.push(auditFinding(
+      "ranking-input-envelope-invalid",
+      "Ranking input batch entry must provide candidate and scorecard properties.",
+    ));
+  }
+  return {
+    candidateValue,
+    scorecardValue,
+    findings,
+    auditHash: auditEnvelopeHash(value),
+  };
+}
+
+function schemaCheck(
+  schema: typeof ThreadCandidateSchema | typeof ThreadScorecardSchema,
+  value: unknown,
+): boolean {
+  try {
+    return Value.Check(schema, value);
+  } catch {
+    return false;
+  }
 }
 
 export function rankThreadCandidates(
@@ -257,10 +391,11 @@ export function rankThreadCandidates(
     throw new RangeError("Ranking requires at least one positive objective weight.");
   }
 
+  const normalizedInputs = inputs.map((input) => normalizeRankingEnvelope(input));
   const candidateIds = new Set<string>();
   const candidateShas = new Set<string>();
-  for (const { candidate: candidateValue } of inputs) {
-    if (!Value.Check(ThreadCandidateSchema, candidateValue)) continue;
+  for (const { candidateValue } of normalizedInputs) {
+    if (!schemaCheck(ThreadCandidateSchema, candidateValue)) continue;
     const candidate = candidateValue as ThreadCandidate;
     if (candidateIds.has(candidate.candidateId)) {
       throw new TypeError(`Ranking input contains duplicate candidate ID "${candidate.candidateId}".`);
@@ -274,7 +409,9 @@ export function rankThreadCandidates(
 
   const passing: RankedThreadCandidate[] = [];
   const rejected: RankedThreadCandidate[] = [];
-  for (const { candidate: candidateValue, scorecard: scorecardValue } of inputs) {
+  const auditDiscriminators = new Map<RankedThreadCandidate, string>();
+  for (const normalized of normalizedInputs) {
+    const { candidateValue, scorecardValue } = normalized;
     const candidateRecord: UnknownRecord = isRecord(candidateValue) ? candidateValue : {};
     const scorecardRecord: UnknownRecord = isRecord(scorecardValue) ? scorecardValue : {};
     const candidateId = auditString(candidateRecord.candidateId, "candidate-invalid");
@@ -283,8 +420,8 @@ export function rankThreadCandidates(
       "candidate-sha-unavailable",
     );
     const scorecardId = auditString(scorecardRecord.scorecardId, "scorecard-invalid");
-    const candidateSchemaValid = Value.Check(ThreadCandidateSchema, candidateValue);
-    const scorecardSchemaValid = Value.Check(ThreadScorecardSchema, scorecardValue);
+    const candidateSchemaValid = schemaCheck(ThreadCandidateSchema, candidateValue);
+    const scorecardSchemaValid = schemaCheck(ThreadScorecardSchema, scorecardValue);
     let canonicalSha256: string | null = null;
     if (candidateSchemaValid) {
       try {
@@ -307,7 +444,9 @@ export function rankThreadCandidates(
     );
     const validationHasHardGate = !validation.accepted
       || validation.findings.some((finding) => finding.severity === "fail");
-    const isRejected = bindingFindings.length > 0 || validationHasHardGate;
+    const isRejected = normalized.findings.length > 0
+      || bindingFindings.length > 0
+      || validationHasHardGate;
     const dimensions = scorecardSchemaValid
       ? dimensionsFromScorecard(scorecardValue as ThreadScorecard)
       : null;
@@ -322,10 +461,21 @@ export function rankThreadCandidates(
         : null,
       dimensions,
       validation,
-      findings: [...validation.findings, ...bindingFindings].sort((left, right) =>
-        compareOrdinal(left.findingId, right.findingId)
+      findings: [
+        ...validation.findings,
+        ...normalized.findings,
+        ...bindingFindings,
+      ].sort((left, right) =>
+        compareOrdinalStrings(left.findingId, right.findingId)
       ),
     };
+    const findingIds = result.findings.map((finding) => finding.findingId);
+    auditDiscriminators.set(result, [
+      candidateSchemaValid ? candidateSha256 : "",
+      scorecardSchemaValid ? scorecardId : "",
+      ...findingIds,
+      normalized.auditHash,
+    ].join("\u0000"));
     if (isRejected) rejected.push(result);
     else passing.push(result);
   }
@@ -350,12 +500,14 @@ export function rankThreadCandidates(
 
   const ranked = nonDominated.sort(rankingComparator);
   dominated.sort(rankingComparator);
-  rejected.sort(stableAuditComparator);
+  rejected.sort((left, right) => stableAuditComparator(left, right, auditDiscriminators));
   return {
     ranked,
     dominated,
     rejected,
-    results: [...ranked, ...dominated, ...rejected].sort(stableAuditComparator),
+    results: [...ranked, ...dominated, ...rejected].sort((left, right) =>
+      stableAuditComparator(left, right, auditDiscriminators)
+    ),
   };
 }
 

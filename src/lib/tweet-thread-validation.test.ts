@@ -395,4 +395,27 @@ for (const invalid of [
   assert.ok(first.findings.every((finding) => /^finding-[a-z0-9-]+$/.test(finding.findingId)));
 }
 
+{
+  const originalLocaleCompare = String.prototype.localeCompare;
+  String.prototype.localeCompare = function reverseOrdinalLocaleCompare(
+    compareString: string,
+  ): number {
+    if (String(this) < compareString) return 1;
+    if (String(this) > compareString) return -1;
+    return 0;
+  };
+  try {
+    const result = validateThreadCandidate(candidate((content) => {
+      content.posts[1]!.text = "🚀🚀🚀🚀 #Launch #launch #Build #Ship";
+    }));
+    const findingIds = result.findings.map((finding) => finding.findingId);
+    assert.deepEqual(
+      findingIds,
+      [...findingIds].sort((left, right) => left < right ? -1 : left > right ? 1 : 0),
+    );
+  } finally {
+    String.prototype.localeCompare = originalLocaleCompare;
+  }
+}
+
 console.log("tweet thread validation tests passed");

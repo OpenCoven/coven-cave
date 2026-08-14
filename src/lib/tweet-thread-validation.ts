@@ -8,6 +8,7 @@ import {
   DeterministicFindingSchema,
   TweetThreadProtocolValidationError,
   assertValidThreadCandidate,
+  compareOrdinalStrings,
   containsBannedPhrase,
 } from "./tweet-thread-protocol.ts";
 import type {
@@ -394,7 +395,7 @@ export function validateThreadCandidate(
   }
 
   const orderedFindings = [...findings.values()].sort((left, right) =>
-    left.findingId.localeCompare(right.findingId)
+    compareOrdinalStrings(left.findingId, right.findingId)
   );
   return {
     candidateSha256: typeof record.candidateSha256 === "string" ? record.candidateSha256 : null,
