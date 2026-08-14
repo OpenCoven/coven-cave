@@ -396,27 +396,20 @@ export function createResumedRunStream(
 ): Response | null {
   let cleanup: (() => void) | null = null;
   let subscription: ReturnType<typeof subscribeRunStream> = null;
+  let pump: (() => void) | null = null;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
       let heartbeat: NodeJS.Timeout | null = null;
       let lastEmittedSeq = cursor;
+      let replayIndex = 0;
+      let pendingLive: { seq: number; json: string } | null = null;
+      let finished = false;
       const translator = createClientStreamTranslator(context);
-      const write = (chunk: Uint8Array) => {
-        if (closed) return;
-        if (controller.desiredSize !== null && controller.desiredSize <= 0) {
-          close();
-          return;
-        }
-        try {
-          controller.enqueue(chunk);
-        } catch {
-          close();
-        }
-      };
       const close = () => {
         if (closed) return;
         closed = true;
+        pendingLive = null;
         if (heartbeat) clearInterval(heartbeat);
         subscription?.unsubscribe();
         try {
@@ -435,84 +428,173 @@ export function createResumedRunStream(
         // the canonical buffer — publishing a synthetic terminal here would
         // wrongly fail an otherwise-healthy run for every other subscriber.
         if (seq <= cursor || seq <= lastEmittedSeq) seq = lastEmittedSeq + 1;
-        write(encodeClientStreamEvent(seq, {
-          type: "run.failed",
-          code: safeFailureCode(code),
-          message: "The run failed.",
-        }));
-        lastEmittedSeq = seq;
+        try {
+          controller.enqueue(encodeClientStreamEvent(seq, {
+            type: "run.failed",
+            code: safeFailureCode(code),
+            message: "The run failed.",
+          }));
+          lastEmittedSeq = seq;
+        } catch {
+          // The transport already closed.
+        }
         close();
       };
-      const consume = (seq: number, json: string, emit: boolean): boolean => {
+      const seedTranslator = (json: string): boolean => {
         try {
           const translated = translator.translate(JSON.parse(json));
           if (
-            !emit
-            && translated.event
+            translated.event
             && (translated.event.type === "reconcile_required"
               || (translated.event.type === "run.failed"
                 && translated.event.code === "invalid_stream_event"))
           ) return false;
-          if (emit && translated.event) {
-            if (seq <= cursor || seq <= lastEmittedSeq) {
-              fail(lastEmittedSeq + 1);
-              return false;
-            }
-            write(encodeClientStreamEvent(seq, translated.event));
-            lastEmittedSeq = seq;
-          }
-          if (translated.terminal && emit) close();
-          return !closed;
+          return true;
         } catch {
-          if (emit) fail(seq);
           return false;
         }
       };
-      heartbeat = setInterval(() => write(KEEP_ALIVE), KEEP_ALIVE_MS);
-      heartbeat.unref?.();
+
+      const nextEvent = () => {
+        if (subscription && replayIndex < subscription.replay.length) {
+          return { event: subscription.replay[replayIndex], replay: true };
+        }
+        return pendingLive ? { event: pendingLive, replay: false } : null;
+      };
+      const consumeNext = (replay: boolean) => {
+        if (replay) {
+          replayIndex += 1;
+        } else {
+          pendingLive = null;
+        }
+      };
+
+      // Static replay is retained by the canonical ring and is consumed only
+      // when downstream pulls. At most one later live event waits behind it:
+      // a stalled subscriber is detached rather than accumulating a private,
+      // unbounded replay queue.
+      pump = () => {
+        while (!closed) {
+          if (controller.desiredSize !== null && controller.desiredSize <= 0) return;
+          const next = nextEvent();
+          if (!next) {
+            if (finished) close();
+            return;
+          }
+          let translated: Translation;
+          try {
+            translated = translator.translate(JSON.parse(next.event.json));
+          } catch {
+            consumeNext(next.replay);
+            fail(next.event.seq);
+            return;
+          }
+          consumeNext(next.replay);
+          if (!translated.event) {
+            if (translated.terminal) close();
+            continue;
+          }
+          if (next.event.seq <= cursor || next.event.seq <= lastEmittedSeq) {
+            fail(lastEmittedSeq + 1);
+            return;
+          }
+          try {
+            controller.enqueue(encodeClientStreamEvent(next.event.seq, translated.event));
+          } catch {
+            close();
+            return;
+          }
+          lastEmittedSeq = next.event.seq;
+          if (translated.terminal) {
+            close();
+            return;
+          }
+          // One output per pull (or live append) keeps a boundary-sized
+          // canonical frame from pushing a following terminal into a full
+          // readable-stream queue.
+          return;
+        }
+      };
+
+      const onEvent = (event: { seq: number; json: string }) => {
+        if (closed) return;
+        if (pendingLive) {
+          close();
+          return;
+        }
+        pendingLive = event;
+        pump?.();
+      };
+      const onFinish = () => {
+        finished = true;
+        pump?.();
+      };
+
       subscription = subscribeRunStream(
         key,
         cursor,
-        (event) => consume(event.seq, event.json, true),
-        close,
+        onEvent,
+        onFinish,
       );
       if (!subscription) {
         close();
         return;
       }
       if (subscription.cursorAhead) {
-        write(encodeClientStreamEvent(cursor + 1, {
-          type: "reconcile_required",
-          conversationId: context.conversationId,
-        }));
-        lastEmittedSeq = cursor + 1;
+        try {
+          controller.enqueue(encodeClientStreamEvent(cursor + 1, {
+            type: "reconcile_required",
+            conversationId: context.conversationId,
+          }));
+          lastEmittedSeq = cursor + 1;
+        } catch {
+          // The transport already closed.
+        }
         close();
         cleanup = close;
         return;
       }
       if (subscription.gapBeforeSeq !== null) {
-        write(encodeClientStreamEvent(subscription.gapBeforeSeq, {
-          type: "reconcile_required",
-          conversationId: context.conversationId,
-        }));
-        lastEmittedSeq = subscription.gapBeforeSeq;
+        try {
+          controller.enqueue(encodeClientStreamEvent(subscription.gapBeforeSeq, {
+            type: "reconcile_required",
+            conversationId: context.conversationId,
+          }));
+          lastEmittedSeq = subscription.gapBeforeSeq;
+        } catch {
+          // The transport already closed.
+        }
         close();
         cleanup = close;
         return;
       }
       for (const event of subscription.seed) {
-        if (!consume(event.seq, event.json, false)) {
+        if (!seedTranslator(event.json)) {
           fail(cursor + 1);
           break;
         }
       }
-      if (!closed) {
-        for (const event of subscription.replay) {
-          if (!consume(event.seq, event.json, true)) break;
-        }
+      finished = subscription.done;
+      if (!closed && !finished) {
+        heartbeat = setInterval(() => {
+          if (
+            closed
+            || pendingLive
+            || (subscription && replayIndex < subscription.replay.length)
+            || (controller.desiredSize !== null && controller.desiredSize <= 0)
+          ) return;
+          try {
+            controller.enqueue(KEEP_ALIVE);
+          } catch {
+            close();
+          }
+        }, KEEP_ALIVE_MS);
+        heartbeat.unref?.();
       }
-      if (!closed && subscription.done) close();
       cleanup = close;
+    },
+    pull() {
+      pump?.();
     },
     cancel() {
       cleanup?.();
@@ -521,7 +603,11 @@ export function createResumedRunStream(
     highWaterMark: RESUME_QUEUE_MAX_BYTES,
     size: (chunk) => chunk.byteLength,
   });
-  signal.addEventListener("abort", () => cleanup?.(), { once: true });
+  if (signal.aborted) {
+    void stream.cancel();
+  } else {
+    signal.addEventListener("abort", () => cleanup?.(), { once: true });
+  }
   if (!subscription) {
     void stream.cancel();
     return null;

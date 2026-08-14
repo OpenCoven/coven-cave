@@ -173,8 +173,17 @@ function assistantChunkAtSerializedSize(byteLength: number) {
   return event;
 }
 
-function ssePayloads(text: string): unknown[] {
-  return [...text.matchAll(/^data: (.+)$/gm)].map((match) => JSON.parse(match[1]));
+function sseFrames(text: string) {
+  return text
+    .split("\n\n")
+    .filter(Boolean)
+    .map((frame) => {
+      const id = frame.match(/^id: (\d+)$/m);
+      const data = frame.match(/^data: (.+)$/m);
+      assert.ok(id, "every event frame has an id");
+      assert.ok(data, "every event frame has data");
+      return { id: Number(id[1]), payload: JSON.parse(data[1]) };
+    });
 }
 
 test("initial and resumed streams share the 128 KiB canonical event boundary", async () => {
@@ -197,11 +206,14 @@ test("initial and resumed streams share the 128 KiB canonical event boundary", a
   const replay = await resumed.text();
 
   assert.deepEqual(
-    ssePayloads(initial)[0],
-    ssePayloads(replay)[0],
-    "the initial emission is the same canonical at-limit event stored for resume",
+    sseFrames(initial),
+    sseFrames(replay),
+    "initial and resumed streams retain every boundary event, including the terminal",
   );
-  assert.equal((ssePayloads(initial)[0] as { type: string }).type, "message.delta");
+  assert.deepEqual(sseFrames(initial), [
+    { id: 1, payload: { type: "message.delta", text: event.text } },
+    { id: 2, payload: { type: "run.completed", conversationId: context.conversationId } },
+  ]);
   resetRunBuffersForTest();
 });
 
@@ -230,10 +242,17 @@ test("initial translation emits the canonical oversized replacement recorded for
   assert.ok(resumed);
   const replay = await resumed.text();
 
-  assert.deepEqual(ssePayloads(initial), ssePayloads(replay));
-  assert.deepEqual(ssePayloads(initial), [
-    { type: "message.delta", text: "hello" },
-    { type: "run.failed", code: "stream_event_too_large", message: "The run failed." },
+  assert.deepEqual(
+    sseFrames(initial),
+    sseFrames(replay),
+    "initial and resumed streams retain identical oversized-replacement terminals",
+  );
+  assert.deepEqual(sseFrames(initial), [
+    { id: 1, payload: { type: "message.delta", text: "hello" } },
+    {
+      id: 2,
+      payload: { type: "run.failed", code: "stream_event_too_large", message: "The run failed." },
+    },
   ]);
   resetRunBuffersForTest();
 });
