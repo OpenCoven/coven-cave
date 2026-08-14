@@ -78,6 +78,13 @@ test("create failures surface the server's message inline (409 no-artifact inclu
   assert.match(modals, /artifact\.state === "published" \|\| artifact\.state === "working"/);
 });
 
+test("generation directions show a bounded, quiet character count", () => {
+  assert.match(modals, /maxLength=\{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\}/);
+  assert.match(modals, /directions\.length\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
+  assert.doesNotMatch(modals, /research-studio-config__count" aria-live/);
+  assert.match(css, /\.research-studio-config__count--near/);
+});
+
 test("markdown editor never fakes persistence", () => {
   // The backend exposes list/create/remove only — no update fetcher — so the
   // primary action is clipboard, plainly labeled, with the gap stated.

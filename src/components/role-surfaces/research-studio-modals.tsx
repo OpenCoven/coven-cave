@@ -603,7 +603,7 @@ export function GenerationConfigModal({
 }) {
   const meta = studioMetaForKind(kind);
   const isMedia = !isResearchGenerationKind(kind);
-  const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH - 200;
+  const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
   const mediaConfigurationError = (() => {
     if (!isMedia) return null;
     if (!readiness) return "Media readiness is still loading.";
@@ -706,11 +706,9 @@ export function GenerationConfigModal({
             onChange={(event) => onDirectionsChange(event.target.value)}
             placeholder="Audience, tone, emphasis — kept with the generation for future pipelines"
           />
-          {nearCap ? (
-            <span className="research-studio-config__count" aria-live="polite">
-              {directions.length} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
-            </span>
-          ) : null}
+          <span className={`research-studio-config__count${nearCap ? " research-studio-config__count--near" : ""}`}>
+            {directions.length.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
+          </span>
         </div>
         {isMedia ? (
           <div className="research-studio-config__media">
