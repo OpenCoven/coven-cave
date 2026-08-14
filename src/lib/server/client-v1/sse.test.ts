@@ -377,6 +377,115 @@ test("resume seeds translator state through the cursor before translating a repl
   resetRunBuffersForTest();
 });
 
+test("resume reconciles when an evicted 100k assistant chunk leaves no complete seed", async () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer([context.runId]);
+  const evictedText = "a".repeat(100_000);
+  run.record({ kind: "assistant_chunk", text: evictedText });
+  for (let index = 0; index < 8; index += 1) {
+    run.record({ kind: "user", text: "p".repeat(64 * 1024) });
+  }
+  const cursor = getRunBufferStatus(context.runId)!.latestSeq;
+  run.record({ kind: "assistant_replace", text: `${evictedText} corrected` });
+  run.record({ kind: "done", isError: false });
+  run.finish();
+
+  const response = createResumedRunStream(
+    context.runId,
+    cursor,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(response);
+  const text = await response.text();
+  assert.deepEqual(sseFrames(text), [{
+    id: cursor + 1,
+    payload: { type: "reconcile_required", conversationId: context.conversationId },
+  }], "a replacement cannot be emitted as a duplicate delta from an incomplete seed");
+  assert.doesNotMatch(text, /message\.delta|corrected/);
+  resetRunBuffersForTest();
+});
+
+test("a retained replacement checkpoint avoids false resume reconciliation after eviction", async () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer([context.runId]);
+  run.record({ kind: "assistant_chunk", text: "a".repeat(100_000) });
+  for (let index = 0; index < 8; index += 1) {
+    run.record({ kind: "user", text: "p".repeat(64 * 1024) });
+  }
+  const checkpoint = "b".repeat(100_000);
+  const checkpointSeq = run.record({ kind: "assistant_replace", text: checkpoint });
+  assert.ok(checkpointSeq);
+  run.record({ kind: "assistant_replace", text: `${checkpoint} updated` });
+  run.record({ kind: "done", isError: false });
+  run.finish();
+
+  const response = createResumedRunStream(
+    context.runId,
+    checkpointSeq,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(response);
+  assert.deepEqual(sseFrames(await response.text()), [{
+    id: checkpointSeq + 1,
+    payload: { type: "message.delta", text: " updated" },
+  }, {
+    id: checkpointSeq + 2,
+    payload: { type: "run.completed", conversationId: context.conversationId },
+  }]);
+  resetRunBuffersForTest();
+});
+
+test("replace-only histories seed and resume without reconciliation", async () => {
+  resetRunBuffersForTest();
+  const run = openRunBuffer([context.runId]);
+  run.record({ kind: "assistant_replace", text: "first" });
+  run.record({ kind: "assistant_replace", text: "first second" });
+  run.record({ kind: "done", isError: false });
+  run.finish();
+
+  const response = createResumedRunStream(
+    context.runId,
+    1,
+    context,
+    new AbortController().signal,
+  );
+  assert.ok(response);
+  assert.deepEqual(sseFrames(await response.text()), [{
+    id: 2,
+    payload: { type: "message.delta", text: " second" },
+  }, {
+    id: 3,
+    payload: { type: "run.completed", conversationId: context.conversationId },
+  }]);
+  resetRunBuffersForTest();
+});
+
+test("complete initial and resumed histories translate identically through replacements", async () => {
+  resetRunBuffersForTest();
+  const key = "complete-initial-resume-equivalence";
+  const events = [
+    { kind: "session", sessionId: "private" },
+    { kind: "assistant_chunk", text: "hello" },
+    { kind: "assistant_replace", text: "hello world" },
+    { kind: "done", isError: false },
+  ] as const;
+  const run = openRunBuffer([key]);
+  for (const event of events) run.record(event);
+  run.finish();
+
+  const upstream = new Response(
+    events.map((event, index) => `id: ${index + 1}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+  const initial = await translateInitialChatResponse(upstream, context, key).text();
+  const resumed = createResumedRunStream(key, 0, context, new AbortController().signal);
+  assert.ok(resumed);
+  assert.deepEqual(sseFrames(await resumed.text()), sseFrames(initial));
+  resetRunBuffersForTest();
+});
+
 test("a divergent replacement emits one reconcile event and closes", async () => {
   const upstream = new Response(
     `id: 1\ndata: ${JSON.stringify({ kind: "assistant_chunk", text: "old" })}\n\n`
