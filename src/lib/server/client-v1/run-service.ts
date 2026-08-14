@@ -22,6 +22,7 @@ import { MAX_PROMPT_CHARS } from "@/lib/server/session-security";
 import type { ClientPrincipal } from "./auth.ts";
 import {
   ClientAttachmentError,
+  isRetryableClientAttachmentError,
   resolveAndBindClientAttachments,
 } from "./attachment-service.ts";
 import {
@@ -36,6 +37,7 @@ import {
   hashNormalizedRequest,
   type ClaimOperationResult,
   type ClientOperationResponse,
+  type JsonValue,
 } from "./idempotency-store.ts";
 import {
   ClientRunOperationStoreError,
@@ -43,6 +45,7 @@ import {
   launchClientRunOperation,
   readClientRunOperation,
   reserveClientRunOperation,
+  type ClientRunOperationLaunchOutcome,
   type LaunchClientRunOperationResult,
   type ClientRunOperationRecord,
 } from "./run-operation-store.ts";
@@ -354,6 +357,34 @@ async function durableRunReceipt(
   return {
     status: response.status,
     body,
+  };
+}
+
+function attachmentFailureOutcome(
+  error: ClientAttachmentError,
+): ClientRunOperationLaunchOutcome<Response> {
+  const retryable = isRetryableClientAttachmentError(error);
+  const response = clientV1Error(
+    error.status,
+    error.code,
+    error.message,
+    retryable,
+  );
+  if (retryable) {
+    return { kind: "retryable_prelaunch_failure", value: response };
+  }
+  const body: JsonValue = {
+    ok: false,
+    error: {
+      code: error.code,
+      message: error.message,
+      retryable: false,
+    },
+  };
+  return {
+    kind: "terminal_prelaunch_failure",
+    value: response,
+    terminalResponse: { status: error.status, body },
   };
 }
 
@@ -766,12 +797,10 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
                 input.conversationId,
               );
             } catch (error) {
-              if (error instanceof ClientAttachmentError) throw error;
-              throw new ClientAttachmentError(
-                503,
-                "service_unavailable",
-                "Attachments are temporarily unavailable.",
-              );
+              if (error instanceof ClientAttachmentError) {
+                return attachmentFailureOutcome(error);
+              }
+              throw error;
             }
             const legacyBody: Record<string, unknown> = {
               familiarId: input.familiarId,
@@ -817,14 +846,6 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
           },
         });
       } catch (error) {
-        if (error instanceof ClientAttachmentError) {
-          return clientV1Error(
-            error.status,
-            error.code,
-            error.message,
-            error.status === 503,
-          );
-        }
         if (error instanceof ClientRunOperationStoreError) {
           return clientV1Error(
             503,

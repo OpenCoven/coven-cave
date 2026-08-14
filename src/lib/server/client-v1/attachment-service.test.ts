@@ -21,6 +21,7 @@ const {
   CLIENT_ATTACHMENT_MAX_REQUEST_BYTES,
   ClientAttachmentError,
   clientAttachmentIndexPath,
+  isRetryableClientAttachmentError,
   parseClientAttachmentForm,
   readClientAttachment,
   resolveAndBindClientAttachments,
@@ -164,6 +165,24 @@ function isClientAttachmentError(
 ): boolean {
   return error instanceof ClientAttachmentError && error.status === status;
 }
+
+test("only unavailable attachment services are retryable", () => {
+  assert.equal(
+    isRetryableClientAttachmentError(
+      new ClientAttachmentError(503, "service_unavailable", "Attachment service unavailable."),
+    ),
+    true,
+  );
+  for (const error of [
+    new ClientAttachmentError(400, "invalid_request", "Invalid attachment."),
+    new ClientAttachmentError(404, "not_found", "Attachment not found."),
+    new ClientAttachmentError(409, "conflict", "Attachment is already bound."),
+    new ClientAttachmentError(413, "invalid_request", "Attachment is too large."),
+    new ClientAttachmentError(415, "invalid_request", "Attachment type is unsupported."),
+  ]) {
+    assert.equal(isRetryableClientAttachmentError(error), false);
+  }
+});
 
 test("multipart parsing accepts the allowlisted image, document, text, and audio families", async () => {
   for (const {

@@ -149,6 +149,14 @@ export class ClientAttachmentError extends Error {
   }
 }
 
+/**
+ * Attachment input, ownership, and capacity errors are deterministic for a
+ * given request. Only an unavailable attachment service may be retried.
+ */
+export function isRetryableClientAttachmentError(error: ClientAttachmentError): boolean {
+  return error.status === 503;
+}
+
 function isWithin(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`)
