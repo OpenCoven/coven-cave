@@ -1,10 +1,20 @@
 import { execFile } from "node:child_process";
-import { createHmac, randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
@@ -78,6 +88,7 @@ function terminatePackagedUnixSidecarTree() {
     }
   }
   sessions.clear();
+  removeClientV1DiscoveryRecordIfOwned();
   try {
     process.kill(-process.pid, "SIGKILL");
   } catch {
@@ -747,10 +758,158 @@ server.on("upgrade", (req, socket, head) => {
     handlePtyConnection(ws, threadId, cols, rows, cwd, replayCursor);
   });
 });
+function clientV1DiscoveryPath() {
+  const override = process.env.COVEN_CAVE_CLIENT_V1_DISCOVERY_PATH;
+  if (override && override.trim()) return override.trim();
+  const covenHomeDir = process.env.COVEN_HOME || join(homedir(), ".coven");
+  const caveHomeDir = process.env.COVEN_CAVE_HOME || join(covenHomeDir, "cave");
+  return join(caveHomeDir, "client-v1-discovery.json");
+}
+function formatDiscoveryEndpoint(discoveryHostname, discoveryPort) {
+  const alreadyBracketed = discoveryHostname.startsWith("[") && discoveryHostname.endsWith("]");
+  const host = !alreadyBracketed && discoveryHostname.includes(":") ? `[${discoveryHostname}]` : discoveryHostname;
+  const endpoint = `http://${host}:${discoveryPort}`;
+  new URL(endpoint);
+  return endpoint;
+}
+let clientV1DiscoveryNonce = null;
+function clientV1DiscoveryLockDbPath(file) {
+  return `${file}.lock.sqlite`;
+}
+const CLIENT_V1_DISCOVERY_LOCK_BUSY_TIMEOUT_MS = (() => {
+  const override = Number(process.env.COVEN_CAVE_CLIENT_V1_DISCOVERY_LOCK_BUSY_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : 5e3;
+})();
+function acquireClientV1DiscoveryLock(file) {
+  const lockDbPath = clientV1DiscoveryLockDbPath(file);
+  mkdirSync(dirname(lockDbPath), { recursive: true });
+  let database = null;
+  try {
+    database = new DatabaseSync(lockDbPath);
+    try {
+      chmodSync(lockDbPath, 384);
+    } catch {
+    }
+    database.exec(`PRAGMA busy_timeout = ${CLIENT_V1_DISCOVERY_LOCK_BUSY_TIMEOUT_MS}`);
+    database.exec("PRAGMA journal_mode = DELETE");
+    database.exec(
+      "CREATE TABLE IF NOT EXISTS lock_meta (id INTEGER PRIMARY KEY CHECK (id = 1), initialized_at TEXT NOT NULL);"
+    );
+    database.exec(
+      "INSERT OR IGNORE INTO lock_meta (id, initialized_at) VALUES (1, datetime('now'));"
+    );
+    database.exec("BEGIN IMMEDIATE");
+    return { database };
+  } catch (error) {
+    if (database) {
+      try {
+        if (database.isTransaction) database.exec("ROLLBACK");
+      } catch {
+      }
+      try {
+        database.close();
+      } catch {
+      }
+    }
+    throw error;
+  }
+}
+function releaseClientV1DiscoveryLock(lock) {
+  try {
+    if (lock.database.isTransaction) lock.database.exec("ROLLBACK");
+  } catch {
+  }
+  try {
+    lock.database.close();
+  } catch {
+  }
+}
+function withClientV1DiscoveryLock(file, operation) {
+  const lock = acquireClientV1DiscoveryLock(file);
+  try {
+    return operation();
+  } finally {
+    releaseClientV1DiscoveryLock(lock);
+  }
+}
+function writeClientV1DiscoveryRecord(discoveryHostname, discoveryPort) {
+  const file = clientV1DiscoveryPath();
+  try {
+    withClientV1DiscoveryLock(file, () => {
+      const nonce = randomBytes(16).toString("hex");
+      const tmp = `${file}.${process.pid}.${nonce}.tmp`;
+      let published = false;
+      try {
+        const record = {
+          version: 1,
+          endpoint: formatDiscoveryEndpoint(discoveryHostname, discoveryPort),
+          pid: process.pid,
+          nonce,
+          startedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        writeFileSync(tmp, JSON.stringify(record, null, 2), { mode: 384 });
+        renameSync(tmp, file);
+        published = true;
+        clientV1DiscoveryNonce = nonce;
+        chmodSync(file, 384);
+      } catch (err) {
+        if (!published) {
+          try {
+            unlinkSync(tmp);
+          } catch {
+          }
+        } else {
+          clientV1DiscoveryNonce = null;
+          removeClientV1DiscoveryRecordLocked(file, nonce);
+        }
+        throw err;
+      }
+    });
+  } catch (err) {
+    console.warn("[client-v1-discovery] failed to write discovery record", err);
+  }
+}
+function removeClientV1DiscoveryRecordLocked(file, ownNonce) {
+  let current = null;
+  try {
+    current = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return;
+  }
+  if (current.nonce !== ownNonce) {
+    return;
+  }
+  try {
+    unlinkSync(file);
+  } catch {
+  }
+}
+function removeClientV1DiscoveryRecordIfOwned() {
+  if (!clientV1DiscoveryNonce) return;
+  const ownNonce = clientV1DiscoveryNonce;
+  clientV1DiscoveryNonce = null;
+  const file = clientV1DiscoveryPath();
+  try {
+    withClientV1DiscoveryLock(file, () => {
+      removeClientV1DiscoveryRecordLocked(file, ownNonce);
+    });
+  } catch (err) {
+    console.warn("[client-v1-discovery] failed to acquire discovery lock during cleanup", err);
+  }
+}
+function clientV1DiscoveryShutdownHandler() {
+  removeClientV1DiscoveryRecordIfOwned();
+  process.exit(0);
+}
+process.on("SIGTERM", clientV1DiscoveryShutdownHandler);
+process.on("SIGINT", clientV1DiscoveryShutdownHandler);
 server.keepAliveTimeout = 75e3;
 server.headersTimeout = 8e4;
 server.listen(port, hostname, () => {
-  console.log(`> Ready on http://${hostname}:${port}`);
+  const address = server.address();
+  const boundPort = typeof address === "object" && address ? address.port : port;
+  console.log(`> Ready on http://${hostname}:${boundPort}`);
+  writeClientV1DiscoveryRecord(hostname, boundPort);
 });
 if (allowedTailnetNodeIds().size > 0) {
   void refreshTailnetPeers();
@@ -758,6 +917,7 @@ if (allowedTailnetNodeIds().size > 0) {
 }
 server.once("error", (err) => {
   console.error(err);
+  removeClientV1DiscoveryRecordIfOwned();
   process.exit(1);
 });
 const HEAP_MONITOR_ENABLED = process.env.COVEN_CAVE_HEAP_MONITOR !== "0";

@@ -49,9 +49,12 @@ assert.match(
   "completion handler falls back to the archive nudge",
 );
 
-// The session list sweep is wired through the shared sweep module.
+// The session list sweep is wired through the shared sweep module. This
+// logic (like the rest of the canonical merge) lives in the shared
+// projection (`computeCanonicalSessionList`) in
+// @/lib/server/client-v1/read-model.ts (cave-client-v1 plan, Task 5).
 const sessionsListRoute = readFileSync(
-  new URL("../app/api/sessions/list/route.ts", import.meta.url),
+  new URL("./server/client-v1/read-model.ts", import.meta.url),
   "utf8",
 );
 assert.match(

@@ -31,6 +31,10 @@ import {
   isHtmlNavigationRequest,
   accessGatePage,
   ACCESS_TOKEN_QUERY_PARAM,
+  isClientV1Path,
+  isClientV1AdminPath,
+  hasEncodedClientV1PathOctet,
+  CLIENT_V1_PREFIX,
 } from "./proxy-helpers.ts";
 
 // ─── isLoopbackHost ────────────────────────────────────────────────────────
@@ -492,5 +496,51 @@ assert.equal(isHtmlNavigationRequest("GET", "/", null), false, "no Accept header
   assert.match(invalid, /didn&rsquo;t verify/, "supplied-but-invalid tokens get the expiry hint");
   assert.match(invalid, /role="alert"/);
 }
+
+// ─── isClientV1Path / isClientV1AdminPath ─────────────────────────────────
+assert.equal(CLIENT_V1_PREFIX, "/api/client/v1/", "the prefix constant must include its trailing slash");
+
+assert.equal(isClientV1Path("/api/client/v1"), true, "the exact root matches");
+assert.equal(isClientV1Path("/api/client/v1/"), true, "the root with a trailing slash matches");
+assert.equal(isClientV1Path("/api/client/v1/pairing"), true, "a nested path matches");
+assert.equal(isClientV1Path("/api/client/v1/admin"), true, "admin paths still match the broader predicate");
+assert.equal(isClientV1Path("/api/client/v1/admin/credentials"), true);
+assert.equal(
+  isClientV1Path("/api/client/v10"),
+  false,
+  "a sibling path that merely shares the 'v1' prefix must not match",
+);
+assert.equal(
+  isClientV1Path("/api/client/v1x"),
+  false,
+  "a sibling path with a suffixed version segment must not match",
+);
+assert.equal(isClientV1Path("/api/client"), false, "the parent path must not match");
+assert.equal(isClientV1Path("/api/client/v2"), false);
+assert.equal(isClientV1Path("/api/clientele/v1"), false, "an unrelated path must not match");
+assert.equal(hasEncodedClientV1PathOctet("/api/client/v1/%61dmin"), true);
+assert.equal(hasEncodedClientV1PathOctet("/api/client/v1/admin%2Fcredentials"), true);
+assert.equal(hasEncodedClientV1PathOctet("/api/client/v1/admin%"), true);
+assert.equal(
+  hasEncodedClientV1PathOctet("/api/client/v10/%61dmin"),
+  false,
+  "encoded rejection stays scoped to the exact client-v1 namespace",
+);
+
+assert.equal(isClientV1AdminPath("/api/client/v1/admin"), true, "the exact admin root matches");
+assert.equal(isClientV1AdminPath("/api/client/v1/admin/"), true);
+assert.equal(isClientV1AdminPath("/api/client/v1/admin/credentials"), true, "nested admin paths match");
+assert.equal(isClientV1AdminPath("/api/client/v1"), false, "the non-admin root must not match");
+assert.equal(isClientV1AdminPath("/api/client/v1/pairing"), false, "a non-admin nested path must not match");
+assert.equal(
+  isClientV1AdminPath("/api/client/v1/admin10"),
+  false,
+  "a sibling path that merely shares the 'admin' prefix must not match",
+);
+assert.equal(
+  isClientV1AdminPath("/api/client/v1/adminx"),
+  false,
+  "a sibling path with a suffixed admin segment must not match",
+);
 
 console.log("proxy-behavior.test.ts: ok");

@@ -350,6 +350,65 @@ export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";
 export const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";
+/**
+ * Stamped by proxy.ts only after an admin request has passed the existing
+ * sidecar-token and CSRF/source/content-type gates, or the direct-loopback
+ * tokenless-development gate. Admin route handlers verify the value against
+ * the per-boot local-peer secret before touching request data or stores.
+ */
+export const CLIENT_V1_ADMIN_HEADER = "x-coven-client-v1-admin";
+
+/**
+ * Stamped by proxy.ts (with the per-boot COVEN_CAVE_LOCAL_PEER_SECRET) on
+ * `/api/client/v1/*` (non-admin) requests once it has verified the caller is
+ * a direct, unforwarded loopback peer (via `isTrustedLocalPeer`) and NOT a
+ * verified remote ingress. Route-level auth (`requireClientPrincipal`)
+ * verifies this stamp before ever trusting a request's bearer token, so a
+ * bearer token alone — without this proof — can never reach a client-v1
+ * route handler. Any client-supplied copy of this header is always stripped
+ * before the stamp is applied; see proxy.ts.
+ */
+export const CLIENT_V1_LOCAL_HEADER = "x-coven-client-v1-local";
+
+/**
+ * The path prefix (with trailing slash) for every nested route under the
+ * standalone OpenCoven Chat client facade. Deliberately includes the
+ * trailing slash so a prefix check can never be confused by an unrelated
+ * path that merely starts with the same characters (e.g. `/api/client/v10`
+ * must NOT match).
+ */
+export const CLIENT_V1_PREFIX = "/api/client/v1/";
+
+const CLIENT_V1_ROOT = "/api/client/v1";
+const CLIENT_V1_ADMIN_ROOT = "/api/client/v1/admin";
+const CLIENT_V1_ADMIN_PREFIX = "/api/client/v1/admin/";
+
+/**
+ * True for the exact client-v1 root and every path nested under it
+ * (including admin paths — callers that need to exclude admin routes should
+ * separately check `isClientV1AdminPath`). Uses `CLIENT_V1_PREFIX`'s trailing
+ * slash so an unrelated sibling path (`/api/client/v10`, `/api/client/v1x`)
+ * never matches.
+ */
+export function isClientV1Path(pathname: string): boolean {
+  return pathname === CLIENT_V1_ROOT || pathname.startsWith(CLIENT_V1_PREFIX);
+}
+
+/** Reject encoded path ambiguity anywhere inside the client-v1 namespace. */
+export function hasEncodedClientV1PathOctet(pathname: string): boolean {
+  return isClientV1Path(pathname) && pathname.includes("%");
+}
+
+/**
+ * True for the exact client-v1 admin root and every path nested under it.
+ * Admin routes remain behind the existing sidecar-token + same-origin/CSRF
+ * Cave UI gates and must never take the loopback bearer-auth bypass that
+ * `isClientV1Path && !isClientV1AdminPath` selects in proxy.ts.
+ */
+export function isClientV1AdminPath(pathname: string): boolean {
+  return pathname === CLIENT_V1_ADMIN_ROOT || pathname.startsWith(CLIENT_V1_ADMIN_PREFIX);
+}
+
 export const SAFE_CONTENT_TYPES = [
   "application/json",
   "application/x-www-form-urlencoded",

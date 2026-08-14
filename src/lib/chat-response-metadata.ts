@@ -41,6 +41,10 @@ export type ChatResponseMetadata = {
     requestedAt: string;
     reason: ChatAttentionReason;
   };
+  /** Server-only reservation for answering an attention request. */
+  attentionResponse?: {
+    operationId: string;
+  };
 };
 
 /** Collapse a user home prefix to "~" so the directory reads as a location the

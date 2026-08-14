@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, readdir, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, test } from "node:test";
 
-const root = await mkdtemp(path.join(tmpdir(), "cave-chat-attachments-"));
-const outside = await mkdtemp(path.join(tmpdir(), "cave-chat-attachments-outside-"));
+const testTmpRoot = path.join(process.cwd(), ".test-tmp");
+await mkdir(testTmpRoot, { recursive: true });
+const root = await mkdtemp(path.join(testTmpRoot, "cave-chat-attachments-"));
+const outside = await mkdtemp(path.join(testTmpRoot, "cave-chat-attachments-outside-"));
 const originalRoot = process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR;
 process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = root;
 
@@ -14,6 +15,8 @@ const {
   ChatAttachmentStoreError,
   chatAttachmentMaxBytes,
   chatAttachmentMimeType,
+  readChatAttachmentName,
+  saveChatFileAttachment,
   isValidChatAttachmentId,
   readChatImageAttachment,
   saveChatImageAttachment,
@@ -126,6 +129,38 @@ test("media outside the allowlist is refused", async () => {
   const dataUrl = `data:video/x-matroska;base64,${Buffer.from("mkv").toString("base64")}`;
   assert.equal(await saveChatMediaAttachment(dataUrl, "video/x-matroska"), null);
   assert.equal(saveChatMediaAttachmentFromFileSync("/tmp/whatever.mkv", "video/x-matroska"), null);
+});
+
+test("client-v1 file saves can mint a deterministic id and immutable name sidecar", async () => {
+  const dataUrl = `data:text/plain;base64,${Buffer.from("hello from Cave Client v1\\n").toString("base64")}`;
+  const storedId = "11111111-2222-4333-8444-555555555555.txt";
+  assert.equal(
+    await saveChatFileAttachment(dataUrl, "text/plain", { storedId, name: "notes.txt" }),
+    storedId,
+  );
+  assert.equal(await readChatAttachmentName(storedId), "notes.txt");
+  assert.equal(
+    await saveChatFileAttachment(dataUrl, "text/plain", { storedId, name: "notes.txt" }),
+    storedId,
+    "an exact replay reuses the deterministic id safely",
+  );
+  assert.equal(
+    await saveChatFileAttachment(dataUrl, "text/plain", {
+      storedId,
+      name: "renamed.txt",
+    }),
+    null,
+    "the immutable sidecar refuses a conflicting name replay",
+  );
+  assert.equal(
+    await saveChatFileAttachment(
+      `data:text/plain;base64,${Buffer.from("different bytes\\n").toString("base64")}`,
+      "text/plain",
+      { storedId, name: "notes.txt" },
+    ),
+    null,
+    "the deterministic id also refuses mismatched bytes",
+  );
 });
 
 test("a media file copies into the store synchronously", async () => {

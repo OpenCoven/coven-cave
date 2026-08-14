@@ -27,6 +27,7 @@ export type LocalConversationSummary = {
   harness?: string;
   model?: string;
   runtime?: string;
+  projectRoot?: string | null;
   title?: string;
   status?: string;
   exitCode?: number | null;
@@ -126,8 +127,15 @@ function localConversationToSession(
   // folder. Only registered-project cwds map — a chat running in the
   // familiar's own workspace (or any unregistered dir) stays No-project by
   // design (see resolveChatProjectSelection in chat-projects.ts).
+  const hasAuthoritativeProjectRoot = Object.hasOwn(conv, "projectRoot");
+  const authoritativeProjectRoot =
+    typeof conv.projectRoot === "string" && conv.projectRoot.trim()
+      ? conv.projectRoot.trim()
+      : "";
   const cwd = conversationLocalCwd(conv.runtime);
-  const projectRoot = (cwd ? projectRootForCwd?.(cwd) : null) ?? "";
+  const projectRoot = hasAuthoritativeProjectRoot
+    ? authoritativeProjectRoot
+    : (cwd ? projectRootForCwd?.(cwd) : null) ?? "";
   return {
     id: conv.sessionId,
     project_root: projectRoot,
@@ -297,6 +305,14 @@ export function mergeSessionRows({
     const row: SessionRow = {
       ...session,
       ...(local && local.sessionId !== session.id ? { id: local.sessionId } : {}),
+      ...(local && Object.hasOwn(local, "projectRoot")
+        ? {
+            project_root:
+              typeof local.projectRoot === "string" && local.projectRoot.trim()
+                ? local.projectRoot.trim()
+                : "",
+          }
+        : {}),
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
       // Cave conversations record the concrete runtime selected for the chat
       // (`local:<cwd>` or `ssh:<host>:<cwd>`). That send-time provenance is

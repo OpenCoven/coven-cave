@@ -1599,6 +1599,50 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
   assert.equal(byId.get("remote")?.project_root, "", "ssh runtimes have no local project root");
   assert.equal(byId.get("no-runtime")?.project_root, "", "conversations without a runtime stay No-project");
 
+  const authoritativeRows = localConversationSessionRows(
+    [
+      { ...conv("authoritative-ssh", "ssh:build:/srv/repo"), projectRoot: "/Users/example/repo" },
+      { ...conv("authoritative-rootless", "ssh:build:/srv/repo"), projectRoot: null },
+    ],
+    bareState,
+    false,
+    projectRootForCwd,
+  );
+  const authoritativeById = new Map(authoritativeRows.map((row) => [row.id, row]));
+  assert.equal(
+    authoritativeById.get("authoritative-ssh")?.project_root,
+    "/Users/example/repo",
+    "authoritative projectRoot wins independently of the execution runtime",
+  );
+  assert.equal(
+    authoritativeById.get("authoritative-rootless")?.project_root,
+    "",
+    "authoritative null remains explicitly projectless even when runtime is remote",
+  );
+  const mergedAuthoritative = mergeSessionRows({
+    daemonSessions: [{
+      id: "authoritative-ssh",
+      project_root: "/srv/repo",
+      harness: "openclaw",
+      title: "Remote",
+      status: "completed",
+      created_at: "2026-06-08T20:00:00.000Z",
+      updated_at: "2026-06-08T20:00:00.000Z",
+    }],
+    localConversations: [{
+      ...conv("authoritative-ssh", "ssh:build:/srv/repo"),
+      projectRoot: "/Users/example/repo",
+    }],
+    state: bareState,
+    includeArchived: false,
+    projectRootForCwd,
+  });
+  assert.equal(
+    mergedAuthoritative[0]?.project_root,
+    "/Users/example/repo",
+    "canonical merged read projection prefers the conversation's authoritative project root over daemon runtime cwd",
+  );
+
   const mergedBackfill = mergeSessionRows({
     daemonSessions: [],
     localConversations: [conv("in-project", "local:/Users/example/repo")],

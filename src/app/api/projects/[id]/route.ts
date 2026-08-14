@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { deleteProject, patchProject } from "@/lib/cave-projects";
-import { revokeAllGrantsForProject } from "@/lib/project-permissions";
+import { patchProject } from "@/lib/cave-projects";
+import { deleteProjectAndRevokeGrants } from "@/lib/project-permissions";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -94,10 +94,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const denied = rejectNonLocalRequest(req);
   if (denied) return denied;
   const { id } = await params;
-  const deleted = await deleteProject(id);
-  if (!deleted) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  // Cascade: a removed project must leave no orphaned access behind (a reused
-  // id could otherwise silently inherit stale grants).
-  const cleaned = await revokeAllGrantsForProject(id);
-  return NextResponse.json({ ok: true, cleaned });
+  const result = await deleteProjectAndRevokeGrants(id);
+  if (!result.deleted) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  return NextResponse.json({ ok: true, cleaned: result.cleaned });
 }

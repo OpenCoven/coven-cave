@@ -79,7 +79,7 @@
     "test:canonical-memory:smoke": "node scripts/canonical-memory-cross-repo-smoke.mjs",
     "e2e:install": "playwright install chromium webkit",
     "test:e2e:mobile": "pnpm e2e:install && playwright test --project=pixel-5 --project=iphone-13",
-    "test:e2e": "pnpm e2e:install && playwright test",
+    "test:e2e": "pnpm e2e:install && node scripts/run-playwright-e2e.mjs",
     "start": "node server.mjs",
     "build:server": "esbuild server.ts --bundle=false --platform=node --target=node24 --outfile=server.mjs --format=esm",
     "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs",

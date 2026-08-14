@@ -12,7 +12,7 @@ import {
 // ── settings-sections catalog (pure) ─────────────────────────────────────────
 
 test("every section has full overview metadata + a highlight strip", () => {
-  const ids = ["profile", "general", "voice", "daemon", "mobile", "appearance", "about"];
+  const ids = ["profile", "general", "voice", "daemon", "mobile", "clientAccess", "appearance", "about"];
   assert.deepEqual(SECTIONS.map((s) => s.id), ids, "the section set matches the shell nav");
   for (const s of SECTIONS) {
     assert.ok(s.label && s.icon.startsWith("ph:") && s.description.length > 0, `${s.id} has label/icon/description`);
@@ -181,6 +181,16 @@ test("the shell sources sections from settings-sections and renders the overview
     "About replaces the generic overview with its accessible handoff hero",
   );
   assert.doesNotMatch(shell, /section="addons"|AddonsSection|Add-ons/, "Add-ons is not a settings section");
+  assert.match(
+    shell,
+    /import \{ SettingsClientAccess \} from "\.\/settings-client-access"/,
+    "the shell imports SettingsClientAccess",
+  );
+  assert.match(
+    shell,
+    /section === "clientAccess" && <SettingsClientAccess \/>/,
+    "the shell actually mounts SettingsClientAccess for the clientAccess section",
+  );
 });
 
 console.log("settings-overview.test.ts: ok");

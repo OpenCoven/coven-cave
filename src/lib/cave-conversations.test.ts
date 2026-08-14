@@ -677,6 +677,68 @@ assert.equal(await deleteConversation("legacy-linear-conversation"), true);
     [],
     "files above the byte cap are skipped",
   );
+
+  // ── Authorization-before-limit (search authorization-before-limit): a
+  // `filter` predicate must be evaluated on every matching candidate BEFORE
+  // `limit` slices the ranked result set, so an unauthorized candidate can
+  // never crowd out an accessible one no matter how many unauthorized
+  // candidates sort ahead of it. >5000 unauthorized, more-recently-updated
+  // candidates must never crowd out the one accessible, older candidate.
+  const AUTH_MARKER = "authz-before-limit-marker";
+  await writeFile(
+    path.join(CONV_DIR, "authz-accessible.json"),
+    fixture("authz-accessible", "2026-06-01T00:00:00.000Z", [AUTH_MARKER]),
+    "utf8",
+  );
+  const unauthorizedCount = 5001;
+  await Promise.all(
+    Array.from({ length: unauthorizedCount }, (_, i) =>
+      writeFile(
+        path.join(CONV_DIR, `authz-unauth-${i}.json`),
+        // Every unauthorized candidate is strictly MORE recently updated
+        // than the one accessible candidate above, so it would rank ahead
+        // pre-filter and, without authorization-before-limit, could
+        // exhaust a small `limit` before the filter is ever consulted.
+        fixture(`authz-unauth-${i}`, `2026-07-01T${String(i % 24).padStart(2, "0")}:00:00.000Z`, [AUTH_MARKER]),
+        "utf8",
+      ),
+    ),
+  );
+  const allowedSessionId = "authz-accessible";
+  let filterCalls = 0;
+  const authorizedHits = await searchConversations(AUTH_MARKER, {
+    limit: 3,
+    filter: (candidate) => {
+      filterCalls += 1;
+      return candidate.sessionId === allowedSessionId;
+    },
+  });
+  assert.ok(
+    authorizedHits.some((hit) => hit.sessionId === allowedSessionId),
+    ">5000 unauthorized, more-recently-updated candidates must never crowd out the one accessible candidate",
+  );
+  assert.ok(
+    authorizedHits.every((hit) => hit.sessionId === allowedSessionId),
+    "no unauthorized candidate ever survives the filter",
+  );
+  assert.ok(
+    filterCalls > unauthorizedCount,
+    "the filter must be consulted for every matching candidate, not skipped once limit unauthorized ones are seen",
+  );
+
+  // Task5 regression: absent `filter`, behavior is byte-identical to before
+  // this option existed — the existing result-cap test above (`capped`)
+  // already covers this, re-asserted here for locality with the new option.
+  const noFilterHits = await searchConversations(AUTH_MARKER, { limit: 3 });
+  assert.equal(noFilterHits.length, 3, "omitting `filter` still just caps to `limit`, unchanged from before");
+
+  // Clean up the large fixture set so later assertions in this file (and
+  // the mtime-cache section appended below) aren't affected by thousands of
+  // stray conversation files.
+  await Promise.all(
+    Array.from({ length: unauthorizedCount }, (_, i) => rm(path.join(CONV_DIR, `authz-unauth-${i}.json`))),
+  );
+  await rm(path.join(CONV_DIR, "authz-accessible.json"));
 }
 
 await saveConversation({
@@ -749,6 +811,192 @@ console.log("cave-conversations.test.ts: ok");
 
   const again = await searchConversations("unique-marker-bbb");
   assert.equal(again.length, 1, "repeat search via the cache returns the same hit");
+}
+
+// ── Task5 quality finding — inactive branches in search: `activePathOnly`
+// restricts match/snippet/matchCount to the validated active path
+// (`activeConversationTurns`), never a sibling/abandoned branch, while the
+// default (option absent) remains the existing full-branch scan every
+// internal caller already relies on ──────────────────────────────────────
+{
+  const { searchConversations, CONV_DIR } = await import("./cave-conversations.ts");
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  await mkdir(CONV_DIR, { recursive: true });
+
+  // Two sibling branches off a shared root: `activeLeafId` picks
+  // "active-child" as active, leaving "inactive-child" — a regenerate/rerun
+  // sibling a real client's UI never renders — reachable only via the raw
+  // (unrestricted) turn set.
+  await writeFile(
+    path.join(CONV_DIR, "branch-scope.json"),
+    JSON.stringify({
+      sessionId: "branch-scope",
+      title: "Branch scope",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      turns: [
+        {
+          id: "root",
+          role: "user",
+          text: "root-branch-scope-marker seed turn",
+          parentId: null,
+          createdAt: "2026-07-20T00:00:00.000Z",
+        },
+        {
+          id: "active-child",
+          role: "assistant",
+          text: "root-branch-scope-marker on the active branch, twice: root-branch-scope-marker",
+          parentId: "root",
+          createdAt: "2026-07-20T00:01:00.000Z",
+        },
+        {
+          id: "inactive-child",
+          role: "assistant",
+          text: "root-branch-scope-marker only on the abandoned branch",
+          parentId: "root",
+          createdAt: "2026-07-20T00:01:00.000Z",
+        },
+      ],
+      activeLeafId: "active-child",
+    }),
+    "utf8",
+  );
+
+  // Query present ONLY on the inactive branch: activePathOnly must return
+  // no hit for this conversation whatsoever.
+  await writeFile(
+    path.join(CONV_DIR, "inactive-only.json"),
+    JSON.stringify({
+      sessionId: "inactive-only",
+      title: "Inactive only",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      turns: [
+        {
+          id: "root",
+          role: "user",
+          text: "root turn, no marker",
+          parentId: null,
+          createdAt: "2026-07-20T00:00:00.000Z",
+        },
+        {
+          id: "active-child",
+          role: "assistant",
+          text: "active branch, no marker either",
+          parentId: "root",
+          createdAt: "2026-07-20T00:01:00.000Z",
+        },
+        {
+          id: "inactive-child",
+          role: "assistant",
+          text: "inactive-branch-only-marker lives here",
+          parentId: "root",
+          createdAt: "2026-07-20T00:01:00.000Z",
+        },
+      ],
+      activeLeafId: "active-child",
+    }),
+    "utf8",
+  );
+
+  // Invalid/ambiguous active-path metadata: two roots, no shared parent, and
+  // no `activeLeafId` recorded — more than one leaf is resolvable and
+  // nothing disambiguates which is active (mirrors the ambiguous-active-path
+  // fixture in read-model.test.ts).
+  await writeFile(
+    path.join(CONV_DIR, "ambiguous-branch.json"),
+    JSON.stringify({
+      sessionId: "ambiguous-branch",
+      title: "Ambiguous branch",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      turns: [
+        {
+          id: "root-a",
+          role: "user",
+          text: "ambiguous-branch-marker branch a",
+          parentId: null,
+          createdAt: "2026-07-20T00:00:00.000Z",
+        },
+        {
+          id: "root-b",
+          role: "user",
+          text: "ambiguous-branch-marker branch b",
+          parentId: null,
+          createdAt: "2026-07-20T00:00:01.000Z",
+        },
+      ],
+      activeLeafId: null,
+    }),
+    "utf8",
+  );
+
+  // ── query only present on an inactive branch → no client hit ────────────
+  const inactiveOnlyHits = await searchConversations("inactive-branch-only-marker", { activePathOnly: true });
+  assert.deepEqual(
+    inactiveOnlyHits.map((h) => h.sessionId),
+    [],
+    "activePathOnly must never surface a hit whose ONLY match lives on an inactive branch",
+  );
+  // Sanity: without activePathOnly (existing internal-search behavior), the
+  // same query DOES match — proving the marker really is in the fixture and
+  // the negative result above isn't a fixture/pre-filter mistake.
+  const inactiveOnlyDefaultHits = await searchConversations("inactive-branch-only-marker");
+  assert.deepEqual(
+    inactiveOnlyDefaultHits.map((h) => h.sessionId),
+    ["inactive-only"],
+    "existing internal (activePathOnly-absent) search behavior is unchanged: it still scans every branch",
+  );
+
+  // ── query on the active branch → correct snippet + matchCount, counting
+  // ONLY active-path occurrences (root + active-child), never the sibling
+  // inactive-child's occurrence ───────────────────────────────────────────
+  const activeHits = await searchConversations("root-branch-scope-marker", { activePathOnly: true });
+  assert.equal(activeHits.length, 1);
+  assert.equal(activeHits[0].sessionId, "branch-scope");
+  assert.equal(
+    activeHits[0].matchCount,
+    3,
+    "matchCount derives solely from active-path turns: 1 (root) + 2 (active-child), never the inactive sibling's 1",
+  );
+  assert.match(
+    activeHits[0].snippet,
+    /root-branch-scope-marker seed turn/,
+    "snippet comes from the first active-path match (the root turn), not the inactive sibling",
+  );
+
+  // Full-scan (activePathOnly absent) must count ALL FOUR occurrences across
+  // all three turns — the existing/internal default behavior, unchanged.
+  const activeHitsDefault = await searchConversations("root-branch-scope-marker");
+  assert.equal(activeHitsDefault.length, 1);
+  assert.equal(
+    activeHitsDefault[0].matchCount,
+    4,
+    "without activePathOnly, matchCount still scans every branch (unchanged existing behavior)",
+  );
+
+  // ── invalid/ambiguous active-path metadata is skipped, not thrown, under
+  // activePathOnly — never surfaces a wrong-branch hit ────────────────────
+  const ambiguousHits = await searchConversations("ambiguous-branch-marker", { activePathOnly: true });
+  assert.deepEqual(
+    ambiguousHits.map((h) => h.sessionId),
+    [],
+    "a non-empty conversation with invalid/ambiguous active-path metadata is skipped under activePathOnly, " +
+      "never surfaced with a wrong branch's content",
+  );
+  // Without activePathOnly, the ambiguous conversation's raw turns are still
+  // scanned — this option opts IN to the stricter behavior, it never changes
+  // the default for existing internal callers.
+  const ambiguousHitsDefault = await searchConversations("ambiguous-branch-marker");
+  assert.equal(
+    ambiguousHitsDefault.length,
+    1,
+    "without activePathOnly, the ambiguous conversation's raw (unvalidated) turns are still scanned — " +
+      "unchanged default behavior",
+  );
+
+  await Promise.all(
+    ["branch-scope.json", "inactive-only.json", "ambiguous-branch.json"].map((name) =>
+      rm(path.join(CONV_DIR, name)),
+    ),
+  );
 }
 
 // ── Atomic persistence (cave-1v95): no torn writes, no temp residue ──────────

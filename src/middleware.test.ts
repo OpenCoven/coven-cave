@@ -27,6 +27,46 @@ assert.match(
   /forbidden peer: missing trusted local peer or verified remote ingress/,
   "tokenless peer failures should identify the missing authorization proof",
 );
+// cave-client-v1-admin (Task 3, tokenless half): the `!sidecarToken`
+// development branch's general `isTokenlessApiPeerAllowed` allowance admits
+// ANY verified remote ingress (mobile invite or allowlisted tailnet device),
+// but /api/client/v1/admin/* must never be reachable tokenlessly except from
+// a direct, unforwarded loopback peer — same admin boundary as the
+// configured-token remote-ingress exemption above. This must 403, not fall
+// through to nextWithMobileAccessMarker.
+assert.match(
+  source,
+  /if \(remoteIngress && isClientV1AdminPath\(req\.nextUrl\.pathname\)\) \{\s*return jsonError\(403, "forbidden peer: client v1 admin requires a direct loopback peer"\);\s*\}/,
+  "the tokenless dev branch must 403 verified remote ingress reaching /api/client/v1/admin/* with a stable, gate-consistent peer-denial response",
+);
+{
+  // Ordering guard: the admin+remoteIngress denial must run BEFORE the
+  // general tokenless peer allowance is granted (isTokenlessApiPeerAllowed),
+  // so a verified-remote-ingress admin request is denied by the specific
+  // admin check rather than ever reaching the general allow path.
+  const noTokenBranchIdx = source.indexOf("if (!sidecarToken) {");
+  const adminDenialIdx = source.indexOf(
+    'return jsonError(403, "forbidden peer: client v1 admin requires a direct loopback peer");',
+  );
+  const generalAllowanceIdx = source.indexOf(
+    "if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {",
+  );
+  assert.ok(noTokenBranchIdx > 0, "the tokenless dev branch should be present");
+  assert.ok(adminDenialIdx > noTokenBranchIdx, "the admin denial must live inside the tokenless dev branch");
+  assert.ok(
+    adminDenialIdx < generalAllowanceIdx,
+    "tokenless admin + remote ingress must be denied BEFORE the general tokenless peer allowance runs",
+  );
+}
+// Preserve tokenless trusted direct-loopback development access to
+// client-v1 admin: the admin denial must be gated on remoteIngress, never on
+// trustedLocalPeer alone, so a genuinely local dev caller (remoteIngress ===
+// false) still falls through to the general allowance and succeeds.
+assert.doesNotMatch(
+  source,
+  /if \(\(remoteIngress \|\| trustedLocalPeer\) && isClientV1AdminPath/,
+  "the tokenless admin denial must not also reject a trusted local (non-remote) peer",
+);
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
@@ -96,13 +136,27 @@ assert.match(source, /missing request source/, "tokenless GET webhooks should re
 // extend to mobile-cookie-authenticated requests in exchange.
 assert.match(
   source,
-  /if \(!sidecarAuthenticated && !remoteIngress\) \{/,
-  "the sidecar gate must admit verified remote ingress — neither a packaged phone nor an allowlisted tailnet device holds the sidecar token",
+  /if \(\s*!sidecarAuthenticated &&\s*\(!remoteIngress \|\| isClientV1AdminPath\(req\.nextUrl\.pathname\)\)\s*\) \{/,
+  "the sidecar gate must admit verified remote ingress for ordinary routes — neither a packaged phone nor an allowlisted tailnet device holds the sidecar token — but must NOT extend that exemption to /api/client/v1/admin/*",
 );
 assert.match(
   source,
   /\(!sidecarToken \|\| mobileAccessAuthenticated\) &&\s*isProductionWebhookGet/,
   "the webhook-GET missing-source guard must cover tokenless servers and mobile-cookie-authenticated requests",
+);
+// cave-client-v1-admin: the final sidecar gate's remote-ingress exemption
+// must explicitly exclude isClientV1AdminPath — a verified mobile invite or
+// allowlisted tailnet device (remoteIngress === true) must still 401 an
+// unauthenticated /api/client/v1/admin/* request. This is a DIFFERENT carve-out
+// than the earlier non-admin client-v1 marker/bearer bypass above (which
+// already excludes admin paths via its own `!isClientV1AdminPath` guard):
+// admin routes get no bypass at all and fall through to this exact
+// sidecar-token-or-401 condition, same as every pre-existing non-client-v1
+// route.
+assert.doesNotMatch(
+  source,
+  /if \(!sidecarAuthenticated && !remoteIngress\) \{/,
+  "the final sidecar gate must not use the bare pre-admin-carve-out condition — it must also 401 verified remote ingress for /api/client/v1/admin/*",
 );
 
 // Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the
@@ -213,6 +267,94 @@ assert.match(
   source,
   /mobileAccessGate\(req, trustedLocalPeer, tailnetPeerVerified\)/,
   "the local-peer and tailnet stamps are verified once in proxy() and shared with the mobile gate",
+);
+
+// ── Client v1 native facade: loopback-only sidecar-token bypass ───────────
+// Non-admin `/api/client/v1/*` routes bypass the private sidecar token, but
+// ONLY for a peer proxy.ts has itself proven is a direct, unforwarded
+// loopback connection — never a verified remote ingress (mobile invite or
+// allowlisted tailnet device), and admin routes are excluded outright.
+assert.match(
+  source,
+  /req\.headers\.delete\(CLIENT_V1_LOCAL_HEADER\);/,
+  "any caller-supplied client-v1 internal marker must be stripped before any other proxy logic runs",
+);
+assert.match(
+  source,
+  /req\.headers\.delete\(CLIENT_V1_ADMIN_HEADER\);/,
+  "any caller-supplied admin marker must be stripped before proxy authorization",
+);
+{
+  // The strip must happen at the very top of proxy(), before the function
+  // body's first other statement — "before any return path" means every
+  // return in the function, including the very first early returns.
+  const proxyBodyIdx = source.indexOf("export async function proxy(req: NextRequest) {");
+  const stripIdx = source.indexOf("req.headers.delete(CLIENT_V1_LOCAL_HEADER);");
+  const adminStripIdx = source.indexOf("req.headers.delete(CLIENT_V1_ADMIN_HEADER);");
+  const firstOtherStatementIdx = source.indexOf("const mobileAccessToken = configuredMobileAccessToken();");
+  assert.ok(
+    proxyBodyIdx > 0 && stripIdx > proxyBodyIdx && adminStripIdx > proxyBodyIdx,
+    "both marker strips must live inside proxy()",
+  );
+  assert.ok(
+    stripIdx < firstOtherStatementIdx && adminStripIdx < firstOtherStatementIdx,
+    "both marker strips must run before any authorization return path",
+  );
+  const encodedRejectIdx = source.indexOf("if (hasEncodedClientV1PathOctet(req.nextUrl.pathname))");
+  assert.ok(
+    encodedRejectIdx > adminStripIdx && encodedRejectIdx < firstOtherStatementIdx,
+    "encoded client-v1 paths must be rejected before non-admin bypass classification",
+  );
+}
+assert.match(
+  source,
+  /if \(isClientV1Path\(req\.nextUrl\.pathname\) && !isClientV1AdminPath\(req\.nextUrl\.pathname\)\) \{/,
+  "the client-v1 bypass must apply to non-admin client-v1 paths only",
+);
+assert.match(
+  source,
+  /if \(!trustedLocalPeer \|\| remoteIngress\) \{\s*return jsonError\(403, "forbidden peer: client v1 requires a direct loopback peer"\);/,
+  "the client-v1 branch must require a proven direct loopback peer and reject any verified remote ingress",
+);
+assert.match(
+  source,
+  /if \(isClientV1Path\(req\.nextUrl\.pathname\) && !isClientV1AdminPath\(req\.nextUrl\.pathname\)\) \{[\s\S]*?if \(!hasSafeContentType\(req\)\) \{\s*return jsonError\(415, "unsupported content-type"\);\s*\}[\s\S]*?return nextWithClientV1Marker\(req\);/,
+  "the client-v1 branch must reject unsafe content types with the existing helper and then stamp the marker",
+);
+{
+  // Ordering guard: the client-v1 branch must run BEFORE sidecar-token
+  // enforcement (it replaces that enforcement for its own narrow surface),
+  // and admin paths must never be able to reach it — they fall through to
+  // every existing host/origin/referer/content-type/sidecar-token check.
+  const automationIdx = source.indexOf("isLocalOnlyAutomationRun(req.nextUrl.pathname, req.method)");
+  const clientV1BranchIdx = source.indexOf(
+    "if (isClientV1Path(req.nextUrl.pathname) && !isClientV1AdminPath(req.nextUrl.pathname)) {",
+  );
+  const sidecarTokenIdx = source.indexOf('const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;');
+  assert.ok(automationIdx > 0, "the local-only automation guard should be present");
+  assert.ok(clientV1BranchIdx > automationIdx, "the client-v1 branch must run after host/source context is established");
+  assert.ok(sidecarTokenIdx > clientV1BranchIdx, "the client-v1 branch must run before sidecar-token enforcement");
+}
+assert.match(
+  source,
+  /function nextWithClientV1Marker\(req: NextRequest\) \{[\s\S]*?requestHeaders\.delete\(CLIENT_V1_LOCAL_HEADER\);[\s\S]*?requestHeaders\.delete\(CLIENT_V1_ADMIN_HEADER\);[\s\S]*?requestHeaders\.set\(CLIENT_V1_LOCAL_HEADER, process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET \?\? ""\);[\s\S]*?return NextResponse\.next\(\{ request: \{ headers: requestHeaders \} \}\);\s*\}/,
+  "the client-v1 marker must be stamped with the per-boot local-peer secret onto sanitized request headers",
+);
+assert.match(
+  source,
+  /function nextWithClientV1AdminMarker\(req: NextRequest\) \{[\s\S]*?requestHeaders\.delete\(CLIENT_V1_LOCAL_HEADER\);[\s\S]*?requestHeaders\.delete\(CLIENT_V1_ADMIN_HEADER\);[\s\S]*?requestHeaders\.set\(CLIENT_V1_ADMIN_HEADER, process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET \?\? ""\);[\s\S]*?return NextResponse\.next\(\{ request: \{ headers: requestHeaders \} \}\);\s*\}/,
+  "admin forwarding must stamp only the sanitized proxy-internal admin marker",
+);
+// Admin exclusion is structural: the branch's own guard condition requires
+// `!isClientV1AdminPath`, so an admin path can never reach the stamp/bypass
+// above and instead falls through to the unmodified sidecar-token logic —
+// verified by requiring the guard condition to name both predicates together
+// (already asserted above) and that admin paths are never separately wired
+// into the bypass helpers.
+assert.doesNotMatch(
+  source,
+  /isClientV1AdminPath\(req\.nextUrl\.pathname\)\)\s*\{\s*return nextWithClientV1Marker/,
+  "an admin client-v1 path must never itself trigger the sidecar-token bypass",
 );
 
 // ── HTML access gate for unauthenticated browser navigations ──────────────

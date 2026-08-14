@@ -38,6 +38,7 @@ try {
       projects: [
         { id: "cave", name: "Cave", root: projectRoot, createdAt: "now", updatedAt: "now" },
       ],
+      visibilityGeneration: "trusted-grant-project",
     }),
     "utf8",
   );
