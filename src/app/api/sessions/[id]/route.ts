@@ -17,6 +17,7 @@ import {
   MAX_CHAT_TITLE_LENGTH,
 } from "@/lib/cave-chat-titles";
 import { clampExtendDays, extendUntilIso } from "@/lib/chat-auto-archive";
+import { withConversationLock } from "@/lib/cave-conversations";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
 
 export const dynamic = "force-dynamic";
@@ -228,6 +229,8 @@ export async function DELETE(
   if (!id || !isValidSessionId(id)) {
     return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
-  const sacrificedAt = await sacrificeSessionLocal(id);
-  return NextResponse.json({ ok: true, sacrificedAt });
+  return withConversationLock(id, async () => {
+    const sacrificedAt = await sacrificeSessionLocal(id);
+    return NextResponse.json({ ok: true, sacrificedAt });
+  });
 }
