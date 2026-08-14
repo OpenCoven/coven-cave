@@ -256,24 +256,21 @@
 }
 
 
-@media (max-height: 760px) {
-  .sidebar-minimal {
-    gap: 7px;
-    padding-top: var(--space-2);
-  }
+/* A short-viewport (max-height: 760px) block used to live here. It set
+   per-selector min-heights of 31px plus a looser .sidebar-nav-scroll gap and a
+   blanket .sidebar-minimal gap/padding-top — and all of it reached the expanded
+   panel ONLY, because the rail's own .shell-nav--rail rules are more specific
+   and won. At 1280x720 that split the two states apart again (rows 32px/4px
+   apart in the rail against 31px/8px in the panel), which walked the footer 6px
+   on hover-peek — the drift issue 4351 is about.
 
-  .sidebar-nav-scroll {
-    gap: var(--space-2);
-  }
-
-  .sidebar-folder-row,
-  .sidebar-actions--footer .sidebar-action-row,
-  .sidebar-foot-bell,
-  .sidebar-foot-btn,
-  .sidebar-foot-icon-btn {
-    min-height: 31px;
-  }
-}
+   It is gone rather than re-scoped: 31px was 1px TALLER than the base row it
+   claimed to compact, the wider gap made a short column looser rather than
+   denser, and the blanket .sidebar-minimal gap contradicted that rule's own
+   contract, where each band carries its own margin precisely so the column
+   cannot shift. If short viewports need a denser rail again, override
+   --rail-control on .shell-nav (see shell-navigation.css) — one knob that both
+   states read — rather than per-selector heights that only one state sees. */
 
 @media (max-width: 1023px) {
   .sidebar-minimal .sidebar-header,
