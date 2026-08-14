@@ -51,6 +51,29 @@ assert.match(
   /openClawGatewayPairedDeviceAuthStatus\(\)[\s\S]*?gatewayAuth\.available[\s\S]*?dispatchOpenClawGatewayTurn/,
   "the route must retain the CLI fallback until an OS-backed paired-device credential store can activate Gateway dispatch",
 );
+{
+  const openClawResponse = chatRoute.indexOf("function openClawChatResponse");
+  const canonicalBuffer = chatRoute.indexOf(
+    "const runBuffer = openRunBuffer([args.body.runId, conversationId]);",
+    openClawResponse,
+  );
+  const gatewayDispatch = chatRoute.indexOf("dispatchOpenClawGatewayTurn", openClawResponse);
+  assert.ok(
+    canonicalBuffer > openClawResponse && canonicalBuffer < gatewayDispatch,
+    "the canonical run buffer opens before Gateway can synchronously invoke onEvent",
+  );
+  const gatewayBranch = chatRoute.slice(gatewayDispatch, chatRoute.indexOf("const openclawLaunch", gatewayDispatch));
+  assert.match(
+    gatewayBranch,
+    /catch \(error\) \{[\s\S]*?openclaw_gateway_dispatch_failed[\s\S]*?runBuffer\.finish\(\);[\s\S]*?close\(\);[\s\S]*?return;/,
+    "a Gateway dispatch exception records a terminal failure and closes the reserved buffer",
+  );
+  assert.match(
+    gatewayBranch,
+    /gatewayDispatch\.kind === "indeterminate"[\s\S]*?openclaw_gateway_indeterminate[\s\S]*?runBuffer\.finish\(\);[\s\S]*?close\(\);[\s\S]*?return;/,
+    "a rejected ambiguous dispatch also cannot leave the canonical run live",
+  );
+}
 assert.match(
   chatRoute,
   /gatewayDispatch\.kind === "accepted"[\s\S]*?return;[\s\S]*?pushProgress\("openclaw-start", "Starting OpenClaw bridge"/,

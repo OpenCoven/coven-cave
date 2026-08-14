@@ -184,8 +184,8 @@ test("send route tees both harness stream paths through the run buffer", () => {
   const seqEmits = send.match(/controller\.enqueue\(chatSse\(recorded\.event, recorded\.seq\)\)/g);
   assert.equal(seqEmits?.length, 3, "all three SSE producers emit the seq as the SSE id — live clients always hold a resume cursor");
   const opens = send.match(/openRunBuffer\(\[/g);
-  assert.equal(opens?.length, 4, "all four dispatch paths (offline, harness, OpenClaw CLI, OpenClaw Gateway) open a buffer under runId + conversation keys");
-  const finishes = send.match(/runBuffer\?\.finish\(\)/g);
+  assert.equal(opens?.length, 3, "OpenClaw opens one canonical buffer before Gateway callbacks and reuses it for CLI fallback");
+  const finishes = send.match(/runBuffer(?:\?\.)?\.finish\(\)/g);
   assert.ok((finishes?.length ?? 0) >= 3, "every stream exit (error + close paths) finishes the buffer");
 });
 
