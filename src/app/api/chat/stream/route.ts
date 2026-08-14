@@ -42,12 +42,13 @@ export async function GET(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start: (controller) => {
       let closed = false;
+      let subscription: ReturnType<typeof subscribeRunStream> = null;
       const write = (chunk: Uint8Array) => {
         if (closed) return;
         try {
           controller.enqueue(chunk);
         } catch {
-          closed = true;
+          close();
         }
       };
       const heartbeat = setInterval(() => {
@@ -61,15 +62,18 @@ export async function GET(req: Request) {
         if (closed) return;
         closed = true;
         clearInterval(heartbeat);
-        subscription?.unsubscribe();
+        const unsubscribe = subscription?.unsubscribe;
+        subscription = null;
+        unsubscribe?.();
         try {
           controller.close();
         } catch {
           /* already closed */
         }
       };
+      cleanup = close;
 
-      const subscription = subscribeRunStream(
+      subscription = subscribeRunStream(
         key,
         cursor,
         (event) => write(sse(event.seq, event.json)),
@@ -81,13 +85,14 @@ export async function GET(req: Request) {
         close();
         return;
       }
+      const activeSubscription = subscription;
 
       // Evicted history: tell the client to full-resync after draining —
       // rendered as a benign progress row, never an error.
-      if (subscription.gapBeforeSeq != null) {
+      if (activeSubscription.gapBeforeSeq != null) {
         write(
           sse(
-            subscription.gapBeforeSeq,
+            activeSubscription.gapBeforeSeq,
             JSON.stringify({
               kind: "progress",
               id: "resume-gap",
@@ -98,19 +103,23 @@ export async function GET(req: Request) {
           ),
         );
       }
-      for (const event of subscription.replay) write(sse(event.seq, event.json));
-      if (subscription.done) {
+      for (const event of activeSubscription.replay) write(sse(event.seq, event.json));
+      if (activeSubscription.done) {
         close();
         return;
       }
-      cleanup = close;
     },
     cancel: () => {
       cleanup?.();
     },
   });
 
-  req.signal.addEventListener("abort", () => cleanup?.(), { once: true });
+  const onAbort = () => cleanup?.();
+  req.signal.addEventListener("abort", onAbort, { once: true });
+  // AbortSignal does not replay an abort that happened before registration.
+  // The live subscription was installed synchronously above, so tear it down
+  // now even when the response body is never read or cancelled.
+  if (req.signal.aborted) onAbort();
 
   return new Response(stream, {
     headers: {

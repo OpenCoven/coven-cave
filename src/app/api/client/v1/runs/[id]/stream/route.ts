@@ -10,7 +10,7 @@ import {
 import { clientV1Error } from "@/lib/server/client-v1/responses";
 import {
   createResumedRunStream,
-  encodeClientStreamEvent,
+  encodeClientReconcileEvent,
   parseClientStreamCursor,
 } from "@/lib/server/client-v1/sse";
 
@@ -65,10 +65,7 @@ export async function GET(req: Request, context: Context): Promise<Response> {
   }
 
   return new Response(
-    new TextDecoder().decode(encodeClientStreamEvent(cursor + 1, {
-      type: "reconcile_required",
-      conversationId: metadata.conversationId,
-    })),
+    new TextDecoder().decode(encodeClientReconcileEvent(cursor, metadata.conversationId)),
     {
       headers: {
         "content-type": "text/event-stream; charset=utf-8",
