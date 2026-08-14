@@ -154,6 +154,18 @@ export async function POST(req: Request): Promise<Response> {
           sha256: upload.sha256,
         })),
       },
+      reconcileReplay: async (ctx) => {
+        try {
+          await saveUploadedClientAttachments(
+            uploads,
+            auth.principal.credentialId,
+            ctx.effectId,
+          );
+        } catch (error) {
+          if (error instanceof ClientAttachmentError) return attachmentErrorResponse(error);
+          return clientV1Error(503, "service_unavailable", "Attachments are temporarily unavailable.", true);
+        }
+      },
     },
     async (ctx) => {
       try {

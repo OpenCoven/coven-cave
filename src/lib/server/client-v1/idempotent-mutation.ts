@@ -50,6 +50,12 @@ export type IdempotentMutationRequest = {
    * identity and instead reports a stable `conflict`.
    */
   identity: unknown;
+  /**
+   * Runs before a completed ledger response is replayed. A mutation whose
+   * response references external durable state can use this to verify or
+   * repair that state; returning a response suppresses the stale replay.
+   */
+  reconcileReplay?: (ctx: IdempotentMutationExecuteContext) => Promise<Response | void>;
 };
 
 /**
@@ -278,6 +284,12 @@ export async function runIdempotentMutation(
   }
 
   if (claim.kind === "replay") {
+    try {
+      const reconciliation = await request.reconcileReplay?.({ requestHash, effectId });
+      if (reconciliation) return reconciliation;
+    } catch {
+      return completionUnconfirmedResponse();
+    }
     return responseFromLedger(claim.response);
   }
   if (claim.kind === "conflict") {
