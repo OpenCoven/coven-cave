@@ -140,7 +140,7 @@ test("an approved pairing exchanges for a bearer token exactly once", async () =
   assert.equal(verified?.id, body.credential.id);
 });
 
-test("an exact same-key replay after success returns a typed already-exchanged result instead of issuing a second credential", async () => {
+test("an exact same-key replay after success returns the original token during the bounded recovery window", async () => {
   const { request, secret } = createPairingRequest(input());
   decidePairingRequest(request.id, "approved");
   const idempotencyKey = "3f4145de-9b43-4abc-876d-81ef63de60e0";
@@ -156,11 +156,11 @@ test("an exact same-key replay after success returns a typed already-exchanged r
     requestFor(request.id, secret, { idempotencyKey }),
     await ctxFor(request.id),
   );
-  assert.equal(replay.status, 409);
+  assert.equal(replay.status, 200);
   const body = await replay.json();
-  assert.equal(body.error.code, "pairing_already_exchanged");
-  assert.equal(body.error.retryable, false);
-  assert.deepEqual(body.error.details.credential, {
+  assert.equal(body.ok, true);
+  assert.equal(body.token, firstBody.token);
+  assert.deepEqual(body.credential, {
     id: firstBody.credential.id,
     appName: firstBody.credential.appName,
     installationId: firstBody.credential.installationId,
