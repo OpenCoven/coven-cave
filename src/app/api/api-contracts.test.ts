@@ -241,6 +241,9 @@ const contracts: RouteContract[] = [
   { route: "/research/missions/[id]/schedule", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  // No pathGuard: the id is validated against a strict arXiv shape and
+  // interpolated into a hard-coded host, so there is no filesystem path to deny.
+  { route: "/research/papers/pdf", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
