@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
+import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 
 const TRUST_LABEL: Record<string, string> = {
   "official-remote": "Official",
@@ -113,9 +114,11 @@ export const MarketplaceCard = memo(function MarketplaceCard({
           onClick={() => onOpen(plugin.id)}
           className="focus-ring flex min-w-0 items-center gap-3 rounded-md text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-            <Icon name={kindIcon(plugin.kind)} width={16} className="text-[var(--text-muted)]" />
-          </span>
+          <MarketplaceLogo
+            id={plugin.id}
+            displayName={plugin.displayName}
+            logo={plugin.logo}
+          />
           <span className="min-w-0">
             <span className="block truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
               {plugin.displayName}

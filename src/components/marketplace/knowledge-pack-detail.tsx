@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
+import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 import type { KnowledgePackManifest, KnowledgePackTemplateMeta } from "@/lib/knowledge-pack-types";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -104,7 +105,12 @@ export function KnowledgePackDetail({ plugin, busy, onClose }: Props) {
         onClick={(event) => event.stopPropagation()}
       >
         <header className="craft-dossier__header">
-          <span className="craft-dossier__sigil" aria-hidden><Icon name="ph:books" width={20} /></span>
+          <MarketplaceLogo
+            id={plugin.id}
+            displayName={manifest?.displayName ?? plugin.displayName}
+            logo={plugin.logo}
+            size="dossier"
+          />
           <div className="min-w-0 flex-1">
             <p className="craft-dossier__eyebrow">Knowledge pack · v{manifest?.version ?? plugin.version}</p>
             <h2>{manifest?.displayName ?? plugin.displayName}</h2>
