@@ -163,6 +163,18 @@ async function gotoApp(
       window.localStorage.setItem("cave:onboarding:dismissed", "1");
     });
   }
+  // The root route resolves bootstrap state on the server, before Playwright
+  // can intercept its client API route. Seed the server-readable dismissal for
+  // these shared-overlay interaction tests, then use the supported manual-open
+  // bridge below. The startup gate itself is covered by the focused app test.
+  await page.goto("/");
+  await page.context().addCookies([
+    {
+      name: "cave_onboarding_dismissed",
+      value: "1",
+      url: page.url(),
+    },
+  ]);
   await page.goto("/");
   // Startup state is now resolved by the server before this browser can
   // intercept API requests. These interaction tests exercise the shared
