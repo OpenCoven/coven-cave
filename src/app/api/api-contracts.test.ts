@@ -429,7 +429,11 @@ for (const contract of contracts) {
       `${contract.route} must preserve local-origin guard`,
     );
     if (effectiveSource.includes("rejectResearchMediaRequest")) {
-      assert.match(effectiveSource, /rejectResearchMediaRequest\(req\)/, `${contract.route} must call the shared media guard`);
+      assert.match(
+        effectiveSource,
+        /await\s+rejectResearchMediaRequest\(\s*[A-Za-z_$][\w$]*\s*\)/,
+        `${contract.route} must call the shared media guard`,
+      );
       const guardSource = readFileSync(
         path.join(apiRoot, "..", "..", "lib", "server", "api-security.ts"),
         "utf8",
