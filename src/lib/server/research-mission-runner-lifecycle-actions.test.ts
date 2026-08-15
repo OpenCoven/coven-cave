@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ConversationFile } from "../cave-conversations.ts";
 import type { FlowRunRecord } from "../flows.ts";
-import { allowedResearchActions, type ResearchMission, type ResearchSourcePatch } from "../research-missions.ts";
+import {
+  allowedResearchActions,
+  RESEARCH_DIRECTION_MAX_LENGTH,
+  type ResearchMission,
+  type ResearchSourcePatch,
+} from "../research-missions.ts";
 import {
   CopilotArgvTransportError,
   CopilotPromptTransportError,
@@ -600,8 +605,8 @@ test("create and refine reject invalid prompt data before any launch or lossy pe
     },
   }));
   await assert.rejects(
-    refineRunner.act(stored.id, { action: "refine", direction: `x${"y".repeat(2_000)}` }),
-    /at most 2000 characters/,
+    refineRunner.act(stored.id, { action: "refine", direction: "x".repeat(RESEARCH_DIRECTION_MAX_LENGTH + 1) }),
+    new RegExp(`at most ${RESEARCH_DIRECTION_MAX_LENGTH} characters`),
   );
   await assert.rejects(
     refineRunner.act(stored.id, { action: "refine", direction: "valid prefix\0hidden" }),

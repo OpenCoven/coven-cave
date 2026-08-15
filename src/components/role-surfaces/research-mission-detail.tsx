@@ -863,8 +863,12 @@ export function ResearchMissionDetail({
                 }}
                 placeholder="What should the next iteration prioritize?"
                 aria-label="Refined research direction"
+                aria-describedby="research-refine-direction-count"
                 maxLength={RESEARCH_DIRECTION_MAX_LENGTH}
               />
+              <span id="research-refine-direction-count" className="research-desk-refine__count">
+                {direction.length.toLocaleString()} / {RESEARCH_DIRECTION_MAX_LENGTH.toLocaleString()}
+              </span>
               <div className="research-desk-refine__actions">
                 <Button
                   size="xs"
