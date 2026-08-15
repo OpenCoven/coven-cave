@@ -463,26 +463,10 @@ export function parseClientV1StreamEvent(value: unknown): ClientV1StreamEvent {
 
 export function parseClientV1PublicSuccessResponse(value: unknown): ClientV1SuccessEnvelope {
   const envelope = parseClientV1SuccessEnvelope(value);
-  const data = requiredRecord(envelope.data, "public success response data");
-
-  if (data.status === "ok") return parseClientV1HealthResponse(envelope);
-  if (data.status === "ready" || data.status === "unavailable") {
-    return parseClientV1FamiliarResponse(envelope);
-  }
-
-  switch (envelope.identity?.kind) {
-    case "credential":
-      return parseClientV1CredentialResponse(envelope);
-    case "familiar":
-      return parseClientV1FamiliarResponse(envelope);
-    case "project":
-      return parseClientV1ProjectResponse(envelope);
-    case "conversation":
-      return parseClientV1ConversationDetailResponse(envelope);
-  }
-
   const candidates: ClientV1SuccessEnvelope[] = [];
   for (const parse of [
+    parseClientV1HealthResponse,
+    parseClientV1FamiliarResponse,
     parseClientV1CredentialResponse,
     parseClientV1ProjectResponse,
     parseClientV1ConversationListResponse,

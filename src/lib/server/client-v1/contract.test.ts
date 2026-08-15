@@ -480,6 +480,44 @@ test("recognizes complete success shapes without misclassifying additions", () =
   );
 });
 
+test("rejects conflicting health and credential shapes", () => {
+  const fixture = createClientV1ContractFixture();
+  const credentialWithHealthStatus = {
+    ...fixture.examples.credential,
+    data: {
+      ...fixture.examples.credential.data,
+      status: "ok",
+    },
+  };
+
+  assert.throws(
+    () => parseClientV1PublicSuccessResponse(credentialWithHealthStatus),
+    /ambiguous/i,
+  );
+  assert.throws(
+    () => clientV1Success(credentialWithHealthStatus.data),
+    /ambiguous/i,
+  );
+});
+
+test("uses the complete conversation-list shape despite unrelated identity metadata", () => {
+  const fixture = createClientV1ContractFixture();
+  const identity = { kind: "project" as const, id: "project-1" };
+  const conversationList = {
+    ...fixture.examples.conversationList,
+    identity,
+  };
+
+  assert.deepEqual(
+    parseClientV1PublicSuccessResponse(conversationList),
+    conversationList,
+  );
+  assert.deepEqual(
+    clientV1Success(conversationList.data, { identity }).data,
+    conversationList.data,
+  );
+});
+
 test("rejects incomplete concrete success data before producing responses", () => {
   assert.throws(
     () => clientV1Success({}),
