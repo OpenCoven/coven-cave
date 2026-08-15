@@ -380,6 +380,7 @@ export const SUITES = {
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
+    "src/lib/server/hf-paper-metadata.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
@@ -1743,6 +1744,8 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // hf-paper-metadata.ts imports "@/lib/hf-papers" as a runtime value.
+  "src/lib/server/hf-paper-metadata.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
