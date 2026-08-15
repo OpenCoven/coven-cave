@@ -27,6 +27,7 @@ import {
   shouldRequireMobileAccessCredential,
   isTokenlessApiPeerAllowed,
   isTrustedLocalPeer,
+  clientV1LoopbackGateDecision,
   timingSafeEqualString,
   isHtmlNavigationRequest,
   accessGatePage,
@@ -413,6 +414,58 @@ assert.equal(
   "no per-boot secret configured (Next running without server.ts) fails closed",
 );
 assert.equal(isTrustedLocalPeer("", ""), false, "empty header and secret never match");
+
+// ─── client-v1 loopback bypass ─────────────────────────────────────────────
+assert.equal(
+  clientV1LoopbackGateDecision({
+    pathname: "/api/client/v1/conversations",
+    trustedLocalPeer: true,
+    localPeerSecret: "per-boot-secret",
+    hasSafeContentType: true,
+  }),
+  "allow",
+  "a safe non-admin request from a verified local peer enters the native API",
+);
+assert.equal(
+  clientV1LoopbackGateDecision({
+    pathname: "/api/client/v1/conversations",
+    trustedLocalPeer: false,
+    localPeerSecret: "per-boot-secret",
+    hasSafeContentType: true,
+  }),
+  "reject-peer",
+  "a remote caller cannot enter the native API bypass",
+);
+assert.equal(
+  clientV1LoopbackGateDecision({
+    pathname: "/api/client/v1/conversations",
+    trustedLocalPeer: true,
+    localPeerSecret: "",
+    hasSafeContentType: true,
+  }),
+  "reject-secret",
+  "the native API fails closed without a nonempty per-boot secret",
+);
+assert.equal(
+  clientV1LoopbackGateDecision({
+    pathname: "/api/client/v1/conversations",
+    trustedLocalPeer: true,
+    localPeerSecret: "per-boot-secret",
+    hasSafeContentType: false,
+  }),
+  "reject-content-type",
+  "unsafe request bodies cannot enter the native API bypass",
+);
+assert.equal(
+  clientV1LoopbackGateDecision({
+    pathname: "/api/client/v1/admin/credentials",
+    trustedLocalPeer: true,
+    localPeerSecret: "per-boot-secret",
+    hasSafeContentType: true,
+  }),
+  "continue",
+  "admin routes stay on the ordinary CSRF and sidecar authorization path",
+);
 
 // ─── bearerFromReferer ─────────────────────────────────────────────────────
 assert.equal(

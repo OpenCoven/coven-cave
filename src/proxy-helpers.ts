@@ -310,6 +310,42 @@ export function accessGatePage({ invalidToken = false }: { invalidToken?: boolea
 }
 
 export const ACCESS_TOKEN_COOKIE = "coven_cave_access";
+export const CLIENT_V1_LOCAL_HEADER = "x-coven-client-v1-local";
+export const CLIENT_V1_PREFIX = "/api/client/v1/";
+
+export function isClientV1Path(pathname: string): boolean {
+  return pathname === "/api/client/v1" || pathname.startsWith(CLIENT_V1_PREFIX);
+}
+
+export function isClientV1AdminPath(pathname: string): boolean {
+  return pathname === "/api/client/v1/admin" || pathname.startsWith("/api/client/v1/admin/");
+}
+
+export type ClientV1LoopbackGateDecision =
+  | "continue"
+  | "allow"
+  | "reject-peer"
+  | "reject-secret"
+  | "reject-content-type";
+
+export function clientV1LoopbackGateDecision({
+  pathname,
+  trustedLocalPeer,
+  localPeerSecret,
+  hasSafeContentType,
+}: {
+  pathname: string;
+  trustedLocalPeer: boolean;
+  localPeerSecret: string | undefined;
+  hasSafeContentType: boolean;
+}): ClientV1LoopbackGateDecision {
+  if (!isClientV1Path(pathname) || isClientV1AdminPath(pathname)) return "continue";
+  if (!trustedLocalPeer) return "reject-peer";
+  if (!localPeerSecret) return "reject-secret";
+  if (!hasSafeContentType) return "reject-content-type";
+  return "allow";
+}
+
 // Stamped by server.ts (with the per-boot COVEN_CAVE_LOCAL_PEER_SECRET) on
 // requests whose TCP peer it verified as direct loopback. Mirrored in
 // server.ts, which cannot import from src/.

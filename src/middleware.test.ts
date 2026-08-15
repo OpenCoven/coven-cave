@@ -17,6 +17,13 @@ const mobileScriptSource = await readFile(new URL("../scripts/mobile-tailscale.s
 const mobileDocsSource = await readFile(new URL("../docs/mobile-tailscale.md", import.meta.url), "utf8");
 const nextConfigSource = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 const proxyHelpersSource = await readFile(new URL("./proxy-helpers.ts", import.meta.url), "utf8");
+const {
+  CLIENT_V1_LOCAL_HEADER,
+  CLIENT_V1_PREFIX,
+  clientV1LoopbackGateDecision,
+  isClientV1AdminPath,
+  isClientV1Path,
+} = await import("./proxy-helpers.ts");
 
 assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16 proxy entrypoint should guard requests");
 assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
@@ -75,6 +82,90 @@ assert.match(
   "the origin gate must compare against origins derived from the request's own Host, not just the configured-port nextUrl.origin",
 );
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
+
+// ── Loopback paired-client API boundary ────────────────────────────────────
+assert.equal(CLIENT_V1_LOCAL_HEADER, "x-coven-client-v1-local");
+assert.equal(CLIENT_V1_PREFIX, "/api/client/v1/");
+for (const pathname of ["/api/client/v1", "/api/client/v1/", "/api/client/v1/familiars"]) {
+  assert.equal(isClientV1Path(pathname), true, pathname);
+}
+for (const pathname of ["/api/client/v1x", "/api/client/v10", "/api/client"]) {
+  assert.equal(isClientV1Path(pathname), false, pathname);
+}
+for (const pathname of ["/api/client/v1/admin", "/api/client/v1/admin/", "/api/client/v1/admin/credentials"]) {
+  assert.equal(isClientV1AdminPath(pathname), true, pathname);
+}
+for (const pathname of ["/api/client/v1", "/api/client/v1/administrator", "/api/client/v1/familiars"]) {
+  assert.equal(isClientV1AdminPath(pathname), false, pathname);
+}
+assert.match(
+  source,
+  /const requestHeaders = new Headers\(req\.headers\);\s*requestHeaders\.delete\(CLIENT_V1_LOCAL_HEADER\);/,
+  "proxy must strip a caller-supplied client-v1 local marker",
+);
+assert.match(
+  source,
+  /const clientV1Decision = clientV1LoopbackGateDecision\(\{\s*pathname: req\.nextUrl\.pathname,\s*trustedLocalPeer,\s*localPeerSecret,\s*hasSafeContentType: hasSafeContentType\(req\),\s*\}\)/,
+  "proxy must delegate the client-v1 bypass decision to the runtime-tested helper",
+);
+assert.match(
+  source,
+  /clientV1Decision === "reject-peer"[\s\S]*?jsonError\(403, "client api requires loopback"\)/,
+  "client-v1 must reject callers without a trusted direct local peer",
+);
+assert.match(
+  source,
+  /clientV1Decision === "reject-content-type"[\s\S]*?jsonError\(415, "unsupported content-type"\)[\s\S]*?clientV1Decision === "allow"[\s\S]*?const clientV1Headers = new Headers\(requestHeaders\);\s*clientV1Headers\.set\(CLIENT_V1_LOCAL_HEADER, localPeerSecret\)/,
+  "the client-v1 helper decision must enforce safe content types before stamping only a fresh header copy",
+);
+assert.doesNotMatch(
+  source,
+  /CLIENT_V1_LOCAL_HEADER,\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET \?\? ""/,
+  "the internal marker must never weaken to an empty-string secret",
+);
+{
+  const stripIdx = source.indexOf("requestHeaders.delete(CLIENT_V1_LOCAL_HEADER)");
+  const trustIdx = source.indexOf("const trustedLocalPeer = isTrustedLocalPeer");
+  const clientBranchIdx = source.indexOf("const clientV1Decision = clientV1LoopbackGateDecision");
+  const mobileGateIdx = source.indexOf("const mobileRes = await mobileAccessGate");
+  const csrfGateIdx = source.indexOf("const expectedOrigins = expectedRequestOrigins");
+  assert.ok(stripIdx > 0 && stripIdx < trustIdx, "caller markers must be stripped before trust decisions");
+  assert.ok(
+    clientBranchIdx > trustIdx &&
+      clientBranchIdx < mobileGateIdx &&
+      clientBranchIdx < csrfGateIdx,
+    "the non-admin client-v1 branch must run after local-peer verification and before mobile, CSRF, and sidecar gates",
+  );
+}
+assert.equal(
+  clientV1LoopbackGateDecision({
+    pathname: "/api/client/v1/admin/credentials",
+    trustedLocalPeer: true,
+    localPeerSecret: "test-secret",
+    hasSafeContentType: true,
+  }),
+  "continue",
+  "admin client-v1 paths must not enter the native bypass",
+);
+assert.match(
+  source,
+  /if \(isClientV1AdminPath\(req\.nextUrl\.pathname\) && !sidecarAuthenticated\) \{\s*return jsonError\(401, "unauthorized"\);\s*\}/,
+  "configured sidecar mode must not authorize client-v1 admin routes with a mobile credential alone",
+);
+{
+  const originIdx = source.indexOf("isAllowedRequestSourceAny(origin, expectedOrigins)");
+  const refererIdx = source.indexOf("isAllowedRequestSourceAny(referer, expectedOrigins)");
+  const contentTypeIdx = source.indexOf('return jsonError(415, "unsupported content-type")', originIdx);
+  const tokenlessIdx = source.indexOf("if (!sidecarToken)");
+  const adminGateIdx = source.indexOf("if (isClientV1AdminPath(req.nextUrl.pathname)");
+  assert.ok(
+    adminGateIdx > originIdx &&
+      adminGateIdx > refererIdx &&
+      adminGateIdx > contentTypeIdx &&
+      adminGateIdx > tokenlessIdx,
+    "client-v1 admin authorization must remain after CSRF/content checks and preserve tokenless local development",
+  );
+}
 for (const mime of ["image/jpeg", "image/png", "image/webp"]) {
   assert.ok(
     proxyHelpersSource.includes(`"${mime}"`),
@@ -186,7 +277,7 @@ assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobil
 // user. Only the per-launch sidecar credential exempts the owning Tauri app.
 assert.match(
   source,
-  /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
+  /const localPeerSecret = process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET;\s*const trustedLocalPeer = isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*localPeerSecret,?\s*\)/,
   "local-peer classification must verify the server-stamped per-boot secret",
 );
 assert.doesNotMatch(

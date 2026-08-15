@@ -7,6 +7,7 @@ import {
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
   LOCAL_PEER_HEADER,
+  CLIENT_V1_LOCAL_HEADER,
   SAFE_CONTENT_TYPES,
   timingSafeEqualString,
   isLoopbackHost,
@@ -25,6 +26,8 @@ import {
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
+  isClientV1AdminPath,
+  clientV1LoopbackGateDecision,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
@@ -205,12 +208,46 @@ function isProductionWebhookGet(pathname: string, method: string) {
 
 function nextWithMobileAccessMarker(req: NextRequest, mobileAccessAuthenticated: boolean) {
   const requestHeaders = new Headers(req.headers);
+  requestHeaders.delete(CLIENT_V1_LOCAL_HEADER);
   requestHeaders.delete(MOBILE_ACCESS_HEADER);
   if (mobileAccessAuthenticated) requestHeaders.set(MOBILE_ACCESS_HEADER, "1");
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export async function proxy(req: NextRequest) {
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.delete(CLIENT_V1_LOCAL_HEADER);
+  // The local-peer stamp distinguishes direct from forwarded traffic, but TCP
+  // loopback is not OS-user identity. When mobile access is armed, the Tauri
+  // app must also present its per-launch sidecar credential and a plain local
+  // browser must use the same access-token gate as remote browsers.
+  const localPeerSecret = process.env.COVEN_CAVE_LOCAL_PEER_SECRET;
+  const trustedLocalPeer = isTrustedLocalPeer(
+    req.headers.get(LOCAL_PEER_HEADER),
+    localPeerSecret,
+  );
+  const clientV1Decision = clientV1LoopbackGateDecision({
+    pathname: req.nextUrl.pathname,
+    trustedLocalPeer,
+    localPeerSecret,
+    hasSafeContentType: hasSafeContentType(req),
+  });
+  if (clientV1Decision === "reject-peer") {
+    return jsonError(403, "client api requires loopback");
+  }
+  if (clientV1Decision === "reject-secret") {
+    return jsonError(500, "missing local peer secret");
+  }
+  if (clientV1Decision === "reject-content-type") {
+    return jsonError(415, "unsupported content-type");
+  }
+  if (clientV1Decision === "allow") {
+    if (!localPeerSecret) return jsonError(500, "missing local peer secret");
+    const clientV1Headers = new Headers(requestHeaders);
+    clientV1Headers.set(CLIENT_V1_LOCAL_HEADER, localPeerSecret);
+    return NextResponse.next({ request: { headers: clientV1Headers } });
+  }
+
   const mobileAccessToken = configuredMobileAccessToken();
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   const sidecarTokenMatches = (supplied: string | null | undefined) => {
@@ -219,14 +256,6 @@ export async function proxy(req: NextRequest) {
   };
   const sidecarAuthenticatedAtGate = sidecarTokenMatches(
     req.headers.get(TOKEN_HEADER) ?? req.nextUrl.searchParams.get(TOKEN_PARAM),
-  );
-  // The local-peer stamp distinguishes direct from forwarded traffic, but TCP
-  // loopback is not OS-user identity. When mobile access is armed, the Tauri
-  // app must also present its per-launch sidecar credential and a plain local
-  // browser must use the same access-token gate as remote browsers.
-  const trustedLocalPeer = isTrustedLocalPeer(
-    req.headers.get(LOCAL_PEER_HEADER),
-    process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
   );
   // Tailnet device context behind a Tailscale-Serve-forwarded request. This is
   // never sufficient authentication because direct loopback clients can forge
@@ -246,7 +275,7 @@ export async function proxy(req: NextRequest) {
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   // CSRF / cross-origin guards always apply to /api/ requests, regardless of
@@ -395,6 +424,10 @@ export async function proxy(req: NextRequest) {
       return jsonError(403, "forbidden peer: missing trusted local peer or verified remote ingress");
     }
     return nextWithMobileAccessMarker(req, remoteIngress);
+  }
+
+  if (isClientV1AdminPath(req.nextUrl.pathname) && !sidecarAuthenticated) {
+    return jsonError(401, "unauthorized");
   }
 
   if (!sidecarAuthenticated && !mobileAccessVerified) {

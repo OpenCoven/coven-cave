@@ -1606,6 +1606,11 @@ export const SUITES = {
     "src/lib/server/prompt-scan.test.ts",
     "src/lib/server/adapter-conflict-heal.test.ts",
     "src/lib/server/mobile-access-provision.test.ts",
+    "src/lib/server/client-v1/contract.test.ts",
+    "src/lib/server/client-v1/pairing-store.test.ts",
+    "src/lib/server/client-v1/credential-store.test.ts",
+    "src/lib/server/client-v1/auth.test.ts",
+    "src/lib/server/client-v1/rate-limit.test.ts",
   ],
   mobile: [
     "src/lib/mobile-access-token.test.ts",
@@ -1840,6 +1845,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/cave-home-migration-fast-path.test.ts",
   // resolves "@/lib/coven-paths" for the store path and "@/lib/server/atomic-write"
   "src/lib/server/passkey-store.test.ts",
+  // the client-v1 stores resolve the shared proxy/helper and cave-home aliases.
+  "src/lib/server/client-v1/pairing-store.test.ts",
+  "src/lib/server/client-v1/credential-store.test.ts",
+  "src/lib/server/client-v1/auth.test.ts",
   // reaches "@/proxy-helpers" and the store through the ceremony module
   "src/lib/server/passkey-ceremony.test.ts",
   "src/lib/server/preferences-store.test.ts",
