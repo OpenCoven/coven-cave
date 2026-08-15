@@ -464,17 +464,39 @@ export function parseClientV1StreamEvent(value: unknown): ClientV1StreamEvent {
 export function parseClientV1PublicSuccessResponse(value: unknown): ClientV1SuccessEnvelope {
   const envelope = parseClientV1SuccessEnvelope(value);
   const data = requiredRecord(envelope.data, "public success response data");
+
   if (data.status === "ok") return parseClientV1HealthResponse(envelope);
   if (data.status === "ready" || data.status === "unavailable") {
     return parseClientV1FamiliarResponse(envelope);
   }
-  if (data.label !== undefined || data.scopes !== undefined || data.expiresAt !== undefined) {
-    return parseClientV1CredentialResponse(envelope);
+
+  switch (envelope.identity?.kind) {
+    case "credential":
+      return parseClientV1CredentialResponse(envelope);
+    case "familiar":
+      return parseClientV1FamiliarResponse(envelope);
+    case "project":
+      return parseClientV1ProjectResponse(envelope);
+    case "conversation":
+      return parseClientV1ConversationDetailResponse(envelope);
   }
-  if (data.name !== undefined) return parseClientV1ProjectResponse(envelope);
-  if (data.conversations !== undefined) return parseClientV1ConversationListResponse(envelope);
-  if (data.familiar !== undefined || data.messages !== undefined || data.title !== undefined) {
-    return parseClientV1ConversationDetailResponse(envelope);
+
+  const candidates: ClientV1SuccessEnvelope[] = [];
+  for (const parse of [
+    parseClientV1CredentialResponse,
+    parseClientV1ProjectResponse,
+    parseClientV1ConversationListResponse,
+    parseClientV1ConversationDetailResponse,
+  ]) {
+    try {
+      candidates.push(parse(envelope));
+    } catch {
+      // A candidate must satisfy its complete required payload shape.
+    }
+  }
+  if (candidates.length === 1) return candidates[0]!;
+  if (candidates.length > 1) {
+    throw new Error("Client v1 public success response payload is ambiguous.");
   }
   throw new Error("Client v1 public success response data has no supported payload shape.");
 }

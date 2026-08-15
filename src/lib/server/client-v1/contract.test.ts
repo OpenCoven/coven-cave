@@ -20,6 +20,7 @@ import {
   parseClientV1Identity,
   parseClientV1PairingScopes,
   parseClientV1ProjectResponse,
+  parseClientV1PublicSuccessResponse,
   parseClientV1Revision,
   parseClientV1StreamEvent,
   parseClientV1SuccessEnvelope,
@@ -438,6 +439,44 @@ test("parses concrete public responses with additions and rejects missing fields
   assert.throws(
     () => parseClientV1StreamEvent({ data: {} }),
     /stream event/i,
+  );
+});
+
+test("recognizes complete success shapes without misclassifying additions", () => {
+  const fixture = createClientV1ContractFixture();
+  const conversationDetail = {
+    ...fixture.examples.conversationDetail,
+    data: {
+      ...fixture.examples.conversationDetail.data,
+      label: "extension",
+    },
+  };
+
+  assert.deepEqual(
+    parseClientV1PublicSuccessResponse(conversationDetail),
+    conversationDetail,
+  );
+  assert.deepEqual(
+    clientV1Success(conversationDetail.data).data,
+    conversationDetail.data,
+  );
+
+  const { identity: _identity, ...conversationDetailWithoutIdentity } = conversationDetail;
+  const ambiguous = {
+    ...conversationDetailWithoutIdentity,
+    data: {
+      ...conversationDetail.data,
+      scopes: ["chat:read"],
+      expiresAt: null,
+    },
+  };
+  assert.throws(
+    () => parseClientV1PublicSuccessResponse(ambiguous),
+    /ambiguous/i,
+  );
+  assert.throws(
+    () => clientV1Success(ambiguous.data),
+    /ambiguous/i,
   );
 });
 
