@@ -483,6 +483,26 @@ assert.match(
   /if \(!confirmMerge\) \{\s*setConfirmMerge\(true\);\s*return;\s*\}/,
   "merge requires a second confirming click — no one-click merges",
 );
+assert.match(
+  prPanel,
+  /const trustedForActions = hasPr && isTrustedPrAttribution\(pr\?\.attribution\);/,
+  "review/merge trust uses an explicit attribution allowlist helper",
+);
+assert.match(
+  prPanel,
+  /trustedForActions \? \(\s*<ActionsSection/,
+  "review and merge controls render only after the PR is resolved from an authoritative branch attribution",
+);
+assert.match(
+  prPanel,
+  /allowResolve=\{trustedForActions\}/,
+  "review-thread resolve controls are withheld whenever PR actions are untrusted",
+);
+assert.match(
+  prPanel,
+  /detected from the chat transcript[\s\S]*?shown for reference only[\s\S]*?Review and merge actions stay disabled/,
+  "the PR tab explains why transcript-derived PRs have destructive actions withheld",
+);
 
 // ── Composer + new-session flow ──────────────────────────────────────────────
 
