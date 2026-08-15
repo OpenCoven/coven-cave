@@ -113,7 +113,7 @@ Point-in-time records. Read for intent, not for current behavior.
 
 ## Other trees under `docs/`
 
-- [`superpowers/`](superpowers) — the approved spec and plan store beads cite (133 files)
+- [`superpowers/`](superpowers) — the approved spec and plan store beads cite (142 files)
 - [`specs/`](specs) — **frozen** (55 files). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: beads cite these by path, including one open unit. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
 - [`plans/`](plans), [`audits/`](audits) — small point-in-time sets predating the `superpowers/` store
 - [`design-handoff/`](design-handoff), [`diagrams/`](diagrams), [`screenshots/`](screenshots), [`familiar-chatout-codex/`](familiar-chatout-codex) — supporting material

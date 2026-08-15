@@ -1222,4 +1222,69 @@ function legacyObservation(overrides = {}) {
   );
 }
 
+// ── cave-5ulwl: the head-mismatch reason must be REACHABLE ──────────────────
+// It was dead code. `mergedPr` is built by the inventory from an exact
+// `headRefOid === head` filter, so `mergedPr.headOid !== head` could never be
+// true for any observation the inventory produces, and a unit sitting one
+// commit behind its own merged PR fell through to the generic
+// "not proven landed" — which reads as "may hold unlanded work".
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      head: "a".repeat(40),
+      headOnDefaultBranch: false,
+      mergedPr: null,
+      branchMergedPr: { number: 4658, url: "https://example.test/4658", headOid: "b".repeat(40) },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "recovery", "a behind-HEAD unit is still preserved");
+  const reasons = item.reasons.join("\n");
+  assert.match(reasons, /does not match merged PR #4658/, "names the PR that actually merged");
+  assert.match(reasons, /bbbbbbbbb/, "names the commit to fast-forward to");
+  assert.match(reasons, /--ff-only/, "names the remedy, since the fix is mechanical");
+  assert.doesNotMatch(
+    reasons,
+    /not proven landed/,
+    "the specific diagnosis replaces the generic one rather than joining it",
+  );
+}
+
+// The near miss must NEVER be mistaken for landing evidence: exact equality is
+// what proves a unit landed, and widening that is the failure this design
+// avoids. A behind-HEAD unit stays in recovery, never cleanup-ready.
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      head: "a".repeat(40),
+      headOnDefaultBranch: false,
+      mergedPr: null,
+      branchMergedPr: { number: 1, url: "https://example.test/1", headOid: "c".repeat(40) },
+      updatedAtMs: NOW - 30 * DAY,
+    }),
+    NOW,
+  );
+  assert.notEqual(item.lane, "cleanup-ready", "a near miss is not landing evidence");
+}
+
+// A near miss whose head EQUALS this unit's head is not a mismatch at all, and
+// an absent field must read as "no near miss known" for legacy callers.
+{
+  const head = "a".repeat(40);
+  for (const near of [
+    { number: 9, url: "https://example.test/9", headOid: head },
+    null,
+  ]) {
+    const item = classifyLifecycleUnit(
+      observation({ head, headOnDefaultBranch: false, mergedPr: null, branchMergedPr: near }),
+      NOW,
+    );
+    assert.match(
+      item.reasons.join("\n"),
+      /not proven landed/,
+      "without a genuine mismatch the generic reason still applies",
+    );
+  }
+}
+
 console.log("worktree-lifecycle.test.ts: ok");

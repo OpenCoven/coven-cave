@@ -10,11 +10,18 @@ assert.match(src, /function FolderDroppable/, "folder droppable wrapper exists")
 assert.match(src, /function FolderChatRow/, "folder chats are sortable rows");
 assert.match(src, /id=\{`folder:\$\{key\}`\}/, "folder droppable id encodes the selection key");
 
-// One DndContext wraps the folder map with the folder drag handler.
+// One DndContext wraps the organization tree with the folder drag handler,
+// and every organization delegates its projects to the unchanged folder
+// renderer that owns the droppable/sortable behavior.
 assert.match(
   src,
-  /<DndContext[\s\S]{0,80}onDragEnd=\{handleFolderDragEnd\}>[\s\S]{0,200}groups\.map/,
-  "the folder tree map is wrapped in a DndContext using the folder drag handler",
+  /<DndContext[\s\S]{0,80}onDragEnd=\{handleFolderDragEnd\}>[\s\S]*organizationGroups\.map/,
+  "the organization tree is wrapped in a DndContext using the folder drag handler",
+);
+assert.match(
+  src,
+  /organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  "organization projects reuse the folder renderer that owns drag and drop",
 );
 
 // Reorder within a folder reuses the shared manual-order list.

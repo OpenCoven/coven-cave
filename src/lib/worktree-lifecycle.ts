@@ -81,7 +81,20 @@ export type WorktreeLifecycleObservation = {
    */
   mentionTaskIds: string[];
   openPrs: WorktreePrRef[];
+  /**
+   * A merged PR whose head is EXACTLY this unit's HEAD. Exact equality is the
+   * point: it is what proves the unit landed, so it must not be widened.
+   */
   mergedPr: WorktreeMergedPrRef | null;
+  /**
+   * The near miss: a merged PR for this unit's BRANCH whose head is a DIFFERENT
+   * commit. It never proves landing — it exists so the classifier can say "one
+   * fast-forward behind" instead of the generic "not proven landed".
+   *
+   * Optional so legacy callers that never populate it keep their old behaviour;
+   * absent reads as "no near miss known" (cave-5ulwl).
+   */
+  branchMergedPr?: WorktreeMergedPrRef | null;
   activeWorkflowUrls: string[];
   headOnDefaultBranch: boolean;
   remoteRefsContainingHead: string[];
@@ -268,6 +281,37 @@ export type WorktreeLifecycleBudgets = {
     expired: number;
   };
 };
+
+/**
+ * The merged PR this unit's HEAD *should* be at, when it demonstrably is not.
+ *
+ * Two sources, deliberately kept apart from the landedness test:
+ *  - `mergedPr` with a differing head. Unreachable from the inventory, which
+ *    builds that field from an exact `headRefOid === head` filter, but kept for
+ *    library callers that construct observations themselves.
+ *  - `branchMergedPr`, the near miss: the branch HAS a merged PR, this worktree
+ *    just sits at a different commit — usually a fixup pushed after the local
+ *    HEAD was last synced.
+ *
+ * Before cave-5ulwl only the first existed, so the second case fell through to
+ * the generic "not proven landed", which reads as "may hold unlanded work" when
+ * the truth is "one fast-forward behind".
+ */
+function mergedPrHeadMismatch(
+  observation: Pick<WorktreeLifecycleObservation, "head" | "mergedPr" | "branchMergedPr">,
+): WorktreeMergedPrRef | null {
+  if (observation.mergedPr) {
+    return observation.mergedPr.headOid === observation.head ? null : observation.mergedPr;
+  }
+  const nearMiss = observation.branchMergedPr ?? null;
+  if (!nearMiss || nearMiss.headOid === observation.head) return null;
+  return nearMiss;
+}
+
+/** Names the remedy, because the fix is mechanical once the commit is known. */
+function headMismatchReason(pr: WorktreeMergedPrRef): string {
+  return `local HEAD does not match merged PR #${pr.number} head ${pr.headOid.slice(0, 9)} — fast-forward with \`git merge --ff-only ${pr.headOid}\` if this unit holds nothing else`;
+}
 
 export const RETIREMENT_COOLDOWN_MS = 8 * 60 * 60 * 1000;
 /** Branch namespaces whose content is a snapshot to preserve, never retire.
@@ -559,9 +603,10 @@ function classifyLifecycleUnitInternal(
     );
   }
 
-  if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
+  const headMismatchPr = mergedPrHeadMismatch(observation);
+  if (headMismatchPr) {
     return withReasons(observation, "recovery", [
-      `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
+      headMismatchReason(headMismatchPr),
       ...reviewAfterReasons(observation.metadata, nowMs),
     ]);
   }
@@ -630,10 +675,9 @@ function classifyLifecycleUnitWithoutMetadata(
     ]);
   }
 
-  if (observation.mergedPr && observation.mergedPr.headOid !== observation.head) {
-    return withReasons(observation, "recovery", [
-      `local HEAD does not match merged PR #${observation.mergedPr.number} head`,
-    ]);
+  const legacyHeadMismatchPr = mergedPrHeadMismatch(observation);
+  if (legacyHeadMismatchPr) {
+    return withReasons(observation, "recovery", [headMismatchReason(legacyHeadMismatchPr)]);
   }
 
   const landed = observation.headOnDefaultBranch || observation.mergedPr !== null;

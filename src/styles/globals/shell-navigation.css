@@ -193,7 +193,10 @@
 
   .shell-detail-panel {
     padding: var(--space-2);
-    background: var(--bg-panel);
+    /* The gutter this padding reserves IS the outer frame, so it takes the
+       rail's own rendered shade rather than the bare panel token — see
+       --shell-floor in globals/foundations.css. */
+    background: var(--shell-floor);
   }
 
   .shell-detail {
@@ -491,6 +494,22 @@
   flex: 1 1 auto;
   height: 1px;
   background: var(--border-hairline);
+}
+
+.cnav__organization + .cnav__organization {
+  margin-top: var(--space-1);
+}
+.cnav__organization-toggle {
+  width: 100%;
+  text-align: left;
+}
+.cnav__organization-toggle:disabled {
+  cursor: default;
+}
+.cnav__organization-projects {
+  margin-inline-start: var(--space-2);
+  padding-inline-start: var(--space-1);
+  border-inline-start: 1px solid var(--border-hairline);
 }
 
 /* Project group header — sticky so context stays while scrolling long lists.
@@ -1158,7 +1177,7 @@
 
 /* The detail wrapper provides the shell floor around the inset content. */
 .shell-detail-panel {
-  background: var(--bg-panel);
+  background: var(--shell-floor);
 }
 
 .shell-detail-header {
