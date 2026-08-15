@@ -820,14 +820,12 @@ export function Workspace() {
   activeChatSessionIdRef.current = activeChatSessionId;
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const onboardingResolved = true;
-  const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
   // Server-owned bootstrap progress persists independently; keeping the host
   // mounted makes close/reopen cheap and retains local focus/announcement refs.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
-  const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
@@ -1155,8 +1153,6 @@ export function Workspace() {
   // for adding to an existing roster without re-running setup.
   useEffect(() => {
     const openCreate = () => {
-      manualOnboardingOpenedRef.current = true;
-      setAutoFinishOnboarding(false);
       setOnboardingOpen(true);
     };
     window.addEventListener("cave:onboarding-open", openCreate);
@@ -1844,8 +1840,6 @@ export function Workspace() {
   }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
   const openOnboarding = useCallback(() => {
-    manualOnboardingOpenedRef.current = true;
-    setAutoFinishOnboarding(false);
     setOnboardingOpen(true);
   }, []);
   const closeOnboarding = useCallback(() => {
@@ -3866,10 +3860,8 @@ export function Workspace() {
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
-          autoFinishWhenComplete={autoFinishOnboarding}
           open={onboardingOpen}
           onDismiss={() => {
-            setAutoFinishOnboarding(false);
             setOnboardingMounted(true);
             closeOnboarding();
           }}
