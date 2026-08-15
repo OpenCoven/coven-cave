@@ -1051,12 +1051,29 @@ Bead: cave-cbz28"
 
 **Files:**
 - Create: `src/components/research-paper-viewer.tsx`
-- Modify: the Research Desk resource list component that renders a `SavedLink` row
+- Modify: `src/components/role-surfaces/research-tab-resources.tsx`
 
-- [ ] **Step 1: Find the resource row**
-
-Run: `grep -rln "SavedLink" src/components/ | grep -v test`
-Read the component that renders link rows; that is where the Read affordance goes.
+> **Corrected 2026-08-15 after reading the real code.** This section originally said
+> to model a standalone dialog on `chat-artifact-viewer.tsx` and to grep for the row
+> component. Both were wrong in a way that would have produced duplicate UI.
+>
+> `research-tab-resources.tsx` (711 lines) already owns the resource-open flow:
+> `openId`/`setOpenId` state (line 80), `openLink` lookup (line 255), `closeOverlay`
+> (line 257), a `useFocusTrap` with escape handling (line 258), and a rendered
+> `role="dialog"` overlay from line 551 with header, category chip, saved-time, URL row
+> and close button. A row already opens it via `onClick={() => setOpenId(link.id)}`
+> (line 488).
+>
+> So there is **no new dialog to build and no new affordance to invent**. The paper
+> viewer renders *inside* the existing overlay body when
+> `openLink.paper?.arxivId` is present, beneath the existing header and source row.
+> Links without an `arxivId` keep exactly today's overlay contents.
+>
+> pdf.js API verified against the installed `pdfjs-dist@6.2.108`: it exports
+> `getDocument`, `TextLayer`, `GlobalWorkerOptions` and `version`. Also verified that
+> importing it under Node fails with `DOMMatrix is not defined` — which is the
+> empirical reason the component must be client-only and why rendering cannot be
+> unit-tested here.
 
 - [ ] **Step 2: Write the component**
 
