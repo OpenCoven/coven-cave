@@ -14,6 +14,12 @@ const diagnostics = await readFile(
   new URL("./onboarding-setup-diagnostics.tsx", import.meta.url),
   "utf8",
 );
+const startupGate = await readFile(
+  new URL("./onboarding-startup-gate.tsx", import.meta.url),
+  "utf8",
+);
+const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(
   lazy,
@@ -74,6 +80,51 @@ assert.match(
   source,
   /requestQueueRef\.current\.then\(\(\) =>\s*performRequest\(method, body\)/,
   "status, confirmation, and resume requests are serialized instead of dropped",
+);
+assert.match(
+  source,
+  /initialState\?: OnboardingBootstrapState/,
+  "the server-resolved bootstrap state can hydrate the dialog",
+);
+assert.match(
+  source,
+  /\(\) => initialState \?\? createOnboardingBootstrapState\(\)/,
+  "the hydrated state is used before any client bootstrap request",
+);
+assert.match(
+  source,
+  /if \(!open \|\| initialState\) return;/,
+  "a server-hydrated dialog does not make an initial bootstrap GET",
+);
+assert.match(
+  source,
+  /document\.cookie = "cave_onboarding_dismissed=1;/,
+  "a first-run dismissal becomes available to the server on the next launch",
+);
+assert.match(
+  page,
+  /await Promise\.all\(\[\s*onboardingBootstrapStatus\(\),\s*cookies\(\),\s*\]\)/s,
+  "the root route resolves bootstrap state before choosing the first surface",
+);
+assert.match(
+  page,
+  /<OnboardingStartupGate initialState=\{bootstrap\} \/>/,
+  "unfinished setup renders its hydrated startup gate instead of Workspace",
+);
+assert.match(
+  startupGate,
+  /import\("@\/components\/workspace-app"\)/,
+  "the startup gate defers the Workspace bundle until setup exits",
+);
+assert.match(
+  startupGate,
+  /<OnboardingOverlay[\s\S]*initialState=\{initialState\}[\s\S]*onDismiss=\{\(\) => setShowWorkspace\(true\)\}/,
+  "the first surface is the hydrated dialog and dismissal releases Workspace",
+);
+assert.doesNotMatch(
+  workspace,
+  /fetch\("\/api\/onboarding\/bootstrap"/,
+  "Workspace no longer waits for a first-run bootstrap request after it mounts",
 );
 assert.doesNotMatch(
   source,
