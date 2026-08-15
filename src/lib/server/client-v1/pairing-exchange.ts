@@ -26,6 +26,7 @@ import {
   recoverPairingCredentialSettlement,
   settlePairingCredentialSettlement,
 } from "./credential-store.ts";
+import type { CredentialSettlementRecovery } from "./credential-store.ts";
 import type {
   PairingExchangeTerminalReplay,
   PublicPairingRecord,
@@ -145,6 +146,97 @@ function hasIssuedReplayReceipt(
   );
 }
 
+type RecoveredPairingCredential = Extract<
+  CredentialSettlementRecovery,
+  { kind: "issued" | "replay" }
+>;
+
+async function completeRecoveredPairingExchange(
+  id: string,
+  secret: string,
+  now: number,
+  context: {
+    pairingId: string;
+    pairingSecret: string;
+    idempotencyKey: string;
+    requestHash: string;
+  },
+  recovered: RecoveredPairingCredential,
+  deps: PairingExchangeDeps,
+  recover: NonNullable<PairingExchangeDeps["recover"]>,
+  settle: NonNullable<PairingExchangeDeps["settle"]>,
+): Promise<PairingExchangeResult> {
+  const recoveredReceipt: PairingExchangeTerminalReplay = {
+    idempotencyKey: context.idempotencyKey,
+    requestHash: context.requestHash,
+    credential: {
+      id: recovered.credential.id,
+      appName: recovered.credential.appName,
+      installationId: recovered.credential.installationId,
+      scopes: [...recovered.credential.scopes],
+      createdAt: recovered.credential.createdAt,
+    },
+  };
+
+  let finalized;
+  try {
+    finalized = deps.finalize(id, recovered.claimId, Date.now(), {
+      exchangeReplay: recoveredReceipt,
+    });
+  } catch (error) {
+    console.error("[client-v1-pairing] recovered pairing finalize failed", {
+      id,
+      claimId: recovered.claimId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { kind: "recovery_pending" };
+  }
+  const finalizedWithReceipt =
+    finalized.kind === "finalized"
+    && hasIssuedReplayReceipt(
+      finalized.replay,
+      { credential: recovered.credential },
+      context.idempotencyKey,
+      context.requestHash,
+    );
+  // Pairings are process-local. A restart has no record to consume, but it
+  // also cannot make that approval reusable; the durable credential journal
+  // is then the recovery authority. In a live process, anything other than a
+  // confirmed finalization must keep the claim non-reusable and withhold the
+  // token.
+  const pairingGoneAfterRestart =
+    finalized.kind === "missing"
+    && deps.readPairing(id, secret, now) === null;
+  if (!finalizedWithReceipt && !pairingGoneAfterRestart) {
+    console.error("[client-v1-pairing] recovered credential lacks a confirmed pairing finalization", {
+      id,
+      claimId: recovered.claimId,
+      finalization: finalized.kind,
+    });
+    return { kind: "recovery_pending" };
+  }
+
+  try {
+    if (!await settle(context, recovered.recoveryClaimId, recovered.claimId, now)) {
+      // A terminal replay whose credential was revoked/replaced is removed
+      // under settle's credential fence. Confirm that no recovery material
+      // remains before returning a terminal, non-token result; an older
+      // claimant racing a newer valid recovery still sees pending instead.
+      const remaining = await recover(context, now);
+      if (remaining.kind === "none") return { kind: "expired" };
+      return { kind: "recovery_pending" };
+    }
+  } catch (error) {
+    console.error("[client-v1-pairing] durable credential recovery settlement failed", {
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { kind: "recovery_pending" };
+  }
+  crashAtPairingSettlementPoint("after-credential-settlement-before-return");
+  return { kind: "ok", token: recovered.token, credential: recovered.credential };
+}
+
 /**
  * Trade an approved pairing request's secret for a bearer credential exactly
  * once, without ever letting a credential-issuance failure permanently
@@ -198,42 +290,16 @@ export async function exchangePairingRequest(
     return { kind: "processing", retryAfterMs: 1_000 };
   }
   if (recovered.kind === "issued" || recovered.kind === "replay") {
-    // If this process still has the original in-memory pairing claim, finish
-    // its tombstone as well. A restart quite properly reports `missing`
-    // here; the durable journal remains the recovery authority in that case.
-    const recoveredReceipt: PairingExchangeTerminalReplay = {
-      idempotencyKey,
-      requestHash,
-      credential: {
-        id: recovered.credential.id,
-        appName: recovered.credential.appName,
-        installationId: recovered.credential.installationId,
-        scopes: [...recovered.credential.scopes],
-        createdAt: recovered.credential.createdAt,
-      },
-    };
-    try {
-      deps.finalize(id, recovered.claimId, Date.now(), { exchangeReplay: recoveredReceipt });
-    } catch (error) {
-      console.error("[client-v1-pairing] recovered pairing finalize failed", {
-        id,
-        claimId: recovered.claimId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    try {
-      if (!await settle(settlementContext, recovered.recoveryClaimId, recovered.claimId, now)) {
-        return { kind: "recovery_pending" };
-      }
-    } catch (error) {
-      console.error("[client-v1-pairing] durable credential recovery settlement failed", {
-        id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return { kind: "recovery_pending" };
-    }
-    crashAtPairingSettlementPoint("after-credential-settlement-before-return");
-    return { kind: "ok", token: recovered.token, credential: recovered.credential };
+    return completeRecoveredPairingExchange(
+      id,
+      secret,
+      now,
+      settlementContext,
+      recovered,
+      deps,
+      recover,
+      settle,
+    );
   }
 
   const claim = deps.claim(id, secret, idempotencyKey, requestHash, now);
@@ -262,6 +328,37 @@ export async function exchangePairingRequest(
       claimId: claimed.claimId,
     });
   } catch (err) {
+    // A write can fail after its atomic rename. Reconcile the durable
+    // credential transaction before releasing the in-memory pairing claim:
+    // releasing first would let another idempotency key exchange the same
+    // approval while the original credential already exists.
+    let reconciled: CredentialSettlementRecovery;
+    try {
+      reconciled = await recover(settlementContext, now);
+    } catch (recoveryError) {
+      console.error("[client-v1-pairing] credential issuance reconciliation failed", {
+        id,
+        claimId: claimed.claimId,
+        error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+      });
+      return { kind: "recovery_pending" };
+    }
+    if (reconciled.kind === "pending") {
+      return { kind: "processing", retryAfterMs: 1_000 };
+    }
+    if (reconciled.kind === "issued" || reconciled.kind === "replay") {
+      return completeRecoveredPairingExchange(
+        id,
+        secret,
+        now,
+        settlementContext,
+        reconciled,
+        deps,
+        recover,
+        settle,
+      );
+    }
+
     let rollback;
     try {
       rollback = deps.rollback(id, claimed.claimId, Date.now());

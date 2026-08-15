@@ -3,15 +3,19 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 
 const TRANSIENT_RENAME_ERRORS = new Set(["EACCES", "EBUSY", "EPERM"]);
-const UNSUPPORTED_DIRECTORY_SYNC_ERRORS = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP", "EPERM"]);
+const UNSUPPORTED_DIRECTORY_SYNC_ERRORS = new Set(["EINVAL", "ENOTSUP", "EOPNOTSUPP"]);
 
 export type AtomicWriteTestHooks = {
+  /** Test-only platform injection for directory-sync behavior. */
+  platform?: NodeJS.Platform;
   afterTempWrite?: (tmp: string, target: string) => void | Promise<void>;
   beforeTempSync?: (tmp: string, target: string) => void | Promise<void>;
   afterTempSync?: (tmp: string, target: string) => void | Promise<void>;
   beforeRename?: (tmp: string, target: string) => void | Promise<void>;
   afterRename?: (target: string) => void | Promise<void>;
   beforeDirectorySync?: (directory: string, target: string) => void | Promise<void>;
+  /** Test-only replacement for FileHandle.sync on the opened parent directory. */
+  syncDirectory?: (directory: string, target: string) => void | Promise<void>;
   afterDirectorySync?: (directory: string, target: string) => void | Promise<void>;
 };
 
@@ -42,9 +46,19 @@ async function renameReplacing(source: string, target: string): Promise<void> {
 }
 
 function isUnsupportedDirectorySyncError(error: unknown): boolean {
-  return UNSUPPORTED_DIRECTORY_SYNC_ERRORS.has(
-    (error as NodeJS.ErrnoException | undefined)?.code ?? "",
-  );
+  const code = (error as NodeJS.ErrnoException | undefined)?.code ?? "";
+  if (UNSUPPORTED_DIRECTORY_SYNC_ERRORS.has(code)) return true;
+
+  // FlushFileBuffers requires write access on Windows, while the directory
+  // handle above is intentionally read-only. Windows can therefore reject
+  // this best-effort directory durability step with EACCES (and rejects
+  // opening a directory with EPERM on supported Node versions). Never extend
+  // this exception to POSIX: EACCES there is a real durability failure.
+  return testHooks?.platform === "win32" || (
+    testHooks?.platform === undefined && process.platform === "win32"
+  )
+    ? code === "EACCES" || code === "EPERM"
+    : false;
 }
 
 async function syncParentDirectory(target: string): Promise<void> {
@@ -53,7 +67,11 @@ async function syncParentDirectory(target: string): Promise<void> {
   try {
     handle = await open(/* turbopackIgnore: true */ directory, "r");
     await testHooks?.beforeDirectorySync?.(directory, target);
-    await handle.sync();
+    if (testHooks?.syncDirectory) {
+      await testHooks.syncDirectory(directory, target);
+    } else {
+      await handle.sync();
+    }
     await testHooks?.afterDirectorySync?.(directory, target);
   } catch (error) {
     // Windows documents opening a directory as EPERM. POSIX filesystems that
