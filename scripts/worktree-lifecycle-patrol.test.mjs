@@ -1783,7 +1783,7 @@ fi
 
 if [ "\${LIFECYCLE_REMOTE_SUCCESS_STDERR:-0}" = "1" ]; then
   case " $* " in
-    *" ls-remote --exit-code --heads origin refs/heads/feat/old "*)
+    *" ls-remote --heads origin "*)
       PATH=\${PATH#${gitBin}:}
       export PATH
       git "$@"
@@ -1796,7 +1796,7 @@ fi
 
 if [ "\${LIFECYCLE_REMOTE_ABSENCE_STDERR:-0}" = "1" ]; then
   case " $* " in
-    *" ls-remote --exit-code --heads origin refs/heads/feat/old "*)
+    *" ls-remote --heads origin "*)
       printf '%s\\n' 'same-named remote ref absence is untrustworthy' >&2
       exit 2
       ;;
@@ -2102,7 +2102,7 @@ case "\${LIFECYCLE_GIT_WARNING_PROBE:-}" in
     ;;
   ref)
     case " $* " in
-      *" ls-remote --exit-code --heads origin refs/heads/feat/old "*)
+      *" ls-remote --heads origin "*)
         PATH=\${PATH#${gitBin}:}
         export PATH
         git "$@"

@@ -2191,8 +2191,43 @@ function historyOverrideProbe(root: string, commonGitDir: string): HistoryOverri
   return { replaceRefsState, graftState, errors };
 }
 
-function exactRemoteRef(
-  root: string,
+/**
+ * Every head the remote advertises, read ONCE per inventory.
+ *
+ * This was one `ls-remote --exit-code --heads origin <ref>` PER UNIT — a
+ * separate round trip each, and the most expensive command in a patrol run.
+ * Measured 2026-08-14 against the test fixture: ~12 calls per run at ~37ms,
+ * the highest mean of any git command; against GitHub each one is a real
+ * network round trip, which is a large part of why the patrol is slow enough
+ * that CLAUDE.md warns about it.
+ *
+ * The remote's head list cannot change between two calls inside one
+ * synchronous run, so asking N times asks the same question N times. Ask once
+ * and answer every unit from the result.
+ *
+ * One deliberate behaviour change: a transport failure now fails every unit's
+ * probe identically rather than per unit. That is the honest reading — an
+ * unreachable remote is one fact about the run, not N independent facts — and
+ * every unit still reports the same error text it would have reported alone.
+ */
+export type RemoteHeadIndex = { refs: Map<string, string> | null; error: string | null };
+
+export function remoteHeadIndex(root: string): RemoteHeadIndex {
+  const result = git(root, ["ls-remote", "--heads", "origin"], 60_000);
+  if (result.stderr) return { refs: null, error: result.stderr };
+  if (!result.ok) return { refs: null, error: result.stderr || "command unavailable" };
+  const refs = new Map<string, string>();
+  for (const line of result.stdout.split("\n")) {
+    // The same shape the per-ref probe validated: <oid>\t<refname>, nothing
+    // else on the line. Anything malformed is skipped rather than trusted.
+    const match = line.match(/^((?:[0-9a-f]{40}|[0-9a-f]{64}))\t(refs\/heads\/.+)$/);
+    if (match) refs.set(match[2]!, match[1]!);
+  }
+  return { refs, error: null };
+}
+
+export function exactRemoteRef(
+  index: RemoteHeadIndex,
   ref: string,
   options: { required?: boolean; label?: string } = {},
 ): {
@@ -2200,34 +2235,21 @@ function exactRemoteRef(
   error: string | null;
 } {
   const label = options.label ?? "same-named remote ref";
-  const result = git(root, ["ls-remote", "--exit-code", "--heads", "origin", ref], 60_000);
-  if (result.stderr) {
+  if (index.error !== null) {
     return {
       remoteRef: null,
-      error: `${label} probe failed for ${ref}: ${result.stderr}`,
+      error: `${label} probe failed for ${ref}: ${index.error}`,
     };
   }
-  if (result.status === 2) {
-
+  const oid = index.refs!.get(ref);
+  if (oid === undefined) {
+    // What exit status 2 meant before: the remote simply has no such head.
     return {
       remoteRef: null,
       error: options.required ? `${label} is missing for ${ref}` : null,
     };
   }
-  if (!result.ok) {
-    return {
-      remoteRef: null,
-      error: `${label} probe failed for ${ref}: ${result.stderr || "command unavailable"}`,
-    };
-  }
-  const match = result.stdout.match(/^((?:[0-9a-f]{40}|[0-9a-f]{64}))\t([^\n]+)\n?$/);
-  if (!match || match[2] !== ref) {
-    return {
-      remoteRef: null,
-      error: `${label} probe returned malformed data for ${ref}`,
-    };
-  }
-  return { remoteRef: { ref: match[2], oid: match[1] }, error: null };
+  return { remoteRef: { ref, oid }, error: null };
 }
 
 function strictOutputLines(raw: string): string[] | null {
@@ -3126,6 +3148,11 @@ function collectInventory(
     tasks.error,
   ].filter((error): error is string => typeof error === "string");
 
+  // Hoisted out of the per-unit map below: one remote read for the whole
+  // inventory instead of one per unit. Resolved unconditionally so the cost is
+  // a single round trip whether one unit needs it or twenty; the old code paid
+  // per unit that had a ref.
+  const remoteHeads = remoteHeadIndex(root);
   const observations: WorktreeLifecycleObservation[] = units.map((unit) => {
     const state = unit.path
       ? statusState(unit.path)
@@ -3185,7 +3212,7 @@ function collectInventory(
       unit.path !== null,
     );
     const remote = unit.ref && originIdentity.error === null
-      ? exactRemoteRef(root, unit.ref)
+      ? exactRemoteRef(remoteHeads, unit.ref)
       : { remoteRef: null, error: null };
     const metadata = metadataFor(unit.branch, unit.path, tasks.tasks);
     const openPrs = unitPullRequests
