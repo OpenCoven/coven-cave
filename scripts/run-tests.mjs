@@ -72,6 +72,7 @@ export const SUITES = {
     "scripts/maintenance-gate.test.mjs",
     "scripts/local-maintenance-gate.test.mjs",
     "scripts/fence-refusal-message.test.mjs",
+    "scripts/rules-of-hooks-gate.test.mjs",
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
     "scripts/onboarding-feedback-report.test.mjs",
