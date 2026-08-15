@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./opencoven-submission-page.tsx", import.meta.url), "utf8");
 
@@ -15,7 +16,7 @@ assert.doesNotMatch(
   /\{ id: "submissions",/,
   "The navigation registry should NOT expose Submissions as a nav item",
 );
-assert.match(workspace, /submissions:\s*"Submissions"/, "Workspace h1 title map should cover submissions mode");
+assert.match(pageRegistry, /submissions:\s*\{[\s\S]{0,120}?title: "Submissions"/, "Workspace page registry should cover submissions mode");
 assert.match(workspace, /mode === "submissions" \?\s*\(\s*<OpenCovenSubmissionPage/, "Workspace should render the OpenCoven submission page directly");
 assert.match(page, /OpenCovenSubmissionPanel/, "Submission page should own the reusable submission panel");
 assert.match(page, /Submit once to OpenCoven/, "Submission page should state the corrected product flow");

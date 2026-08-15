@@ -20,6 +20,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const githubView = await readFile(new URL("./github-view.tsx", import.meta.url), "utf8");
 const lazySurfaces = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
@@ -73,9 +74,9 @@ assert.match(
 // ── Workspace wiring ─────────────────────────────────────────────────────────
 
 assert.match(
-  workspace,
-  /code: "Code"/,
-  "WORKSPACE_MODE_TITLES names the Code surface (canonical-nav agreement)",
+  pageRegistry,
+  /code:\s*\{[\s\S]{0,120}?title: "Code"/,
+  "the workspace page registry names the Code surface (canonical-nav agreement)",
 );
 assert.match(
   workspace,
@@ -343,8 +344,8 @@ assert.match(
 // two can never disagree about what changed.
 assert.match(
   workbench,
-  /const changes = useWorktreeChanges\(workRoot, running\);/,
-  "one changes subscription feeds the tree and the rail",
+  /const changes = useWorktreeChanges\(contextRoot, running\);/,
+  "one provenance-aware changes subscription feeds the tree and the rail",
 );
 assert.match(
   workbenchTree,

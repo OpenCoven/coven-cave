@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 const view = readFileSync(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const transcript = readFileSync(new URL("../lib/group-chat-transcript.ts", import.meta.url), "utf8");
@@ -382,7 +383,7 @@ test("Group chat transcript uses avatar author rows with recency", () => {
 test("Group Chat is a tab inside the Chat surface, not a standalone page", () => {
   // The mode still exists purely as a redirect target for legacy deep links.
   assert.match(mode, /\| "groupchat"/, "groupchat stays a valid WorkspaceMode for redirects");
-  assert.match(workspace, /groupchat: "Group Chat"/, "groupchat keeps a title entry");
+  assert.match(pageRegistry, /groupchat:\s*\{[\s\S]{0,120}?title: "Group chat"/, "groupchat keeps a page-registry title");
 
   // The standalone page is retired: the Workspace no longer imports or renders
   // GroupChatView, and redirects the legacy mode into the Chat surface's tab.

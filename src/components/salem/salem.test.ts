@@ -95,11 +95,18 @@ const workspace = await readFile(path.join(root, "src/components/workspace.tsx")
 // The right companion rail was removed; Salem was re-homed into the
 // drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-assert.match(workspace, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem launcher must open Salem in the drag-to-split pane");
-assert.match(workspace, /import \{[\s\S]*SalemChatPanel[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load only the Salem sidepanel surface");
+assert.match(
+  workspace,
+  /normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), "salem"\);[\s\S]{0,120}if \(request\) addSplitTarget\(request\)/,
+  "Salem launcher must open a normalized Salem page request in the drag-to-split pane",
+);
+assert.match(workspace, /import \{[\s\S]*AskSalemView[\s\S]*\} from "@\/components\/lazy-surfaces"/, "workspace should lazy-load the Ask Salem surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
-assert.match(workspace, /<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the split with the local familiar's model");
+assert.match(
+  workspace,
+  /<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
+  "workspace must render Ask Salem with the active familiar context",
+);
 
 // 7. CSS classes present
 const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");

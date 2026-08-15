@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 
 const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
-const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 
 // Extract `id -> label` pairs from `{ id: "...", label: "..." }` object rows.
 function extractLabels(source, blockName, blockRe) {
@@ -76,13 +76,13 @@ assert.deepEqual(
   "sidebar primary cluster (→ mobile tabs) should be the four daily destinations",
 );
 
-// ── The sr-only h1 / split-tile title map agrees for sidebar destinations ────
-const titlesBlock = workspace.match(
-  /const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = \{[\s\S]*?\n\};/,
+// ── The page registry agrees with sidebar destinations ────────────────────────
+const titlesBlock = pageRegistry.match(
+  /const WORKSPACE_MODE_PAGES = freezePageMap\(\{[\s\S]*?\n\} satisfies Record<WorkspaceMode, WorkspacePageDefinition>\);/,
 )?.[0];
-assert.ok(titlesBlock, "WORKSPACE_MODE_TITLES should be extractable");
+assert.ok(titlesBlock, "WORKSPACE_MODE_PAGES should be extractable");
 const modeTitles = new Map();
-for (const m of titlesBlock.matchAll(/"?([a-z-]+)"?: "([^"]+)"/g)) {
+for (const m of titlesBlock.matchAll(/"?([a-z-]+)"?:\s*\{\s*id: "[^"]+",\s*title: "([^"]+)"/g)) {
   modeTitles.set(m[1], m[2]);
 }
 for (const [id, canonical] of registryLabels) {
@@ -91,14 +91,21 @@ for (const [id, canonical] of registryLabels) {
   assert.equal(
     title,
     canonical,
-    `WORKSPACE_MODE_TITLES["${id}"] must use the canonical navigation label "${canonical}", got "${title}"`,
+    `WORKSPACE_MODE_PAGES["${id}"] must use the canonical navigation label "${canonical}", got "${title}"`,
   );
 }
 
-// Alias modes that render another surface's view keep that surface's name —
-// they must never introduce a new peer vocabulary (issue #3283 acceptance:
-// "Compatibility aliases do not appear as peer destinations").
-assert.equal(modeTitles.get("calendar"), modeTitles.get("inbox"), "calendar is a tab of Rituals, not a new name");
-assert.equal(modeTitles.get("familiar-work-queue"), modeTitles.get("board"), "the work queue is a tab of Tasks, not a new name");
+// Alias pages can name their specific tab, but must point back to the canonical
+// destination instead of appearing as peer navigation rows.
+assert.match(
+  titlesBlock,
+  /calendar:\s*\{[\s\S]{0,120}?canonicalId: "inbox",[\s\S]{0,80}?variant: "calendar"/,
+  "calendar remains a Rituals page variant",
+);
+assert.match(
+  titlesBlock,
+  /"familiar-work-queue":\s*\{[\s\S]{0,140}?canonicalId: "board",[\s\S]{0,80}?variant: "queue"/,
+  "the work queue remains a Tasks page variant",
+);
 
 console.log("canonical-nav-names: ok");

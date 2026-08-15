@@ -226,7 +226,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /mode === "browser" \|\|[\s\S]{0,180}target\.kind === "browser" \|\| \(target\.kind === "page" && target\.mode === "browser"\)/,
+  /mode === "browser" \|\|[\s\S]{0,180}splitTargets\.some\(\(target\) => target\.pageId === "browser"\)/,
   "Workspace tracks browser visibility across primary and split panes",
 );
 assert.match(

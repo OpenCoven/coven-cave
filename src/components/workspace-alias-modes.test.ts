@@ -39,7 +39,7 @@ for (const alias of ["groupchat", "journal", "flow"]) {
 assert.equal(MODE_ALIASES["familiar-work-queue"], "board");
 assert.match(
   workspace,
-  /mode === "board" \|\| mode === "familiar-work-queue"[\s\S]{0,400}?<BoardView\s+key=\{mode\}\s+initialTab=\{mode === "familiar-work-queue" \? "queue" : "tasks"\}/,
+  /mode === "board" \|\| mode === "familiar-work-queue"[\s\S]{0,400}?<BoardView\s+key=\{mode\}\s+initialTab=\{mode === "familiar-work-queue" \|\| variant === "queue" \? "queue" : "tasks"\}/,
   "the familiar-work-queue alias renders the Tasks surface on its Queue tab (keyed remount)",
 );
 assert.match(
@@ -51,7 +51,7 @@ assert.match(
 assert.equal(MODE_ALIASES.calendar, "inbox");
 assert.match(
   workspace,
-  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar" \? "calendar" : "overview"\}/,
+  /mode === "inbox" \|\| mode === "calendar"[\s\S]{0,400}?key=\{mode\}\s+initialTab=\{mode === "calendar" \|\| variant === "calendar" \? "calendar" : "overview"\}/,
   "the calendar alias renders the Rituals surface on its Calendar tab (keyed remount)",
 );
 
@@ -59,7 +59,7 @@ assert.equal(MODE_ALIASES.roles, "marketplace");
 assert.equal(MODE_ALIASES.capabilities, "marketplace");
 assert.match(
   workspace,
-  /mode === "marketplace" \|\| mode === "roles" \|\| mode === "capabilities"[\s\S]{0,500}?key=\{mode\}\s+initialSection=\{mode === "roles" \? "roles" : mode === "capabilities" \? "capabilities" : "browse"\}/,
+  /mode === "marketplace" \|\| mode === "roles" \|\| mode === "capabilities"[\s\S]{0,600}?key=\{mode\}\s+initialSection=\{\s*mode === "roles" \|\| variant === "roles"[\s\S]{0,160}?mode === "capabilities" \|\| variant === "capabilities"[\s\S]{0,120}?"browse"/,
   "the roles/capabilities aliases render the Marketplace hub on their sections (keyed remount)",
 );
 
@@ -91,8 +91,8 @@ assert.doesNotMatch(
 
 assert.match(
   urlState,
-  /function readModeParam\(\): WorkspaceMode \| RoleSurfaceMode \| null \{[\s\S]{0,350}?isWorkspaceMode\(raw\) \|\| isRoleSurfaceMode\(raw\)/,
-  "?mode= deep links validate built-in modes and generic role-surface modes",
+  /function readWorkspacePageParam\(name: string\): WorkspacePageId \| null \{[\s\S]{0,350}?isWorkspacePageId\(raw\)[\s\S]{0,120}?function readModeParam\(\): WorkspacePageId \| null/,
+  "?mode= deep links validate built-in and role-surface pages through the shared page registry",
 );
 assert.match(
   workspace,

@@ -83,8 +83,12 @@ assert.match(navigation, /id: "journal", label: "Journal", iconName: "ph:book-op
 assert.doesNotMatch(navigation, /generated sketches/, "the Journal description no longer promises the canvas");
 assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar consumes the section-filtered visible registry");
 
-// ── A redirect is not a page: journal can't be dragged into a split ─────────
-assert.match(pageDrag, /NON_SPLITTABLE = new Set\(\["terminal", "journal"\]\)/, "journal is excluded from drag-to-split");
+// ── Registered aliases can be normalized into split-page requests ────────────
+assert.match(
+  pageDrag,
+  /return workspacePageDefinition\(mode\) !== null;/,
+  "journal remains draggable through the shared page registry even though its primary-mode path redirects",
+);
 
 // ── Slash palette copy matches the new home ───────────────────────────────────
 assert.match(slash, /name: "\/journal"/, "the /journal slash command survives the redirect");

@@ -81,6 +81,7 @@ A document in `docs/` proper should be one somebody keeps current.
 Active initiatives. Parts have shipped; parts have not. Each states which.
 
 - [`daemon-connectivity-reliability.md`](daemon-connectivity-reliability.md) — the reliability program (`cave-58eoq`); Windows supervision and authenticated native readiness have shipped
+- [`desktop-onboarding.md`](desktop-onboarding.md) — the evidence baseline and active program for reaching a successful first familiar response without terminal setup
 - [`golden-paths.md`](golden-paths.md) — the eight journeys the Cave must make effortless, with per-item shipped/broken status
 - [`craft-ux.md`](craft-ux.md) — a friction inventory of the craft authoring flow with a reuse-first enablement plan
 

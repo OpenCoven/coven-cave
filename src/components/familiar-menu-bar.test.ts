@@ -237,7 +237,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /<SalemChatPanel\s+familiarId=\{[\s\S]*?model=\{/,
+  /<AskSalemView familiars=\{familiars\} activeFamiliarId=\{activeId\} \/>/,
   "Salem should remain available — re-homed into the drag-to-split pane",
 );
 assert.doesNotMatch(

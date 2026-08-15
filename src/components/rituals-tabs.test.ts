@@ -12,6 +12,7 @@ const automations = [
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
@@ -25,9 +26,9 @@ assert.match(
   "The navigation registry should label the slim surface Rituals",
 );
 assert.match(
-  workspace,
-  /inbox: "Rituals"/,
-  "Workspace title map should call the surface Rituals",
+  pageRegistry,
+  /inbox:\s*\{[\s\S]{0,120}?title: "Rituals"/,
+  "The workspace page registry should call the surface Rituals",
 );
 assert.match(
   mobileTabs,
@@ -127,8 +128,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /initialTab=\{mode === "calendar" \? "calendar" : "overview"\}/,
-  "Workspace lands on the overview unless the Calendar deep link asked for Calendar",
+  /initialTab=\{mode === "calendar" \|\| variant === "calendar" \? "calendar" : "overview"\}/,
+  "Workspace lands on the overview unless the Calendar mode or page variant asked for Calendar",
 );
 assert.match(automations, /sessionStorage\.setItem\("cave:calendar:pending-open-date", day\.key\)[\s\S]{0,100}selectTab\("calendar"\)/, "a ribbon day queues its date before Calendar mounts");
 assert.match(calendar, /sessionStorage\.getItem\("cave:calendar:pending-open-date"\)[\s\S]{0,180}openDateValue\(pendingDate\)/, "Calendar consumes a queued ribbon date on mount");

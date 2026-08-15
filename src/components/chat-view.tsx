@@ -8882,19 +8882,23 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
-  // Auto-detect renderable artifacts and inject the tabbed viewer.
+  // Auto-detect renderable artifacts only after settlement. Streaming keeps the
+  // ordinary markdown path until markers and fences are complete.
   const artifactCtx = { familiarId: familiar.id };
-  const split = splitSegmentsForGitHub(
-    splitSegmentsForArtifacts(
-      splitSegmentsForImages(
-        splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+  let renderSegments: MessageBubbleSegment[] | undefined;
+  if (!turn.pending) {
+    const split = splitSegmentsForGitHub(
+      splitSegmentsForArtifacts(
+        splitSegmentsForImages(
+          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+        ),
+        artifactCtx,
       ),
-      artifactCtx,
-    ),
-    onOpenUrl,
-    ghFamiliar,
-  );
-  const renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
+      onOpenUrl,
+      ghFamiliar,
+    );
+    renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
+  }
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
   // that used to sit inline here now live only in the debug pane, so a quiet
