@@ -1,0 +1,183 @@
+import {
+  CLIENT_V1_API_VERSION,
+  CLIENT_V1_CAPABILITIES,
+  CLIENT_V1_ERROR_CODES,
+  CLIENT_V1_LIMITS,
+  CLIENT_V1_MIN_CLIENT_VERSION,
+  parseClientV1Capabilities,
+  parseClientV1Cursor,
+  parseClientV1ErrorDetails,
+  parseClientV1Identity,
+  parseClientV1RequestId,
+  parseClientV1Revision,
+  type ClientV1Capability,
+  type ClientV1Cursor,
+  type ClientV1ErrorCode,
+  type ClientV1ErrorEnvelope,
+  type ClientV1EnvelopeBase,
+  type ClientV1Identity,
+  type ClientV1Record,
+  type ClientV1Revision,
+  type ClientV1SuccessEnvelope,
+} from "./contract.ts";
+
+export type ClientV1EnvelopeOptions = {
+  capabilities?: readonly ClientV1Capability[];
+  requestId?: string;
+  identity?: ClientV1Identity;
+  revision?: ClientV1Revision;
+  cursor?: ClientV1Cursor;
+};
+
+export type ClientV1SuccessResponseOptions = ClientV1EnvelopeOptions & {
+  status?: number;
+};
+
+export type ClientV1ErrorResponseOptions = ClientV1EnvelopeOptions & {
+  details?: Record<string, string>;
+  retryable?: boolean;
+  status?: number;
+};
+
+const CLIENT_V1_ERROR_CODE_SET = new Set<string>(CLIENT_V1_ERROR_CODES);
+
+function requiredRecord(value: unknown, name: string): ClientV1Record {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`Client v1 ${name} must be an object.`);
+  }
+  return value as ClientV1Record;
+}
+
+function requiredErrorMessage(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("Client v1 error message must be a non-empty string.");
+  }
+  if (value.length > CLIENT_V1_LIMITS.errorMessageCharacters) {
+    throw new Error(
+      `Client v1 error message must be at most ${CLIENT_V1_LIMITS.errorMessageCharacters} characters.`,
+    );
+  }
+  return value;
+}
+
+function defaultCapabilities(): ClientV1Capability[] {
+  return [...CLIENT_V1_CAPABILITIES];
+}
+
+function envelopeBase(options: ClientV1EnvelopeOptions = {}): ClientV1EnvelopeBase {
+  return {
+    apiVersion: CLIENT_V1_API_VERSION,
+    minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
+    capabilities: options.capabilities ? parseClientV1Capabilities(options.capabilities) : defaultCapabilities(),
+    ...(options.requestId !== undefined ? { requestId: parseClientV1RequestId(options.requestId) } : {}),
+    ...(options.identity !== undefined ? { identity: parseClientV1Identity(options.identity) } : {}),
+    ...(options.revision !== undefined ? { revision: parseClientV1Revision(options.revision) } : {}),
+    ...(options.cursor !== undefined ? { cursor: parseClientV1Cursor(options.cursor) } : {}),
+  };
+}
+
+function requireErrorCode(code: ClientV1ErrorCode): ClientV1ErrorCode {
+  if (!CLIENT_V1_ERROR_CODE_SET.has(code)) {
+    throw new Error("Client v1 error code is not supported.");
+  }
+  return code;
+}
+
+function assertSuccessStatus(status: number) {
+  if (!Number.isInteger(status) || status < 200 || status > 299) {
+    throw new Error("Client v1 success responses must use a 2xx HTTP status.");
+  }
+}
+
+function assertErrorStatus(status: number) {
+  if (!Number.isInteger(status) || status < 400 || status > 599) {
+    throw new Error("Client v1 error responses must use a 4xx or 5xx HTTP status.");
+  }
+}
+
+export function httpStatusForClientV1ErrorCode(code: ClientV1ErrorCode): number {
+  switch (code) {
+    case "invalid_request":
+      return 400;
+    case "unauthorized":
+      return 401;
+    case "scope_denied":
+      return 403;
+    case "pairing_denied":
+      return 403;
+    case "not_found":
+      return 404;
+    case "pairing_expired":
+      return 410;
+    case "conflict":
+      return 409;
+    case "pairing_pending":
+      return 409;
+    case "reconcile_required":
+      return 409;
+    case "incompatible_version":
+      return 426;
+    case "rate_limited":
+      return 429;
+    case "internal_error":
+      return 500;
+    case "service_unavailable":
+      return 503;
+  }
+}
+
+export function clientV1Success<TData extends ClientV1Record>(
+  data: TData,
+  options: ClientV1EnvelopeOptions = {},
+): ClientV1SuccessEnvelope<TData> {
+  return {
+    ...envelopeBase(options),
+    data: requiredRecord(data, "response data") as TData,
+  };
+}
+
+export function clientV1Error(
+  code: ClientV1ErrorCode,
+  message: string,
+  options: Omit<ClientV1ErrorResponseOptions, "status"> = {},
+): ClientV1ErrorEnvelope {
+  const details = options.details === undefined ? undefined : parseClientV1ErrorDetails(options.details);
+  return {
+    ...envelopeBase(options),
+    error: {
+      code: requireErrorCode(code),
+      message: requiredErrorMessage(message),
+      ...(details ? { details } : {}),
+      retryable: options.retryable === true,
+    },
+  };
+}
+
+export function clientV1SuccessResponse<TData extends ClientV1Record>(
+  data: TData,
+  options: ClientV1SuccessResponseOptions = {},
+): Response {
+  const status = options.status ?? 200;
+  assertSuccessStatus(status);
+  return Response.json(clientV1Success(data, options), { status });
+}
+
+export function clientV1ErrorResponse(
+  code: ClientV1ErrorCode,
+  message: string,
+  options: ClientV1ErrorResponseOptions = {},
+): Response {
+  const status = options.status ?? httpStatusForClientV1ErrorCode(code);
+  assertErrorStatus(status);
+  return Response.json(clientV1Error(code, message, options), { status });
+}
+
+export function clientV1OperationInProgressError(operation: string): ClientV1ErrorEnvelope {
+  return clientV1Error("conflict", "The operation is already in progress.", {
+    details: {
+      operation,
+      reason: "operation_in_progress",
+    },
+    retryable: true,
+  });
+}

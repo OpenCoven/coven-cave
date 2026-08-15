@@ -84,3 +84,18 @@ test("iOS sources and generators request the macOS build", () => {
     assert.equal(classifyCiPaths([path]).ios, true, path);
   }
 });
+
+test("public client v1 changes run Cave API, E2E, and documentation validation", () => {
+  for (const file of [
+    "src/lib/server/client-v1/contract.ts",
+    "src/lib/server/client-v1/contract-fixture.json",
+    "scripts/export-client-v1-contract.mjs",
+    "src/app/api/client/v1/health/route.ts",
+    "docs/api/client-v1.md",
+  ]) {
+    const paths = classifyCiPaths([file]);
+    assert.equal(paths.frontend, true, `${file} must run Cave API validation`);
+    assert.equal(paths.e2e, true, `${file} must run E2E validation`);
+    assert.equal(paths.docs, true, `${file} must run documentation validation`);
+  }
+});
