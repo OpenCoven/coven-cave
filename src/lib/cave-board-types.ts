@@ -83,6 +83,15 @@ export type TaskNextStep = {
   updatedAt: string;
 };
 
+export type TaskOrchestrationAuditEntry = {
+  taskId: string;
+  resolvedDependencyId: string;
+  previousNextStep: TaskNextStep | null;
+  nextStep: TaskNextStep | null;
+  at: string;
+  actor: string;
+};
+
 /** Derived on read from dependencies + primary blocker + next step. Never stored. */
 export type TaskReadiness = "ready" | "waiting" | "incomplete" | "cyclic";
 
@@ -221,6 +230,8 @@ export type Card = {
   /** Freezes the operator's choice so promotion never moves it. */
   primaryBlockerPinned?: boolean;
   nextStep?: TaskNextStep | null;
+  /** Append-only explanation of automatic primary-blocker promotions. */
+  orchestrationAudit?: TaskOrchestrationAuditEntry[];
   /** Files carried in from the composer when the card was created. Stored lean:
    * metadata + inlined text, but image `dataUrl`/`mimeType` are stripped so the
    * board JSON doesn't bloat with base64 payloads. Absent when none were staged. */

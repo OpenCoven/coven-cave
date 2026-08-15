@@ -143,24 +143,336 @@ await assert.rejects(
 
 await assert.rejects(
   board.updateCard(blocked.id, {
-    dependencies: [{ ...blocker, state: "resolved", evidence: "Decision recorded" }],
-  }),
-  (error) => {
-    const codes = errorCodes(error);
-    assert.ok(codes.includes("blocked_requires_dependency"));
-    assert.ok(codes.includes("blocked_requires_primary"));
-    return true;
-  },
-);
-
-await assert.rejects(
-  board.updateCard(blocked.id, {
     nextStep: { ...humanNextStep, summary: "  " },
   }),
   (error) => {
     assert.ok(errorCodes(error).includes("blocked_requires_next_step"));
     return true;
   },
+);
+
+const resolvedHumanBlocker = {
+  ...blocker,
+  state: "resolved" as const,
+  resolvedAt: new Date().toISOString(),
+  resolvedBy: "cody",
+  evidence: "Maintainer chose the implementation",
+};
+const readyBlocked = await board.updateCard(
+  blocked.id,
+  { dependencies: [resolvedHumanBlocker] },
+  { actor: "cody" },
+);
+assert.ok(readyBlocked);
+assert.equal(readyBlocked.status, "blocked", "resolution does not move the card out of Blocked");
+assert.equal(readyBlocked.primaryBlockerId, null, "the resolved final primary is cleared");
+assert.deepEqual(readyBlocked.nextStep, humanNextStep, "a human-authored next step is preserved");
+assert.equal(orchestration.deriveReadiness(readyBlocked, (await board.loadBoard()).cards), "ready");
+assert.deepEqual(readyBlocked.orchestrationAudit, [{
+  taskId: blocked.id,
+  resolvedDependencyId: blocker.id,
+  previousNextStep: humanNextStep,
+  nextStep: humanNextStep,
+  at: readyBlocked.updatedAt,
+  actor: "cody",
+}]);
+
+const settledUpdatedAt = readyBlocked.updatedAt;
+const repeatedResolution = await board.updateCard(
+  blocked.id,
+  { dependencies: [resolvedHumanBlocker] },
+  { actor: "cody" },
+);
+assert.equal(repeatedResolution?.updatedAt, settledUpdatedAt, "repeat resolution is a storage no-op");
+assert.equal(repeatedResolution?.orchestrationAudit?.length, 1, "repeat resolution does not duplicate audit");
+
+await new Promise((resolve) => setTimeout(resolve, 2));
+const reorderedRepeat = await board.updateCard(
+  blocked.id,
+  {
+    dependencies: [{
+      evidence: resolvedHumanBlocker.evidence,
+      resolvedBy: resolvedHumanBlocker.resolvedBy,
+      resolvedAt: "2099-01-01T00:00:00.000Z",
+      createdAt: resolvedHumanBlocker.createdAt,
+      origin: resolvedHumanBlocker.origin,
+      state: resolvedHumanBlocker.state,
+      label: resolvedHumanBlocker.label,
+      kind: resolvedHumanBlocker.kind,
+      id: resolvedHumanBlocker.id,
+    }],
+  },
+  { actor: "cody" },
+);
+assert.equal(
+  reorderedRepeat?.updatedAt,
+  settledUpdatedAt,
+  "repeat resolution ignores regenerated resolution timestamps and property order",
+);
+assert.equal(reorderedRepeat?.orchestrationAudit?.length, 1);
+
+const editedReadyBlocked = await board.updateCard(blocked.id, {
+  notes: "Ready for an explicit move out of Blocked",
+});
+assert.equal(editedReadyBlocked?.notes, "Ready for an explicit move out of Blocked");
+assert.equal(
+  orchestration.deriveReadiness(editedReadyBlocked, (await board.loadBoard()).cards),
+  "ready",
+  "a persisted ready-blocked card remains editable",
+);
+
+const primaryDependency = {
+  id: "system-primary",
+  kind: "service" as const,
+  label: "Restore the build service",
+  ref: "svc:build",
+  state: "unresolved" as const,
+  origin: "system" as const,
+  createdAt: now,
+};
+const secondaryDependency = {
+  id: "system-secondary",
+  kind: "github" as const,
+  label: "Merge the follow-up pull request",
+  ref: "OpenCoven/coven-cave#9999",
+  state: "unresolved" as const,
+  origin: "system" as const,
+  createdAt: now,
+};
+const systemNextStep = {
+  summary: primaryDependency.label,
+  requiresApproval: false,
+  origin: "system" as const,
+  updatedAt: now,
+};
+const promotable = await board.createCard({
+  title: "Promote blockers deterministically",
+  status: "blocked",
+  dependencies: [primaryDependency, secondaryDependency],
+  primaryBlockerId: primaryDependency.id,
+  nextStep: systemNextStep,
+});
+const promoted = await board.updateCard(
+  promotable.id,
+  {
+    dependencies: [
+      {
+        ...primaryDependency,
+        state: "resolved",
+        resolvedAt: new Date().toISOString(),
+        resolvedBy: "cody",
+        evidence: "Build service health check passed",
+      },
+      secondaryDependency,
+    ],
+  },
+  { automated: true, actor: "cody" },
+);
+assert.ok(promoted);
+assert.equal(promoted.primaryBlockerId, secondaryDependency.id, "array order chooses the next primary");
+assert.equal(promoted.nextStep?.summary, secondaryDependency.label, "the derived next step follows the promoted blocker");
+assert.equal(promoted.nextStep?.origin, "system");
+assert.deepEqual(promoted.orchestrationAudit?.[0], {
+  taskId: promotable.id,
+  resolvedDependencyId: primaryDependency.id,
+  previousNextStep: systemNextStep,
+  nextStep: promoted.nextStep,
+  at: promoted.updatedAt,
+  actor: "cody",
+});
+
+const pinnedPromotion = await board.createCard({
+  title: "Pinned primary stays operator-controlled",
+  status: "blocked",
+  dependencies: [
+    { ...primaryDependency, id: "pinned-promotion-primary" },
+    { ...secondaryDependency, id: "pinned-promotion-secondary" },
+  ],
+  primaryBlockerId: "pinned-promotion-primary",
+  primaryBlockerPinned: true,
+  nextStep: systemNextStep,
+});
+await assert.rejects(
+  board.updateCard(pinnedPromotion.id, {
+    dependencies: [
+      {
+        ...primaryDependency,
+        id: "pinned-promotion-primary",
+        state: "resolved",
+        resolvedAt: new Date().toISOString(),
+        evidence: "Operator resolved the service",
+      },
+      { ...secondaryDependency, id: "pinned-promotion-secondary" },
+    ],
+  }),
+  (error) => {
+    assert.ok(errorCodes(error).includes("blocked_requires_primary"));
+    return true;
+  },
+);
+const stillPinned = (await board.loadBoard()).cards.find((card) => card.id === pinnedPromotion.id);
+assert.equal(stillPinned?.primaryBlockerId, "pinned-promotion-primary");
+assert.equal(stillPinned?.dependencies?.[0]?.state, "unresolved", "a rejected pinned resolution is not saved");
+assert.equal(stillPinned?.orchestrationAudit?.length, 0);
+
+const deletedUpstream = await board.createCard({ title: "Upstream task to delete" });
+const taskDependency = {
+  id: "deleted-task-dependency",
+  kind: "task" as const,
+  label: "Finish the upstream task",
+  taskId: deletedUpstream.id,
+  state: "unresolved" as const,
+  origin: "human" as const,
+  createdAt: now,
+};
+const dependent = await board.createCard({
+  title: "Repair references after deletion",
+  status: "blocked",
+  dependencies: [taskDependency, secondaryDependency],
+  primaryBlockerId: taskDependency.id,
+  nextStep: {
+    summary: taskDependency.label,
+    requiresApproval: false,
+    origin: "system",
+    updatedAt: now,
+  },
+});
+assert.equal(await board.deleteCard(deletedUpstream.id, { actor: "cody" }), "deleted");
+const repairedDependent = (await board.loadBoard()).cards.find((card) => card.id === dependent.id);
+assert.ok(repairedDependent);
+assert.equal(
+  repairedDependent.dependencies?.some(
+    (dependency) => dependency.kind === "task" && dependency.taskId === deletedUpstream.id,
+  ),
+  false,
+  "deletion leaves no dangling task edge",
+);
+assert.equal(repairedDependent.primaryBlockerId, secondaryDependency.id);
+assert.equal(repairedDependent.nextStep?.summary, secondaryDependency.label);
+assert.equal(repairedDependent.orchestrationAudit?.at(-1)?.resolvedDependencyId, taskDependency.id);
+assert.equal(repairedDependent.orchestrationAudit?.at(-1)?.actor, "cody");
+
+const soleUpstream = await board.createCard({ title: "Only upstream task" });
+const soleDependency = {
+  ...taskDependency,
+  id: "sole-task-dependency",
+  taskId: soleUpstream.id,
+};
+const soleDependent = await board.createCard({
+  title: "Stay blocked for explicit unblocking",
+  status: "blocked",
+  dependencies: [soleDependency],
+  primaryBlockerId: soleDependency.id,
+  nextStep: {
+    summary: soleDependency.label,
+    requiresApproval: false,
+    origin: "system",
+    updatedAt: now,
+  },
+});
+assert.equal(await board.deleteCard(soleUpstream.id, { actor: "cody" }), "deleted");
+const readyAfterDelete = (await board.loadBoard()).cards.find((card) => card.id === soleDependent.id);
+assert.ok(readyAfterDelete);
+assert.equal(readyAfterDelete.status, "blocked");
+assert.equal(readyAfterDelete.primaryBlockerId, null);
+assert.equal(orchestration.deriveReadiness(readyAfterDelete, (await board.loadBoard()).cards), "ready");
+assert.equal(
+  readyAfterDelete.dependencies?.some(
+    (dependency) => dependency.kind === "task" && dependency.taskId === soleUpstream.id,
+  ),
+  false,
+);
+assert.deepEqual(
+  orchestration.repairRecommendations(readyAfterDelete, (await board.loadBoard()).cards)
+    .map((recommendation) => recommendation.code),
+  ["blocked_requires_dependency"],
+  "ready-blocked cards recommend unblocking without asking for a new next step",
+);
+
+const legacyUpstream = await board.createCard({ title: "Legacy upstream task" });
+const legacyDependentBase = await board.createCard({ title: "Legacy dependent task" });
+const beforeLegacySeed = await board.loadBoard();
+await board.saveBoard({
+  version: beforeLegacySeed.version,
+  cards: beforeLegacySeed.cards.map((card) =>
+    card.id === legacyDependentBase.id
+      ? {
+          ...card,
+          status: "blocked",
+          lifecycle: "failed",
+          dependencies: [
+            {
+              ...taskDependency,
+              id: "legacy-task-dependency",
+              taskId: legacyUpstream.id,
+            },
+            {
+              ...secondaryDependency,
+              id: "legacy-resolved-without-evidence",
+              state: "resolved",
+            },
+          ],
+          primaryBlockerId: null,
+          nextStep: null,
+        }
+      : card),
+});
+assert.equal(
+  await board.deleteCard(legacyUpstream.id, { actor: "cody" }),
+  "deleted",
+  "pre-existing legacy errors do not block dangling-edge cleanup",
+);
+const repairedLegacy = (await board.loadBoard()).cards.find(
+  (card) => card.id === legacyDependentBase.id,
+);
+assert.equal(
+  repairedLegacy?.dependencies?.some(
+    (dependency) => dependency.kind === "task" && dependency.taskId === legacyUpstream.id,
+  ),
+  false,
+);
+
+const malformedUpstream = await board.createCard({ title: "Malformed dependency upstream" });
+const malformedObjectCard = await board.createCard({ title: "Non-array legacy dependencies" });
+const malformedEntryCard = await board.createCard({ title: "Mixed legacy dependencies" });
+const beforeMalformedSeed = await board.loadBoard();
+await board.saveBoard({
+  version: beforeMalformedSeed.version,
+  cards: beforeMalformedSeed.cards.map((card) => {
+    if (card.id === malformedObjectCard.id) {
+      return { ...card, dependencies: { broken: true } as never };
+    }
+    if (card.id === malformedEntryCard.id) {
+      return {
+        ...card,
+        dependencies: [
+          null,
+          {
+            ...taskDependency,
+            id: "mixed-legacy-task-dependency",
+            taskId: malformedUpstream.id,
+          },
+        ] as never,
+      };
+    }
+    return card;
+  }),
+});
+assert.equal(
+  await board.deleteCard(malformedUpstream.id, { actor: "cody" }),
+  "deleted",
+  "malformed legacy dependency payloads cannot crash deletion",
+);
+const repairedMalformed = (await board.loadBoard()).cards.find(
+  (card) => card.id === malformedEntryCard.id,
+);
+assert.equal(
+  Array.isArray(repairedMalformed?.dependencies) &&
+    repairedMalformed.dependencies.some(
+      (dependency) =>
+        dependency?.kind === "task" && dependency.taskId === malformedUpstream.id,
+    ),
+  false,
 );
 
 const enhanceTarget = await board.createCard({ title: "Enhance target" });

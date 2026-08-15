@@ -300,6 +300,8 @@ export type OrchestrationContext = {
   previous?: Card | null;
   /** True when the writer is automation (Enhance or a system transition). */
   automated?: boolean;
+  /** Internal resolution transaction that leaves a ready card in Blocked for explicit unblocking. */
+  allowReadyBlocked?: boolean;
 };
 
 export class OrchestrationValidationError extends Error {
@@ -460,7 +462,20 @@ export function validateOrchestration(
   // I1 — the blocked triple. Legacy cards are read-only-tolerated (I8); this is
   // the write path, so the contract is strict here.
   if (card.status === "blocked") {
-    if (unresolved.length === 0) {
+    const readyBlocked =
+      deps.length > 0 &&
+      unresolved.length === 0 &&
+      card.primaryBlockerId == null &&
+      (
+        ctx.allowReadyBlocked === true ||
+        (
+          ctx.previous?.status === "blocked" &&
+          dependenciesOf(ctx.previous).length > 0 &&
+          unresolvedOf(ctx.previous).length === 0 &&
+          ctx.previous.primaryBlockerId == null
+        )
+      );
+    if (unresolved.length === 0 && !readyBlocked) {
       errors.push({
         code: "blocked_requires_dependency",
         field: "dependencies",
@@ -469,7 +484,10 @@ export function validateOrchestration(
     }
 
     const primary = deps.find((dep) => dep.id === card.primaryBlockerId);
-    if (!isNonEmpty(card.primaryBlockerId) || !primary) {
+    if (readyBlocked) {
+      // Resolution deliberately does not move the card. Readiness becomes
+      // `ready`, and the operator gets an explicit unblocking recommendation.
+    } else if (!isNonEmpty(card.primaryBlockerId) || !primary) {
       if (unresolved.length > 0) {
         errors.push({
           code: "blocked_requires_primary",
@@ -486,7 +504,7 @@ export function validateOrchestration(
       });
     }
 
-    if (!isValidNextStep(card.nextStep)) {
+    if (!readyBlocked && !isValidNextStep(card.nextStep)) {
       errors.push({
         code: "blocked_requires_next_step",
         field: "nextStep",
@@ -548,6 +566,11 @@ export function deriveReadiness(
 
   const unresolved = unresolvedOf(card);
   if (card.status === "blocked") {
+    if (unresolved.length === 0) {
+      return dependenciesOf(card).length > 0 && card.primaryBlockerId == null
+        ? "ready"
+        : "incomplete";
+    }
     const primary = dependenciesOf(card).find((dep) => dep.id === card.primaryBlockerId);
     const complete =
       unresolved.length > 0 && primary?.state === "unresolved" && isValidNextStep(card.nextStep);
@@ -610,7 +633,7 @@ export function repairRecommendations(
       }
     }
 
-    if (!isValidNextStep(card.nextStep)) {
+    if ((unresolved.length > 0 || deps.length === 0) && !isValidNextStep(card.nextStep)) {
       out.push({
         code: "blocked_requires_next_step",
         field: "nextStep",

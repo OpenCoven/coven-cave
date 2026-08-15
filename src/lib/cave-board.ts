@@ -14,6 +14,7 @@ import {
   type CardStatus,
   type TaskDependency,
   type TaskNextStep,
+  type TaskOrchestrationAuditEntry,
 } from "@/lib/cave-board-types";
 import {
   mergeLinksWithGitHub,
@@ -35,7 +36,10 @@ import {
 } from "@/lib/chat-attachments";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { assertValidOrchestration } from "@/lib/task-orchestration";
+import {
+  assertValidOrchestration,
+  validateOrchestration,
+} from "@/lib/task-orchestration";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -52,6 +56,7 @@ export {
   type CardStatus,
   type TaskDependency,
   type TaskNextStep,
+  type TaskOrchestrationAuditEntry,
 } from "@/lib/cave-board-types";
 export { OrchestrationValidationError } from "@/lib/task-orchestration";
 
@@ -283,6 +288,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     primaryBlockerPinned:
       typeof c.primaryBlockerPinned === "boolean" ? c.primaryBlockerPinned : false,
     nextStep: c.nextStep ?? null,
+    orchestrationAudit: Array.isArray(c.orchestrationAudit) ? c.orchestrationAudit : [],
   } as Card;
 }
 
@@ -436,6 +442,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     primaryBlockerPinned:
       input.primaryBlockerPinned === undefined ? false : input.primaryBlockerPinned,
     nextStep: input.nextStep ?? null,
+    orchestrationAudit: [],
   };
   if (card.nextStep?.requiresApproval) card.needsHuman = true;
   const attachments = boardAttachments(input.attachments);
@@ -447,10 +454,176 @@ export async function createCard(input: NewCardInput): Promise<Card> {
   });
 }
 
+function resolutionActor(
+  options: { automated?: boolean; actor?: string },
+  dependency?: TaskDependency,
+): string {
+  return (
+    options.actor?.trim() ||
+    dependency?.resolvedBy?.trim() ||
+    (options.automated ? "system" : "human")
+  );
+}
+
+function nextStepForDependency(dependency: TaskDependency, now: string): TaskNextStep {
+  const target = dependency.url ?? dependency.ref ?? dependency.taskId;
+  return {
+    summary: dependency.label,
+    ...(target ? { target } : {}),
+    requiresApproval: dependency.kind === "human" || dependency.kind === "credential",
+    origin: "system",
+    updatedAt: now,
+  };
+}
+
+function appendPromotionAudit(
+  card: Card,
+  resolvedDependencyId: string,
+  previousNextStep: TaskNextStep | null,
+  nextStep: TaskNextStep | null,
+  now: string,
+  actor: string,
+): void {
+  const entry: TaskOrchestrationAuditEntry = {
+    taskId: card.id,
+    resolvedDependencyId,
+    previousNextStep,
+    nextStep,
+    at: now,
+    actor,
+  };
+  card.orchestrationAudit = [...(card.orchestrationAudit ?? []), entry];
+}
+
+function promoteResolvedPrimary(
+  current: Card,
+  next: Card,
+  patch: Partial<Omit<Card, "id" | "createdAt">>,
+  now: string,
+  options: { automated?: boolean; actor?: string },
+): { promoted: boolean; readyBlocked: boolean } {
+  if (
+    current.primaryBlockerPinned ||
+    !current.primaryBlockerId ||
+    next.primaryBlockerId !== current.primaryBlockerId
+  ) {
+    return { promoted: false, readyBlocked: false };
+  }
+
+  const before = (current.dependencies ?? []).find(
+    (dependency) => dependency.id === current.primaryBlockerId,
+  );
+  const resolved = (next.dependencies ?? []).find(
+    (dependency) => dependency.id === current.primaryBlockerId,
+  );
+  if (
+    before?.state !== "unresolved" ||
+    !resolved ||
+    (resolved.state !== "resolved" && resolved.state !== "waived")
+  ) {
+    return { promoted: false, readyBlocked: false };
+  }
+
+  const promoted = (next.dependencies ?? []).find(
+    (dependency) => dependency.state === "unresolved",
+  );
+  const previousNextStep = current.nextStep ?? null;
+  next.primaryBlockerId = promoted?.id ?? null;
+  if (!("nextStep" in patch)) {
+    next.nextStep =
+      previousNextStep?.origin === "human"
+        ? previousNextStep
+        : promoted
+          ? nextStepForDependency(promoted, now)
+          : null;
+  }
+  appendPromotionAudit(
+    next,
+    resolved.id,
+    previousNextStep,
+    next.nextStep ?? null,
+    now,
+    resolutionActor(options, resolved),
+  );
+  return { promoted: true, readyBlocked: promoted == null };
+}
+
+function isRepeatResolutionNoop(
+  left: Card,
+  right: Card,
+  patch: Partial<Omit<Card, "id" | "createdAt">>,
+): boolean {
+  if (!("dependencies" in patch)) return false;
+  const orchestrationFields = new Set([
+    "dependencies",
+    "primaryBlockerId",
+    "primaryBlockerPinned",
+    "nextStep",
+  ]);
+  if (Object.keys(patch).some((field) => !orchestrationFields.has(field))) return false;
+  const leftDependencies = left.dependencies ?? [];
+  const rightDependencies = right.dependencies ?? [];
+  return (
+    leftDependencies.length === rightDependencies.length &&
+    leftDependencies.every((dependency, index) =>
+      sameDependencyForRepeat(dependency, rightDependencies[index])) &&
+    left.primaryBlockerId === right.primaryBlockerId &&
+    left.primaryBlockerPinned === right.primaryBlockerPinned &&
+    sameNextStepValue(left.nextStep, right.nextStep)
+  );
+}
+
+function sameOptionalValue(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  return (left ?? null) === (right ?? null);
+}
+
+function sameDependencyForRepeat(
+  left: TaskDependency,
+  right: TaskDependency | undefined,
+): boolean {
+  return (
+    right != null &&
+    left.id === right.id &&
+    left.kind === right.kind &&
+    left.label === right.label &&
+    sameOptionalValue(left.taskId, right.taskId) &&
+    sameOptionalValue(left.ref, right.ref) &&
+    sameOptionalValue(left.url, right.url) &&
+    left.state === right.state &&
+    left.origin === right.origin &&
+    left.createdAt === right.createdAt &&
+    sameOptionalValue(left.resolvedBy, right.resolvedBy) &&
+    sameOptionalValue(left.evidence, right.evidence) &&
+    (left.state !== "unresolved" ||
+      sameOptionalValue(left.resolvedAt, right.resolvedAt))
+  );
+}
+
+function sameNextStepValue(
+  left: TaskNextStep | null | undefined,
+  right: TaskNextStep | null | undefined,
+): boolean {
+  if (left == null || right == null) return left == null && right == null;
+  return (
+    left.summary === right.summary &&
+    sameOptionalValue(left.actorFamiliarId, right.actorFamiliarId) &&
+    sameOptionalValue(left.capability, right.capability) &&
+    sameOptionalValue(left.target, right.target) &&
+    (left.inputs?.length ?? 0) === (right.inputs?.length ?? 0) &&
+    (left.inputs ?? []).every((input, index) => input === right.inputs?.[index]) &&
+    left.requiresApproval === right.requiresApproval &&
+    left.origin === right.origin &&
+    left.updatedAt === right.updatedAt
+  );
+}
+
 export async function updateCard(
   id: string,
   patchWithOps: CardPatch,
-  options: { automated?: boolean } = {},
+  options: { automated?: boolean; actor?: string } = {},
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
@@ -547,7 +720,9 @@ export async function updateCard(
         : patch.primaryBlockerPinned
       : current.primaryBlockerPinned ?? false,
     nextStep: "nextStep" in patch ? patch.nextStep ?? null : current.nextStep ?? null,
+    orchestrationAudit: current.orchestrationAudit ?? [],
   };
+  const promotion = promoteResolvedPrimary(current, next, patch, now, options);
   if (statusChanged) next.needsHuman = next.status === "blocked";
   if (next.nextStep?.requiresApproval) next.needsHuman = true;
   if (next.lifecycle === "running" && !next.runningSince) {
@@ -555,10 +730,12 @@ export async function updateCard(
   } else if (next.lifecycle !== "running") {
     delete next.runningSince;
   }
+  if (isRepeatResolutionNoop(current, next, patch)) return current;
   assertValidOrchestration(next, {
     cards: board.cards,
     previous: current,
     automated: options.automated,
+    allowReadyBlocked: promotion.readyBlocked,
   });
   board.cards[idx] = next;
   await saveBoard(board);
@@ -721,6 +898,94 @@ export async function transitionCard(
  *  it. `linked` is refused rather than silently skipped so the caller can say so. */
 export type DeleteCardOutcome = "deleted" | "not-found" | "linked";
 
+function repairDeletedTaskReferences(
+  card: Card,
+  deleted: Card,
+  now: string,
+  actor: string,
+): Card {
+  const rawDependencies = (card as { dependencies?: unknown }).dependencies;
+  if (!Array.isArray(rawDependencies)) return card;
+  const references = rawDependencies.filter(
+    (dependency): dependency is TaskDependency =>
+      dependency != null &&
+      typeof dependency === "object" &&
+      (dependency as { kind?: unknown }).kind === "task" &&
+      (dependency as { taskId?: unknown }).taskId === deleted.id,
+  );
+  if (references.length === 0) return card;
+
+  const removedPrimary = references.find(
+    (dependency) => dependency.id === card.primaryBlockerId,
+  );
+  const dependencies = rawDependencies.map((dependency): TaskDependency => {
+    if (
+      dependency == null ||
+      typeof dependency !== "object" ||
+      (dependency as { kind?: unknown }).kind !== "task" ||
+      (dependency as { taskId?: unknown }).taskId !== deleted.id
+    ) {
+      return dependency as TaskDependency;
+    }
+    return {
+      ...(dependency as TaskDependency),
+      kind: "external",
+      taskId: null,
+      ref: dependency.ref ?? `deleted-task:${deleted.id}`,
+      state: "waived",
+      resolvedAt: now,
+      resolvedBy: actor,
+      evidence: `Referenced task "${deleted.title}" was deleted.`,
+    };
+  });
+  const next: Card = {
+    ...card,
+    dependencies,
+    orchestrationAudit: card.orchestrationAudit ?? [],
+    updatedAt: now,
+  };
+
+  if (removedPrimary) {
+    const promoted = dependencies.find((dependency) => dependency.state === "unresolved");
+    const previousNextStep = card.nextStep ?? null;
+    next.primaryBlockerId = promoted?.id ?? null;
+    next.primaryBlockerPinned = false;
+    next.nextStep =
+      previousNextStep?.origin === "human"
+        ? previousNextStep
+        : promoted
+          ? nextStepForDependency(promoted, now)
+          : null;
+    appendPromotionAudit(
+      next,
+      removedPrimary.id,
+      previousNextStep,
+      next.nextStep ?? null,
+      now,
+      actor,
+    );
+  }
+
+  return next;
+}
+
+function hasOnlySettledDependencies(card: Card): boolean {
+  const raw = (card as { dependencies?: unknown }).dependencies;
+  return (
+    Array.isArray(raw) &&
+    raw.length > 0 &&
+    raw.every(
+      (dependency) =>
+        dependency != null &&
+        typeof dependency === "object" &&
+        (
+          (dependency as { state?: unknown }).state === "resolved" ||
+          (dependency as { state?: unknown }).state === "waived"
+        ),
+    )
+  );
+}
+
 /**
  * Delete a card.
  *
@@ -732,14 +997,41 @@ export type DeleteCardOutcome = "deleted" | "not-found" | "linked";
  */
 export async function deleteCard(
   id: string,
-  options: { allowLinked?: boolean } = {},
+  options: { allowLinked?: boolean; actor?: string } = {},
 ): Promise<DeleteCardOutcome> {
   return withBoardLock(async () => {
   const board = await loadBoard();
   const card = board.cards.find((c) => c.id === id);
   if (!card) return "not-found";
   if (card.beadRef && !options.allowLinked) return "linked";
-  board.cards = board.cards.filter((c) => c.id !== id);
+  const now = new Date().toISOString();
+  const actor = options.actor?.trim() || "human";
+  const remaining = board.cards.filter((candidate) => candidate.id !== id);
+  const repaired = remaining.map((candidate) =>
+    repairDeletedTaskReferences(candidate, card, now, actor));
+  for (let index = 0; index < repaired.length; index += 1) {
+    const next = repaired[index];
+    const previous = remaining[index];
+    if (next === previous) continue;
+    const previousErrors = validateOrchestration(previous, {
+      cards: board.cards,
+      allowReadyBlocked:
+        previous.status === "blocked" &&
+        hasOnlySettledDependencies(previous) &&
+        previous.primaryBlockerId == null,
+    });
+    if (previousErrors.length === 0) {
+      assertValidOrchestration(next, {
+        cards: repaired,
+        previous,
+        allowReadyBlocked:
+          next.status === "blocked" &&
+          hasOnlySettledDependencies(next) &&
+          next.primaryBlockerId == null,
+      });
+    }
+  }
+  board.cards = repaired;
   await saveBoard(board);
   return "deleted";
   });
