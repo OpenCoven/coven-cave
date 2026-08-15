@@ -54,10 +54,6 @@ import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
-import {
-  shouldApplyStartupOnboardingBootstrap,
-  type OnboardingBootstrapStatusPayload,
-} from "@/lib/onboarding-gate";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
@@ -823,15 +819,13 @@ export function Workspace() {
   const activeChatSessionIdRef = useRef<string | null>(null);
   activeChatSessionIdRef.current = activeChatSessionId;
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [onboardingResolved, setOnboardingResolved] = useState(false);
-  const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
+  const onboardingResolved = true;
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
   // Server-owned bootstrap progress persists independently; keeping the host
   // mounted makes close/reopen cheap and retains local focus/announcement refs.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
-  const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
@@ -1159,8 +1153,6 @@ export function Workspace() {
   // for adding to an existing roster without re-running setup.
   useEffect(() => {
     const openCreate = () => {
-      manualOnboardingOpenedRef.current = true;
-      setAutoFinishOnboarding(false);
       setOnboardingOpen(true);
     };
     window.addEventListener("cave:onboarding-open", openCreate);
@@ -1848,8 +1840,6 @@ export function Workspace() {
   }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
   const openOnboarding = useCallback(() => {
-    manualOnboardingOpenedRef.current = true;
-    setAutoFinishOnboarding(false);
     setOnboardingOpen(true);
   }, []);
   const closeOnboarding = useCallback(() => {
@@ -1881,40 +1871,6 @@ export function Workspace() {
     clearPendingFirstProjectAccessSnapshot();
     setPendingFirstProjectGrant(null);
   }, [canReconcilePendingFirstProjectGrant, pendingFirstProjectGrant, reconciledPendingFirstProjectGrant]);
-
-  // First-run uses the staged bootstrap state instead of the legacy technical
-  // readiness checklist. A confirmed interrupted job always resumes; before
-  // confirmation the existing dismissal flag still suppresses auto-open.
-  useEffect(() => {
-    let cancelled = false;
-    const skipped =
-      typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
-    void (async () => {
-      try {
-        const res = await fetch("/api/onboarding/bootstrap", { cache: "no-store" });
-        if (!res.ok || cancelled) return;
-        const json = (await res.json()) as OnboardingBootstrapStatusPayload;
-        if (
-          shouldApplyStartupOnboardingBootstrap({
-            status: json,
-            cancelled,
-            manuallyOpened: manualOnboardingOpenedRef.current,
-          }) &&
-          (!skipped || json.confirmed === true)
-        ) {
-          setAutoFinishOnboarding(true);
-          setOnboardingOpen(true);
-        }
-      } catch {
-        /* ignore — the daemon-offline banner surfaces transport issues */
-      } finally {
-        if (!cancelled) setOnboardingResolved(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -3904,10 +3860,8 @@ export function Workspace() {
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
-          autoFinishWhenComplete={autoFinishOnboarding}
           open={onboardingOpen}
           onDismiss={() => {
-            setAutoFinishOnboarding(false);
             setOnboardingMounted(true);
             closeOnboarding();
           }}
