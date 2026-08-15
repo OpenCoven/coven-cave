@@ -38,8 +38,8 @@ type RunBuffer = {
   tailListeners: Set<(event: BufferedStreamEvent) => void>;
   finishListeners: Set<() => void>;
   reapTimer: NodeJS.Timeout | null;
-  /** The first (and only) terminal-kind (`done`/`error`) entry ever recorded
-   *  — real or synthesized. Once set it is never replaced: it is what makes
+  /** The first (and only) terminal (`done`/terminal-error) entry ever
+   *  recorded — real or synthesized. Once set it is never replaced: it is what makes
    *  `ensureTerminalFailure` idempotent across concurrent callers. */
   terminalEntry: BufferedStreamEvent | null;
   /** Whether the assistant state immediately before the retained ring can be
@@ -57,6 +57,7 @@ const OVERSIZED_EVENT: StreamEvent = {
   kind: "error",
   code: "stream_event_too_large",
   message: "The run failed.",
+  terminal: true,
 };
 // A finished run lingers briefly so a phone that reconnects moments after the
 // turn ended still drains the tail from the buffer; after this, resync from
@@ -71,11 +72,11 @@ const buffers = new Map<string, RunBuffer>();
 const SYNTHETIC_TERMINAL_FAILURE_CODE = "upstream_disconnected";
 
 function isTerminalStreamEvent(event: StreamEvent): boolean {
-  return event.kind === "done" || event.kind === "error";
+  return event.kind === "done" || (event.kind === "error" && event.terminal === true);
 }
 
 function syntheticTerminalFailureEvent(code: string): StreamEvent {
-  return { kind: "error", code, message: "The run failed." };
+  return { kind: "error", code, message: "The run failed.", terminal: true };
 }
 
 /**
@@ -156,13 +157,12 @@ function appendToRing(buffer: RunBuffer, event: StreamEvent): BufferedStreamEven
 
 function recordCanonicalRunStreamEvent(buffer: RunBuffer, event: StreamEvent): number | undefined {
   // Once the canonical history already carries a terminal event — real
-  // or synthetic, whether or not `finish()` has run yet — every later
-  // event (another terminal from a racing producer, or ordinary
-  // nonterminal chatter that arrives after) is rejected outright: no
-  // seq is consumed, no bytes are added, no listener fires. This is
-  // what keeps "exactly one terminal, ever" true even in the window
-  // between a real `done`/`error` landing and `finish()` closing the
-  // buffer, not just after `finish()`.
+  // `done` or synthetic terminal error, whether or not `finish()` has run
+  // yet — every later event (another terminal from a racing producer, or
+  // ordinary nonterminal chatter that arrives after) is rejected outright:
+  // no seq is consumed, no bytes are added, no listener fires. Diagnostic
+  // errors deliberately remain nonterminal so their required error `done`
+  // can be recorded.
   if (buffer.done || buffer.terminalEntry) return undefined;
   return appendCanonicalToRing(buffer, event).seq;
 }
@@ -192,7 +192,7 @@ function finalizeBuffer(buffer: RunBuffer): void {
  * this buffer will ever carry; every other caller (a concurrently attached
  * live tail, a later resume, or the real producer's own `finish()`) sees
  * that same entry rather than appending a second one. A buffer that already
- * has a real terminal (`done`/`error`) recorded — or a previously
+ * has a real terminal (`done`/terminal-error) recorded — or a previously
  * synthesized one — is never touched again, and a buffer already marked
  * done is returned as-is (never re-finalized).
  */
@@ -227,8 +227,8 @@ export type RunBufferHandle = {
   /** Records the event and returns its seq — the SSE `id:` the original
    *  stream emits so any client holds a valid resume cursor. Returns
    *  `undefined` when the event was ignored instead of appended: the buffer
-   *  is already done, or a terminal (`done`/`error`) was already recorded
-   *  (real or synthetic) and this canonical history is closed. `seq` is
+   *  is already done, or a terminal (`done`/terminal-error) was already
+   *  recorded (real or synthetic) and this canonical history is closed. `seq` is
    *  never assigned and `bytes` never grows for an ignored event — the
    *  producer can check for `undefined` to learn its event never landed
    *  (e.g. to stop emitting further chunks), but every existing caller that
@@ -321,7 +321,7 @@ export function openRunBuffer(
     },
     finish: () => {
       // Every closure path (normal completion, abort, upstream error) lands
-      // here — if the producer never recorded a terminal (`done`/`error`)
+      // here — if the producer never recorded a terminal (`done`/terminal-error)
       // event, a truncated run would otherwise mark the buffer done with no
       // way for any subscriber, live or resumed, to learn it ended. Route
       // through the same atomic helper a consumer-side discovery would use

@@ -41,7 +41,14 @@ export type StreamEvent =
       costUsd?: number;
       responseMetadata?: ChatResponseMetadata;
     }
-  | { kind: "error"; message: string; code?: string };
+  | {
+      kind: "error";
+      message: string;
+      code?: string;
+      /** Only buffer-synthesized failures terminate the canonical stream.
+       * Producer diagnostics remain replayable until their required `done`. */
+      terminal?: true;
+    };
 
 /** Discriminator literal for every {@link StreamEvent} variant. */
 export type StreamEventKind = StreamEvent["kind"];

@@ -69,9 +69,15 @@ test("an oversized synchronous Gateway callback terminates the canonical run and
       kind: "error",
       code: "stream_event_too_large",
       message: "The run failed.",
+      terminal: true,
     },
     seq: 1,
   }], "the replacement is the sole emitted terminal and later callbacks are rejected");
+  assert.equal(
+    run.record({ kind: "done", isError: true }),
+    undefined,
+    "a synthesized terminal error rejects the producer's later done",
+  );
   const resumed = subscribeRunStream("gateway-sync-oversized", 0, () => {}, () => {});
   assert.ok(resumed);
   assert.deepEqual(
@@ -96,12 +102,17 @@ test("Gateway launch rejection closes its reserved buffer with one terminal fail
       message: "Cave could not start the OpenClaw Gateway turn.",
     });
     if (recorded) live.push(recorded);
+    const done = canonicalizeAndRecordRunStreamEvent(run, { kind: "done", isError: true });
+    if (done) live.push(done);
     run.finish();
   };
 
   failLaunch();
   const status = getRunBufferStatus("gateway-launch-rejected");
-  assert.deepEqual(live.map(({ seq, event }) => ({ seq, kind: event.kind })), [{ seq: 1, kind: "error" }]);
+  assert.deepEqual(live.map(({ seq, event }) => ({ seq, kind: event.kind })), [
+    { seq: 1, kind: "error" },
+    { seq: 2, kind: "done" },
+  ]);
   assert.equal(status?.done, true, "a rejected launch cannot leave a false live run behind");
   assert.equal(
     canonicalizeAndRecordRunStreamEvent(run, { kind: "assistant_chunk", text: "late callback" }),
@@ -381,6 +392,7 @@ test("oversized raw events are replaced before append and count plus bytes stay 
     kind: "error",
     code: "stream_event_too_large",
     message: "The run failed.",
+    terminal: true,
   });
   assert.doesNotMatch(subscription.replay[0].json, /private|token/);
 
@@ -499,13 +511,64 @@ test("subscriber cancellation detaches only — it never marks the run failed wh
   resetRunBuffersForTest();
 });
 
+test("diagnostic errors remain canonical until their final error done", () => {
+  resetRunBuffersForTest();
+  const handle = openRunBuffer(["run-diagnostic-errors"]);
+
+  const unavailable = handle.record({
+    kind: "error",
+    code: "runtime_unavailable",
+    message: "The runtime is unavailable.",
+  });
+  const retry = handle.record({
+    kind: "error",
+    code: "runtime_probe_failed",
+    message: "The runtime check failed.",
+  });
+  const done = handle.record({ kind: "done", isError: true });
+  handle.finish();
+
+  assert.deepEqual([unavailable, retry, done], [1, 2, 3]);
+  const replay = subscribeRunStream("run-diagnostic-errors", 0, () => {}, () => {});
+  assert.ok(replay?.done);
+  assert.deepEqual(
+    replay!.replay.map((entry) => ({ seq: entry.seq, event: JSON.parse(entry.json) })),
+    [
+      {
+        seq: 1,
+        event: {
+          kind: "error",
+          code: "runtime_unavailable",
+          message: "The runtime is unavailable.",
+        },
+      },
+      {
+        seq: 2,
+        event: {
+          kind: "error",
+          code: "runtime_probe_failed",
+          message: "The runtime check failed.",
+        },
+      },
+      { seq: 3, event: { kind: "done", isError: true } },
+    ],
+    "multiple producer diagnostics remain replayable before the final canonical done",
+  );
+  resetRunBuffersForTest();
+});
+
 test("chunk -> done -> error -> chunk records only the chunk and the done, ignoring everything after the terminal", () => {
   resetRunBuffersForTest();
   const handle = openRunBuffer(["run-post-terminal"]);
 
   const chunkSeq = handle.record({ kind: "assistant_chunk", text: "hi" });
   const doneSeq = handle.record({ kind: "done" });
-  const errorSeq = handle.record({ kind: "error", code: "boom", message: "should never land" });
+  const errorSeq = handle.record({
+    kind: "error",
+    code: "boom",
+    message: "should never land",
+    terminal: true,
+  });
   const ghostChunkSeq = handle.record({ kind: "assistant_chunk", text: "ghost" });
 
   assert.equal(chunkSeq, 1, "the leading nonterminal event is recorded normally");
@@ -560,7 +623,12 @@ test("racing terminal publishes through record() converge on exactly one canonic
   // terminal event back-to-back (e.g. a real `done` immediately followed by
   // a late upstream `error`). Only the first lands.
   const firstSeq = handle.record({ kind: "done" });
-  const secondSeq = handle.record({ kind: "error", code: "late", message: "late upstream error" });
+  const secondSeq = handle.record({
+    kind: "error",
+    code: "late",
+    message: "late upstream error",
+    terminal: true,
+  });
   assert.ok(typeof firstSeq === "number", "the first terminal publish wins and is recorded");
   assert.equal(secondSeq, undefined, "the racing second terminal publish is ignored, not appended");
 

@@ -339,6 +339,7 @@ function buildStreamSamples() {
   const failure = createClientStreamTranslator(context).translate({
     kind: "error",
     code: "service_unavailable",
+    terminal: true,
   }).event;
 
   return {

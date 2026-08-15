@@ -108,8 +108,10 @@ export function createClientStreamTranslator(context: ClientStreamContext) {
         case "tool_use":
           return typeof event.name === "string";
         case "done":
-        case "error":
           terminal = true;
+          return true;
+        case "error":
+          terminal = event.terminal === true;
           return true;
         case "user":
           return typeof event.text === "string";
@@ -191,6 +193,11 @@ export function createClientStreamTranslator(context: ClientStreamContext) {
       };
     }
     case "error":
+      // Direct chat producers emit diagnostic errors before their required
+      // `done { isError: true }`. Client v1 exposes lifecycle failures only
+      // at that terminal done; only explicit buffer-synthesized errors close
+      // this translation themselves.
+      if (event.terminal !== true) return { event: null, terminal: false };
       terminal = true;
       return {
         event: {

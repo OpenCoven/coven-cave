@@ -68,11 +68,17 @@ process.env.CODEX_BIN = pinnedCodex;
 async function readSse(response) {
   assert.equal(response.status, 200, await response.clone().text());
   const body = await response.text();
-  const events = body
-    .split("\n")
-    .filter((line) => line.startsWith("data: "))
-    .map((line) => JSON.parse(line.slice("data: ".length)));
-  return { body, events };
+  const frames = body
+    .split("\n\n")
+    .map((frame) => {
+      const id = frame.match(/^id: (\d+)$/m);
+      const data = frame.match(/^data: (.+)$/m);
+      return data
+        ? { id: id ? Number(id[1]) : null, event: JSON.parse(data[1]) }
+        : null;
+    })
+    .filter(Boolean);
+  return { body, events: frames.map((frame) => frame.event), frames };
 }
 
 function assertNoFabricatedAssistantResponse(body, events) {
@@ -193,7 +199,7 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ familiarId: "opal", prompt: "hello", projectRoot: familiarWorkspace }),
     }));
-    const { body, events } = await readSse(response);
+    const { body, events, frames } = await readSse(response);
 
     const error = events.find((event) => event.kind === "error");
     assert.ok(error, "a missing runner produces a structured error event");
@@ -212,6 +218,18 @@ try {
     const done = events.findLast((event) => event.kind === "done");
     assert.ok(done, "the no-spawn path still completes the stream with a done event");
     assert.equal(done.isError, true, "the done event reports the errored outcome");
+    assert.deepEqual(
+      frames.map((frame) => frame.id),
+      frames.map((_frame, index) => index + 1),
+      "the direct stream preserves the canonical id for every diagnostic and completion frame",
+    );
+    const unavailable = frames.find((frame) => frame.event.kind === "error");
+    const terminal = frames.findLast((frame) => frame.event.kind === "done");
+    assert.ok(unavailable && terminal);
+    assert.ok(
+      terminal.id > unavailable.id,
+      "the runtime-unavailable diagnostic is followed by its required error done",
+    );
     if (done.sessionId) {
       const conversation = await loadConversation(done.sessionId);
       const assistantTurns = (conversation?.turns ?? []).filter(

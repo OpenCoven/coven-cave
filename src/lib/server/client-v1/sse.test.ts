@@ -47,7 +47,12 @@ test("translateStreamEvent is the one typed mapping used by send and resume", ()
     { type: "run.completed", conversationId: context.conversationId },
   );
   assert.deepEqual(
-    translateStreamEvent({ kind: "error", code: "spawn_error", message: "/secret/path" }, context),
+    translateStreamEvent({
+      kind: "error",
+      code: "spawn_error",
+      message: "/secret/path",
+      terminal: true,
+    }, context),
     { type: "run.failed", code: "spawn_error", message: "The run failed." },
   );
   assert.equal(translateStreamEvent({ kind: "user", text: "private prompt" }, context), null);
@@ -59,6 +64,7 @@ test("run failure codes cannot carry paths or diagnostic secrets", () => {
       kind: "error",
       code: "/Users/private/project?token=secret",
       message: "raw diagnostic",
+      terminal: true,
     }, context),
     { type: "run.failed", code: "run_failed", message: "The run failed." },
   );
@@ -219,6 +225,47 @@ test("client-v1 translates synchronous pre-accept Gateway events from their cano
     id: 2,
     payload: { type: "run.completed", conversationId: context.conversationId },
   }]);
+  resetRunBuffersForTest();
+});
+
+test("client-v1 defers diagnostic errors to their final error done across initial and resumed streams", async () => {
+  resetRunBuffersForTest();
+  const key = "client-v1-runtime-unavailable";
+  const events = [
+    {
+      kind: "error",
+      code: "runtime_unavailable",
+      message: "The requested runtime is unavailable.",
+    },
+    { kind: "done", isError: true },
+  ] as const;
+  const translator = createClientStreamTranslator(context);
+  assert.deepEqual(translator.translate(events[0]), { event: null, terminal: false });
+  assert.deepEqual(
+    translator.translate(events[1]),
+    {
+      event: { type: "run.failed", code: "run_failed", message: "The run failed." },
+      terminal: true,
+    },
+    "the final done, not a diagnostic, closes the client lifecycle",
+  );
+
+  const run = openRunBuffer([key]);
+  for (const event of events) assert.ok(canonicalizeAndRecordRunStreamEvent(run, event));
+  run.finish();
+  const upstream = new Response(
+    events.map((event, index) => `id: ${index + 1}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+  const initial = await translateInitialChatResponse(upstream, context, key).text();
+  const resumed = createResumedRunStream(key, 0, context, new AbortController().signal);
+  assert.ok(resumed);
+  const expected = [{
+    id: 2,
+    payload: { type: "run.failed", code: "run_failed", message: "The run failed." },
+  }];
+  assert.deepEqual(sseFrames(initial), expected);
+  assert.deepEqual(sseFrames(await resumed.text()), expected);
   resetRunBuffersForTest();
 });
 

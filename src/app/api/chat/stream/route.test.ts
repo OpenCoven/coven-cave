@@ -186,6 +186,52 @@ test("an initial user event has the same canonical id and payload live and on re
   resetRunBuffersForTest();
 });
 
+test("runtime diagnostics and their final error done preserve live, replay, and reconnect cursors", async () => {
+  resetRunBuffersForTest();
+  const key = "run-runtime-unavailable";
+  const run = openRunBuffer([key]);
+  const live: Uint8Array[] = [];
+  const events = [
+    {
+      kind: "error",
+      code: "runtime_unavailable",
+      message: "The requested runtime is unavailable.",
+    },
+    {
+      kind: "error",
+      code: "runtime_probe_failed",
+      message: "The runtime probe failed.",
+    },
+    { kind: "done", isError: true },
+  ] as const;
+  for (const event of events) {
+    const recorded = canonicalizeAndRecordRunStreamEvent(run, event);
+    assert.ok(recorded);
+    live.push(chatSse(recorded.event, recorded.seq));
+  }
+  run.finish();
+
+  const expected = [
+    { id: 1, payload: events[0] },
+    { id: 2, payload: events[1] },
+    { id: 3, payload: events[2] },
+  ];
+  assert.deepEqual(
+    rawSseFrames(new TextDecoder().decode(Buffer.concat(live))),
+    expected,
+    "the direct producer emits each diagnostic and its required terminal done with canonical ids",
+  );
+
+  const replay = await GET(new Request(`http://127.0.0.1/api/chat/stream?runId=${key}`));
+  assert.deepEqual(rawSseFrames(await drain(replay)), expected);
+
+  const reconnect = await GET(new Request(
+    `http://127.0.0.1/api/chat/stream?runId=${key}&cursor=1`,
+  ));
+  assert.deepEqual(rawSseFrames(await drain(reconnect)), expected.slice(1));
+  resetRunBuffersForTest();
+});
+
 test("an oversized canonical terminal is the complete identical live and replay sequence", async () => {
   resetRunBuffersForTest();
   const oversized = {
@@ -207,6 +253,7 @@ test("an oversized canonical terminal is the complete identical live and replay 
         kind: "error",
         code: "stream_event_too_large",
         message: "The run failed.",
+        terminal: true,
       },
     },
   ];
