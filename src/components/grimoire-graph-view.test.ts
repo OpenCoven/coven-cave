@@ -166,4 +166,40 @@ assert.match(
   "the truncation count stays honest under a scope — those totals are coven-wide",
 );
 
+// ── Rules of Hooks: nothing may be called after the empty-state early return ─
+// The scoped memory-in-window count shipped BELOW that return, so an empty
+// graph ran one hook fewer than a populated one and React threw "Rendered more
+// hooks than during the previous render" the moment the graph filled or emptied
+// — which a scope change does routinely (cave-qxq4l).
+//
+// Asserted as an ordering and an absence rather than as surrounding text: the
+// contract is "every hook runs on every render", so a future hook added below
+// the return has to fail this too, not just the one that caused the crash.
+// Nothing else covers it — eslint.config.mjs is a design-system-only gate that
+// stubs react-hooks to a no-op, so rules-of-hooks never runs on this repo.
+//
+// GrimoireGraphView is the last top-level function in the file, so everything
+// after the early return is inside its body and a stray hook there is always
+// the bug this guards.
+{
+  const earlyReturn = view.indexOf("if (graph.nodes.length === 0)");
+  assert.ok(earlyReturn > 0, "the empty-state early return still exists");
+
+  const memoized = view.indexOf("scopedMemoryInWindow = useMemo(");
+  assert.ok(memoized > 0, "the scoped memory-in-window count is still memoized");
+  assert.ok(
+    memoized < earlyReturn,
+    "the scoped memory-in-window memo must run before the empty-state early return",
+  );
+
+  const stray = view
+    .slice(earlyReturn)
+    .match(/\buse(?:State|Effect|LayoutEffect|Memo|Callback|Ref|Context|Reducer|ImperativeHandle|Transition|DeferredValue|SyncExternalStore|Id)\s*\(/);
+  assert.equal(
+    stray?.[0] ?? null,
+    null,
+    `no hook may be called after the empty-state early return (found ${stray?.[0] ?? "none"})`,
+  );
+}
+
 console.log("grimoire-graph-view.test.ts: ok");
