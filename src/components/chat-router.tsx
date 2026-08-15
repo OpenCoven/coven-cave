@@ -93,6 +93,7 @@ type Props = {
   /** Route back to the linked board task from the chat header. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   /** Mirror the open chat into the URL hash (`#chat-<sessionId>`) so chats are
    *  deep-linkable and browser Back/Forward navigates list ↔ chat. Only the
    *  main chat surface opts in — the companion-rail ChatRouter must not fight
@@ -169,6 +170,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     pendingProjectRoot,
     onOpenTask,
     onOpenUrl,
+    onOpenPreview,
     syncUrlHash,
     compact = false,
     hideRail = false,
@@ -943,6 +945,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       onOpenOnboarding={onOpenOnboarding}
       onOpenTask={onOpenTask}
       onOpenUrl={onOpenUrl}
+      onOpenPreview={onOpenPreview}
       onProjectRootChange={syncSidebarProjectRoot}
     />
   );
@@ -977,6 +980,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               onSessionsDeleted={onSessionsDeleted}
               onOpenTask={onOpenTask}
               onOpenUrl={onOpenUrl}
+              onOpenPreview={onOpenPreview}
             />
           ),
         },

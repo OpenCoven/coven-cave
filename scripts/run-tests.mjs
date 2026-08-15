@@ -142,6 +142,8 @@ export const SUITES = {
     "src/components/role-surfaces/review-readiness.test.ts",
     "src/components/role-surfaces/review-file-tree.test.ts",
     "src/components/chat-view-render-cap.test.ts",
+    "src/components/chat-preview-card.test.tsx",
+    "src/components/chat-preview-routing.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
     "src/lib/chat-composer-prefs.test.ts",
     "src/lib/model-control-capabilities.test.ts",
@@ -251,6 +253,7 @@ export const SUITES = {
     "src/lib/skill-blocks.test.ts",
     "src/lib/github-blocks.test.ts",
     "src/lib/image-blocks.test.ts",
+    "src/lib/preview-blocks.test.ts",
     "src/lib/chat-attention-marker.test.ts",
     "src/lib/chat-attention-stream.test.ts",
     "src/lib/chat-attention-events.test.ts",
@@ -1992,6 +1995,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/chat-preview-card.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",

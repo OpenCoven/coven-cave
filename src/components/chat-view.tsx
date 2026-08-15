@@ -211,6 +211,7 @@ import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
+import { slicePreviewBlocks } from "@/lib/preview-blocks";
 import { parseSkillInvocation } from "@/lib/skill-blocks";
 import {
   chatTurnVisibleText,
@@ -244,6 +245,7 @@ import {
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { ChatSpecCard } from "@/components/chat-spec-card";
+import { ChatPreviewCard } from "@/components/chat-preview-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -465,6 +467,7 @@ type Props = {
    *  card focused. The link is bidirectional; this is the chat→task side. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   onProjectRootChange?: (projectRoot: string | null) => void;
 };
 
@@ -1914,7 +1917,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -7924,6 +7927,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             expandedAvatarTurnId={expandedAvatarTurnId}
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
             onOpenUrl={onOpenUrl}
+            onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
           />
           {shouldShowChatArchiveNudge({
@@ -8338,6 +8342,7 @@ function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubble
       out.push(seg);
       return;
     }
+
     const pieces = sliceImageBlocks(seg.text);
     if (pieces.length === 1 && pieces[0].kind === "text") {
       // `sliceImageBlocks` also removes a terminal incomplete marker. Preserve
@@ -8358,6 +8363,34 @@ function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubble
     });
   });
   return out;
+}
+
+function splitSegmentsForPreviews(
+  segments: MessageBubbleSegment[],
+  onOpenPreview?: (url: string) => void,
+  onOpenUrl?: (url: string) => void,
+): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return slicePreviewBlocks(segment.text).flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim()
+          ? [{ kind: "text" as const, text: piece.text }]
+          : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `preview-${segmentIndex}-${pieceIndex}-${piece.preview.url}`,
+        node: (
+          <ChatPreviewCard
+            preview={piece.preview}
+            onOpenPreview={onOpenPreview}
+            onOpenUrl={onOpenUrl}
+          />
+        ),
+      }];
+    });
+  });
 }
 
 // ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
@@ -8415,6 +8448,7 @@ const TranscriptRows = memo(function TranscriptRows({
   expandedAvatarTurnId,
   setExpandedAvatarTurnId,
   onOpenUrl,
+  onOpenPreview,
   handlersRef,
 }: {
   groupedTurns: TranscriptGroup[];
@@ -8432,6 +8466,7 @@ const TranscriptRows = memo(function TranscriptRows({
   expandedAvatarTurnId: string | null;
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
 }) {
   const handlers = () => handlersRef.current;
@@ -8499,6 +8534,7 @@ const TranscriptRows = memo(function TranscriptRows({
           readerPrompt={handlers().readerPromptFor(t)}
           onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
+          onOpenPreview={onOpenPreview}
           onRequest={(prompt) => void handlers().send(prompt)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
@@ -8564,6 +8600,7 @@ const TranscriptRows = memo(function TranscriptRows({
               readerPrompt={handlers().readerPromptFor(t)}
               onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
+              onOpenPreview={onOpenPreview}
               onRequest={(prompt) => void handlers().send(prompt)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
@@ -8617,6 +8654,7 @@ function TurnRowImpl({
   readerPrompt,
   onRerunWith,
   onOpenUrl,
+  onOpenPreview,
   expanded = false,
   onToggleAvatar,
   onRequest,
@@ -8647,6 +8685,7 @@ function TurnRowImpl({
    *  which is what hides the reader's Edit affordance. */
   onRerunWith?: (prompt: string) => void;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   expanded?: boolean;
   onToggleAvatar?: () => void;
   /** Model/runtime stamp for thumbs votes (per-model analytics). */
@@ -8843,7 +8882,11 @@ function TurnRowImpl({
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
-          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+          splitSegmentsForPreviews(
+            splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+            onOpenPreview,
+            onOpenUrl,
+          ),
         ),
         artifactCtx,
       ),

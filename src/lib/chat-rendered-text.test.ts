@@ -21,6 +21,7 @@ const CONTROL_HEAVY_ASSISTANT_TEXT = [
   "</coven:next-paths>",
   '<coven:github kind="issue" repo="OpenCoven/coven-cave" number="42" />',
   '<coven:image src="/api/chat/attachment?id=preview.png" />',
+  '<coven:preview url="http://127.0.0.1:3000/demo" title="Demo" />',
 ].join("\n");
 
 test("rendered assistant text keeps prose while removing every non-prose control", () => {
@@ -36,6 +37,7 @@ test("rendered assistant text keeps prose while removing every non-prose control
   ]);
   assert.match(result.cardText, /<coven:github/);
   assert.match(result.cardText, /<coven:image/);
+  assert.match(result.cardText, /<coven:preview/);
 });
 
 test("find and reply projections cannot expose assistant control markers", () => {
@@ -71,6 +73,17 @@ test("attention fragments use pending extraction only while a turn is streaming"
     }),
     "AFTER",
   );
+});
+
+test("streaming preview fragments never enter visible assistant text", () => {
+  for (const text of [
+    "Visible before <coven:pre",
+    'Visible before <coven:preview url="http://localhost:3000',
+  ]) {
+    const rendered = extractChatRenderedText(text, { pending: true });
+    assert.equal(rendered.visible, "Visible before ");
+    assert.equal(rendered.cardText, "Visible before ");
+  }
 });
 
 test("user and system text remains unchanged", () => {

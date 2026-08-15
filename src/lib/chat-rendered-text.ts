@@ -4,6 +4,10 @@ import { extractChatAttentionMarker } from "./chat-attention-marker.ts";
 import { splitReasoning } from "./chat-reasoning.ts";
 import { stripGitHubMarkers } from "./github-blocks.ts";
 import { stripImageMarkers } from "./image-blocks.ts";
+import {
+  stripIncompletePreviewMarker,
+  stripPreviewMarkers,
+} from "./preview-blocks.ts";
 import { extractNextPaths } from "./next-paths.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
 
@@ -19,8 +23,8 @@ export type ChatRenderedTextProjection = {
 
 /**
  * Project an assistant turn through the exact control-marker pipeline used by
- * the transcript. `visible` is prose-only; `cardText` retains GitHub and image
- * markers so the renderer can replace them with rich cards.
+ * the transcript. `visible` is prose-only; `cardText` retains GitHub, image,
+ * and preview markers so the renderer can replace them with rich cards.
  */
 export function extractChatRenderedText(
   text: string,
@@ -35,8 +39,8 @@ export function extractChatRenderedText(
   const nextPathSplit = extractNextPaths(attentionSplit.visible);
 
   return {
-    visible: stripImageMarkers(stripGitHubMarkers(nextPathSplit.visible)),
-    cardText: nextPathSplit.visible,
+    visible: stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(nextPathSplit.visible))),
+    cardText: stripIncompletePreviewMarker(nextPathSplit.visible),
     inlineReasoning: reasoningSplit.reasoning,
     skillUpdates: skillSplit.updates,
     autoStatusUpdate: autoStatusSplit.update,

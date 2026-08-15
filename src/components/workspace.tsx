@@ -808,6 +808,21 @@ export function Workspace() {
     setSplitSide(side);
     setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, workspacePaneRequestKey));
   }, []);
+  const openPreviewBeside = useCallback((url: string) => {
+    if (!url) return;
+    browserNavigationIdRef.current += 1;
+    const request = { id: browserNavigationIdRef.current, url };
+    setBrowserNavigationQueue((queue) => enqueueBrowserNavigation(queue, request));
+    if (modeRef.current !== "browser") {
+      const sessionId = activeChatSessionIdRef.current;
+      if (modeRef.current === "chat" && sessionId) {
+        setPendingChatAction({ kind: "open", sessionId, nonce: Date.now() });
+      }
+      const target = normalizeWorkspacePaneRequest("chat-preview-browser", "browser");
+      if (target) addSplitTarget(target, "right");
+    }
+    shellRef.current?.dismissNavMobile();
+  }, [addSplitTarget]);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   // The session the chat surface is showing, mirrored as state so the sidebar
@@ -3440,6 +3455,7 @@ export function Workspace() {
         onSessionsDeleted={handleSessionsDeleted}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInApp}
+        onOpenPreview={openPreviewBeside}
         initialScope={variant === "group" ? "coven" : "conversation"}
         scopeHistoryId={instanceId ? `chat:scope:${instanceId}` : undefined}
       />
