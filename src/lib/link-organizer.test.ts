@@ -261,3 +261,12 @@ test("unknown categories degrade to Other instead of crashing a surface", () => 
     assert.doesNotMatch(source, /LINK_CATEGORY_META\[/);
   }
 });
+
+test("huggingface.co/papers is a paper, other HF paths are not", () => {
+  assert.equal(categorizeLink("https://huggingface.co/papers/2401.12345"), "paper");
+  assert.equal(categorizeLink("https://huggingface.co/papers"), "paper");
+  assert.equal(categorizeLink("https://huggingface.co/papers/"), "paper");
+  assert.notEqual(categorizeLink("https://huggingface.co/models/meta-llama/Llama-3"), "paper");
+  assert.notEqual(categorizeLink("https://huggingface.co/datasets/squad"), "paper");
+  assert.notEqual(categorizeLink("https://huggingface.co/blog/some-post"), "paper");
+});

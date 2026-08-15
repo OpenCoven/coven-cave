@@ -132,6 +132,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
     "src/lib/research-generations.test.ts",
+    "src/lib/research-paper-view.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
@@ -383,6 +384,7 @@ export const SUITES = {
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
+    "src/lib/server/hf-paper-metadata.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
@@ -999,6 +1001,7 @@ export const SUITES = {
     "src/lib/github-repo-link.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
+    "src/lib/hf-papers.test.ts",
     "src/lib/memory-inspector.test.ts",
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
@@ -1242,6 +1245,8 @@ export const SUITES = {
     "src/lib/onboarding-status-probes.test.ts",
     "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
+    "src/app/api/research/links/ingest-urls.test.ts",
+    "src/app/api/research/papers/pdf/route.test.ts",
   ],
   api: [
     "src/app/api/afs/afs-routes.test.ts",
@@ -1749,6 +1754,10 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // hf-paper-metadata.ts imports "@/lib/hf-papers" as a runtime value.
+  "src/lib/server/hf-paper-metadata.test.ts",
+  // ingest-urls.ts imports "@/lib/link-extractor" and "@/lib/hf-papers".
+  "src/app/api/research/links/ingest-urls.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -1991,6 +2000,9 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
+  // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
+  // reaches "@/lib/server/api-security" for the local-request guard.
+  "src/app/api/research/papers/pdf/route.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would

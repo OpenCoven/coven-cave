@@ -51,6 +51,13 @@ export type SavedLink = {
   addedAt: string;
   /** Where the save originated. */
   source: "chat" | "desk";
+  /** Present only for papers resolved through hf-papers ingest. */
+  paper?: {
+    arxivId: string;
+    authors: string[];
+    abstract: string;
+    publishedAt: string;
+  };
 };
 
 const VIDEO_HOSTS = new Set([
@@ -126,6 +133,9 @@ export function categorizeLink(rawUrl: string): LinkCategory {
   if (host === "github.com" || host === "gist.github.com" || host.endsWith(".github.io")) {
     return "github";
   }
+  // huggingface.co also serves models, datasets, spaces and blog posts, so the
+  // host cannot join PAPER_HOSTS — only this path may.
+  if (host === "huggingface.co" && /^\/papers(\/|$)/.test(pathname)) return "paper";
   if (hostMatches(host, PAPER_HOSTS)) return "paper";
   if (hostMatches(host, VIDEO_HOSTS)) return "video";
   if (hostMatches(host, SOCIAL_HOSTS)) return "social";

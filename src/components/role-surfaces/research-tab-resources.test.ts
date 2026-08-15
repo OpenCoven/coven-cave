@@ -78,8 +78,13 @@ test("remove is a two-step inline confirm wired to useResearchLinks.remove", () 
   assert.match(source, />\s*Keep\s*<\/Button>/);
   assert.match(source, /setConfirmingRemove\(true\)/);
   assert.match(source, /await remove\(openLink\.id\)/);
-  // Opening a different resource never inherits a pending confirm.
-  assert.match(source, /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*\}, \[openId\]\)/);
+  // Opening a different resource never inherits a pending confirm — nor an
+  // already-expanded paper viewer, which would otherwise show paper A's
+  // document under paper B's title and start its fetch unasked.
+  assert.match(
+    source,
+    /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*\}, \[openId\]\)/,
+  );
 });
 
 test("grid/rows view persists under cave:research:res-view with an SSR guard", () => {
