@@ -838,17 +838,59 @@ function formatDiscoveryEndpoint(discoveryHostname, discoveryPort) {
   new URL(endpoint);
   return endpoint;
 }
-function clientV1DiscoveryProcessStartIdentity(pid) {
-  if (process.platform === "win32" || typeof execFileSync !== "function") return null;
+function clientV1DiscoveryLinuxProcessStartIdentity(pid, read) {
   try {
-    const started = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-    return started ? `ps:${started}` : null;
+    const bootId = read("/proc/sys/kernel/random/boot_id", "utf8").trim().toLowerCase();
+    const stat = read(`/proc/${pid}/stat`, "utf8");
+    const commandEnd = stat.lastIndexOf(")");
+    const startTicks = commandEnd === -1 ? "" : stat.slice(commandEnd + 1).trim().split(/\s+/)[19] ?? "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bootId) || !/^\d+$/.test(startTicks)) {
+      return null;
+    }
+    return `linux:${bootId}:${startTicks}`;
   } catch {
     return null;
   }
+}
+function clientV1DiscoveryPsStartIdentity(pid, runPs) {
+  try {
+    const started = runPs("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: {
+        ...process.env,
+        TZ: "UTC",
+        LC_ALL: "C",
+        LANG: "C"
+      }
+    }).trim();
+    const match = /^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})$/.exec(started);
+    if (!match) return null;
+    const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(match[1]);
+    const day = Number(match[2]);
+    const hour = Number(match[3]);
+    const minute = Number(match[4]);
+    const second = Number(match[5]);
+    const year = Number(match[6]);
+    const timestamp = Date.UTC(year, month, day, hour, minute, second);
+    const date = new Date(timestamp);
+    if (month === -1 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day || date.getUTCHours() !== hour || date.getUTCMinutes() !== minute || date.getUTCSeconds() !== second) {
+      return null;
+    }
+    return `ps-utc:${timestamp}`;
+  } catch {
+    return null;
+  }
+}
+function clientV1DiscoveryProcessStartIdentity(pid, platform = process.platform, read = readFileSync, runPs) {
+  if (!Number.isInteger(pid) || pid < 1 || !platform || platform === "win32") return null;
+  if (platform === "linux") {
+    const linuxIdentity = clientV1DiscoveryLinuxProcessStartIdentity(pid, read);
+    if (linuxIdentity) return linuxIdentity;
+  }
+  if (platform !== "linux" && platform !== "darwin") return null;
+  const ps = runPs ?? (typeof execFileSync === "function" ? execFileSync : null);
+  return ps ? clientV1DiscoveryPsStartIdentity(pid, ps) : null;
 }
 const clientV1DiscoveryStartedAt = (/* @__PURE__ */ new Date()).toISOString();
 const clientV1DiscoveryNonce = randomBytes(16).toString("hex");
@@ -980,7 +1022,7 @@ function isClientV1DiscoveryRegistrationLive(registration) {
   } catch (error) {
     return error.code !== "ESRCH";
   }
-  if (registration.startIdentity.startsWith("ps:")) {
+  if (registration.startIdentity.startsWith("linux:") || registration.startIdentity.startsWith("ps-utc:")) {
     const actual = clientV1DiscoveryProcessStartIdentity(registration.pid);
     if (actual && actual !== registration.startIdentity) return false;
   }

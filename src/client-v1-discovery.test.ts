@@ -14,7 +14,7 @@
 // chmod, and lock-serialization behavior under test is the exact behavior
 // that ships.
 import assert from "node:assert/strict";
-import { fork } from "node:child_process";
+import { execFileSync, fork } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -173,7 +173,11 @@ function harness({
     "process", "console", "randomBytes", "DatabaseSync",
     "mkdirSync", "writeFileSync", "renameSync", "chmodSync", "unlinkSync", "readFileSync",
     "join", "dirname", "homedir",
-    `${section}\nreturn { clientV1DiscoveryPath, writeClientV1DiscoveryRecord, removeClientV1DiscoveryRecordIfOwned, clientV1DiscoveryShutdownHandler };`,
+    `${section}\nreturn {
+      clientV1DiscoveryPath, clientV1DiscoveryProcessStartIdentity,
+      writeClientV1DiscoveryRecord, removeClientV1DiscoveryRecordIfOwned,
+      clientV1DiscoveryShutdownHandler,
+    };`,
   );
   const api = factory(
     fakeProcess, fakeConsole, randomBytes, DatabaseSync,
@@ -206,6 +210,58 @@ function successorHarness(h: ReturnType<typeof harness>) {
 
 function cleanup(h: { dir: string }) {
   rmSync(h.dir, { recursive: true, force: true });
+}
+
+// ── Process-start identity: stable sources and conservative fallbacks ────────
+{
+  const h = harness();
+  const linuxRead = (file: string) => {
+    if (file === "/proc/sys/kernel/random/boot_id") {
+      return "9e8e7d6c-5b4a-3928-1716-151413121110\n";
+    }
+    if (file === "/proc/4321/stat") {
+      return "4321 (node with spaces) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 24680 20";
+    }
+    throw new Error(`unexpected procfs path: ${file}`);
+  };
+  assert.equal(
+    h.clientV1DiscoveryProcessStartIdentity(4321, "linux", linuxRead),
+    "linux:9e8e7d6c-5b4a-3928-1716-151413121110:24680",
+    "Linux uses boot ID plus procfs start ticks, not locale-formatted ps output",
+  );
+
+  const psOptions: Array<{ env?: NodeJS.ProcessEnv }> = [];
+  const stablePs = ((_: string, _args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
+    psOptions.push(options);
+    return "Wed Aug 12 14:15:16 2026\n";
+  }) as typeof execFileSync;
+  const first = h.clientV1DiscoveryProcessStartIdentity(4321, "darwin", linuxRead, stablePs);
+  const second = h.clientV1DiscoveryProcessStartIdentity(4321, "darwin", linuxRead, stablePs);
+  assert.equal(first, "ps-utc:1786544116000", "macOS ps output is normalized to a UTC epoch");
+  assert.equal(second, first, "the same macOS PID/start has one canonical identity");
+  assert.deepEqual(
+    psOptions.map(({ env }) => [env?.TZ, env?.LC_ALL, env?.LANG]),
+    [["UTC", "C", "C"], ["UTC", "C", "C"]],
+    "ps always runs with explicit locale and timezone, never caller settings",
+  );
+  assert.equal(
+    h.clientV1DiscoveryProcessStartIdentity(
+      4321,
+      "darwin",
+      linuxRead,
+      (() => {
+        throw new Error("ps unavailable");
+      }) as typeof execFileSync,
+    ),
+    null,
+    "an unavailable ps has no speculative identity and falls back safely",
+  );
+  assert.equal(
+    h.clientV1DiscoveryProcessStartIdentity(4321, "win32", linuxRead, stablePs),
+    null,
+    "Windows keeps the nonce-only, fail-safe fallback",
+  );
+  cleanup(h);
 }
 
 // ── Path pinning: default vs override ────────────────────────────────────────
@@ -268,7 +324,7 @@ function cleanup(h: { dir: string }) {
   assert.equal(typeof record.nonce, "string");
   assert.ok(record.nonce.length >= 16, "nonce must be a real random value, not a placeholder");
   assert.match(record.startedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, "startedAt is ISO-8601");
-  assert.match(record.startIdentity, /^(?:ps:|started:)/, "each process publishes a start identity");
+  assert.match(record.startIdentity, /^(?:linux:|ps-utc:|started:)/, "each process publishes a start identity");
   assert.equal(record.healthEndpoint, "http://127.0.0.1:3020/api/client/v1/health");
   assert.deepEqual(record.registrations, [Object.fromEntries(
     Object.entries(record).filter(([key]) => key !== "registryVersion" && key !== "registrations"),
@@ -953,6 +1009,7 @@ function listenHarness({ env = {} }: { env?: Record<string, string> } = {}) {
 const subprocessRoot = mkdtempSync(join(testTmpRoot, "client-v1-discovery-processes-"));
 const subprocessFile = join(subprocessRoot, "client-v1-discovery.json");
 const subprocessFixture = join(subprocessRoot, "discovery-server.mjs");
+const subprocessIdentityProbe = join(subprocessRoot, "discovery-identity-probe.mjs");
 
 writeFileSync(
   subprocessFixture,
@@ -996,6 +1053,27 @@ setInterval(() => {}, 1_000);
   { mode: 0o600 },
 );
 
+// This intentionally runs the identity observer in separate Node processes
+// with distinct inherited environments, while both inspect THIS test process.
+// It catches the original failure mode: two servers using different TZ/locale
+// settings must still compute the same PID/start value for one live process.
+writeFileSync(
+  subprocessIdentityProbe,
+  `import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+const CAVE_PRODUCTION_PORT = 3020;
+${section}
+const targetPid = Number(process.env.COVEN_CAVE_DISCOVERY_IDENTITY_PROBE_PID);
+const identity = clientV1DiscoveryProcessStartIdentity(targetPid);
+process.send?.({ type: "identity", identity }, () => process.exit(0));
+`,
+  { mode: 0o600 },
+);
+
 type DiscoveryChild = ReturnType<typeof fork>;
 const activeDiscoveryChildren = new Set<DiscoveryChild>();
 
@@ -1025,6 +1103,41 @@ function waitForChildExit(child: DiscoveryChild) {
   return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.once("exit", (code, signal) => resolve({ code, signal }));
   });
+}
+
+async function probeDiscoveryProcessStartIdentity(
+  targetPid: number,
+  env: Partial<NodeJS.ProcessEnv>,
+): Promise<string | null> {
+  const child = fork(subprocessIdentityProbe, [], {
+    env: {
+      ...process.env,
+      ...env,
+      COVEN_CAVE_DISCOVERY_IDENTITY_PROBE_PID: String(targetPid),
+    },
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
+  const exited = waitForChildExit(child);
+  const identity = await new Promise<string | null>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`timed out waiting for identity probe ${child.pid ?? "unknown"}`));
+    }, 10_000);
+    child.once("message", (message: { type?: string; identity?: unknown }) => {
+      clearTimeout(timeout);
+      if (message?.type !== "identity") {
+        reject(new Error(`unexpected identity probe message: ${JSON.stringify(message)}`));
+        return;
+      }
+      resolve(typeof message.identity === "string" ? message.identity : null);
+    });
+    child.once("exit", (code, signal) => {
+      clearTimeout(timeout);
+      reject(new Error(`identity probe exited before reporting: code=${code}, signal=${signal}`));
+    });
+  });
+  const result = await exited;
+  assert.equal(result.code, 0, `identity probe ${child.pid ?? "unknown"} exits cleanly`);
+  return identity;
 }
 
 async function startDiscoveryChild(mode: "dev" | "production") {
@@ -1069,6 +1182,33 @@ function subprocessRegistry() {
 }
 
 try {
+  const losAngelesIdentity = await probeDiscoveryProcessStartIdentity(process.pid, {
+    TZ: "America/Los_Angeles",
+    LC_ALL: "C",
+  });
+  const tokyoIdentity = await probeDiscoveryProcessStartIdentity(process.pid, {
+    TZ: "Asia/Tokyo",
+    LC_ALL: "POSIX",
+  });
+  if (process.platform === "win32") {
+    assert.equal(losAngelesIdentity, null, "Windows safely uses nonce-only process identity fallback");
+    assert.equal(tokyoIdentity, null, "Windows fallback remains independent of TZ/locale");
+  } else {
+    assert.ok(losAngelesIdentity, "Unix supplies a stable process-start identity");
+    assert.equal(
+      tokyoIdentity,
+      losAngelesIdentity,
+      "subprocesses with different TZ/LC_ALL values agree on the same target PID/start",
+    );
+  }
+  const parentStartIdentity = losAngelesIdentity;
+  const stalePidReuseIdentity =
+    parentStartIdentity?.startsWith("linux:")
+      ? `${parentStartIdentity}:reused`
+      : parentStartIdentity?.startsWith("ps-utc:")
+        ? `ps-utc:${Number(parentStartIdentity.slice("ps-utc:".length)) + 1_000}`
+        : null;
+
   // Start dev then production: production is the deterministic installed
   // service selection, and dev cleanup leaves production published.
   const firstDev = await startDiscoveryChild("dev");
@@ -1133,9 +1273,67 @@ try {
   await Promise.all(concurrent.map(({ child }) => stopDiscoveryChild(child)));
   assert.equal(existsSync(subprocessFile), false);
 
-  // A live, reused PID with a mismatched `ps:` process-start identity is
+  // Seed one live owner alongside a PID-reuse record, then let several real
+  // writers prune and publish concurrently. Every writer must agree that the
+  // mismatched PID/start entry is stale without losing any live registration.
+  assert.ok(stalePidReuseIdentity, "concurrent pruning has a verifiable stale PID/start identity");
+  const retainedDev = await startDiscoveryChild("dev");
+  assert.ok(retainedDev.pid, "the retained live child has a PID");
+  const retainedRegistration = subprocessRegistry().registrations.find(
+    (registration) => registration.pid === retainedDev.pid,
+  );
+  assert.ok(retainedRegistration, "the live registration is available to seed concurrent pruning");
+  const staleConcurrentRegistration = {
+    ...retainedRegistration,
+    endpoint: "http://127.0.0.1:39998",
+    pid: process.pid,
+    nonce: "stale-concurrent-pid-reuse",
+    startedAt: "2020-01-01T00:00:00.000Z",
+    port: 39998,
+    startIdentity: stalePidReuseIdentity,
+    healthEndpoint: "http://127.0.0.1:39998/api/client/v1/health",
+  };
+  writeFileSync(
+    subprocessFile,
+    JSON.stringify({
+      ...retainedRegistration,
+      registryVersion: 2,
+      registrations: [retainedRegistration, staleConcurrentRegistration],
+    }),
+    { mode: 0o600 },
+  );
+  const concurrentPruners = await Promise.all(
+    Array.from({ length: 6 }, (_, index) => startDiscoveryChild(index % 2 ? "production" : "dev")),
+  );
+  registry = subprocessRegistry();
+  const expectedLivePids = new Set([
+    retainedDev.pid,
+    ...concurrentPruners.map(({ pid }) => pid),
+  ]);
+  assert.equal(
+    registry.registrations.length,
+    expectedLivePids.size,
+    "concurrent pruning keeps every live registration while removing the reused PID",
+  );
+  assert.ok(
+    registry.registrations.every((registration) => expectedLivePids.has(registration.pid)),
+    "no concurrent writer restores the stale PID-reuse registration",
+  );
+  assert.equal(
+    registry.registrations.some((registration) => registration.nonce === "stale-concurrent-pid-reuse"),
+    false,
+    "the stale PID-reuse registration is pruned exactly under concurrent publication",
+  );
+  await Promise.all([
+    stopDiscoveryChild(retainedDev.child),
+    ...concurrentPruners.map(({ child }) => stopDiscoveryChild(child)),
+  ]);
+  assert.equal(existsSync(subprocessFile), false, "concurrently pruned registry cleans up after every owner exits");
+
+  // A live, reused PID with a mismatched stable process-start identity is
   // stale even though kill(pid, 0) succeeds. The next subprocess must remove
   // it, proving PID liveness alone cannot pin a stale endpoint forever.
+  assert.ok(stalePidReuseIdentity, "Unix PID reuse simulation has an observable start identity");
   writeFileSync(
     subprocessFile,
     JSON.stringify({
@@ -1146,7 +1344,7 @@ try {
       startedAt: "2020-01-01T00:00:00.000Z",
       port: 39999,
       mode: "dev",
-      startIdentity: "ps:not-the-current-process",
+      startIdentity: stalePidReuseIdentity,
       healthEndpoint: "http://127.0.0.1:39999/api/client/v1/health",
       registryVersion: 2,
       registrations: [{
@@ -1157,7 +1355,7 @@ try {
         startedAt: "2020-01-01T00:00:00.000Z",
         port: 39999,
         mode: "dev",
-        startIdentity: "ps:not-the-current-process",
+        startIdentity: stalePidReuseIdentity,
         healthEndpoint: "http://127.0.0.1:39999/api/client/v1/health",
       }],
     }),

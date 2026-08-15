@@ -1388,22 +1388,98 @@ function formatDiscoveryEndpoint(discoveryHostname: string, discoveryPort: numbe
   return endpoint;
 }
 
-// A process start time is observable on macOS and Linux through `ps`; that
-// lets a later writer distinguish a dead registration from a PID that has
-// since been reused. On platforms without that observation, the random nonce
-// still uniquely identifies this process's registration and callers fail
-// safe by retaining an otherwise-live PID.
-function clientV1DiscoveryProcessStartIdentity(pid: number): string | null {
-  if (process.platform === "win32" || typeof execFileSync !== "function") return null;
+// Linux exposes a boot-scoped, scheduler-tick process start value in procfs.
+// Pairing that value with the boot ID distinguishes a reused PID, including
+// after a reboot, without consulting a locale or wall clock.
+function clientV1DiscoveryLinuxProcessStartIdentity(
+  pid: number,
+  read: typeof readFileSync,
+): string | null {
   try {
-    const started = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return started ? `ps:${started}` : null;
+    const bootId = read("/proc/sys/kernel/random/boot_id", "utf8").trim().toLowerCase();
+    const stat = read(`/proc/${pid}/stat`, "utf8");
+    const commandEnd = stat.lastIndexOf(")");
+    // Field 22 is starttime. Fields after the parenthesized command begin at
+    // field 3, making starttime index 19 in this suffix.
+    const startTicks = commandEnd === -1 ? "" : stat.slice(commandEnd + 1).trim().split(/\s+/)[19] ?? "";
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(bootId) ||
+      !/^\d+$/.test(startTicks)
+    ) {
+      return null;
+    }
+    return `linux:${bootId}:${startTicks}`;
   } catch {
     return null;
   }
+}
+
+// `ps lstart` is available on macOS and is the fallback when procfs is
+// unavailable on Linux. Request its C-locale UTC representation explicitly,
+// then parse it rather than retaining display text whose spelling/zone could
+// otherwise vary between concurrent servers.
+function clientV1DiscoveryPsStartIdentity(
+  pid: number,
+  runPs: typeof execFileSync,
+): string | null {
+  try {
+    const started = runPs("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: {
+        ...process.env,
+        TZ: "UTC",
+        LC_ALL: "C",
+        LANG: "C",
+      },
+    }).trim();
+    const match = /^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})$/.exec(started);
+    if (!match) return null;
+    const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(match[1]);
+    const day = Number(match[2]);
+    const hour = Number(match[3]);
+    const minute = Number(match[4]);
+    const second = Number(match[5]);
+    const year = Number(match[6]);
+    const timestamp = Date.UTC(year, month, day, hour, minute, second);
+    const date = new Date(timestamp);
+    if (
+      month === -1 ||
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month ||
+      date.getUTCDate() !== day ||
+      date.getUTCHours() !== hour ||
+      date.getUTCMinutes() !== minute ||
+      date.getUTCSeconds() !== second
+    ) {
+      return null;
+    }
+    return `ps-utc:${timestamp}`;
+  } catch {
+    return null;
+  }
+}
+
+// A process start identity lets a later writer distinguish a dead registration
+// from a PID that has since been reused. Windows does not expose an equivalent
+// portable observation here, so its random nonce fallback fails safe by
+// retaining an otherwise-live PID. The optional dependencies make the parser
+// directly testable and preserve that same fallback if process inspection is
+// unavailable in a constrained runtime.
+function clientV1DiscoveryProcessStartIdentity(
+  pid: number,
+  platform: NodeJS.Platform | undefined = process.platform,
+  read: typeof readFileSync = readFileSync,
+  runPs?: typeof execFileSync,
+): string | null {
+  if (!Number.isInteger(pid) || pid < 1 || !platform || platform === "win32") return null;
+  if (platform === "linux") {
+    const linuxIdentity = clientV1DiscoveryLinuxProcessStartIdentity(pid, read);
+    if (linuxIdentity) return linuxIdentity;
+  }
+  if (platform !== "linux" && platform !== "darwin") return null;
+  const ps = runPs ?? (typeof execFileSync === "function" ? execFileSync : null);
+  return ps ? clientV1DiscoveryPsStartIdentity(pid, ps) : null;
 }
 
 const clientV1DiscoveryStartedAt = new Date().toISOString();
@@ -1637,10 +1713,15 @@ function isClientV1DiscoveryRegistrationLive(registration: ClientV1DiscoveryRegi
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
-  // A liveness probe alone is not enough after PID reuse. `ps` is optional,
-  // but when both the registration and this platform provide a process-start
-  // identity, a mismatch is definitive and safe to prune.
-  if (registration.startIdentity.startsWith("ps:")) {
+  // A liveness probe alone is not enough after PID reuse. Stable start
+  // identities are optional, but when both the registration and this
+  // platform provide one, a mismatch is definitive and safe to prune.
+  // Legacy `ps:` display strings deliberately remain unverified: comparing
+  // them could recreate the timezone/locale false-positive this replaced.
+  if (
+    registration.startIdentity.startsWith("linux:") ||
+    registration.startIdentity.startsWith("ps-utc:")
+  ) {
     const actual = clientV1DiscoveryProcessStartIdentity(registration.pid);
     if (actual && actual !== registration.startIdentity) return false;
   }
