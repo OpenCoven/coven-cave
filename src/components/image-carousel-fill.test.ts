@@ -6,7 +6,7 @@ const carousel = readFileSync(new URL("./image-carousel.tsx", import.meta.url), 
 
 assert.match(
   carousel,
-  /className=\{`focus-ring flex aspect-video w-full[\s\S]*?overflow-hidden/,
+  /className=\{`focus-ring flex aspect-video w-full[^$`]*\boverflow-hidden\b[^$`]*\$\{/,
   "each inline slide establishes a full-width frame that clips overflow",
 );
 assert.match(
