@@ -49,28 +49,40 @@ assert.equal(
 // ── The rule is reachable ────────────────────────────────────────────────────
 // eslint only lints the paths the CLI is given, so a widened `files` block in
 // the config buys nothing on its own.
+//
+// One pass, not two: eslint.config.mjs decides which rules apply to which
+// files, so a single run over the union enforces the design rules on component
+// JSX and rules-of-hooks everywhere. `lint` used to chain lint:design and a
+// second wider run, which linted src/components/**/*.tsx twice and evaluated
+// both rule sets on it twice. lint:design survives as a focused subset for
+// iterating on the design rules by hand.
 assert.match(
   pkg.scripts.lint,
-  /pnpm lint:hooks/,
-  "the top-level lint script runs the hooks gate",
+  /pnpm lint:source/,
+  "the top-level lint script runs the single source pass",
 );
-const hooks = pkg.scripts["lint:hooks"];
-assert.equal(typeof hooks, "string", "lint:hooks exists");
+const source = pkg.scripts["lint:source"];
+assert.equal(typeof source, "string", "lint:source exists");
+// EVERY glob, not a sample. A partial list here would let a dropped path go
+// unlinted while this still passed — the same "looks covered, isn't" failure
+// the stub itself was.
 for (const glob of [
   "src/lib/**/*.ts",
   "src/lib/**/*.tsx",
+  "src/app/**/*.ts",
   "src/app/**/*.tsx",
+  "src/components/**/*.ts",
   "src/components/**/*.tsx",
 ]) {
   assert.ok(
-    hooks.includes(glob),
-    `lint:hooks covers ${glob} — hooks live outside src/components too`,
+    source.includes(glob),
+    `lint:source covers ${glob} — hooks live outside src/components too`,
   );
 }
 assert.match(
-  hooks,
+  source,
   /--max-warnings=0/,
-  "lint:hooks fails the build rather than printing warnings",
+  "lint:source fails the build rather than printing warnings",
 );
 
 console.log("rules-of-hooks-gate.test.mjs: ok");
