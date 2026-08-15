@@ -1238,6 +1238,7 @@ export const SUITES = {
     "src/lib/onboarding-status-probes.test.ts",
     "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
+    "src/app/api/research/links/ingest-urls.test.ts",
   ],
   api: [
     "src/app/api/afs/afs-routes.test.ts",
@@ -1746,6 +1747,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/flow-executor.test.ts",
   // hf-paper-metadata.ts imports "@/lib/hf-papers" as a runtime value.
   "src/lib/server/hf-paper-metadata.test.ts",
+  // ingest-urls.ts imports "@/lib/link-extractor" and "@/lib/hf-papers".
+  "src/app/api/research/links/ingest-urls.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws

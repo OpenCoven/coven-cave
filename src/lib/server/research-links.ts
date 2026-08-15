@@ -21,9 +21,10 @@ import {
   type SavedLink,
 } from "../link-organizer.ts";
 import { caveHome } from "../coven-paths.ts";
-import { isArxivPaperId } from "../hf-papers.ts";
+import { isArxivPaperId, parseHfPaperReferences } from "../hf-papers.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
+import type { HfPaperMetadata } from "./hf-paper-metadata.ts";
 
 export { MAX_LINKS_PER_SAVE };
 
@@ -153,6 +154,7 @@ export type SaveLinksResult = {
 export async function saveResearchLinks(
   rawUrls: string[],
   source: SavedLink["source"],
+  enrichment?: Map<string, HfPaperMetadata | null>,
 ): Promise<SaveLinksResult> {
   return withWriteMutex(async () => {
     const file = await loadFile();
@@ -180,13 +182,18 @@ export async function saveResearchLinks(
         continue;
       }
       existing.add(key);
+      const meta = enrichment?.get(trimmed) ?? null;
+      const [arxivId] = parseHfPaperReferences(trimmed);
       added.push({
         id: randomUUID(),
         url: trimmed,
         category: categorizeLink(trimmed),
-        title: deriveLinkTitle(trimmed),
+        title: meta?.title || deriveLinkTitle(trimmed),
         addedAt: new Date().toISOString(),
         source,
+        ...(meta && arxivId
+          ? { paper: { arxivId, authors: meta.authors, abstract: meta.abstract, publishedAt: meta.publishedAt } }
+          : {}),
       });
     }
 
