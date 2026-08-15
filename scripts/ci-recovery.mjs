@@ -79,10 +79,12 @@ export async function runCiRecovery({
         skipped.push({ number: recovery.number, reason: drift });
         continue;
       }
-      dispatchable.push({
-        recovery,
-        supportsExpectedSha: await workflowSupportsExpectedSha(context, recovery.sha),
-      });
+      const contract = await inspectRecoveryDispatch(context, recovery.sha);
+      if (!contract.dispatchable) {
+        skipped.push({ number: recovery.number, reason: "workflow_not_dispatchable" });
+        continue;
+      }
+      dispatchable.push({ recovery, supportsExpectedSha: contract.supportsExpectedSha });
     }
   }
 
@@ -104,9 +106,16 @@ export async function runCiRecovery({
         `${recovery.dispatched ? "dispatched" : "eligible"} ${recovery.ref} ${recovery.sha.slice(0, 12)}`,
     );
   }
+  // Say what was dropped. `skipped` was collected and never printed, so a run
+  // that recovered only some of its candidates read exactly like one that
+  // recovered all of them.
+  for (const entry of skipped) {
+    log(`#${entry.number} skipped ${entry.reason}`);
+  }
   log(
     `CI recovery: ${result.scanned} open PR${result.scanned === 1 ? "" : "s"} scanned; ` +
-      `${recoveries.length} ${apply ? "dispatched" : "eligible"}.`,
+      `${recoveries.length} ${apply ? "dispatched" : "eligible"}` +
+      `${skipped.length > 0 ? `; ${skipped.length} skipped` : ""}.`,
   );
   return result;
 }
@@ -280,7 +289,19 @@ async function workflowJobCount(context, runId) {
   return payload.total_count;
 }
 
-async function workflowSupportsExpectedSha(context, sha) {
+/** Inspect the CI workflow at an exact head and decide how it may be dispatched.
+ *
+ *  Three outcomes, and keeping them distinct is the whole point:
+ *  - `{dispatchable: false}` — that head's ci.yml has no `workflow_dispatch`
+ *    trigger, so it cannot be dispatched by anyone. A permanent fact about the
+ *    branch, not an ambiguity, so the caller skips this candidate and continues.
+ *  - `{dispatchable: true, supportsExpectedSha}` — dispatch it, with the SHA
+ *    guard when the head carries the complete guarded contract.
+ *  - throws — the guard contract is only PARTIALLY configured. That one stays
+ *    fatal: we cannot tell whether the exact-SHA guard will be honoured, so a
+ *    dispatch might silently test a different commit than the one we checked.
+ */
+async function inspectRecoveryDispatch(context, sha) {
   const url =
     `${context.apiUrl}/repos/${context.repositoryPath}/contents/.github/workflows/${WORKFLOW_FILE}` +
     `?ref=${encodeURIComponent(sha)}`;
@@ -308,7 +329,11 @@ async function workflowSupportsExpectedSha(context, sha) {
     typeof triggers !== "object" ||
     !Object.hasOwn(triggers, "workflow_dispatch")
   ) {
-    throw new Error("CI workflow does not support recovery dispatches");
+    // Un-dispatchable, not ambiguous. This used to throw, which aborted the
+    // WHOLE apply — so a single stale branch whose ci.yml predates dispatch
+    // support disabled recovery for every other PR in the repository
+    // (cave-qibp6: #4646 blocked #4643 and #4641, and nothing was dispatched).
+    return { dispatchable: false, supportsExpectedSha: false };
   }
   const inputs = workflow?.on?.workflow_dispatch?.inputs;
   const expectedInput =
@@ -337,14 +362,16 @@ async function workflowSupportsExpectedSha(context, sha) {
     workflow?.jobs?.build?.if === EXPECTED_JOB_GUARD &&
     !Object.hasOwn(workflow?.jobs ?? {}, "paths") &&
     !Object.hasOwn(workflow?.jobs ?? {}, "ios");
-  if (hasCompleteGuardedContract || hasPreviousGuardedContract) return true;
+  if (hasCompleteGuardedContract || hasPreviousGuardedContract) {
+    return { dispatchable: true, supportsExpectedSha: true };
+  }
 
   const hasGuardedProtocolMarker =
     hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
   if (hasGuardedProtocolMarker) {
     throw new Error("CI workflow recovery contract was partially configured");
   }
-  return false;
+  return { dispatchable: true, supportsExpectedSha: false };
 }
 
 async function dispatchWorkflow(context, ref, expectedSha, supportsExpectedSha) {
