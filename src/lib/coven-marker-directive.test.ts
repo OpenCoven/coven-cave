@@ -110,6 +110,22 @@ assert.equal(
   "the taught spec example must parse into a document card",
 );
 
+const exampleHandoff = directive.match(
+  /`{3,}handoff title="[^"]+"\n[\s\S]*?\n`{3,}/,
+)?.[0];
+assert.ok(exampleHandoff, "directive carries a handoff-fence example");
+const handoffPieces = sliceSpecBlocks(exampleHandoff);
+assert.equal(
+  handoffPieces.find((piece) => piece.kind === "spec")?.spec.kind,
+  "handoff",
+  "the taught handoff example must parse into a handoff document card",
+);
+assert.match(
+  directive,
+  /decisions, changed paths, verification, blockers, and next actions/,
+  "handoff guidance must optimize the artifact for concrete continuation",
+);
+
 // ── Coverage: every parseable kind/stage is taught ───────────────────────────
 for (const kind of ["pr", "issue", "commit", "run"]) {
   assert.match(directive, new RegExp(`\\b${kind}\\b`), `display kind ${kind} taught`);

@@ -80,6 +80,33 @@ while remaining a smaller, spec-specific component. It does not expose answer
 rewrite, prompt rerun, citations, tools, or skill provenance because those
 controls describe a chat answer rather than a document artifact.
 
+## Handoff document extension
+
+The same parser and reader also accept a `handoff` fence for execution-ready
+continuation documents:
+
+~~~markdown
+````handoff title="Auth boundary handoff"
+# Auth boundary handoff
+
+## Current state
+
+The compatibility boundary is implemented.
+
+## Next action
+
+Run the focused regression suite from the active worktree.
+````
+~~~
+
+Handoffs retain the same Markdown rendering, contents navigation, progress,
+copy, export, focus, and safety behavior as specs. Their transcript card and
+reader use `Familiar handoff`, `Open handoff`, and `Close handoff reader`
+language so the artifact's purpose remains clear. The familiar marker directive
+asks for relevant decisions, changed paths, verification, blockers, and concrete
+next actions, and reserves the fence for work whose continuity benefits from a
+durable handoff.
+
 ## Data flow
 
 1. The familiar marker directive teaches the `spec` fence contract.
