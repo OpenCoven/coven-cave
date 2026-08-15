@@ -5199,6 +5199,23 @@ export async function POST(req: Request) {
         await runAttempt(args);
       }
 
+      // Copilot can silently close an expired native session with exit code 0:
+      // no result frame, no assistant text, and no "session not found" stderr.
+      // Treat that exact resumed-attempt shape as a stale session so the
+      // existing bounded context-replay retry can answer the user's turn.
+      if (
+        copilotStream &&
+        resumeTarget &&
+        !runtimeAccessRefreshNeeded &&
+        !runHandle.stopRequested &&
+        !launchFailure &&
+        !assistantText.trim() &&
+        result.duration_ms == null &&
+        result.is_error == null
+      ) {
+        resumeFailed = true;
+      }
+
       // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
       // installed CLI now ships as a built-in harness makes the registry load
       // fatal, killing the run before any assistant output. Quarantine the

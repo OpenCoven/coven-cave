@@ -40,3 +40,11 @@ test("Chat derives effective grants from usable local directories", async () => 
     /effectiveAccessibleProjects[\s\S]*?const grantedProjectRoots = effectiveAccessibleProjects\.map/,
   );
 });
+
+test("a silent stale Copilot resume retries with recent context", async () => {
+  const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(
+    route,
+    /copilotStream[\s\S]*?resumeTarget[\s\S]*?!assistantText\.trim\(\)[\s\S]*?result\.duration_ms == null[\s\S]*?result\.is_error == null[\s\S]*?resumeFailed = true/,
+  );
+});
