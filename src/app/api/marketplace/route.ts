@@ -22,11 +22,17 @@ import {
   type MarketplaceJsonPlugin,
   type PluginManifest,
 } from "@/lib/marketplace-catalog";
+import { resolveMarketplaceLogo } from "@/lib/marketplace-logo";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
+
+function toTransportMarketplaceLogo(logo: ReturnType<typeof resolveMarketplaceLogo>) {
+  const { svgPath: _svgPath, ...transportLogo } = logo;
+  return transportLogo;
+}
 
 export async function GET() {
   let marketplacePlugins: MarketplaceJsonPlugin[] = [];
@@ -68,6 +74,11 @@ export async function GET() {
   const plugins = [
     ...drafts.map((draft) => draft.plugin),
     ...ownedCatalog,
-  ];
+  ].map((plugin) => ({
+    ...plugin,
+    logo: toTransportMarketplaceLogo(
+      plugin.logo ?? resolveMarketplaceLogo(plugin.id, plugin.displayName),
+    ),
+  }));
   return NextResponse.json({ ok: true, plugins });
 }

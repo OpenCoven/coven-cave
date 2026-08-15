@@ -55,6 +55,8 @@ assert.equal(github.trust, "reference-local");
 assert.deepEqual(github.capabilities, ["network", "mcp"]);
 assert.deepEqual(github.keywords, ["git", "pull-requests"]);
 assert.equal(github.kind, "mcp");
+assert.equal(github.logo.kind, "brand");
+assert.equal(github.logo.slug, "github");
 assert.equal(github.version, "0.1.0");
 assert.equal(github.installed, false);
 assert.equal(github.requiresSetup, true);
@@ -97,6 +99,7 @@ assert.equal(unlistedOwned?.unlisted, true, "missing catalog metadata is explici
 assert.equal(unlistedOwned?.installed, true, "unlisted local records stay owned");
 assert.equal(unlistedOwned?.available, false, "unlisted records never claim remote installability");
 assert.equal(unlistedOwned?.description, "Installed locally. Catalog details are no longer available.");
+assert.equal(unlistedOwned?.logo.kind, "monogram", "unlisted installs still receive a deterministic identity");
 assert.deepEqual(
   ownedInstallMap["legacy-local-record"],
   {

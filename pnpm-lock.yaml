@@ -204,6 +204,9 @@ importers:
       react-test-renderer:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
+      simple-icons:
+        specifier: 16.28.0
+        version: 16.28.0
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3
@@ -3109,6 +3112,10 @@ packages:
 
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
+
+  simple-icons@16.28.0:
+    resolution: {integrity: sha512-sQPR5AtK/ijRjou7zw7mlLp08oB6FH7i0lOy5XJ2zp9mJs/yejgiOn7KvQoe2q4YJIx6VmgUSW5AOefebPt5kg==}
+    engines: {node: '>=0.12.18'}
 
   sirv@2.0.4:
     resolution: {integrity: sha512-94Bdh3cC2PKrbgSOUqTiGPWVZeSiXfKOVZNJniWoqrWrRkB1CJzBU3NEbiTsPcYy1lDsANA/THzS+9WBiy5nfQ==}
@@ -6928,6 +6935,8 @@ snapshots:
       '@types/hast': 3.0.5
 
   siginfo@2.0.0: {}
+
+  simple-icons@16.28.0: {}
 
   sirv@2.0.4:
     dependencies:

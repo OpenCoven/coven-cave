@@ -241,32 +241,7 @@ struct PluginsPanel: View {
     }
 
     private func pluginTile(_ plugin: MarketplacePlugin, size: CGFloat) -> some View {
-        Image(systemName: symbol(for: plugin))
-            .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(gradient(for: plugin), in: RoundedRectangle(cornerRadius: size * 0.24))
-    }
-
-    private func symbol(for plugin: MarketplacePlugin) -> String {
-        switch plugin.kind {
-        case "mcp": return "server.rack"
-        case "prompt": return "text.quote"
-        case "craft": return "sparkles.rectangle.stack"
-        case "knowledge-pack": return "books.vertical.fill"
-        case "api": return "network"
-        default: return "puzzlepiece.extension.fill"
-        }
-    }
-
-    private func gradient(for plugin: MarketplacePlugin) -> LinearGradient {
-        let palettes: [[Color]] = [
-            [.indigo, .purple], [.blue, .cyan], [.orange, .pink],
-            [.green, .teal], [.gray, .indigo],
-        ]
-        let scalar = plugin.id.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        let colors = palettes[scalar % palettes.count]
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+        MarketplacePluginLogo(plugin: plugin, size: size)
     }
 
     @discardableResult
@@ -362,11 +337,7 @@ private struct MarketplacePluginDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "puzzlepiece.extension.fill")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(chrome.accent)
-                        .frame(width: 62, height: 62)
-                        .glass(.raised, cornerRadius: 15)
+                    MarketplacePluginLogo(plugin: plugin, size: 62)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(plugin.displayName).font(.largeTitle.bold())
                         Text(plugin.category).foregroundStyle(.secondary)
@@ -505,5 +476,55 @@ private struct MarketplacePluginDetailView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glass(.raised, cornerRadius: 16)
+    }
+}
+
+private struct MarketplacePluginLogo: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    let plugin: MarketplacePlugin
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.24)
+                .fill(chrome.bgRaised)
+            if let source = app.client?.marketplaceLogoSource(for: plugin) {
+                CachedImageView(
+                    source: source,
+                    targetSize: CGSize(width: size, height: size)
+                ) { image in
+                    Image(uiImage: image)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(chrome.textPrimary)
+                        .padding(size * 0.23)
+                } placeholder: {
+                    fallback
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    private var fallback: some View {
+        Text(plugin.logo?.monogram ?? monogram(plugin.displayName))
+            .font(.system(size: size * 0.28, weight: .bold, design: .rounded))
+            .foregroundStyle(chrome.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+
+    private func monogram(_ value: String) -> String {
+        let words = value.split { !$0.isLetter && !$0.isNumber }
+        guard let first = words.first else { return "?" }
+        if words.count == 1 {
+            return String(first.prefix(2)).uppercased()
+        }
+        return "\(first.prefix(1))\(words.last?.prefix(1) ?? "")".uppercased()
     }
 }

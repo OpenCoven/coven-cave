@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
+import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 import { isCraftInstallationVerified, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { openExternalUrl } from "@/lib/open-external";
 import type { RoleEffectiveComposition } from "@/lib/role-craft-composition";
@@ -237,7 +238,12 @@ export function CraftDetail({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="craft-dossier__header">
-          <span className="craft-dossier__sigil" aria-hidden><Icon name="ph:package-bold" width={20} /></span>
+          <MarketplaceLogo
+            id={plugin.id}
+            displayName={plugin.displayName}
+            logo={plugin.logo}
+            size="dossier"
+          />
           <div className="min-w-0 flex-1">
             <p className="craft-dossier__eyebrow">Research Craft · v{plugin.version}</p>
             <h2>{plugin.displayName}</h2>
