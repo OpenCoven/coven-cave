@@ -27,6 +27,40 @@ export function parseHfPaperReferences(text: string): string[] {
   return [...seen];
 }
 
+const HF_HOSTS = new Set(["huggingface.co", "www.huggingface.co"]);
+const ARXIV_HOSTS = new Set(["arxiv.org", "www.arxiv.org"]);
+const HF_PAPER_PATH = new RegExp(String.raw`^/papers/${ARXIV_ID}$`);
+const ARXIV_PAPER_PATH = new RegExp(String.raw`^/(?:abs|pdf)/${ARXIV_ID}(?:\.pdf)?$`);
+
+/**
+ * Classify a value that ALREADY IS a URL — the counterpart to the scanner
+ * above, for entries that arrive through `urls[]` rather than inside prose.
+ *
+ * The scanner finds a reference ANYWHERE in a blob, which is right for text
+ * and wrong for a URL: `google.com/url?q=https://arxiv.org/abs/<id>` or
+ * `r.jina.ai/https://arxiv.org/abs/<id>` merely embeds a paper URL, and
+ * treating the wrapper as the paper stamps a foreign title and a `paper` block
+ * onto somebody else's page. So this matches on the PARSED host and pathname,
+ * and returns null for everything else, unparseable input included.
+ */
+export function arxivIdFromUrl(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  // `host`, not `hostname`: a non-default port is not one of these sites.
+  const pattern = HF_HOSTS.has(url.host)
+    ? HF_PAPER_PATH
+    : ARXIV_HOSTS.has(url.host)
+      ? ARXIV_PAPER_PATH
+      : null;
+  const id = pattern?.exec(url.pathname)?.[1];
+  return id && isArxivPaperId(id) ? id : null;
+}
+
 export function hfPaperUrl(arxivId: string): string {
   return `https://huggingface.co/papers/${arxivId}`;
 }

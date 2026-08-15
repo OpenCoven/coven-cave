@@ -21,7 +21,7 @@ import {
   type SavedLink,
 } from "../link-organizer.ts";
 import { caveHome } from "../coven-paths.ts";
-import { isArxivPaperId, parseHfPaperReferences } from "../hf-papers.ts";
+import { arxivIdFromUrl, isArxivPaperId } from "../hf-papers.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 import type { HfPaperMetadata } from "./hf-paper-metadata.ts";
@@ -183,7 +183,9 @@ export async function saveResearchLinks(
       }
       existing.add(key);
       const meta = enrichment?.get(trimmed) ?? null;
-      const [arxivId] = parseHfPaperReferences(trimmed);
+      // The saved URL is a URL, so classify it. Scanning it as text would
+      // attach a `paper` block to any page whose URL happens to embed one.
+      const arxivId = arxivIdFromUrl(trimmed);
       added.push({
         id: randomUUID(),
         url: trimmed,

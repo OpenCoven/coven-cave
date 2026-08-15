@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { parseHfPaperReferences } from "@/lib/hf-papers";
+import { arxivIdFromUrl } from "@/lib/hf-papers";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { fetchHfPaperMetadata, type HfPaperMetadata } from "@/lib/server/hf-paper-metadata";
 import {
@@ -59,7 +59,10 @@ export async function POST(req: Request) {
   const enrichment = new Map<string, HfPaperMetadata | null>();
   await Promise.all(
     urls.map(async (url) => {
-      const [arxivId] = parseHfPaperReferences(url);
+      // Classify the URL, never scan it: a wrapper that merely embeds a paper
+      // URL is a different page, and enriching it would title it after the
+      // paper it quotes.
+      const arxivId = arxivIdFromUrl(url);
       if (arxivId) enrichment.set(url, await fetchHfPaperMetadata(arxivId));
     }),
   );

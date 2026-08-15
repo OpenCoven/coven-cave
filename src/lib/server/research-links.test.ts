@@ -218,6 +218,23 @@ test("enrichment metadata sets the stored title and paper block", async () => {
   });
 });
 
+test("a URL that merely embeds a paper URL never gets a paper block", async () => {
+  // The stored arxivId drives the Read affordance and is interpolated into the
+  // PDF route's URL, so it has to come from classifying THIS url — not from
+  // scanning it for a paper reference that belongs to the page it links to.
+  const wrapper = "https://www.google.com/url?q=https://arxiv.org/abs/2401.12345";
+  const meta: HfPaperMetadata = {
+    title: "Distributionally Robust Receive Beamforming",
+    authors: ["A. Author"],
+    abstract: "A foreign paper's abstract.",
+    publishedAt: "2024-01-22T00:00:00.000Z",
+  };
+  const { added } = await saveResearchLinks([wrapper], "chat", new Map([[wrapper, meta]]));
+  assert.equal(added.length, 1);
+  assert.equal(added[0].url, wrapper);
+  assert.equal(added[0].paper, undefined);
+});
+
 test("a null enrichment entry produces exactly the record saved with no enrichment map at all", async () => {
   const url = "https://huggingface.co/papers/2402.11111";
 
