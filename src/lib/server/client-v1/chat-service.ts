@@ -60,7 +60,7 @@ import crypto from "node:crypto";
 
 import {
   applySessionMetadataWithCheckpoint,
-  getSessionDeletionGeneration,
+  getSessionDeletionFence,
   loadState,
   sacrificeSessionLocal,
   withFamiliarLifecycleGuard,
@@ -794,6 +794,8 @@ export async function withAuthorizedClientConversation<T>(
       withConversationLock(sessionId, async () => {
         const conversation = await loadConversation(sessionId);
         if (!conversation) return NOT_FOUND_RESULT;
+        const deletionFence = await getSessionDeletionFence(sessionId);
+        if (deletionFence.sacrificed) return NOT_FOUND_RESULT;
         const authorized = await authorizeExistingConversationOwner(
           voiceChatDeps,
           permissions,
@@ -804,11 +806,10 @@ export async function withAuthorizedClientConversation<T>(
         // This read is deliberately inside the same cross-process conversation
         // fence as authorization. Client-v1 carries it through reservation
         // and launch so a later DELETE cannot be undone by transcript writes.
-        const deletionGeneration = await getSessionDeletionGeneration(sessionId);
         return {
           ok: true as const,
           value: await effect(conversation),
-          deletionGeneration,
+          deletionGeneration: deletionFence.generation,
         };
       }),
     );
@@ -886,10 +887,14 @@ export async function deleteClientConversation(sessionId: string): Promise<Delet
           conv,
         );
         if (!authorized.ok) return authorized;
+        const deletionFence = await getSessionDeletionFence(sessionId);
 
         // Cleanup runs FIRST, while the canonical conversation file still
         // exists — see this function's doc comment for why the order matters.
-        await deleteClientConversationAttachments(sessionId);
+        await deleteClientConversationAttachments(
+          sessionId,
+          deletionFence.generation + 1,
+        );
         await sacrificeSessionLocal(sessionId);
         await unlinkSessionFromCards(sessionId);
 

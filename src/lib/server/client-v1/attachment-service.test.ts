@@ -24,6 +24,7 @@ const {
   CLIENT_UNBOUND_ATTACHMENT_TTL_MS,
   ClientAttachmentError,
   clientAttachmentIndexPath,
+  deleteClientConversationAttachments,
   isRetryableClientAttachmentError,
   parseClientAttachmentForm,
   readClientAttachment,
@@ -579,6 +580,30 @@ test("a corrupt bound payload is rejected rather than overwritten by an upload r
     (error: unknown) => isClientAttachmentError(error, 409),
   );
   assert.equal(await readFile(path.join(canonicalRoot, first[0].id), "utf8"), "corrupt payload");
+});
+
+test("cascade deletion tombstones a bound deterministic upload", async () => {
+  const [prepared] = await parseFiles(testFile(textBytes, "cascade.txt", "text/plain"));
+  const effectId = "a1111111-2222-4333-8444-555555555555";
+  const [uploaded] = await saveUploadedClientAttachments([prepared], owner, effectId, 10);
+  await resolveAndBindClientAttachments([uploaded.id], owner, "conversation-cascade", 11);
+
+  await deleteClientConversationAttachments("conversation-cascade", 1);
+  const deletedIndex = JSON.parse(await readFile(indexPath, "utf8"));
+  assert.deepEqual(deletedIndex.attachments, []);
+  assert.deepEqual(deletedIndex.tombstones, [{
+    attachmentId: uploaded.id,
+    credentialId: owner,
+    conversationId: "conversation-cascade",
+    deletionGeneration: 1,
+  }]);
+
+  await assert.rejects(
+    saveUploadedClientAttachments([prepared], owner, effectId, 12),
+    (error: unknown) => isClientAttachmentError(error, 409),
+    "a completed upload retry must not resurrect an intentionally cascade-deleted payload",
+  );
+  assert.deepEqual(await readdir(canonicalRoot), []);
 });
 
 test("an index commit failure removes canonical files created by the failed upload", async () => {

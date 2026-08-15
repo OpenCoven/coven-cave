@@ -5,7 +5,11 @@ import path from "node:path";
 import sharp from "sharp";
 
 import type { ChatAttachment } from "@/lib/chat-attachments";
-import { isSafeConversationSessionId } from "@/lib/cave-conversations";
+import {
+  isSafeConversationSessionId,
+  withConversationLock,
+} from "@/lib/cave-conversations";
+import { getSessionDeletionFence } from "@/lib/cave-config";
 import { caveHome } from "@/lib/coven-paths";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 import {
@@ -50,7 +54,7 @@ const RECORD_KEYS = [
   "conversationId",
 ];
 const RECORD_KEY_SET: ReadonlySet<string> = new Set(RECORD_KEYS);
-const STORE_KEYS = ["version", "attachments"] as const;
+const STORE_KEYS = ["version", "attachments", "tombstones"] as const;
 const STORE_KEY_SET: ReadonlySet<string> = new Set(STORE_KEYS);
 
 const CANONICAL_MIME_BY_EXT: Record<string, ClientAttachmentMimeType> = {
@@ -141,7 +145,18 @@ export type ClientAttachmentRecord = {
   conversationId: string | null;
 };
 
-type AttachmentIndex = { version: 1; attachments: ClientAttachmentRecord[] };
+export type ClientAttachmentDeletionTombstone = {
+  attachmentId: string;
+  credentialId: string;
+  conversationId: string;
+  deletionGeneration: number;
+};
+
+type AttachmentIndex = {
+  version: 2;
+  attachments: ClientAttachmentRecord[];
+  tombstones: ClientAttachmentDeletionTombstone[];
+};
 
 type AttachmentIndexWriteHook = (
   storePath: string,
@@ -532,15 +547,57 @@ function parseRecord(value: unknown): ClientAttachmentRecord | null {
   };
 }
 
+function parseTombstone(value: unknown): ClientAttachmentDeletionTombstone | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== 4
+    || !keys.every((key) =>
+      key === "attachmentId"
+      || key === "credentialId"
+      || key === "conversationId"
+      || key === "deletionGeneration")
+  ) {
+    return null;
+  }
+  if (
+    !isValidChatAttachmentId(record.attachmentId as string)
+    || !isUuid(record.credentialId as string)
+    || !isSafeConversationSessionId(record.conversationId as string)
+    || !Number.isSafeInteger(record.deletionGeneration)
+    || (record.deletionGeneration as number) < 1
+  ) {
+    return null;
+  }
+  return {
+    attachmentId: record.attachmentId as string,
+    credentialId: (record.credentialId as string).toLowerCase(),
+    conversationId: record.conversationId as string,
+    deletionGeneration: record.deletionGeneration as number,
+  };
+}
+
+function attachmentTombstoneKey(attachmentId: string, credentialId: string): string {
+  return `${credentialId.toLowerCase()}\0${attachmentId}`;
+}
+
 function parseIndex(value: unknown): AttachmentIndex | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.length !== STORE_KEYS.length || !keys.every((key) => STORE_KEY_SET.has(key))) return null;
+  const legacyV1 = record.version === 1
+    && keys.length === 2
+    && keys.every((key) => key === "version" || key === "attachments");
   if (
-    record.version !== 1
+    !legacyV1
+    && (keys.length !== STORE_KEYS.length || !keys.every((key) => STORE_KEY_SET.has(key)))
+  ) return null;
+  if (
+    (record.version !== 1 && record.version !== 2)
     || !Array.isArray(record.attachments)
     || record.attachments.length > CLIENT_ATTACHMENT_MAX_RECORDS
+    || (!legacyV1 && !Array.isArray(record.tombstones))
   ) return null;
   const attachments: ClientAttachmentRecord[] = [];
   const ids = new Set<string>();
@@ -550,7 +607,19 @@ function parseIndex(value: unknown): AttachmentIndex | null {
     ids.add(attachment.attachmentId);
     attachments.push(attachment);
   }
-  return { version: 1, attachments };
+  const tombstones: ClientAttachmentDeletionTombstone[] = [];
+  const tombstoneKeys = new Set<string>();
+  for (const value of legacyV1 ? [] : record.tombstones as unknown[]) {
+    const tombstone = parseTombstone(value);
+    const key = tombstone && attachmentTombstoneKey(
+      tombstone.attachmentId,
+      tombstone.credentialId,
+    );
+    if (!tombstone || !key || tombstoneKeys.has(key)) return null;
+    tombstoneKeys.add(key);
+    tombstones.push(tombstone);
+  }
+  return { version: 2, attachments, tombstones };
 }
 
 async function readIndexForMutation(storePath: string): Promise<AttachmentIndex> {
@@ -559,7 +628,7 @@ async function readIndexForMutation(storePath: string): Promise<AttachmentIndex>
     info = await lstat(/* turbopackIgnore: true */ storePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { version: 1, attachments: [] };
+      return { version: 2, attachments: [], tombstones: [] };
     }
 
     throw new ClientAttachmentError(503, "service_unavailable", "The attachment index is unavailable.");
@@ -879,6 +948,26 @@ async function cleanupUnindexedCanonicalAttachments(ids: readonly string[]): Pro
   }
 }
 
+async function assertAttachmentBindingFence(
+  conversationId: string,
+  expectedDeletionGeneration: number | undefined,
+): Promise<void> {
+  const deletionFence = await getSessionDeletionFence(conversationId);
+  if (
+    deletionFence.sacrificed
+    || (
+      expectedDeletionGeneration !== undefined
+      && deletionFence.generation !== expectedDeletionGeneration
+    )
+  ) {
+    throw new ClientAttachmentError(
+      409,
+      "conflict",
+      "The conversation was deleted before attachments could be bound.",
+    );
+  }
+}
+
 export async function saveUploadedClientAttachments(
   uploads: readonly PreparedClientAttachment[],
   credentialId: string,
@@ -906,6 +995,34 @@ export async function saveUploadedClientAttachments(
           upload,
           attachmentId: deterministicAttachmentId(effectId, indexInRequest, upload.mimeType),
         }));
+        const deletedByKey = new Map(
+          index.tombstones.map((tombstone) => [
+            attachmentTombstoneKey(tombstone.attachmentId, tombstone.credentialId),
+            tombstone,
+          ]),
+        );
+        for (const { attachmentId } of planned) {
+          const ownedTombstone = deletedByKey.get(
+            attachmentTombstoneKey(attachmentId, credentialId),
+          );
+          if (ownedTombstone) {
+            throw new ClientAttachmentError(
+              409,
+              "conflict",
+              "This attachment was deleted with its conversation and cannot be replayed.",
+            );
+          }
+          if (index.tombstones.some((tombstone) =>
+            tombstone.attachmentId === attachmentId
+            && tombstone.credentialId === credentialId.toLowerCase(),
+          )) {
+            throw new ClientAttachmentError(
+              503,
+              "service_unavailable",
+              "The attachment index is unavailable.",
+            );
+          }
+        }
         const newRecordCount = planned.filter(({ attachmentId }) => !byId.has(attachmentId)).length;
         const ownedRecordCount = index.attachments.filter(
           (record) => record.credentialId === credentialId.toLowerCase(),
@@ -1043,62 +1160,103 @@ export async function resolveAndBindClientAttachments(
   credentialId: string,
   conversationId: string,
   now?: number,
+  expectedDeletionGeneration?: number,
 ): Promise<ChatAttachment[]> {
   const attachmentIds = validateResolveInput(ids, credentialId, conversationId);
-  if (attachmentIds.length === 0) return [];
   assertValidAttachmentAccessTime(now);
+  if (
+    expectedDeletionGeneration !== undefined
+    && (!Number.isSafeInteger(expectedDeletionGeneration) || expectedDeletionGeneration < 0)
+  ) {
+    throw new ClientAttachmentError(400, "invalid_request", "Invalid attachment binding request.");
+  }
+  if (attachmentIds.length === 0) {
+    return withConversationLock(conversationId, async () => {
+      await assertAttachmentBindingFence(conversationId, expectedDeletionGeneration);
+      return [];
+    });
+  }
   const storePath = clientAttachmentIndexPath();
   await assertStoreBoundary(storePath);
   await clientAttachmentStorageRoot();
-  return withMutationQueue(storePath, () =>
-    withCredentialTransactionLock(
-      { storePath, label: "client-v1-attachment-index" },
-      async () => {
-        const index = await readIndexForMutation(storePath);
-        if (await reclaimExpiredUnboundAttachments(index, now ?? Date.now())) {
-          await writeAttachmentIndex(storePath, index);
-        }
-        const byId = new Map(index.attachments.map((record) => [record.attachmentId, record]));
-        const records: ClientAttachmentRecord[] = [];
-        for (const id of attachmentIds) {
-          const record = byId.get(id);
-          if (!record || record.credentialId !== credentialId.toLowerCase()) {
-            throw new ClientAttachmentError(404, "not_found", "Attachment not found.");
+  return withConversationLock(conversationId, async () => {
+    // The conversation fence always precedes the attachment index. DELETE
+    // takes this same order, so either binding completes before deletion
+    // removes it, or deletion wins and this call fails before changing the
+    // ownership index.
+    await assertAttachmentBindingFence(conversationId, expectedDeletionGeneration);
+    return withMutationQueue(storePath, () =>
+      withCredentialTransactionLock(
+        { storePath, label: "client-v1-attachment-index" },
+        async () => {
+          const index = await readIndexForMutation(storePath);
+          if (await reclaimExpiredUnboundAttachments(index, now ?? Date.now())) {
+            await writeAttachmentIndex(storePath, index);
           }
-          if (record.conversationId !== null && record.conversationId !== conversationId) {
-            throw new ClientAttachmentError(
-              409,
-              "conflict",
-              "Attachment is already bound to another conversation.",
-            );
+          const byId = new Map(index.attachments.map((record) => [record.attachmentId, record]));
+          const records: ClientAttachmentRecord[] = [];
+          for (const id of attachmentIds) {
+            const record = byId.get(id);
+            if (!record || record.credentialId !== credentialId.toLowerCase()) {
+              throw new ClientAttachmentError(404, "not_found", "Attachment not found.");
+            }
+            if (record.conversationId !== null && record.conversationId !== conversationId) {
+              throw new ClientAttachmentError(
+                409,
+                "conflict",
+                "Attachment is already bound to another conversation.",
+              );
+            }
+            if (index.tombstones.some((tombstone) =>
+              tombstone.attachmentId === id
+              && tombstone.credentialId === credentialId.toLowerCase(),
+            )) {
+              throw new ClientAttachmentError(
+                409,
+                "conflict",
+                "This attachment was deleted with its conversation.",
+              );
+            }
+            records.push(record);
           }
-          records.push(record);
-        }
 
-        const canonical = await Promise.all(records.map(async (record) => ({
-          record,
-          attachment: await readCanonicalClientAttachment(record.attachmentId),
-        })));
+          const canonical = await Promise.all(records.map(async (record) => ({
+            record,
+            attachment: await readCanonicalClientAttachment(record.attachmentId),
+          })));
 
-        const changed = records.some((record) => record.conversationId === null);
-        if (changed) {
-          for (const record of records) record.conversationId = conversationId;
-          await writeAttachmentIndex(storePath, index);
-        }
-        return canonical.map(({ record, attachment }) => ({
-          name: attachment.name,
-          type: attachment.mimeType,
-          mimeType: attachment.mimeType,
-          size: attachment.sizeBytes,
-          storedId: record.attachmentId,
-        }));
-      },
-    ),
-  );
+          const changed = records.some((record) => record.conversationId === null);
+          if (changed) {
+            for (const record of records) record.conversationId = conversationId;
+            await writeAttachmentIndex(storePath, index);
+          }
+          return canonical.map(({ record, attachment }) => ({
+            name: attachment.name,
+            type: attachment.mimeType,
+            mimeType: attachment.mimeType,
+            size: attachment.sizeBytes,
+            storedId: record.attachmentId,
+          }));
+        },
+      ),
+    );
+  });
 }
 
-export async function deleteClientConversationAttachments(conversationId: string): Promise<void> {
+/**
+ * Delete a conversation's bound client uploads while its caller owns the
+ * conversation fence. The required ordering is conversation fence → attachment
+ * index → transcript deletion; taking the attachment index first would
+ * deadlock against `resolveAndBindClientAttachments`.
+ */
+export async function deleteClientConversationAttachments(
+  conversationId: string,
+  deletionGeneration: number,
+): Promise<void> {
   if (!isSafeConversationSessionId(conversationId)) {
+    throw new ClientAttachmentError(400, "invalid_request", "Invalid attachment deletion request.");
+  }
+  if (!Number.isSafeInteger(deletionGeneration) || deletionGeneration < 1) {
     throw new ClientAttachmentError(400, "invalid_request", "Invalid attachment deletion request.");
   }
   const storePath = clientAttachmentIndexPath();
@@ -1115,6 +1273,24 @@ export async function deleteClientConversationAttachments(conversationId: string
           await deleteChatStoredAttachment(record.attachmentId);
         }
         index.attachments = index.attachments.filter((record) => record.conversationId !== conversationId);
+        const tombstones = new Map(
+          index.tombstones.map((tombstone) => [
+            attachmentTombstoneKey(tombstone.attachmentId, tombstone.credentialId),
+            tombstone,
+          ]),
+        );
+        for (const record of bound) {
+          tombstones.set(
+            attachmentTombstoneKey(record.attachmentId, record.credentialId),
+            {
+              attachmentId: record.attachmentId,
+              credentialId: record.credentialId,
+              conversationId,
+              deletionGeneration,
+            },
+          );
+        }
+        index.tombstones = [...tombstones.values()];
         await mkdir(/* turbopackIgnore: true */ path.dirname(storePath), {
           recursive: true,
           mode: 0o700,

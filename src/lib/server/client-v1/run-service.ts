@@ -296,8 +296,19 @@ const defaultDeps: ClientRunServiceDeps = {
   reserveRunOperation: reserveClientRunOperation,
   readRunOperation: readClientRunOperation,
   launchRunOperation: launchClientRunOperation,
-  resolveAttachments: (ids, credentialId, conversationId) =>
-    resolveAndBindClientAttachments(ids, credentialId, conversationId),
+  resolveAttachments: (
+    ids,
+    credentialId,
+    conversationId,
+    now,
+    deletionGeneration,
+  ) => resolveAndBindClientAttachments(
+    ids,
+    credentialId,
+    conversationId,
+    now,
+    deletionGeneration,
+  ),
   executeChatSend,
   requestChatStop,
   now: () => Date.now(),
@@ -386,6 +397,16 @@ function attachmentFailureOutcome(
     value: response,
     terminalResponse: { status: error.status, body },
   };
+}
+
+function deletionFenceFailureOutcome(): ClientRunOperationLaunchOutcome<Response> {
+  const response = clientV1Error(
+    503,
+    "service_unavailable",
+    "The conversation deletion fence is unavailable. Retry this send.",
+    true,
+  );
+  return { kind: "retryable_prelaunch_failure", value: response };
 }
 
 function reconcileRequired(
@@ -679,10 +700,22 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
       if (!authorized.ok || authorized.value.kind === "not_found") {
         return clientV1Error(404, "not_found", "Conversation not found.", false);
       }
-      // Production authorization always returns the fenced generation. The
-      // fallback preserves the narrow dependency-injected unit-test contract;
-      // real client-v1 launches never rely on it.
-      const deletionGeneration = authorized.deletionGeneration ?? 0;
+      const authorizedDeletionGeneration = authorized.deletionGeneration;
+      if (
+        typeof authorizedDeletionGeneration !== "number"
+        || !Number.isSafeInteger(authorizedDeletionGeneration)
+        || authorizedDeletionGeneration < 0
+      ) {
+        // Do not turn a missing dependency result into generation zero. A
+        // direct client-v1 send without a captured fence must never launch.
+        return clientV1Error(
+          503,
+          "service_unavailable",
+          "The conversation deletion fence is unavailable.",
+          true,
+        );
+      }
+      const deletionGeneration = authorizedDeletionGeneration;
 
       const requestHash = hashNormalizedRequest(input);
       let claim: ClaimOperationResult;
@@ -794,12 +827,22 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
           credentialId: principal.credentialId,
           requestHash,
           launch: async (record) => {
+            const recordDeletionGeneration = record.deletionGeneration;
+            if (
+              typeof recordDeletionGeneration !== "number"
+              || !Number.isSafeInteger(recordDeletionGeneration)
+              || recordDeletionGeneration < 0
+            ) {
+              return deletionFenceFailureOutcome();
+            }
             let attachments: ChatAttachment[];
             try {
               attachments = await deps.resolveAttachments(
                 input.attachmentIds,
                 principal.credentialId,
                 input.conversationId,
+                undefined,
+                recordDeletionGeneration,
               );
             } catch (error) {
               if (error instanceof ClientAttachmentError) {
@@ -814,7 +857,7 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
               projectRoot: authorized.value.projectRoot,
               sessionId: input.conversationId,
               runId: record.internalRunId,
-              conversationDeletionGeneration: record.deletionGeneration ?? deletionGeneration,
+              conversationDeletionGeneration: recordDeletionGeneration,
               ...(input.model
                 ? { modelOverride: input.model, modelOverrideScope: "next-message" }
                 : {}),

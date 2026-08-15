@@ -1612,9 +1612,23 @@ export async function sacrificeSessionLocal(sessionId: string): Promise<string> 
  * persistence must read it while holding that conversation's lock.
  */
 export async function getSessionDeletionGeneration(sessionId: string): Promise<number> {
-  return withStateTransaction(
-    (state) => state.sessionSacrificeGeneration[sessionId] ?? 0,
-  );
+  return (await getSessionDeletionFence(sessionId)).generation;
+}
+
+/**
+ * Read a session's durable deletion fence from one state snapshot. Callers
+ * that make a conversation lifecycle decision must hold that conversation's
+ * fence before reading this value, so a DELETE cannot interleave between the
+ * tombstone check and the generation capture.
+ */
+export async function getSessionDeletionFence(sessionId: string): Promise<{
+  generation: number;
+  sacrificed: boolean;
+}> {
+  return withStateTransaction((state) => ({
+    generation: state.sessionSacrificeGeneration[sessionId] ?? 0,
+    sacrificed: Boolean(state.sessionSacrificed[sessionId]),
+  }));
 }
 
 /** Upsert a role's config entry (active state, activatedAt). */

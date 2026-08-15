@@ -188,6 +188,21 @@ function createRunOperationDeps() {
 
 function createService(overrides: Partial<ClientRunServiceDeps> = {}) {
   const runOps = createRunOperationDeps();
+  const suppliedAuthorization = overrides.authorizeConversation;
+  const fencedOverrides: Partial<ClientRunServiceDeps> = suppliedAuthorization
+    ? {
+      ...overrides,
+      authorizeConversation: async (sessionId, effect) => {
+        const result = await suppliedAuthorization(sessionId, effect);
+        // Unit fixtures model a successful authorization, so make their
+        // synthetic fence explicit rather than relying on production's
+        // fail-closed missing-generation behavior.
+        return result.ok && result.deletionGeneration === undefined
+          ? { ...result, deletionGeneration: 0 }
+          : result;
+      },
+    }
+    : overrides;
   const runOpDeps = {
     reserveRunOperation: runOps.reserveRunOperation,
     readRunOperation: runOps.readRunOperation,
@@ -197,13 +212,24 @@ function createService(overrides: Partial<ClientRunServiceDeps> = {}) {
     runOps,
     service: createClientRunService({
       ...runOpDeps,
-      ...overrides,
+      ...fencedOverrides,
     }),
   };
 }
 
 function createDurableService(overrides: Partial<ClientRunServiceDeps> = {}) {
-  return createClientRunService(overrides);
+  const suppliedAuthorization = overrides.authorizeConversation;
+  return createClientRunService(suppliedAuthorization
+    ? {
+      ...overrides,
+      authorizeConversation: async (sessionId, effect) => {
+        const result = await suppliedAuthorization(sessionId, effect);
+        return result.ok && result.deletionGeneration === undefined
+          ? { ...result, deletionGeneration: 0 }
+          : result;
+      },
+    }
+    : overrides);
 }
 
 async function storedRunOperation(
@@ -235,6 +261,24 @@ test("client send input is exact, typed, and bounded", () => {
     { ...input, retryOfTurnId: "../turn" },
   ];
   for (const value of invalid) assert.throws(() => parseClientSendInput(value));
+});
+
+test("a direct send without an authorization deletion generation fails before reservation or dispatch", async () => {
+  let dispatched = false;
+  const service = createClientRunService({
+    authorizeConversation: async (_id, effect) => ({
+      ok: true,
+      value: await effect(conversation),
+    }),
+    executeChatSend: async () => {
+      dispatched = true;
+      return new Response();
+    },
+  });
+
+  const response = await service.send(input, principal);
+  assert.equal(response.status, 503);
+  assert.equal(dispatched, false);
 });
 
 test("run reservation happens before launch and the durable replay receipt lands after executeChatSend", async () => {

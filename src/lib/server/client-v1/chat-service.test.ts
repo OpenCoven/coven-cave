@@ -33,7 +33,12 @@ const {
   withAuthorizedClientConversation,
 } = await import("./chat-service.ts");
 const { grantProjectToFamiliar } = await import("@/lib/project-permissions.ts");
-const { getSessionDeletionGeneration, loadState, loadConfig } = await import("@/lib/cave-config.ts");
+const {
+  getSessionDeletionGeneration,
+  loadState,
+  loadConfig,
+  sacrificeSessionLocal,
+} = await import("@/lib/cave-config.ts");
 const { loadConversation, listConversations, saveConversation, withConversationLock, clearConversationListMetadataCache, CONV_DIR } = await import(
   "@/lib/cave-conversations.ts"
 );
@@ -51,6 +56,7 @@ const {
   saveUploadedClientAttachments,
 } = await import("./attachment-service.ts");
 const { setCredentialLockDbPathForTest } = await import("./credential-transaction-lock.ts");
+const { DELETE: deleteConversationRoute } = await import("@/app/api/chat/conversation/[id]/route.ts");
 
 let stopDaemon = async () => {};
 const attachmentRoot = process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR!;
@@ -568,6 +574,18 @@ test("send authorization captures the durable deletion generation under the conv
     expected,
     "the launch reservation must carry the generation observed while authorization owned the lock",
   );
+});
+
+test("send authorization rejects a sacrificed conversation even if a stale transcript still exists", async () => {
+  await resetFixtures();
+  await setupDaemonAndConfig();
+  const id = "sacrificed-send-authorization";
+  await seedConversation(id);
+  await sacrificeSessionLocal(id);
+
+  const authorized = await withAuthorizedClientConversation(id, async () => "must not run");
+  assert.equal(authorized.ok, false);
+  assert.equal(authorized.status, 404);
 });
 
 test("patch: an unknown conversation id returns 404 not_found", async () => {
@@ -1141,6 +1159,48 @@ test("delete: an unsafe id (path traversal shape) 404s rather than touching the 
   const result = await deleteClientConversation("../../etc/passwd");
   assert.equal(result.ok, false);
   assert.equal(result.status, 404);
+});
+
+test("delete winning the conversation fence prevents a racing attachment bind and leaves it unbound", async () => {
+  await resetFixtures();
+  await setupDaemonAndConfig();
+  const id = "delete-bind-generation-race";
+  await seedConversation(id);
+  const form = new FormData();
+  form.append("files", new File([attachmentBytes], "race.txt", { type: "text/plain" }));
+  const [prepared] = await parseClientAttachmentForm(form);
+  const [uploaded] = await saveUploadedClientAttachments(
+    [prepared],
+    attachmentOwner,
+    crypto.randomUUID(),
+    Date.now(),
+  );
+  const deletionGeneration = await getSessionDeletionGeneration(id);
+  const barrier = conversationBarrier(id);
+  await barrier.ready;
+
+  const deletion = deleteConversationRoute(
+    new Request(`http://test/api/chat/conversation/${id}`, { method: "DELETE" }),
+    { params: Promise.resolve({ id }) },
+  );
+  await nextTurn();
+  const binding = resolveAndBindClientAttachments(
+    [uploaded.id],
+    attachmentOwner,
+    id,
+    undefined,
+    deletionGeneration,
+  );
+  barrier.release();
+  await barrier.held;
+
+  assert.equal((await deletion).status, 200);
+  await assert.rejects(
+    binding,
+    (error: unknown) => error instanceof Error && /conversation was deleted/.test(error.message),
+  );
+  const index = JSON.parse(await readFile(attachmentIndexPath, "utf8"));
+  assert.equal(index.attachments[0]?.conversationId, null);
 });
 
 // ── concurrency: delete racing patch (no resurrection) ──────────────────────

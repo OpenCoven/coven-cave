@@ -2,7 +2,7 @@ import {
   bindingFor,
   completeOfflineTravelItem,
   failOfflineTravelItem,
-  getSessionDeletionGeneration,
+  getSessionDeletionFence,
   markOfflineTravelItemSyncing,
   offlineTravelItemsNeedingSync,
   recordSessionFamiliar,
@@ -20,7 +20,10 @@ import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { isSshRuntime } from "@/lib/familiar-runtime";
 import { cleanModelId } from "@/lib/chat-model-state";
 import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
+import {
+  persistQueuedOfflineConversation,
+  withConversationLock,
+} from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
@@ -85,6 +88,27 @@ function objectArray<T>(value: unknown): T[] {
 function queuedRuntime(payload: Record<string, unknown>): string | null {
   const metadata = record(payload.responseMetadata);
   return stringValue(metadata.runtime);
+}
+
+function savedConversationDeletionGeneration(payload: Record<string, unknown>): number {
+  const generation = payload.conversationDeletionGeneration;
+  if (!Number.isSafeInteger(generation) || (generation as number) < 0) {
+    // A legacy queue item has no durable deletion decision. Replaying it
+    // would allow a deleted conversation to launch work, so it must be
+    // surfaced for repair rather than treated as an unfenced prompt.
+    throw new Error("queued chat deletion generation is missing");
+  }
+  return generation as number;
+}
+
+async function assertQueuedConversationIsLive(
+  sessionId: string,
+  deletionGeneration: number,
+): Promise<void> {
+  const fence = await getSessionDeletionFence(sessionId);
+  if (fence.sacrificed || fence.generation !== deletionGeneration) {
+    throw new Error("conversation deleted before offline replay dispatch");
+  }
 }
 
 /**
@@ -186,6 +210,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const familiarId = stringValue(payload.familiarId);
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
+  const sessionId = stringValue(payload.sessionId) ?? item.id;
+  const deletionGeneration = savedConversationDeletionGeneration(payload);
   const controlFamilies = daemonReplayControlFamilies(payload);
   if (controlFamilies.length) {
     throw new Error(
@@ -228,37 +254,41 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
   const replayTitle =
     chatSummaryTitle({ userText: prompt }) ??
-    defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id);
+    defaultChatTitleForSession(sessionId);
   let harnessSessionId = stringValue(payload.harnessSessionId);
+  await withConversationLock(sessionId, async () => {
+    // Keep the fence through the actual daemon POST. A DELETE that won first
+    // rejects here before a prompt is dispatched; one that arrives later
+    // queues behind this accepted launch and then cleans up its transcript.
+    await assertQueuedConversationIsLive(sessionId, deletionGeneration);
+    if (!harnessSessionId) {
+      harnessSessionId = await spawnHubSession({
+        config,
+        familiarId,
+        harness: binding.harness,
+        prompt: replayPrompt,
+        // Preserve the distinction between an omitted model and an explicit
+        // runtime-default request. The daemon receives no model argument in both
+        // cases, while the scope marker prevents this replay path from treating a
+        // cleared model as an accidental static/catalog fallback.
+        model: modelOverride,
+        ...(payload.modelOverrideScope === "runtime-default"
+          ? { modelOverrideScope: "runtime-default" as const }
+          : {}),
+        reasoningEffort: stringValue(payload.reasoningEffort),
+        responseSpeed: stringValue(payload.responseSpeed),
+        modelControls: record(payload.modelControls),
+        projectRoot,
+        title: replayTitle,
+        titleOwnership: "auto",
+      });
+      await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
+    }
+  });
   if (!harnessSessionId) {
-    harnessSessionId = await spawnHubSession({
-      config,
-      familiarId,
-      harness: binding.harness,
-      prompt: replayPrompt,
-      // Preserve the distinction between an omitted model and an explicit
-      // runtime-default request. The daemon receives no model argument in both
-      // cases, while the scope marker prevents this replay path from treating a
-      // cleared model as an accidental static/catalog fallback.
-      model: modelOverride,
-      ...(payload.modelOverrideScope === "runtime-default"
-        ? { modelOverrideScope: "runtime-default" as const }
-        : {}),
-      reasoningEffort: stringValue(payload.reasoningEffort),
-      responseSpeed: stringValue(payload.responseSpeed),
-      modelControls: record(payload.modelControls),
-      projectRoot,
-      title: replayTitle,
-      titleOwnership: "auto",
-    });
-    await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
+    throw new Error("offline replay did not receive a daemon session id");
   }
-  const sessionId = stringValue(payload.sessionId) ?? item.id;
-  const deletionGeneration = typeof payload.conversationDeletionGeneration === "number"
-    && Number.isSafeInteger(payload.conversationDeletionGeneration)
-    && payload.conversationDeletionGeneration >= 0
-    ? payload.conversationDeletionGeneration
-    : undefined;
+  const replayHarnessSessionId = harnessSessionId;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,
@@ -271,7 +301,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
       : {}),
     title: replayTitle,
     createdAt: item.createdAt,
-    harnessSessionId,
+    harnessSessionId: replayHarnessSessionId,
     userTurn: {
       id: stringValue(payload.userTurnId) ?? item.id,
       text: prompt,
@@ -294,18 +324,12 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
         ? { parentId: payload.parentTurnId as string | null }
         : {}),
     },
-  }, deletionGeneration === undefined
-    ? undefined
-    : async () => {
-      if (await getSessionDeletionGeneration(sessionId) !== deletionGeneration) {
-        throw new Error("conversation deleted before offline transcript save");
-      }
-    });
-  if (sessionId !== harnessSessionId) {
+  }, () => assertQueuedConversationIsLive(sessionId, deletionGeneration));
+  if (sessionId !== replayHarnessSessionId) {
     await setSessionTitleAutoIfOwned(
-      harnessSessionId,
+      replayHarnessSessionId,
       replayTitle,
-      new Set([defaultChatTitleForSession(harnessSessionId)]),
+      new Set([defaultChatTitleForSession(replayHarnessSessionId)]),
     );
   }
 }

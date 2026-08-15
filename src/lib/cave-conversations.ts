@@ -742,69 +742,88 @@ export async function createConversationStub(
   });
 }
 
+async function persistQueuedOfflineConversationUnlocked(
+  seed: QueuedOfflineConversationSeed,
+  beforeSave?: () => Promise<void> | void,
+): Promise<void> {
+  const existing = await loadConversation(seed.sessionId);
+  const attentionClearOperationId = normalizeChatAttentionOperationId(
+    seed.userTurn.attentionClearOperationId,
+  );
+  const conv = existing ?? {
+    sessionId: seed.sessionId,
+    familiarId: seed.familiarId,
+    harness: seed.harness,
+    ...(seed.model ? { model: seed.model } : {}),
+    ...(seed.runtime ? { runtime: seed.runtime } : {}),
+    ...(seed.title ? { title: seed.title } : {}),
+    ...(seed.origin ? { origin: seed.origin } : {}),
+    ...(seed.modelIntent ? { modelIntent: seed.modelIntent } : {}),
+    createdAt: seed.createdAt,
+    updatedAt: seed.createdAt,
+    turns: [],
+  };
+  conv.familiarId = seed.familiarId;
+  conv.harness = seed.harness;
+  if (seed.model !== undefined) conv.model = seed.model;
+  if (seed.runtime !== undefined) conv.runtime = seed.runtime;
+  if (!conv.title && seed.title) conv.title = seed.title;
+  if (!conv.origin && seed.origin) conv.origin = seed.origin;
+  if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
+  if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
+
+  const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
+  if (!existingTurn) {
+    const parentId = seed.userTurn.parentId !== undefined
+      ? seed.userTurn.parentId
+      : existing?.activeLeafId ?? null;
+    conv.turns.push({
+      id: seed.userTurn.id,
+      role: "user",
+      text: seed.userTurn.text,
+      ...(seed.userTurn.attachments?.length ? { attachments: seed.userTurn.attachments } : {}),
+      ...(seed.userTurn.reasoningEffort ? { reasoningEffort: seed.userTurn.reasoningEffort } : {}),
+      ...(seed.userTurn.responseSpeed ? { responseSpeed: seed.userTurn.responseSpeed } : {}),
+      ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
+        ? { modelControls: seed.userTurn.modelControls }
+        : {}),
+      ...(seed.userTurn.modelOverride ? { modelOverride: seed.userTurn.modelOverride } : {}),
+      ...(seed.userTurn.modelOverrideScope === "runtime-default"
+        ? { modelOverrideScope: "runtime-default" as const }
+        : {}),
+      ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
+      createdAt: seed.createdAt,
+      ...(parentId != null ? { parentId } : { parentId: null }),
+    });
+    conv.activeLeafId = seed.userTurn.id;
+  }
+  delete conv.pendingUserTurnId;
+  if (!existing) {
+    conv.updatedAt = seed.createdAt;
+  }
+  await beforeSave?.();
+  await saveConversation(conv);
+}
+
+/**
+ * Persist an accepted offline turn while the caller owns the conversation
+ * fence. This is used when queue state and transcript persistence must share
+ * one deletion-generation decision; it must never be called without that
+ * fence.
+ */
+export async function persistQueuedOfflineConversationUnderLock(
+  seed: QueuedOfflineConversationSeed,
+  beforeSave?: () => Promise<void> | void,
+): Promise<void> {
+  await persistQueuedOfflineConversationUnlocked(seed, beforeSave);
+}
+
 export async function persistQueuedOfflineConversation(
   seed: QueuedOfflineConversationSeed,
   beforeSave?: () => Promise<void> | void,
 ): Promise<void> {
-  await withConversationLock(seed.sessionId, async () => {
-    const existing = await loadConversation(seed.sessionId);
-    const attentionClearOperationId = normalizeChatAttentionOperationId(
-      seed.userTurn.attentionClearOperationId,
-    );
-    const conv = existing ?? {
-      sessionId: seed.sessionId,
-      familiarId: seed.familiarId,
-      harness: seed.harness,
-      ...(seed.model ? { model: seed.model } : {}),
-      ...(seed.runtime ? { runtime: seed.runtime } : {}),
-      ...(seed.title ? { title: seed.title } : {}),
-      ...(seed.origin ? { origin: seed.origin } : {}),
-      ...(seed.modelIntent ? { modelIntent: seed.modelIntent } : {}),
-      createdAt: seed.createdAt,
-      updatedAt: seed.createdAt,
-      turns: [],
-    };
-    conv.familiarId = seed.familiarId;
-    conv.harness = seed.harness;
-    if (seed.model !== undefined) conv.model = seed.model;
-    if (seed.runtime !== undefined) conv.runtime = seed.runtime;
-    if (!conv.title && seed.title) conv.title = seed.title;
-    if (!conv.origin && seed.origin) conv.origin = seed.origin;
-    if (!conv.modelIntent && seed.modelIntent) conv.modelIntent = seed.modelIntent;
-    if (seed.harnessSessionId) conv.harnessSessionId = seed.harnessSessionId;
-
-    const existingTurn = conv.turns.find((turn) => turn.id === seed.userTurn.id);
-    if (!existingTurn) {
-      const parentId = seed.userTurn.parentId !== undefined
-        ? seed.userTurn.parentId
-        : existing?.activeLeafId ?? null;
-      conv.turns.push({
-        id: seed.userTurn.id,
-        role: "user",
-        text: seed.userTurn.text,
-        ...(seed.userTurn.attachments?.length ? { attachments: seed.userTurn.attachments } : {}),
-        ...(seed.userTurn.reasoningEffort ? { reasoningEffort: seed.userTurn.reasoningEffort } : {}),
-        ...(seed.userTurn.responseSpeed ? { responseSpeed: seed.userTurn.responseSpeed } : {}),
-        ...(seed.userTurn.modelControls && Object.keys(seed.userTurn.modelControls).length > 0
-          ? { modelControls: seed.userTurn.modelControls }
-          : {}),
-        ...(seed.userTurn.modelOverride ? { modelOverride: seed.userTurn.modelOverride } : {}),
-        ...(seed.userTurn.modelOverrideScope === "runtime-default"
-          ? { modelOverrideScope: "runtime-default" as const }
-          : {}),
-        ...(attentionClearOperationId ? { attentionClearOperationId } : {}),
-        createdAt: seed.createdAt,
-        ...(parentId != null ? { parentId } : { parentId: null }),
-      });
-      conv.activeLeafId = seed.userTurn.id;
-    }
-    delete conv.pendingUserTurnId;
-    if (!existing) {
-      conv.updatedAt = seed.createdAt;
-    }
-    await beforeSave?.();
-    await saveConversation(conv);
-  });
+  await withConversationLock(seed.sessionId, () =>
+    persistQueuedOfflineConversationUnlocked(seed, beforeSave));
 }
 
 /**

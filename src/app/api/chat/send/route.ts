@@ -9,6 +9,7 @@ import {
   bindingFor,
   enqueueOfflineTravelItem,
   type CaveConfig,
+  getSessionDeletionFence,
   getSessionDeletionGeneration,
   loadConfig,
   loadState,
@@ -211,7 +212,7 @@ import {
   type ChatTurn,
   createConversationStub,
   loadConversation,
-  persistQueuedOfflineConversation,
+  persistQueuedOfflineConversationUnderLock,
   saveConversation,
   stripConversationStubTurn,
   withConversationLock,
@@ -456,7 +457,6 @@ type OfflineChatQueuePayload = Pick<
   | "reasoningEffort"
   | "responseSpeed"
   | "modelControls"
-  | "conversationDeletionGeneration"
   | "mentionedFiles"
   | "mentionedFilesRoot"
   | "parentTurnId"
@@ -465,6 +465,8 @@ type OfflineChatQueuePayload = Pick<
   prompt: string;
   sessionId: string;
   userTurnId: string;
+  /** Captured under the conversation fence before this item becomes replayable. */
+  conversationDeletionGeneration: number;
   attachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
 };
@@ -660,56 +662,75 @@ async function maybeQueueOfflineChat(args: {
     body: args.body,
     responseMetadata: args.responseMetadata,
   });
-  const payload: OfflineChatQueuePayload = {
-    familiarId: args.body.familiarId,
-    prompt: args.promptText,
-    sessionId,
-    userTurnId: queuedUserTurnId,
-    projectRoot: args.body.projectRoot,
-    runId: args.body.runId,
-    modelOverride: queuedModelIntent.modelOverride,
-    modelOverrideScope: queuedModelIntent.modelOverrideScope,
-    reasoningEffort: args.body.reasoningEffort,
-    responseSpeed: args.body.responseSpeed,
-    modelControls: args.body.modelControls,
-    conversationDeletionGeneration: expectedConversationDeletionGeneration(args.body),
-    attachments: args.persistedAttachments,
-    mentionedFiles: args.body.mentionedFiles,
-    mentionedFilesRoot: args.body.mentionedFilesRoot,
-    parentTurnId: args.body.parentTurnId,
-    origin: args.body.origin,
-    responseMetadata: args.responseMetadata,
-  };
-  const queued = await enqueueOfflineTravelItem({
-    kind: "chat",
-    summary: chatTitleFromPrompt(args.promptText) ?? `Offline chat with ${args.body.familiarId}`,
-    payload,
+  const expectedGeneration = expectedConversationDeletionGeneration(args.body);
+  const queued = await withConversationLock(sessionId, async () => {
+    // The conversation fence is outermost. Queue state, then transcript
+    // persistence, happen beneath it so a DELETE cannot turn a saved offline
+    // item into a dispatchable prompt after this decision.
+    const deletionFence = await getSessionDeletionFence(sessionId);
+    if (
+      deletionFence.sacrificed
+      || (expectedGeneration !== undefined && expectedGeneration !== deletionFence.generation)
+    ) {
+      throw new Error("conversation deleted before offline queue acceptance");
+    }
+    const payload: OfflineChatQueuePayload = {
+      familiarId: args.body.familiarId,
+      prompt: args.promptText,
+      sessionId,
+      userTurnId: queuedUserTurnId,
+      projectRoot: args.body.projectRoot,
+      runId: args.body.runId,
+      modelOverride: queuedModelIntent.modelOverride,
+      modelOverrideScope: queuedModelIntent.modelOverrideScope,
+      reasoningEffort: args.body.reasoningEffort,
+      responseSpeed: args.body.responseSpeed,
+      modelControls: args.body.modelControls,
+      conversationDeletionGeneration: deletionFence.generation,
+      attachments: args.persistedAttachments,
+      mentionedFiles: args.body.mentionedFiles,
+      mentionedFilesRoot: args.body.mentionedFilesRoot,
+      parentTurnId: args.body.parentTurnId,
+      origin: args.body.origin,
+      responseMetadata: args.responseMetadata,
+    };
+    const created = await enqueueOfflineTravelItem({
+      kind: "chat",
+      summary: chatTitleFromPrompt(args.promptText) ?? `Offline chat with ${args.body.familiarId}`,
+      payload,
+    });
+    await persistQueuedOfflineConversationUnderLock({
+      sessionId,
+      familiarId: args.body.familiarId,
+      harness: args.responseMetadata.harness ?? bindingFor(args.config, args.body.familiarId).harness,
+      ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "model")
+        ? { model: args.responseMetadata.model ?? undefined }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "runtime")
+        ? { runtime: args.responseMetadata.runtime ?? undefined }
+        : {}),
+      title: chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(sessionId),
+      ...(args.body.origin ? { origin: args.body.origin } : {}),
+      createdAt: created.createdAt,
+      userTurn: {
+        id: queuedUserTurnId,
+        text: args.promptText,
+        ...(args.persistedAttachments.length ? { attachments: args.persistedAttachments } : {}),
+        ...attentionClearOperationForTurn(args.body.runId),
+        ...persistedTurnControls(args.body, args.responseMetadata.retryModel),
+        ...(args.body.parentTurnId !== undefined ? { parentId: args.body.parentTurnId } : {}),
+      },
+    }, async () => {
+      const latestFence = await getSessionDeletionFence(sessionId);
+      if (
+        latestFence.sacrificed
+        || latestFence.generation !== deletionFence.generation
+      ) {
+        throw new Error("conversation deleted before offline transcript save");
+      }
+    });
+    return created;
   });
-  await persistQueuedOfflineConversation({
-    sessionId,
-    familiarId: args.body.familiarId,
-    harness: args.responseMetadata.harness ?? bindingFor(args.config, args.body.familiarId).harness,
-    ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "model")
-      ? { model: args.responseMetadata.model ?? undefined }
-      : {}),
-    ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "runtime")
-      ? { runtime: args.responseMetadata.runtime ?? undefined }
-      : {}),
-    title: chatTitleFromPrompt(args.promptText) ?? defaultChatTitleForSession(sessionId),
-    ...(args.body.origin ? { origin: args.body.origin } : {}),
-    createdAt: queued.createdAt,
-    userTurn: {
-      id: queuedUserTurnId,
-      text: args.promptText,
-      ...(args.persistedAttachments.length ? { attachments: args.persistedAttachments } : {}),
-      ...attentionClearOperationForTurn(args.body.runId),
-      ...persistedTurnControls(args.body, args.responseMetadata.retryModel),
-      ...(args.body.parentTurnId !== undefined ? { parentId: args.body.parentTurnId } : {}),
-    },
-  }, () => assertConversationDeletionGeneration(
-    sessionId,
-    expectedConversationDeletionGeneration(args.body),
-  ));
 
   const runBuffer = openRunBuffer([args.body.runId, sessionId]);
   const stream = new ReadableStream<Uint8Array>({

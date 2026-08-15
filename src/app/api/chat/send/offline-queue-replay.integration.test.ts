@@ -1,8 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import http from "node:http";
 import path from "node:path";
 import { mkdir, rm } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const previousEnv = {
   COVEN_HOME: process.env.COVEN_HOME,
@@ -248,6 +253,65 @@ try {
     "retrying a replay after the daemon session id was recorded must not spawn a second daemon session",
   );
   assert.equal((await conversations.loadConversation("offline-chat-1"))?.turns.length, 1);
+
+  // A separate process can sacrifice a queued transcript after queue
+  // acceptance but before a reconnect. Replay must acquire the shared
+  // conversation fence and reject that durable generation before its daemon
+  // POST, so this prompt is never dispatched.
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:03:00.000Z"));
+  const deletedConversationId = "offline-chat-deleted-before-dispatch";
+  const deletedQueueResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "sage",
+      prompt: "this deleted offline prompt must never reach the hub",
+      projectRoot,
+      sessionId: deletedConversationId,
+    }),
+  }));
+  await readSse(deletedQueueResponse);
+  const deletedQueue = (await config.loadState()).travel.offlineQueue.find(
+    (item) => item.payload?.sessionId === deletedConversationId,
+  );
+  assert.ok(deletedQueue);
+  const conversationRouteUrl = pathToFileURL(
+    path.resolve("src/app/api/chat/conversation/[id]/route.ts"),
+  ).href;
+  await execFileAsync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--import",
+      "./scripts/test-alias-register.mjs",
+      "--input-type=module",
+      "--eval",
+      `
+        const { DELETE } = await import(${JSON.stringify(conversationRouteUrl)});
+        const response = await DELETE(
+          new Request("http://test/api/chat/conversation/${deletedConversationId}", { method: "DELETE" }),
+          { params: Promise.resolve({ id: ${JSON.stringify(deletedConversationId)} }) },
+        );
+        if (response.status !== 200) throw new Error("delete failed: " + response.status);
+      `,
+    ],
+    { cwd: process.cwd(), env: { ...process.env }, windowsHide: true },
+  );
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T12:04:00.000Z"));
+  const blockedReplay = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(blockedReplay.attempted, 1);
+  assert.equal(blockedReplay.synced, 0);
+  assert.equal(blockedReplay.failed, 1);
+  assert.match(blockedReplay.errors[0]?.error ?? "", /conversation deleted before offline replay dispatch/);
+  assert.equal(
+    sessionRequests.length,
+    1,
+    "a cross-process delete before replay must prevent the daemon from receiving the queued prompt",
+  );
+  assert.equal(
+    (await config.loadState()).travel.offlineQueue.find((item) => item.id === deletedQueue.id)?.status,
+    "failed",
+  );
 
   console.log("offline-queue-replay.integration.test.ts: ok");
 } finally {

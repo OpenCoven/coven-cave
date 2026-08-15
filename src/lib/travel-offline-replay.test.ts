@@ -139,8 +139,8 @@ assert.match(
 
 assert.match(
   replay,
-  /const deletionGeneration = typeof payload\.conversationDeletionGeneration === "number"[\s\S]*?persistQueuedOfflineConversation\([\s\S]*?getSessionDeletionGeneration\(sessionId\) !== deletionGeneration/,
-  "offline replay preserves the authorization-time deletion fence and refuses a deleted conversation before saving",
+  /savedConversationDeletionGeneration\(payload\)[\s\S]*?withConversationLock\(sessionId,[\s\S]*?assertQueuedConversationIsLive\(sessionId, deletionGeneration\)[\s\S]*?spawnHubSession\([\s\S]*?persistQueuedOfflineConversation\([\s\S]*?assertQueuedConversationIsLive\(sessionId, deletionGeneration\)/,
+  "offline replay validates its durable generation under the cross-process conversation fence before dispatch and again before transcript save",
 );
 assert.match(
   replay,
