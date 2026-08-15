@@ -1992,7 +1992,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
-  // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value.
+  // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
+  // reaches "@/lib/server/api-security" for the local-request guard.
   "src/app/api/research/papers/pdf/route.test.ts",
 ]);
 

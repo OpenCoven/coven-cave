@@ -7,6 +7,17 @@ import { arxivPdfUrl } from "./arxiv-url";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+/** The final URL of the chain, which is the request URL when nothing redirected. */
+function isArxivResponse(response: Response): boolean {
+  let host: string;
+  try {
+    host = new URL(response.url).host;
+  } catch {
+    return false;
+  }
+  return host === "arxiv.org" || host.endsWith(".arxiv.org");
+}
+
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
@@ -20,11 +31,25 @@ export async function GET(req: Request) {
   const range = req.headers.get("range");
   let response: Response;
   try {
-    response = await fetch(upstream, { headers: range ? { range } : {} });
+    // `accept-encoding: identity` keeps the upstream length describing exactly
+    // the bytes we forward. fetch decompresses a gzipped body transparently
+    // but leaves the COMPRESSED content-length on the response, so copying
+    // that header across would hand pdf.js a truncated document. Asking for no
+    // encoding is preferred over dropping content-length, because pdf.js reads
+    // it — with accept-ranges — to fetch page ranges instead of the whole file.
+    response = await fetch(upstream, {
+      headers: { "accept-encoding": "identity", ...(range ? { range } : {}) },
+    });
   } catch {
     return NextResponse.json({ ok: false, error: "upstream unavailable" }, { status: 502 });
   }
-  if (!response.ok && response.status !== 206) {
+  // arxivPdfUrl composes the REQUEST url safely, but nothing constrained where
+  // a redirect chain ends up, and the body is streamed back as
+  // application/pdf. Refuse a response that left arXiv rather than proxying it.
+  if (!isArxivResponse(response)) {
+    return NextResponse.json({ ok: false, error: "upstream redirected away" }, { status: 502 });
+  }
+  if (!response.ok) {
     return NextResponse.json({ ok: false, error: "paper not found" }, { status: 404 });
   }
 
