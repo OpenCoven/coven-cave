@@ -3247,9 +3247,12 @@ export async function POST(req: Request) {
         { output: string | undefined; isError: boolean }
       >();
       const MAX_PENDING_COPILOT_TOOL_COMPLETIONS = 64;
-      let claudeToolsEnabled =
+      let claudeEnvelopeToolsEnabled =
         binding.harness !== "claude" ||
         (claudeCompatibility?.kind === "compatible" && !claudeCompatibility.stale);
+      // Local Coven hook lines remain useful evidence independently of the
+      // versioned stream-json envelope. SSH stdout has no equivalent provenance.
+      const claudeHookEvidenceEnabled = binding.harness !== "claude" || !sshRuntime;
       const claudeDiagnostic = claudeCompatibility
         ? claudeCompatibilityDiagnostic(claudeCompatibility)
         : binding.harness === "claude" && sshRuntime
@@ -3270,7 +3273,7 @@ export async function POST(req: Request) {
         // One malformed frame means the selected envelope profile no longer
         // describes this stream. Continue showing assistant text, but do not
         // resume profile-selected tool decoding on later frames.
-        claudeToolsEnabled = false;
+        claudeEnvelopeToolsEnabled = false;
         if (claudeUnsupportedFrameDiagnosticSent) return;
         claudeUnsupportedFrameDiagnosticSent = true;
         console.warn("[chat] Claude stream frame could not be decoded", {
@@ -3280,7 +3283,7 @@ export async function POST(req: Request) {
         claudeCompatibilityDiagnosticSent = true;
         pushProgress(
           "claude-runtime-compatibility",
-          "A Claude Code stream frame could not be decoded; chat text will continue without unverified tool bubbles.",
+          "A Claude Code stream frame could not be decoded; stream-json tool bubbles are disabled, but local hook evidence will still be shown when available.",
           "notice",
         );
       };
@@ -3288,7 +3291,7 @@ export async function POST(req: Request) {
         // An unrecognised tool block can change the meaning or ordering of
         // later frames, so fail closed for the rest of this stream rather than
         // treating subsequent familiar labels as independently trustworthy.
-        claudeToolsEnabled = false;
+        claudeEnvelopeToolsEnabled = false;
         if (claudeUnsupportedFrameDiagnosticSent) return;
         claudeUnsupportedFrameDiagnosticSent = true;
         console.warn("[chat] Claude tool frame ignored by compatibility profile", {
@@ -3298,7 +3301,7 @@ export async function POST(req: Request) {
         claudeCompatibilityDiagnosticSent = true;
         pushProgress(
           "claude-runtime-compatibility",
-          "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
+          "A Claude Code tool frame is not supported by the selected compatibility profile; stream-json tool bubbles are disabled, but local hook evidence will still be shown when available.",
           "notice",
         );
       };
@@ -4239,7 +4242,7 @@ export async function POST(req: Request) {
               binding.harness === "claude" &&
               claudeCompatibility?.kind === "compatible" &&
               !claudeCompatibility.stale &&
-              claudeToolsEnabled
+              claudeEnvelopeToolsEnabled
             ) {
               // Profile-selected decoding keeps version-specific envelope names
               // outside this route. The shared tracker continues to provide
@@ -4344,16 +4347,18 @@ export async function POST(req: Request) {
         if (binding.harness !== "claude") {
           recordStdoutErrorTail(cleaned);
         }
-        if (toolMatch && claudeToolsEnabled) {
+        if (toolMatch && claudeHookEvidenceEnabled) {
           const isPost = trimmed.startsWith("hook: post_tool_use");
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();
-          if (!isPost) boundarySentinel?.observe(name, rest);
+          if (!isPost && (binding.harness !== "claude" || claudeEnvelopeToolsEnabled)) {
+            boundarySentinel?.observe(name, rest);
+          }
           const toolEv = isPost
             ? toolTracker.hookEnd(
                 name,
                 formatToolPayload(rest),
-                /error|fail|denied|exit\s*[1-9]/i.test(rest),
+                /error|fail|denied|exit(?:[\s_-]*code)?["']?\s*[:=]?\s*[1-9]/i.test(rest),
               )
             : toolTracker.hookStart(name, formatToolPayload(rest), assistantText.length);
           push({ kind: "tool_use", ...toolEv });
