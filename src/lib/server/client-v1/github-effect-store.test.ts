@@ -10,6 +10,7 @@ await mkdir(root, { recursive: true });
 process.env.COVEN_CAVE_CLIENT_GITHUB_EFFECT_STORE_PATH = path.join(root, "github-effects.json");
 
 const store = await import("./github-effect-store.ts");
+const { COMPLETED_OPERATION_TTL_MS } = await import("./idempotency-store.ts");
 
 after(async () => {
   await rm(root, { recursive: true, force: true });
@@ -352,6 +353,7 @@ test("strict receipt validation still replays valid succeeded variants", async (
       effectId: record.effectId,
       source: source(),
       action: record.action,
+      at: isoAt(100),
     });
     assert.equal(replay.kind, "replay", `${kind} receipts should remain replayable when well-formed`);
   }
@@ -404,39 +406,45 @@ test("retryable failures re-dispatch while manual reconciliation blocks later se
   assert.equal(blocked.failure.reason, "network_ambiguous");
 });
 
-test("capacity evicts only terminal effects and never pending ones", async () => {
+test("capacity full of live-window receipts fails closed without evicting a replayable receipt", async () => {
   await seedEffects([
-    succeededRecord(900, commentAudit("succeeded-900"), commentReceipt("succeeded-900")),
-    ...Array.from({ length: 511 }, (_, index) => pendingRecord(index)),
+    ...Array.from({ length: 512 }, (_, index) =>
+      succeededRecord(index, commentAudit(`succeeded-${index}`), commentReceipt(`succeeded-${index}`)),
+    ),
   ]);
 
-  const created = await store.beginGitHubEffect({
-    effectId: effectId(901),
-    source: source(),
-    action: commentAudit("fresh"),
-  });
-  assert.equal(created.kind, "dispatch");
+  const at = new Date(Date.parse(isoAt(0)) + COMPLETED_OPERATION_TTL_MS).toISOString();
+  await assert.rejects(
+    store.beginGitHubEffect({
+      effectId: effectId(900),
+      source: source(),
+      action: commentAudit("fresh"),
+      at,
+    }),
+    (error) => error instanceof store.GitHubEffectStoreCapacityError,
+  );
 
   const persisted = JSON.parse(await persistedStoreRaw());
   assert.equal(persisted.effects.length, 512);
   assert.equal(
-    persisted.effects.some((effect) => effect.effectId === effectId(900)),
-    false,
-    "the oldest terminal record is the eviction victim",
-  );
-  assert.equal(
     persisted.effects.some((effect) => effect.effectId === effectId(0)),
     true,
-    "live pending effects must remain durable at capacity",
+    "the oldest live-window receipt must remain replayable",
+  );
+  assert.equal(
+    persisted.effects.some((effect) => effect.effectId === effectId(511)),
+    true,
+    "capacity errors must not evict any protected receipt",
   );
 
   const retry = await store.beginGitHubEffect({
     effectId: effectId(0),
     source: source(),
-    action: commentAudit("pending-0"),
+    action: commentAudit("succeeded-0"),
+    at,
   });
-  assert.equal(retry.kind, "reconcile");
-  assert.equal(retry.claim.generation, 2);
+  assert.equal(retry.kind, "replay");
+  assert.deepEqual(retry.receipt, commentReceipt("succeeded-0"));
 });
 
 test("capacity full of pending effects fails closed without evicting the original record", async () => {
@@ -466,6 +474,95 @@ test("capacity full of pending effects fails closed without evicting the origina
   });
   assert.equal(retry.kind, "reconcile", "retrying the preserved record must not redispatch");
   assert.equal(retry.claim.generation, 2);
+});
+
+test("capacity reclaims only receipts expired beyond the outer idempotency window", async () => {
+  assert.equal(
+    store.GITHUB_EFFECT_RECEIPT_RETENTION_MS,
+    COMPLETED_OPERATION_TTL_MS,
+    "GitHub receipt retention must be derived from the outer idempotency window",
+  );
+  await seedEffects(
+    Array.from({ length: 512 }, (_, index) =>
+      succeededRecord(index, commentAudit(`receipt-${index}`), commentReceipt(`receipt-${index}`)),
+    ),
+  );
+
+  // Record 0 settled one second after isoAt(0), making it expired exactly at
+  // this clock value. The later 511 records are still inside the same
+  // 24-hour live window and must remain protected.
+  const at = new Date(Date.parse(isoAt(0)) + COMPLETED_OPERATION_TTL_MS + 1_000).toISOString();
+  const created = await store.beginGitHubEffect({
+    effectId: effectId(900),
+    source: source(),
+    action: commentAudit("fresh-after-expiry"),
+    at,
+  });
+  assert.equal(created.kind, "dispatch");
+
+  const persisted = JSON.parse(await persistedStoreRaw());
+  assert.equal(persisted.effects.length, 512);
+  assert.equal(
+    persisted.effects.some((effect) => effect.effectId === effectId(0)),
+    false,
+    "only the expired receipt is reclaimed",
+  );
+  assert.equal(
+    persisted.effects.some((effect) => effect.effectId === effectId(1)),
+    true,
+    "a receipt with one second remaining must stay durable",
+  );
+  assert.equal(
+    persisted.effects.some((effect) => effect.effectId === effectId(900)),
+    true,
+    "the reclaimed slot is atomically reserved for the new effect",
+  );
+});
+
+test("concurrent capacity claims admit exactly one effect without evicting protected receipts", async () => {
+  await seedEffects(
+    Array.from({ length: 511 }, (_, index) =>
+      succeededRecord(index, commentAudit(`receipt-${index}`), commentReceipt(`receipt-${index}`)),
+    ),
+  );
+  const at = new Date(Date.parse(isoAt(0)) + COMPLETED_OPERATION_TTL_MS).toISOString();
+
+  const claims = await Promise.allSettled([
+    store.beginGitHubEffect({
+      effectId: effectId(900),
+      source: source(),
+      action: commentAudit("first-claim"),
+      at,
+    }),
+    store.beginGitHubEffect({
+      effectId: effectId(901),
+      source: source(),
+      action: commentAudit("second-claim"),
+      at,
+    }),
+  ]);
+
+  assert.equal(claims.filter((claim) => claim.status === "fulfilled").length, 1);
+  assert.equal(claims.filter((claim) => claim.status === "rejected").length, 1);
+  assert.ok(
+    claims.some(
+      (claim) =>
+        claim.status === "rejected" && claim.reason instanceof store.GitHubEffectStoreCapacityError,
+    ),
+  );
+
+  const persisted = JSON.parse(await persistedStoreRaw());
+  assert.equal(persisted.effects.length, 512);
+  assert.equal(
+    persisted.effects.filter((effect) => effect.effectId === effectId(900) || effect.effectId === effectId(901)).length,
+    1,
+    "the transaction lock must serialize capacity check and reservation",
+  );
+  assert.equal(
+    persisted.effects.some((effect) => effect.effectId === effectId(0)),
+    true,
+    "concurrent claim pressure must never evict a protected receipt",
+  );
 });
 
 test("pending records remain readable after the retained attempt window truncates older cycles", async () => {

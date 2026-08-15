@@ -8,12 +8,20 @@ import { caveHome } from "@/lib/coven-paths";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 
 import { isUuid, type ClientV1ErrorCode } from "./contract.ts";
+import { COMPLETED_OPERATION_TTL_MS } from "./idempotency-store.ts";
 import { withOperationTransactionLock } from "./operation-transaction-lock.ts";
 
 import type { GitHubActionReceipt } from "./action-service.ts";
 
 const STORE_VERSION = 1;
-const MAX_GITHUB_EFFECTS = 512;
+export const MAX_GITHUB_EFFECTS = 512;
+/**
+ * Terminal GitHub effect records must outlive the outer mutation ledger's
+ * replay window. A same-key retry can reclaim its outer pending claim after a
+ * completion failure, and must still find this receipt rather than dispatch
+ * the external action again.
+ */
+export const GITHUB_EFFECT_RECEIPT_RETENTION_MS = COMPLETED_OPERATION_TTL_MS;
 const MAX_EFFECT_ATTEMPTS = 8;
 const MAX_FAILURE_MESSAGE_CHARS = 512;
 const MAX_GITHUB_RECEIPT_TEXT_BYTES = 2_048;
@@ -864,22 +872,19 @@ function capAttempts(attempts: GitHubEffectAttempt[]): GitHubEffectAttempt[] {
   return attempts.slice(-MAX_EFFECT_ATTEMPTS);
 }
 
-function ensureCapacityForNewEffect(
+function reclaimExpiredEffectReceipts(
   effects: GitHubEffectRecord[],
-): { ok: true; effects: GitHubEffectRecord[]; changed: boolean } | { ok: false } {
-  if (effects.length < MAX_GITHUB_EFFECTS) return { ok: true, effects, changed: false };
-  const needed = effects.length - MAX_GITHUB_EFFECTS + 1;
-  const terminalOldestFirst = effects
-    .map((effect, index) => ({ effect, index }))
-    .filter((entry) => entry.effect.state !== "pending")
-    .sort((a, b) => compareIso(a.effect.updatedAt, b.effect.updatedAt));
-  if (terminalOldestFirst.length < needed) return { ok: false };
-  const evictIndexes = new Set(terminalOldestFirst.slice(0, needed).map((entry) => entry.index));
-  return {
-    ok: true,
-    effects: effects.filter((_, index) => !evictIndexes.has(index)),
-    changed: true,
-  };
+  now: number,
+): { effects: GitHubEffectRecord[]; changed: boolean } {
+  // A successful receipt is the critical duplicate-prevention record, but
+  // retain every terminal outcome for the same window: a manual-reconciliation
+  // result must not turn into a new dispatch while its outer mutation can
+  // still be reclaimed and retried with the same idempotency key.
+  const retained = effects.filter((effect) =>
+    effect.state === "pending"
+      || Date.parse(effect.updatedAt) + GITHUB_EFFECT_RECEIPT_RETENTION_MS > now,
+  );
+  return { effects: retained, changed: retained.length !== effects.length };
 }
 
 async function mutateStore<T>(
@@ -962,16 +967,17 @@ export async function beginGitHubEffect(args: {
   const action = parseGitHubEffectActionAudit(args.action);
   if (!source || !action) throw new Error("Invalid GitHub effect reservation input.");
 
-  return mutateStore<BeginGitHubEffectResult>((store) => {
+  const result = await mutateStore<BeginGitHubEffectResult | { kind: "capacity_exceeded" }>((store) => {
+    // This whole reclamation + capacity + reservation sequence runs inside
+    // mutateStore's SQLite transaction lock. No process can evict a record
+    // another process has just observed or reserve beyond the bounded store.
+    const reclaimed = reclaimExpiredEffectReceipts(store.effects, Date.parse(at));
+    store.effects = reclaimed.effects;
     const existing = store.effects.find((effect) => effect.effectId === args.effectId);
     if (!existing) {
-      const capacity = ensureCapacityForNewEffect(store.effects);
-      if (!capacity.ok) {
-        throw new GitHubEffectStoreCapacityError(
-          "GitHub effect store is full of live effects awaiting resolution.",
-        );
+      if (store.effects.length >= MAX_GITHUB_EFFECTS) {
+        return { changed: reclaimed.changed, value: { kind: "capacity_exceeded" } };
       }
-      store.effects = capacity.effects;
       const claim = mintClaim(null);
       const created: GitHubEffectRecord = {
         effectId: args.effectId,
@@ -995,7 +1001,7 @@ export async function beginGitHubEffect(args: {
 
     if (existing.state === "succeeded" && existing.receipt) {
       return {
-        changed: false,
+        changed: reclaimed.changed,
         value: {
           kind: "replay",
           record: cloneRecord(existing),
@@ -1006,7 +1012,7 @@ export async function beginGitHubEffect(args: {
 
     if (existing.state === "manual_reconciliation" && existing.lastFailure) {
       return {
-        changed: false,
+        changed: reclaimed.changed,
         value: {
           kind: "manual_reconciliation",
           record: cloneRecord(existing),
@@ -1047,8 +1053,14 @@ export async function beginGitHubEffect(args: {
         record: cloneRecord(existing),
         claim: cloneClaim(claim),
       },
-    };
+    }
   });
+  if (result.kind === "capacity_exceeded") {
+    throw new GitHubEffectStoreCapacityError(
+      "GitHub effect store is full of live effects awaiting resolution.",
+    );
+  }
+  return result;
 }
 
 export async function settleGitHubEffectSuccess(args: {

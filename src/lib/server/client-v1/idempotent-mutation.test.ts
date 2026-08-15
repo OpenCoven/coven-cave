@@ -20,6 +20,7 @@ const testTmpRoot = path.join(process.cwd(), ".test-tmp");
 await mkdir(testTmpRoot, { recursive: true });
 const workdir = await mkdtemp(path.join(testTmpRoot, "client-v1-idempotent-mutation-"));
 process.env.COVEN_CAVE_CLIENT_OPERATION_STORE_PATH = path.join(workdir, "client-v1-operations.json");
+process.env.COVEN_CAVE_CLIENT_GITHUB_EFFECT_STORE_PATH = path.join(workdir, "github-effects.json");
 
 const { runIdempotentMutation, deriveIdempotentEffectId } = await import("./idempotent-mutation.ts");
 const {
@@ -32,6 +33,10 @@ const {
   setPostReadDelayForTest,
   setReadFileForTest,
 } = await import("./idempotency-store.ts");
+const {
+  beginGitHubEffect,
+  settleGitHubEffectSuccess,
+} = await import("./github-effect-store.ts");
 const { clientV1Ok, clientV1Error } = await import("./responses.ts");
 
 after(async () => {
@@ -40,6 +45,10 @@ after(async () => {
 
 beforeEach(async () => {
   await rm(clientOperationStorePath(), { force: true });
+  await rm(process.env.COVEN_CAVE_CLIENT_GITHUB_EFFECT_STORE_PATH!, { force: true });
+  await rm(`${process.env.COVEN_CAVE_CLIENT_GITHUB_EFFECT_STORE_PATH}.lock.sqlite3`, { force: true });
+  await rm(`${process.env.COVEN_CAVE_CLIENT_GITHUB_EFFECT_STORE_PATH}.lock.sqlite3-shm`, { force: true });
+  await rm(`${process.env.COVEN_CAVE_CLIENT_GITHUB_EFFECT_STORE_PATH}.lock.sqlite3-wal`, { force: true });
   setPostReadDelayForTest(null);
   setReadFileForTest(null);
 });
@@ -519,6 +528,94 @@ test("execute receives a stable effectId across a claim -> reclaim (never derive
       idempotencyKey: request.idempotencyKey,
       requestHash: seenRequestHashes[0],
     }),
+  );
+});
+
+test("a completion crash retries the durable GitHub receipt without a second external dispatch", async () => {
+  const request = baseRequest({
+    route: "github-actions",
+    identity: {
+      method: "POST",
+      conversationId: "conv-1",
+      turnId: "assistant-1",
+      action: { kind: "comment", repo: "OpenCoven/coven-cave", number: 7, body: "Ship it" },
+    },
+  });
+  const source = { conversationId: "conv-1", turnId: "assistant-1" };
+  const body = "Ship it";
+  const bodySha256 = crypto.createHash("sha256").update(body).digest("hex");
+  const action = {
+    kind: "comment" as const,
+    repo: "OpenCoven/coven-cave",
+    number: 7,
+    bodyPreview: body,
+    bodyBytes: Buffer.byteLength(body, "utf8"),
+    bodySha256,
+    bodyTruncated: false,
+  };
+  const receipt = {
+    source,
+    action: {
+      kind: "comment" as const,
+      repo: "OpenCoven/coven-cave",
+      number: 7,
+      body,
+      bodyBytes: Buffer.byteLength(body, "utf8"),
+      bodySha256,
+    },
+    result: {
+      kind: "comment" as const,
+      commentId: "91",
+      body,
+      bodyBytes: Buffer.byteLength(body, "utf8"),
+      bodySha256,
+      createdAt: "2026-08-10T10:02:00.000Z",
+      url: "https://github.com/OpenCoven/coven-cave/issues/7#issuecomment-91",
+    },
+  };
+  let githubDispatches = 0;
+  const execute = async (ctx: { effectId: string }) => {
+    const reservation = await beginGitHubEffect({ effectId: ctx.effectId, source, action });
+    if (reservation.kind === "replay") {
+      return clientV1Ok({ ok: true, action: reservation.receipt });
+    }
+    assert.equal(reservation.kind, "dispatch", "the initial action must reserve before dispatching");
+    githubDispatches += 1;
+    assert.equal(
+      await settleGitHubEffectSuccess({
+        effectId: ctx.effectId,
+        receipt,
+        expected: { state: "pending", claim: reservation.claim },
+      }),
+      true,
+    );
+    return clientV1Ok({ ok: true, action: receipt });
+  };
+
+  const first = await runIdempotentMutation(
+    request,
+    execute,
+    depsWithFakeCompletion(async () => {
+      throw new Error("simulated outer completion crash");
+    }),
+  );
+  assert.equal(first.status, 503);
+  assert.equal(githubDispatches, 1);
+
+  const reclaimDeps = {
+    claimOperation: (input: Parameters<typeof claimOperation>[0]) =>
+      claimOperation(input, Date.now() + PENDING_CLAIM_RETRY_MS + 1_000),
+    completeOperation,
+    hashNormalizedRequest,
+    isIdempotencyStoreIntegrityError,
+  };
+  const retry = await runIdempotentMutation(request, execute, reclaimDeps);
+  assert.equal(retry.status, 200);
+  assert.deepEqual(await retry.json(), { ok: true, action: receipt });
+  assert.equal(
+    githubDispatches,
+    1,
+    "the same-key retry must replay its protected receipt instead of calling GitHub again",
   );
 });
 
