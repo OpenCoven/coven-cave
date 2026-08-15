@@ -147,3 +147,6 @@ __verify-chat-detail.mjs
 .psyche*
 /.xcode-source-packages
 /.demo
+
+# build product of a pinned dependency (scripts/copy-pdf-worker.mjs); not source
+public/pdf.worker.min.mjs

@@ -96,7 +96,7 @@
     "test:e2e": "pnpm e2e:install && playwright test",
     "start": "node server.mjs",
     "build:server": "esbuild server.ts --bundle=false --platform=node --target=node24 --outfile=server.mjs --format=esm",
-    "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs",
+    "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs && node scripts/copy-pdf-worker.mjs",
     "test:supply-chain": "node scripts/dependency-policy.test.mjs"
   },
   "dependencies": {
@@ -135,6 +135,7 @@
     "mermaid": "11.16.0",
     "next": "16.2.12",
     "node-pty": "1.1.0",
+    "pdfjs-dist": "6.2.108",
     "punycode": "2.3.1",
     "qrcode": "1.5.4",
     "react": "19.2.8",
