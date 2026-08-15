@@ -5,6 +5,7 @@
 - Treat `main` as the canonical project state. Before starting work, fetch and branch from current `origin/main`.
 - Use branches and worktrees only as short-lived PR transport for active implementation. Do not use branches as durable storage, coordination logs, or half-finished agent memory.
 - Keep durable coordination in tracked workflow artifacts: plans, specs, issues, PR descriptions/checklists, release notes, and handoff docs.
+- Land an approved spec or plan on `main` through its own docs PR even when the implementation is deferred or abandoned. Bead citations must resolve on `main`; archive tags are recovery sources, not the canonical location of an approved design.
 - Before opening a PR, make the branch PR-shaped: scoped diff, relevant local verification, and a summary of what changed.
 - Create managed worktrees through `pnpm beads:worktrees:create --bead cave-123
   --branch fix/cave-123-example --owner kitty --purpose "Repair example"` so the
