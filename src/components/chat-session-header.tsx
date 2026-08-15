@@ -211,6 +211,9 @@ export function SessionOverflowMenu({
                     key={item.id}
                     icon={item.icon}
                     checked={item.checked}
+                    // Only `thinking` and `instruments` carry `checked` here and
+                    // both are independent on/off toggles, not one of a set.
+                    checkedRole="checkbox"
                     disabled={item.disabled}
                     title={item.title}
                     onSelect={handlers[item.id]}
