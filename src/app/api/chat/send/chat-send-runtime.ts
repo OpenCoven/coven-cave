@@ -1,4 +1,5 @@
-import { realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { loadConversation } from "@/lib/cave-conversations";
 import { callDaemon } from "@/lib/coven-daemon";
@@ -47,6 +48,31 @@ export async function daemonSessionCwd(sessionId?: string): Promise<string | und
     /* daemon offline — the caller keeps its remaining fallbacks */
   }
   return undefined;
+}
+
+/**
+ * Keep stale project registrations out of native harness argv. Copilot treats
+ * one missing or inaccessible --add-dir as a fatal prompt error, so effective
+ * runtime grants must be directories the current host can actually traverse.
+ */
+export async function filterUsableLocalDirectories(
+  candidates: readonly string[],
+): Promise<string[]> {
+  const unique = [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))];
+  const usable = await Promise.all(
+    unique.map(async (candidate) => {
+      try {
+        const resolved = await realpath(candidate);
+        const metadata = await stat(resolved);
+        if (!metadata.isDirectory()) return null;
+        await access(resolved, constants.R_OK | constants.X_OK);
+        return candidate;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return usable.filter((candidate): candidate is string => candidate !== null);
 }
 
 /**

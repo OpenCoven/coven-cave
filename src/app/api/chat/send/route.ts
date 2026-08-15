@@ -307,7 +307,12 @@ import {
   type ModelControlValues,
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
-import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
+import {
+  conversationCwd,
+  daemonSessionCwd,
+  filterUsableLocalDirectories,
+  resolveFamiliarWorkspace,
+} from "./chat-send-runtime";
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
@@ -2524,9 +2529,18 @@ export async function POST(req: Request) {
   const accessibleProjects = sshRuntime
     ? []
     : await listAccessibleProjects(projects, body.familiarId);
-  const grantedProjectRoots = accessibleProjects.map((entry) => entry.project.root);
+  const usableProjectRoots = new Set(
+    await filterUsableLocalDirectories(
+      accessibleProjects.map((entry) => entry.project.root),
+    ),
+  );
+  const effectiveAccessibleProjects = accessibleProjects.filter((entry) =>
+    usableProjectRoots.has(entry.project.root.trim())
+  );
+  const omittedGrantCount = accessibleProjects.length - effectiveAccessibleProjects.length;
+  const grantedProjectRoots = effectiveAccessibleProjects.map((entry) => entry.project.root.trim());
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
-    accessibleProjects.map((entry) => [entry.project.root, entry.access]),
+    effectiveAccessibleProjects.map((entry) => [entry.project.root.trim(), entry.access]),
   );
   const runtimeResourceRoots = sshRuntime
     ? []
@@ -3080,7 +3094,8 @@ export async function POST(req: Request) {
           // buffer has expired. It carries file names only, never contents.
           id === "familiar-contract" ||
           id === "runtime-process" ||
-          id === "runtime-launch-diagnostics"
+          id === "runtime-launch-diagnostics" ||
+          id === "runtime-grants"
         ) {
           persistedCompatibilityDiagnostics.push({
             id,
@@ -3113,6 +3128,14 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (omittedGrantCount > 0) {
+        pushProgress(
+          "runtime-grants",
+          "Unavailable project grants skipped",
+          "notice",
+          `${omittedGrantCount} registered project ${omittedGrantCount === 1 ? "directory was" : "directories were"} unavailable on this host.`,
+        );
+      }
       // Report what identity context this turn actually loaded. A familiar
       // asked "what is in your SOUL.md" should be answerable from the run's own
       // record rather than from the familiar's introspection, which is exactly
@@ -5200,6 +5223,23 @@ export async function POST(req: Request) {
         await runAttempt(buildArgs(null, replay.prompt), replay.prompt);
       } else {
         await runAttempt(args);
+      }
+
+      // Copilot can silently close an expired native session with exit code 0:
+      // no result frame, no assistant text, and no "session not found" stderr.
+      // Treat that exact resumed-attempt shape as a stale session so the
+      // existing bounded context-replay retry can answer the user's turn.
+      if (
+        copilotStream &&
+        resumeTarget &&
+        !runtimeAccessRefreshNeeded &&
+        !runHandle.stopRequested &&
+        !launchFailure &&
+        !assistantText.trim() &&
+        result.duration_ms == null &&
+        result.is_error == null
+      ) {
+        resumeFailed = true;
       }
 
       // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
