@@ -276,20 +276,19 @@ struct CaveClient {
         }
     }
 
-    func marketplaceLogoURL(for plugin: MarketplacePlugin) -> URL? {
+    func marketplaceLogoSource(for plugin: MarketplacePlugin) -> CaveImageSource? {
         guard let path = plugin.logo?.assetPath,
               let base = connection.baseURL,
-              let resolved = URL(string: path, relativeTo: base)?.absoluteURL,
-              var components = URLComponents(
-                url: resolved,
-                resolvingAgainstBaseURL: false)
+              let resolved = URL(string: path, relativeTo: base)?.absoluteURL
         else { return nil }
-        if let token = try? CaveConnection.credentialForRequest(to: resolved) {
-            components.queryItems = [
-                URLQueryItem(name: "coven_access_token", value: token),
-            ]
+        do {
+            if let token = try CaveConnection.credentialForRequest(to: resolved) {
+                return .authenticatedRemoteURL(resolved, bearerToken: token)
+            }
+            return .remoteURL(resolved)
+        } catch {
+            return nil
         }
-        return components.url
     }
 
     func installMarketplacePlugin(id: String) async throws {

@@ -489,9 +489,9 @@ private struct MarketplacePluginLogo: View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.24)
                 .fill(chrome.bgRaised)
-            if let url = app.client?.marketplaceLogoURL(for: plugin) {
+            if let source = app.client?.marketplaceLogoSource(for: plugin) {
                 CachedImageView(
-                    source: .remoteURL(url),
+                    source: source,
                     targetSize: CGSize(width: size, height: size)
                 ) { image in
                     Image(uiImage: image)

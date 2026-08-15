@@ -103,7 +103,8 @@ assert.match(iosModels, /struct MarketplaceLogoIdentity: Codable, Hashable/);
 assert.match(iosView, /MarketplacePluginLogo\(plugin: plugin, size:/);
 assert.match(iosView, /CachedImageView\(/);
 assert.match(iosView, /plugin\.logo\?\.monogram/);
-assert.match(iosClient, /func marketplaceLogoURL\(for plugin: MarketplacePlugin\) -> URL\?/);
+assert.match(iosClient, /func marketplaceLogoSource\(for plugin: MarketplacePlugin\) -> CaveImageSource\?/);
+assert.match(iosClient, /\.authenticatedRemoteURL\(resolved, bearerToken: token\)/);
 
 const marketplaceRoute = await readFile(
   path.join(root, "src/app/api/marketplace/route.ts"),
