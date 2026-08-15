@@ -267,9 +267,12 @@ test("keeps a well-formed paper block and drops a malformed one", async () => {
 });
 ```
 
-If `normalizeStoredLink` is not already exported for tests, export it from
-`src/lib/server/research-links.ts` as `normalizeStoredLinkForTest` and import it in the
-test alongside the existing imports.
+**Do NOT export `normalizeStoredLink` to test it.** It is deliberately module-private, and
+the existing test file already has a better idiom: it points
+`CAVE_RESEARCH_LINKS_PATH_OVERRIDE` at a temp directory and drives the public API. Follow
+that — write a `research-links.json` containing one good and one malformed `paper` block,
+call `listSavedLinks()`, and assert what survives. That tests the actual read path
+including the JSON round-trip, rather than a function pulled out of its context.
 
 - [ ] **Step 2: Run it and confirm it fails**
 
@@ -303,8 +306,15 @@ export type SavedLink = {
 
 In `src/lib/server/research-links.ts`, add above `normalizeStoredLink`:
 
+> **Use a RELATIVE import, not the `@/` alias.** This file imports its neighbours as
+> `../link-organizer.ts` and `./atomic-write.ts`, and `research-links.test.ts` is
+> deliberately NOT in `ALIAS_LOADER`. Introducing an `@/` import here would make the test
+> throw `ERR_MODULE_NOT_FOUND` in CI while still passing locally — the `cave-nzfiy`
+> failure. Either import relatively (correct, no registration change) or add the test to
+> `ALIAS_LOADER` (unnecessary churn). Import relatively.
+
 ```ts
-import { isArxivPaperId } from "@/lib/hf-papers";
+import { isArxivPaperId } from "../hf-papers.ts";
 
 function normalizePaperBlock(value: unknown): SavedLink["paper"] {
   if (!value || typeof value !== "object") return undefined;
