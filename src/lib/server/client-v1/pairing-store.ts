@@ -726,6 +726,22 @@ function hasClaimReplayReceipt(
   );
 }
 
+function hasSameExchangeReplay(
+  left: PairingExchangeTerminalReplay,
+  right: PairingExchangeTerminalReplay,
+): boolean {
+  return (
+    left.idempotencyKey === right.idempotencyKey
+    && left.requestHash === right.requestHash
+    && left.credential.id === right.credential.id
+    && left.credential.appName === right.credential.appName
+    && left.credential.installationId === right.credential.installationId
+    && left.credential.createdAt === right.credential.createdAt
+    && left.credential.scopes.length === right.credential.scopes.length
+    && left.credential.scopes.every((scope, index) => scope === right.credential.scopes[index])
+  );
+}
+
 /**
  * Finish a successful exchange: verifies the exact claim still owns the
  * record and, for an idempotent exchange, durably writes its replay receipt
@@ -739,7 +755,21 @@ export function finalizeApprovedPairingClaim(
   options: { exchangeReplay?: PairingExchangeTerminalReplay | null } = {},
 ): PairingFinalizeClaimResult {
   const record = requests.get(id);
-  if (!record) return terminalSettlementResult(id, claimId);
+  if (!record) {
+    const marker = tombstones.get(id);
+    const requestedReplay = options.exchangeReplay;
+    if (
+      marker?.terminalReason === "finalized"
+      && marker.terminalClaimId === claimId
+      && marker.exchangeReplay !== null
+      && requestedReplay !== null
+      && requestedReplay !== undefined
+      && hasSameExchangeReplay(marker.exchangeReplay, requestedReplay)
+    ) {
+      return { kind: "finalized", replay: cloneExchangeReplay(marker.exchangeReplay) };
+    }
+    return terminalSettlementResult(id, claimId);
+  }
   if (record.claimId !== claimId) return { kind: "conflict" };
   if (!hasClaimReplayReceipt(record, options.exchangeReplay)) return { kind: "conflict" };
   record.consumedAt = now;

@@ -1123,6 +1123,15 @@ export async function settlePairingCredentialSettlement(
       // A terminal replay is owned by the exact transaction/recovery claimant
       // that promoted it. An older claimant may still hold decrypted bytes in
       // memory, but it must fail this fence before any caller can return them.
+      // Revalidate authority under THIS same credential transaction too:
+      // `recoverPairingCredentialSettlement` may have released its lock
+      // before a revocation/replacement committed, so its previously active
+      // token is not safe to return until this terminal fence confirms it.
+      if (!hasActiveSettlementCredential(store, replay)) {
+        journal.replays = journal.replays.filter((entry) => entry !== replay);
+        await writeSettlementJournal(journal);
+        return false;
+      }
       return replay.claimId === claimId && replay.recoveryClaimId === recoveryClaimId;
     }
     const transaction = journal.transactions.find((entry) => isSettlementContextForEntry(entry, context));
