@@ -154,7 +154,7 @@ async function baseRoutes(page: Page) {
 async function gotoApp(
   page: Page,
   handler: (route: Route) => Promise<unknown> | unknown,
-  options?: { dismissed?: boolean },
+  options?: { dismissed?: boolean; openOnboarding?: boolean },
 ) {
   await baseRoutes(page);
   await page.route("**/api/onboarding/bootstrap**", handler);
@@ -164,6 +164,19 @@ async function gotoApp(
     });
   }
   await page.goto("/");
+  // Startup state is now resolved by the server before this browser can
+  // intercept API requests. These interaction tests exercise the shared
+  // overlay through the Workspace's supported manual-open bridge; the server
+  // startup/hydration contract is covered by the focused app test.
+  if (options?.openOnboarding !== false) {
+    await page.getByRole("searchbox").first().waitFor({
+      state: "visible",
+      timeout: 30_000,
+    });
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("cave:onboarding-open"));
+    });
+  }
 }
 
 const setup = (page: Page) => page.getByRole("dialog", { name: "Set up Cave" });
@@ -575,6 +588,7 @@ test.describe("onboarding bootstrap", () => {
     });
     await gotoApp(page, (route) =>
       route.fulfill({ json: payload(complete) }),
+      { openOnboarding: false },
     );
     await page.getByRole("searchbox").first().waitFor({
       state: "visible",
