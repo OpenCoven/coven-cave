@@ -181,7 +181,7 @@ import {
   projectlessGenerationLaunch,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
-import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
+import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -2544,7 +2544,7 @@ export async function POST(req: Request) {
   );
   const runtimeResourceRoots = sshRuntime
     ? []
-    : await resolveRuntimeSkillRoots({
+    : await resolveRuntimeResourceRoots({
         coveredRoots: [
           cwd,
           ...grantedProjectRoots,
@@ -2574,6 +2574,7 @@ export async function POST(req: Request) {
           cwd,
           ...grantedProjectRoots,
           ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+          ...runtimeResourceRoots,
         ],
       });
   const responseMetadata: ChatResponseMetadata = {
