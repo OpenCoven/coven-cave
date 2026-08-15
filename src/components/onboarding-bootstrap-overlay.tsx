@@ -18,6 +18,7 @@ type Props = {
   open: boolean;
   onDismiss: () => void;
   autoFinishWhenComplete?: boolean;
+  initialState?: OnboardingBootstrapState;
 };
 
 type BootstrapResponse = OnboardingBootstrapState & {
@@ -54,9 +55,10 @@ export function OnboardingOverlay({
   open,
   onDismiss,
   autoFinishWhenComplete = false,
+  initialState,
 }: Props) {
   const [state, setState] = useState<OnboardingBootstrapState>(
-    createOnboardingBootstrapState(),
+    () => initialState ?? createOnboardingBootstrapState(),
   );
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -73,6 +75,11 @@ export function OnboardingOverlay({
       localStorage.setItem("cave:onboarding:dismissed", "1");
     } catch {
       /* private mode */
+    }
+    try {
+      document.cookie = "cave_onboarding_dismissed=1; Path=/; Max-Age=31536000; SameSite=Lax";
+    } catch {
+      /* embedded browser storage disabled */
     }
   }, []);
 
@@ -157,9 +164,9 @@ export function OnboardingOverlay({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || initialState) return;
     void request("GET");
-  }, [open, request]);
+  }, [initialState, open, request]);
 
   useEffect(() => {
     if (!open || !state.failure?.diagnostics) setDiagnosticsOpen(false);
