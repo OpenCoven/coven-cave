@@ -595,7 +595,6 @@ export function classifyOnboardingInstallFailure(input: {
   // outcome. Historical success output must not override that known phase.
   if (input.code === 0) return "verification_failed";
   if (/timed out/i.test(detail)) return "install_timeout";
-  if (input.launchFailed) return "installer_start_failed";
   if (/(EBUSY|resource busy|locked)/i.test(detail)) {
     return "install_busy";
   }
@@ -611,6 +610,7 @@ export function classifyOnboardingInstallFailure(input: {
     // data. Never turn this signal into an application-data writeability claim.
     return "filesystem_failed";
   }
+  if (input.launchFailed) return "installer_start_failed";
   return "unknown_failure";
 }
 
@@ -651,10 +651,53 @@ export function readOnboardingInstall(
   return { ...jobView(job), ...npmLaneView() };
 }
 
-function installStartErrorMessage(err: unknown): string {
+const SAFE_INSTALLER_ERROR_CODES = new Set([
+  "EACCES",
+  "EAGAIN",
+  "EINVAL",
+  "EMFILE",
+  "ENFILE",
+  "ENOENT",
+  "ENOMEM",
+  "EPERM",
+  "EROFS",
+]);
+
+export function installerErrorCode(err: unknown): string | null {
+  const direct =
+    err && typeof err === "object" && "code" in err
+      ? String((err as { code?: unknown }).code ?? "").toUpperCase()
+      : "";
+  if (SAFE_INSTALLER_ERROR_CODES.has(direct)) return direct;
   const message = err instanceof Error ? err.message : String(err);
-  if (/resource temporarily unavailable|EAGAIN|uv_thread_create/i.test(message)) {
+  const matched = message
+    .toUpperCase()
+    .match(/\b(EACCES|EAGAIN|EINVAL|EMFILE|ENFILE|ENOENT|ENOMEM|EPERM|EROFS)\b/);
+  return matched?.[1] ?? null;
+}
+
+function installerErrorDetail(err: unknown): string {
+  const code = installerErrorCode(err);
+  return code ? `Installer launch failed with ${code}.` : "";
+}
+
+export function installStartErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const code = installerErrorCode(err);
+  if (
+    code === "EAGAIN" ||
+    code === "ENOMEM" ||
+    code === "EMFILE" ||
+    code === "ENFILE" ||
+    /resource temporarily unavailable|uv_thread_create/i.test(message)
+  ) {
     return "Cave could not start the installer because the system is temporarily out of process slots. Wait a moment, then click Install again.";
+  }
+  if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
+    return `The operating system blocked Cave from starting the installer (${code}). Check the affected user-scoped location and security controls, then retry setup.`;
+  }
+  if (code === "ENOENT") {
+    return "Cave could not start the installer because its reviewed executable was missing (ENOENT). Restart Cave, then retry setup.";
   }
   if (!message) return "install failed to start";
   return "Cave could not start the installer. Retry in a moment; if it continues, copy diagnostics for support.";
@@ -879,10 +922,11 @@ async function runInstallJob(
     if (finalized) return;
     finalized = true;
     clearTimers();
+    const launchErrorCode = installerErrorCode(launchError);
     appendTrace(
       job,
       launchError
-        ? "Installer process: did not start."
+        ? `Installer process: did not start${launchErrorCode ? ` (${launchErrorCode})` : ""}.`
         : code === null
           ? `Installer process: ended by signal ${signal ?? "unknown"}.`
           : `Installer process: exited with code ${code}.`,
@@ -1007,12 +1051,24 @@ async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLe
   } catch (error) {
     job.ok = false;
     job.code = 1;
+    const errorDetail = installerErrorDetail(error);
     job.error = job.cancelRequested
       ? "install cancelled"
       : installStartErrorMessage(error);
     job.failureCode = job.cancelRequested
       ? "unknown_failure"
-      : "installer_start_failed";
+      : classifyOnboardingInstallFailure({
+          code: null,
+          output: job.output,
+          error: errorDetail,
+          launchFailed: true,
+        });
+    appendTrace(
+      job,
+      errorDetail
+        ? `Managed Node installer: failed before completion (${installerErrorCode(error)}).`
+        : "Managed Node installer: failed before completion.",
+    );
     appendOutput(job, `${job.error}\n`);
   } finally {
     job.status = "done";

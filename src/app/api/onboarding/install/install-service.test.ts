@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   canRepairDetectedCovenWithHostNpm,
   classifyOnboardingInstallFailure,
+  installerErrorCode,
+  installStartErrorMessage,
 } from "./install-service.ts";
 
 test("Coven CLI repair uses host npm only for Windows npm command shims", () => {
@@ -22,6 +24,16 @@ const cases = [
     name: "launch",
     input: { code: null, output: "", launchFailed: true },
     expected: "installer_start_failed",
+  },
+  {
+    name: "Windows access-denied launch",
+    input: {
+      code: null,
+      output: "",
+      error: "Installer launch failed with EACCES.",
+      launchFailed: true,
+    },
+    expected: "filesystem_failed",
   },
   {
     name: "integrity",
@@ -102,5 +114,29 @@ for (const fixture of cases) {
     );
   });
 }
+
+test("installer launch diagnostics retain only stable Windows error codes", () => {
+  const error = Object.assign(
+    new Error("spawn C:\\Users\\Sage\\private\\node.exe EACCES"),
+    { code: "EACCES", path: "C:\\Users\\Sage\\private\\node.exe" },
+  );
+
+  assert.equal(installerErrorCode(error), "EACCES");
+  assert.equal(
+    installStartErrorMessage(error),
+    "The operating system blocked Cave from starting the installer (EACCES). Check the affected user-scoped location and security controls, then retry setup.",
+  );
+  assert.doesNotMatch(installStartErrorMessage(error), /Sage|node\.exe/);
+});
+
+test("missing installer executables produce an actionable restart message", () => {
+  const error = Object.assign(new Error("spawn node.exe ENOENT"), {
+    code: "ENOENT",
+  });
+
+  assert.equal(installerErrorCode(error), "ENOENT");
+  assert.match(installStartErrorMessage(error), /reviewed executable was missing/);
+  assert.match(installStartErrorMessage(error), /Restart Cave/);
+});
 
 console.log("onboarding install-service.test.ts: ok");
