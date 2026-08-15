@@ -7743,13 +7743,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <CodeReadingContext.Provider value={codeReading}>
       {/* Row, so a `split` inspector docks BESIDE the transcript and narrows it
           rather than covering it. With no inspector open the row collapses to
-          the transcript alone and the layout is unchanged. Overlay and modal
-          are fixed-position and escape this row on their own. */}
+          the transcript alone and the layout is unchanged. The Thread Signal
+          host stays inside the transcript column but outside its scroll flow. */}
       <div className="flex min-h-0 flex-1">
+      <div className="cave-chat-overlay-host relative min-h-0 flex-1">
       <div
         ref={scrollRef}
         tabIndex={0}
-        className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto"
+        className="cave-chat-transcript relative h-full min-h-0 overflow-y-auto"
         onDragOver={familiarDrag ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropHover(true); } : undefined}
         onDragLeave={familiarDrag ? () => setDropHover(false) : undefined}
         onDrop={familiarDrag ? handleFamiliarDrop : undefined}
@@ -7902,16 +7903,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               archiving={archivingChat}
             />
           ) : null}
-          {threadSignalReport ? (
-            <ThreadSignalCard
-              report={threadSignalReport}
-              onDismiss={() => setThreadSignalReport(null)}
-              onViewFull={() => {
-                const params = new URLSearchParams({ sessionId: threadSignalReport.sessionId });
-                window.location.href = `/dashboard/familiars/${encodeURIComponent(threadSignalReport.familiarId)}/analytics?${params.toString()}`;
-              }}
-            />
-          ) : null}
           <div ref={tailRef} />
         </div>
 
@@ -7939,6 +7930,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence-foreground)]">{newTurnsCount}</span>}
           </button>
         )}
+      </div>
+      {threadSignalReport ? (
+        <div className="cave-thread-signal-overlay">
+          <ThreadSignalCard
+            report={threadSignalReport}
+            onDismiss={() => setThreadSignalReport(null)}
+            onViewFull={() => {
+              const params = new URLSearchParams({ sessionId: threadSignalReport.sessionId });
+              window.location.href = `/dashboard/familiars/${encodeURIComponent(threadSignalReport.familiarId)}/analytics?${params.toString()}`;
+            }}
+          />
+        </div>
+      ) : null}
       </div>
       {readingTarget ? (
         <CodeReadingInspector

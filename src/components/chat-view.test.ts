@@ -121,8 +121,13 @@ assert.match(
 
 assert.match(
   source,
-  /<ThreadSignalCard[\s\S]*report=\{threadSignalReport\}/,
-  "Successful reflection should render the ThreadSignalCard in the transcript",
+  /<div className="cave-thread-signal-overlay">[\s\S]*<ThreadSignalCard[\s\S]*report=\{threadSignalReport\}/,
+  "Successful reflection should render the ThreadSignalCard in the chat overlay",
+);
+
+assert.ok(
+  source.indexOf('<div ref={tailRef} />') < source.indexOf('<div className="cave-thread-signal-overlay">'),
+  "Thread Signal should render after the transcript tail rather than inside the conversation log",
 );
 
 assert.match(
