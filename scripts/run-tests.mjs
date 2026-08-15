@@ -909,6 +909,7 @@ export const SUITES = {
     "src/components/github-action-popover-chat-launch.test.ts",
     "src/components/github-card-wiring.test.ts",
     "src/components/image-carousel-wiring.test.ts",
+    "src/components/image-carousel-fill.test.ts",
     "src/components/chat-spec-card.test.ts",
     "src/components/chat-spec-card-wiring.test.ts",
     "src/lib/gh-card-commands.test.ts",
