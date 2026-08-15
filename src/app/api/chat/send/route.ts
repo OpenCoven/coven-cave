@@ -4334,7 +4334,6 @@ export async function POST(req: Request) {
         }
         // Snapshot error-looking stdout lines for the empty-response diagnostic.
         captureCodexAdapterFailure(cleaned);
-        recordStdoutErrorTail(cleaned);
         // Surface tool-use hook lines as structured events so the chat can
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
