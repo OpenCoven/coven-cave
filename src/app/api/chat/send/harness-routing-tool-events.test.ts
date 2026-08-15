@@ -305,6 +305,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /Snapshot error-looking stdout lines for the empty-response diagnostic\.[\s\S]*?captureCodexAdapterFailure\(cleaned\);\s*\/\/ Surface tool-use hook lines/,
+  "plain stdout must be recorded only inside the harness guard, without double-recording non-Claude output",
+);
+
+assert.match(
+  chatRoute,
   /Claude stderr can include tool payloads[\s\S]*?if \(binding\.harness !== "claude"\) \{[\s\S]*?stderrTail\.push\(trimmed\);/,
   "Claude stderr must not enter empty-response diagnostics with tool payloads",
 );
