@@ -2040,14 +2040,14 @@ export async function POST(req: Request) {
       ? await resolveInstalledClaudeCompatibility()
       : null;
   await ensureAdapterManifestScaffold(binding.harness);
-// The Responses API does not expose a documented, enforceable equivalent of
-  // Cave's read-only sandbox. Do not downgrade that security promise to a
-  // prompt merely because a familiar opted into the structured transport.
-  if (hermesDirect && hermesApi && body.permissionMode === "read") {
+  // Neither the Responses API nor the direct CLI exposes a documented,
+  // enforceable equivalent of Cave's read-only sandbox. Reject both transports
+  // rather than silently launching Hermes with full local access.
+  if ((hermesDirect || hermesApi) && body.permissionMode === "read") {
     return new Response(
       JSON.stringify({
         ok: false,
-        error: "Hermes API does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+        error: "Hermes does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
       }),
       { status: 501, headers: { "content-type": "application/json" } },
     );
@@ -2107,6 +2107,22 @@ export async function POST(req: Request) {
   const resumeCwdResolved = resumeCwd
     ? await realpath(resumeCwd).catch(() => undefined)
     : undefined;
+  // The workspace exemption assumes a workspace directory is not a registered
+  // project. A user can register one whose root lives under the familiar's
+  // workspace, so ask the registry rather than trusting containment: a resume
+  // root that resolves to a real project id is gated like any other project
+  // root (cave-g8fqc). `unregistered:<root>` is the fail-closed sentinel and
+  // does NOT count as registered.
+  const resumeProjectAccessId = resumeCwd
+    ? chatProjectAccessId({
+        projects,
+        resumeCwd,
+        resolvedCwd: resumeCwdResolved ?? resumeCwd,
+      })
+    : null;
+  const resumeCwdIsRegisteredProject = Boolean(
+    resumeProjectAccessId && !resumeProjectAccessId.startsWith("unregistered:"),
+  );
   const projectlessLaunch = projectlessGenerationLaunch({
     origin: generationOrigin,
     hasRequestedProjectRoot: Boolean(body.projectRoot),
@@ -2115,6 +2131,7 @@ export async function POST(req: Request) {
     resumeCwd,
     resumeCwdResolved,
     familiarWorkspace: resolvedFamiliarWorkspace,
+    resumeCwdIsRegisteredProject,
   });
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so

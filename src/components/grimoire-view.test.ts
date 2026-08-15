@@ -356,7 +356,20 @@ assert.match(view, /b\.type === "mention" \? "Mentions this doc \(unlinked\)" : 
 assert.match(view, /from "@\/lib\/grimoire-graph"/, "grimoire-view builds the fallback graph via the graph lib");
 assert.match(view, /import\("@\/components\/grimoire-graph-view"\)/, "the canvas graph is lazy-loaded (dynamic import)");
 assert.match(view, /ssr: false/, "the graph view is client-only (no SSR)");
-assert.match(view, /fetch\("\/api\/grimoire\/graph"/, "the full-corpus graph comes from the server scan");
+assert.match(view, /fetch\(`\/api\/grimoire\/graph\$\{params\}`/, "the graph comes from the server scan");
+// cave-z6xvd: the familiar scope rides the request so the scan's cap applies to
+// the scoped set. Scoping only on the client meant a familiar saw their (F/T)
+// slice of the coven's most-recent N, never all of their own files.
+assert.match(
+  view,
+  /familiarId=\$\{encodeURIComponent\(id\)\}/,
+  "the scan request carries the familiar scope",
+);
+assert.match(
+  view,
+  /\}, \[scanTick, scopeKey\]\)/,
+  "the scan refetches when the scope changes, keyed by value so a new Set identity alone does not",
+);
 assert.match(view, /const localGraph = useMemo\([\s\S]{0,200}buildDocGraph\(/, "the fallback graph is memoized from buildDocGraph");
 assert.match(view, /markdown: k\.body/, "the fallback graph reads each knowledge body (already loaded)");
 assert.match(view, /const graph = scan\?\.graph \?\? localGraph/, "the server scan wins, the local graph stands in — never blank");

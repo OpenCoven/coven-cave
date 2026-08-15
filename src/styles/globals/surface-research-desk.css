@@ -812,6 +812,13 @@
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 1px;
 }
+.research-desk-refine__count {
+  align-self: flex-end;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
 .research-desk-refine__actions {
   display: flex;
   flex-wrap: wrap;

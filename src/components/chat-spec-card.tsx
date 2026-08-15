@@ -20,13 +20,13 @@ import { MarkdownBlock } from "@/components/message-bubble";
 
 const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6";
 
-function exportFilename(title: string): string {
+function exportFilename(title: string, fallback: string): string {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
-  return `${slug || "familiar-spec"}.md`;
+  return `${slug || fallback}.md`;
 }
 
 export function ChatSpecCard({
@@ -45,6 +45,20 @@ export function ChatSpecCard({
   const headingsRef = useRef<HTMLElement[]>([]);
   const titleId = useId();
   const outline = useMemo(() => readerOutline(spec.markdown), [spec.markdown]);
+  const labels =
+    spec.kind === "handoff"
+      ? {
+          eyebrow: "Familiar handoff",
+          noun: "handoff",
+          subject: "Handoff",
+          fallbackFilename: "familiar-handoff",
+        }
+      : {
+          eyebrow: "Familiar spec",
+          noun: "spec",
+          subject: "Spec",
+          fallbackFilename: "familiar-spec",
+        };
 
   const close = useCallback(() => setOpen(false), []);
   useFocusTrap(open, dialogRef, { onEscape: close });
@@ -109,7 +123,11 @@ export function ChatSpecCard({
 
   const copy = async () => {
     const copied = await copyText(spec.markdown);
-    setAnnouncement(copied ? "Spec copied as Markdown." : "Spec could not be copied.");
+    setAnnouncement(
+      copied
+        ? `${labels.subject} copied as Markdown.`
+        : `${labels.subject} could not be copied.`,
+    );
   };
 
   const download = () => {
@@ -119,10 +137,10 @@ export function ChatSpecCard({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = exportFilename(spec.title);
+    link.download = exportFilename(spec.title, labels.fallbackFilename);
     link.click();
     requestAnimationFrame(() => URL.revokeObjectURL(url));
-    setAnnouncement("Spec downloaded as Markdown.");
+    setAnnouncement(`${labels.subject} downloaded as Markdown.`);
   };
 
   const meta = [
@@ -158,7 +176,7 @@ export function ChatSpecCard({
             <Icon name="ph:file-text-bold" width={16} />
           </span>
           <div className="chat-spec-reader__heading">
-            <span className="chat-spec-reader__eyebrow">Familiar spec</span>
+            <span className="chat-spec-reader__eyebrow">{labels.eyebrow}</span>
             <h2 id={titleId}>{spec.title}</h2>
           </div>
           <span className="chat-spec-reader__meta">{meta}</span>
@@ -182,7 +200,7 @@ export function ChatSpecCard({
             type="button"
             className="chat-spec-reader__close focus-ring"
             onClick={close}
-            aria-label="Close spec reader"
+            aria-label={`Close ${labels.noun} reader`}
           >
             <Icon name="ph:x-bold" width={14} aria-hidden />
           </button>
@@ -244,12 +262,12 @@ export function ChatSpecCard({
           <Icon name="ph:file-text-bold" width={20} />
         </span>
         <span className="chat-spec-card__content">
-          <span className="chat-spec-card__eyebrow">Familiar spec</span>
+          <span className="chat-spec-card__eyebrow">{labels.eyebrow}</span>
           <strong>{spec.title}</strong>
           <span className="chat-spec-card__meta">{meta}</span>
         </span>
         <span className="chat-spec-card__action">
-          Open spec
+          Open {labels.noun}
           <Icon name="ph:arrow-square-out" width={14} aria-hidden />
         </span>
       </button>

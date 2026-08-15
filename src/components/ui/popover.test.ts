@@ -1,8 +1,85 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 
 const src = readFileSync(new URL("./popover.tsx", import.meta.url), "utf8");
+
+const require = createRequire(import.meta.url);
+const originalSucraseOptions = process.env.SUCRASE_OPTIONS;
+process.env.SUCRASE_OPTIONS = JSON.stringify({ jsxRuntime: "automatic" });
+require("sucrase/register/tsx");
+if (originalSucraseOptions === undefined) delete process.env.SUCRASE_OPTIONS;
+else process.env.SUCRASE_OPTIONS = originalSucraseOptions;
+const Module = require("node:module");
+const originalResolveFilename = Module._resolveFilename;
+const suffixes = ["", ".ts", ".tsx", ".js", ".mjs", "/index.ts", "/index.tsx"];
+Module._resolveFilename = function resolveTypeScript(request, parent, isMain, options) {
+  let base = null;
+  if (request.startsWith("@/")) {
+    base = path.join(process.cwd(), "src", request.slice(2));
+  } else if ((request.startsWith("./") || request.startsWith("../")) && parent?.filename) {
+    base = path.resolve(path.dirname(parent.filename), request);
+  }
+  if (base) {
+    for (const suffix of suffixes) {
+      if (existsSync(base + suffix)) return base + suffix;
+    }
+  }
+  return originalResolveFilename.call(this, request, parent, isMain, options);
+};
+const { PopoverItem } = require("./popover.tsx");
+Module._resolveFilename = originalResolveFilename;
+
+function renderItem(props) {
+  return renderToStaticMarkup(
+    createElement(PopoverItem, { onSelect: () => undefined, ...props }, "Example"),
+  );
+}
+
+function jsxElements(fileName, source, tagName) {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const elements = [];
+  const readAttributes = (attributes) => {
+    const values = new Map();
+    for (const attr of attributes.properties) {
+      if (!ts.isJsxAttribute(attr)) continue;
+      if (!attr.initializer) {
+        values.set(attr.name.text, true);
+        continue;
+      }
+      if (ts.isStringLiteral(attr.initializer)) {
+        values.set(attr.name.text, attr.initializer.text);
+        continue;
+      }
+      if (ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
+        values.set(attr.name.text, attr.initializer.expression.getText(sourceFile));
+      }
+    }
+    return values;
+  };
+  const visit = (node) => {
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(sourceFile) === tagName) {
+      elements.push({
+        block: node.getText(sourceFile),
+        attributes: readAttributes(node.openingElement.attributes),
+      });
+    } else if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(sourceFile) === tagName) {
+      elements.push({
+        block: node.getText(sourceFile),
+        attributes: readAttributes(node.attributes),
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return elements;
+}
 
 // The popover must consume its own Escape: a capture-phase keydown listener that
 // stopPropagation()s before the event reaches a parent dialog's bubble-phase
@@ -116,5 +193,84 @@ assert.match(
   /anchorRef\.current\?\.contains\(next\)/,
   "focus moving back to the anchor doesn't close the popover",
 );
+
+// A `checked` row used to be a menuitemradio unconditionally, so every
+// standalone boolean toggle in a popover menu announced as one choice among
+// mutually exclusive alternatives. Render the actual element so the coverage
+// survives formatting-only refactors in the component source.
+assert.match(
+  renderItem({ checked: true }),
+  /role="menuitemradio"[\s\S]*aria-checked="true"/,
+  "checked rows stay menuitemradio by default",
+);
+assert.match(
+  renderItem({ checked: false, checkedRole: "checkbox" }),
+  /role="menuitemcheckbox"[\s\S]*aria-checked="false"/,
+  "independent toggles can opt into menuitemcheckbox",
+);
+assert.match(
+  renderItem({ checked: true, semantic: "button" }),
+  /aria-pressed="true"/,
+  "button-semantics toggles expose their pressed state",
+);
+assert.doesNotMatch(
+  renderItem({ checked: true, semantic: "button" }),
+  /aria-checked=|role="menuitem(?:radio|checkbox)"/,
+  "button-semantics toggles keep native button semantics",
+);
+
+// The render assertions above prove the COMPONENT honors checkedRole. They say
+// nothing about whether the five independent toggles actually pass it, and that
+// is the bug: drop `checkedRole="checkbox"` from workspace-sidebar and every
+// assertion above still passes while "Show archived" silently announces as one
+// choice among mutually exclusive alternatives again. So the call sites are
+// pinned too — component behavior and adoption are different claims. Read the
+// TSX as JSX so the coverage survives formatting-only refactors in the callers.
+const workspaceSidebar = readFileSync(new URL("../workspace-sidebar.tsx", import.meta.url), "utf8");
+assert.ok(
+  jsxElements("workspace-sidebar.tsx", workspaceSidebar, "PopoverItem").some(
+    ({ block, attributes }) =>
+      block.includes("Show archived") && attributes.get("checkedRole") === "checkbox",
+  ),
+  "Show archived is an independent toggle, not one of a mutually exclusive set",
+);
+
+const sessionHeader = readFileSync(new URL("../chat-session-header.tsx", import.meta.url), "utf8");
+assert.ok(
+  jsxElements("chat-session-header.tsx", sessionHeader, "PopoverItem").some(
+    ({ attributes }) =>
+      attributes.get("checked") === "item.checked" &&
+      attributes.get("checkedRole") === "checkbox",
+  ),
+  "session menu toggles (thinking / instruments) opt into the checkbox role",
+);
+
+// Both "Keep chat" rows — the list row menu and the hover-kebab menu — carry
+// it. Their indentation differs, so a single edit silently covers only one of
+// them; that happened while writing this change, which is why the count is
+// asserted rather than a bare match.
+const chatList = readFileSync(new URL("../chat-list.tsx", import.meta.url), "utf8");
+const chatListItems = jsxElements("chat-list.tsx", chatList, "PopoverItem");
+assert.equal(
+  chatListItems.filter(
+    ({ block, attributes }) =>
+      block.includes("Keep chat") && attributes.get("checkedRole") === "checkbox",
+  ).length,
+  2,
+  "both Keep-chat toggles opt into the checkbox role",
+);
+
+// Guard the other direction: mutually exclusive pickers must NOT be converted.
+// e2e specs pin these as menuitemradio (chat-response-output, chat-sessions-
+// surface, composer-runtime-chip), so a stray conversion breaks them far from
+// here.
+for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "../ui/select.tsx"]) {
+  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
+  const elements = jsxElements(file, caller, "PopoverItem");
+  assert.ok(
+    !elements.some(({ attributes }) => attributes.get("checkedRole") === "checkbox"),
+    `${file} is a one-of-a-set picker and must stay menuitemradio`,
+  );
+}
 
 console.log("popover.test.ts: ok");

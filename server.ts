@@ -133,6 +133,7 @@ const FORWARDING_HEADERS = [
 
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const PRESENCE_COOKIE = "coven_passkey_presence";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 
@@ -297,21 +298,33 @@ function scrollbackFrom(session: PtySession, cursor: number): Buffer[] {
   return output;
 }
 
-function getTokensFromCookie(header: string | undefined): string[] {
-  if (!header) return [];
-  const tokens: string[] = [];
+function parseCookies(header: string | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!header) return map;
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
-    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      const raw = rest.join("=") ?? "";
-      try {
-        tokens.push(decodeURIComponent(raw));
-      } catch {
-        // Ignore malformed percent-encoding.
-      }
+    if (!key) continue;
+    try {
+      map.set(key, decodeURIComponent(rest.join("=")));
+    } catch {
+      // Leave malformed percent-encoded values out of the map.
     }
   }
+  return map;
+}
+
+function getTokensFromCookie(header: string | undefined): string[] {
+  const cookies = parseCookies(header);
+  const tokens: string[] = [];
+  for (const name of [ACCESS_COOKIE, LEGACY_ACCESS_COOKIE]) {
+    const value = cookies.get(name);
+    if (value !== undefined) tokens.push(value);
+  }
   return tokens;
+}
+
+function getCookie(header: string | undefined, name: string): string | null {
+  return parseCookies(header).get(name) ?? null;
 }
 
 function timingSafeEqualString(a: string, b: string): boolean {
@@ -356,6 +369,37 @@ function isValidSignedAccessToken(value: string, secret: string): boolean {
     .update(`v1.${parts[1]}.${parts[2]}`)
     .digest("base64url");
   return timingSafeEqualString(parts[3], expected);
+}
+
+// Mirrors src/lib/passkey-presence.ts. server.mjs is emitted without bundling,
+// so this entrypoint cannot import from src/ at runtime.
+function hasValidPasskeyPresence(req: IncomingMessage, tailnetNodeId: string | null): boolean {
+  if (!tailnetNodeId) return false;
+  const secret = process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
+  const token = getCookie(req.headers.cookie, PRESENCE_COOKIE);
+  if (!secret || !token) return false;
+
+  const parts = token.split(".");
+  if (parts.length !== 6 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  const field = /^[A-Za-z0-9_-]+$/;
+  if (
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= 0 ||
+    !field.test(parts[2]) ||
+    !field.test(parts[3]) ||
+    !parts[4] ||
+    !parts[5]
+  ) {
+    return false;
+  }
+  const body = parts.slice(0, 5).join(".");
+  const expected = createHmac("sha256", secret).update(body).digest("base64url");
+  return (
+    timingSafeEqualString(parts[5], expected) &&
+    expiresAt > Date.now() &&
+    parts[2] === tailnetNodeId
+  );
 }
 
 function bearerToken(req: IncomingMessage): string | null {
@@ -1140,7 +1184,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1160,11 +1204,13 @@ server.on("upgrade", (req, socket, head) => {
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
   // Forwarding headers are not credentials at this boundary: a local process
   // can forge them, so allowlisted tailnet identity alone must never authorize
-  // spawning or adopting a shell.
+  // spawning or adopting a shell. The resolved tailnet node id is still needed
+  // below to verify the passkey presence token's tailnet-device binding.
+  const tailnetNodeId = resolveTailnetPeer(req);
   const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
-    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1185,21 +1231,34 @@ server.on("upgrade", (req, socket, head) => {
     accessTokenConfigured: Boolean(accessToken()),
     tokenAuthenticated,
   })) {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  // Unlike ordinary API requests, this upgrade is handled here rather than by
+  // Next middleware. Apply the same remote passkey gate before granting shell
+  // access; direct loopback remains exempt just as it is in proxy.ts.
+  if (
+    process.env.COVEN_CAVE_PASSKEY_REQUIRED === "1" &&
+    !isDirectLoopbackRequest(req) &&
+    !hasValidPasskeyPresence(req, tailnetNodeId)
+  ) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
 
   const threadId = String(query.threadId ?? "");
   if (!threadId) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
 
   const replayCursor = parsePtyReplayCursor(query.ptyReplayCursor);
   if (replayCursor === null) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1208,7 +1267,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     cwd = validateCwd(query.projectRoot ? String(query.projectRoot) : undefined);
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }

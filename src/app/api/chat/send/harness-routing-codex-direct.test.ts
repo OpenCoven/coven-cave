@@ -26,6 +26,15 @@ const fixturePath = fileURLToPath(
   new URL("../../../../lib/fixtures/codex/0.145.0-tool-lifecycle.jsonl", import.meta.url),
 );
 
+// This test asserts ROUTING, not probe latency. The probe launches three cold
+// Node fixture processes, and if they miss the production 5s budget the route
+// does not fail loudly — it silently serves the turn through the generic coven
+// fallback, so the miss surfaces as a bogus routing assertion failure. It did
+// exactly that on CI run 31129333186, against a PR that touched only two
+// scripts. Opt out of the budget rather than chase it (cave-qwebr).
+const previousProbeTimeout = process.env.COVEN_CODEX_PROBE_TIMEOUT_MS;
+process.env.COVEN_CODEX_PROBE_TIMEOUT_MS = "120000";
+
 const previousHome = process.env.COVEN_HOME;
 const previousCaveHome = process.env.COVEN_CAVE_HOME;
 const previousCovenBin = process.env.COVEN_BIN;
@@ -439,6 +448,8 @@ try {
   else process.env.COVEN_BIN = previousCovenBin;
   if (previousCodexBin === undefined) delete process.env.CODEX_BIN;
   else process.env.CODEX_BIN = previousCodexBin;
+  if (previousProbeTimeout === undefined) delete process.env.COVEN_CODEX_PROBE_TIMEOUT_MS;
+  else process.env.COVEN_CODEX_PROBE_TIMEOUT_MS = previousProbeTimeout;
   if (previousCovenSocket === undefined) delete process.env.COVEN_SOCKET;
   else process.env.COVEN_SOCKET = previousCovenSocket;
   await new Promise((resolve, reject) => daemon.close((error) => error ? reject(error) : resolve()));

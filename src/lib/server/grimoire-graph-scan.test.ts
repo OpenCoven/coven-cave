@@ -48,10 +48,19 @@ assert.match(
   /O\(n²\)/,
   "the cap documents the O(n²) renderer constraint that actually bounds it",
 );
+// cave-z6xvd inverted this: the cap is applied AFTER the scope now, so the doc
+// must say so. The previous pin asserted the OPPOSITE ordering, which is how
+// this test earns its keep — a change to the ordering cannot land while the
+// comment still promises the old one.
 assert.match(
   scan,
-  /applied coven-wide BEFORE the\s*\n?\s*\*? ?client's familiar scoping/,
-  "the cap documents that it precedes familiar scoping — the limitation raising it cannot fix",
+  /applied AFTER the familiar scope/,
+  "the cap documents that the scope precedes it, which is what makes a scoped view complete",
+);
+assert.match(
+  scan,
+  /familiarInScope\(familiarScope, m\.familiarId\)/,
+  "the memory set is scoped BEFORE it is truncated, not after",
 );
 
 // ── Bounds are reported, never silently applied ──────────────────────────────
@@ -60,8 +69,15 @@ assert.match(
 // the notice unable to say what was left out.
 assert.match(
   scan,
-  /memory: \{ scanned: memoryScanSet\.length, total: memoryMarkdown\.length \}/,
+  /scanned: memoryScanSet\.length,[\s\S]{0,80}total: memoryMarkdown\.length/,
   "meta reports both the scanned count and the true total for memory",
+);
+// Both counts are scope-relative once a scope is supplied, so the notice must be
+// able to tell which reading it holds rather than inferring it from the numbers.
+assert.match(
+  scan,
+  /scoped: familiarScope\.size > 0/,
+  "meta says whether its memory counts are scope-relative",
 );
 assert.match(
   scan,
