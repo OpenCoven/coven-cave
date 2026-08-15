@@ -44,8 +44,10 @@ import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
-import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
-import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { groupConsecutiveTools } from "@/lib/turn-segments";
+import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
+import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
@@ -8656,11 +8658,9 @@ function TurnRowImpl({
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
-  // Tool activity renders inline while a turn streams (watching tools run IS the
-  // live feedback). Once the turn settles, the prose is shown uninterrupted and
-  // every tool call is collected into one designated, collapsed "Tool activity"
-  // section below it (the ToolGroup) — so a familiar's response reads cleanly and
-  // its tool usage is clearly separated rather than woven through the text.
+  // Tool UI keeps the same render slots for the turn's lifetime: non-edit calls
+  // stay in one compact ToolGroup above the answer, while edit cards stay below
+  // it. Settlement updates those instances instead of relocating them.
   // Chat timestamp format (12h/24h clock + MM.DD/DD.MM/Off date) — a user
   // preference; the model/cwd/duration that used to sit here now live only in
   // the debug pane's per-turn JSON.
@@ -8801,45 +8801,11 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
-  // CHAT-D4-01: when every tool event carries a textOffset (live turns from
-  // this session), render the turn as ordered segments — prose spans with
-  // each tool call inline at its chronological position — instead of the
-  // legacy "all text, then a trailing Tool activity rollup" stack that
-  // inverted causality. Offsets were captured against the raw streamed text;
-  // segmentTurn snaps them forward to fence-safe paragraph boundaries (and
-  // clamps past-end offsets, e.g. when splitReasoning stripped thinking
-  // markup), so a drifted offset degrades toward trailing — never a split
-  // inside a code fence. Stored transcripts without offsets return null and
-  // keep today's trailing ToolGroup.
-  const segments = segmentTurn(visible, turn.tools);
-  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((seg, i) =>
-    seg.kind === "text"
-      ? { kind: "text" as const, text: seg.text }
-      : {
-          kind: "block" as const,
-          key: `tools-${seg.tools[0]?.id ?? i}`,
-          // Each chronology-preserving segment only rolls consecutive calls
-          // with the same name; prose and a new offset stay hard boundaries.
-          node: <ToolRuns tools={seg.tools} />,
-        },
-  );
-
-  // Auto-detect renderable artifacts and inject the tabbed viewer. Applies to
-  // SETTLED turns only (streaming shows plain code until the fence closes).
+  // Auto-detect renderable artifacts only after settlement. Streaming keeps the
+  // ordinary markdown path until markers and fences are complete.
   const artifactCtx = { familiarId: familiar.id };
-
   let renderSegments: MessageBubbleSegment[] | undefined;
-  if (turn.pending) {
-    // Streaming: interleave tool blocks inline at their chronological offset so
-    // you can watch them run as live feedback.
-    renderSegments = bubbleSegments;
-  } else {
-    // Settled: prose only (+ artifact viewers + GitHub cards + image
-    // carousels). Tools are NOT woven into the text — they render in the
-    // designated ToolGroup section below. Image splitting runs first, while
-    // every marker is still in one prose span, so `group` decks can cross an
-    // artifact or GitHub card. The later splitters refine only the remaining
-    // prose; the `visible` fallback/content path is marker-free either way.
+  if (!turn.pending) {
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
@@ -8850,7 +8816,7 @@ function TurnRowImpl({
       onOpenUrl,
       ghFamiliar,
     );
-    renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
+    renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
   }
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
@@ -8862,17 +8828,17 @@ function TurnRowImpl({
   const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
   const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
 
-  // Chat-revamp 1b: settled tool activity splits once, up front. Codex
+  // Chat-revamp 1b: tool activity splits once, up front. Codex
   // file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE inline
   // below the prose — they're the actionable output (Review/Undo), so they
   // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
   // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("Worked for <duration> · <N> steps · ran <cmd>"). Streaming turns weave
-  // tools inline instead — see renderSegments.
+  // ("<N> calls · <categories>"). These partitions do not depend on pending,
+  // so React updates the same instances when the turn settles.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
-  const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
-  const editCards = settledTools.filter(isEditCard);
-  const otherTools = settledTools.filter((t) => !isEditCard(t));
+  const turnTools = turn.tools ?? [];
+  const editCards = turnTools.filter(isEditCard);
+  const otherTools = turnTools.filter((t) => !isEditCard(t));
 
   return (
     <div
@@ -8959,12 +8925,16 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
-            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
-            {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
-                answer, so the reader sees "Worked for … · N steps" first and
-                the prose below reads uninterrupted. */}
-            {otherTools.length ? <ToolGroup tools={otherTools} durationMs={turn.durationMs} /> : null}
-            {indicatorVisible ? (
+            <ChatToolActivityLayout
+              leading={
+                reasoning
+                  ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} />
+                  : null
+              }
+              activity={otherTools.length ? <ToolGroup tools={otherTools} /> : null}
+              content={
+                <>
+                  {indicatorVisible ? (
               <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : (
               // `cave-artifact-content` scopes the comment-on-artifact text
@@ -8990,7 +8960,7 @@ function TurnRowImpl({
                   // The reader's "How this was made" footer reads the same
                   // settled tool events the stream already renders, so the
                   // provenance it shows can never disagree with the transcript.
-                  readerTools={settledTools}
+                  readerTools={turnTools}
                   readerDurationMs={turn.durationMs}
                   onAskAbout={onAskAbout}
                   readerPrompt={readerPrompt}
@@ -9001,20 +8971,8 @@ function TurnRowImpl({
                 <ResponseModelStatus metadata={turn.responseMetadata} />
                 <ResponseControlStatus metadata={turn.responseMetadata} />
               </div>
-            )}
-            {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
-                (research-style turns) — show them inline immediately so
-                they don't teleport out of a rollup once text arrives. */}
-            {indicatorVisible && segments?.length ? (
-              <div className="mt-3 space-y-2">
-                {segments.map((seg, index) =>
-                  seg.kind === "tools"
-                    ? <ToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
-                    : null,
-                )}
-              </div>
-            ) : null}
-            {/* Agent-produced inline attachments: images render full-bleed
+                  )}
+                  {/* Agent-produced inline attachments: images render full-bleed
                 (e.g. /image generations), audio/video mount as players, and
                 everything else stays a file chip that opens the lightbox. */}
             {turn.attachments?.length ? (
@@ -9044,11 +9002,12 @@ function TurnRowImpl({
                 <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
               </div>
             ) : null}
-            {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-            {/* Edit cards on settled turns (the work line above the answer
-                already collapsed everything else). */}
-            {!turn.pending && turn.tools?.length && editCards.length
-              ? (() => {
+                  {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
+                </>
+              }
+              editCards={
+                editCards.length
+                  ? (() => {
                   // Golden path 4 (cave-qva4): a multi-file turn gets ONE
                   // aggregate entry into the working-tree review — the
                   // per-card Review buttons remain, but "which of these five
@@ -9065,7 +9024,7 @@ function TurnRowImpl({
                   );
                   return (
                     <div className="cave-edit-cards mt-3 space-y-2">
-                      {editedFiles.length > 1 ? (
+                      {!turn.pending && turn.tools?.length && editedFiles.length > 1 ? (
                         <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
                           <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
                             {editedFiles.length} files changed
@@ -9087,8 +9046,10 @@ function TurnRowImpl({
                       {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
                     </div>
                   );
-                })()
-              : null}
+                    })()
+                  : null
+              }
+            />
             {/* Comment on the markdown artifact this turn produced: select any
                 passage above to leave a comment, then request a revision that
                 sends every comment back to the agent. Settled, substantial
@@ -9239,24 +9200,33 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
   );
 }
 
-function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: number }) {
-  // Chat-revamp 1b: agent work collapses to ONE quiet bordered line —
-  // "Worked for <duration> · <N> steps · ran <last command>" — expandable to
-  // the full per-tool detail. aria-expanded mirrors the native <details>
-  // disclosure state for AT that doesn't map summary semantics.
+/** The outer disclosure's accessible name: the same compact summary sighted
+ *  readers get, plus the running/error counts that otherwise live only in a
+ *  tinted (color-only) chip — so a screen reader hears "3 running" and
+ *  "1 error" exactly like the eye sees them. */
+function toolGroupAriaLabel(summary: string, running: number, errors: number): string {
+  return [
+    summary ? `Tool activity: ${summary}` : "",
+    running ? `${running} running` : "",
+    errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function ToolGroup({ tools }: { tools: ToolEvent[] }) {
+  // Chat-revamp 1b, compacted: agent work collapses to ONE quiet bordered
+  // line — a call count plus the categories it touched ("6 calls · read,
+  // shell") — expandable to the full per-tool detail. aria-expanded mirrors
+  // the native <details> disclosure state for AT that doesn't map summary
+  // semantics.
   const [open, setOpen] = useState(false);
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
-  const duration = fmtDuration(durationMs);
-  // The last shell-ish command the agent ran — the "· ran `cmd`" mono chip.
-  const lastShellTool = [...tools]
-    .reverse()
-    .find((t) => /bash|shell|terminal|command|exec/i.test(t.name));
-  const lastCommand = lastShellTool ? toolArgSummary(lastShellTool.name, lastShellTool.input) : "";
-  // Chat.dc.html 2a ④: the quiet rollup on the right of the work line —
-  // "4 batches · 6 ok". Running and failed calls keep their tinted counters
-  // beside it so trouble never reads as neutral mono.
-  const rollup = toolBatchSummary(tools, toolBatches(tools));
+  // The turn's own compact activity summary — count + distinct categories,
+  // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
+  // counters beside it, so trouble never reads as neutral mono.
+  const summary = toolActivitySummary(tools);
   // The capabilities this turn actually reached for, as the design's SKILLS
   // eyebrow above the card. Absent when the turn used none — this surface
   // never shows a label with nothing under it.
@@ -9297,19 +9267,14 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
         data-default-collapsed="true"
         onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
       >
-        <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
-          <span className="cave-work-line__label">
-            {duration ? `Worked for ${duration} · ` : ""}
-            {tools.length} {tools.length === 1 ? "step" : "steps"}
-          </span>
-          {lastCommand ? (
-            <span className="cave-work-line__ran">
-              {"· ran "}
-              <code className="cave-work-line__cmd">{lastCommand}</code>
-            </span>
-          ) : null}
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-            {rollup ? <span className="cave-tool-rollup">{rollup}</span> : null}
+        <summary
+          className="cave-tool-summary focus-ring"
+          aria-expanded={open}
+          aria-label={toolGroupAriaLabel(summary, running, errors)}
+        >
+          <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
+          <span className="cave-work-line__label">{summary}</span>
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-work-line__status">
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           </span>
@@ -9335,17 +9300,16 @@ function ToolRuns({ tools }: { tools: ToolEvent[] }) {
     batches.length > 1 && batches.some((batch) => batch.toolIds.length > 1) ? batches : [];
   const headerByToolId = new Map(bandedBatches.map((batch) => [batch.headToolId, batch]));
   return groupConsecutiveTools(tools).map((run) => {
-    const key = run.tools.map((tool) => tool.id).join(":");
+    // Stable for the run's lifetime: the first tool ID is unique and does not
+    // change as adjacent repeats append further calls to the same run.
+    const key = run.tools[0]!.id;
     const header = headerByToolId.get(run.tools[0]!.id);
     // File-mutation cards carry review/undo affordances. Keeping each one
     // standalone means a repeated edit never hides an actionable change.
     const containsEdit = run.tools.some((tool) => toolInputAsDiff(tool.name, tool.input) != null);
-    const body =
-      run.tools.length > 1 && !containsEdit ? (
-        <ToolRunGroup name={run.name} tools={run.tools} />
-      ) : (
-        run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
-      );
+    const body = containsEdit
+      ? run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
+      : <ToolRunGroup name={run.name} tools={run.tools} />;
     return (
       <Fragment key={key}>
         {header ? <ToolBatchHeader batch={header} /> : null}
@@ -9374,36 +9338,35 @@ function ToolBatchHeader({ batch }: { batch: ToolBatch }) {
 }
 
 function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
-  const [open, setOpen] = useState(false);
+  // The shell exists for the first call, but is visually inert until a second
+  // adjacent call arrives. That stable parent/list keeps the first ToolBlock's
+  // DOM, focus, and local disclosure state intact across the one→two transition.
+  const repeated = tools.length > 1;
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
 
   return (
-    <details
-      className="cave-tool-run"
-      data-default-collapsed="true"
-      data-tool-category={visual.category}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+    <ChatToolRunDisclosure
+      repeated={repeated}
+      statuses={tools.map((tool) => tool.status)}
+      category={visual.category}
+      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
+      summary={
+        <>
+          <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
+          <span className="cave-tool-run__name">{displayName}</span>
+          <span className="cave-tool-count">×{tools.length}</span>
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
+            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+          </span>
+        </>
+      }
     >
-      <summary
-        className="cave-tool-summary focus-ring"
-        aria-expanded={open}
-        aria-label={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}`}
-      >
-        <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
-        <span className="cave-tool-run__name">{displayName}</span>
-        <span className="cave-tool-count">{tools.length} {tools.length === 1 ? "call" : "calls"}</span>
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
-        </span>
-      </summary>
-      <div className="cave-tool-run__list">
-        {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
-      </div>
-    </details>
+      {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+    </ChatToolRunDisclosure>
   );
 }
 
@@ -9571,7 +9534,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     const base = displayPath.split("/").pop() || displayPath;
     return (
       <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category}>
-        <summary className="cave-edit-card__summary">
+        <summary className="cave-edit-card__summary focus-ring">
           <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
           <span className="cave-edit-card__body">
             <span className="cave-edit-card__title">Edited {base}</span>
@@ -9608,7 +9571,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
-      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)]">
+      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
