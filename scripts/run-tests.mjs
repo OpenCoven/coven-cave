@@ -1239,6 +1239,7 @@ export const SUITES = {
     "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
     "src/app/api/research/links/ingest-urls.test.ts",
+    "src/app/api/research/papers/pdf/route.test.ts",
   ],
   api: [
     "src/app/api/afs/afs-routes.test.ts",
@@ -1990,6 +1991,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
+  // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value.
+  "src/app/api/research/papers/pdf/route.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
