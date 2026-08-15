@@ -216,7 +216,16 @@ async function boot(
   // is what actually suppresses it. (cave-4xv9v)
   await page.addInitScript(() => {
     const add = HTMLMediaElement.prototype.addEventListener;
-    HTMLMediaElement.prototype.addEventListener = function patched(type, listener, options) {
+    // Annotate every parameter and `this` explicitly. `as typeof add` asserts
+    // the assembled function's TYPE but does not contextually type the function
+    // expression's parameters, so under noImplicitAny they were four errors
+    // (TS7006 ×3 plus TS2683 on `this`) and typecheck failed.
+    HTMLMediaElement.prototype.addEventListener = function patched(
+      this: HTMLMediaElement,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
       if (type === "error") return;
       return add.call(this, type, listener, options);
     } as typeof add;
