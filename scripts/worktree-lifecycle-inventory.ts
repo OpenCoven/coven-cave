@@ -3194,6 +3194,28 @@ function collectInventory(
                 Date.parse(right.mergedAt!) - Date.parse(left.mergedAt!),
             )[0] ?? null
         : null;
+    // The near miss (cave-5ulwl): same repo and base filters as exactMerged, but
+    // the OPPOSITE head test. This never feeds landedness — that still demands
+    // exact equality above — it only lets the classifier say "one fast-forward
+    // behind" instead of the generic "not proven landed". Widening exactMerged
+    // itself would silently mark behind-HEAD units as landed, which is the
+    // failure this is designed to avoid.
+    const branchMerged =
+      defaultBranch.branch !== null && prs.canonicalRepo !== null
+        ? unitPullRequests
+            .filter(
+              (pullRequest) =>
+                pullRequest.state === "MERGED" &&
+                pullRequest.headRefOid !== unit.head &&
+                pullRequest.baseRepository.toLowerCase() ===
+                  prs.canonicalRepo!.toLowerCase() &&
+                pullRequest.baseRefName === defaultBranch.branch,
+            )
+            .sort(
+              (left, right) =>
+                Date.parse(right.mergedAt!) - Date.parse(left.mergedAt!),
+            )[0] ?? null
+        : null;
     const landing =
       unit.branch !== null && ancestry.value && defaultBranch.oid !== null
         ? exactDefaultLandingAt(
@@ -3285,6 +3307,13 @@ function collectInventory(
             number: exactMerged.number,
             url: exactMerged.url,
             headOid: exactMerged.headRefOid,
+          }
+        : null,
+      branchMergedPr: branchMerged
+        ? {
+            number: branchMerged.number,
+            url: branchMerged.url,
+            headOid: branchMerged.headRefOid,
           }
         : null,
       activeWorkflowUrls,

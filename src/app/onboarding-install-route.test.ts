@@ -19,8 +19,8 @@ assert.match(
 
 assert.match(
   route,
-  /function installStartErrorMessage\([\s\S]*?resource temporarily unavailable[\s\S]*?Cave could not start the installer because the system is temporarily out of process slots/,
-  "install route should turn process exhaustion into a user-facing retryable job error",
+  /function installStartErrorMessage\([\s\S]*?resource temporarily unavailable[\s\S]*?Cave could not start the installer because system resources are temporarily exhausted/,
+  "install route should turn resource exhaustion into a user-facing retryable job error",
 );
 
 assert.doesNotMatch(

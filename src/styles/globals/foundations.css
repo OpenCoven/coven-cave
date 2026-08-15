@@ -251,6 +251,19 @@
   /* ---- Surface alphas ---- */
   --backdrop-scrim: oklch(0 0 0 / 60%);
 
+  /* ---- Shell frame ----
+     The nav rail's rendered surface, as one flat color. `.shell-nav` paints
+     color-mix(--bg-raised 88%, transparent) over the --bg-panel ground its
+     panel supplies, so the rail lands on this value — measured rgb(34,30,31)
+     on the Coven default against rgb(33,30,31) here, the 1/255 being the
+     rail's own saturate(140%). The inset gutter around the main content reads
+     from the same token, so the rail and the three outer gutters form ONE
+     continuous frame instead of two shades of dark meeting at the content
+     edge. Flat, not translucent: the gutter has to cover the backdrop layer
+     (see the frame rules in styles/backdrop.css), and a see-through fill is
+     exactly what let the image bleed through it. */
+  --shell-floor: color-mix(in oklch, var(--bg-raised) 88%, var(--bg-panel));
+
   /* ---- Glass (native-vibrancy translucency for overlay chrome) ----
      Derived from the theme's own surface tokens via color-mix, so every
      accent theme and light mode track automatically. Overlay surfaces only —

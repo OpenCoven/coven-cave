@@ -692,8 +692,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(!isPost\) boundarySentinel\?\.observe\(name, rest\)/,
-  "pre_tool_use hook lines should feed the boundary sentinel",
+  /if \(!isPost && \(binding\.harness !== "claude" \|\| claudeEnvelopeToolsEnabled\)\) \{\s*boundarySentinel\?\.observe\(name, rest\);/,
+  "pre_tool_use hooks should feed the boundary sentinel only while their Claude envelope profile remains verified",
 );
 
 assert.match(
