@@ -192,9 +192,14 @@ assert.match(
     "the scoped memory-in-window memo must run before the empty-state early return",
   );
 
-  const stray = view
-    .slice(earlyReturn)
-    .match(/\buse(?:State|Effect|LayoutEffect|Memo|Callback|Ref|Context|Reducer|ImperativeHandle|Transition|DeferredValue|SyncExternalStore|Id)\s*\(/);
+  // Match the NAMING CONVENTION, not a list of built-ins. An enumerated list
+  // silently exempts custom hooks (useResearchMediaUrl) and any built-in React
+  // adds later (useInsertionEffect, useActionState, useOptimistic), which would
+  // make this assert less than the sentence above it promises — a pin that
+  // cannot fail for the case it claims to cover. `\b` keeps it off identifiers
+  // that merely end in "use" (onUseFoo), and requiring an uppercase letter
+  // keeps it off ordinary words like "used(".
+  const stray = view.slice(earlyReturn).match(/\buse[A-Z][A-Za-z0-9_]*\s*\(/);
   assert.equal(
     stray?.[0] ?? null,
     null,
