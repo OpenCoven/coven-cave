@@ -356,7 +356,16 @@ assert.match(
 assert.match(source, /const \[selectMode, setSelectMode\] = useState\(false\)/, "a select mode toggles bulk-select");
 assert.match(source, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected chat ids live in a Set");
 assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\)/, "the header Select toggle clears any selection");
-assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
+// Behavior, not formatting: the effect must be keyed on the active familiar and
+// must clear BOTH the mode and the ids. It was pinned to a single-line literal
+// with an exact `[familiar?.id]` dep list, so #4647 broke it by reformatting the
+// body and adding clearSessionFilters() to the same effect — a change that
+// strictly does MORE of what this guards, yet failed the suite on every PR.
+assert.match(
+  source,
+  /useEffect\(\(\) => \{[\s\S]{0,200}?setSelectMode\(false\);[\s\S]{0,120}?setSelectedIds\(new Set\(\)\);[\s\S]{0,120}?\}, \[[^\]]*familiar\?\.id[^\]]*\]\)/,
+  "selection resets when the active familiar changes",
+);
 assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
 // Row click = open (Sessions): clicking a row opens the session directly on
 // every device; select mode still toggles selection. The old inline detail
