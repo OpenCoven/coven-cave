@@ -2107,6 +2107,22 @@ export async function POST(req: Request) {
   const resumeCwdResolved = resumeCwd
     ? await realpath(resumeCwd).catch(() => undefined)
     : undefined;
+  // The workspace exemption assumes a workspace directory is not a registered
+  // project. A user can register one whose root lives under the familiar's
+  // workspace, so ask the registry rather than trusting containment: a resume
+  // root that resolves to a real project id is gated like any other project
+  // root (cave-g8fqc). `unregistered:<root>` is the fail-closed sentinel and
+  // does NOT count as registered.
+  const resumeProjectAccessId = resumeCwd
+    ? chatProjectAccessId({
+        projects,
+        resumeCwd,
+        resolvedCwd: resumeCwdResolved ?? resumeCwd,
+      })
+    : null;
+  const resumeCwdIsRegisteredProject = Boolean(
+    resumeProjectAccessId && !resumeProjectAccessId.startsWith("unregistered:"),
+  );
   const projectlessLaunch = projectlessGenerationLaunch({
     origin: generationOrigin,
     hasRequestedProjectRoot: Boolean(body.projectRoot),
@@ -2115,6 +2131,7 @@ export async function POST(req: Request) {
     resumeCwd,
     resumeCwdResolved,
     familiarWorkspace: resolvedFamiliarWorkspace,
+    resumeCwdIsRegisteredProject,
   });
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so
