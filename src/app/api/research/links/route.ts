@@ -44,11 +44,6 @@ export async function POST(req: Request) {
   if (!parsed.ok) return parsed.response;
 
   const urls = collectIngestUrls(parsed.body);
-  const enrichment = new Map<string, HfPaperMetadata | null>();
-  for (const url of urls) {
-    const [arxivId] = parseHfPaperReferences(url);
-    if (arxivId) enrichment.set(url, await fetchHfPaperMetadata(arxivId));
-  }
   if (urls.length === 0) {
     return NextResponse.json(
       { ok: false, error: "no links found — pass urls[] or a text block containing http(s) links" },
@@ -61,6 +56,13 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  const enrichment = new Map<string, HfPaperMetadata | null>();
+  await Promise.all(
+    urls.map(async (url) => {
+      const [arxivId] = parseHfPaperReferences(url);
+      if (arxivId) enrichment.set(url, await fetchHfPaperMetadata(arxivId));
+    }),
+  );
   const source = parsed.body.source === "desk" ? "desk" : "chat";
   let result;
   try {
