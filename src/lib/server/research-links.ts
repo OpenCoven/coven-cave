@@ -21,6 +21,7 @@ import {
   type SavedLink,
 } from "../link-organizer.ts";
 import { caveHome } from "../coven-paths.ts";
+import { isArxivPaperId } from "../hf-papers.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
@@ -43,6 +44,23 @@ function emptyFile(): ResearchLinksFile {
   return { version: 1, links: [] };
 }
 
+function normalizePaperBlock(value: unknown): SavedLink["paper"] {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  // Disk contents are user-editable, and arxivId is interpolated into a URL by
+  // the PDF route — validate it here rather than trusting the file.
+  if (typeof raw.arxivId !== "string" || !isArxivPaperId(raw.arxivId)) return undefined;
+  if (!Array.isArray(raw.authors) || !raw.authors.every((a) => typeof a === "string")) return undefined;
+  if (typeof raw.abstract !== "string") return undefined;
+  if (typeof raw.publishedAt !== "string") return undefined;
+  return {
+    arxivId: raw.arxivId,
+    authors: raw.authors as string[],
+    abstract: raw.abstract,
+    publishedAt: raw.publishedAt,
+  };
+}
+
 function normalizeStoredLink(value: unknown): SavedLink | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<SavedLink>;
@@ -58,6 +76,7 @@ function normalizeStoredLink(value: unknown): SavedLink | null {
     typeof raw.addedAt === "string" && Number.isFinite(Date.parse(raw.addedAt))
       ? raw.addedAt
       : new Date().toISOString();
+  const paper = normalizePaperBlock((value as { paper?: unknown }).paper);
   return {
     id: typeof raw.id === "string" && raw.id ? raw.id : randomUUID(),
     url: raw.url,
@@ -65,6 +84,7 @@ function normalizeStoredLink(value: unknown): SavedLink | null {
     title: typeof raw.title === "string" && raw.title ? raw.title : deriveLinkTitle(raw.url),
     addedAt,
     source: raw.source === "desk" ? "desk" : "chat",
+    ...(paper ? { paper } : {}),
   };
 }
 

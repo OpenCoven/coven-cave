@@ -143,3 +143,54 @@ test("unreadable stores surface errors instead of reading as empty", async () =>
     process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = previous;
   }
 });
+
+// ── paper metadata (cave-cbz28) ──────────────────────────────────────────────
+
+test("a well-formed paper block survives, a malformed one is dropped without discarding the link", async () => {
+  const target = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
+  await writeFile(
+    target,
+    JSON.stringify({
+      version: 1,
+      links: [
+        {
+          id: "paper-a",
+          url: "https://huggingface.co/papers/2401.12345",
+          category: "paper",
+          title: "A well-formed paper",
+          addedAt: "2026-01-01T00:00:00.000Z",
+          source: "desk",
+          paper: {
+            arxivId: "2401.12345",
+            authors: ["A. Author"],
+            abstract: "An abstract.",
+            publishedAt: "2024-01-22T00:00:00.000Z",
+          },
+        },
+        {
+          id: "paper-b",
+          url: "https://huggingface.co/papers/2402.54321",
+          category: "paper",
+          title: "A malformed paper",
+          addedAt: "2026-01-02T00:00:00.000Z",
+          source: "desk",
+          paper: {
+            arxivId: "../etc/passwd",
+            authors: "not-an-array",
+          },
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const listed = await listSavedLinks();
+  const linkA = listed.find((link) => link.id === "paper-a");
+  const linkB = listed.find((link) => link.id === "paper-b");
+
+  assert.equal(linkA?.paper?.arxivId, "2401.12345");
+  assert.deepEqual(linkA?.paper?.authors, ["A. Author"]);
+
+  assert.ok(linkB, "the link with the malformed paper block still survives");
+  assert.equal(linkB?.paper, undefined);
+});

@@ -51,6 +51,13 @@ export type SavedLink = {
   addedAt: string;
   /** Where the save originated. */
   source: "chat" | "desk";
+  /** Present only for papers resolved through hf-papers ingest. */
+  paper?: {
+    arxivId: string;
+    authors: string[];
+    abstract: string;
+    publishedAt: string;
+  };
 };
 
 const VIDEO_HOSTS = new Set([
