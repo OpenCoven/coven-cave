@@ -116,3 +116,33 @@ assert.match(
   /writeFamiliarBackdropImage\(familiarId, blob\)/,
   "uploads persist through the per-familiar backdrop store",
 );
+
+// ── Top bar joins the backdrop (cave-vyp3e) ──────────────────────────────────
+// .shell-top and .top-bar paint an opaque var(--bg-base) so they read as a
+// seamless extension of the canvas. With a backdrop on, everything below them
+// is translucent, so an opaque bar cut the image off in a hard line. Pin the
+// glass AND both fallbacks: a translucent band with no scrim would leave the
+// bar's controls and search text sitting on raw photo.
+assert.match(
+  css,
+  /html\[data-backdrop-on\] \.shell-top,\s*\n\s*html\[data-backdrop-on\] \.top-bar \{[^}]*background: color-mix\(in oklch, var\(--bg-base\) 46%, transparent\);[^}]*\}/,
+  "both top bars take the same 46% glass the native titlebar already uses",
+);
+assert.match(
+  css,
+  /html\[data-backdrop-on\] \.shell-top,\s*\n\s*html\[data-backdrop-on\] \.top-bar \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);[^}]*\}/,
+  "the band blurs the backdrop behind it rather than only tinting it",
+);
+// Both fallbacks restore the OPAQUE band. The native rule falls back to
+// transparent because the window supplies its own material; in the browser the
+// baseline is var(--bg-base), so transparent would strand the controls.
+assert.match(
+  css,
+  /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\) \{\s*\n\s*html\[data-backdrop-on\] \.shell-top,\s*\n\s*html\[data-backdrop-on\] \.top-bar \{\s*\n\s*background: var\(--bg-base\);/,
+  "without backdrop-filter the bar falls back to the opaque band, not a bare wash",
+);
+assert.match(
+  css,
+  /@media \(prefers-reduced-transparency: reduce\) \{\s*\n\s*html\[data-backdrop-on\] \.shell-top,\s*\n\s*html\[data-backdrop-on\] \.top-bar \{[^}]*backdrop-filter: none;[^}]*\}/,
+  "reduced-transparency drops the glass instead of merely thinning it",
+);
