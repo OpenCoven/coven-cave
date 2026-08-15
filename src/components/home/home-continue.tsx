@@ -1,18 +1,17 @@
 "use client";
 
-// "Continue where you left off" — the hearth's resume strip (home refinement
-// 2026-07-22): up to three most-recent resumable sessions as horizontal
-// cards below the composer, matching the reference. Each card: a mono/source
-// glyph, the title, its project/source subtitle, a presence-aware "Edited N
-// ago" foot, and a resume arrow. Clicking resumes through the same handler
+// "Continue where you left off" — the hearth's resume carousel. Each page
+// shows up to three recent sessions; its cards resume through the same handler
 // the thread rail uses.
 
 import { useMemo, useState } from "react";
+import { IconButton } from "@/components/ui/icon-button";
 import { Icon, type IconName } from "@/lib/icon";
 import type { SessionRow } from "@/lib/types";
 import { relativeAge } from "@/lib/rss";
 
 export const HOME_CONTINUE_PREF_KEY = "cave:home:continue-expanded";
+const HOME_CONTINUE_PAGE_SIZE = 3;
 
 /** Newest-first sessions a person can meaningfully resume from home: not
  *  archived, not generator-spawned, and actually titled. */
@@ -33,7 +32,11 @@ export function HomeContinue({ sessions, familiarNameById, onOpenSession }: Prop
   // Sampled once per mount — ages are coarse ("2h ago"), so a live ticker
   // would be re-render noise right next to the composer.
   const [nowMs] = useState(() => Date.now());
-  const rows = useMemo(() => resumableSessions(sessions), [sessions]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const rows = useMemo(() => resumableSessions(sessions, Number.POSITIVE_INFINITY), [sessions]);
+  const pageCount = Math.ceil(rows.length / HOME_CONTINUE_PAGE_SIZE);
+  const page = Math.min(pageIndex, Math.max(0, pageCount - 1));
+  const visibleRows = rows.slice(page * HOME_CONTINUE_PAGE_SIZE, (page + 1) * HOME_CONTINUE_PAGE_SIZE);
   if (rows.length === 0 || !onOpenSession) return null;
 
   return (
@@ -41,8 +44,8 @@ export function HomeContinue({ sessions, familiarNameById, onOpenSession }: Prop
       {/* No visible heading (2026-07-22): the cards read as resumable sessions
           on their own — title, "Edited N ago", resume arrow — so the label is
           screen-reader-only via the section's aria-label. */}
-      <div className="home-continue__cards" data-count={rows.length}>
-        {rows.map((s) => {
+      <div className="home-continue__cards" data-count={visibleRows.length}>
+        {visibleRows.map((s) => {
           const familiar = s.familiarId ? familiarNameById.get(s.familiarId) ?? null : null;
           const running = s.status === "running";
           const age = relativeAge(s.updated_at, nowMs);
@@ -81,6 +84,27 @@ export function HomeContinue({ sessions, familiarNameById, onOpenSession }: Prop
           );
         })}
       </div>
+      {pageCount > 1 ? (
+        <nav className="home-continue__nav" aria-label="Continue carousel">
+          <IconButton
+            icon="ph:caret-left"
+            className="home-continue__nav-button"
+            aria-label="Previous set of sessions"
+            disabled={page === 0}
+            onClick={() => setPageIndex(page - 1)}
+          />
+          <span className="home-continue__page" aria-live="polite" aria-atomic="true">
+            Page {page + 1} of {pageCount}
+          </span>
+          <IconButton
+            icon="ph:caret-right"
+            className="home-continue__nav-button"
+            aria-label="Next set of sessions"
+            disabled={page === pageCount - 1}
+            onClick={() => setPageIndex(page + 1)}
+          />
+        </nav>
+      ) : null}
     </section>
   );
 }

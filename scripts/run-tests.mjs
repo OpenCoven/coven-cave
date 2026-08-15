@@ -499,6 +499,7 @@ export const SUITES = {
     "src/components/marketplace/marketplace-detail.test.ts",
     "src/lib/knowledge-pack-ui.test.ts",
     "src/components/home-hearth.test.ts",
+    "src/components/home-continue-carousel.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
     "src/components/home-composer-centering.test.ts",
