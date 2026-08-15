@@ -442,7 +442,28 @@ async function installDaemonlessFixture(page: Page): Promise<FixtureState> {
             {
               id: "turn-assistant",
               role: "assistant",
-              text: "The boundary now keeps the legacy caller contract.",
+              text: [
+                "The boundary now keeps the legacy caller contract.",
+                "",
+                '````handoff title="Auth boundary handoff"',
+                "# Auth boundary handoff",
+                "",
+                "## Current state",
+                "",
+                "- Legacy callers keep their existing contract.",
+                "- The focused regression is covered.",
+                "",
+                "## Verification",
+                "",
+                "```sh",
+                "pnpm test:app",
+                "```",
+                "",
+                "## Next action",
+                "",
+                "Review `src/auth.ts`, then continue from the active worktree.",
+                "````",
+              ].join("\n"),
               createdAt: ISO,
               durationMs: 1_240,
               tools: [{
@@ -754,6 +775,25 @@ test("repo chat hands an exact changed file to the same Coding Desk session and 
   await expect(chatRail.getByTitle("src/auth.ts", { exact: true })).toBeVisible();
   await expect(chatRail.getByTitle("src/auth.test.ts", { exact: true })).toBeVisible();
   await expect(page.getByText("The boundary now keeps the legacy caller contract.")).toBeVisible();
+
+  const handoffCard = page.getByRole("button", {
+    name: /Familiar handoff Auth boundary handoff/,
+  });
+  await expect(handoffCard).toContainText("Open handoff");
+  await handoffCard.click();
+
+  const handoffReader = page.getByRole("dialog", { name: "Auth boundary handoff" });
+  await expect(handoffReader).toBeVisible();
+  await expect(handoffReader.getByRole("heading", { name: "Current state" })).toBeVisible();
+  await expect(handoffReader.getByText("Legacy callers keep their existing contract.")).toBeVisible();
+  await expect(handoffReader.getByText("pnpm test:app")).toBeVisible();
+  await expect(
+    handoffReader.getByRole("navigation", { name: "Contents" }).getByRole("button", {
+      name: "Next action",
+    }),
+  ).toBeVisible();
+  await handoffReader.getByRole("button", { name: "Close handoff reader" }).click();
+  await expect(handoffReader).toBeHidden();
 
   await page.locator(".cave-edit-card").getByRole("button", { name: "Review", exact: true }).click();
 

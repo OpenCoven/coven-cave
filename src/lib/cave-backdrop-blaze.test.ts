@@ -113,10 +113,14 @@ assert.match(
   /\{blazeShowing && active \? <CaveBackdropBlaze \/> : null\}/,
   "the GPU loop unmounts whenever no backdrop surface is frontmost",
 );
+// Blaze is the FIRST branch, so it still owns the layer whenever it is
+// selected. Deliberately open-ended after that: the accent wash added a third
+// value (backdrop-scrim.test.ts owns the full ordering), and pinning the whole
+// ternary here made this fail for a change that never touched Blaze.
 assert.match(
   layer,
-  /data-backdrop-style=\{blazeShowing \? "blaze" : "image"\}/,
-  "CSS can target the active backdrop style",
+  /data-backdrop-style=\{blazeShowing \? "blaze" : /,
+  "CSS can target the active backdrop style, and Blaze outranks the others",
 );
 assert.match(
   layer,

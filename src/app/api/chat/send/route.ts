@@ -2538,7 +2538,6 @@ export async function POST(req: Request) {
           cwd,
           ...grantedProjectRoots,
           ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
-          ...runtimeResourceRoots,
         ],
       });
   const responseMetadata: ChatResponseMetadata = {
@@ -2728,10 +2727,11 @@ export async function POST(req: Request) {
           : forwardModel) ?? undefined;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
-  // Directory grants: forward every granted project root — plus the familiar's
-  // own workspace when it isn't the spawn cwd — so the harness actually trusts
-  // the roots the runtime-scope preamble grants. The spawn cwd is already
-  // trusted implicitly, so it's excluded. Gated on the `--add-dir` probe and
+  // Directory grants are writable in full-permission harness modes. Forward
+  // only writable project roots and the familiar workspace; runtime skill
+  // roots are advertised as read-only and must never be promoted through an
+  // `--add-dir` grant. The spawn cwd is already trusted implicitly, so it is
+  // excluded. Generic forwarding remains gated on the `--add-dir` probe and
   // local runtimes only (SSH runtimes own their remote filesystem).
   const spawnRoot = cwd;
   const grantDirs = !sshRuntime
@@ -2740,7 +2740,6 @@ export async function POST(req: Request) {
           [
             ...grantedProjectRoots,
             ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
-            ...runtimeResourceRoots,
           ]
             .map((root) => root.trim())
             .filter((root) => root && root !== spawnRoot),

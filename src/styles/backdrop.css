@@ -25,6 +25,26 @@ html[data-backdrop] .cave-backdrop-layer[data-on="true"] {
   opacity: var(--cave-backdrop-opacity, 0.35);
 }
 
+/* Accent wash — the tail of the fallback chain (familiar image → app image →
+   this). A familiar switched on with no upload used to enable an empty layer,
+   so the toggle read as broken; this gives it something that is still visibly
+   THEIRS, seeded from the same accent that drives their rail ring.
+
+   A top-anchored radial rather than a flat fill: the scrim below already
+   darkens toward the bottom where composers and transcripts sit, so a uniform
+   tint would fight it. Kept well under the image path's strength — this is a
+   hint of color on the canvas, not a picture, and it must not cost contrast on
+   surfaces the user cannot re-tune. --cave-backdrop-accent is set inline by
+   cave-backdrop-layer.tsx; the fallback keeps the rule valid if it is ever
+   missing. */
+html[data-backdrop] .cave-backdrop-layer[data-backdrop-style="accent"] {
+  background-image: radial-gradient(
+    120% 80% at 50% 0%,
+    color-mix(in oklch, var(--cave-backdrop-accent, var(--accent-presence)) 22%, transparent),
+    transparent 62%
+  );
+}
+
 /* Readability floor: bg-base gradient scrim, heavier toward the bottom where
    composers and transcripts live. Sits inside the layer so the intensity
    slider scales image and scrim together. */
@@ -113,6 +133,52 @@ html[data-backdrop-on] .shell-detail {
 html[data-backdrop-on] .chat-surface,
 html[data-backdrop-on] .cave-chat-linear {
   background: color-mix(in oklch, var(--bg-base) 16%, transparent);
+}
+
+/* ── The top bar joins the backdrop (cave-vyp3e) ─────────────────────────────
+   .shell-top (desktop) and .top-bar (mobile) both paint an opaque
+   var(--bg-base) to read as a seamless extension of the canvas. That is right
+   with no backdrop and wrong with one: everything below them goes translucent
+   above, so the familiar's image stopped in a hard line at the top bar.
+
+   The lit state below copies the SAME glass the native shell already gives
+   itself — see `:root[data-tauri-titlebar] .shell-top` in
+   globals/desktop-chrome.css, which is why the packaged app already looked
+   right and the browser tab did not. Matching its values keeps the two shells
+   showing one titlebar treatment rather than two slightly different ones.
+
+   Deliberately NOT `background: transparent` like .shell-root above: the bar
+   carries controls and search text directly over the image, so it needs the
+   scrim-plus-blur that the content panes get from their own glass.
+
+   ⚠️ The two fallbacks below intentionally DIVERGE from the native rule, which
+   drops to `background: transparent`. Do not "resync" them. The native window
+   supplies its own material behind a transparent band; here the baseline is an
+   opaque var(--bg-base), so transparent would leave the bar's controls sitting
+   on unscrimmed photo the moment blur is unavailable or the reader asks for
+   reduced transparency. Restoring the opaque band is the safe direction in
+   both cases — and for prefers-reduced-transparency it is the correct one. */
+html[data-backdrop-on] .shell-top,
+html[data-backdrop-on] .top-bar {
+  background: color-mix(in oklch, var(--bg-base) 46%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* No blur available: fall back to the seamless opaque band rather than a bare
+   translucent one, which would leave the controls sitting on raw image. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-backdrop-on] .shell-top,
+  html[data-backdrop-on] .top-bar {
+    background: var(--bg-base);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-backdrop-on] .shell-top,
+  html[data-backdrop-on] .top-bar {
+    background: var(--bg-base);
+    backdrop-filter: none;
+  }
 }
 
 /* ── Readable transcript over the image (cave-5oeu) ──────────────────────────
@@ -273,4 +339,69 @@ html[data-backdrop-on] .shell-list-panel {
   position: relative;
   z-index: 1;
   background: var(--bg-panel);
+}
+
+/* ── The outer frame stays solid too (cave-0uzj0) ────────────────────────────
+   Only the CONTENT of the detail pane joins the backdrop. The pane's box is
+   content PLUS the inset gutter, though, and the gutter is chrome — the same
+   frame the nav rail is part of. Handing the whole box to the layer therefore
+   painted the image straight through the top, right and bottom edges: a solid
+   charcoal rail beside three bleeding gutters.
+
+   The panes above fix this by lifting themselves over the layer. The detail
+   pane cannot do that: lifting it would carry the content with it and hide the
+   image inside the panel, which is the one place it is supposed to show. So
+   the gutter BAND is painted instead — four strips on a pseudo-element, above
+   the layer, leaving the content box untouched. Strips rather than a masked
+   ring on purpose: no mask-composite dependency, and the corners stay square
+   where they meet the window edge (a rounded ring would leak the image back in
+   at exactly the four corners of the app).
+
+   No z-index: the strips paint over the layer because they come later in the
+   document, and staying at `auto` keeps them UNDER the pane's own content, so
+   a surface that deliberately paints into the gutter (the home composer's
+   translateX shift, which opens this pane's overflow) is not clipped by them. */
+@media (min-width: 1024px) {
+  html[data-backdrop-on] .shell-detail-panel {
+    /* Positioning context for the strips below — and transparent, which is
+       load-bearing rather than leftover: positioning the pane lifts it over
+       the z-0 layer, so an opaque paint here would cover the image across the
+       WHOLE box, content included (measured: the hero went flat charcoal).
+       The band is painted by ::before instead; the pane itself paints nothing. */
+    position: relative;
+    background: transparent;
+  }
+
+  html[data-backdrop-on] .shell-detail-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--shell-floor) 0 0),
+      linear-gradient(var(--shell-floor) 0 0),
+      linear-gradient(var(--shell-floor) 0 0),
+      linear-gradient(var(--shell-floor) 0 0);
+    background-repeat: no-repeat;
+    background-size:
+      100% var(--space-2),
+      var(--space-2) 100%,
+      100% var(--space-2),
+      var(--space-2) 100%;
+    /* top, right, bottom, left — the exact band .shell-detail-panel's padding
+       reserves, so the strips can never encroach on the content box. */
+    background-position: 0 0, 100% 0, 0 100%, 0 0;
+  }
+
+  /* The strips stop at the content's square box, but the content is a rounded
+     panel — four wedges inside that box, outside its rounded border, would
+     still show the image. An outer spread shadow paints precisely the region
+     outside the border shape, so it fills them in the same color. The
+     elevation shadow is restated because box-shadow does not cascade
+     per-layer. */
+  html[data-backdrop-on] .shell-detail {
+    box-shadow:
+      0 0 0 var(--space-2) var(--shell-floor),
+      0 14px 36px -28px var(--shadow-color);
+  }
 }

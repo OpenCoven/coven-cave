@@ -39,7 +39,14 @@ const sessions = [
 ];
 
 const projects = [
-  { id: "alpha", name: "Alpha", root: "/work/alpha", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z" },
+  {
+    id: "alpha",
+    name: "Alpha",
+    root: "/work/alpha",
+    repoUrl: "https://github.com/OpenCoven/alpha",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+  },
   { id: "known-empty", name: "Known Empty", root: "/work/empty", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z" },
 ];
 
@@ -131,6 +138,12 @@ assert.deepEqual(
     { root: null, defaultFamiliarId: "charm", sessionIds: ["scratch"] },
   ],
   "project groups should order by latest chat activity, with No project last, and expose the latest familiar for launch",
+);
+
+assert.deepEqual(
+  groups.map((group) => group.organization.label),
+  ["OpenCoven", "No organization", "No organization"],
+  "registered projects derive organization metadata while unregistered/no-project groups stay explicit",
 );
 
 // The project holding the most recent chat floats to the top — recency beats
