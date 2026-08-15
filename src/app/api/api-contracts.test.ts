@@ -229,6 +229,10 @@ const contracts: RouteContract[] = [
   { route: "/research/generations/cancel", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/generations/infographic", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
   { route: "/research/generations/media", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
+  // Mints the signed ticket the media route above consumes. No pathGuard: it
+  // never resolves a filesystem path — it validates familiarId/id as opaque
+  // ids and returns a URL, so there is no "path not allowed" 403 to preserve.
+  { route: "/research/generations/media-ticket", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -413,8 +417,29 @@ for (const contract of contracts) {
     // (/x/oauth/start passes rejectNonLocalRequest into
     // createXOAuthStartRouteHandlers, which calls it), and reading only the
     // route file would report that as a missing guard when it is present.
-    assert.match(effectiveSource, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);
-    if (effectiveSource.includes("rejectNonLocalRequest")) {
+    // rejectResearchMediaRequest counts: it CALLS rejectNonLocalRequest first
+    // and returns null whenever that passes, so it is a narrowing rather than a
+    // weakening. It relaxes only when the host and the origin are both local
+    // AND a signed media ticket validates — the carve-out exists because a
+    // native <audio>/<video> element cannot go through patched fetch, so the
+    // ticket proves the sidecar credential instead (#4634).
+    assert.match(
+      effectiveSource,
+      /isLocalOrigin|rejectNonLocalRequest|rejectResearchMediaRequest/,
+      `${contract.route} must preserve local-origin guard`,
+    );
+    if (effectiveSource.includes("rejectResearchMediaRequest")) {
+      assert.match(effectiveSource, /rejectResearchMediaRequest\(req\)/, `${contract.route} must call the shared media guard`);
+      const guardSource = readFileSync(
+        path.join(apiRoot, "..", "..", "lib", "server", "api-security.ts"),
+        "utf8",
+      );
+      assert.match(
+        guardSource,
+        /export async function rejectResearchMediaRequest[\s\S]{0,200}rejectNonLocalRequest\(req\)/,
+        "rejectResearchMediaRequest must still delegate to the local-origin guard",
+      );
+    } else if (effectiveSource.includes("rejectNonLocalRequest")) {
       assert.match(effectiveSource, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
     } else {
       assert.match(effectiveSource, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
