@@ -81,7 +81,7 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
   }), null);
 });
 
-test("research prompt limits retain the requested intent and direction capacity", () => {
+test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
   assert.equal(RESEARCH_INTENT_MAX_LENGTH, 25_000);
   assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 10_000);
   assert.equal(
