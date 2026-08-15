@@ -480,7 +480,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /import \{ conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace \} from "\.\/chat-send-runtime";/,
+  /import \{[\s\S]{0,200}conversationCwd,[\s\S]{0,200}daemonSessionCwd,[\s\S]{0,200}filterUsableLocalDirectories,[\s\S]{0,200}resolveFamiliarWorkspace,[\s\S]{0,50}\} from "\.\/chat-send-runtime";/,
   "The daemon-session resume fallback comes from the shared chat-send-runtime helper",
 );
 const sendRuntimeHelpers = await readFile(
