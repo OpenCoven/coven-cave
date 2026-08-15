@@ -262,6 +262,23 @@ test("attention respond releases a still-launching retryable conflict so the sam
   assert.equal(firstResponse.status, 409);
   assert.equal((await firstResponse.json()).error.retryable, true);
 
+  const differentPrompt = request("assistant-1", {
+    bearer: issued.token,
+    idempotencyKey,
+    body: { conversationId: "conv-1", prompt: "Use a different approval" },
+  });
+  const differentPromptResponse = await POST(differentPrompt.req, differentPrompt.ctx);
+  assert.equal(differentPromptResponse.status, 409);
+  assert.deepEqual(await differentPromptResponse.json(), {
+    ok: false,
+    error: {
+      code: "conflict",
+      message: "This Idempotency-Key was already used for a different request.",
+      retryable: false,
+    },
+  });
+  assert.equal(sendCalls, 1, "a different prompt must not reclaim a retryable attention key");
+
   const retry = request("assistant-1", { bearer: issued.token, idempotencyKey });
   const retryResponse = await POST(retry.req, retry.ctx);
   assert.equal(retryResponse.status, 202, "the released key may immediately retry the nested launch");
@@ -400,7 +417,7 @@ test("attention respond exact retries replay the completed send ledger even afte
   assert.equal(prepareCalls, 1, "the cleared attention request must replay from the ledger, not re-run stale validation");
 });
 
-test("attention respond exact retries can recover a reserved send when no replayable run exists yet", async () => {
+test("attention respond recovers a crashed nested launch without releasing request-hash ownership", async () => {
   const issued = await issuedCredential();
   const idempotencyKey = "3f4145de-9b43-4abc-876d-81ef63de60e0";
   let prepareCalls = 0;
@@ -429,6 +446,16 @@ test("attention respond exact retries can recover a reserved send when no replay
   const first = request("assistant-1", { bearer: issued.token, idempotencyKey });
   const firstResponse = await POST(first.req, first.ctx);
   assert.equal(firstResponse.status, 500);
+
+  const differentPrompt = request("assistant-1", {
+    bearer: issued.token,
+    idempotencyKey,
+    body: { conversationId: "conv-1", prompt: "Different recovery payload" },
+  });
+  const differentPromptResponse = await POST(differentPrompt.req, differentPrompt.ctx);
+  assert.equal(differentPromptResponse.status, 409);
+  assert.equal((await differentPromptResponse.json()).error.retryable, false);
+  assert.equal(sendCalls, 1, "a crashed launch must not free the key for another payload");
 
   const retry = request("assistant-1", { bearer: issued.token, idempotencyKey });
   const retryResponse = await POST(retry.req, retry.ctx);

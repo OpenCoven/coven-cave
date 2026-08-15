@@ -26,7 +26,8 @@
 // explicitly revoked, while an operation claim is a short-lived, bounded
 // bookkeeping record whose whole purpose is to expire (10 minutes for a
 // stale in-progress claim to become abandoned and reclaimable, 24 hours for
-// a completed result to stop being replayable). Coupling the two stores
+// a retryable reservation or completed result to stop owning the key).
+// Coupling the two stores
 // would force one file's retention/eviction policy onto data that does not
 // share it, so this module imports nothing from `credential-store.ts` and
 // persists to its own file. For the same reason, cross-process mutual
@@ -89,12 +90,10 @@ export function clientOperationStorePath(): string {
   return override || path.join(/* turbopackIgnore: true */ caveHome(), "client-v1-operations.json");
 }
 
-// Persisted literal is "in_progress", never "pending": "pending" describes
-// an English-language concept (a claim awaiting completion) but is NOT the
-// literal this store ever writes to or reads from disk — `parseClientOperation`
-// rejects any other literal (including the legacy "pending" spelling) as
-// corruption, never silently reinterpreting it.
-export type ClientOperationState = "in_progress" | "completed";
+// Persisted literals distinguish a live claimant from a key that remains
+// owned after a retryable outcome. "pending" describes the English-language
+// condition of a live claim, but is never a persisted state.
+export type ClientOperationState = "in_progress" | "retryable" | "completed";
 
 /** A JSON value this store will ever canonicalize, hash, or persist. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -124,11 +123,9 @@ type PersistedClientOperation = {
   updatedAt: number;
   // Exact invariant, enforced by `parseClientOperation` (never merely
   // "close enough"): in-progress, `expiresAt === claimedAt +
-  // PENDING_CLAIM_RETRY_MS` (the moment this claim is abandoned and
-  // prunable/reclaimable) and `updatedAt === claimedAt` (untouched since the
-  // claim was granted); completed, `expiresAt === updatedAt +
-  // COMPLETED_OPERATION_TTL_MS` (the moment this result stops being
-  // replayable and becomes prunable).
+  // PENDING_CLAIM_RETRY_MS` and `updatedAt === claimedAt`; retryable and
+  // completed entries retain their composite identity and request hash for
+  // `COMPLETED_OPERATION_TTL_MS` from `updatedAt`.
   expiresAt: number;
   response: { status: number; body: JsonValue } | null;
 };
@@ -231,8 +228,9 @@ function parseResponse(value: unknown): { status: number; body: JsonValue } | nu
  * write nudged off the formula): in-progress requires
  * `expiresAt === claimedAt + PENDING_CLAIM_RETRY_MS`, `updatedAt ===
  * claimedAt` (untouched since the claim was granted), and `response ===
- * null`; completed requires `expiresAt === updatedAt +
- * COMPLETED_OPERATION_TTL_MS` and a present, well-formed `response`.
+ * null`; retryable requires a null response and `expiresAt === updatedAt +
+ * COMPLETED_OPERATION_TTL_MS`; completed requires that same operation TTL
+ * and a present, well-formed `response`.
  * Cross-entry invariants (no duplicate composite identity, no duplicate
  * claim id, bounded total count) are checked by `readStoreForMutation`
  * after every entry here has already parsed cleanly.
@@ -252,7 +250,7 @@ function parseClientOperation(value: unknown): PersistedClientOperation | null {
     return null;
   }
   if (typeof record.requestHash !== "string" || !REQUEST_HASH_RE.test(record.requestHash)) return null;
-  if (record.state !== "in_progress" && record.state !== "completed") return null;
+  if (record.state !== "in_progress" && record.state !== "retryable" && record.state !== "completed") return null;
   if (!isUuid(record.claimId)) return null;
   if (!isFiniteNonNegativeNumber(record.claimedAt)) return null;
   if (!isFiniteNonNegativeNumber(record.updatedAt) || (record.updatedAt as number) < (record.claimedAt as number)) {
@@ -269,6 +267,9 @@ function parseClientOperation(value: unknown): PersistedClientOperation | null {
     if (record.response !== null) return null;
     if (updatedAt !== claimedAt) return null;
     if (expiresAt !== claimedAt + PENDING_CLAIM_RETRY_MS) return null;
+  } else if (record.state === "retryable") {
+    if (record.response !== null) return null;
+    if (expiresAt !== updatedAt + COMPLETED_OPERATION_TTL_MS) return null;
   } else {
     if (response === null) return null;
     if (expiresAt !== updatedAt + COMPLETED_OPERATION_TTL_MS) return null;
@@ -689,10 +690,11 @@ function pruneExpiredAndAbandoned(
   operations: PersistedClientOperation[],
   now: number,
 ): { operations: PersistedClientOperation[]; changed: boolean } {
-  // Two independent prunable conditions, checked together so a single pass
-  // (and a single capacity check afterward) sees the ledger with BOTH kinds
-  // of stale entry already gone:
-  //   - a completed entry past its 24h TTL (`COMPLETED_OPERATION_TTL_MS`).
+  // Three independent prunable conditions, checked together so a single pass
+  // (and a single capacity check afterward) sees the ledger with ALL stale
+  // entries already gone:
+  //   - a completed or retryable entry past its 24h operation TTL
+  //     (`COMPLETED_OPERATION_TTL_MS`).
   //   - an in-progress claim abandoned for the full 10-minute retry window
   //     (`PENDING_CLAIM_RETRY_MS`) with no completion ever recorded. Pruning
   //     it outright (rather than merely flagging it "reclaimable" and
@@ -736,7 +738,8 @@ function ensureCapacityForNewEntry(
  * `(input.credentialId, input.route, input.key)`, atomically:
  *
  *   - a brand-new composite identity (including one whose only prior entry
- *     was just pruned as expired-completed or abandoned-in-progress, below)
+ *     was just pruned as expired-completed, expired-retryable, or
+ *     abandoned-in-progress, below)
  *     claims fresh (`"claimed"`).
  *   - the exact same composite identity + requestHash, already completed
  *     and not yet expired, replays the persisted response (`"replay"`) —
@@ -755,7 +758,7 @@ function ensureCapacityForNewEntry(
  *     `"capacity_exceeded"` rather than either silently dropping work or
  *     growing without bound.
  *
- * Completed entries past `COMPLETED_OPERATION_TTL_MS`, and in-progress
+ * Completed and retryable entries past `COMPLETED_OPERATION_TTL_MS`, and in-progress
  * claims abandoned past `PENDING_CLAIM_RETRY_MS` with no completion ever
  * recorded, are pruned outright before any of the above is evaluated (see
  * `pruneExpiredAndAbandoned`) — so an expired or abandoned composite
@@ -824,6 +827,21 @@ export async function claimOperation(input: ClaimOperationInput, now = Date.now(
     if (existing.state === "completed") {
       if (changed) await writeStore({ version: 1, operations });
       return { kind: "replay", response: toPublicResponse(existing.response as { status: number; body: JsonValue }) };
+    }
+
+    if (existing.state === "retryable") {
+      const claimId = randomUUID();
+      const claimedEntry: PersistedClientOperation = {
+        ...existing,
+        state: "in_progress",
+        claimId,
+        claimedAt: now,
+        updatedAt: now,
+        expiresAt: now + PENDING_CLAIM_RETRY_MS,
+      };
+      operations = operations.map((operation, entryIndex) => (entryIndex === existingIndex ? claimedEntry : operation));
+      await writeStore({ version: 1, operations });
+      return { kind: "claimed", claimId };
     }
 
     // Still in progress and NOT abandoned (an abandoned entry with this
@@ -991,6 +1009,10 @@ export async function completeOperation(
       if (changed) await writeStore({ version: 1, operations });
       return same ? { kind: "replay", response: toPublicResponse(existingResponse) } : { kind: "conflict" };
     }
+    if (existing.state === "retryable") {
+      if (changed) await writeStore({ version: 1, operations });
+      return { kind: "not_found" };
+    }
 
     // The caller-supplied `now` is trusted for retry-hint arithmetic
     // elsewhere, but a wall-clock rollback (a caller's clock stepping
@@ -1028,11 +1050,11 @@ export async function completeOperation(
 
 /**
  * Release an in-progress claim after its owner produced a retryable result.
- * The claim id is the ownership fence: a caller can delete only its own
- * still-pending reservation, never a completed result or a later reclaim.
- * This lets the same idempotency key retry immediately instead of treating a
- * transient response as a 10-minute in-progress operation or a 24-hour
- * replay.
+ * The claim id is the ownership fence: a caller can transition only its own
+ * live claim to `retryable`, never a completed result or a later reclaim.
+ * That transition retains the original request hash and composite key for
+ * the full operation TTL, while allowing an exact same-hash retry to claim
+ * a fresh execution lease immediately.
  */
 export async function releaseOperation(
   input: CompleteOperationInput,
@@ -1060,7 +1082,19 @@ export async function releaseOperation(
       if (changed) await writeStore({ version: 1, operations });
       return { kind: "completed" };
     }
-    operations = operations.filter((_, operationIndex) => operationIndex !== index);
+    if (existing.state === "retryable") {
+      if (changed) await writeStore({ version: 1, operations });
+      return { kind: "not_found" };
+    }
+    const effectiveUpdatedAt = Math.max(now, existing.claimedAt, existing.updatedAt);
+    const retryableEntry: PersistedClientOperation = {
+      ...existing,
+      state: "retryable",
+      updatedAt: effectiveUpdatedAt,
+      expiresAt: effectiveUpdatedAt + COMPLETED_OPERATION_TTL_MS,
+      response: null,
+    };
+    operations = operations.map((operation, operationIndex) => (operationIndex === index ? retryableEntry : operation));
     await writeStore({ version: 1, operations });
     return { kind: "released" };
   });

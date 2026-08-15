@@ -92,31 +92,57 @@ test("a brand-new key claims fresh", async () => {
   assert.ok((result as { claimId: string }).claimId);
 });
 
-test("a claim owner can release only its pending reservation for an immediate retry", async () => {
+test("a retryable release retains request-hash ownership while allowing an exact retry to claim fresh", async () => {
   const input = claimInput();
-  const first = await claimOperation(input);
+  const first = await claimOperation(input, 1_000);
   assert.equal(first.kind, "claimed");
   const firstClaimId = (first as { claimId: string }).claimId;
 
-  assert.deepEqual(await releaseOperation({ key: input.key, claimId: firstClaimId }), { kind: "released" });
+  assert.deepEqual(await releaseOperation({ key: input.key, claimId: firstClaimId }, 2_000), { kind: "released" });
 
-  const retry = await claimOperation(input);
+  const released = JSON.parse(await readFile(clientOperationStorePath(), "utf8")).operations[0];
+  assert.equal(released.state, "retryable");
+  assert.equal(released.requestHash, input.requestHash);
+  assert.equal(released.response, null);
+  assert.equal(released.expiresAt, 2_000 + 24 * 60 * 60_000);
+
+  const differentRequest = await claimOperation(
+    { ...input, requestHash: hashNormalizedRequest({ ok: false }) },
+    2_001,
+  );
+  assert.equal(differentRequest.kind, "conflict", "a retryable key must retain its original request-hash ownership");
+
+  const retry = await claimOperation(input, 2_001);
   assert.equal(retry.kind, "claimed");
   const retryClaimId = (retry as { claimId: string }).claimId;
   assert.notEqual(retryClaimId, firstClaimId);
   assert.deepEqual(
-    await releaseOperation({ key: input.key, claimId: firstClaimId }),
+    await releaseOperation({ key: input.key, claimId: firstClaimId }, 2_002),
     { kind: "not_found" },
     "a stale claimant cannot release its successor",
   );
 
-  await completeOperation({ key: input.key, claimId: retryClaimId }, { status: 202, body: { ok: true } });
+  await completeOperation({ key: input.key, claimId: retryClaimId }, { status: 202, body: { ok: true } }, 2_003);
   assert.deepEqual(
-    await releaseOperation({ key: input.key, claimId: retryClaimId }),
+    await releaseOperation({ key: input.key, claimId: retryClaimId }, 2_004),
     { kind: "completed" },
     "release never deletes a terminal exact replay",
   );
-  assert.equal((await claimOperation(input)).kind, "replay");
+  assert.equal((await claimOperation(input, 2_005)).kind, "replay");
+});
+
+test("a retryable reservation expires after the operation TTL, releasing the key for a new request hash", async () => {
+  const input = claimInput();
+  const first = await claimOperation(input, 1_000);
+  assert.equal(first.kind, "claimed");
+  const claimId = (first as { claimId: string }).claimId;
+  await releaseOperation({ key: input.key, claimId }, 2_000);
+
+  const differentInput = { ...input, requestHash: hashNormalizedRequest({ ok: false }) };
+  assert.equal((await claimOperation(differentInput, 2_000 + 24 * 60 * 60_000 - 1)).kind, "conflict");
+
+  const expired = await claimOperation(differentInput, 2_000 + 24 * 60 * 60_000);
+  assert.equal(expired.kind, "claimed");
 });
 
 test("completing a claimed operation returns the completed response, and the same identity later replays it verbatim", async () => {
@@ -459,6 +485,22 @@ test("concurrent claims for a brand-new identity grant exactly one claim, the re
     const pending = results.filter((r) => r.kind === "pending");
     assert.equal(claimed.length, 1, "exactly one concurrent claimant must win");
     assert.equal(pending.length, 7, "every other concurrent caller must see pending, never a second claim");
+  } finally {
+    setPostReadDelayForTest(null);
+  }
+});
+
+test("concurrent retries of a retryable reservation grant one fresh execution lease", async () => {
+  const input = claimInput();
+  const first = await claimOperation(input, 1_000);
+  assert.equal(first.kind, "claimed");
+  await releaseOperation({ key: input.key, claimId: (first as { claimId: string }).claimId }, 2_000);
+
+  setPostReadDelayForTest(delayHook(20));
+  try {
+    const results = await Promise.all(Array.from({ length: 6 }, () => claimOperation(input, 3_000)));
+    assert.equal(results.filter((result) => result.kind === "claimed").length, 1);
+    assert.equal(results.filter((result) => result.kind === "pending").length, 5);
   } finally {
     setPostReadDelayForTest(null);
   }
