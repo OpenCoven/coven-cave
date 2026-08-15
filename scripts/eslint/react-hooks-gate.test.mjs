@@ -34,42 +34,31 @@ async function hookErrorsFor(relativePath, source) {
 
 // A hook after an early return — the exact shape that crashed the Relations
 // graph (cave-qxq4l) with "Rendered more hooks than during the previous
-// render". One case per linted scope; the src/lib fixture is a custom hook in a
-// .ts file rather than a component, because .ts cannot carry JSX.
-const OFFENDERS = [
-  [
-    "src/components/__react-hooks-gate-fixture.tsx",
-    `import { useState } from "react";
-
-export function ConditionalHook({ enabled }: { enabled: boolean }) {
-  if (!enabled) return null;
-  const [value] = useState(0);
-  return <div>{value}</div>;
-}
-`,
-  ],
-  [
-    "src/lib/__react-hooks-gate-fixture.ts",
-    `import { useState } from "react";
+// render". One case per configured source glob proves both extensions are
+// enforced in every linted scope.
+const TS_OFFENDER = `import { useState } from "react";
 
 export function useConditional(enabled: boolean) {
   if (!enabled) return null;
   const [value] = useState(0);
   return value;
 }
-`,
-  ],
-  [
-    "src/app/__react-hooks-gate-fixture.tsx",
-    `import { useState } from "react";
+`;
+const TSX_OFFENDER = `import { useState } from "react";
 
-export default function Page({ enabled }: { enabled: boolean }) {
+export function ConditionalHook({ enabled }: { enabled: boolean }) {
   if (!enabled) return null;
   const [value] = useState(0);
   return <div>{value}</div>;
 }
-`,
-  ],
+`;
+const OFFENDERS = [
+  ["src/components/__react-hooks-gate-fixture.ts", TS_OFFENDER],
+  ["src/components/__react-hooks-gate-fixture.tsx", TSX_OFFENDER],
+  ["src/app/__react-hooks-gate-fixture.ts", TS_OFFENDER],
+  ["src/app/__react-hooks-gate-fixture.tsx", TSX_OFFENDER],
+  ["src/lib/__react-hooks-gate-fixture.ts", TS_OFFENDER],
+  ["src/lib/__react-hooks-gate-fixture.tsx", TSX_OFFENDER],
 ];
 
 for (const [relativePath, source] of OFFENDERS) {

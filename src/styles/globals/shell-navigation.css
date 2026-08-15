@@ -193,7 +193,10 @@
 
   .shell-detail-panel {
     padding: var(--space-2);
-    background: var(--bg-panel);
+    /* The gutter this padding reserves IS the outer frame, so it takes the
+       rail's own rendered shade rather than the bare panel token — see
+       --shell-floor in globals/foundations.css. */
+    background: var(--shell-floor);
   }
 
   .shell-detail {
@@ -1158,7 +1161,7 @@
 
 /* The detail wrapper provides the shell floor around the inset content. */
 .shell-detail-panel {
-  background: var(--bg-panel);
+  background: var(--shell-floor);
 }
 
 .shell-detail-header {
