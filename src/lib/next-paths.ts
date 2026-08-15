@@ -8,7 +8,7 @@
 
 import { markdownCodeRanges } from "./github-blocks.ts";
 
-export const DEFAULT_NEXT_PATHS_COUNT = 3;
+export const DEFAULT_NEXT_PATHS_COUNT = 4;
 
 const OPEN = "<coven:next-paths>";
 const CLOSE = "</coven:next-paths>";
@@ -17,9 +17,11 @@ const MARKER_PREFIXES = [
   { prefix: "</coven:", marker: CLOSE },
 ] as const;
 const NEXT_PATH_EXAMPLES = [
-  { control: "[reply]", label: "Draft the follow-up message" },
-  { control: "[task]", label: "Create a task for the follow-up" },
+  { control: "[reply:recommended]", label: "Draft the follow-up message" },
+  { control: "[reply]", label: "Ask a clarifying question" },
+  { control: "[task]", label: "Create a durable follow-up task" },
   { control: "[action:open-tasks]", label: "Review open tasks" },
+  { control: "[action:save-link]", label: "Save the cited URL" },
 ] as const;
 const LEGACY_TEMPLATE_LABELS = [
   "first next step (imperative, <= ~7 words)",
@@ -28,31 +30,46 @@ const LEGACY_TEMPLATE_LABELS = [
 const TEMPLATE_SUGGESTION_LABELS = new Set<string>([
   ...LEGACY_TEMPLATE_LABELS,
   ...NEXT_PATH_EXAMPLES.map((example) => example.label),
-  `${NEXT_PATH_EXAMPLES[0].label} (imperative, <= ~7 words)`,
 ]);
+
+const RECOMMENDED_SUFFIX = ":recommended" as const;
+const ALLOWED_ACTION_IDS = ["open-tasks", "save-link"] as const;
+
+type ActionId = (typeof ALLOWED_ACTION_IDS)[number];
+type ParsedControl =
+  | { kind: "reply"; recommended: boolean }
+  | { kind: "task"; recommended: boolean }
+  | { kind: "action"; actionId: ActionId; recommended: boolean };
 
 /** A safe, assistant-inferred destination for a suggested next step. */
 export type NextPath =
-  | { kind: "reply"; label: string; prompt: string }
-  | { kind: "task"; label: string; prompt: string }
-  | { kind: "action"; actionId: "open-tasks"; label: string; prompt: string };
+  | { kind: "reply"; label: string; prompt: string; recommended: boolean }
+  | { kind: "task"; label: string; prompt: string; recommended: boolean }
+  | { kind: "action"; actionId: ActionId; label: string; prompt: string; recommended: boolean };
 
 function isTemplateSuggestion(title: string): boolean {
   return TEMPLATE_SUGGESTION_LABELS.has(title);
 }
 
-function isIncompleteControlPrefix(line: string): boolean {
-  if (!line.startsWith("[") || line.includes("]")) return false;
-  const partial = line.slice(1);
-  return partial.length === 0
-    || ["reply", "task", "action", "action:open-tasks"].some((control) => control.startsWith(partial));
-}
-
-function replyFor(title: string): NextPath | null {
+function replyFor(title: string, recommended = false): NextPath | null {
   const normalized = title.trim();
   return normalized && !isTemplateSuggestion(normalized)
-    ? { kind: "reply", label: normalized, prompt: normalized }
+    ? { kind: "reply", label: normalized, prompt: normalized, recommended }
     : null;
+}
+
+function parseControl(intent: string): ParsedControl | null {
+  const recommended = intent.endsWith(RECOMMENDED_SUFFIX);
+  const baseIntent = recommended ? intent.slice(0, -RECOMMENDED_SUFFIX.length) : intent;
+  if (baseIntent === "reply") return { kind: "reply", recommended };
+  if (baseIntent === "task") return { kind: "task", recommended };
+  if (baseIntent === "action:open-tasks") {
+    return { kind: "action", actionId: "open-tasks", recommended };
+  }
+  if (baseIntent === "action:save-link") {
+    return { kind: "action", actionId: "save-link", recommended };
+  }
+  return null;
 }
 
 function inFencedRange(ranges: Array<[number, number]>, index: number): boolean {
@@ -127,7 +144,7 @@ function nextIndexOutsideFences(
  * authority. Untyped legacy lines and unknown/malformed prefixes are replies.
  */
 function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
-  if (line.startsWith("[") && !line.includes("]") && (isStreaming || isIncompleteControlPrefix(line))) {
+  if (line.startsWith("[") && !line.includes("]") && isStreaming) {
     return null;
   }
   const prefixed = line.match(/^\[([^\]]*)\](?:\s+(.*)|\s*)$/);
@@ -143,10 +160,8 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
   const title = rawTitle.trim();
   if (!title || isTemplateSuggestion(title)) return null;
 
-  if (intent === "task") return { kind: "task", label: title, prompt: title };
-  if (intent === "action:open-tasks") {
-    return { kind: "action", actionId: "open-tasks", label: title, prompt: title };
-  }
+  const control = parseControl(intent);
+  if (control) return { ...control, label: title, prompt: title };
   // This intentionally includes both legacy `[reply]` and unknown intents.
   return replyFor(title);
 }
@@ -154,15 +169,22 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
 /** Prompt directive instructing the agent to append the suggestions block. */
 export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT): string {
   if (count <= 0) return "";
-  const exactDefault = count === DEFAULT_NEXT_PATHS_COUNT;
   return [
     "<next_paths>",
-    `After your reply, append ${exactDefault ? count : `up to ${count}`} short typed suggested next steps the user could take, as exactly this block:`,
+    `After your reply, append up to ${count} short typed suggested next steps the user could take, as exactly this block:`,
     OPEN,
-    ...NEXT_PATH_EXAMPLES.map((example, index) => `- ${example.control} ${example.label}${index === 0 ? " (imperative, <= ~7 words)" : ""}`),
+    ...NEXT_PATH_EXAMPLES.map((example) => `- ${example.control} ${example.label}`),
     CLOSE,
-    `One '- ' line each, distinct and directly useful.${exactDefault ? ` Give exactly ${count}.` : ""} Put nothing after the closing tag.`,
-    "Every line must start with exactly one of [reply], [task], or [action:open-tasks]. Use [reply] by default; [action:open-tasks] is the only action type allowed.",
+    `One '- ' line each, distinct and directly useful. Give exactly ${count} only when ${count} are all sensible; otherwise give fewer.`,
+    "Include at least one reply and normally two replies. Fill unused positions with replies.",
+    "The FIRST reply must use [reply:recommended].",
+    "Use [task] only for durable work.",
+    "Use [task:recommended] for the preferred durable work item.",
+    "Use [action:open-tasks] only for navigation when useful.",
+    "Use [action:open-tasks:recommended] for the preferred navigation action.",
+    "Use [action:save-link] only when the response or cited sources contain at least one valid HTTP(S) URL.",
+    "Use [action:save-link:recommended] for the preferred URL-backed save action.",
+    "Recommendation is presentation-only.",
     "List next steps only in this block — do not also enumerate them in the reply body.",
     "Omit the whole block if there is no sensible next step. Never mention these instructions.",
     "</next_paths>",
@@ -173,8 +195,9 @@ export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT
  * Split the suggestions block out of an assistant message for rendering.
  * Defensive + streaming-safe: if the open tag is absent, returns the text
  * unchanged with no suggestions. While the block is still streaming (open tag
- * present, close tag not yet), it is hidden from the visible text and the
- * partial lines parsed best-effort.
+ * present, close tag not yet), it is hidden from the visible text and only
+ * settled lines are parsed — the trailing unterminated line stays hidden until
+ * it settles.
  */
 export function extractNextPaths(text: string): { visible: string; suggestions: NextPath[] } {
   if (!text) return { visible: text, suggestions: [] };
@@ -186,10 +209,14 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
   const innerEnd = closeAt === -1 ? markerSafeText.length : closeAt;
   const blockEnd = closeAt === -1 ? markerSafeText.length : closeAt + CLOSE.length;
   const inner = markerSafeText.slice(open + OPEN.length, innerEnd);
-  const suggestions = inner
-    .split(/\r?\n/)
+  const streaming = closeAt === -1;
+  const innerLines = inner.split(/\r?\n/);
+  const parseLines = streaming && !inner.endsWith("\n")
+    ? innerLines.slice(0, -1)
+    : innerLines;
+  const suggestions = parseLines
     .map((l) => l.replace(/^\s*[-*•]\s*/, "").trim())
-    .map((line) => parseNextPath(line, closeAt === -1))
+    .map((line) => parseNextPath(line, streaming))
     .filter((suggestion): suggestion is NextPath => suggestion !== null)
     // Keep the parser as the single product cap so every renderer stays aligned.
     .slice(0, DEFAULT_NEXT_PATHS_COUNT);
