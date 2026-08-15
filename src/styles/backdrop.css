@@ -115,6 +115,52 @@ html[data-backdrop-on] .cave-chat-linear {
   background: color-mix(in oklch, var(--bg-base) 16%, transparent);
 }
 
+/* ── The top bar joins the backdrop (cave-vyp3e) ─────────────────────────────
+   .shell-top (desktop) and .top-bar (mobile) both paint an opaque
+   var(--bg-base) to read as a seamless extension of the canvas. That is right
+   with no backdrop and wrong with one: everything below them goes translucent
+   above, so the familiar's image stopped in a hard line at the top bar.
+
+   The lit state below copies the SAME glass the native shell already gives
+   itself — see `:root[data-tauri-titlebar] .shell-top` in
+   globals/desktop-chrome.css, which is why the packaged app already looked
+   right and the browser tab did not. Matching its values keeps the two shells
+   showing one titlebar treatment rather than two slightly different ones.
+
+   Deliberately NOT `background: transparent` like .shell-root above: the bar
+   carries controls and search text directly over the image, so it needs the
+   scrim-plus-blur that the content panes get from their own glass.
+
+   ⚠️ The two fallbacks below intentionally DIVERGE from the native rule, which
+   drops to `background: transparent`. Do not "resync" them. The native window
+   supplies its own material behind a transparent band; here the baseline is an
+   opaque var(--bg-base), so transparent would leave the bar's controls sitting
+   on unscrimmed photo the moment blur is unavailable or the reader asks for
+   reduced transparency. Restoring the opaque band is the safe direction in
+   both cases — and for prefers-reduced-transparency it is the correct one. */
+html[data-backdrop-on] .shell-top,
+html[data-backdrop-on] .top-bar {
+  background: color-mix(in oklch, var(--bg-base) 46%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* No blur available: fall back to the seamless opaque band rather than a bare
+   translucent one, which would leave the controls sitting on raw image. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-backdrop-on] .shell-top,
+  html[data-backdrop-on] .top-bar {
+    background: var(--bg-base);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-backdrop-on] .shell-top,
+  html[data-backdrop-on] .top-bar {
+    background: var(--bg-base);
+    backdrop-filter: none;
+  }
+}
+
 /* ── Readable transcript over the image (cave-5oeu) ──────────────────────────
    The session transcript deliberately flattens bubbles to bare text on the
    pane (.cave-chat-linear strips bubble fills/borders), so with a backdrop
