@@ -856,6 +856,11 @@ export type CompleteOperationResult =
   | { kind: "conflict" }
   | { kind: "not_found" };
 
+export type ReleaseOperationResult =
+  | { kind: "released" }
+  | { kind: "completed" }
+  | { kind: "not_found" };
+
 type NormalizedCompleteInput = { key: string; claimId: string };
 
 function normalizeCompleteInput(input: CompleteOperationInput): NormalizedCompleteInput {
@@ -1018,5 +1023,45 @@ export async function completeOperation(
     operations = operations.map((operation, entryIndex) => (entryIndex === index ? completedEntry : operation));
     await writeStore({ version: 1, operations });
     return { kind: "completed", response: toPublicResponse(canonicalResponse) };
+  });
+}
+
+/**
+ * Release an in-progress claim after its owner produced a retryable result.
+ * The claim id is the ownership fence: a caller can delete only its own
+ * still-pending reservation, never a completed result or a later reclaim.
+ * This lets the same idempotency key retry immediately instead of treating a
+ * transient response as a 10-minute in-progress operation or a 24-hour
+ * replay.
+ */
+export async function releaseOperation(
+  input: CompleteOperationInput,
+  now = Date.now(),
+): Promise<ReleaseOperationResult> {
+  const normalizedInput = normalizeCompleteInput(input);
+  assertValidNow(now);
+  return withOperationTransaction(async () => {
+    const store = await readStoreForMutation();
+    await postReadDelayForTest?.();
+    const pruned = pruneExpiredAndAbandoned(store.operations, now);
+    let operations = pruned.operations;
+    const changed = pruned.changed;
+    const index = operations.findIndex((operation) => operation.claimId === normalizedInput.claimId);
+    if (index === -1) {
+      if (changed) await writeStore({ version: 1, operations });
+      return { kind: "not_found" };
+    }
+    const existing = operations[index];
+    if (existing.key !== normalizedInput.key) {
+      if (changed) await writeStore({ version: 1, operations });
+      return { kind: "not_found" };
+    }
+    if (existing.state === "completed") {
+      if (changed) await writeStore({ version: 1, operations });
+      return { kind: "completed" };
+    }
+    operations = operations.filter((_, operationIndex) => operationIndex !== index);
+    await writeStore({ version: 1, operations });
+    return { kind: "released" };
   });
 }

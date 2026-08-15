@@ -7,6 +7,7 @@ import {
   claimOperation,
   completeOperation,
   hashNormalizedRequest,
+  releaseOperation,
   type ClientOperationResponse,
 } from "@/lib/server/client-v1/idempotency-store";
 import { clientRunService } from "@/lib/server/client-v1/run-service";
@@ -84,8 +85,46 @@ function replayIdentity(attentionRequestId: string, input: ReturnType<typeof par
   };
 }
 
-async function persistStoredResponse(idempotencyKey: string, claimId: string, stored: ClientOperationResponse | null): Promise<void> {
-  if (!stored || stored.status >= 500) return;
+function isRetryableStoredResponse(stored: ClientOperationResponse): boolean {
+  if (stored.status >= 500) return true;
+  const error = stored.body && typeof stored.body === "object"
+    ? (stored.body as { error?: { retryable?: unknown } }).error
+    : undefined;
+  return error?.retryable === true;
+}
+
+async function isRetryableResponse(response: Response): Promise<boolean> {
+  if (response.status >= 500) return true;
+  try {
+    return isRetryableStoredResponse({
+      status: response.status,
+      body: await response.clone().json(),
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function releaseRetryableClaim(idempotencyKey: string, claimId: string): Promise<void> {
+  try {
+    await releaseOperation({ key: idempotencyKey, claimId });
+  } catch {
+    // The retryable response itself remains safe to return. If its release
+    // cannot be confirmed, the ledger's bounded pending lease still fences a
+    // concurrent duplicate rather than ever recording the transient result.
+  }
+}
+
+async function persistStoredResponse(
+  idempotencyKey: string,
+  claimId: string,
+  stored: ClientOperationResponse | null,
+): Promise<void> {
+  if (!stored) return;
+  if (isRetryableStoredResponse(stored)) {
+    await releaseRetryableClaim(idempotencyKey, claimId);
+    return;
+  }
   try {
     const result = await completeOperation({ key: idempotencyKey, claimId }, stored);
     if (result.kind !== "completed" && result.kind !== "replay") return;
@@ -93,7 +132,10 @@ async function persistStoredResponse(idempotencyKey: string, claimId: string, st
 }
 
 async function persistJsonResponse(idempotencyKey: string, claimId: string, response: Response): Promise<void> {
-  if (response.status >= 500) return;
+  if (await isRetryableResponse(response)) {
+    await releaseRetryableClaim(idempotencyKey, claimId);
+    return;
+  }
   try {
     await persistStoredResponse(idempotencyKey, claimId, {
       status: response.status,
@@ -180,10 +222,10 @@ export async function POST(req: Request, context: Context): Promise<Response> {
 
   if (claim.kind === "replay") return responseFromStored(claim.response);
   if (claim.kind === "conflict") return claimConflictResponse();
-  const replayingPending = claim.kind === "pending";
-  if (replayingPending) {
+  if (claim.kind === "pending") {
     const completedSend = await findReplayableSendResponse(sendOperationId, auth.principal.credentialId);
     if (completedSend) return responseFromStored(completedSend);
+    return claimPendingResponse(claim.retryAfterMs);
   }
   if (claim.kind === "capacity_exceeded") return capacityExceededResponse();
 
@@ -213,8 +255,9 @@ export async function POST(req: Request, context: Context): Promise<Response> {
     }
     return response;
   } catch {
-    return claim.kind === "pending"
-      ? claimPendingResponse(claim.retryAfterMs)
-      : clientV1Error(500, "internal_error", "Attention response failed.", true);
+    if (claim.kind === "claimed") {
+      await releaseRetryableClaim(idempotencyKey, claim.claimId);
+    }
+    return clientV1Error(500, "internal_error", "Attention response failed.", true);
   }
 }

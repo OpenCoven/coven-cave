@@ -25,6 +25,7 @@ const {
   claimOperation,
   completeOperation,
   findCompletedOperation,
+  releaseOperation,
   canonicalizeJsonValue,
   hashNormalizedRequest,
   isIdempotencyStoreIntegrityError,
@@ -89,6 +90,33 @@ test("a brand-new key claims fresh", async () => {
   const result = await claimOperation(input);
   assert.equal(result.kind, "claimed");
   assert.ok((result as { claimId: string }).claimId);
+});
+
+test("a claim owner can release only its pending reservation for an immediate retry", async () => {
+  const input = claimInput();
+  const first = await claimOperation(input);
+  assert.equal(first.kind, "claimed");
+  const firstClaimId = (first as { claimId: string }).claimId;
+
+  assert.deepEqual(await releaseOperation({ key: input.key, claimId: firstClaimId }), { kind: "released" });
+
+  const retry = await claimOperation(input);
+  assert.equal(retry.kind, "claimed");
+  const retryClaimId = (retry as { claimId: string }).claimId;
+  assert.notEqual(retryClaimId, firstClaimId);
+  assert.deepEqual(
+    await releaseOperation({ key: input.key, claimId: firstClaimId }),
+    { kind: "not_found" },
+    "a stale claimant cannot release its successor",
+  );
+
+  await completeOperation({ key: input.key, claimId: retryClaimId }, { status: 202, body: { ok: true } });
+  assert.deepEqual(
+    await releaseOperation({ key: input.key, claimId: retryClaimId }),
+    { kind: "completed" },
+    "release never deletes a terminal exact replay",
+  );
+  assert.equal((await claimOperation(input)).kind, "replay");
 });
 
 test("completing a claimed operation returns the completed response, and the same identity later replays it verbatim", async () => {

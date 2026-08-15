@@ -41,10 +41,17 @@ export type ClientCredential = {
   createdAt: number;
   lastUsedAt: number | null;
   revokedAt: number | null;
+  /**
+   * Advances on every revocation event, including an administrator revoking
+   * a credential that a pending pairing replacement already revoked. It is
+   * deliberately private: settlement rollback uses it as a durable
+   * compare-and-swap ownership fence, not as client-visible metadata.
+   */
+  revocationGeneration: number;
 };
 
 /** Everything about a credential except the value that grants authority. */
-export type SafeClientCredential = Omit<ClientCredential, "tokenHash">;
+export type SafeClientCredential = Omit<ClientCredential, "tokenHash" | "revocationGeneration">;
 
 type StoreFile = { version: 1; credentials: ClientCredential[] };
 
@@ -73,6 +80,13 @@ type ReplacedCredential = {
   id: string;
   previousRevokedAt: number | null;
   replacementRevokedAt: number;
+  /**
+   * The revocation generation written by this settlement transaction.
+   * Legacy journals have no durable ownership fence and therefore set this
+   * to null; their rollback removes only their replacement, never restores a
+   * predecessor whose later ownership cannot be proven.
+   */
+  replacementRevocationGeneration: number | null;
 };
 
 type CredentialSettlementEntry = {
@@ -163,8 +177,11 @@ const CREDENTIAL_KEYS = [
   "createdAt",
   "lastUsedAt",
   "revokedAt",
+  "revocationGeneration",
 ] as const;
 const CREDENTIAL_KEY_SET: ReadonlySet<string> = new Set(CREDENTIAL_KEYS);
+const LEGACY_CREDENTIAL_KEYS = CREDENTIAL_KEYS.filter((key) => key !== "revocationGeneration");
+const LEGACY_CREDENTIAL_KEY_SET: ReadonlySet<string> = new Set(LEGACY_CREDENTIAL_KEYS);
 
 const TOKEN_HASH_RE = /^[0-9a-f]{64}$/i;
 
@@ -180,6 +197,17 @@ function isFiniteNonNegativeNumber(value: unknown): value is number {
 
 function isNullOrFiniteNonNegativeNumber(value: unknown): value is number | null {
   return value === null || isFiniteNonNegativeNumber(value);
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function nextRevocationGeneration(generation: number): number {
+  if (generation >= Number.MAX_SAFE_INTEGER) {
+    throw new CredentialStoreIntegrityError("Credential revocation generation is exhausted.");
+  }
+  return generation + 1;
 }
 
 /**
@@ -216,8 +244,14 @@ function parseClientCredential(value: unknown): ClientCredential | null {
   const record = value as Record<string, unknown>;
 
   const keys = Object.keys(record);
-  if (keys.length !== CREDENTIAL_KEYS.length) return null;
-  if (!keys.every((key) => CREDENTIAL_KEY_SET.has(key))) return null;
+  const isLegacy = keys.length === LEGACY_CREDENTIAL_KEYS.length
+    && keys.every((key) => LEGACY_CREDENTIAL_KEY_SET.has(key));
+  if (
+    !isLegacy
+    && (keys.length !== CREDENTIAL_KEYS.length || !keys.every((key) => CREDENTIAL_KEY_SET.has(key)))
+  ) {
+    return null;
+  }
 
   if (!isUuid(record.id)) return null;
   if (!isNonEmptyString(record.appName)) return null;
@@ -235,6 +269,7 @@ function parseClientCredential(value: unknown): ClientCredential | null {
 
   if (!isNullOrFiniteNonNegativeNumber(record.revokedAt)) return null;
   if (record.revokedAt !== null && record.revokedAt < createdAt) return null;
+  if (!isLegacy && !isNonNegativeSafeInteger(record.revocationGeneration)) return null;
 
   return {
     id: record.id,
@@ -252,6 +287,10 @@ function parseClientCredential(value: unknown): ClientCredential | null {
     createdAt,
     lastUsedAt: record.lastUsedAt,
     revokedAt: record.revokedAt,
+    // A legacy record predates durable revocation ownership. Treat it as
+    // generation zero; the next mutation upgrades it by persisting the
+    // explicit generation field.
+    revocationGeneration: isLegacy ? 0 : record.revocationGeneration as number,
   };
 }
 
@@ -452,11 +491,23 @@ function parseSealedToken(value: unknown): SealedToken | null {
 function parseReplacedCredential(value: unknown): ReplacedCredential | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (!hasExactKeys(record, ["id", "previousRevokedAt", "replacementRevokedAt"])) return null;
+  const legacy = hasExactKeys(record, ["id", "previousRevokedAt", "replacementRevokedAt"]);
+  if (
+    !legacy
+    && !hasExactKeys(record, [
+      "id",
+      "previousRevokedAt",
+      "replacementRevokedAt",
+      "replacementRevocationGeneration",
+    ])
+  ) {
+    return null;
+  }
   if (
     !isUuid(record.id)
     || !isNullOrFiniteNonNegativeNumber(record.previousRevokedAt)
     || !isFiniteNonNegativeNumber(record.replacementRevokedAt)
+    || (!legacy && !isNonNegativeSafeInteger(record.replacementRevocationGeneration))
   ) {
     return null;
   }
@@ -464,6 +515,7 @@ function parseReplacedCredential(value: unknown): ReplacedCredential | null {
     id: record.id,
     previousRevokedAt: record.previousRevokedAt,
     replacementRevokedAt: record.replacementRevokedAt,
+    replacementRevocationGeneration: legacy ? null : record.replacementRevocationGeneration as number,
   };
 }
 
@@ -835,6 +887,7 @@ function hasPersistedSettlementCredential(
     && credential.tokenHash === entry.credential.tokenHash
     && credential.createdAt === entry.credential.createdAt
     && credential.lastUsedAt === entry.credential.lastUsedAt
+    && credential.revocationGeneration === entry.credential.revocationGeneration
     && credential.scopes.length === entry.credential.scopes.length
     && credential.scopes.every((scope, index) => scope === entry.credential.scopes[index]),
   );
@@ -858,16 +911,22 @@ function hasActiveSettlementCredential(
 }
 
 /**
- * Undo only the precise writes this transaction made.  The exact planned
- * revocation timestamp is the compare-and-swap guard: an administrator's
- * later, independent revocation is never silently overwritten.
+ * Undo only the precise writes this transaction made. The timestamp and
+ * durable revocation generation together form the compare-and-swap fence:
+ * an administrator's later revocation advances the generation even when the
+ * timestamp is already populated by this temporary replacement, so rollback
+ * can never reactivate that predecessor.
  */
 function rollbackSettlementCredential(store: StoreFile, entry: CredentialSettlementEntry): boolean {
   if (!hasPersistedSettlementCredential(store, entry)) return false;
   store.credentials = store.credentials.filter((credential) => credential.id !== entry.credential.id);
   for (const replaced of entry.replaced) {
     const credential = store.credentials.find((candidate) => candidate.id === replaced.id);
-    if (credential?.revokedAt === replaced.replacementRevokedAt) {
+    if (
+      replaced.replacementRevocationGeneration !== null
+      && credential?.revokedAt === replaced.replacementRevokedAt
+      && credential.revocationGeneration === replaced.replacementRevocationGeneration
+    ) {
       credential.revokedAt = replaced.previousRevokedAt;
     }
   }
@@ -937,6 +996,7 @@ function makeReplacementCredential(
     createdAt,
     lastUsedAt: null,
     revokedAt: null,
+    revocationGeneration: 0,
   };
   const replaced: ReplacedCredential[] = [];
   const credentials = store.credentials.map((existing) => {
@@ -948,12 +1008,18 @@ function makeReplacementCredential(
       return existing;
     }
     const replacementRevokedAt = monotonicTimestamp(now, existing.createdAt, existing.lastUsedAt);
+    const replacementRevocationGeneration = nextRevocationGeneration(existing.revocationGeneration);
     replaced.push({
       id: existing.id,
       previousRevokedAt: existing.revokedAt,
       replacementRevokedAt,
+      replacementRevocationGeneration,
     });
-    return { ...existing, revokedAt: replacementRevokedAt };
+    return {
+      ...existing,
+      revokedAt: replacementRevokedAt,
+      revocationGeneration: replacementRevocationGeneration,
+    };
   });
   credentials.push(credential);
   return { credential, replaced, credentials };
@@ -1240,6 +1306,7 @@ export async function issueCredential(
       createdAt,
       lastUsedAt: null,
       revokedAt: null,
+      revocationGeneration: 0,
     };
     const remaining = store.credentials.map((existing) => {
       if (
@@ -1254,7 +1321,11 @@ export async function issueCredential(
       // possibly-bumped `createdAt` above) so this credential's revocation
       // time reflects when it actually happened, independent of whatever
       // ordering adjustment the newly issued credential needed.
-      return { ...existing, revokedAt: monotonicTimestamp(now, existing.createdAt, existing.lastUsedAt) };
+      return {
+        ...existing,
+        revokedAt: monotonicTimestamp(now, existing.createdAt, existing.lastUsedAt),
+        revocationGeneration: nextRevocationGeneration(existing.revocationGeneration),
+      };
     });
     remaining.push(credential);
     await writeStore({ version: 1, credentials: remaining });
@@ -1333,12 +1404,14 @@ export async function recordCredentialUse(id: string, now = Date.now()): Promise
 }
 
 /**
- * Revoke a credential. Idempotent: revoking an already-revoked credential
- * stays successful but never moves its `revokedAt` timestamp forward, so the
- * recorded revocation time is always the first one. A caller-supplied `now`
- * that is stale or explicitly earlier than the credential's own
- * `createdAt`/`lastUsedAt` is clamped forward via `monotonicTimestamp`
- * before being persisted, so `revokedAt` can never precede `createdAt`.
+ * Revoke a credential. The first revoke records a stable `revokedAt`;
+ * every explicit revoke advances the private generation, including one that
+ * finds an already-revoked credential. That durable generation makes an
+ * administrator's revocation supersede a temporary pairing replacement
+ * revocation with the same timestamp. A caller-supplied `now` that is stale
+ * or explicitly earlier than the credential's own `createdAt`/`lastUsedAt`
+ * is clamped forward via `monotonicTimestamp` before being persisted, so
+ * `revokedAt` can never precede `createdAt`.
  */
 export async function revokeCredential(id: string, now = Date.now()): Promise<boolean> {
   // Rejected before the transaction is even entered — see `assertValidNow`.
@@ -1354,8 +1427,9 @@ export async function revokeCredential(id: string, now = Date.now()): Promise<bo
     if (!credential) return false;
     if (credential.revokedAt === null) {
       credential.revokedAt = monotonicTimestamp(now, credential.createdAt, credential.lastUsedAt);
-      await writeStore(store);
     }
+    credential.revocationGeneration = nextRevocationGeneration(credential.revocationGeneration);
+    await writeStore(store);
     return true;
   });
 }

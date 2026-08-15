@@ -226,6 +226,138 @@ test("attention respond maps typed service errors onto the stable client-v1 enve
   });
 });
 
+test("attention respond releases a still-launching retryable conflict so the same key can later succeed", async () => {
+  const issued = await issuedCredential();
+  const idempotencyKey = "4f4145de-9b43-4abc-876d-81ef63de60e0";
+  let sendCalls = 0;
+  actionServiceModule.clientActionService.prepareAttentionResponse = async (_requestId, input, sendOperationId) => ({
+    ok: true,
+    send: {
+      operationId: sendOperationId,
+      conversationId: input.conversationId,
+      familiarId: "charm",
+      prompt: input.prompt,
+      attachmentIds: [],
+      projectRoot: null,
+    },
+  });
+  runServiceModule.clientRunService.findReplayableResponse = async () => null;
+  runServiceModule.clientRunService.send = async (input) => {
+    sendCalls += 1;
+    if (sendCalls === 1) {
+      return Response.json({
+        ok: false,
+        error: {
+          code: "operation_already_started",
+          message: "This run is still launching. Retry shortly.",
+          retryable: true,
+        },
+      }, { status: 409 });
+    }
+    return Response.json({ ok: true, runId: input.operationId, conversationId: input.conversationId }, { status: 202 });
+  };
+
+  const first = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  const firstResponse = await POST(first.req, first.ctx);
+  assert.equal(firstResponse.status, 409);
+  assert.equal((await firstResponse.json()).error.retryable, true);
+
+  const retry = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  const retryResponse = await POST(retry.req, retry.ctx);
+  assert.equal(retryResponse.status, 202, "the released key may immediately retry the nested launch");
+  const retryBody = await retryResponse.json();
+  assert.equal(retryBody.ok, true);
+  assert.equal(sendCalls, 2);
+
+  const replay = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  const replayResponse = await POST(replay.req, replay.ctx);
+  assert.equal(replayResponse.status, 202);
+  assert.deepEqual(await replayResponse.json(), retryBody);
+  assert.equal(sendCalls, 2, "the successful retry is now an exact persisted replay");
+});
+
+test("attention respond persists a terminal conflict for exact replay", async () => {
+  const issued = await issuedCredential();
+  const idempotencyKey = "5f4145de-9b43-4abc-876d-81ef63de60e0";
+  let prepareCalls = 0;
+  actionServiceModule.clientActionService.prepareAttentionResponse = async () => {
+    prepareCalls += 1;
+    return {
+      ok: false,
+      status: 409,
+      code: "conflict",
+      message: "This attention request is stale or no longer active.",
+      retryable: false,
+    };
+  };
+
+  const first = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  const firstResponse = await POST(first.req, first.ctx);
+  assert.equal(firstResponse.status, 409);
+  const firstBody = await firstResponse.json();
+
+  const replay = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  const replayResponse = await POST(replay.req, replay.ctx);
+  assert.equal(replayResponse.status, 409);
+  assert.deepEqual(await replayResponse.json(), firstBody);
+  assert.equal(prepareCalls, 1, "terminal conflicts are completed exactly once and replayed");
+});
+
+test("attention respond keeps a concurrent outer claim from launching a duplicate nested send", async () => {
+  const issued = await issuedCredential();
+  const idempotencyKey = "6f4145de-9b43-4abc-876d-81ef63de60e0";
+  let prepareCalls = 0;
+  let sendCalls = 0;
+  let markSendStarted;
+  const sendStarted = new Promise((resolve) => {
+    markSendStarted = resolve;
+  });
+  let finishSend;
+  const sendFinished = new Promise((resolve) => {
+    finishSend = resolve;
+  });
+  actionServiceModule.clientActionService.prepareAttentionResponse = async (_requestId, input, sendOperationId) => {
+    prepareCalls += 1;
+    return {
+      ok: true,
+      send: {
+        operationId: sendOperationId,
+        conversationId: input.conversationId,
+        familiarId: "charm",
+        prompt: input.prompt,
+        attachmentIds: [],
+        projectRoot: null,
+      },
+    };
+  };
+  runServiceModule.clientRunService.findReplayableResponse = async () => null;
+  runServiceModule.clientRunService.send = async (input) => {
+    sendCalls += 1;
+    markSendStarted();
+    await sendFinished;
+    return Response.json({ ok: true, runId: input.operationId, conversationId: input.conversationId }, { status: 202 });
+  };
+
+  const first = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  const firstPromise = POST(first.req, first.ctx);
+  await sendStarted;
+
+  const concurrent = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  const concurrentResponse = await POST(concurrent.req, concurrent.ctx);
+  assert.equal(concurrentResponse.status, 409);
+  assert.equal((await concurrentResponse.json()).error.retryable, true);
+  assert.equal(prepareCalls, 1);
+  assert.equal(sendCalls, 1);
+
+  finishSend();
+  const firstResponse = await firstPromise;
+  assert.equal(firstResponse.status, 202);
+
+  const replay = request("assistant-1", { bearer: issued.token, idempotencyKey });
+  assert.equal((await POST(replay.req, replay.ctx)).status, 202);
+  assert.equal(sendCalls, 1);
+});
+
 test("attention respond exact retries replay the completed send ledger even after attention clears", async () => {
   const issued = await issuedCredential();
   const idempotencyKey = "1f4145de-9b43-4abc-876d-81ef63de60e0";

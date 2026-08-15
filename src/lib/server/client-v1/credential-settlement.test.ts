@@ -250,6 +250,67 @@ test("a stale unresolved transaction rolls back its replacement and restores the
   assert.deepEqual((await journal()).transactions, []);
 });
 
+test("an administrator revocation concurrent with settlement rollback never reactivates the predecessor", async () => {
+  const previous = await issueCredential(approvedPairing(), 1_000);
+  const context = {
+    pairingId: "b13b7c7b-70bf-43fa-9ee2-767807fc580e",
+    pairingSecret: "settlement-secret",
+    idempotencyKey: "b13b7c7b-70bf-43fa-9ee2-767807fc580b",
+    requestHash: "e".repeat(64),
+  };
+  const issued = await issueCredentialForPairingSettlement(approvedPairing(), context, 2_000);
+  const expiredAt = 2_000 + PAIRING_CREDENTIAL_RECOVERY_TTL_MS + 1;
+
+  // Calls share the durable credential transaction lock. Starting the
+  // administrator operation first makes it the later revocation event before
+  // recovery's rollback takes its own turn, exercising the ownership fence
+  // rather than relying on a timestamp difference.
+  const [revoked, recovered] = await Promise.all([
+    revokeCredential(previous.credential.id, expiredAt),
+    recoverPairingCredentialSettlement(context, expiredAt),
+  ]);
+
+  assert.equal(revoked, true);
+  assert.deepEqual(recovered, { kind: "none" });
+  assert.equal(await verifyCredential(issued.token), null, "the unresolved replacement is removed");
+  assert.equal(
+    await verifyCredential(previous.token),
+    null,
+    "the administrator's later revocation must outlive the settlement rollback",
+  );
+  assert.deepEqual((await journal()).transactions, []);
+});
+
+test("restart recovery preserves an administrator revocation over an unfinished replacement", async () => {
+  const previous = await issueCredential(approvedPairing(), 1_000);
+  const context = {
+    pairingId: "b13b7c7b-70bf-43fa-9ee2-767807fc580e",
+    pairingSecret: "settlement-secret",
+    idempotencyKey: "b13b7c7b-70bf-43fa-9ee2-767807fc580c",
+    requestHash: "f".repeat(64),
+  };
+  const issued = await issueCredentialForPairingSettlement(approvedPairing(), context, 2_000);
+  const expiredAt = 2_000 + PAIRING_CREDENTIAL_RECOVERY_TTL_MS + 1;
+  assert.equal(await revokeCredential(previous.credential.id, expiredAt), true);
+
+  const credentialStoreUrl = pathToFileURL(
+    path.resolve("src/lib/server/client-v1/credential-store.ts"),
+  ).href;
+  const restartedStore = await import(
+    `${credentialStoreUrl}?restart-revocation-fence=${Date.now()}-${Math.random()}`,
+  ) as typeof import("./credential-store.ts");
+  const recovered = await restartedStore.recoverPairingCredentialSettlement(context, expiredAt);
+
+  assert.deepEqual(recovered, { kind: "none" });
+  assert.equal(await restartedStore.verifyCredential(issued.token), null);
+  assert.equal(
+    await restartedStore.verifyCredential(previous.token),
+    null,
+    "the durable administrator generation must survive module/process recovery",
+  );
+  assert.deepEqual((await journal()).transactions, []);
+});
+
 test("an exact retry recovers a credential when process-local pairing finalization throws", async () => {
   const { request, secret } = createPairingRequest(approvedPairing());
   decidePairingRequest(request.id, "approved");
