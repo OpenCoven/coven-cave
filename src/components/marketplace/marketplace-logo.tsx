@@ -18,7 +18,10 @@ export function MarketplaceLogo({
   logo,
   size = "card",
 }: MarketplaceLogoProps) {
-  const resolved = logo ?? resolveMarketplaceLogo(id, displayName);
+  const resolved = {
+    ...resolveMarketplaceLogo(id, displayName),
+    ...logo,
+  };
   return (
     <span
       className={`marketplace-logo marketplace-logo--${size}`}

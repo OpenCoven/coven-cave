@@ -74,6 +74,7 @@ const componentSource = await readFile(
 assert.match(componentSource, /data-marketplace-logo-kind=\{resolved\.kind\}/);
 assert.match(componentSource, /resolved\.kind === "brand" && resolved\.svgPath/);
 assert.match(componentSource, /marketplace-logo__monogram/);
+assert.match(componentSource, /resolveMarketplaceLogo\(id, displayName\),\s+\.\.\.logo/s);
 
 for (const file of [
   "src/components/marketplace/marketplace-card.tsx",
@@ -110,6 +111,11 @@ const marketplaceRoute = await readFile(
   path.join(root, "src/app/api/marketplace/route.ts"),
   "utf8",
 );
-assert.match(marketplaceRoute, /logo: plugin\.logo \?\? resolveMarketplaceLogo\(plugin\.id, plugin\.displayName\)/);
+assert.match(marketplaceRoute, /function toTransportMarketplaceLogo/);
+assert.match(marketplaceRoute, /const \{ svgPath: _svgPath, \.\.\.transportLogo \} = logo/);
+assert.match(
+  marketplaceRoute,
+  /logo: toTransportMarketplaceLogo\(\s+plugin\.logo \?\? resolveMarketplaceLogo\(plugin\.id, plugin\.displayName\),/s,
+);
 
 console.log(`marketplace-logo.test.ts: ${catalogIds.length} entries covered`);

@@ -29,6 +29,11 @@ export const runtime = "nodejs";
 
 const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
 
+function toTransportMarketplaceLogo(logo: ReturnType<typeof resolveMarketplaceLogo>) {
+  const { svgPath: _svgPath, ...transportLogo } = logo;
+  return transportLogo;
+}
+
 export async function GET() {
   let marketplacePlugins: MarketplaceJsonPlugin[] = [];
   try {
@@ -71,7 +76,9 @@ export async function GET() {
     ...ownedCatalog,
   ].map((plugin) => ({
     ...plugin,
-    logo: plugin.logo ?? resolveMarketplaceLogo(plugin.id, plugin.displayName),
+    logo: toTransportMarketplaceLogo(
+      plugin.logo ?? resolveMarketplaceLogo(plugin.id, plugin.displayName),
+    ),
   }));
   return NextResponse.json({ ok: true, plugins });
 }
