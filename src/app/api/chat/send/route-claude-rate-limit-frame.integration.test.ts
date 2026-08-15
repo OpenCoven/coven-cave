@@ -31,6 +31,7 @@ const previousShell = process.env.SHELL;
 const previousCovenBin = process.env.COVEN_BIN;
 const previousPath = process.env.PATH;
 const previousPathCase = process.env.Path;
+const previousClaudeToolTestMode = process.env.CLAUDE_TOOL_TEST_MODE;
 process.env.COVEN_HOME = home;
 process.env.COVEN_CAVE_HOME = path.join(home, "cave");
 process.env.HOME = home;
@@ -109,6 +110,16 @@ const FRAMES = [
 const shim = [
   "const frames = " + JSON.stringify(FRAMES) + ";",
   "if (process.argv[2] === 'run' && process.argv[3] === 'claude') {",
+  "  if (process.env.CLAUDE_TOOL_TEST_MODE === 'protocol-drift-hooks') {",
+  "    const sessionId = 'protocol-drift-hook-session';",
+  "    process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId }) + '\\n');",
+  "    process.stdout.write(JSON.stringify({ type: 'future_tool_frame', message: { content: [{ type: 'future_tool', id: 'future-1' }] }, session_id: sessionId }) + '\\n');",
+  "    process.stdout.write('hook: pre_tool_use Bash {\"command\":\"test -f SOUL.md\"}\\n');",
+  "    process.stdout.write('hook: post_tool_use Bash {\"exitCode\":1,\"stderr\":\"SOUL.md not found\"}\\n');",
+  "    process.stdout.write(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'SOUL.md is unavailable.' }] }, session_id: sessionId }) + '\\n');",
+  "    process.stdout.write(JSON.stringify({ type: 'result', duration_ms: 25, is_error: false, session_id: sessionId }) + '\\n');",
+  "    process.exit(0);",
+  "  }",
   "  for (const frame of frames) process.stdout.write(JSON.stringify(frame) + '\\n');",
   "  process.exit(0);",
   "}",
@@ -166,6 +177,7 @@ try {
   const { resetClaudeCompatibilityCacheForTest, resolveInstalledClaudeCompatibility } =
     await import("@/lib/server/claude-runtime-compatibility");
   const { saveConfig } = await import("@/lib/cave-config");
+  const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
   const { POST } = await import("./route.ts");
@@ -225,8 +237,56 @@ try {
   assert.match(assistantText, /DONE/, "assistant text after the notice still streams");
   assert.doesNotMatch(assistantText, /rate_limit|utilization/i, "the notice never leaks into the transcript");
 
+  process.env.CLAUDE_TOOL_TEST_MODE = "protocol-drift-hooks";
+  const drift = await readSse(
+    await POST(new Request("http://localhost/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: "sage", prompt: "check SOUL.md", projectRoot: familiarWorkspace }),
+    })),
+  );
+  const driftTools = drift.events.filter(
+    (event) => event.kind === "tool_use" && event.name === "Bash",
+  );
+  assert.ok(
+    driftTools.length > 0,
+    `hook evidence must survive stream-json protocol drift: ${drift.body}`,
+  );
+  assert.equal(
+    driftTools[0]?.input,
+    '{\n  "command": "test -f SOUL.md"\n}',
+    "the quarantined envelope path retains the independent filesystem check",
+  );
+  assert.equal(
+    driftTools.at(-1)?.output,
+    '{\n  "exitCode": 1,\n  "stderr": "SOUL.md not found"\n}',
+    "the hook retains its terminal result",
+  );
+  assert.equal(
+    driftTools.at(-1)?.status,
+    "error",
+    "a non-zero JSON exitCode remains visibly failed evidence",
+  );
+  const driftNotice = drift.events.find(
+    (event) => event.kind === "progress" && event.id === "claude-runtime-compatibility",
+  );
+  assert.match(
+    driftNotice?.label ?? "",
+    /hook evidence will still be shown/i,
+    "the protocol-drift notice must distinguish disabled envelopes from retained hooks",
+  );
+  const driftDone = drift.events.findLast((event) => event.kind === "done");
+  const driftConversation = await loadConversation(driftDone?.sessionId);
+  assert.equal(
+    driftConversation?.turns.at(-1)?.tools?.at(-1)?.output,
+    '{\n  "exitCode": 1,\n  "stderr": "SOUL.md not found"\n}',
+    "hook evidence persists across chat reloads instead of becoming tools: []",
+  );
+
   console.log("route-claude-rate-limit-frame.integration.test.ts OK");
 } finally {
+  if (previousClaudeToolTestMode === undefined) delete process.env.CLAUDE_TOOL_TEST_MODE;
+  else process.env.CLAUDE_TOOL_TEST_MODE = previousClaudeToolTestMode;
   process.env.COVEN_HOME = previousHome;
   process.env.COVEN_CAVE_HOME = previousCaveHome;
   process.env.HOME = previousOsHome;
