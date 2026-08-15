@@ -162,6 +162,7 @@
     "babel-plugin-react-compiler": "1.0.0",
     "esbuild": "0.28.1",
     "eslint": "10.8.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "highlight.js": "11.11.1",
     "react-test-renderer": "19.2.8",
     "tailwindcss": "4.3.3",

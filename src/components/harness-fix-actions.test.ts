@@ -106,12 +106,12 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /onUseHarness=\{\(runtime\) =>[\s\S]{0,120}useHarnessForReply\(agent\.reply, runtime\)/,
+    /onUseHarness=\{\(runtime\) =>[\s\S]{0,120}handleHarnessForReply\(agent\.reply, runtime\)/,
     "group chat should wire each failure card to the per-reply harness-fix handler",
   );
   assert.match(
     source,
-    /useHarnessForReply/,
+    /handleHarnessForReply/,
     "group chat should define a per-reply harness-fix handler",
   );
   assert.match(
@@ -126,7 +126,7 @@ import { readFile } from "node:fs/promises";
   );
   assert.match(
     source,
-    /const useHarnessForReply = useCallback\([\s\S]*?if \(reply\.sessionId \|\| activeGroupRef\.current\?\.sessions\[reply\.familiarId\]\) \{[\s\S]*?reply is pinned to its original runtime[\s\S]*?return;/,
+    /const handleHarnessForReply = useCallback\([\s\S]*?if \(reply\.sessionId \|\| activeGroupRef\.current\?\.sessions\[reply\.familiarId\]\) \{[\s\S]*?reply is pinned to its original runtime[\s\S]*?return;/,
     "group-chat recovery must not rebind a familiar when the failed reply already has a pinned session",
   );
 }

@@ -1280,7 +1280,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
 
   // Recovery for a harness/runtime failure on one reply: before a session is
   // pinned, rebind that familiar via /api/config, then re-run just their reply.
-  const useHarnessForReply = useCallback(
+  const handleHarnessForReply = useCallback(
     async (reply: GroupReply, runtime: string) => {
       if (busy) return;
       if (reply.sessionId || activeGroupRef.current?.sessions[reply.familiarId]) {
@@ -1979,7 +1979,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl, onDebugS
                                           onRetry={() => void retryReply(agent.reply)}
                                           onSkip={null}
                                           onUseHarness={(runtime) =>
-                                            void useHarnessForReply(agent.reply, runtime)
+                                            void handleHarnessForReply(agent.reply, runtime)
                                           }
                                           busy={busy}
                                           visibleText={

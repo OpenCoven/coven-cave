@@ -205,6 +205,7 @@ export const SUITES = {
     "scripts/react-compiler-config.test.mjs",
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
+    "scripts/eslint/react-hooks-gate.test.mjs",
     "scripts/bundle-budget.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/enforce-branch-cap.test.mjs",

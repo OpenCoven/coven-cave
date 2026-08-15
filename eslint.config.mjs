@@ -1,4 +1,5 @@
 import tsParser from "@typescript-eslint/parser";
+import reactHooks from "eslint-plugin-react-hooks";
 
 import designSystemPlugin from "./scripts/eslint/design-system-plugin.mjs";
 
@@ -30,7 +31,7 @@ export default [
     },
     plugins: {
       "coven-design": designSystemPlugin,
-      "react-hooks": { rules: { "exhaustive-deps": noopRule } },
+      "react-hooks": reactHooks,
       "@next/next": { rules: { "no-img-element": noopRule } },
       react: { rules: { "no-danger": noopRule } },
       "jsx-a11y": {
@@ -41,6 +42,7 @@ export default [
       "coven-design/no-raw-px-text": "error",
       "coven-design/no-static-inline-style": "error",
       "coven-design/no-render-hex-color": "error",
+      "react-hooks/rules-of-hooks": "error",
     },
   },
 ];
