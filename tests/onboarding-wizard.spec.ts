@@ -185,9 +185,16 @@ async function gotoApp(
       state: "visible",
       timeout: 30_000,
     });
-    await page.evaluate(() => {
-      window.dispatchEvent(new Event("cave:onboarding-open"));
-    });
+    // The search surface paints before Workspace installs the bridge listener.
+    // Re-dispatch until that listener has opened the shared overlay.
+    await expect
+      .poll(async () => {
+        await page.evaluate(() => {
+          window.dispatchEvent(new Event("cave:onboarding-open"));
+        });
+        return await setup(page).count();
+      }, { timeout: 30_000 })
+      .toBeGreaterThan(0);
   }
 }
 
