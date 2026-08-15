@@ -993,6 +993,7 @@ export const SUITES = {
     "src/lib/github-repo-link.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
+    "src/lib/hf-papers.test.ts",
     "src/lib/memory-inspector.test.ts",
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
