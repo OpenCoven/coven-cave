@@ -204,6 +204,32 @@ async function boot(
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     window.localStorage.setItem("cave:active-familiar", "rida");
   });
+  // #4634 wired onError={reportPlaybackFailure} onto the <audio>/<video>
+  // elements, which tears the player AND its Download link out of the DOM the
+  // moment the browser cannot decode the source. This harness has always served
+  // a 1-byte placeholder for /media — harmless before that change, fatal after —
+  // so the media assertions began failing on every PR without the product being
+  // broken. This suite has no real codecs and no media fixtures; it fakes the
+  // whole backend already, so it fakes decode support too rather than shipping
+  // a binary just to satisfy a decoder. React binds media events directly to
+  // the element (they do not bubble), so dropping the listener at registration
+  // is what actually suppresses it. (cave-4xv9v)
+  await page.addInitScript(() => {
+    const add = HTMLMediaElement.prototype.addEventListener;
+    // Annotate every parameter and `this` explicitly. `as typeof add` asserts
+    // the assembled function's TYPE but does not contextually type the function
+    // expression's parameters, so under noImplicitAny they were four errors
+    // (TS7006 ×3 plus TS2683 on `this`) and typecheck failed.
+    HTMLMediaElement.prototype.addEventListener = function patched(
+      this: HTMLMediaElement,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type === "error") return;
+      return add.call(this, type, listener, options);
+    } as typeof add;
+  });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
       json: {
@@ -277,6 +303,25 @@ async function boot(
                 ? undefined
                 : "Install ffmpeg and download a local voice.",
             },
+          },
+        });
+        return;
+      }
+      // #4634 put a ticket hop in front of playback: the client asks for a
+      // signed media URL and only renders <audio>/<video> once it resolves, so
+      // an unmocked ticket meant no media element at all and the viewer showed
+      // "Couldn't load podcast audio." The spec's route regex already matched
+      // this path, so the request was intercepted and fell through to the
+      // generations LIST response — shaped nothing like a ticket — rather than
+      // reaching a real handler. Answer it before /media, whose bytes the
+      // resolved URL then requests. (cave-4xv9v)
+      if (url.pathname.endsWith("/media-ticket")) {
+        const familiarId = url.searchParams.get("familiarId") ?? "";
+        const id = url.searchParams.get("id") ?? "";
+        await route.fulfill({
+          json: {
+            ok: true,
+            mediaUrl: `/api/research/generations/media?familiarId=${encodeURIComponent(familiarId)}&id=${encodeURIComponent(id)}`,
           },
         });
         return;
