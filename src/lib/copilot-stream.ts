@@ -276,14 +276,12 @@ const COPILOT_ADD_DIR_FLAG = "--add-dir";
 // schema selection and before its first JSONL frame.
 export const COPILOT_NO_AUTO_UPDATE_ARG = "--no-auto-update";
 
-// Approval argv for unattended one-shot runs (flow sessions). A `-p` spawn
-// cannot answer approval prompts, so without these the CLI auto-denies every
-// tool — the "mission workspace was read-only all session" failure that left
-// research missions without artifacts/primary.md. Deliberately narrower than
-// the manifest's full_args (`--allow-all`): tools and URLs are approved, but
-// file-path verification stays ON, confining writes to the spawn cwd plus the
-// explicit `--add-dir` grants (native flags verified against CLI 1.0.73).
-const COPILOT_UNATTENDED_ARGS = ["--allow-all-tools", "--allow-all-urls"];
+// Approval argv for non-interactive launches. A `-p` spawn cannot answer
+// approval prompts, so without these the CLI auto-denies every tool. These are
+// deliberately narrower than the manifest's full_args (`--allow-all`): tools
+// and URLs are approved, but file-path verification stays ON, confining writes
+// to the spawn cwd plus explicit `--add-dir` grants.
+const COPILOT_NONINTERACTIVE_APPROVAL_ARGS = ["--allow-all-tools", "--allow-all-urls"];
 
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
@@ -480,8 +478,9 @@ export type CopilotStreamLaunch = {
    * Granted directories to trust at the harness level (repeatable
    * `--add-dir`). Without these the runtime-scope preamble's grants are
    * prompt-text-only: read-only sessions deny every granted-root access, and
-   * full sessions ride `--allow-all` instead of an explicit trust list
-   * (cave-n1yc). The spawn cwd is already trusted and must not be included.
+   * full sessions pre-approve tools and URLs while retaining the explicit
+   * trust list (cave-n1yc). The spawn cwd is already trusted and must not be
+   * included.
    */
   addDirs: string[];
   /** Trusted, app-bundled skill-only plugins loaded for this process. */
@@ -525,17 +524,14 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   for (const dir of launch.pluginDirs ?? []) {
     if (dir) args.push("--plugin-dir", dir);
   }
-  // Sandbox mapping from the manifest. A direct `-p` process has no stdin to
-  // answer approval prompts, so full chats retain their existing manifest
-  // approval contract instead of auto-denying every requested tool.
-  // Unattended one-shots pre-approve tools/URLs (auto-deny otherwise) while
-  // path verification keeps the cwd + --add-dir write boundary.
-  if (launch.permissionMode === "full") {
-    args.push(...spec.sandboxFullArgs);
-  } else if (launch.permissionMode === "read") {
+  // A direct `-p` process has no stdin to answer approval prompts. Full chats
+  // and unattended one-shots therefore pre-approve tools/URLs (auto-deny
+  // otherwise) while path verification keeps the cwd + --add-dir boundary.
+  // Do not use the manifest's blanket `--allow-all`: it disables that boundary.
+  if (launch.permissionMode === "read") {
     args.push(...spec.sandboxReadOnlyArgs);
-  } else if (launch.permissionMode === "unattended") {
-    args.push(...COPILOT_UNATTENDED_ARGS);
+  } else if (launch.permissionMode === "full" || launch.permissionMode === "unattended") {
+    args.push(...COPILOT_NONINTERACTIVE_APPROVAL_ARGS);
   }
   args.push(...spec.prefixArgs, launch.prompt);
   return args;

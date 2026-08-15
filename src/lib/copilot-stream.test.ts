@@ -350,7 +350,8 @@ assert.deepEqual(
     "/Users/example/.coven/workspaces/familiars/sage",
     "--plugin-dir",
     "/Applications/CovenCave.app/marketplace/plugins/coven-memory",
-    "--allow-all",
+    "--allow-all-tools",
+    "--allow-all-urls",
     "--output-format",
     "json",
     "--stream",
@@ -358,8 +359,9 @@ assert.deepEqual(
     "-p",
     "do the thing",
   ],
-  "fresh full-permission turns preserve the manifest approval argv with their session, model, trust grants, and trailing prompt",
+  "fresh full-permission turns pre-approve tools and URLs while preserving path verification for their trust grants",
 );
+assert.ok(!freshArgs.includes("--allow-all"), "full chat turns never disable cwd and --add-dir path verification");
 
 const opus5Args = buildCopilotStreamArgs({
   spec,
