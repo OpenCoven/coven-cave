@@ -14,6 +14,7 @@
  * (`attach-source` action) so triage semantics stay identical.
  */
 
+import dynamic from "next/dynamic";
 import {
   useCallback,
   useEffect,
@@ -44,6 +45,13 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { ResearchTabProps } from "./researcher-surface";
 import { ResearchXSources } from "./research-x-sources";
 import { useResearchLinks } from "./use-research-links";
+
+// pdf.js is browser-only (it dies on `DOMMatrix` under Node), so the paper
+// viewer never renders on the server. The dynamic boundary also keeps the PDF
+// machinery out of the bundle for anyone who never opens a paper.
+const ResearchPaperViewer = dynamic(() => import("@/components/research-paper-viewer"), {
+  ssr: false,
+});
 
 const VIEW_STORAGE_KEY = "cave:research:res-view";
 
@@ -605,6 +613,19 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             </div>
 
             <div className="research-res-overlay__body">
+              {/* Papers ingested with arXiv metadata read in place. A link
+                  saved before the feature — or one whose metadata fetch
+                  degraded — carries no arxivId and keeps exactly the contents
+                  it has always had. */}
+              {openLink.paper?.arxivId ? (
+                <ResearchPaperViewer
+                  arxivId={openLink.paper.arxivId}
+                  authors={openLink.paper.authors}
+                  abstract={openLink.paper.abstract}
+                  publishedAt={openLink.paper.publishedAt}
+                />
+              ) : null}
+
               {/* Stats strip: only fields the store really holds or facts we
                   can derive — none of the design's invented metrics. */}
               <div className="research-res-overlay__stats">

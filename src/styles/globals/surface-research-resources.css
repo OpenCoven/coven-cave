@@ -810,6 +810,150 @@
   background: color-mix(in oklch, var(--research-accent) 7%, transparent);
 }
 
+/* ── Paper viewer: pdf.js canvas with its text layer laid over the top. ── */
+.research-paper-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.research-paper-view__byline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.research-paper-view__authors {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.research-paper-view__published { font-size: var(--text-xs); color: var(--text-muted); }
+.research-paper-view__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.research-paper-view__label i {
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--research-accent);
+}
+.research-paper-view__label span {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.research-paper-view__abstract p {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.research-paper-view__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.research-paper-view__group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.research-paper-view__readout {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.research-paper-view__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--space-3);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.research-paper-view__page {
+  position: relative;
+  flex: none;
+  line-height: 0;
+}
+.research-paper-view__canvas {
+  display: block;
+  border-radius: var(--radius-sm);
+}
+/* Dim the page while the next one is rasterizing so a slow flip reads as
+   pending rather than as the reader's click having missed. */
+.research-paper-view__stage[data-status="loading"] .research-paper-view__canvas {
+  opacity: 0.45;
+}
+.research-paper-view__status { margin: 0; font-size: var(--text-xs); color: var(--text-muted); }
+.research-paper-view__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--text-xs);
+  color: var(--destructive);
+}
+
+/* Text layer — the essential rules from pdf.js' own text_layer.css, scoped
+   to this viewer. The spans are transparent and positioned over the glyphs
+   the canvas painted, which is what makes the page selectable and findable
+   instead of a picture of a paper. pdf.js writes --total-scale-factor,
+   --min-font-size, --font-height, --scale-x and --rotate; everything here
+   only consumes them. */
+.research-paper-view__text {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: var(--text-primary);
+  z-index: 0;
+  --total-scale-factor: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.research-paper-view__text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.research-paper-view__text > :not(.markedContent),
+.research-paper-view__text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.research-paper-view__text .markedContent { display: contents; }
+.research-paper-view__text ::selection {
+  background: color-mix(in oklch, var(--research-accent) 35%, transparent);
+}
+
 /* Action bar: destructive management left, workflow actions right. */
 .research-res-overlay__actions {
   display: flex;
