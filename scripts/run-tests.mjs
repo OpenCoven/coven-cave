@@ -70,6 +70,7 @@ export const SUITES = {
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
     "scripts/run-playwright-e2e.test.mjs",
     "scripts/test-alias-loader.test.mjs",
+    "scripts/run-tests.test.mjs",
     "scripts/maintenance-gate.test.mjs",
     "scripts/local-maintenance-gate.test.mjs",
     "scripts/fence-refusal-message.test.mjs",
@@ -2158,6 +2159,8 @@ const ALIAS_LOADER = new Set([
   // resolves the pairing-store + credential-store modules (transitively
   // "@/proxy-helpers", "@/lib/coven-paths", "@/lib/server/atomic-write").
   "src/lib/server/client-v1/pairing-exchange.test.ts",
+  // resolves the credential-store graph, including "@/proxy-helpers".
+  "src/lib/server/client-v1/credential-settlement.test.ts",
   // no "@/" aliases of its own — a self-contained node:sqlite-backed
   // mutex; imports only node builtins and its own sibling module. Wired
   // here anyway, alongside its sole consumer's tests, for consistency.
