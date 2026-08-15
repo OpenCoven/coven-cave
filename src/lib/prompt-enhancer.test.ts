@@ -43,6 +43,17 @@ const research = buildPromptEnhancement({
 assert.match(research.enhanced, /Primary questions:/, "research mode adds investigation questions");
 assert.match(research.enhanced, /Sources and confidence:/, "research mode requests citations and confidence");
 
+const researchRepeated = buildPromptEnhancement({
+  draft: research.enhanced,
+  mode: "research",
+});
+
+assert.deepEqual(
+  researchRepeated,
+  research,
+  "research enhancement is idempotent when its generated prompt is enhanced again",
+);
+
 const chat = buildPromptEnhancement({
   draft: "explain docker networking",
   mode: "chat",

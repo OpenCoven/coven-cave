@@ -879,4 +879,27 @@ test.describe("research desk tabs", () => {
     await saves.getByRole("button", { name: /Qdrant guide/ }).click();
     await expect(intake.getByText("1 attached to this run")).toBeVisible();
   });
+
+  test("Prompt Improve stays stable when clicked twice", async ({ page }) => {
+    await openResearchDesk(page);
+    await deskTab(page, /^Prompt/).click();
+
+    const intent = page.locator("#research-intent");
+    const improve = page.getByRole("button", { name: "✦ Improve" });
+
+    await intent.fill("Compare local LLM runtimes");
+    const firstResponse = page.waitForResponse("**/api/prompt/enhance");
+    await improve.click();
+    await firstResponse;
+    await expect(intent).toHaveValue(/Research and compare:/);
+
+    const improvedOnce = await intent.inputValue();
+    expect(improvedOnce.split("Primary questions:")).toHaveLength(2);
+
+    const secondResponse = page.waitForResponse("**/api/prompt/enhance");
+    await improve.click();
+    await secondResponse;
+    await expect(intent).toHaveValue(improvedOnce);
+    expect((await intent.inputValue()).split("Primary questions:")).toHaveLength(2);
+  });
 });

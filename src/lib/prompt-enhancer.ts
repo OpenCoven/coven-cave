@@ -28,6 +28,16 @@ export type PromptEnhanceResult =
       error: string;
     };
 
+const PRESERVED_OBJECTIVE = "Do not change the objective, invent new work, or discard any explicit constraints.";
+const RESEARCH_PREFIX = "Research and compare: ";
+const RESEARCH_SECTION_LINES = [
+  "Primary questions: identify the key claims, tradeoffs, and decision criteria to answer.",
+  "Method: use current primary sources where possible, compare alternatives, and separate facts from inference.",
+  "Sources and confidence: cite sources, note publication dates, and label confidence or uncertainty.",
+  "Output format: start with an executive summary, then detailed findings, comparison criteria, and recommended next steps.",
+  PRESERVED_OBJECTIVE,
+] as const;
+
 export function normalizeEnhanceMode(mode: unknown): PromptEnhanceMode {
   return mode === "code" || mode === "image" || mode === "research" || mode === "task" || mode === "chat"
     ? mode
@@ -36,6 +46,17 @@ export function normalizeEnhanceMode(mode: unknown): PromptEnhanceMode {
 
 function cleanDraft(draft: unknown): string {
   return typeof draft === "string" ? draft.replace(/\s+/g, " ").trim() : "";
+}
+
+function recoverResearchObjective(draft: unknown): unknown {
+  if (typeof draft !== "string") return draft;
+  const lines = draft.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length !== RESEARCH_SECTION_LINES.length + 1) return draft;
+  if (!RESEARCH_SECTION_LINES.every((line, index) => lines[index + 1] === line)) return draft;
+
+  const firstLine = lines[0];
+  if (!firstLine.startsWith(RESEARCH_PREFIX) || !firstLine.endsWith(".")) return draft;
+  return firstLine.slice(RESEARCH_PREFIX.length, -1);
 }
 
 function asText(value: unknown): string | null {
@@ -167,13 +188,12 @@ export function settleEnhance(baseDraft: string, currentDraft: string): "apply" 
 
 export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhanceResult {
   const mode = normalizeEnhanceMode(input.mode);
-  const draft = cleanDraft(input.draft);
+  const draft = cleanDraft(mode === "research" ? recoverResearchObjective(input.draft) : input.draft);
   if (!draft) return { ok: false, mode, error: "Draft is empty." };
 
   const context = normalizeContext(input.context);
   const contextBlock = contextLines(context);
   const contextText = contextBlock.length ? `\n\nContext:\n- ${contextBlock.join("\n- ")}` : "";
-  const preserved = "Do not change the objective, invent new work, or discard any explicit constraints.";
 
   if (mode === "code") {
     return {
@@ -189,7 +209,7 @@ export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhan
         "- Make the smallest appropriate fix or addition.",
         "- Update or add focused tests for affected behavior when appropriate.",
         "- Summarize the cause, the changes made, verification run, and any follow-up risk.",
-        `- ${preserved}`,
+        `- ${PRESERVED_OBJECTIVE}`,
       ].filter(Boolean).join("\n"),
     };
   }
@@ -206,7 +226,7 @@ export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhan
         "Style: specify medium, rendering quality, texture, and level of realism.",
         "Color: include palette guidance and any colors to avoid.",
         "Output: include aspect ratio, background treatment, and any important negative constraints.",
-        preserved,
+        PRESERVED_OBJECTIVE,
       ].join("\n"),
     };
   }
@@ -217,12 +237,8 @@ export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhan
       mode,
       label: "Research",
       enhanced: [
-        `Research and compare: ${draft}.`,
-        "Primary questions: identify the key claims, tradeoffs, and decision criteria to answer.",
-        "Method: use current primary sources where possible, compare alternatives, and separate facts from inference.",
-        "Sources and confidence: cite sources, note publication dates, and label confidence or uncertainty.",
-        "Output format: start with an executive summary, then detailed findings, comparison criteria, and recommended next steps.",
-        preserved,
+        `${RESEARCH_PREFIX}${draft}.`,
+        ...RESEARCH_SECTION_LINES,
       ].join("\n"),
     };
   }
@@ -242,7 +258,7 @@ export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhan
         "- Subtasks: ordered implementation steps sized for one maintainer or agent.",
         "- Context: include relevant project, file, dependency, or user constraints.",
         "- Verification: name the focused checks or manual proof expected before closing.",
-        `- ${preserved}`,
+        `- ${PRESERVED_OBJECTIVE}`,
       ].filter(Boolean).join("\n"),
     };
   }
@@ -257,7 +273,7 @@ export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhan
       "Cover the key concepts, practical examples, common pitfalls, and any important tradeoffs.",
       "Output format: start with a concise summary, then use organized sections or bullets if they make the answer easier to scan.",
       "Ask a clarifying question only if the request cannot be answered safely without one.",
-      preserved,
+      PRESERVED_OBJECTIVE,
     ].join("\n"),
   };
 }
