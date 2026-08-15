@@ -244,7 +244,7 @@ assert.match(
 
 assert.match(
   turnRow,
-  /renderSegments = split\.some\(\(s\) => s\.kind === "block"\) \? split : undefined/,
+  /renderSegments = split\.some\(\(segment\) => segment\.kind === "block"\) \? split : undefined/,
   "settled turns render prose (+ artifacts) only — tool blocks are not woven into the text",
 );
 
@@ -277,7 +277,7 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  /\{!turn\.pending && turn\.tools\?\.length && editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
   "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
 );
 assert.match(

@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 
-type RunStatus = "running" | "ok" | "error";
+export type ToolRunStatus = "running" | "ok" | "error";
 
 export type ToolRunDisclosure = {
   open: boolean;
@@ -33,7 +33,7 @@ export type ToolRunDisclosure = {
  *    when a second same-name call turns the shell into a repeated subgroup.
  */
 export function useToolRunDisclosure(
-  statuses: readonly RunStatus[],
+  statuses: readonly ToolRunStatus[],
   collapsible = true,
 ): ToolRunDisclosure {
   const isRunning = statuses.some((s) => s === "running");
