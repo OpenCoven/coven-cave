@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import "@/styles/backdrop.css";
 import {
   applyBackdropToDocument,
@@ -32,9 +32,15 @@ import { CaveBackdropBlaze } from "@/components/cave-backdrop-blaze";
 export function CaveBackdropLayer({
   active,
   familiarId = null,
+  accent = null,
 }: {
   active: boolean;
   familiarId?: string | null;
+  /** The active familiar's resolved accent color. Paints a wash derived from
+   *  it when the familiar is switched on but no image — theirs or the app's —
+   *  is available to show. Without this that state renders an enabled layer
+   *  with nothing in it, so the switch looked broken (cave-vyp3e follow-up). */
+  accent?: string | null;
 }) {
   const prefs = useBackdropPrefs();
   const imageRevision = useBackdropImageRevision();
@@ -67,6 +73,15 @@ export function CaveBackdropLayer({
   // per-familiar opt-in) still takes the layer over while it is showing.
   const blazeShowing =
     effectiveEnabled && prefs.style === "blaze" && !familiarImageShowing;
+  // Last resort in the fallback chain: familiar image → app image → accent
+  // wash. Reached only when the layer is enabled and BOTH images are absent,
+  // which is exactly the state a familiar lands in when it is switched on
+  // without an upload — previously an enabled-but-empty layer, so the toggle
+  // appeared to do nothing. Blaze owns the layer when selected, so it is
+  // checked first and the wash never competes with it.
+  const accentWash = accent?.trim() || null;
+  const accentShowing =
+    effectiveEnabled && !blazeShowing && effectiveUrl === null && accentWash !== null;
 
   // Load (or clear) the stored image whenever the backdrop is toggled or its
   // bytes change. writeBackdropImage publishes the latter independently from
@@ -154,7 +169,13 @@ export function CaveBackdropLayer({
     <div
       className="cave-backdrop-layer"
       data-on={active ? "true" : "false"}
-      data-backdrop-style={blazeShowing ? "blaze" : "image"}
+      data-backdrop-style={blazeShowing ? "blaze" : accentShowing ? "accent" : "image"}
+      // Custom property, not a background shorthand: the gradient's shape and
+      // stops live in backdrop.css next to the rest of the layer's painting,
+      // so only the seed color crosses from JS. React writes custom properties
+      // through style.setProperty, which takes the value as a single
+      // declaration — a stray ";" makes it invalid rather than injecting.
+      style={accentShowing ? ({ "--cave-backdrop-accent": accentWash } as CSSProperties) : undefined}
       aria-hidden
     >
       {blazeShowing && active ? <CaveBackdropBlaze /> : null}

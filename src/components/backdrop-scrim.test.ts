@@ -146,3 +146,30 @@ assert.match(
   /@media \(prefers-reduced-transparency: reduce\) \{\s*\n\s*html\[data-backdrop-on\] \.shell-top,\s*\n\s*html\[data-backdrop-on\] \.top-bar \{[^}]*backdrop-filter: none;[^}]*\}/,
   "reduced-transparency drops the glass instead of merely thinning it",
 );
+
+// ── Accent wash fallback (cave-vyp3e follow-up) ──────────────────────────────
+// A familiar switched on with no uploaded image enabled a layer with nothing
+// in it, so the toggle read as broken. The wash is the tail of the chain:
+// familiar image → app image → accent. (Reuses `layer`, read above.)
+assert.match(
+  css,
+  /html\[data-backdrop\] \.cave-backdrop-layer\[data-backdrop-style="accent"\] \{[^}]*radial-gradient\(/s,
+  "the accent style paints a gradient wash rather than a flat tint",
+);
+assert.match(
+  css,
+  /color-mix\(in oklch, var\(--cave-backdrop-accent, var\(--accent-presence\)\) 22%, transparent\)/,
+  "the wash is seeded from the familiar accent and falls back to the theme accent",
+);
+// Ordering is the contract, not the boolean: the wash must be REACHED ONLY
+// when both images are absent, and must never pre-empt Blaze.
+assert.match(
+  layer,
+  /accentShowing =\s*\n?\s*effectiveEnabled && !blazeShowing && effectiveUrl === null && accentWash !== null/,
+  "the wash requires no image of either kind and yields to Blaze",
+);
+assert.match(
+  layer,
+  /data-backdrop-style=\{blazeShowing \? "blaze" : accentShowing \? "accent" : "image"\}/,
+  "Blaze outranks the wash, which outranks the image style",
+);
