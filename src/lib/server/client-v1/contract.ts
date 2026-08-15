@@ -191,6 +191,7 @@ export type ClientV1ContractFixture = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLIENT_V1_SCOPE_SET = new Set<string>(CLIENT_V1_SCOPES);
 const CLIENT_V1_CAPABILITY_SET = new Set<string>(CLIENT_V1_CAPABILITIES);
+const CLIENT_V1_ERROR_CODE_SET = new Set<string>(CLIENT_V1_ERROR_CODES);
 const CLIENT_V1_IDENTITY_KIND_SET = new Set<string>(CLIENT_V1_IDENTITY_KINDS);
 
 function requiredRecord(value: unknown, name: string): ClientV1Record {
@@ -317,6 +318,154 @@ export function parseClientV1ErrorDetails(value: unknown): Record<string, string
     );
   }
   return details as Record<string, string>;
+}
+
+function parseClientV1EnvelopeBase(value: unknown): ClientV1EnvelopeBase {
+  const envelope = requiredRecord(value, "envelope");
+  if (envelope.apiVersion !== CLIENT_V1_API_VERSION) {
+    throw new Error(`Client v1 apiVersion must be ${CLIENT_V1_API_VERSION}.`);
+  }
+  if (envelope.minimumClientVersion !== CLIENT_V1_MIN_CLIENT_VERSION) {
+    throw new Error(
+      `Client v1 minimumClientVersion must be ${CLIENT_V1_MIN_CLIENT_VERSION}.`,
+    );
+  }
+  parseClientV1Capabilities(envelope.capabilities);
+  if (envelope.requestId !== undefined) parseClientV1RequestId(envelope.requestId);
+  if (envelope.identity !== undefined) parseClientV1Identity(envelope.identity);
+  if (envelope.revision !== undefined) parseClientV1Revision(envelope.revision);
+  if (envelope.cursor !== undefined) parseClientV1Cursor(envelope.cursor);
+  return envelope as ClientV1EnvelopeBase;
+}
+
+export function parseClientV1SuccessEnvelope(value: unknown): ClientV1SuccessEnvelope {
+  const envelope = parseClientV1EnvelopeBase(value);
+  requiredRecord(envelope.data, "success response data");
+  return envelope as ClientV1SuccessEnvelope;
+}
+
+export function parseClientV1ErrorEnvelope(value: unknown): ClientV1ErrorEnvelope {
+  const envelope = parseClientV1EnvelopeBase(value);
+  const error = requiredRecord(envelope.error, "error");
+  if (typeof error.code !== "string" || !CLIENT_V1_ERROR_CODE_SET.has(error.code)) {
+    throw new Error("Client v1 error code is not supported.");
+  }
+  requiredString(error.message, "error message", CLIENT_V1_LIMITS.errorMessageCharacters);
+  if (error.details !== undefined) parseClientV1ErrorDetails(error.details);
+  if (typeof error.retryable !== "boolean") {
+    throw new Error("Client v1 error retryable must be a boolean.");
+  }
+  return envelope as ClientV1ErrorEnvelope;
+}
+
+function successResponseData(value: unknown): {
+  envelope: ClientV1SuccessEnvelope;
+  data: ClientV1Record;
+} {
+  const envelope = parseClientV1SuccessEnvelope(value);
+  return { envelope, data: requiredRecord(envelope.data, "success response data") };
+}
+
+function parseClientV1ConversationSummary(value: unknown): ClientV1ConversationSummary {
+  const conversation = requiredRecord(value, "conversation");
+  parseClientV1Identity(conversation.identity);
+  requiredString(conversation.title, "conversation title");
+  requiredIsoTimestamp(conversation.updatedAt, "conversation updatedAt");
+  parseClientV1Revision(conversation.revision);
+  return conversation as ClientV1ConversationSummary;
+}
+
+function parseClientV1ConversationMessage(value: unknown): ClientV1ConversationMessage {
+  const message = requiredRecord(value, "conversation message");
+  parseClientV1Identity(message.identity);
+  if (message.role !== "user" && message.role !== "assistant") {
+    throw new Error("Client v1 conversation message role must be user or assistant.");
+  }
+  requiredString(message.content, "conversation message content");
+  requiredIsoTimestamp(message.createdAt, "conversation message createdAt");
+  if (message.revision !== undefined) parseClientV1Revision(message.revision);
+  return message as ClientV1ConversationMessage;
+}
+
+export function parseClientV1HealthResponse(value: unknown): ClientV1HealthResponse {
+  const { envelope, data } = successResponseData(value);
+  if (data.status !== "ok") throw new Error("Client v1 health status must be ok.");
+  return envelope as ClientV1HealthResponse;
+}
+
+export function parseClientV1CredentialResponse(value: unknown): ClientV1CredentialResponse {
+  const { envelope, data } = successResponseData(value);
+  requiredString(data.label, "credential label");
+  parseClientV1PairingScopes(data.scopes);
+  if (data.expiresAt !== null) requiredIsoTimestamp(data.expiresAt, "credential expiresAt");
+  return envelope as ClientV1CredentialResponse;
+}
+
+export function parseClientV1FamiliarResponse(value: unknown): ClientV1FamiliarResponse {
+  const { envelope, data } = successResponseData(value);
+  if (data.status !== "ready" && data.status !== "unavailable") {
+    throw new Error("Client v1 familiar status must be ready or unavailable.");
+  }
+  return envelope as ClientV1FamiliarResponse;
+}
+
+export function parseClientV1ProjectResponse(value: unknown): ClientV1ProjectResponse {
+  const { envelope, data } = successResponseData(value);
+  requiredString(data.name, "project name");
+  return envelope as ClientV1ProjectResponse;
+}
+
+export function parseClientV1ConversationListResponse(
+  value: unknown,
+): ClientV1ConversationListResponse {
+  const { envelope, data } = successResponseData(value);
+  if (!Array.isArray(data.conversations)) {
+    throw new Error("Client v1 conversation list conversations must be an array.");
+  }
+  data.conversations.forEach(parseClientV1ConversationSummary);
+  return envelope as ClientV1ConversationListResponse;
+}
+
+export function parseClientV1ConversationDetailResponse(
+  value: unknown,
+): ClientV1ConversationDetailResponse {
+  const { envelope, data } = successResponseData(value);
+  parseClientV1Identity(data.familiar);
+  requiredString(data.title, "conversation title");
+  if (!Array.isArray(data.messages)) {
+    throw new Error("Client v1 conversation detail messages must be an array.");
+  }
+  data.messages.forEach(parseClientV1ConversationMessage);
+  return envelope as ClientV1ConversationDetailResponse;
+}
+
+export function parseClientV1StreamEvent(value: unknown): ClientV1StreamEvent {
+  const event = requiredRecord(value, "stream event");
+  requiredString(event.event, "stream event");
+  requiredRecord(event.data, "stream event data");
+  if (event.eventId !== undefined) requiredString(event.eventId, "stream event id");
+  if (event.identity !== undefined) parseClientV1Identity(event.identity);
+  if (event.revision !== undefined) parseClientV1Revision(event.revision);
+  if (event.cursor !== undefined) parseClientV1Cursor(event.cursor);
+  return event as ClientV1StreamEvent;
+}
+
+export function parseClientV1PublicSuccessResponse(value: unknown): ClientV1SuccessEnvelope {
+  const envelope = parseClientV1SuccessEnvelope(value);
+  const data = requiredRecord(envelope.data, "public success response data");
+  if (data.status === "ok") return parseClientV1HealthResponse(envelope);
+  if (data.status === "ready" || data.status === "unavailable") {
+    return parseClientV1FamiliarResponse(envelope);
+  }
+  if (data.label !== undefined || data.scopes !== undefined || data.expiresAt !== undefined) {
+    return parseClientV1CredentialResponse(envelope);
+  }
+  if (data.name !== undefined) return parseClientV1ProjectResponse(envelope);
+  if (data.conversations !== undefined) return parseClientV1ConversationListResponse(envelope);
+  if (data.familiar !== undefined || data.messages !== undefined || data.title !== undefined) {
+    return parseClientV1ConversationDetailResponse(envelope);
+  }
+  throw new Error("Client v1 public success response data has no supported payload shape.");
 }
 
 export function sortClientV1JsonKeys(value: unknown): unknown {

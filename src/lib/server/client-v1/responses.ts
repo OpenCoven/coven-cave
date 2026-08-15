@@ -7,7 +7,9 @@ import {
   parseClientV1Capabilities,
   parseClientV1Cursor,
   parseClientV1ErrorDetails,
+  parseClientV1ErrorEnvelope,
   parseClientV1Identity,
+  parseClientV1PublicSuccessResponse,
   parseClientV1RequestId,
   parseClientV1Revision,
   type ClientV1Capability,
@@ -130,10 +132,10 @@ export function clientV1Success<TData extends ClientV1Record>(
   data: TData,
   options: ClientV1EnvelopeOptions = {},
 ): ClientV1SuccessEnvelope<TData> {
-  return {
+  return parseClientV1PublicSuccessResponse({
     ...envelopeBase(options),
-    data: requiredRecord(data, "response data") as TData,
-  };
+    data: requiredRecord(data, "response data"),
+  }) as ClientV1SuccessEnvelope<TData>;
 }
 
 export function clientV1Error(
@@ -142,7 +144,7 @@ export function clientV1Error(
   options: Omit<ClientV1ErrorResponseOptions, "status"> = {},
 ): ClientV1ErrorEnvelope {
   const details = options.details === undefined ? undefined : parseClientV1ErrorDetails(options.details);
-  return {
+  return parseClientV1ErrorEnvelope({
     ...envelopeBase(options),
     error: {
       code: requireErrorCode(code),
@@ -150,7 +152,7 @@ export function clientV1Error(
       ...(details ? { details } : {}),
       retryable: options.retryable === true,
     },
-  };
+  });
 }
 
 export function clientV1SuccessResponse<TData extends ClientV1Record>(

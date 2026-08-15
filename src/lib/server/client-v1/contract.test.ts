@@ -9,11 +9,20 @@ import {
   CLIENT_V1_MIN_CLIENT_VERSION,
   CLIENT_V1_SCOPES,
   createClientV1ContractFixture,
+  parseClientV1ConversationDetailResponse,
+  parseClientV1ConversationListResponse,
+  parseClientV1CredentialResponse,
   parseClientV1Cursor,
+  parseClientV1ErrorEnvelope,
+  parseClientV1FamiliarResponse,
+  parseClientV1HealthResponse,
   parseClientV1IdempotencyKey,
   parseClientV1Identity,
   parseClientV1PairingScopes,
+  parseClientV1ProjectResponse,
   parseClientV1Revision,
+  parseClientV1StreamEvent,
+  parseClientV1SuccessEnvelope,
   renderClientV1ContractFixture,
   sortClientV1JsonKeys,
 } from "./contract.ts";
@@ -296,4 +305,104 @@ test("builds a deterministic public contract fixture with shared metadata and ex
     hasMore: true,
   });
   assert.deepEqual(createClientV1ContractFixture(), fixture);
+});
+
+test("parses complete public envelopes while preserving additive fields", () => {
+  const fixture = createClientV1ContractFixture();
+  const success = {
+    ...fixture.examples.health,
+    extension: "accepted",
+    data: { ...fixture.examples.health.data, extension: "accepted" },
+  };
+  const error = {
+    ...fixture.examples.error,
+    extension: "accepted",
+    error: { ...fixture.examples.error.error, extension: "accepted" },
+  };
+
+  assert.deepEqual(parseClientV1SuccessEnvelope(success), success);
+  assert.deepEqual(parseClientV1ErrorEnvelope(error), error);
+  assert.throws(
+    () => parseClientV1SuccessEnvelope({ data: { status: "ok" } }),
+    /apiVersion/i,
+  );
+  assert.throws(
+    () => parseClientV1ErrorEnvelope({ ...fixture.examples.error, error: {} }),
+    /error code/i,
+  );
+});
+
+test("parses concrete public responses with additions and rejects missing fields", () => {
+  const fixture = createClientV1ContractFixture();
+  const cases: Array<{
+    response: Record<string, unknown>;
+    parse(value: unknown): unknown;
+    missing: Record<string, unknown>;
+  }> = [
+    {
+      response: fixture.examples.health,
+      parse: parseClientV1HealthResponse,
+      missing: { ...fixture.examples.health, data: {} },
+    },
+    {
+      response: fixture.examples.credential,
+      parse: parseClientV1CredentialResponse,
+      missing: {
+        ...fixture.examples.credential,
+        data: { scopes: ["chat:read"], expiresAt: null },
+      },
+    },
+    {
+      response: fixture.examples.familiar,
+      parse: parseClientV1FamiliarResponse,
+      missing: { ...fixture.examples.familiar, data: {} },
+    },
+    {
+      response: fixture.examples.project,
+      parse: parseClientV1ProjectResponse,
+      missing: { ...fixture.examples.project, data: {} },
+    },
+    {
+      response: fixture.examples.conversationList,
+      parse: parseClientV1ConversationListResponse,
+      missing: { ...fixture.examples.conversationList, data: {} },
+    },
+    {
+      response: fixture.examples.conversationDetail,
+      parse: parseClientV1ConversationDetailResponse,
+      missing: { ...fixture.examples.conversationDetail, data: {} },
+    },
+  ];
+
+  for (const { response, parse, missing } of cases) {
+    const additive = {
+      ...response,
+      extension: "accepted",
+      data: { ...(response.data as Record<string, unknown>), extension: "accepted" },
+    };
+    assert.deepEqual(parse(additive), additive);
+    assert.throws(() => parse(missing));
+  }
+
+  const streamEvent = {
+    ...fixture.examples.streamEvent,
+    extension: "accepted",
+    data: { ...fixture.examples.streamEvent.data, extension: "accepted" },
+  };
+  assert.deepEqual(parseClientV1StreamEvent(streamEvent), streamEvent);
+  assert.throws(
+    () => parseClientV1StreamEvent({ data: {} }),
+    /stream event/i,
+  );
+});
+
+test("rejects incomplete concrete success data before producing responses", () => {
+  assert.throws(
+    () => clientV1Success({}),
+    /public success response data/i,
+  );
+  assert.throws(
+    () => clientV1SuccessResponse({}),
+    /public success response data/i,
+  );
 });
