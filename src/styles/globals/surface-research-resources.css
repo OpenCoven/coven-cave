@@ -810,6 +810,37 @@
   background: color-mix(in oklch, var(--research-accent) 7%, transparent);
 }
 
+/* ── Read affordance: the gate in front of the paper viewer. Mounting the
+   viewer costs the pdfjs-dist chunk plus a multi-megabyte document fetch, so
+   a reader who opened the resource for its citations gets to decline. ── */
+.research-res-overlay__read {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.research-res-overlay__read-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.research-res-overlay__read-copy strong {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.research-res-overlay__read-copy span {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 /* ── Paper viewer: pdf.js canvas with its text layer laid over the top. ── */
 .research-paper-view {
   display: flex;
@@ -896,8 +927,12 @@
   border-radius: var(--radius-sm);
 }
 /* Dim the page while the next one is rasterizing so a slow flip reads as
-   pending rather than as the reader's click having missed. */
-.research-paper-view__stage[data-status="loading"] .research-paper-view__canvas {
+   pending rather than as the reader's click having missed. Keyed on
+   data-pending, not data-status: once the document effect and the render
+   effect were split, a page turn no longer moves the reducer back to
+   "loading" — that is the point of the split — so the status alone stopped
+   describing whether a page is in flight. */
+.research-paper-view__stage[data-pending] .research-paper-view__canvas {
   opacity: 0.45;
 }
 .research-paper-view__status { margin: 0; font-size: var(--text-xs); color: var(--text-muted); }

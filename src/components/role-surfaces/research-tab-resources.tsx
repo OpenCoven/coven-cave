@@ -30,6 +30,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SearchInput } from "@/components/ui/search-input";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
+import { paperArxivUrl, paperDownloadUrl } from "@/lib/research-paper-view";
 import {
   groupSavedLinksByUsage,
   linkCategoryMeta,
@@ -86,6 +87,11 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  // The paper viewer is opt-in: mounting it pulls the pdfjs-dist chunk and
+  // starts a multi-megabyte document fetch, and the overlay's cited-by content
+  // sits below a 60vh PDF stage. Someone who opened the resource to read that
+  // should not pay for the reader they never asked for.
+  const [reading, setReading] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [copied, setCopied] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
@@ -265,10 +271,13 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   const closeOverlay = useCallback(() => setOpenId(null), []);
   useFocusTrap(Boolean(openLink), dialogRef, { onEscape: closeOverlay });
 
-  // A fresh overlay never inherits the previous one's confirm/copied state.
+  // A fresh overlay never inherits the previous one's confirm/copied/reading
+  // state — closing the overlay or opening a different resource both land
+  // here, so paper B never opens with paper A's viewer already expanded.
   useEffect(() => {
     setConfirmingRemove(false);
     setCopied(false);
+    setReading(false);
   }, [openId]);
 
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -305,6 +314,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   };
 
   const openCited = openLink ? citingMissions(openLink) : [];
+  const openPaperId = openLink?.paper?.arxivId ?? null;
 
   return (
     <section className="research-res" aria-label="Research resources">
@@ -618,12 +628,31 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                   degraded — carries no arxivId and keeps exactly the contents
                   it has always had. */}
               {openLink.paper?.arxivId ? (
-                <ResearchPaperViewer
-                  arxivId={openLink.paper.arxivId}
-                  authors={openLink.paper.authors}
-                  abstract={openLink.paper.abstract}
-                  publishedAt={openLink.paper.publishedAt}
-                />
+                reading ? (
+                  <ResearchPaperViewer
+                    arxivId={openLink.paper.arxivId}
+                    authors={openLink.paper.authors}
+                    abstract={openLink.paper.abstract}
+                    publishedAt={openLink.paper.publishedAt}
+                  />
+                ) : (
+                  <div className="research-res-overlay__read">
+                    <div className="research-res-overlay__read-copy">
+                      <strong>Read this paper here</strong>
+                      <span>
+                        Opens the full PDF inline — selectable and searchable, page by page.
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      leadingIcon="ph:book-open"
+                      onClick={() => setReading(true)}
+                    >
+                      Read
+                    </Button>
+                  </div>
+                )
               ) : null}
 
               {/* Stats strip: only fields the store really holds or facts we
@@ -696,6 +725,33 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                   <span className="research-res-overlay__hint">
                     Select a run to add this resource.
                   </span>
+                ) : null}
+                {/* An ingested paper's saved URL IS its Hugging Face page —
+                    `collectIngestUrls` canonicalises every reference to
+                    huggingface.co/papers/<id> — so "Open link" already covers
+                    the HF half of the spec's link-out set. These two add the
+                    other half: the arXiv record, and the PDF itself for
+                    saving. Both point at arxiv.org rather than the loopback
+                    proxy, which means nothing once the URL leaves the app. */}
+                {openPaperId ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      trailingIcon="ph:arrow-square-out"
+                      onClick={() => context.openUrl(paperArxivUrl(openPaperId))}
+                    >
+                      arXiv
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      leadingIcon="ph:download-simple"
+                      onClick={() => context.openUrl(paperDownloadUrl(openPaperId))}
+                    >
+                      Download PDF
+                    </Button>
+                  </>
                 ) : null}
                 <Button
                   size="sm"
