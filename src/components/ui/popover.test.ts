@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 
 const src = readFileSync(new URL("./popover.tsx", import.meta.url), "utf8");
 
@@ -39,6 +40,45 @@ function renderItem(props) {
   return renderToStaticMarkup(
     createElement(PopoverItem, { onSelect: () => undefined, ...props }, "Example"),
   );
+}
+
+function jsxElements(fileName, source, tagName) {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const elements = [];
+  const readAttributes = (attributes) => {
+    const values = new Map();
+    for (const attr of attributes.properties) {
+      if (!ts.isJsxAttribute(attr)) continue;
+      if (!attr.initializer) {
+        values.set(attr.name.text, true);
+        continue;
+      }
+      if (ts.isStringLiteral(attr.initializer)) {
+        values.set(attr.name.text, attr.initializer.text);
+        continue;
+      }
+      if (ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
+        values.set(attr.name.text, attr.initializer.expression.getText(sourceFile));
+      }
+    }
+    return values;
+  };
+  const visit = (node) => {
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(sourceFile) === tagName) {
+      elements.push({
+        block: node.getText(sourceFile),
+        attributes: readAttributes(node.openingElement.attributes),
+      });
+    } else if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(sourceFile) === tagName) {
+      elements.push({
+        block: node.getText(sourceFile),
+        attributes: readAttributes(node.attributes),
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return elements;
 }
 
 // The popover must consume its own Escape: a capture-phase keydown listener that
@@ -184,27 +224,38 @@ assert.doesNotMatch(
 // is the bug: drop `checkedRole="checkbox"` from workspace-sidebar and every
 // assertion above still passes while "Show archived" silently announces as one
 // choice among mutually exclusive alternatives again. So the call sites are
-// pinned too — component behavior and adoption are different claims.
-for (const [file, label] of [
-  ["../workspace-sidebar.tsx", "Show archived"],
-  ["../chat-list.tsx", "Keep chat"],
-  ["../chat-session-header.tsx", "session menu (thinking / instruments)"],
-]) {
-  const caller = readFileSync(new URL(file, import.meta.url), "utf8");
-  assert.match(
-    caller,
-    /checkedRole="checkbox"/,
-    `${label} is an independent toggle, not one of a mutually exclusive set`,
-  );
-}
+// pinned too — component behavior and adoption are different claims. Read the
+// TSX as JSX so the coverage survives formatting-only refactors in the callers.
+const workspaceSidebar = readFileSync(new URL("../workspace-sidebar.tsx", import.meta.url), "utf8");
+assert.ok(
+  jsxElements("workspace-sidebar.tsx", workspaceSidebar, "PopoverItem").some(
+    ({ block, attributes }) =>
+      block.includes("Show archived") && attributes.get("checkedRole") === "checkbox",
+  ),
+  "Show archived is an independent toggle, not one of a mutually exclusive set",
+);
 
-// Both "Keep chat" rows — the list row menu and the hover-kebab menu — carry it.
-// Their indentation differs, so a single edit silently covers only one of them;
-// that happened while writing this change, which is why the count is asserted
-// rather than a bare match.
+const sessionHeader = readFileSync(new URL("../chat-session-header.tsx", import.meta.url), "utf8");
+assert.ok(
+  jsxElements("chat-session-header.tsx", sessionHeader, "PopoverItem").some(
+    ({ attributes }) =>
+      attributes.get("checked") === "item.checked" &&
+      attributes.get("checkedRole") === "checkbox",
+  ),
+  "session menu toggles (thinking / instruments) opt into the checkbox role",
+);
+
+// Both "Keep chat" rows — the list row menu and the hover-kebab menu — carry
+// it. Their indentation differs, so a single edit silently covers only one of
+// them; that happened while writing this change, which is why the count is
+// asserted rather than a bare match.
 const chatList = readFileSync(new URL("../chat-list.tsx", import.meta.url), "utf8");
+const chatListItems = jsxElements("chat-list.tsx", chatList, "PopoverItem");
 assert.equal(
-  chatList.match(/checkedRole="checkbox"/g)?.length,
+  chatListItems.filter(
+    ({ block, attributes }) =>
+      block.includes("Keep chat") && attributes.get("checkedRole") === "checkbox",
+  ).length,
   2,
   "both Keep-chat toggles opt into the checkbox role",
 );
@@ -215,8 +266,9 @@ assert.equal(
 // here.
 for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "../ui/select.tsx"]) {
   const caller = readFileSync(new URL(file, import.meta.url), "utf8");
+  const elements = jsxElements(file, caller, "PopoverItem");
   assert.ok(
-    !/checkedRole="checkbox"/.test(caller),
+    !elements.some(({ attributes }) => attributes.get("checkedRole") === "checkbox"),
     `${file} is a one-of-a-set picker and must stay menuitemradio`,
   );
 }
