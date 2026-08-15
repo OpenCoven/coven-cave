@@ -825,6 +825,7 @@ export function WorkspaceSidebar({
                 <PopoverItem
                   icon="ph:archive"
                   checked={showArchived}
+                  checkedRole="checkbox"
                   onSelect={() => {
                     setShowArchived((v) => !v);
                     setMenuOpen(false);

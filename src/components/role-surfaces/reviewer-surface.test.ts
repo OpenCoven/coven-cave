@@ -194,6 +194,16 @@ test("the queue derives from the familiar's real sessions", () => {
   assert.match(surface, /useRoleSurfaceState<ReviewerState>/);
 });
 
+test("review bodies stay bounded before GitHub dispatch", () => {
+  assert.match(surface, /GITHUB_REVIEW_BODY_MAX_LENGTH/);
+  assert.match(surface, /maxLength=\{GITHUB_REVIEW_BODY_MAX_LENGTH\}/);
+  assert.match(surface, /next\.slice\(0, GITHUB_REVIEW_BODY_MAX_LENGTH\)/);
+  assert.match(surface, /rd-character-count/);
+  assert.match(surface, /aria-describedby="rd-note-help rd-note-count"/);
+  assert.match(surface, /aria-describedby="rd-rc-help rd-rc-count"/);
+  assert.match(reviewDeckCss, /\.rd-character-count \{/);
+});
+
 test("bucket filter announcements run outside React state updaters", () => {
   assert.match(
     surface,

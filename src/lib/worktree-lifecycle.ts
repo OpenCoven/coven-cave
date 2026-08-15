@@ -270,8 +270,22 @@ export type WorktreeLifecycleBudgets = {
 };
 
 export const RETIREMENT_COOLDOWN_MS = 8 * 60 * 60 * 1000;
-const RECOVERY_BRANCH = /^(?:backup|archive|rescue)\//i;
-const WIP_BRANCH = /(?:^|[/-])wip(?:$|[/-])/i;
+/** Branch namespaces whose content is a snapshot to preserve, never retire.
+ *
+ *  `wip/` is a NAMESPACE here, not a token anywhere in the name. The previous
+ *  rule — /(?:^|[/-])wip(?:$|[/-])/i — matched branches whose *subject* is WIP
+ *  rather than whose *content* is: `fix/cave-qqt1g-revert-wip-merge` is named
+ *  for the WIP merge it REVERTS, held no WIP, was clean with its PR merged, and
+ *  still could not be retired because the name alone forced `recovery`. A
+ *  branch like `fix/ios-wipe-gesture` would have matched the same way.
+ *
+ *  Measured across all 677 refs in this checkout before the change: the
+ *  token-anywhere rule matched exactly 2 refs the namespace rule missed, and
+ *  BOTH were `retention/…` tags, not branches. Across all 50 branch refs — the
+ *  only thing this classifier ever sees — its unique contribution was zero.
+ *  `retention/` is folded in anyway so the retention-push hook's snapshots stay
+ *  covered by name if one ever becomes a branch. (cave-22d8v) */
+const RECOVERY_BRANCH = /^(?:backup|archive|rescue|retention|wip)\//i;
 const DISPOSABLE_IGNORED_ROOTS = [
   ".next",
   ".turbo",
@@ -527,7 +541,7 @@ function classifyLifecycleUnitInternal(
     ]);
   }
 
-  if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
+  if (RECOVERY_BRANCH.test(observation.branch)) {
     return withReasons(observation, "recovery", [
       "branch name identifies a recovery or WIP snapshot",
       ...reviewAfterReasons(observation.metadata, nowMs),
@@ -610,7 +624,7 @@ function classifyLifecycleUnitWithoutMetadata(
     return withReasons(observation, "recovery", ["detached HEAD"]);
   }
 
-  if (RECOVERY_BRANCH.test(observation.branch) || WIP_BRANCH.test(observation.branch)) {
+  if (RECOVERY_BRANCH.test(observation.branch)) {
     return withReasons(observation, "recovery", [
       "branch name identifies a recovery or WIP snapshot",
     ]);

@@ -301,6 +301,90 @@ test("apply fails closed when the required job lacks the expected SHA guard", as
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 
+test("an un-dispatchable head is skipped without blocking the other candidates", async () => {
+  // The head listed FIRST is the un-dispatchable one, because that is the case
+  // that used to abort everything: its ci.yml predates workflow_dispatch, so it
+  // can never be dispatched by anyone, and throwing for it stranded every other
+  // eligible PR in the repository (cave-qibp6).
+  const stale = pull({ number: 4646, sha: "c".repeat(40), branch: "codex/stale-workflow" });
+  const healthy = pull({ number: 4643, sha: "d".repeat(40), branch: "codex/current-workflow" });
+  const fixture = githubFixture({
+    pulls: [stale, healthy],
+    workflowsBySha: {
+      [stale.head.sha]: "name: CI\non:\n  pull_request:\n",
+      [healthy.head.sha]: GUARDED_CI_WORKFLOW,
+    },
+  });
+  const messages = [];
+
+  const result = await runCiRecovery(
+    options(fixture.fetchImpl, true, { log: (message) => messages.push(message) }),
+  );
+
+  assert.deepEqual(
+    result.recoveries.map((recovery) => recovery.number),
+    [healthy.number],
+  );
+  assert.deepEqual(result.skipped, [
+    { number: stale.number, reason: "workflow_not_dispatchable" },
+  ]);
+  assert.deepEqual(
+    fixture.requests.filter((request) => request.method === "POST"),
+    [
+      {
+        method: "POST",
+        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
+        body: { ref: healthy.head.ref, inputs: { expected_sha: healthy.head.sha } },
+      },
+    ],
+  );
+  // A dropped candidate has to be visible; a silent skip reads as full coverage.
+  assert.equal(
+    messages.some((message) => message.includes("#4646 skipped workflow_not_dispatchable")),
+    true,
+  );
+  assert.equal(messages.some((message) => message.includes("1 skipped")), true);
+});
+
+test("a partial guard contract still aborts every dispatch, even beside a healthy candidate", async () => {
+  // The safety property the skip above must not have weakened. A partial
+  // contract is ambiguous rather than un-dispatchable: the exact-SHA guard may
+  // not be honoured, so the dispatch could test a different commit. That stays
+  // fatal for the whole run, before any mutation.
+  const partial = pull({ number: 1, sha: "e".repeat(40), branch: "fix/partial" });
+  const healthy = pull({ number: 2, sha: "f".repeat(40), branch: "fix/healthy" });
+  const fixture = githubFixture({
+    pulls: [partial, healthy],
+    workflowsBySha: {
+      [partial.head.sha]: GUARDED_CI_WORKFLOW.replace(`run-name: ${GUARDED_RUN_NAME}\n`, ""),
+      [healthy.head.sha]: GUARDED_CI_WORKFLOW,
+    },
+  });
+
+  await assert.rejects(
+    runCiRecovery(options(fixture.fetchImpl, true)),
+    /CI workflow recovery contract was partially configured/,
+  );
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
+test("a legacy dispatchable head is still dispatched without inputs", async () => {
+  const legacy = pull({ number: 7, sha: "b".repeat(40) });
+  const fixture = githubFixture({
+    pulls: [legacy],
+    workflowsBySha: { [legacy.head.sha]: "name: CI\non:\n  workflow_dispatch:\n" },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.equal(result.recoveries[0].dispatched, true);
+  assert.deepEqual(result.skipped, []);
+  assert.deepEqual(
+    fixture.requests.filter((request) => request.method === "POST")[0].body,
+    { ref: legacy.head.ref },
+  );
+});
+
 test("existing CI, young PRs, drafts, and fork heads are never dispatched", async () => {
   const healthy = pull({ number: 1, sha: "1".repeat(40) });
   const young = pull({
