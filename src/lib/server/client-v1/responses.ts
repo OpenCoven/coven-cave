@@ -89,6 +89,9 @@ function assertSuccessStatus(status: number) {
   if (!Number.isInteger(status) || status < 200 || status > 299) {
     throw new Error("Client v1 success responses must use a 2xx HTTP status.");
   }
+  if (status === 204 || status === 205) {
+    throw new Error("Client v1 success responses must not use a bodyless status.");
+  }
 }
 
 function assertErrorStatus(status: number) {

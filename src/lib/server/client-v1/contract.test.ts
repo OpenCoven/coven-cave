@@ -146,6 +146,37 @@ test("parses stable ids, scopes, identities, revisions, and cursors", () => {
   assert.throws(() => parseClientV1Cursor({ hasMore: true }), /cursor/i);
 });
 
+test("accepts only unambiguous public wire timestamps", () => {
+  const fixture = createClientV1ContractFixture();
+  const canonicalTimestamp = fixture.examples.conversationDetail.revision?.updatedAt;
+
+  assert.deepEqual(
+    parseClientV1Revision({ token: "revision-1", updatedAt: canonicalTimestamp }),
+    { token: "revision-1", updatedAt: canonicalTimestamp },
+  );
+  for (const timestamp of ["2026-08-15", "August 15, 2026 00:00:00 UTC"]) {
+    assert.throws(
+      () => parseClientV1Revision({ token: "revision-1", updatedAt: timestamp }),
+      /ISO-8601/i,
+    );
+  }
+});
+
+test("preserves additive cursor fields through parsers and response helpers", () => {
+  const cursor = {
+    current: "cursor-1",
+    next: "cursor-2",
+    hasMore: true,
+    futureCursorField: "accepted",
+  };
+
+  assert.deepEqual(parseClientV1Cursor(cursor), cursor);
+  assert.deepEqual(
+    clientV1Success({ status: "ok" }, { cursor }).cursor,
+    cursor,
+  );
+});
+
 test("serializes the public contract deterministically by sorting object keys", () => {
   assert.deepEqual(
     sortClientV1JsonKeys({
@@ -253,6 +284,12 @@ test("maps explicit client v1 errors without masking failures as success", async
     () => clientV1ErrorResponse("invalid_request", "bad request", { status: 200 }),
     /4xx or 5xx/i,
   );
+  for (const status of [204, 205]) {
+    assert.throws(
+      () => clientV1SuccessResponse({ status: "ok" }, { status }),
+      /must not use a bodyless status/i,
+    );
+  }
 });
 
 test("represents in-progress operations as retryable conflicts", () => {
@@ -329,6 +366,14 @@ test("parses complete public envelopes while preserving additive fields", () => 
   assert.throws(
     () => parseClientV1ErrorEnvelope({ ...fixture.examples.error, error: {} }),
     /error code/i,
+  );
+  assert.throws(
+    () => parseClientV1SuccessEnvelope({ ...fixture.examples.health, error: fixture.examples.error.error }),
+    /must not contain an error/i,
+  );
+  assert.throws(
+    () => parseClientV1ErrorEnvelope({ ...fixture.examples.error, data: fixture.examples.health.data }),
+    /must not contain data/i,
   );
 });
 

@@ -189,6 +189,8 @@ export type ClientV1ContractFixture = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ISO_8601_TIMESTAMP_RE =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const CLIENT_V1_SCOPE_SET = new Set<string>(CLIENT_V1_SCOPES);
 const CLIENT_V1_CAPABILITY_SET = new Set<string>(CLIENT_V1_CAPABILITIES);
 const CLIENT_V1_ERROR_CODE_SET = new Set<string>(CLIENT_V1_ERROR_CODES);
@@ -213,7 +215,15 @@ function requiredString(value: unknown, name: string, maxLength?: number): strin
 
 function requiredIsoTimestamp(value: unknown, name: string): string {
   const iso = requiredString(value, name);
-  if (!Number.isFinite(Date.parse(iso))) {
+  const match = ISO_8601_TIMESTAMP_RE.exec(iso);
+  if (!match) {
+    throw new Error(`Client v1 ${name} must be an ISO-8601 timestamp.`);
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day > daysInMonth) {
     throw new Error(`Client v1 ${name} must be an ISO-8601 timestamp.`);
   }
   return iso;
@@ -293,12 +303,7 @@ export function parseClientV1Cursor(value: unknown): ClientV1Cursor {
   if (!current && !next && !previous) {
     throw new Error("Client v1 cursor must publish at least one current, next, or previous token.");
   }
-  return {
-    ...(current ? { current } : {}),
-    ...(next ? { next } : {}),
-    ...(previous ? { previous } : {}),
-    hasMore: cursor.hasMore,
-  };
+  return cursor as ClientV1Cursor;
 }
 
 export function parseClientV1ErrorDetails(value: unknown): Record<string, string> {
@@ -340,12 +345,18 @@ function parseClientV1EnvelopeBase(value: unknown): ClientV1EnvelopeBase {
 
 export function parseClientV1SuccessEnvelope(value: unknown): ClientV1SuccessEnvelope {
   const envelope = parseClientV1EnvelopeBase(value);
+  if (envelope.error !== undefined) {
+    throw new Error("Client v1 success envelope must not contain an error.");
+  }
   requiredRecord(envelope.data, "success response data");
   return envelope as ClientV1SuccessEnvelope;
 }
 
 export function parseClientV1ErrorEnvelope(value: unknown): ClientV1ErrorEnvelope {
   const envelope = parseClientV1EnvelopeBase(value);
+  if (envelope.data !== undefined) {
+    throw new Error("Client v1 error envelope must not contain data.");
+  }
   const error = requiredRecord(envelope.error, "error");
   if (typeof error.code !== "string" || !CLIENT_V1_ERROR_CODE_SET.has(error.code)) {
     throw new Error("Client v1 error code is not supported.");
