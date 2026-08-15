@@ -84,6 +84,48 @@ assert.equal(await readFile(target, "utf8"), "renamed-but-not-confirmed");
 assert.deepEqual(await tmps(), [], "a directory-sync failure leaves no temp behind");
 setAtomicWriteTestHooksForTest(null);
 
+// Windows cannot FlushFileBuffers a read-only directory handle. That narrow
+// platform-specific fallback must not turn POSIX permission failures into
+// false durability successes.
+const windowsDirectorySyncAccessDenied = Object.assign(
+  new Error("Windows FlushFileBuffers requires write access"),
+  { code: "EACCES" },
+);
+setAtomicWriteTestHooksForTest({
+  platform: "win32",
+  syncDirectory: () => {
+    throw windowsDirectorySyncAccessDenied;
+  },
+});
+await writeFileAtomic(target, "windows-directory-sync-fallback");
+assert.equal(
+  await readFile(target, "utf8"),
+  "windows-directory-sync-fallback",
+  "the injected Windows directory sync limitation is a supported fallback",
+);
+
+const posixDirectorySyncAccessDenied = Object.assign(
+  new Error("POSIX directory sync permission denied"),
+  { code: "EACCES" },
+);
+setAtomicWriteTestHooksForTest({
+  platform: "linux",
+  syncDirectory: () => {
+    throw posixDirectorySyncAccessDenied;
+  },
+});
+await assert.rejects(
+  () => writeFileAtomic(target, "posix-directory-sync-permission-denied"),
+  posixDirectorySyncAccessDenied,
+  "a genuine POSIX EACCES must propagate",
+);
+assert.equal(
+  await readFile(target, "utf8"),
+  "posix-directory-sync-permission-denied",
+  "the rename may have happened even though its POSIX durability confirmation failed",
+);
+setAtomicWriteTestHooksForTest(null);
+
 // 4. Concurrent writers all settle without ENOENT. A shared `.tmp` made the
 //    second rename race to ENOENT and crash (#1516); unique temp names let each
 //    writer rename its own file. Last writer wins; the file is never torn.
