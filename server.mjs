@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -838,7 +838,22 @@ function formatDiscoveryEndpoint(discoveryHostname, discoveryPort) {
   new URL(endpoint);
   return endpoint;
 }
-let clientV1DiscoveryNonce = null;
+function clientV1DiscoveryProcessStartIdentity(pid) {
+  if (process.platform === "win32" || typeof execFileSync !== "function") return null;
+  try {
+    const started = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return started ? `ps:${started}` : null;
+  } catch {
+    return null;
+  }
+}
+const clientV1DiscoveryStartedAt = (/* @__PURE__ */ new Date()).toISOString();
+const clientV1DiscoveryNonce = randomBytes(16).toString("hex");
+const clientV1DiscoveryStartIdentity = clientV1DiscoveryProcessStartIdentity(process.pid) ?? `started:${clientV1DiscoveryStartedAt}:${clientV1DiscoveryNonce}`;
+let clientV1DiscoveryPublished = false;
 function clientV1DiscoveryLockDbPath(file) {
   return `${file}.lock.sqlite`;
 }
@@ -898,66 +913,191 @@ function withClientV1DiscoveryLock(file, operation) {
     releaseClientV1DiscoveryLock(lock);
   }
 }
+function clientV1DiscoveryMode() {
+  return process.env.COVEN_CAVE_BUNDLE === "1" ? "production" : "dev";
+}
+function clientV1DiscoveryHealthEndpoint(endpoint) {
+  return new URL("/api/client/v1/health", `${endpoint}/`).toString();
+}
+function clientV1DiscoveryPort(endpoint) {
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== "http:") return null;
+    const port2 = Number(parsed.port);
+    return Number.isInteger(port2) && port2 >= 1 && port2 <= 65535 ? port2 : null;
+  } catch {
+    return null;
+  }
+}
+function isClientV1DiscoveryMode(value) {
+  return value === "dev" || value === "production";
+}
+function normalizeClientV1DiscoveryRegistration(value) {
+  if (!value || typeof value !== "object") return null;
+  const raw = value;
+  const endpoint = raw.endpoint;
+  const pid = raw.pid;
+  const nonce = raw.nonce;
+  const startedAt = raw.startedAt;
+  const port2 = typeof raw.port === "number" && Number.isInteger(raw.port) ? raw.port : clientV1DiscoveryPort(String(endpoint ?? ""));
+  if (raw.version !== 1 || typeof endpoint !== "string" || typeof pid !== "number" || !Number.isInteger(pid) || pid < 1 || typeof nonce !== "string" || !nonce || typeof startedAt !== "string" || !Number.isFinite(Date.parse(startedAt)) || !port2 || port2 < 1 || port2 > 65535) {
+    return null;
+  }
+  const mode = isClientV1DiscoveryMode(raw.mode) ? raw.mode : port2 === CAVE_PRODUCTION_PORT ? "production" : "dev";
+  const startIdentity = typeof raw.startIdentity === "string" && raw.startIdentity ? raw.startIdentity : `legacy:${pid}:${startedAt}:${nonce}`;
+  return {
+    version: 1,
+    endpoint,
+    pid,
+    nonce,
+    startedAt,
+    port: port2,
+    mode,
+    startIdentity,
+    healthEndpoint: typeof raw.healthEndpoint === "string" && raw.healthEndpoint ? raw.healthEndpoint : clientV1DiscoveryHealthEndpoint(endpoint)
+  };
+}
+function readClientV1DiscoveryRegistrationsLocked(file) {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const raw = parsed;
+  const candidates = Array.isArray(raw.registrations) ? raw.registrations : [parsed];
+  const registrations = candidates.map(normalizeClientV1DiscoveryRegistration).filter((registration) => registration !== null);
+  return registrations.length || candidates.length === 0 ? registrations : null;
+}
+function isClientV1DiscoveryRegistrationLive(registration) {
+  if (registration.pid === process.pid) {
+    return registration.nonce === clientV1DiscoveryNonce && registration.startIdentity === clientV1DiscoveryStartIdentity;
+  }
+  if (typeof process.kill !== "function") return true;
+  try {
+    process.kill(registration.pid, 0);
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+  if (registration.startIdentity.startsWith("ps:")) {
+    const actual = clientV1DiscoveryProcessStartIdentity(registration.pid);
+    if (actual && actual !== registration.startIdentity) return false;
+  }
+  return true;
+}
+function clientV1DiscoveryRegistrationKey(registration) {
+  return `${registration.pid}:${registration.port}:${registration.mode}:${registration.startIdentity}:${registration.nonce}`;
+}
+function pruneClientV1DiscoveryRegistrations(registrations) {
+  const seen = /* @__PURE__ */ new Set();
+  return registrations.filter((registration) => {
+    const key = clientV1DiscoveryRegistrationKey(registration);
+    if (seen.has(key) || !isClientV1DiscoveryRegistrationLive(registration)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function selectClientV1DiscoveryRegistration(registrations) {
+  return [...registrations].sort((left, right) => {
+    const mode = Number(left.mode !== "production") - Number(right.mode !== "production");
+    if (mode) return mode;
+    const port2 = left.port - right.port;
+    if (port2) return port2;
+    const started = left.startedAt.localeCompare(right.startedAt);
+    if (started) return started;
+    const pid = left.pid - right.pid;
+    if (pid) return pid;
+    return left.nonce.localeCompare(right.nonce);
+  })[0] ?? null;
+}
+function writeClientV1DiscoveryRegistrationsLocked(file, registrations, onRenamed) {
+  const selected = selectClientV1DiscoveryRegistration(registrations);
+  if (!selected) {
+    try {
+      unlinkSync(file);
+    } catch {
+    }
+    return;
+  }
+  const registry = {
+    ...selected,
+    registryVersion: 2,
+    registrations
+  };
+  const tmp = `${file}.${process.pid}.${randomBytes(16).toString("hex")}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(registry, null, 2), { mode: 384 });
+    renameSync(tmp, file);
+    onRenamed?.();
+    chmodSync(file, 384);
+  } catch (error) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+    }
+    throw error;
+  }
+}
+function clientV1DiscoveryOwnRegistration(discoveryHostname, discoveryPort) {
+  const endpoint = formatDiscoveryEndpoint(discoveryHostname, discoveryPort);
+  return {
+    version: 1,
+    endpoint,
+    pid: process.pid,
+    nonce: clientV1DiscoveryNonce,
+    startedAt: clientV1DiscoveryStartedAt,
+    port: discoveryPort,
+    mode: clientV1DiscoveryMode(),
+    startIdentity: clientV1DiscoveryStartIdentity,
+    healthEndpoint: clientV1DiscoveryHealthEndpoint(endpoint)
+  };
+}
+function isClientV1DiscoveryOwnedRegistration(registration) {
+  return registration.pid === process.pid && registration.nonce === clientV1DiscoveryNonce && registration.startIdentity === clientV1DiscoveryStartIdentity;
+}
 function writeClientV1DiscoveryRecord(discoveryHostname, discoveryPort) {
   const file = clientV1DiscoveryPath();
+  let renamed = false;
   try {
     withClientV1DiscoveryLock(file, () => {
-      const nonce = randomBytes(16).toString("hex");
-      const tmp = `${file}.${process.pid}.${nonce}.tmp`;
-      let published = false;
-      try {
-        const record = {
-          version: 1,
-          endpoint: formatDiscoveryEndpoint(discoveryHostname, discoveryPort),
-          pid: process.pid,
-          nonce,
-          startedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        writeFileSync(tmp, JSON.stringify(record, null, 2), { mode: 384 });
-        renameSync(tmp, file);
-        published = true;
-        clientV1DiscoveryNonce = nonce;
-        chmodSync(file, 384);
-      } catch (err) {
-        if (!published) {
-          try {
-            unlinkSync(tmp);
-          } catch {
-          }
-        } else {
-          clientV1DiscoveryNonce = null;
-          removeClientV1DiscoveryRecordLocked(file, nonce);
-        }
-        throw err;
-      }
+      const current = readClientV1DiscoveryRegistrationsLocked(file) ?? [];
+      const registrations = pruneClientV1DiscoveryRegistrations(current).filter(
+        (registration) => !isClientV1DiscoveryOwnedRegistration(registration)
+      );
+      registrations.push(clientV1DiscoveryOwnRegistration(discoveryHostname, discoveryPort));
+      writeClientV1DiscoveryRegistrationsLocked(file, registrations, () => {
+        renamed = true;
+        clientV1DiscoveryPublished = true;
+      });
     });
   } catch (err) {
+    if (renamed) {
+      try {
+        withClientV1DiscoveryLock(file, () => removeClientV1DiscoveryRecordLocked(file));
+      } catch {
+      }
+    }
     console.warn("[client-v1-discovery] failed to write discovery record", err);
   }
 }
-function removeClientV1DiscoveryRecordLocked(file, ownNonce) {
-  let current = null;
-  try {
-    current = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    return;
-  }
-  if (current.nonce !== ownNonce) {
-    return;
-  }
-  try {
-    unlinkSync(file);
-  } catch {
-  }
+function removeClientV1DiscoveryRecordLocked(file) {
+  const current = readClientV1DiscoveryRegistrationsLocked(file);
+  if (!current) return;
+  const hasOwnRegistration = current.some(isClientV1DiscoveryOwnedRegistration);
+  if (!hasOwnRegistration) return;
+  const remaining = pruneClientV1DiscoveryRegistrations(current).filter(
+    (registration) => !isClientV1DiscoveryOwnedRegistration(registration)
+  );
+  writeClientV1DiscoveryRegistrationsLocked(file, remaining);
 }
 function removeClientV1DiscoveryRecordIfOwned() {
-  if (!clientV1DiscoveryNonce) return;
-  const ownNonce = clientV1DiscoveryNonce;
-  clientV1DiscoveryNonce = null;
+  if (!clientV1DiscoveryPublished) return;
   const file = clientV1DiscoveryPath();
   try {
     withClientV1DiscoveryLock(file, () => {
-      removeClientV1DiscoveryRecordLocked(file, ownNonce);
+      removeClientV1DiscoveryRecordLocked(file);
+      clientV1DiscoveryPublished = false;
     });
   } catch (err) {
     console.warn("[client-v1-discovery] failed to acquire discovery lock during cleanup", err);

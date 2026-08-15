@@ -14,6 +14,7 @@
 // chmod, and lock-serialization behavior under test is the exact behavior
 // that ships.
 import assert from "node:assert/strict";
+import { fork } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -242,13 +243,36 @@ function cleanup(h: { dir: string }) {
 
   h.writeClientV1DiscoveryRecord("127.0.0.1", 3020);
   const record = JSON.parse(readFileSync(file, "utf8"));
-  assert.deepEqual(Object.keys(record).sort(), ["endpoint", "nonce", "pid", "startedAt", "version"]);
+  assert.deepEqual(
+    Object.keys(record).sort(),
+    [
+      "endpoint",
+      "healthEndpoint",
+      "mode",
+      "nonce",
+      "pid",
+      "port",
+      "registrations",
+      "registryVersion",
+      "startIdentity",
+      "startedAt",
+      "version",
+    ],
+  );
   assert.equal(record.version, 1);
+  assert.equal(record.registryVersion, 2);
   assert.equal(record.endpoint, "http://127.0.0.1:3020");
   assert.equal(record.pid, 4242);
+  assert.equal(record.port, 3020);
+  assert.equal(record.mode, "dev");
   assert.equal(typeof record.nonce, "string");
   assert.ok(record.nonce.length >= 16, "nonce must be a real random value, not a placeholder");
   assert.match(record.startedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, "startedAt is ISO-8601");
+  assert.match(record.startIdentity, /^(?:ps:|started:)/, "each process publishes a start identity");
+  assert.equal(record.healthEndpoint, "http://127.0.0.1:3020/api/client/v1/health");
+  assert.deepEqual(record.registrations, [Object.fromEntries(
+    Object.entries(record).filter(([key]) => key !== "registryVersion" && key !== "registrations"),
+  )]);
   cleanup(h);
 }
 
@@ -352,6 +376,8 @@ if (process.platform !== "win32") {
   const foreign = JSON.parse(readFileSync(file, "utf8"));
   foreign.nonce = "someone-elses-nonce";
   foreign.pid = 9999;
+  foreign.registrations[0].nonce = "someone-elses-nonce";
+  foreign.registrations[0].pid = 9999;
   writeFileSync(file, JSON.stringify(foreign, null, 2));
 
   h.removeClientV1DiscoveryRecordIfOwned();
@@ -719,6 +745,7 @@ function sidecarHarness({ env = {} }: { env?: Record<string, string> } = {}) {
   h.fakeProcess.env.COVEN_CAVE_CLIENT_V1_DISCOVERY_PATH = file;
   h.writeClientV1DiscoveryRecord("127.0.0.1", 3020);
   assert.ok(existsSync(file), "a discovery record exists before shutdown");
+  h.events.length = 0;
 
   let ptyKilled = false;
   h.sessions.set("thread-1", { pty: { kill: () => { ptyKilled = true; } } });
@@ -748,7 +775,10 @@ function sidecarHarness({ env = {} }: { env?: Record<string, string> } = {}) {
   const foreign = JSON.parse(readFileSync(file, "utf8"));
   foreign.nonce = "someone-elses-nonce";
   foreign.pid = 9999;
+  foreign.registrations[0].nonce = "someone-elses-nonce";
+  foreign.registrations[0].pid = 9999;
   writeFileSync(file, JSON.stringify(foreign, null, 2));
+  h.events.length = 0;
 
   h.terminatePackagedUnixSidecarTree();
 
@@ -773,6 +803,7 @@ function sidecarHarness({ env = {} }: { env?: Record<string, string> } = {}) {
   h._setFile(file);
   h.fakeProcess.env.COVEN_CAVE_CLIENT_V1_DISCOVERY_PATH = file;
   h.writeClientV1DiscoveryRecord("127.0.0.1", 3020);
+  h.events.length = 0;
   h.killImpl = () => {
     throw new Error("ESRCH: no such process group");
   };
@@ -912,6 +943,267 @@ function listenHarness({ env = {} }: { env?: Record<string, string> } = {}) {
   assert.equal(h.exitCode, 1, "the error handler still exits with code 1");
   assert.equal(existsSync(file), false, "no record was ever published, so there is nothing to clean up — and nothing is created either");
   cleanup(h);
+}
+
+// ── Real subprocess registry protocol ─────────────────────────────────────
+// The harnesses above make every edge of the inlined implementation directly
+// observable. These tests additionally run independently booted HTTP servers
+// against one shared file, which proves the SQLite transaction works across
+// real OS processes and that stopping one owner leaves its sibling selected.
+const subprocessRoot = mkdtempSync(join(testTmpRoot, "client-v1-discovery-processes-"));
+const subprocessFile = join(subprocessRoot, "client-v1-discovery.json");
+const subprocessFixture = join(subprocessRoot, "discovery-server.mjs");
+
+writeFileSync(
+  subprocessFixture,
+  `import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+const CAVE_PRODUCTION_PORT = 3020;
+${section}
+const server = createServer((request, response) => {
+  if (request.url === "/api/client/v1/health") {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true, pid: process.pid }));
+    return;
+  }
+  response.writeHead(404);
+  response.end();
+});
+server.listen(0, "127.0.0.1", () => {
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("server did not bind a TCP port");
+  writeClientV1DiscoveryRecord("127.0.0.1", address.port);
+  process.send?.({ type: "published", pid: process.pid, port: address.port });
+});
+process.on("message", (message) => {
+  if (message === "stop") {
+    server.close(() => {
+      removeClientV1DiscoveryRecordIfOwned();
+      process.send?.({ type: "stopped" });
+      process.exit(0);
+    });
+  } else if (message === "crash") {
+    process.exit(91);
+  }
+});
+setInterval(() => {}, 1_000);
+`,
+  { mode: 0o600 },
+);
+
+type DiscoveryChild = ReturnType<typeof fork>;
+const activeDiscoveryChildren = new Set<DiscoveryChild>();
+
+function waitForChildMessage(child: DiscoveryChild, expected: "published" | "stopped") {
+  return new Promise<{ type: string; pid?: number; port?: number }>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`timed out waiting for child ${child.pid ?? "unknown"} to ${expected}`));
+    }, 10_000);
+    const onMessage = (message: { type?: string; pid?: number; port?: number }) => {
+      if (message?.type !== expected) return;
+      clearTimeout(timeout);
+      child.off("message", onMessage);
+      child.off("exit", onExit);
+      resolve({ type: expected, pid: message.pid, port: message.port });
+    };
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      clearTimeout(timeout);
+      child.off("message", onMessage);
+      reject(new Error(`child exited before ${expected}: code=${code}, signal=${signal}`));
+    };
+    child.on("message", onMessage);
+    child.once("exit", onExit);
+  });
+}
+
+function waitForChildExit(child: DiscoveryChild) {
+  return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+}
+
+async function startDiscoveryChild(mode: "dev" | "production") {
+  const child = fork(subprocessFixture, [], {
+    env: {
+      ...process.env,
+      COVEN_CAVE_CLIENT_V1_DISCOVERY_PATH: subprocessFile,
+      COVEN_CAVE_BUNDLE: mode === "production" ? "1" : "0",
+    },
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
+  activeDiscoveryChildren.add(child);
+  child.once("exit", () => activeDiscoveryChildren.delete(child));
+  const published = await waitForChildMessage(child, "published");
+  return { child, mode, ...published };
+}
+
+async function stopDiscoveryChild(child: DiscoveryChild) {
+  const exited = waitForChildExit(child);
+  child.send("stop");
+  await waitForChildMessage(child, "stopped");
+  const result = await exited;
+  assert.equal(result.code, 0, `child ${child.pid ?? "unknown"} stops cleanly`);
+}
+
+function subprocessRegistry() {
+  return JSON.parse(readFileSync(subprocessFile, "utf8")) as {
+    registryVersion: number;
+    endpoint: string;
+    mode: "dev" | "production";
+    registrations: Array<{
+      endpoint: string;
+      pid: number;
+      port: number;
+      mode: "dev" | "production";
+      nonce: string;
+      startedAt: string;
+      startIdentity: string;
+      healthEndpoint: string;
+    }>;
+  };
+}
+
+try {
+  // Start dev then production: production is the deterministic installed
+  // service selection, and dev cleanup leaves production published.
+  const firstDev = await startDiscoveryChild("dev");
+  const firstProduction = await startDiscoveryChild("production");
+  let registry = subprocessRegistry();
+  assert.equal(registry.registryVersion, 2);
+  assert.equal(registry.mode, "production");
+  assert.equal(registry.registrations.length, 2);
+  assert.ok(
+    registry.registrations.every(
+      (registration) =>
+        registration.pid > 0 &&
+        registration.port > 0 &&
+        registration.mode &&
+        registration.startIdentity &&
+        registration.healthEndpoint.endsWith("/api/client/v1/health"),
+    ),
+    "each subprocess registration carries its PID, actual port, mode, start identity, and health endpoint",
+  );
+  assert.notEqual(firstDev.pid, firstProduction.pid);
+  await stopDiscoveryChild(firstDev.child);
+  registry = subprocessRegistry();
+  assert.equal(registry.mode, "production", "stopping dev republishes the live production owner");
+  assert.equal(registry.registrations.length, 1);
+  await stopDiscoveryChild(firstProduction.child);
+  assert.equal(existsSync(subprocessFile), false, "the final owner removes the now-empty registry");
+
+  // Reverse shutdown order: dev automatically becomes the selected legacy
+  // projection after production removes only its own registration.
+  const secondProduction = await startDiscoveryChild("production");
+  const secondDev = await startDiscoveryChild("dev");
+  assert.equal(subprocessRegistry().mode, "production");
+  await stopDiscoveryChild(secondProduction.child);
+  registry = subprocessRegistry();
+  assert.equal(registry.mode, "dev", "stopping production republishes the remaining dev server");
+  assert.equal(registry.registrations.length, 1);
+  await stopDiscoveryChild(secondDev.child);
+  assert.equal(existsSync(subprocessFile), false);
+
+  // A crash strands an entry, but the next writer observes its dead PID and
+  // atomically prunes it while publishing its own live registration.
+  const crashedDev = await startDiscoveryChild("dev");
+  const crashedExit = waitForChildExit(crashedDev.child);
+  crashedDev.child.send("crash");
+  assert.equal((await crashedExit).code, 91);
+  assert.equal(subprocessRegistry().registrations.length, 1, "a crash leaves its registration for safe later pruning");
+  const recoveryProduction = await startDiscoveryChild("production");
+  registry = subprocessRegistry();
+  assert.equal(registry.registrations.length, 1, "a dead PID is pruned by the recovery publisher");
+  assert.equal(registry.registrations[0].pid, recoveryProduction.pid);
+  await stopDiscoveryChild(recoveryProduction.child);
+
+  // Real simultaneous writers must retain every entry, not merely the last
+  // rename winner. The selected projection remains deterministic afterward.
+  const concurrent = await Promise.all(
+    Array.from({ length: 6 }, (_, index) => startDiscoveryChild(index % 2 ? "production" : "dev")),
+  );
+  registry = subprocessRegistry();
+  assert.equal(registry.registrations.length, concurrent.length, "all concurrent publishers survive in one registry");
+  assert.equal(new Set(registry.registrations.map((registration) => registration.pid)).size, concurrent.length);
+  assert.equal(registry.mode, "production", "selection does not depend on race timing");
+  await Promise.all(concurrent.map(({ child }) => stopDiscoveryChild(child)));
+  assert.equal(existsSync(subprocessFile), false);
+
+  // A live, reused PID with a mismatched `ps:` process-start identity is
+  // stale even though kill(pid, 0) succeeds. The next subprocess must remove
+  // it, proving PID liveness alone cannot pin a stale endpoint forever.
+  writeFileSync(
+    subprocessFile,
+    JSON.stringify({
+      version: 1,
+      endpoint: "http://127.0.0.1:39999",
+      pid: process.pid,
+      nonce: "stale-pid-reuse",
+      startedAt: "2020-01-01T00:00:00.000Z",
+      port: 39999,
+      mode: "dev",
+      startIdentity: "ps:not-the-current-process",
+      healthEndpoint: "http://127.0.0.1:39999/api/client/v1/health",
+      registryVersion: 2,
+      registrations: [{
+        version: 1,
+        endpoint: "http://127.0.0.1:39999",
+        pid: process.pid,
+        nonce: "stale-pid-reuse",
+        startedAt: "2020-01-01T00:00:00.000Z",
+        port: 39999,
+        mode: "dev",
+        startIdentity: "ps:not-the-current-process",
+        healthEndpoint: "http://127.0.0.1:39999/api/client/v1/health",
+      }],
+    }),
+    { mode: 0o600 },
+  );
+  const pidReuseRecovery = await startDiscoveryChild("dev");
+  registry = subprocessRegistry();
+  assert.equal(registry.registrations.length, 1, "mismatched process-start identity is pruned despite a live PID");
+  assert.equal(registry.registrations[0].pid, pidReuseRecovery.pid);
+  await stopDiscoveryChild(pidReuseRecovery.child);
+
+  // A pre-registry v1 file migrates without losing its legacy top-level
+  // fields. Its live PID remains registered beside the new owner, and after
+  // that owner exits the registry's selected projection is still usable by a
+  // v1-only reader.
+  writeFileSync(
+    subprocessFile,
+    JSON.stringify({
+      version: 1,
+      endpoint: "http://127.0.0.1:3000",
+      pid: process.pid,
+      nonce: "legacy-record",
+      startedAt: new Date().toISOString(),
+    }),
+    { mode: 0o600 },
+  );
+  const legacyMigration = await startDiscoveryChild("production");
+  registry = subprocessRegistry();
+  assert.equal(registry.registryVersion, 2, "a legacy record is migrated on the next locked publish");
+  assert.equal(registry.registrations.length, 2, "migration preserves the live legacy owner");
+  assert.equal(registry.mode, "production");
+  await stopDiscoveryChild(legacyMigration.child);
+  registry = subprocessRegistry();
+  assert.equal(registry.mode, "dev", "legacy-compatible selected fields republish after sibling cleanup");
+  assert.equal(registry.endpoint, "http://127.0.0.1:3000");
+} finally {
+  const outstanding = [...activeDiscoveryChildren].map((child) => ({
+    child,
+    exit: waitForChildExit(child),
+  }));
+  for (const { child } of outstanding) {
+    if (child.connected) child.send("stop");
+    else child.kill("SIGTERM");
+  }
+  await Promise.all(outstanding.map(({ exit }) => exit));
+  rmSync(subprocessRoot, { recursive: true, force: true });
 }
 
 console.log("client-v1-discovery.test.ts: ok");

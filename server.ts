@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -1303,12 +1303,12 @@ server.on("upgrade", (req, socket, head) => {
 // Chat (the standalone native OpenCoven Chat client) discovers a running Cave
 // install by reading `~/.coven/cave/client-v1-discovery.json` — NOT by
 // probing ports. This file is the PRIMARY installed-service discovery
-// contract: written only after `server.listen` below succeeds, atomically
-// (same-directory temp file, then rename), mode 0600, and removed on
-// shutdown ONLY if the on-disk record's nonce still matches the one THIS
-// process wrote — so a signal handler racing a newer Cave process (this one
-// died without cleaning up, a fresh one started and wrote its own record)
-// can never clobber that newer record.
+// contract. Its v2 registry keeps one registration for every live process,
+// while its top-level v1 fields remain a selected compatibility projection
+// for existing Chat builds. Every registration is written only after
+// `server.listen` succeeds, atomically (same-directory temp file, then
+// rename), mode 0600. Cleanup removes only this process's nonce/start
+// identity entry and atomically republishes another live entry if one exists.
 //
 // Every publish (writer) and every cleanup (read/compare/unlink) is
 // serialized cross-process by a `BEGIN IMMEDIATE` transaction on a SQLite
@@ -1335,12 +1335,29 @@ server.on("upgrade", (req, socket, head) => {
 // resolve `src/` imports once unpacked from the packaged bundle. Mirrors
 // `heapDiagnosticsDir()` below for the same reason: COVEN_HOME/COVEN_CAVE_HOME
 // resolution is duplicated rather than imported from `@/lib/coven-paths`.
+type ClientV1DiscoveryMode = "dev" | "production";
+
+// The top-level fields deliberately retain the v1 shape. Old Chat builds
+// continue to read this selected registration while registry-aware readers
+// inspect `registrations` to make their own choice.
 type ClientV1Discovery = {
   version: 1;
   endpoint: string;
   pid: number;
   nonce: string;
   startedAt: string;
+};
+
+type ClientV1DiscoveryRegistration = ClientV1Discovery & {
+  port: number;
+  mode: ClientV1DiscoveryMode;
+  startIdentity: string;
+  healthEndpoint: string;
+};
+
+type ClientV1DiscoveryRegistry = ClientV1Discovery & {
+  registryVersion: 2;
+  registrations: ClientV1DiscoveryRegistration[];
 };
 
 function clientV1DiscoveryPath(): string {
@@ -1371,12 +1388,30 @@ function formatDiscoveryEndpoint(discoveryHostname: string, discoveryPort: numbe
   return endpoint;
 }
 
-// The nonce THIS process's discovery record was written with, if any. The
-// shutdown cleanup below reads this back (never trusting its own memory of
-// "did I write one" alone) by comparing it against whatever nonce is
-// actually on disk right now, so ownership is proven at cleanup time, not
-// merely assumed from having written once earlier in this process's life.
-let clientV1DiscoveryNonce: string | null = null;
+// A process start time is observable on macOS and Linux through `ps`; that
+// lets a later writer distinguish a dead registration from a PID that has
+// since been reused. On platforms without that observation, the random nonce
+// still uniquely identifies this process's registration and callers fail
+// safe by retaining an otherwise-live PID.
+function clientV1DiscoveryProcessStartIdentity(pid: number): string | null {
+  if (process.platform === "win32" || typeof execFileSync !== "function") return null;
+  try {
+    const started = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return started ? `ps:${started}` : null;
+  } catch {
+    return null;
+  }
+}
+
+const clientV1DiscoveryStartedAt = new Date().toISOString();
+const clientV1DiscoveryNonce = randomBytes(16).toString("hex");
+const clientV1DiscoveryStartIdentity =
+  clientV1DiscoveryProcessStartIdentity(process.pid) ??
+  `started:${clientV1DiscoveryStartedAt}:${clientV1DiscoveryNonce}`;
+let clientV1DiscoveryPublished = false;
 
 // The lock database lives adjacent to the discovery record it guards — never
 // a single fixed, shared-across-records path — so an operator override
@@ -1404,10 +1439,11 @@ type ClientV1DiscoveryLock = { database: DatabaseSync };
  * inside the critical section it guards at a time, across every process on
  * the machine. `PRAGMA busy_timeout` lets SQLite's own (synchronous, native)
  * busy handler do the waiting rather than a hand-rolled retry/backoff loop —
- * there is no bespoke staleness heuristic anywhere in this path: a lock left
- * held by a crashed process is released by the OS the instant that
- * process's file descriptors are torn down, and this call simply blocks
- * (bounded by the timeout above) until that happens.
+ * a lock left held by a crashed process is released by the OS the instant
+ * that process's file descriptors are torn down, and this call simply blocks
+ * (bounded by the timeout above) until that happens. Registration liveness
+ * is evaluated separately while the lock is held, never by guessing whether
+ * the lock itself is stale.
  */
 function acquireClientV1DiscoveryLock(file: string): ClientV1DiscoveryLock {
   const lockDbPath = clientV1DiscoveryLockDbPath(file);
@@ -1488,135 +1524,280 @@ function withClientV1DiscoveryLock<T>(file: string, operation: () => T): T {
   }
 }
 
+function clientV1DiscoveryMode(): ClientV1DiscoveryMode {
+  return process.env.COVEN_CAVE_BUNDLE === "1" ? "production" : "dev";
+}
+
+function clientV1DiscoveryHealthEndpoint(endpoint: string): string {
+  return new URL("/api/client/v1/health", `${endpoint}/`).toString();
+}
+
+function clientV1DiscoveryPort(endpoint: string): number | null {
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== "http:") return null;
+    const port = Number(parsed.port);
+    return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null;
+  } catch {
+    return null;
+  }
+}
+
+function isClientV1DiscoveryMode(value: unknown): value is ClientV1DiscoveryMode {
+  return value === "dev" || value === "production";
+}
+
+function normalizeClientV1DiscoveryRegistration(value: unknown): ClientV1DiscoveryRegistration | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<ClientV1DiscoveryRegistration>;
+  const endpoint = raw.endpoint;
+  const pid = raw.pid;
+  const nonce = raw.nonce;
+  const startedAt = raw.startedAt;
+  const port =
+    typeof raw.port === "number" && Number.isInteger(raw.port)
+      ? raw.port
+      : clientV1DiscoveryPort(String(endpoint ?? ""));
+  if (
+    raw.version !== 1 ||
+    typeof endpoint !== "string" ||
+    typeof pid !== "number" ||
+    !Number.isInteger(pid) ||
+    pid < 1 ||
+    typeof nonce !== "string" ||
+    !nonce ||
+    typeof startedAt !== "string" ||
+    !Number.isFinite(Date.parse(startedAt)) ||
+    !port ||
+    port < 1 ||
+    port > 65535
+  ) {
+    return null;
+  }
+  const mode = isClientV1DiscoveryMode(raw.mode)
+    ? raw.mode
+    : port === CAVE_PRODUCTION_PORT
+      ? "production"
+      : "dev";
+  const startIdentity =
+    typeof raw.startIdentity === "string" && raw.startIdentity
+      ? raw.startIdentity
+      : `legacy:${pid}:${startedAt}:${nonce}`;
+  return {
+    version: 1,
+    endpoint,
+    pid,
+    nonce,
+    startedAt,
+    port,
+    mode,
+    startIdentity,
+    healthEndpoint:
+      typeof raw.healthEndpoint === "string" && raw.healthEndpoint
+        ? raw.healthEndpoint
+        : clientV1DiscoveryHealthEndpoint(endpoint),
+  };
+}
+
+/**
+ * Reads either the v2 registry or the old single v1 record. The latter is
+ * treated as a one-entry registry and is therefore migrated on the next
+ * locked write without ever making a legacy Chat client unable to read the
+ * selected top-level fields.
+ */
+function readClientV1DiscoveryRegistrationsLocked(file: string): ClientV1DiscoveryRegistration[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const raw = parsed as { registrations?: unknown };
+  const candidates = Array.isArray(raw.registrations) ? raw.registrations : [parsed];
+  const registrations = candidates
+    .map(normalizeClientV1DiscoveryRegistration)
+    .filter((registration): registration is ClientV1DiscoveryRegistration => registration !== null);
+  return registrations.length || candidates.length === 0 ? registrations : null;
+}
+
+function isClientV1DiscoveryRegistrationLive(registration: ClientV1DiscoveryRegistration): boolean {
+  if (registration.pid === process.pid) {
+    return (
+      registration.nonce === clientV1DiscoveryNonce &&
+      registration.startIdentity === clientV1DiscoveryStartIdentity
+    );
+  }
+  // The harnesses deliberately omit process.kill. In that environment an
+  // external registration cannot be disproven, so preserve it exactly as a
+  // platform without process inspection would.
+  if (typeof process.kill !== "function") return true;
+  try {
+    process.kill(registration.pid, 0);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+  // A liveness probe alone is not enough after PID reuse. `ps` is optional,
+  // but when both the registration and this platform provide a process-start
+  // identity, a mismatch is definitive and safe to prune.
+  if (registration.startIdentity.startsWith("ps:")) {
+    const actual = clientV1DiscoveryProcessStartIdentity(registration.pid);
+    if (actual && actual !== registration.startIdentity) return false;
+  }
+  return true;
+}
+
+function clientV1DiscoveryRegistrationKey(registration: ClientV1DiscoveryRegistration): string {
+  return `${registration.pid}:${registration.port}:${registration.mode}:${registration.startIdentity}:${registration.nonce}`;
+}
+
+function pruneClientV1DiscoveryRegistrations(
+  registrations: ClientV1DiscoveryRegistration[],
+): ClientV1DiscoveryRegistration[] {
+  const seen = new Set<string>();
+  return registrations.filter((registration) => {
+    const key = clientV1DiscoveryRegistrationKey(registration);
+    if (seen.has(key) || !isClientV1DiscoveryRegistrationLive(registration)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Production is the installed service that legacy discovery was originally
+ * written for, so it wins when both channels are live. Ties are explicit and
+ * stable: port, start time, PID, and nonce. A registry-aware reader can use
+ * the same ordering to select a verified-health registration from the list.
+ */
+function selectClientV1DiscoveryRegistration(
+  registrations: ClientV1DiscoveryRegistration[],
+): ClientV1DiscoveryRegistration | null {
+  return [...registrations].sort((left, right) => {
+    const mode = Number(left.mode !== "production") - Number(right.mode !== "production");
+    if (mode) return mode;
+    const port = left.port - right.port;
+    if (port) return port;
+    const started = left.startedAt.localeCompare(right.startedAt);
+    if (started) return started;
+    const pid = left.pid - right.pid;
+    if (pid) return pid;
+    return left.nonce.localeCompare(right.nonce);
+  })[0] ?? null;
+}
+
+function writeClientV1DiscoveryRegistrationsLocked(
+  file: string,
+  registrations: ClientV1DiscoveryRegistration[],
+  onRenamed?: () => void,
+): void {
+  const selected = selectClientV1DiscoveryRegistration(registrations);
+  if (!selected) {
+    try {
+      unlinkSync(file);
+    } catch {
+      // The record is already absent.
+    }
+    return;
+  }
+  const registry: ClientV1DiscoveryRegistry = {
+    ...selected,
+    registryVersion: 2,
+    registrations,
+  };
+  const tmp = `${file}.${process.pid}.${randomBytes(16).toString("hex")}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(registry, null, 2), { mode: 0o600 });
+    renameSync(tmp, file);
+    onRenamed?.();
+    chmodSync(file, 0o600);
+  } catch (error) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // The rename already consumed the temp path, or its creation failed.
+    }
+    throw error;
+  }
+}
+
+function clientV1DiscoveryOwnRegistration(
+  discoveryHostname: string,
+  discoveryPort: number,
+): ClientV1DiscoveryRegistration {
+  const endpoint = formatDiscoveryEndpoint(discoveryHostname, discoveryPort);
+  return {
+    version: 1,
+    endpoint,
+    pid: process.pid,
+    nonce: clientV1DiscoveryNonce,
+    startedAt: clientV1DiscoveryStartedAt,
+    port: discoveryPort,
+    mode: clientV1DiscoveryMode(),
+    startIdentity: clientV1DiscoveryStartIdentity,
+    healthEndpoint: clientV1DiscoveryHealthEndpoint(endpoint),
+  };
+}
+
+function isClientV1DiscoveryOwnedRegistration(registration: ClientV1DiscoveryRegistration): boolean {
+  return (
+    registration.pid === process.pid &&
+    registration.nonce === clientV1DiscoveryNonce &&
+    registration.startIdentity === clientV1DiscoveryStartIdentity
+  );
+}
+
 function writeClientV1DiscoveryRecord(discoveryHostname: string, discoveryPort: number): void {
   const file = clientV1DiscoveryPath();
+  let renamed = false;
   try {
     withClientV1DiscoveryLock(file, () => {
-      const nonce = randomBytes(16).toString("hex");
-      // Same-directory temp file + rename: rename(2) is atomic on POSIX, so a
-      // concurrent reader (Chat, polling for this file) never observes a
-      // half-written record. The temp name is unique per write (pid + nonce)
-      // so two Cave processes racing to write (serialized by the lock above
-      // for the parts that touch `file` itself, but each still computing its
-      // own temp path) never collide on a shared name.
-      const tmp = `${file}.${process.pid}.${nonce}.tmp`;
-      // Tracks whether the rename below actually completed — i.e. whether
-      // the record at `file` is this process's own publication. Only past
-      // that point is `clientV1DiscoveryNonce` set, and only past that point
-      // does a later failure's cleanup target the FINAL path rather than the
-      // temp one.
-      let published = false;
-      try {
-        const record: ClientV1Discovery = {
-          version: 1,
-          endpoint: formatDiscoveryEndpoint(discoveryHostname, discoveryPort),
-          pid: process.pid,
-          nonce,
-          startedAt: new Date().toISOString(),
-        };
-        writeFileSync(tmp, JSON.stringify(record, null, 2), { mode: 0o600 });
-        renameSync(tmp, file);
-        // Ownership must be recorded THE INSTANT the rename succeeds —
-        // before any later step (chmod) that could itself throw — so that if
-        // such a later step fails, its cleanup path can still prove (and
-        // safely remove) the record this process just published, rather
-        // than leaving an orphaned file that nothing ever considers itself
-        // responsible for.
-        published = true;
-        clientV1DiscoveryNonce = nonce;
-        // Belt-and-suspenders: writeFileSync's `mode` option only applies at
-        // file CREATION. If an older Cave build (or a manual edit) left a
-        // world-readable file at this path, the rename above would inherit
-        // that file's identity but the mode passed to writeFileSync only
-        // governed the temp file, not necessarily the final path pre-rename
-        // on every platform — chmod after the rename makes 0600
-        // unconditional.
-        chmodSync(file, 0o600);
-      } catch (err) {
-        if (!published) {
-          // The rename never completed (or an earlier step — write — failed
-          // first): the only artifact that could exist is our own temp
-          // file, at the exact same-directory path constructed above. Remove
-          // exactly that path and nothing else; the final `file` was never
-          // touched, so it is left exactly as it was found (absent, or a
-          // prior process's still-valid record).
-          try {
-            unlinkSync(tmp);
-          } catch {
-            // Never existed (the write itself failed before creating it) or
-            // already gone — nothing further to clean up.
-          }
-        } else {
-          // The rename succeeded (this nonce is now canonical) but a later
-          // step (chmod) failed AFTER ownership was already recorded.
-          // Removal is a plain read/compare/unlink — no rename-into-
-          // quarantine dance needed — because this call is ALREADY inside
-          // the same lock transaction the writer itself is holding: nothing
-          // else can be racing this exact record right now.
-          clientV1DiscoveryNonce = null;
-          removeClientV1DiscoveryRecordLocked(file, nonce);
-        }
-        throw err;
-      }
+      const current = readClientV1DiscoveryRegistrationsLocked(file) ?? [];
+      const registrations = pruneClientV1DiscoveryRegistrations(current).filter(
+        (registration) => !isClientV1DiscoveryOwnedRegistration(registration),
+      );
+      registrations.push(clientV1DiscoveryOwnRegistration(discoveryHostname, discoveryPort));
+      writeClientV1DiscoveryRegistrationsLocked(file, registrations, () => {
+        renamed = true;
+        clientV1DiscoveryPublished = true;
+      });
     });
   } catch (err) {
-    // Discovery is a convenience for native clients, never a boot
-    // requirement — Cave's own UI never reads this file, so a write failure
-    // (including a failure merely to acquire the lock) must not take the
-    // server down with it.
+    // If chmod failed after rename, this process already owns a registration.
+    // Remove only that entry while still holding the same transaction; all
+    // sibling registrations are re-published and remain discoverable.
+    if (renamed) {
+      try {
+        withClientV1DiscoveryLock(file, () => removeClientV1DiscoveryRecordLocked(file));
+      } catch {
+        // The warning below reports the original publish failure. Never risk
+        // an unlocked cleanup merely because recovery also failed.
+      }
+    }
     console.warn("[client-v1-discovery] failed to write discovery record", err);
   }
 }
 
-/**
- * Reads whatever currently sits at `file` and removes it ONLY if its nonce
- * still matches `ownNonce`. Must only ever be called while this exact
- * record's discovery lock is already held — either by an already-open
- * publish transaction cleaning up after its own late failure (see above), or
- * by `removeClientV1DiscoveryRecordIfOwned` below, which acquires the lock
- * fresh before calling this. The lock is what makes this plain
- * read/compare/unlink race-free: no other process can publish or clean up
- * the SAME record while it's held, closing the compare-then-unlink TOCTOU
- * window without any rename-into-quarantine dance. Missing, corrupt,
- * otherwise-unreadable content, or a mismatched nonce (a successor already
- * published its own record here) all preserve whatever is on disk rather
- * than guessing.
- */
-function removeClientV1DiscoveryRecordLocked(file: string, ownNonce: string): void {
-  let current: Partial<ClientV1Discovery> | null = null;
-  try {
-    current = JSON.parse(readFileSync(file, "utf8")) as Partial<ClientV1Discovery>;
-  } catch {
-    // Missing (already gone), corrupt, or otherwise unreadable — ownership
-    // can never be proven, so nothing here is touched.
-    return;
-  }
-  if (current.nonce !== ownNonce) {
-    // A successor process already published its own record at this path —
-    // it must never be removed.
-    return;
-  }
-  try {
-    unlinkSync(file);
-  } catch {
-    // Already gone — nothing further to clean up.
-  }
+/** Removes only this process's entry, then atomically republishes another live entry. */
+function removeClientV1DiscoveryRecordLocked(file: string): void {
+  const current = readClientV1DiscoveryRegistrationsLocked(file);
+  if (!current) return;
+  const hasOwnRegistration = current.some(isClientV1DiscoveryOwnedRegistration);
+  if (!hasOwnRegistration) return;
+  const remaining = pruneClientV1DiscoveryRegistrations(current).filter(
+    (registration) => !isClientV1DiscoveryOwnedRegistration(registration),
+  );
+  writeClientV1DiscoveryRegistrationsLocked(file, remaining);
 }
 
-/** Deletes the discovery record, but ONLY if the on-disk nonce still belongs to this process. */
 function removeClientV1DiscoveryRecordIfOwned(): void {
-  if (!clientV1DiscoveryNonce) return;
-  const ownNonce = clientV1DiscoveryNonce;
-  clientV1DiscoveryNonce = null;
+  if (!clientV1DiscoveryPublished) return;
   const file = clientV1DiscoveryPath();
   try {
     withClientV1DiscoveryLock(file, () => {
-      removeClientV1DiscoveryRecordLocked(file, ownNonce);
+      removeClientV1DiscoveryRecordLocked(file);
+      clientV1DiscoveryPublished = false;
     });
   } catch (err) {
-    // Lock acquisition failure fails safe: the canonical record is left
-    // exactly as it was found rather than risking an unserialized
-    // read/compare/unlink against a concurrent publish or cleanup.
     console.warn("[client-v1-discovery] failed to acquire discovery lock during cleanup", err);
   }
 }
