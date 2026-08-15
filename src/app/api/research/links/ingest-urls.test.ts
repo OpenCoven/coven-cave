@@ -28,10 +28,9 @@ test("explicit urls array is honoured alongside text", () => {
   assert.ok(urls.includes("https://example.com/b"));
 });
 
-test("an unrelated arXiv URL is kept when no command references it", () => {
+test("a raw arXiv URL with no command is rewritten to the canonical HF URL", () => {
   const urls = collectIngestUrls({ text: "https://arxiv.org/abs/2401.12345" });
-  assert.equal(urls.length, 1);
-  assert.ok(urls[0].includes("2401.12345"));
+  assert.deepEqual(urls, ["https://huggingface.co/papers/2401.12345"]);
 });
 
 test("non-string junk is ignored", () => {
