@@ -679,6 +679,10 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
       if (!authorized.ok || authorized.value.kind === "not_found") {
         return clientV1Error(404, "not_found", "Conversation not found.", false);
       }
+      // Production authorization always returns the fenced generation. The
+      // fallback preserves the narrow dependency-injected unit-test contract;
+      // real client-v1 launches never rely on it.
+      const deletionGeneration = authorized.deletionGeneration ?? 0;
 
       const requestHash = hashNormalizedRequest(input);
       let claim: ClaimOperationResult;
@@ -708,6 +712,7 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
             credentialId: principal.credentialId,
             requestHash,
             conversationId: input.conversationId,
+            deletionGeneration,
             internalRunId: randomUUID(),
           });
           if (reservation.kind === "conflict") return claimFailure("conflict");
@@ -809,6 +814,7 @@ export function createClientRunService(overrides: Partial<ClientRunServiceDeps> 
               projectRoot: authorized.value.projectRoot,
               sessionId: input.conversationId,
               runId: record.internalRunId,
+              conversationDeletionGeneration: record.deletionGeneration ?? deletionGeneration,
               ...(input.model
                 ? { modelOverride: input.model, modelOverrideScope: "next-message" }
                 : {}),

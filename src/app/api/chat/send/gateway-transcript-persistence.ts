@@ -35,6 +35,11 @@ export async function settleGatewayInitialStub(
 export async function persistGatewayTranscript<Result>(args: {
   sessionId: string;
   initialStubState: GatewayInitialStubState;
+  /**
+   * client-v1 records this while authorization owns the conversation fence.
+   * Legacy chat omits it and retains its established missing-stub recovery.
+   */
+  expectedDeletionGeneration?: number;
   deps: GatewayTranscriptPersistenceDeps;
   createAfterInitialStubFailure: () => ConversationFile;
   complete: (
@@ -43,6 +48,13 @@ export async function persistGatewayTranscript<Result>(args: {
   ) => Promise<Result> | Result;
 }): Promise<Result> {
   return args.deps.withConversationLock(args.sessionId, async () => {
+    const deletionGeneration = await args.deps.getDeletionGeneration(args.sessionId);
+    if (
+      args.expectedDeletionGeneration !== undefined
+      && deletionGeneration !== args.expectedDeletionGeneration
+    ) {
+      throw new Error("conversation deleted before Gateway transcript save");
+    }
     const existing = await args.deps.loadConversation(args.sessionId);
     const createdAfterInitialStubFailure = existing == null;
     if (
@@ -58,6 +70,14 @@ export async function persistGatewayTranscript<Result>(args: {
 
     const conversation = existing ?? args.createAfterInitialStubFailure();
     const result = await args.complete(conversation, { createdAfterInitialStubFailure });
+    // This is immediately before this helper's only save. The enclosing
+    // conversation fence serializes DELETE in-process and cross-process.
+    if (
+      args.expectedDeletionGeneration !== undefined
+      && args.expectedDeletionGeneration !== await args.deps.getDeletionGeneration(args.sessionId)
+    ) {
+      throw new Error("conversation deleted before Gateway transcript save");
+    }
     await args.deps.saveConversation(conversation);
     return result;
   });

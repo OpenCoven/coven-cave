@@ -76,10 +76,12 @@ async function gatewayCompletion(
     kind: "already-existed",
     deletionGeneration: 0,
   },
+  expectedDeletionGeneration?: number,
 ): Promise<boolean> {
   return persistGatewayTranscript({
     sessionId: id,
     initialStubState,
+    expectedDeletionGeneration,
     deps: {
       loadConversation,
       saveConversation,
@@ -120,11 +122,70 @@ test("Gateway persists a completed transcript after an initial stub write failur
   );
 
   assert.equal(initialStubState.kind, "failed-before-exists");
-  assert.equal(await gatewayCompletion(id, initialStubState), true);
+  assert.equal(await gatewayCompletion(id, initialStubState, initialGeneration), true);
   assert.deepEqual(
     (await loadConversation(id))?.turns.map((turn) => turn.text),
     ["Gateway prompt", "Gateway reply"],
   );
+});
+
+test("Gateway refuses the client-v1 generation after DELETE wins between authorization and stub creation", async () => {
+  const id = "gateway-client-v1-delete-before-stub";
+  const authorizedGeneration = await getSessionDeletionGeneration(id);
+  const deleted = await DELETE(
+    new Request(`http://test/api/chat/conversation/${id}`, { method: "DELETE" }),
+    { params: Promise.resolve({ id }) },
+  );
+  assert.equal(deleted.status, 200);
+
+  await assert.rejects(
+    createConversationStub(
+      {
+        sessionId: id,
+        familiarId: "wren",
+        harness: "openclaw",
+        runtime: `local:${home}`,
+        userTurn: { id: "client-v1-user", text: "must not resurrect" },
+      },
+      async () => {
+        if (await getSessionDeletionGeneration(id) !== authorizedGeneration) {
+          throw new Error("conversation deleted before transcript save");
+        }
+      },
+    ),
+    /conversation deleted before transcript save/,
+  );
+  assert.equal(await loadConversation(id), null);
+});
+
+test("Gateway checks the client-v1 deletion generation again immediately before final save", async () => {
+  const id = "gateway-client-v1-delete-before-final-save";
+  await seed(id);
+  let reads = 0;
+  let saves = 0;
+
+  await assert.rejects(
+    persistGatewayTranscript({
+      sessionId: id,
+      initialStubState: { kind: "already-existed", deletionGeneration: 0 },
+      expectedDeletionGeneration: 0,
+      deps: {
+        loadConversation,
+        saveConversation: async () => {
+          saves += 1;
+        },
+        withConversationLock,
+        getDeletionGeneration: async () => {
+          reads += 1;
+          return reads === 1 ? 0 : 1;
+        },
+      },
+      createAfterInitialStubFailure: () => emptyGatewayConversation(id),
+      complete: () => true,
+    }),
+    /conversation deleted before Gateway transcript save/,
+  );
+  assert.equal(saves, 0, "a deletion just before save cannot recreate or overwrite the conversation");
 });
 
 test("Gateway refuses recovery when DELETE sacrifices a missing conversation after its stub fails", async () => {
@@ -354,12 +415,12 @@ test("production OpenClaw Gateway persistence tracks stub failure separately fro
   assert.match(branch, /const initialStubState = settleGatewayInitialStub\(\s*createConversationStub\(/);
   assert.match(
     branch,
-    /createConversationStub\(\{[\s\S]*?\}, async \(\) => \{\s*initialDeletionGeneration = await getSessionDeletionGeneration\(conversationId\);[\s\S]*?\}\)\.then\([\s\S]*?\),\s*\(\) => initialDeletionGeneration,/,
-    "the initial stub captures the durable deletion generation while holding its conversation lock",
+    /createConversationStub\(\{[\s\S]*?\}, async \(\) => \{\s*await assertConversationDeletionGeneration\(\s*conversationId,\s*expectedDeletionGeneration,\s*\);\s*initialDeletionGeneration = await getSessionDeletionGeneration\(conversationId\);[\s\S]*?\}\)\.then\([\s\S]*?\),\s*\(\) => initialDeletionGeneration,/,
+    "the initial stub validates the client-v1 generation and captures the durable deletion generation while holding its conversation lock",
   );
   assert.match(
     branch,
-    /persistGatewayTranscript\(\{[\s\S]*?initialStubState: await initialStubState,[\s\S]*?getDeletionGeneration: getSessionDeletionGeneration/,
+    /persistGatewayTranscript\(\{[\s\S]*?initialStubState: await initialStubState,[\s\S]*?expectedDeletionGeneration,[\s\S]*?getDeletionGeneration: getSessionDeletionGeneration/,
   );
   assert.match(
     helperSource,

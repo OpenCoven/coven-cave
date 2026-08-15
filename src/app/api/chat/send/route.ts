@@ -166,7 +166,6 @@ import {
 import {
   canonicalizeAndRecordRunStreamEvent,
   openRunBuffer,
-  type RunBufferHandle,
 } from "@/lib/server/chat-stream-buffer";
 import { wireRunDetachCleanup } from "@/lib/server/chat-detach-cleanup";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
@@ -439,6 +438,12 @@ type SendBody = {
   /** Provenance for a brand-new conversation (e.g. "eval"). Stamped on the
    *  conversation file once, when it's first created. */
   origin?: SessionOrigin;
+  /**
+   * Internal client-v1 deletion fence, captured while authorization holds the
+   * conversation lock. A value supplied outside that facade can only make the
+   * caller's own transcript persistence fail closed; it grants no authority.
+   */
+  conversationDeletionGeneration?: number;
 };
 
 type OfflineChatQueuePayload = Pick<
@@ -451,6 +456,7 @@ type OfflineChatQueuePayload = Pick<
   | "reasoningEffort"
   | "responseSpeed"
   | "modelControls"
+  | "conversationDeletionGeneration"
   | "mentionedFiles"
   | "mentionedFilesRoot"
   | "parentTurnId"
@@ -462,6 +468,23 @@ type OfflineChatQueuePayload = Pick<
   attachments: ChatAttachment[];
   responseMetadata: ChatResponseMetadata;
 };
+
+function expectedConversationDeletionGeneration(body: SendBody): number | undefined {
+  const generation = body.conversationDeletionGeneration;
+  return typeof generation === "number" && Number.isSafeInteger(generation) && generation >= 0
+    ? generation
+    : undefined;
+}
+
+async function assertConversationDeletionGeneration(
+  sessionId: string,
+  expectedGeneration: number | undefined,
+): Promise<void> {
+  if (expectedGeneration === undefined) return;
+  if (await getSessionDeletionGeneration(sessionId) !== expectedGeneration) {
+    throw new Error("conversation deleted before transcript save");
+  }
+}
 
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
@@ -649,6 +672,7 @@ async function maybeQueueOfflineChat(args: {
     reasoningEffort: args.body.reasoningEffort,
     responseSpeed: args.body.responseSpeed,
     modelControls: args.body.modelControls,
+    conversationDeletionGeneration: expectedConversationDeletionGeneration(args.body),
     attachments: args.persistedAttachments,
     mentionedFiles: args.body.mentionedFiles,
     mentionedFilesRoot: args.body.mentionedFilesRoot,
@@ -682,7 +706,10 @@ async function maybeQueueOfflineChat(args: {
       ...persistedTurnControls(args.body, args.responseMetadata.retryModel),
       ...(args.body.parentTurnId !== undefined ? { parentId: args.body.parentTurnId } : {}),
     },
-  });
+  }, () => assertConversationDeletionGeneration(
+    sessionId,
+    expectedConversationDeletionGeneration(args.body),
+  ));
 
   const runBuffer = openRunBuffer([args.body.runId, sessionId]);
   const stream = new ReadableStream<Uint8Array>({
@@ -732,6 +759,7 @@ function openClawChatResponse(args: {
   initialModelIntent: string | null;
   ownsFirstExchangeTitle: boolean;
 }): Response {
+  const expectedDeletionGeneration = expectedConversationDeletionGeneration(args.body);
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       let closed = false;
@@ -1084,6 +1112,10 @@ function openClawChatResponse(args: {
               ...persistedTurnControls(args.body, responseMetadata.retryModel),
             },
           }, async () => {
+            await assertConversationDeletionGeneration(
+              conversationId,
+              expectedDeletionGeneration,
+            );
             initialDeletionGeneration = await getSessionDeletionGeneration(conversationId);
           }).then(async (created) => {
             if (created && ownsFirstExchangeTitle) {
@@ -1142,10 +1174,10 @@ function openClawChatResponse(args: {
         if (!gatewayAssistantTextEmitted) push({ kind: "assistant_chunk", text: gatewayAssistantText });
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
-          await recordSessionFamiliar(conversationId, args.body.familiarId);
           const isFirstExchange = await persistGatewayTranscript({
             sessionId: conversationId,
             initialStubState: await initialStubState,
+            expectedDeletionGeneration,
             deps: {
               loadConversation,
               saveConversation,
@@ -1169,6 +1201,7 @@ function openClawChatResponse(args: {
               };
             },
             complete: async (conv, { createdAfterInitialStubFailure }) => {
+              await recordSessionFamiliar(conversationId, args.body.familiarId);
               const hadFirstTurnStub = stripConversationStubTurn(conv, pendingUserTurnId);
               const firstExchange =
                 ownsFirstExchangeTitle && (createdAfterInitialStubFailure || hadFirstTurnStub);
@@ -1351,7 +1384,10 @@ function openClawChatResponse(args: {
           ...attentionClearOperationForTurn(args.body.runId),
           ...persistedTurnControls(args.body, responseMetadata.retryModel),
         },
-      }).then(async (created) => {
+      }, () => assertConversationDeletionGeneration(
+        conversationId,
+        expectedDeletionGeneration,
+      )).then(async (created) => {
         if (created && ownsFirstExchangeTitle) {
           await setDefaultStubTitleAuto(conversationId, stubTitle);
         }
@@ -1497,11 +1533,15 @@ function openClawChatResponse(args: {
         if (sessionId) {
           try {
             pushProgress("save-transcript", "Saving transcript", "running");
-            await recordSessionFamiliar(sessionId, args.body.familiarId);
             // Settle the spawn-time stub write first so it can never race (and
             // clobber) the authoritative transcript saved below.
             await stubWrite;
             const isFirstExchange = await withConversationLock(sessionId, async () => {
+              await assertConversationDeletionGeneration(
+                sessionId,
+                expectedDeletionGeneration,
+              );
+              await recordSessionFamiliar(sessionId, args.body.familiarId);
               const existing = await loadConversation(sessionId);
               // First-turn visibility (cave-0g2x): drop the spawn-time stub turn
               // so the authoritative user turn below re-lands under the same id.
@@ -1580,6 +1620,10 @@ function openClawChatResponse(args: {
                 },
               );
               conv.activeLeafId = assistantTurnId;
+              await assertConversationDeletionGeneration(
+                sessionId,
+                expectedDeletionGeneration,
+              );
               await saveConversation(conv);
               return firstExchange;
             });
@@ -3080,6 +3124,12 @@ export async function executeChatSend(req: Request) {
   // before the child-run registry is installed. Keep this binding available
   // to `announceSession` without putting it in the temporal dead zone.
   let runHandle!: ChatRunHandle;
+  // The direct harness emits the initial user event and can synchronously
+  // surface startup failures before its child registration exists. Establish
+  // one canonical history before either can happen, then add a newly-minted
+  // conversation id when announceSession resolves it.
+  const runBuffer = openRunBuffer([body.runId, body.sessionId]);
+  const expectedDeletionGeneration = expectedConversationDeletionGeneration(body);
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       let closed = false;
@@ -3098,7 +3148,6 @@ export async function executeChatSend(req: Request) {
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
         }
       };
-      let runBuffer: RunBufferHandle | null = null;
       let disposeDetachCleanup: (() => void) | null = null;
       // Compatibility notices are deliberately value-free and must survive
       // transcript reloads; the live SSE buffer alone expires after two
@@ -3516,6 +3565,7 @@ export async function executeChatSend(req: Request) {
         const announcedId = body.sessionId && !openCodeUnrecordedResume
           ? body.sessionId
           : sessionId;
+        runBuffer.addKeys([announcedId]);
         // A new chat registered with only the client runId (body.sessionId is
         // null until the harness mints the id) — late-key the run so
         // /api/chat/stop and the sessions-list liveness probe reach it by
@@ -3546,7 +3596,10 @@ export async function executeChatSend(req: Request) {
             ...attentionClearOperationForTurn(body.runId),
             ...persistedTurnControls(body, responseMetadata.retryModel),
           },
-        }).then(async (created) => {
+        }, () => assertConversationDeletionGeneration(
+          announcedId,
+          expectedDeletionGeneration,
+        )).then(async (created) => {
           if (created && ownsFirstExchangeTitle) {
             await setDefaultStubTitleAuto(
               announcedId,
@@ -4445,7 +4498,7 @@ export async function executeChatSend(req: Request) {
         [body.runId, body.sessionId, sessionId],
         killCurrentChild,
       );
-      runBuffer = openRunBuffer([body.runId, body.sessionId]);
+      runBuffer.addKeys([body.runId, body.sessionId, sessionId]);
       disposeDetachCleanup = wireRunDetachCleanup({
         runBuffer,
         signal: req.signal,
@@ -5665,12 +5718,16 @@ export async function executeChatSend(req: Request) {
       if (finalSessionId && (!launchFailure || persistCovenProcessFailure)) {
         try {
           pushProgress("save-transcript", "Saving transcript", "running");
-          await recordSessionFamiliar(finalSessionId, body.familiarId);
           // Settle any in-flight stub write first so it can never race (and
           // clobber) the authoritative transcript saved below.
           if (stubWrite) await stubWrite;
 
           const isFirstExchange = await withConversationLock(finalSessionId, async () => {
+            await assertConversationDeletionGeneration(
+              finalSessionId,
+              expectedDeletionGeneration,
+            );
+            await recordSessionFamiliar(finalSessionId, body.familiarId);
             const existing = await loadConversation(finalSessionId);
             // First-turn visibility (cave-0g2x): drop the announce-time stub turn
             // so the authoritative user turn below re-lands under the same id.
@@ -5786,6 +5843,10 @@ export async function executeChatSend(req: Request) {
           }
           conv.turns.push(userTurn, assistantTurn);
           conv.activeLeafId = assistantTurnId;
+          await assertConversationDeletionGeneration(
+            finalSessionId,
+            expectedDeletionGeneration,
+          );
           await saveConversation(conv);
             return firstExchange;
           });
@@ -5820,7 +5881,7 @@ export async function executeChatSend(req: Request) {
       cleanupStagedImageFiles(imageFilePaths);
       disposeDetachCleanup?.();
       unregisterChatRun(runHandle);
-      runBuffer?.finish();
+      runBuffer.finish();
       await sleep(20);
       close();
     },

@@ -168,6 +168,24 @@ test("live and replay sequences are identical at the canonical event-size bounda
   resetRunBuffersForTest();
 });
 
+test("an initial user event has the same canonical id and payload live and on replay", async () => {
+  resetRunBuffersForTest();
+  const user = { kind: "user", text: "first direct-harness prompt" } as const;
+  const { live, replay } = await liveAndReplayFrames("run-initial-user", [
+    user,
+    { kind: "done", isError: false },
+  ]);
+  const expected = [
+    { id: 1, payload: user },
+    { id: 2, payload: { kind: "done", isError: false } },
+  ];
+
+  assert.deepEqual(live, expected, "the initial live user frame carries its canonical SSE id");
+  assert.deepEqual(replay, expected, "the resumed frame preserves the canonical id and payload");
+  assert.deepEqual(live, replay);
+  resetRunBuffersForTest();
+});
+
 test("an oversized canonical terminal is the complete identical live and replay sequence", async () => {
   resetRunBuffersForTest();
   const oversized = {
@@ -223,6 +241,17 @@ test("send route tees both harness stream paths through the run buffer", () => {
   assert.equal(opens?.length, 3, "OpenClaw opens one canonical buffer before Gateway callbacks and reuses it for CLI fallback");
   const finishes = send.match(/runBuffer(?:\?\.)?\.finish\(\)/g);
   assert.ok((finishes?.length ?? 0) >= 3, "every stream exit (error + close paths) finishes the buffer");
+});
+
+test("direct harness opens its canonical history before its initial user event", () => {
+  const directBuffer = send.indexOf("const runBuffer = openRunBuffer([body.runId, body.sessionId]);");
+  const directStream = send.indexOf("const stream = new ReadableStream<Uint8Array>({", directBuffer);
+  const initialUser = send.indexOf('push({ kind: "user", text: promptText });', directStream);
+  const lateOpen = send.indexOf("runBuffer = openRunBuffer", directStream);
+
+  assert.ok(directBuffer >= 0 && directBuffer < directStream);
+  assert.ok(directStream < initialUser, "the direct initial user must be recorded by the canonical buffer");
+  assert.equal(lateOpen, -1, "the direct harness never replaces its canonical buffer after emitting");
 });
 
 test("native child detach cleanup reconciles pre-abort, reattach, and completion through real buffer hooks", (t) => {

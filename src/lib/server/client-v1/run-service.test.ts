@@ -89,12 +89,14 @@ function createRunOperationDeps() {
       credentialId,
       requestHash,
       conversationId,
+      deletionGeneration,
       internalRunId,
     }: {
       operationId: string;
       credentialId: string;
       requestHash: string;
       conversationId: string;
+      deletionGeneration: number;
       internalRunId: string;
       now?: number;
     }) => {
@@ -112,6 +114,7 @@ function createRunOperationDeps() {
         credentialId,
         requestHash,
         conversationId,
+        deletionGeneration,
         internalRunId,
         state: "reserved",
         createdAt: 0,
@@ -273,6 +276,7 @@ test("run reservation happens before launch and the durable replay receipt lands
     projectRoot: "/work/project",
     sessionId: "conversation-safe",
     runId: "<internal>",
+    conversationDeletionGeneration: 0,
   });
   assert.equal(typeof sent.runId, "string");
   assert.notEqual(sent.runId, operationId, "the global registry never receives the caller operation UUID");
@@ -281,6 +285,43 @@ test("run reservation happens before launch and the durable replay receipt lands
   assert.match(text, /"type":"run.started"/);
   assert.match(text, /"type":"message.delta"/);
   assert.match(text, /"type":"run.completed"/);
+});
+
+test("client-v1 durably carries its authorized deletion generation into the canonical send", async () => {
+  let mapped: Record<string, unknown> | null = null;
+  const { service, runOps } = createService({
+    authorizeConversation: async (_id, effect) => ({
+      ok: true,
+      value: await effect(conversation),
+      deletionGeneration: 17,
+    }),
+    claimOperation: async () => ({
+      kind: "claimed",
+      claimId: "890437e7-7b87-4af9-a6ce-28931d778f80",
+    }),
+    completeOperation: async (_claim, response) => ({ kind: "completed", response }),
+    resolveAttachments: async () => [],
+    executeChatSend: async (request) => {
+      mapped = await request.json() as Record<string, unknown>;
+      return new Response(
+        `id: 1\ndata: ${JSON.stringify({ kind: "done", isError: false })}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+
+  const response = await service.send(input, principal);
+  assert.equal(response.status, 200);
+  assert.equal(
+    runOps.records.get(`${credentialId.toLowerCase()}:${operationId.toLowerCase()}`)?.deletionGeneration,
+    17,
+    "the reservation survives the authorization lock release with its deletion generation",
+  );
+  assert.equal(
+    (mapped as Record<string, unknown> | null)?.conversationDeletionGeneration,
+    17,
+    "the direct-harness request validates the same durable generation before transcript writes",
+  );
 });
 
 test("a retryable non-SSE launch failure reverts to reserved and the same operation id succeeds", async () => {

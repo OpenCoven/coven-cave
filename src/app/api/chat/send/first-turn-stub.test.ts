@@ -23,7 +23,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /stubWrite = createConversationStub\(\{\s*sessionId: announcedId,[\s\S]*?\}\)\.catch\(\(\) => undefined\);\s*push\(\{ kind: "session", sessionId: announcedId \}\);/,
+  /stubWrite = createConversationStub\(\{\s*sessionId: announcedId,[\s\S]*?\}, \(\) => assertConversationDeletionGeneration\([\s\S]*?announcedId,[\s\S]*?expectedDeletionGeneration,[\s\S]*?\)\)\.then[\s\S]*?\.catch\(\(\) => undefined\);\s*push\(\{ kind: "session", sessionId: announcedId \}\);/,
   "announceSession must start the stub write before pushing the session frame, keyed to the stable announced id",
 );
 
@@ -41,7 +41,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(stubWrite\) await stubWrite;\s*const isFirstExchange = await withConversationLock\(finalSessionId, async \(\) => \{\s*const existing = await loadConversation\(finalSessionId\);/,
+  /if \(stubWrite\) await stubWrite;\s*const isFirstExchange = await withConversationLock\(finalSessionId, async \(\) => \{\s*await assertConversationDeletionGeneration\(\s*finalSessionId,\s*expectedDeletionGeneration,\s*\);\s*await recordSessionFamiliar\(finalSessionId, body\.familiarId\);\s*const existing = await loadConversation\(finalSessionId\);/,
   "the coven-run save must settle the stub write and lock before loading, so a stub or model PATCH can never lose an authoritative update",
 );
 assert.match(
@@ -69,7 +69,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /createConversationStub\(\{[\s\S]*?sessionId: announcedId,[\s\S]*?\}\)\.then\(async \(created\) => \{\s*if \(created && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\([\s\S]*?\);\s*\}\s*return created;\s*\}\)\.catch/,
+  /createConversationStub\(\{[\s\S]*?sessionId: announcedId,[\s\S]*?\}, \(\) => assertConversationDeletionGeneration\([\s\S]*?expectedDeletionGeneration,[\s\S]*?\)\)\.then\(async \(created\) => \{\s*if \(created && ownsFirstExchangeTitle\) \{\s*await setDefaultStubTitleAuto\([\s\S]*?\);\s*\}\s*return created;\s*\}\)\.catch/,
   "generic stub title initialization runs only when this request owns the first exchange",
 );
 
@@ -101,7 +101,7 @@ assert.match(
 
 const openClawStubWrites = [
   ...chatRoute.matchAll(
-    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => false\);/g,
+    /const stubWrite = createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}, \(\) => assertConversationDeletionGeneration\([\s\S]*?expectedDeletionGeneration,[\s\S]*?\)\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\)\.catch\(\(\) => false\);/g,
   ),
 ];
 assert.equal(
@@ -111,7 +111,7 @@ assert.equal(
 );
 assert.match(
   chatRoute,
-  /const initialStubState = settleGatewayInitialStub\(\s*createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\),\s*\);/,
+  /const initialStubState = settleGatewayInitialStub\(\s*createConversationStub\(\{[\s\S]*?harness: "openclaw",[\s\S]*?\}, async \(\) => \{[\s\S]*?assertConversationDeletionGeneration\([\s\S]*?expectedDeletionGeneration,[\s\S]*?\}\)\.then\(async \(created\) => \{[\s\S]*?if \(created && ownsFirstExchangeTitle\) \{[\s\S]*?await setDefaultStubTitleAuto\(conversationId, stubTitle\);[\s\S]*?\}[\s\S]*?return created;[\s\S]*?\}\),\s*\);/,
   "the Gateway transport initializes title ownership while preserving a distinct stub persistence outcome",
 );
 assert.match(
@@ -141,7 +141,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /await stubWrite;\s*const isFirstExchange = await withConversationLock\(sessionId, async \(\) => \{\s*const existing = await loadConversation\(sessionId\);/,
+  /await stubWrite;\s*const isFirstExchange = await withConversationLock\(sessionId, async \(\) => \{\s*await assertConversationDeletionGeneration\(\s*sessionId,\s*expectedDeletionGeneration,\s*\);\s*await recordSessionFamiliar\(sessionId, args\.body\.familiarId\);\s*const existing = await loadConversation\(sessionId\);/,
   "the OpenClaw close handler must settle the stub write and lock before loading the conversation",
 );
 assert.match(

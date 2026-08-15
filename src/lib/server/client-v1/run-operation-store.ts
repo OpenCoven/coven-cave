@@ -34,6 +34,12 @@ export type ClientRunOperationRecord = {
   credentialId: string;
   requestHash: string;
   conversationId: string;
+  /**
+   * The conversation's durable deletion generation while client-v1
+   * authorization held its conversation fence. Older records omit it; a
+   * still-reserved legacy record is upgraded before it can launch.
+   */
+  deletionGeneration?: number;
   internalRunId: string;
   state: ClientRunOperationState;
   createdAt: number;
@@ -183,6 +189,12 @@ function validateConversationId(conversationId: string): void {
   }
 }
 
+function validateDeletionGeneration(deletionGeneration: number): void {
+  if (!Number.isSafeInteger(deletionGeneration) || deletionGeneration < 0) {
+    throw new Error("Invalid client run deletion generation.");
+  }
+}
+
 function readInt(record: Record<string, unknown>, key: string): number | null {
   const value = record[key];
   return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : null;
@@ -227,6 +239,9 @@ function parseRecord(value: unknown): ClientRunOperationRecord | null {
   const credentialId = typeof record.credentialId === "string" ? record.credentialId : null;
   const requestHash = typeof record.requestHash === "string" ? record.requestHash : null;
   const conversationId = typeof record.conversationId === "string" ? record.conversationId : null;
+  const deletionGeneration = record.deletionGeneration === undefined
+    ? undefined
+    : readInt(record, "deletionGeneration");
   const internalRunId = typeof record.internalRunId === "string" ? record.internalRunId : null;
   const createdAt = readInt(record, "createdAt");
   const updatedAt = readInt(record, "updatedAt");
@@ -255,12 +270,16 @@ function parseRecord(value: unknown): ClientRunOperationRecord | null {
     || !isUuid(internalRunId)
     || !REQUEST_HASH_RE.test(requestHash)
     || !isSafeConversationSessionId(conversationId)
+    || (record.deletionGeneration !== undefined && deletionGeneration === null)
     || updatedAt < createdAt
     || (record.state === "terminal" && !terminalResponse)
     || (record.state !== "terminal" && record.terminalResponse !== undefined)
   ) {
     return null;
   }
+  const normalizedDeletionGeneration = deletionGeneration === null
+    ? undefined
+    : deletionGeneration;
   if (
     (record.state === "reserved" && expiresAt !== updatedAt + PENDING_CLAIM_RETRY_MS)
     || (record.state !== "reserved" && expiresAt !== updatedAt + COMPLETED_OPERATION_TTL_MS)
@@ -273,6 +292,9 @@ function parseRecord(value: unknown): ClientRunOperationRecord | null {
     credentialId: credentialId.toLowerCase(),
     requestHash: requestHash.toLowerCase(),
     conversationId,
+    ...(normalizedDeletionGeneration !== undefined
+      ? { deletionGeneration: normalizedDeletionGeneration }
+      : {}),
     internalRunId: internalRunId.toLowerCase(),
     state: record.state,
     createdAt,
@@ -699,6 +721,7 @@ export async function reserveClientRunOperation(args: {
   credentialId: string;
   requestHash: string;
   conversationId: string;
+  deletionGeneration: number;
   internalRunId: string;
   now?: number;
 }): Promise<ReserveClientRunOperationResult> {
@@ -708,6 +731,7 @@ export async function reserveClientRunOperation(args: {
   }
   validateRequestHash(args.requestHash);
   validateConversationId(args.conversationId);
+  validateDeletionGeneration(args.deletionGeneration);
   const now = args.now ?? Date.now();
   const storePath = clientRunOperationStorePath(args.operationId, args.credentialId);
   const locks = await acquireRunOperationLocks(storePath, now);
@@ -720,6 +744,7 @@ export async function reserveClientRunOperation(args: {
         credentialId: args.credentialId.toLowerCase(),
         requestHash: args.requestHash.toLowerCase(),
         conversationId: args.conversationId,
+        deletionGeneration: args.deletionGeneration,
         internalRunId: args.internalRunId.toLowerCase(),
         state: "reserved",
         createdAt: now,
@@ -732,8 +757,20 @@ export async function reserveClientRunOperation(args: {
     if (
       existing.requestHash !== args.requestHash.toLowerCase()
       || existing.conversationId !== args.conversationId
+      || (
+        existing.deletionGeneration !== undefined
+        && existing.deletionGeneration !== args.deletionGeneration
+      )
     ) {
       return { kind: "conflict" };
+    }
+    if (existing.deletionGeneration === undefined && existing.state === "reserved") {
+      const upgraded: ClientRunOperationRecord = {
+        ...existing,
+        deletionGeneration: args.deletionGeneration,
+      };
+      await writeRecord(storePath, upgraded);
+      return { kind: "reserved", record: upgraded };
     }
     return { kind: "reserved", record: existing };
   } finally {

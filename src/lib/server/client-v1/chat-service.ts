@@ -60,6 +60,7 @@ import crypto from "node:crypto";
 
 import {
   applySessionMetadataWithCheckpoint,
+  getSessionDeletionGeneration,
   loadState,
   sacrificeSessionLocal,
   withFamiliarLifecycleGuard,
@@ -773,7 +774,7 @@ export type DeleteConversationResult =
   | ChatServiceErrorResult;
 
 export type AuthorizedClientConversationResult<T> =
-  | { ok: true; value: T }
+  | { ok: true; value: T; deletionGeneration?: number }
   | ChatServiceErrorResult;
 
 /**
@@ -800,7 +801,15 @@ export async function withAuthorizedClientConversation<T>(
           conversation,
         );
         if (!authorized.ok) return authorized;
-        return { ok: true as const, value: await effect(conversation) };
+        // This read is deliberately inside the same cross-process conversation
+        // fence as authorization. Client-v1 carries it through reservation
+        // and launch so a later DELETE cannot be undone by transcript writes.
+        const deletionGeneration = await getSessionDeletionGeneration(sessionId);
+        return {
+          ok: true as const,
+          value: await effect(conversation),
+          deletionGeneration,
+        };
       }),
     );
   });

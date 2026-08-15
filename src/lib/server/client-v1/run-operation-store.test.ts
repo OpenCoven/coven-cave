@@ -48,6 +48,7 @@ async function reserve(now = 1_000) {
     credentialId,
     requestHash,
     conversationId: "conversation-safe",
+    deletionGeneration: 0,
     internalRunId,
     now,
   });
@@ -65,12 +66,27 @@ async function reserveOperation(
     credentialId: credential,
     requestHash,
     conversationId: "conversation-safe",
+    deletionGeneration: 0,
     internalRunId,
     now,
   });
   assert.equal(result.kind, "reserved");
   return result.record;
 }
+
+test("a reservation refuses a conversation whose deletion generation changed after authorization", async () => {
+  await reserve();
+  const replayAfterDelete = await reserveClientRunOperation({
+    operationId,
+    credentialId,
+    requestHash,
+    conversationId: "conversation-safe",
+    deletionGeneration: 1,
+    internalRunId,
+    now: 1_001,
+  });
+  assert.deepEqual(replayAfterDelete, { kind: "conflict" });
+});
 
 function operationIdAt(index: number): string {
   return `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;

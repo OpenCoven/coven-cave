@@ -744,6 +744,7 @@ export async function createConversationStub(
 
 export async function persistQueuedOfflineConversation(
   seed: QueuedOfflineConversationSeed,
+  beforeSave?: () => Promise<void> | void,
 ): Promise<void> {
   await withConversationLock(seed.sessionId, async () => {
     const existing = await loadConversation(seed.sessionId);
@@ -801,6 +802,7 @@ export async function persistQueuedOfflineConversation(
     if (!existing) {
       conv.updatedAt = seed.createdAt;
     }
+    await beforeSave?.();
     await saveConversation(conv);
   });
 }

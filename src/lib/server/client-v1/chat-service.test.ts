@@ -30,9 +30,10 @@ const {
   parseCreateConversationInput,
   parsePatchConversationInput,
   patchClientConversation,
+  withAuthorizedClientConversation,
 } = await import("./chat-service.ts");
 const { grantProjectToFamiliar } = await import("@/lib/project-permissions.ts");
-const { loadState, loadConfig } = await import("@/lib/cave-config.ts");
+const { getSessionDeletionGeneration, loadState, loadConfig } = await import("@/lib/cave-config.ts");
 const { loadConversation, listConversations, saveConversation, withConversationLock, clearConversationListMetadataCache, CONV_DIR } = await import(
   "@/lib/cave-conversations.ts"
 );
@@ -551,6 +552,23 @@ async function seedConversation(sessionId: string, overrides: Partial<Record<str
     ...overrides,
   });
 }
+
+test("send authorization captures the durable deletion generation under the conversation fence", async () => {
+  await resetFixtures();
+  await setupDaemonAndConfig();
+  const id = "send-authorization-generation";
+  await seedConversation(id);
+  const expected = await getSessionDeletionGeneration(id);
+
+  const authorized = await withAuthorizedClientConversation(id, async (conversation) => conversation.sessionId);
+  assert.equal(authorized.ok, true);
+  assert.equal(authorized.value, id);
+  assert.equal(
+    authorized.deletionGeneration,
+    expected,
+    "the launch reservation must carry the generation observed while authorization owned the lock",
+  );
+});
 
 test("patch: an unknown conversation id returns 404 not_found", async () => {
   await resetFixtures();

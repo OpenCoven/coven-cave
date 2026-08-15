@@ -122,6 +122,7 @@ test("a subprocess DELETE cannot pass Gateway's deletion-generation check and re
     await persistGatewayTranscript({
       sessionId: ${JSON.stringify(id)},
       initialStubState: { kind: "failed-before-exists", deletionGeneration: 0 },
+      expectedDeletionGeneration: 0,
       deps: { loadConversation, saveConversation, withConversationLock, getDeletionGeneration: getSessionDeletionGeneration },
       createAfterInitialStubFailure: () => ({
         sessionId: ${JSON.stringify(id)},

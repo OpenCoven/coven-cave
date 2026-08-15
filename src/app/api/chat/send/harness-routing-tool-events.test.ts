@@ -174,7 +174,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /let detachTimeoutFired = false;[\s\S]*?detachKillTimer = setTimeout\(\(\) => \{\s*detachTimeoutFired = true;\s*stopDetachedGateway\(\);[\s\S]*?\}, CHAT_DETACH_MAX_MS\);/,
+  /let detachTimeoutFired = false;[\s\S]*?wireRunDetachCleanup\(\{[\s\S]*?onTimeout: \(\) => \{\s*detachTimeoutFired = true;\s*stopDetachedGateway\(\);[\s\S]*?\},[\s\S]*?\}\);/,
   "the detach timeout must record its causal flag before taking the non-user interruption path",
 );
 assert.match(
@@ -470,7 +470,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /req\.signal\.addEventListener\("abort", onAbort, \{ once: true \}\)[\s\S]*?req\.signal\.removeEventListener\("abort", onAbort\)/,
+  /wireRunDetachCleanup\(\{[\s\S]*?runBuffer,[\s\S]*?signal: req\.signal,[\s\S]*?onTimeout: killCurrentChild,[\s\S]*?\}\);[\s\S]*?disposeDetachCleanup\?\.\(\);/,
   "Hermes API attempts must arm and clean up the shared detached-stream deadline",
 );
 

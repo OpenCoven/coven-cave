@@ -2,6 +2,7 @@ import {
   bindingFor,
   completeOfflineTravelItem,
   failOfflineTravelItem,
+  getSessionDeletionGeneration,
   markOfflineTravelItemSyncing,
   offlineTravelItemsNeedingSync,
   recordSessionFamiliar,
@@ -253,6 +254,11 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     await updateOfflineTravelItemPayload(item.id, { ...payload, harnessSessionId });
   }
   const sessionId = stringValue(payload.sessionId) ?? item.id;
+  const deletionGeneration = typeof payload.conversationDeletionGeneration === "number"
+    && Number.isSafeInteger(payload.conversationDeletionGeneration)
+    && payload.conversationDeletionGeneration >= 0
+    ? payload.conversationDeletionGeneration
+    : undefined;
   await persistQueuedOfflineConversation({
     sessionId,
     familiarId,
@@ -288,7 +294,13 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
         ? { parentId: payload.parentTurnId as string | null }
         : {}),
     },
-  });
+  }, deletionGeneration === undefined
+    ? undefined
+    : async () => {
+      if (await getSessionDeletionGeneration(sessionId) !== deletionGeneration) {
+        throw new Error("conversation deleted before offline transcript save");
+      }
+    });
   if (sessionId !== harnessSessionId) {
     await setSessionTitleAutoIfOwned(
       harnessSessionId,

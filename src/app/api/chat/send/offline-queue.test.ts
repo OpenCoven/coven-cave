@@ -83,7 +83,7 @@ assert.ok(
 );
 assert.match(
   chatRoute,
-  /maybeQueueOfflineChat[\s\S]*?openRunBuffer\(\[args\.body\.runId, sessionId\]\)[\s\S]*?runBuffer\.record\(event\)[\s\S]*?runBuffer\.finish\(\)/,
+  /maybeQueueOfflineChat[\s\S]*?openRunBuffer\(\[args\.body\.runId, sessionId\]\)[\s\S]*?canonicalizeAndRecordRunStreamEvent\(runBuffer, event\)[\s\S]*?runBuffer\.finish\(\)/,
   "offline completion events use the same bounded canonical run sequence",
 );
 
@@ -101,6 +101,11 @@ assert.match(
   offlineChatResponseBlock,
   /const queuedUserTurnId = crypto\.randomUUID\(\);[\s\S]*userTurnId: queuedUserTurnId,[\s\S]*await persistQueuedOfflineConversation\(\{[\s\S]*userTurn: \{[\s\S]*id: queuedUserTurnId,[\s\S]*attachments: args\.persistedAttachments[\s\S]*attentionClearOperationForTurn\(args\.body\.runId\)[\s\S]*persistedTurnControls\([\s\S]*parentId: args\.body\.parentTurnId/,
   "the queue payload and original local human turn share one stable id and preserve attachments, controls, parentage, and the attention operation",
+);
+assert.match(
+  offlineChatResponseBlock,
+  /conversationDeletionGeneration: expectedConversationDeletionGeneration\(args\.body\)[\s\S]*?persistQueuedOfflineConversation\([\s\S]*?assertConversationDeletionGeneration\(\s*sessionId,\s*expectedConversationDeletionGeneration\(args\.body\)/,
+  "client-v1 deletion generation is carried into offline persistence and checked under its conversation lock",
 );
 assert.doesNotMatch(
   offlineChatResponseBlock,

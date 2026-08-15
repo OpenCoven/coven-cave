@@ -136,6 +136,12 @@ assert.match(
   /queuedModelOverride\(payload\)[\s\S]*modelOverrideScope:[\s\S]*reasoningEffort: stringValue\(payload\.reasoningEffort\),[\s\S]*responseSpeed: stringValue\(payload\.responseSpeed\),[\s\S]*modelControls: record\(payload\.modelControls\)/,
   "travel replay extracts queued model and capability intent before the daemon boundary",
 );
+
+assert.match(
+  replay,
+  /const deletionGeneration = typeof payload\.conversationDeletionGeneration === "number"[\s\S]*?persistQueuedOfflineConversation\([\s\S]*?getSessionDeletionGeneration\(sessionId\) !== deletionGeneration/,
+  "offline replay preserves the authorization-time deletion fence and refuses a deleted conversation before saving",
+);
 assert.match(
   replay,
   /const model = cleanModelId\(queuedModel\)[\s\S]*queued chat model id is not safe for launch/,
