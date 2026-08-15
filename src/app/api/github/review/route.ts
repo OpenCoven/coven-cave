@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { resolveGitHubToken } from "@/lib/github-token";
+import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,6 +45,12 @@ export async function POST(req: Request) {
   }
   if (event !== "APPROVE" && !text) {
     return NextResponse.json({ ok: false, error: "review body required" }, { status: 400 });
+  }
+  if (text.length > GITHUB_REVIEW_BODY_MAX_LENGTH) {
+    return NextResponse.json(
+      { ok: false, error: `review body must be at most ${GITHUB_REVIEW_BODY_MAX_LENGTH} characters` },
+      { status: 400 },
+    );
   }
 
   const token = resolveGitHubToken();

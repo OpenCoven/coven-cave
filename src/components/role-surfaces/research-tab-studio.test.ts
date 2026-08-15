@@ -65,6 +65,14 @@ test("media lifecycle text, cancellation, players, and download use persisted st
   assert.doesNotMatch(tab, /\{ \.\.\.entry, status: "cancelled"/);
   assert.match(modals, /<audio[\s\S]*controls[\s\S]*preload="metadata"/);
   assert.match(modals, /<video[\s\S]*controls[\s\S]*preload="metadata"/);
+  assert.match(modals, /useResearchMediaUrl/);
+  assert.doesNotMatch(modals, /const mediaUrl = `\/api\/research\/generations\/media/);
+  assert.match(modals, /Loading podcast audio…/);
+  assert.match(modals, /Loading video preview…/);
+  assert.match(modals, /Couldn’t load podcast audio/);
+  assert.match(modals, /Couldn’t load video preview/);
+  assert.match(modals, /onClick=\{retryMedia\}/);
+  assert.match(modals, /onError=\{reportPlaybackFailure\}/);
   assert.match(modals, /download=1/);
 });
 
@@ -76,6 +84,15 @@ test("create failures surface the server's message inline (409 no-artifact inclu
   // mirroring the published-or-working markdown artifact rule.
   assert.match(modals, /endsWith\("\.md"\)/);
   assert.match(modals, /artifact\.state === "published" \|\| artifact\.state === "working"/);
+});
+
+test("generation directions show a bounded, quiet character count", () => {
+  assert.match(modals, /maxLength=\{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\}/);
+  assert.match(modals, /directions\.length\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
+  assert.match(modals, /aria-describedby="research-studio-directions-count"/);
+  assert.match(modals, /id="research-studio-directions-count"/);
+  assert.doesNotMatch(modals, /research-studio-config__count" aria-live/);
+  assert.match(css, /\.research-studio-config__count--near/);
 });
 
 test("markdown editor never fakes persistence", () => {

@@ -143,6 +143,16 @@ assert.match(
   /body\.permissionMode === "read"[\s\S]*?!directReadOnlyEnforcement && \(!permissionForwardingEnabled \|\| Boolean\(sshRuntime\)\)[\s\S]*?code: "read_only_unavailable"[\s\S]*?status: 501/,
   "read-only requests fail closed before launch when the selected runtime cannot enforce the boundary",
 );
+assert.match(
+  chatRoute,
+  /if \(\(hermesDirect \|\| hermesApi\) && body\.permissionMode === "read"\)/,
+  "Hermes read-only guard must cover both the API and direct CLI transports",
+);
+assert.match(
+  chatRoute,
+  /error: "Hermes does not support Cave[\s\S]*?status: 501/,
+  "Hermes must return HTTP 501 with a Hermes-specific error before either transport runs",
+);
 
 assert.match(
   chatRoute,

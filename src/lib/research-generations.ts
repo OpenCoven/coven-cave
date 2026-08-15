@@ -528,7 +528,7 @@ export function isResearchGenerationContent(
 const FAMILIAR_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-export const RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH = 2_000;
+export const RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH = 10_000;
 
 export function isValidResearchGenerationFamiliarId(value: unknown): value is string {
   return (

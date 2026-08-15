@@ -67,6 +67,7 @@ const FORWARDING_HEADERS = [
 ];
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const PRESENCE_COOKIE = "coven_passkey_presence";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
@@ -161,20 +162,30 @@ function scrollbackFrom(session, cursor) {
   }
   return output;
 }
-function getTokensFromCookie(header) {
-  if (!header) return [];
-  const tokens = [];
+function parseCookies(header) {
+  const map = /* @__PURE__ */ new Map();
+  if (!header) return map;
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
-    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      const raw = rest.join("=") ?? "";
-      try {
-        tokens.push(decodeURIComponent(raw));
-      } catch {
-      }
+    if (!key) continue;
+    try {
+      map.set(key, decodeURIComponent(rest.join("=")));
+    } catch {
     }
   }
+  return map;
+}
+function getTokensFromCookie(header) {
+  const cookies = parseCookies(header);
+  const tokens = [];
+  for (const name of [ACCESS_COOKIE, LEGACY_ACCESS_COOKIE]) {
+    const value = cookies.get(name);
+    if (value !== void 0) tokens.push(value);
+  }
   return tokens;
+}
+function getCookie(header, name) {
+  return parseCookies(header).get(name) ?? null;
 }
 function timingSafeEqualString(a, b) {
   const aBytes = Buffer.from(a);
@@ -206,6 +217,22 @@ function isValidSignedAccessToken(value, secret) {
   if (!parts[2] || !parts[3]) return false;
   const expected = createHmac("sha256", secret).update(`v1.${parts[1]}.${parts[2]}`).digest("base64url");
   return timingSafeEqualString(parts[3], expected);
+}
+function hasValidPasskeyPresence(req, tailnetNodeId) {
+  if (!tailnetNodeId) return false;
+  const secret = process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
+  const token = getCookie(req.headers.cookie, PRESENCE_COOKIE);
+  if (!secret || !token) return false;
+  const parts = token.split(".");
+  if (parts.length !== 6 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  const field = /^[A-Za-z0-9_-]+$/;
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0 || !field.test(parts[2]) || !field.test(parts[3]) || !parts[4] || !parts[5]) {
+    return false;
+  }
+  const body = parts.slice(0, 5).join(".");
+  const expected = createHmac("sha256", secret).update(body).digest("base64url");
+  return timingSafeEqualString(parts[5], expected) && expiresAt > Date.now() && parts[2] === tailnetNodeId;
 }
 function bearerToken(req) {
   const auth = req.headers.authorization ?? "";
@@ -728,7 +755,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -739,9 +766,10 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
+  const tailnetNodeId = resolveTailnetPeer(req);
   const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
-    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -750,19 +778,24 @@ server.on("upgrade", (req, socket, head) => {
     accessTokenConfigured: Boolean(accessToken()),
     tokenAuthenticated
   })) {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  if (process.env.COVEN_CAVE_PASSKEY_REQUIRED === "1" && !isDirectLoopbackRequest(req) && !hasValidPasskeyPresence(req, tailnetNodeId)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
   const threadId = String(query.threadId ?? "");
   if (!threadId) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
   const replayCursor = parsePtyReplayCursor(query.ptyReplayCursor);
   if (replayCursor === null) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -770,7 +803,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     cwd = validateCwd(query.projectRoot ? String(query.projectRoot) : void 0);
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }

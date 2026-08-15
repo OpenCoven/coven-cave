@@ -756,6 +756,34 @@ export function GrimoireGraphView({
     [announcer, centerOnNode, fitView, onOpen, scheduleFrame, zoomBy],
   );
 
+  // How many of the scope's memory files were actually READ. The scan cap is
+  // applied coven-wide BEFORE familiar scoping, so a scoped view is not "this
+  // familiar's memory graph" — it is their slice of the coven's most recent N
+  // files. `meta.memory.scanned` is coven-wide and cannot answer this, so the
+  // count comes off the nodes themselves (cave-ed4s3).
+  //
+  // `scanned` is load-bearing, not defensive: the resolution index spans the
+  // WHOLE corpus while the scan is capped, so a [[link]] into an out-of-window
+  // memory file still resolves and lands as a leaf node with no body. Counting
+  // raw memory nodes would mix files that were read with files merely pointed
+  // at and overcount the window — the exact class of false claim this notice
+  // exists to stop making.
+  //
+  // This MUST stay above the empty-state early return below. It lived under it
+  // and only ran when the graph had nodes, so an empty graph rendered one hook
+  // fewer and React threw "Rendered more hooks than during the previous render"
+  // the moment the graph filled or emptied — which a scope change does routinely
+  // (cave-qxq4l). Nothing in CI catches this: eslint.config.mjs is a
+  // design-system-only gate that stubs react-hooks to a no-op, so
+  // rules-of-hooks never runs.
+  const scopedMemoryInWindow = useMemo(
+    () =>
+      scopeLabel
+        ? graph.nodes.reduce((n, node) => n + (node.kind === "memory" && node.scanned ? 1 : 0), 0)
+        : 0,
+    [graph, scopeLabel],
+  );
+
   // ── Empty state — only when there is genuinely nothing to draw ─────────────
   if (graph.nodes.length === 0) {
     return (
@@ -779,25 +807,6 @@ export function GrimoireGraphView({
 
   const summary = `${visible.nodes.length} of ${graph.nodes.length} nodes, ${visible.edges.length} connections shown`;
   const memoryTruncated = meta ? meta.memory.scanned < meta.memory.total : false;
-  // How many of the scope's memory files were actually READ. The scan cap is
-  // applied coven-wide BEFORE familiar scoping, so a scoped view is not "this
-  // familiar's memory graph" — it is their slice of the coven's most recent N
-  // files. `meta.memory.scanned` is coven-wide and cannot answer this, so the
-  // count comes off the nodes themselves (cave-ed4s3).
-  //
-  // `scanned` is load-bearing, not defensive: the resolution index spans the
-  // WHOLE corpus while the scan is capped, so a [[link]] into an out-of-window
-  // memory file still resolves and lands as a leaf node with no body. Counting
-  // raw memory nodes would mix files that were read with files merely pointed
-  // at and overcount the window — the exact class of false claim this notice
-  // exists to stop making.
-  const scopedMemoryInWindow = useMemo(
-    () =>
-      scopeLabel
-        ? graph.nodes.reduce((n, node) => n + (node.kind === "memory" && node.scanned ? 1 : 0), 0)
-        : 0,
-    [graph, scopeLabel],
-  );
   // Only worth saying when the scope actually lost files to the cap. Equal
   // counts mean the window covered them all, and a shortfall notice would be
   // noise; `>` cannot happen, but treating it as "nothing to report" keeps the

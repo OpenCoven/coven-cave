@@ -6,6 +6,33 @@ const MISSION_ID = "m-media";
 const ELEVENLABS_VOICE_ID = DEFAULT_ELEVENLABS_VOICE_ID;
 const now = new Date().toISOString();
 
+function createSilentWav() {
+  const sampleRate = 8_000;
+  const dataBytes = 160;
+  const wav = Buffer.alloc(44 + dataBytes);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + dataBytes, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(dataBytes, 40);
+  return wav;
+}
+
+// One black 16x16 H.264 frame. Real media bytes keep the browser from firing
+// the viewer's playback-error path before the assertions can inspect it.
+const BLACK_MP4 = Buffer.from(
+  "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMtbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAHgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAld0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAHgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAB4AAAAAAABAAAAAAHPbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAABgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABem1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAATpzdGJsAAAAtnN0c2QAAAAAAAAAAQAAAKZhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALGF2Y0MBQsAK/+EAFWdCwAraewEQAAADABAAAAMDIPEiagEABGjOD8gAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAClGgAAAAAAAAAYc3R0cwAAAAAAAAABAAAAAwAAAgAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAAAwAAAAEAAAAgc3RzegAAAAAAAAAAAAAAAwAAAmgAAAAJAAAACQAAABRzdGNvAAAAAAAAAAEAAANdAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDEAAAAIZnJlZQAAAoJtZGF0AAACVgYF//9S3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTAgcmVmPTEgZGVibG9jaz0wOi0zOi0zIGFuYWx5c2U9MDowIG1lPWRpYSBzdWJtZT0wIHBzeT0xIHBzeV9yZD0yLjAwOjAuNzAgbWl4ZWRfcmVmPTAgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0wIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PTAgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTAgaW50cmFfcmVmcmVzaD0wIHJjPWNyZiBtYnRyZWU9MCBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0wAIAAAAAKZYiEOiYoAAkC4AAAAAVBmiAmlAAAAAVBmkAqlA==",
+  "base64",
+);
+const SILENT_WAV = createSilentWav();
+
 const MISSION = {
   version: 1,
   id: MISSION_ID,
@@ -281,17 +308,40 @@ async function boot(
         });
         return;
       }
+      // Playback resolves a scoped URL before the native media request.
+      if (url.pathname.endsWith("/media-ticket")) {
+        const id = url.searchParams.get("id") ?? "";
+        const target = records.get(id);
+        if (!target || target.status !== "ready") {
+          await route.fulfill({
+            status: 404,
+            json: { ok: false, error: "media not found" },
+          });
+          return;
+        }
+        const params = new URLSearchParams({
+          familiarId: FAMILIAR_ID,
+          id,
+          mediaTicket: "e2e-ticket",
+        });
+        await route.fulfill({
+          json: {
+            ok: true,
+            mediaUrl: `/api/research/generations/media?${params}`,
+          },
+        });
+        return;
+      }
       if (url.pathname.endsWith("/media")) {
         const target = records.get(url.searchParams.get("id") ?? "");
         await route.fulfill({
-          status: 206,
+          status: 200,
           headers: {
             "content-type":
               target?.kind === "podcast" ? "audio/wav" : "video/mp4",
-            "content-range": "bytes 0-0/1",
             "accept-ranges": "bytes",
           },
-          body: "0",
+          body: target?.kind === "podcast" ? SILENT_WAV : BLACK_MP4,
         });
         return;
       }

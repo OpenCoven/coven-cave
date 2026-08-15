@@ -3750,6 +3750,15 @@ export function Workspace() {
       <CaveBackdropLayer
         active={mode === "home" || mode === "chat"}
         familiarId={mode === "chat" ? activeId : null}
+        // Same resolved color the rail ring uses, so a familiar with no
+        // uploaded image still tints the room recognisably. Scoped to the
+        // chat familiar exactly like familiarId — on Home there is no single
+        // familiar whose accent would be the honest one to show.
+        accent={
+          mode === "chat"
+            ? resolvedFamiliars.find((f) => f.id === activeId)?.color ?? null
+            : null
+        }
       />
       <Shell
         ref={shellRef}

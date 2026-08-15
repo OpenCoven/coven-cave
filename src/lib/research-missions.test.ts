@@ -15,6 +15,8 @@ import {
   RESEARCH_CONSTRAINT_MAX_COUNT,
   RESEARCH_CONSTRAINT_MAX_LENGTH,
   RESEARCH_DELIVERABLE_MAX_LENGTH,
+  RESEARCH_DIRECTION_MAX_LENGTH,
+  RESEARCH_INTENT_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
   RESEARCH_HARNESS_IDS,
@@ -77,6 +79,19 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
     ...validMission(),
     constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
   }), null);
+});
+
+test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
+  assert.equal(RESEARCH_INTENT_MAX_LENGTH, 25_000);
+  assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 10_000);
+  assert.equal(
+    validateCreateResearchMissionInput({ ...validMission(), intent: "i".repeat(RESEARCH_INTENT_MAX_LENGTH) }).ok,
+    true,
+  );
+  assert.equal(
+    validateCreateResearchMissionInput({ ...validMission(), intent: "i".repeat(RESEARCH_INTENT_MAX_LENGTH + 1) }).ok,
+    false,
+  );
 });
 
 test("mission parser strips private process-owner provenance from public state", () => {

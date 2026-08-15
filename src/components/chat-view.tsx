@@ -8318,7 +8318,7 @@ function splitSegmentsForSpecs(
       }
       return [{
         kind: "block" as const,
-        key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
+        key: `${piece.spec.kind}-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
         node: <ChatSpecCard spec={piece.spec} onOpenUrl={onOpenUrl} />,
       }];
     });

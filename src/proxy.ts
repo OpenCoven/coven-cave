@@ -28,6 +28,7 @@ import {
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
+import { isValidResearchMediaTicketRequest } from "./lib/research-media-ticket.ts";
 
 // Re-exported here so existing call sites (and tests) that imported these
 // from "./proxy" keep working.
@@ -217,9 +218,10 @@ export async function proxy(req: NextRequest) {
     if (!sidecarToken || !supplied) return false;
     return timingSafeEqualString(supplied, sidecarToken);
   };
+  const mediaTicketAuthenticated = await isValidResearchMediaTicketRequest(req, sidecarToken);
   const sidecarAuthenticatedAtGate = sidecarTokenMatches(
     req.headers.get(TOKEN_HEADER) ?? req.nextUrl.searchParams.get(TOKEN_PARAM),
-  );
+  ) || mediaTicketAuthenticated;
   // The local-peer stamp distinguishes direct from forwarded traffic, but TCP
   // loopback is not OS-user identity. When mobile access is armed, the Tauri
   // app must also present its per-launch sidecar credential and a plain local
@@ -398,6 +400,9 @@ export async function proxy(req: NextRequest) {
   }
 
   if (!sidecarAuthenticated && !mobileAccessVerified) {
+    if (mediaTicketAuthenticated) {
+      return nextWithMobileAccessMarker(req, remoteIngress);
+    }
     // A verified signed mobile invite is the paired phone's credential: the
     // token is minted by this desktop from its access secret and already
     // passed mobileAccessGate above. Requiring the webview's per-launch

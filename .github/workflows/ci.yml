@@ -90,9 +90,84 @@ jobs:
         working-directory: apps/ios/CovenCave
         run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 
+  frontend-validation:
+    name: Frontend validation (${{ matrix.validation.name }})
+    needs: paths
+    if: needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        validation:
+          - name: lint
+            command: lint
+          - name: typecheck
+            command: typecheck
+          - name: test wiring
+            command: check:tests-wired
+          - name: app tests
+            command: test:app
+          - name: API tests
+            command: test:api
+          - name: mobile tests
+            command: test:mobile
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ${{ matrix.validation.command }}
+
+  frontend-bundle:
+    name: Frontend bundle
+    needs: paths
+    if: needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_CAVE_CRAFTS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build with Turbopack flake retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if pnpm build; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
+              rm -rf .next
+            fi
+          done
+          echo "::error::pnpm build failed after 3 attempts"
+          exit 1
+
   build:
     name: Frontend build
-    needs: [paths, ios]
+    needs: [paths, ios, frontend-validation, frontend-bundle]
     if: always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -102,11 +177,18 @@ jobs:
       - name: Require selected validation
         env:
           PATHS_RESULT: ${{ needs.paths.result }}
+          FRONTEND_ENABLED: ${{ needs.paths.outputs.frontend }}
+          FRONTEND_VALIDATION_RESULT: ${{ needs.frontend-validation.result }}
+          FRONTEND_BUNDLE_RESULT: ${{ needs.frontend-bundle.result }}
           IOS_ENABLED: ${{ needs.paths.outputs.ios }}
           IOS_RESULT: ${{ needs.ios.result }}
         run: |
           set -euo pipefail
           test "$PATHS_RESULT" = "success"
+          if [ "$FRONTEND_ENABLED" = "true" ]; then
+            test "$FRONTEND_VALIDATION_RESULT" = "success"
+            test "$FRONTEND_BUNDLE_RESULT" = "success"
+          fi
           if [ "$IOS_ENABLED" = "true" ]; then
             test "$IOS_RESULT" = "success"
           fi
@@ -130,28 +212,8 @@ jobs:
         run: node scripts/docs-index.test.mjs
 
       - name: Install JavaScript dependencies
-        if: needs.paths.outputs.frontend == 'true' || needs.paths.outputs.e2e == 'true'
+        if: needs.paths.outputs.e2e == 'true'
         run: pnpm install --frozen-lockfile
-
-      - name: Validate frontend
-        if: needs.paths.outputs.frontend == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm lint
-          pnpm typecheck
-          pnpm check:tests-wired
-          pnpm test:app
-          pnpm test:api
-          pnpm test:mobile
-          for attempt in 1 2 3; do
-            if pnpm build; then
-              exit 0
-            fi
-            echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
-            rm -rf .next
-          done
-          exit 1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
         if: needs.paths.outputs.rust == 'true'

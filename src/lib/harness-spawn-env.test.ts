@@ -242,6 +242,22 @@ assert.match(
   /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
   "reader rewrite runs through the shared runner with its familiar id",
 );
+const rewritePermissionIndex = rewriteSource.search(/['"]--permission['"]\s*,\s*['"]read-only['"]/);
+const rewriteSeparatorIndex = rewriteSource.search(/['"]--['"]\s*,/);
+assert.notEqual(
+  rewritePermissionIndex,
+  -1,
+  "reader rewrite includes a read-only permission flag in the harness args",
+);
+assert.notEqual(
+  rewriteSeparatorIndex,
+  -1,
+  "reader rewrite includes the prompt separator in the harness args",
+);
+assert.ok(
+  rewritePermissionIndex < rewriteSeparatorIndex,
+  "reader rewrite constrains untrusted answer text to a read-only harness run",
+);
 assert.doesNotMatch(rewriteSource, /covenSpawnEnv/);
 
 const automationSource = read("./server/automation-runner.ts");
