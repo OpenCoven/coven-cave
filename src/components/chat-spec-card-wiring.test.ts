@@ -26,7 +26,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /if \(turn\.pending\) \{[\s\S]*?renderSegments = bubbleSegments;/,
+  /let renderSegments: MessageBubbleSegment\[\] \| undefined;[\s\S]*?if \(!turn\.pending\) \{[\s\S]*?renderSegments = split\.some/,
   "pending turns stay on the ordinary streaming path",
 );
 
