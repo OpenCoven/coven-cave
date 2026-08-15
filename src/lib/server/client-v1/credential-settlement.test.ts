@@ -19,6 +19,7 @@ import {
 } from "./pairing-store.ts";
 import { defaultPairingExchangeDeps, exchangePairingRequest } from "./pairing-exchange.ts";
 import {
+  acknowledgePairingCredentialDelivery,
   clientCredentialSettlementJournalPath,
   clientCredentialStorePath,
   issueCredential,
@@ -57,7 +58,7 @@ function requestHash(pairingId: string): string {
 }
 
 async function journal(): Promise<{
-  version: 1;
+  version: 2;
   transactions: unknown[];
   replays: unknown[];
 }> {
@@ -156,22 +157,15 @@ test("a crash before issuance leaves no replacement and keeps the prior credenti
 for (const point of [
   "after-credential-write",
   "after-pairing-finalize",
-  "after-credential-settlement-before-return",
 ]) {
-  test(`a subprocess crash ${point} recovers one exact retry without leaking its token to disk`, async () => {
+  test(`a subprocess crash ${point} lets exactly one recovery claimant expose the token`, async () => {
     const previous = await issueCredential(approvedPairing(), Date.now());
     const crashed = await crashExchange(point);
     const rawBeforeRecovery = await readFile(clientCredentialSettlementJournalPath(), "utf8");
     assert.match(rawBeforeRecovery, /"ciphertext"/);
     const beforeRecovery = await journal();
-    assert.equal(
-      beforeRecovery.transactions.length,
-      point === "after-credential-settlement-before-return" ? 0 : 1,
-    );
-    assert.equal(
-      beforeRecovery.replays.length,
-      point === "after-credential-settlement-before-return" ? 1 : 0,
-    );
+    assert.equal(beforeRecovery.transactions.length, 1);
+    assert.equal(beforeRecovery.replays.length, 0);
 
     const [first, duplicate] = await Promise.all([
       exchangePairingRequest(
@@ -190,27 +184,23 @@ for (const point of [
       ),
     ]);
     const successful = [first, duplicate].filter((result) => result.kind === "ok");
-    assert.ok(successful.length >= 1, "an exact retry must recover the issued bearer token");
+    assert.equal(successful.length, 1, "the disclosure fence permits only one token-bearing recovery");
     const recovered = successful[0];
     if (!recovered || recovered.kind !== "ok") return;
-    assert.ok(
-      successful.every((result) => result.kind === "ok" && result.token === recovered.token),
-      "concurrent exact retries may replay only the original token",
-    );
     const other = first.kind === "ok" ? duplicate : first;
     assert.ok(
-      other.kind === "ok" || other.kind === "processing" || other.kind === "already_exchanged",
-      "a concurrent retry may receive the same replay, wait for recovery, or observe terminal metadata",
+      other.kind === "processing" || other.kind === "already_exchanged",
+      "the second claimant either waits or observes terminal metadata",
     );
     assert.ok(await verifyCredential(recovered.token), "the recovered token must be the active credential");
     assert.equal(await verifyCredential(previous.token), null, "the recovered replacement supersedes its predecessor");
 
     const rawAfterRecovery = await readFile(clientCredentialSettlementJournalPath(), "utf8");
     assert.equal(rawBeforeRecovery.includes(recovered.token), false, "the pending journal must encrypt the bearer token");
-    assert.equal(rawAfterRecovery.includes(recovered.token), false, "the terminal replay receipt must encrypt the bearer token");
+    assert.equal(rawAfterRecovery.includes(recovered.token), false, "the terminal receipt must never persist the bearer");
     const settled = await journal();
     assert.deepEqual(settled.transactions, [], "durably settled transactions are cleaned from the journal");
-    assert.equal(settled.replays.length, 1, "a bounded encrypted replay receipt remains for terminal idempotency");
+    assert.equal(settled.replays.length, 1, "a bounded terminal receipt remains for exact-request metadata");
 
     const exactReplay = await exchangePairingRequest(
       crashed.pairingId,
@@ -219,10 +209,55 @@ for (const point of [
       crashed.requestHash,
       Date.now(),
     );
-    assert.equal(exactReplay.kind, "ok", "the bounded terminal receipt replays an exact retry");
-    if (exactReplay.kind === "ok") assert.equal(exactReplay.token, recovered.token);
+    assert.equal(exactReplay.kind, "already_exchanged");
+    assert.equal("token" in exactReplay, false);
   });
 }
+
+test("a subprocess crash after the disclosure fence never rediscloses a potentially lost token", async () => {
+  const previous = await issueCredential(approvedPairing(), Date.now());
+  const crashed = await crashExchange("after-credential-settlement-before-return");
+  const beforeRecovery = await journal();
+  assert.deepEqual(beforeRecovery.transactions, []);
+  assert.equal(beforeRecovery.replays.length, 1);
+
+  const terminal = await exchangePairingRequest(
+    crashed.pairingId,
+    crashed.pairingSecret,
+    crashed.idempotencyKey,
+    crashed.requestHash,
+    Date.now(),
+  );
+  assert.equal(terminal.kind, "already_exchanged");
+  assert.equal("token" in terminal, false);
+
+  const differentIdentity = await exchangePairingRequest(
+    crashed.pairingId,
+    crashed.pairingSecret,
+    crypto.randomUUID(),
+    crashed.requestHash,
+    Date.now(),
+  );
+  assert.deepEqual(differentIdentity, { kind: "expired" });
+
+  // HTTP has no trustworthy response-delivery acknowledgement. The unknown
+  // credential is therefore revoked when its short delivery window closes,
+  // rather than remaining silently active forever.
+  const afterDeadline = Date.now() + PAIRING_CREDENTIAL_RECOVERY_TTL_MS + 1;
+  assert.deepEqual(
+    await exchangePairingRequest(
+      crashed.pairingId,
+      crashed.pairingSecret,
+      crashed.idempotencyKey,
+      crashed.requestHash,
+      afterDeadline,
+    ),
+    { kind: "expired" },
+  );
+  const replacement = (await listCredentials()).find((credential) => credential.id !== previous.credential.id);
+  assert.ok(replacement);
+  assert.notEqual(replacement?.revokedAt, null, "an unacknowledged credential is bounded and revoked");
+});
 
 test("a stale unresolved transaction rolls back its replacement and restores the prior credential", async () => {
   const previous = await issueCredential(approvedPairing(), 1_000);
@@ -330,8 +365,8 @@ test("an exact retry recovers a credential when process-local pairing finalizati
   if (retry.kind !== "ok") return;
   assert.ok(await verifyCredential(retry.token));
   const terminalReplay = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
-  assert.equal(terminalReplay.kind, "ok");
-  if (terminalReplay.kind === "ok") assert.equal(terminalReplay.token, retry.token);
+  assert.equal(terminalReplay.kind, "already_exchanged");
+  assert.equal("token" in terminalReplay, false);
 });
 
 test("a post-rename credential fault reconciles before consuming the pairing or returning its exact replay", async () => {
@@ -358,8 +393,8 @@ test("a post-rename credential fault reconciles before consuming the pairing or 
   assert.equal(isPairingRequestExpired(request.id, secret), true, "consumed pairing remains terminal");
 
   const exactRetry = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
-  assert.equal(exactRetry.kind, "ok", "only the exact request may recover the bearer token");
-  if (exactRetry.kind === "ok") assert.equal(exactRetry.token, recovered.token);
+  assert.equal(exactRetry.kind, "already_exchanged");
+  assert.equal("token" in exactRetry, false);
 
   const differentKey = await exchangePairingRequest(
     request.id,
@@ -421,11 +456,11 @@ test("a terminal replay fences an older recovery claimant before it can return i
   assert.equal("token" in stale, false);
 
   const winningReplay = await exchangePairingRequest(request.id, secret, key, hash, 1_007);
-  assert.equal(winningReplay.kind, "ok");
-  if (winningReplay.kind === "ok") assert.equal(winningReplay.token, newer.token);
+  assert.equal(winningReplay.kind, "already_exchanged");
+  assert.equal("token" in winningReplay, false);
 });
 
-test("a terminal token replay is withheld when revocation commits between recovery and settlement", async () => {
+test("a terminal exact retry is metadata-only after administrator revocation", async () => {
   const { request, secret } = createPairingRequest(approvedPairing());
   decidePairingRequest(request.id, "approved");
   const key = crypto.randomUUID();
@@ -434,19 +469,10 @@ test("a terminal token replay is withheld when revocation commits between recove
   assert.equal(issued.kind, "ok");
   if (issued.kind !== "ok") return;
 
-  const raced = await exchangePairingRequest(request.id, secret, key, hash, Date.now(), {
-    ...defaultPairingExchangeDeps,
-    settle: async (context, recoveryClaimId, claimId, now) => {
-      // Both operations enter the shared credential fence without awaiting
-      // either first. Their call order deterministically puts revocation
-      // before terminal settlement, simulating the post-recovery race.
-      const revocation = revokeCredential(issued.credential.id, now);
-      const settlement = settlePairingCredentialSettlement(context, recoveryClaimId, claimId, now);
-      const [, settled] = await Promise.all([revocation, settlement]);
-      return settled;
-    },
-  });
-  assert.deepEqual(raced, { kind: "expired" }, "revocation produces a terminal non-token result");
+  await revokeCredential(issued.credential.id, Date.now());
+  const replay = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
+  assert.equal(replay.kind, "already_exchanged", "a revoked terminal retry stays metadata-only");
+  assert.equal("token" in replay, false);
   assert.equal(await verifyCredential(issued.token), null);
   assert.deepEqual((await journal()).replays, [], "revocation invalidates the encrypted terminal replay");
 
@@ -454,7 +480,7 @@ test("a terminal token replay is withheld when revocation commits between recove
   assert.equal("token" in afterRevocation, false, "a revoked replay never exposes its old bearer token");
 });
 
-test("a terminal token replay is withheld when a replacement commits between recovery and settlement", async () => {
+test("a terminal exact retry is metadata-only after a replacement", async () => {
   const { request, secret } = createPairingRequest(approvedPairing());
   decidePairingRequest(request.id, "approved");
   const key = crypto.randomUUID();
@@ -463,20 +489,10 @@ test("a terminal token replay is withheld when a replacement commits between rec
   assert.equal(issued.kind, "ok");
   if (issued.kind !== "ok") return;
 
-  let replacement: Awaited<ReturnType<typeof issueCredential>> | null = null;
-  const raced = await exchangePairingRequest(request.id, secret, key, hash, Date.now(), {
-    ...defaultPairingExchangeDeps,
-    settle: async (context, recoveryClaimId, claimId, now) => {
-      const replacementPromise = issueCredential(approvedPairing(), now);
-      const settlement = settlePairingCredentialSettlement(context, recoveryClaimId, claimId, now);
-      const [newCredential, settled] = await Promise.all([replacementPromise, settlement]);
-      replacement = newCredential;
-      return settled;
-    },
-  });
-  assert.deepEqual(raced, { kind: "expired" }, "replacement produces a terminal non-token result");
-  assert.ok(replacement);
-  const replacementCredential = replacement as Awaited<ReturnType<typeof issueCredential>>;
+  const replacementCredential = await issueCredential(approvedPairing(), Date.now());
+  const replay = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
+  assert.equal(replay.kind, "already_exchanged", "replacement leaves only terminal metadata");
+  assert.equal("token" in replay, false);
   assert.equal(await verifyCredential(issued.token), null, "the replaced token must no longer be active");
   assert.ok(
     await verifyCredential(replacementCredential.token),
@@ -515,8 +531,65 @@ test("terminal replay expires without restoring a predecessor or serving a diffe
 
   const afterExpiry = 1_004 + PAIRING_CREDENTIAL_RECOVERY_TTL_MS + 1;
   assert.deepEqual(await recoverPairingCredentialSettlement(context, afterExpiry), { kind: "none" });
-  assert.ok(await verifyCredential(issued.token), "expiry removes only recovery material");
+  assert.equal(await verifyCredential(issued.token, afterExpiry), null, "an unacknowledged delivery expires");
   assert.equal(await verifyCredential(previous.token), null, "terminal replay expiry must not restore the predecessor");
+});
+
+test("the first authenticated bearer use acknowledges delivery without enabling token replay", async () => {
+  const context = {
+    pairingId: crypto.randomUUID(),
+    pairingSecret: "acknowledgement-secret",
+    idempotencyKey: crypto.randomUUID(),
+    requestHash: "a".repeat(64),
+    claimId: crypto.randomUUID(),
+  };
+  const issued = await issueCredentialForPairingSettlement(approvedPairing(), context, 1_000);
+  assert.equal(await settlePairingCredentialSettlement(context, null, context.claimId, 1_001), true);
+  assert.equal(await acknowledgePairingCredentialDelivery(issued.credential.id, 1_002), true);
+
+  const acknowledged = await journal();
+  assert.equal(acknowledged.replays.length, 1);
+  assert.equal((acknowledged.replays[0] as { sealedToken: unknown }).sealedToken, null);
+  const terminal = await recoverPairingCredentialSettlement(context, 1_003);
+  assert.equal(terminal.kind, "terminal");
+  assert.equal("token" in terminal, false);
+
+  const afterDeadline = 1_000 + PAIRING_CREDENTIAL_RECOVERY_TTL_MS + 1;
+  assert.deepEqual(await recoverPairingCredentialSettlement(context, afterDeadline), { kind: "none" });
+  assert.ok(
+    await verifyCredential(issued.token, afterDeadline),
+    "acknowledged delivery remains active after terminal metadata expires",
+  );
+});
+
+test("a legacy terminal replay migrates fail-closed instead of re-revealing its bearer", async () => {
+  const context = {
+    pairingId: crypto.randomUUID(),
+    pairingSecret: "legacy-terminal-secret",
+    idempotencyKey: crypto.randomUUID(),
+    requestHash: "b".repeat(64),
+    claimId: crypto.randomUUID(),
+  };
+  const issued = await issueCredentialForPairingSettlement(approvedPairing(), context, 1_000);
+  assert.equal(await settlePairingCredentialSettlement(context, null, context.claimId, 1_001), true);
+  const current = await journal();
+  const legacyReplay = current.replays.map((entry) => {
+    const { exposedAt: _exposedAt, deliveryAcknowledgedAt: _deliveryAcknowledgedAt, ...legacy } =
+      entry as Record<string, unknown>;
+    return legacy;
+  });
+  await writeFile(
+    clientCredentialSettlementJournalPath(),
+    JSON.stringify({ version: 1, transactions: current.transactions, replays: legacyReplay }),
+  );
+
+  const terminal = await recoverPairingCredentialSettlement(context, 1_002);
+  assert.equal(terminal.kind, "terminal");
+  assert.equal("token" in terminal, false);
+
+  const afterDeadline = 1_000 + PAIRING_CREDENTIAL_RECOVERY_TTL_MS + 1;
+  assert.deepEqual(await recoverPairingCredentialSettlement(context, afterDeadline), { kind: "none" });
+  assert.equal(await verifyCredential(issued.token, afterDeadline), null);
 });
 
 test("a terminal replay survives mutable credential use within its recovery window", async () => {
@@ -539,8 +612,8 @@ test("a terminal replay survives mutable credential use within its recovery wind
   await recordCredentialUse(issued.credential.id, 1_003 + 60_001);
 
   const replay = await recoverPairingCredentialSettlement(context, 1_005);
-  assert.equal(replay.kind, "replay");
-  if (replay.kind === "replay") assert.equal(replay.token, issued.token);
+  assert.equal(replay.kind, "terminal");
+  assert.equal("token" in replay, false);
 });
 
 test("settlement capacity never evicts a live terminal replay before its expiry", async () => {
@@ -551,7 +624,7 @@ test("settlement capacity never evicts a live terminal replay before its expiry"
     requestHash: "f".repeat(64),
     claimId: crypto.randomUUID(),
   };
-  const firstIssued = await issueCredentialForPairingSettlement(
+  await issueCredentialForPairingSettlement(
     { ...approvedPairing(), installationId: crypto.randomUUID() },
     firstContext,
     1_000,
@@ -598,14 +671,14 @@ test("settlement capacity never evicts a live terminal replay before its expiry"
     "a full replay journal leaves the new transaction recoverable instead of evicting an older replay",
   );
   const firstReplay = await recoverPairingCredentialSettlement(firstContext, 2_002);
-  assert.equal(firstReplay.kind, "replay");
-  if (firstReplay.kind === "replay") assert.equal(firstReplay.token, firstIssued.token);
+  assert.equal(firstReplay.kind, "terminal");
+  assert.equal("token" in firstReplay, false);
   const fullJournal = await journal();
   assert.equal(fullJournal.replays.length, PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES);
   assert.equal(fullJournal.transactions.length, 1);
 });
 
-test("a post-rename credential durability fault is recovered as the original exact token", async () => {
+test("a post-rename credential durability fault recovers one delivery then fences terminal retry", async () => {
   const previous = await issueCredential(approvedPairing(), Date.now());
   const { request, secret } = createPairingRequest(approvedPairing());
   decidePairingRequest(request.id, "approved");
@@ -628,10 +701,9 @@ test("a post-rename credential durability fault is recovered as the original exa
 
   setAtomicWriteTestHooksForTest(null);
   const exactReplay = await exchangePairingRequest(request.id, secret, key, hash, Date.now());
-  assert.equal(exactReplay.kind, "ok");
-  if (exactReplay.kind !== "ok") return;
-  assert.equal(exactReplay.token, reconciled.token);
-  assert.ok(await verifyCredential(exactReplay.token));
+  assert.equal(exactReplay.kind, "already_exchanged");
+  assert.equal("token" in exactReplay, false);
+  assert.ok(await verifyCredential(reconciled.token));
   assert.equal(await verifyCredential(previous.token), null, "recovery keeps the persisted replacement authoritative");
 });
 

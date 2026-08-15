@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, beforeEach, test } from "node:test";
@@ -48,9 +48,12 @@ process.env.COVEN_CAVE_LOCAL_PEER_SECRET = LOCAL_PEER_SECRET;
 
 const {
   clientCredentialStorePath,
+  clientCredentialSettlementJournalPath,
   issueCredential,
+  issueCredentialForPairingSettlement,
   revokeCredential,
   setPostReadDelayForTest,
+  settlePairingCredentialSettlement,
 } = await import("./credential-store.ts");
 const { resetRateLimitsForTest } = await import("./rate-limit.ts");
 const { createClientAuthorizer, requireClientPrincipal } = await import("./auth.ts");
@@ -60,7 +63,10 @@ after(async () => {
 });
 
 beforeEach(async () => {
-  await rm(clientCredentialStorePath(), { force: true });
+  await Promise.all([
+    rm(clientCredentialStorePath(), { force: true }),
+    rm(clientCredentialSettlementJournalPath(), { force: true }),
+  ]);
   setPostReadDelayForTest(null);
   resetRateLimitsForTest();
 });
@@ -173,8 +179,36 @@ test("a valid token with the required scope returns a safe principal", async () 
     installationId: "4e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5b",
     scopes: ["chat:read"],
   });
+
   assert.equal("tokenHash" in result.principal, false, "the principal must never carry the token hash");
   assert.equal(JSON.stringify(result.principal).includes(token), false, "the principal must never carry the raw bearer");
+});
+
+test("the first authenticated bearer use acknowledges delivery without permitting exchange replay", async () => {
+  const context = {
+    pairingId: "7e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5b",
+    pairingSecret: "delivery-acknowledgement-secret",
+    idempotencyKey: "8e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5b",
+    requestHash: "a".repeat(64),
+    claimId: "9e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5b",
+  };
+  const issued = await issueCredentialForPairingSettlement(approvedPairing(), context, 1_000);
+  assert.equal(
+    await settlePairingCredentialSettlement(context, null, context.claimId, 1_001),
+    true,
+  );
+
+  const authorizer = createClientAuthorizer({ now: () => 1_002 });
+  const result = await authorizer(
+    requestWith({ authorization: `Bearer ${issued.token}` }),
+    "chat:read",
+  );
+  assert.equal(result.ok, true);
+
+  const journal = JSON.parse(await readFile(clientCredentialSettlementJournalPath(), "utf8"));
+  assert.equal(journal.replays.length, 1);
+  assert.equal(journal.replays[0].sealedToken, null);
+  assert.equal(journal.replays[0].deliveryAcknowledgedAt, 1_002);
 });
 
 test("a valid token with every required scope passes a multi-scope authorization", async () => {

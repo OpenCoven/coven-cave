@@ -22,11 +22,12 @@
 //      secret a guess got right.
 //   2. a syntactically valid bearer token
 //   3. the token verifies against a live, unrevoked credential
-//   4. that credential carries the EXACT scope the route requires
-//   5. the authenticated rate limit, keyed by credential id (so a flood of
+//   4. a newly revealed credential durably acknowledges its first bearer use
+//   5. that credential carries the EXACT scope the route requires
+//   6. the authenticated rate limit, keyed by credential id (so a flood of
 //      invalid tokens can never consume a real client's throttle budget —
-//      steps 2-4 must succeed first)
-//   6. `recordCredentialUse`'s write-throttled "last used" bookkeeping —
+//      steps 2-5 must succeed first)
+//   7. `recordCredentialUse`'s write-throttled "last used" bookkeeping —
 //      purely informational, and never allowed to turn an otherwise-successful
 //      authorization into a failure (see the comment at that step)
 //
@@ -40,6 +41,7 @@ import { CLIENT_V1_LOCAL_HEADER, isTrustedLocalPeer } from "@/proxy-helpers";
 import type { ClientV1Scope } from "./contract.ts";
 import { clientV1Error } from "./responses.ts";
 import {
+  acknowledgePairingCredentialDelivery as defaultAcknowledgePairingCredentialDelivery,
   recordCredentialUse as defaultRecordCredentialUse,
   verifyCredential as defaultVerifyCredential,
   type SafeClientCredential,
@@ -132,6 +134,7 @@ export type ClientAuthDeps = {
   /** Reads the per-boot secret proxy.ts stamped the internal marker with. */
   localPeerSecret: () => string | undefined;
   verifyCredential: (token: string, now?: number) => Promise<SafeClientCredential | null>;
+  acknowledgePairingCredentialDelivery: (id: string, now?: number) => Promise<boolean>;
   recordCredentialUse: (id: string, now?: number) => Promise<void>;
   consumeAuthenticatedRateLimit: (credentialId: string, now?: number) => RateLimitResult;
   now: () => number;
@@ -141,6 +144,7 @@ function defaultDeps(): ClientAuthDeps {
   return {
     localPeerSecret: () => process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
     verifyCredential: defaultVerifyCredential,
+    acknowledgePairingCredentialDelivery: defaultAcknowledgePairingCredentialDelivery,
     recordCredentialUse: defaultRecordCredentialUse,
     consumeAuthenticatedRateLimit: consumeClientV1AuthenticatedLimit,
     now: () => Date.now(),
@@ -189,7 +193,19 @@ export function createClientAuthorizer(overrides: Partial<ClientAuthDeps> = {}) 
       return { ok: false, response: unauthorized() };
     }
 
-    // 4. Exact scope check — a credential scoped to `chat:read` never
+    // 4. A successful bearer use is the only reliable delivery
+    // acknowledgement available to HTTP. It promotes a newly revealed
+    // credential out of its bounded lost-response window. Fail closed if the
+    // promotion cannot be written or the window has expired.
+    try {
+      if (!await deps.acknowledgePairingCredentialDelivery(credential.id, now)) {
+        return { ok: false, response: unauthorized() };
+      }
+    } catch {
+      return { ok: false, response: unauthorized() };
+    }
+
+    // 5. Exact scope check — a credential scoped to `chat:read` never
     // satisfies a route that requires `chat:write`, and a route that requires
     // multiple scopes must have ALL of them before it may proceed. The failure
     // is intentionally generic: never reveal which specific scope was missing.
@@ -197,7 +213,7 @@ export function createClientAuthorizer(overrides: Partial<ClientAuthDeps> = {}) 
       return { ok: false, response: scopeDenied() };
     }
 
-    // 5. The authenticated rate limit, keyed by credential id — only reached
+    // 6. The authenticated rate limit, keyed by credential id — only reached
     // once identity AND scope are both proven, so a flood of invalid tokens
     // or under-scoped credentials can never consume a real client's budget.
     const limitResult = deps.consumeAuthenticatedRateLimit(credential.id, now);
@@ -205,7 +221,7 @@ export function createClientAuthorizer(overrides: Partial<ClientAuthDeps> = {}) 
       return { ok: false, response: rateLimited(limitResult) };
     }
 
-    // 6. Record the use. `recordCredentialUse`'s own write throttle keeps a
+    // 7. Record the use. `recordCredentialUse`'s own write throttle keeps a
     // chatty client from causing a disk write on every request. This step is
     // purely informational bookkeeping — `lastUsedAt` — layered on top of a
     // credential whose live, unrevoked, correctly-scoped persisted record was

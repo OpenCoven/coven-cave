@@ -3,12 +3,13 @@
 // transport as the poll route) for a long-lived bearer credential. Requires
 // the same internal loopback marker (same as /health and create) as every
 // other client-v1 route, checked before params/body/secrets are parsed or
-// either store is touched at all. The raw token is normally returned exactly
-// once in this response body. During the short crash-recovery window it is
-// retained only as AES-GCM ciphertext in the credential settlement journal,
-// bound to the original pairing secret and exact request; it is never logged
-// and is not stored in the credential authority record (which keeps only its
-// hash).
+// either store is touched at all. The raw token is returned exactly once in
+// this response body. A durable disclosure fence is crossed immediately
+// before constructing that response, so a terminal replay is metadata-only.
+// During the short unfinished-issuance recovery window the token is retained
+// only as AES-GCM ciphertext in the credential settlement journal, bound to
+// the original pairing secret and exact request; it is never logged and is
+// not stored in the credential authority record (which keeps only its hash).
 //
 // The actual claim -> issue -> finalize/rollback transaction lives in
 // `pairing-exchange.ts` (`exchangePairingRequest`), which claims the approved
@@ -23,9 +24,9 @@
 // already hold the correct secret, every failure looks identical (a generic
 // `pairing_expired`) — but to the legitimate holder of a correct secret this
 // reveals nothing that helps an attacker, so a still-pending or explicitly
-// denied request is reported precisely, an exact same-key replay during the
-// bounded encrypted-recovery window gets the original bearer token, and an
-// exact concurrent duplicate gets a retryable in-flight 409.
+// denied request is reported precisely, only a genuinely unfinished issuance
+// can recover its first delivery, and every terminal exact retry gets
+// metadata-only 409.
 
 import { CLIENT_V1_LOCAL_HEADER, isTrustedLocalPeer } from "@/proxy-helpers";
 

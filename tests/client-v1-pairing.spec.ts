@@ -229,6 +229,7 @@ test("Client Access approves, exchanges, and revokes a standalone Chat pairing",
       };
     };
     expect(replayBody.error.code).toBe("pairing_already_exchanged");
+    expect("token" in replayBody).toBe(false);
     expect(replayBody.error.details.credential.id).toBe(exchangeBody.credential.id);
     expect(replayBody.error.details.credential.appName).toBe(appName);
     expect(replayBody.error.details.credential.installationId).toBe(installationId);

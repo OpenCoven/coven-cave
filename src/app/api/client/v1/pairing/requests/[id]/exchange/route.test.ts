@@ -140,7 +140,7 @@ test("an approved pairing exchanges for a bearer token exactly once", async () =
   assert.equal(verified?.id, body.credential.id);
 });
 
-test("an exact same-key replay after success returns the original token during the bounded recovery window", async () => {
+test("an exact same-key terminal replay is metadata-only and never re-reveals the token", async () => {
   const { request, secret } = createPairingRequest(input());
   decidePairingRequest(request.id, "approved");
   const idempotencyKey = "3f4145de-9b43-4abc-876d-81ef63de60e0";
@@ -156,11 +156,12 @@ test("an exact same-key replay after success returns the original token during t
     requestFor(request.id, secret, { idempotencyKey }),
     await ctxFor(request.id),
   );
-  assert.equal(replay.status, 200);
+  assert.equal(replay.status, 409);
   const body = await replay.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.token, firstBody.token);
-  assert.deepEqual(body.credential, {
+  assert.equal(body.ok, false);
+  assert.equal(body.error.code, "pairing_already_exchanged");
+  assert.equal("token" in body, false);
+  assert.deepEqual(body.error.details.credential, {
     id: firstBody.credential.id,
     appName: firstBody.credential.appName,
     installationId: firstBody.credential.installationId,
@@ -339,7 +340,7 @@ test("two concurrent exact-duplicate exchanges with the same key never double-is
   const duplicateBody = await duplicateResponse.json();
   assert.ok(
     duplicateBody.error.code === "conflict" || duplicateBody.error.code === "pairing_already_exchanged",
-    "the duplicate either caught the in-flight claim or arrived after the one-time reveal completed",
+    "the duplicate either caught the in-flight claim or observed terminal metadata",
   );
   if (duplicateBody.error.code === "conflict") {
     assert.equal(duplicateBody.error.retryable, true);

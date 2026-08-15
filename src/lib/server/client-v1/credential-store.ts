@@ -4,10 +4,11 @@
 // after pairing completes. The authority record keeps only the SHA-256 hash.
 // Pairing exchange additionally keeps a short-lived AES-GCM-encrypted recovery
 // copy in its adjacent settlement journal, decryptable only with the original
-// high-entropy pairing secret, so a crash cannot strand a newly active
-// credential without an exact-request replay path. This mirrors the persisted
-// half of passkey-store.ts, but for an opaque bearer token instead of a
-// WebAuthn public key.
+// high-entropy pairing secret, so a crash before the one permitted disclosure
+// cannot strand a newly active credential. Once the disclosure fence is
+// crossed, the terminal path never decrypts or reveals it again; the first
+// authenticated bearer use then redacts the ciphertext and acknowledges
+// delivery.
 
 import {
   createCipheriv,
@@ -97,15 +98,26 @@ type CredentialSettlementEntry = {
   requestHash: string;
   credential: ClientCredential;
   replaced: ReplacedCredential[];
-  sealedToken: SealedToken;
+  sealedToken: SealedToken | null;
   createdAt: number;
   expiresAt: number;
   recoveryClaimId: string | null;
   recoveryClaimStartedAt: number | null;
+  /**
+   * Crossing this durable fence authorizes precisely one in-memory caller to
+   * put the token in an HTTP response. It is set before that caller returns,
+   * because HTTP response delivery has no reliable acknowledgement channel.
+   */
+  exposedAt: number | null;
+  /**
+   * A subsequent authenticated bearer use proves the token was not lost in
+   * delivery. Until then, the credential is bounded by `expiresAt`.
+   */
+  deliveryAcknowledgedAt: number | null;
 };
 
 type CredentialSettlementJournal = {
-  version: 1;
+  version: 2;
   transactions: CredentialSettlementEntry[];
   replays: CredentialSettlementEntry[];
 };
@@ -120,14 +132,13 @@ export type CredentialSettlementRecovery =
     claimId: string;
   }
   | {
-    kind: "replay";
-    token: string;
+    kind: "terminal";
     credential: SafeClientCredential;
-    recoveryClaimId: string | null;
     claimId: string;
   };
 
-const SETTLEMENT_JOURNAL_VERSION = 1;
+const SETTLEMENT_JOURNAL_VERSION = 2;
+const LEGACY_SETTLEMENT_JOURNAL_VERSION = 1;
 export const PAIRING_CREDENTIAL_RECOVERY_TTL_MS = PAIRING_CLAIM_STALE_MS;
 export const PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES = 64;
 const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
@@ -519,10 +530,13 @@ function parseReplacedCredential(value: unknown): ReplacedCredential | null {
   };
 }
 
-function parseSettlementEntry(value: unknown): CredentialSettlementEntry | null {
+function parseSettlementEntry(
+  value: unknown,
+  version: typeof SETTLEMENT_JOURNAL_VERSION | typeof LEGACY_SETTLEMENT_JOURNAL_VERSION,
+): CredentialSettlementEntry | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (!hasExactKeys(record, [
+  const legacyKeys = [
     "pairingId",
     "claimId",
     "secretHash",
@@ -535,7 +549,9 @@ function parseSettlementEntry(value: unknown): CredentialSettlementEntry | null 
     "expiresAt",
     "recoveryClaimId",
     "recoveryClaimStartedAt",
-  ])) {
+  ] as const;
+  const currentKeys = [...legacyKeys, "exposedAt", "deliveryAcknowledgedAt"] as const;
+  if (!hasExactKeys(record, version === LEGACY_SETTLEMENT_JOURNAL_VERSION ? legacyKeys : currentKeys)) {
     return null;
   }
   if (
@@ -557,8 +573,25 @@ function parseSettlementEntry(value: unknown): CredentialSettlementEntry | null 
     return null;
   }
   const credential = parseClientCredential(record.credential);
-  const sealedToken = parseSealedToken(record.sealedToken);
-  if (!credential || !sealedToken) return null;
+  const sealedToken = record.sealedToken === null ? null : parseSealedToken(record.sealedToken);
+  const exposedAt = version === LEGACY_SETTLEMENT_JOURNAL_VERSION
+    ? null
+    : isNullOrFiniteNonNegativeNumber(record.exposedAt)
+      ? record.exposedAt
+      : undefined;
+  const deliveryAcknowledgedAt = version === LEGACY_SETTLEMENT_JOURNAL_VERSION
+    ? null
+    : isNullOrFiniteNonNegativeNumber(record.deliveryAcknowledgedAt)
+      ? record.deliveryAcknowledgedAt
+      : undefined;
+  if (
+    !credential
+    || sealedToken === undefined
+    || exposedAt === undefined
+    || deliveryAcknowledgedAt === undefined
+  ) {
+    return null;
+  }
   const replaced: ReplacedCredential[] = [];
   const replacementIds = new Set<string>();
   for (const entry of record.replaced) {
@@ -580,6 +613,8 @@ function parseSettlementEntry(value: unknown): CredentialSettlementEntry | null 
     expiresAt: record.expiresAt,
     recoveryClaimId: record.recoveryClaimId,
     recoveryClaimStartedAt: record.recoveryClaimStartedAt,
+    exposedAt,
+    deliveryAcknowledgedAt,
   };
 }
 
@@ -606,7 +641,7 @@ async function readSettlementJournalForMutation(): Promise<CredentialSettlementJ
   const record = parsed as Record<string, unknown>;
   if (
     !hasExactKeys(record, ["version", "transactions", "replays"])
-    || record.version !== SETTLEMENT_JOURNAL_VERSION
+    || (record.version !== SETTLEMENT_JOURNAL_VERSION && record.version !== LEGACY_SETTLEMENT_JOURNAL_VERSION)
     || !Array.isArray(record.transactions)
     || !Array.isArray(record.replays)
     || record.transactions.length > PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES
@@ -614,28 +649,57 @@ async function readSettlementJournalForMutation(): Promise<CredentialSettlementJ
   ) {
     throw new CredentialStoreIntegrityError("The pairing credential settlement journal does not match the expected schema.");
   }
+  const version = record.version;
   const transactions: CredentialSettlementEntry[] = [];
   const replays: CredentialSettlementEntry[] = [];
   const identities = new Set<string>();
   for (const rawEntry of record.transactions) {
-    const entry = parseSettlementEntry(rawEntry);
+    const entry = parseSettlementEntry(rawEntry, version);
     const identity = entry && `${entry.pairingId}:${entry.idempotencyKey}:${entry.requestHash}`;
-    if (!entry || !identity || identities.has(identity)) {
+    if (
+      !entry
+      || entry.sealedToken === null
+      || entry.exposedAt !== null
+      || entry.deliveryAcknowledgedAt !== null
+      || !identity
+      || identities.has(identity)
+    ) {
       throw new CredentialStoreIntegrityError("The pairing credential settlement journal contains a malformed entry.");
     }
     identities.add(identity);
     transactions.push(entry);
   }
   for (const rawEntry of record.replays) {
-    const entry = parseSettlementEntry(rawEntry);
+    const parsedEntry = parseSettlementEntry(rawEntry, version);
+    // Legacy terminal entries were created by a version that could have
+    // already returned their token. Treat them as uncertain delivery, never
+    // as a replay grant, and bound the credential until first authenticated
+    // use confirms it reached its holder.
+    const entry = parsedEntry && version === LEGACY_SETTLEMENT_JOURNAL_VERSION
+      ? { ...parsedEntry, exposedAt: parsedEntry.createdAt }
+      : parsedEntry;
     const identity = entry && `${entry.pairingId}:${entry.idempotencyKey}:${entry.requestHash}`;
-    if (!entry || !identity || identities.has(identity)) {
+    if (
+      !entry
+      || entry.exposedAt === null
+      || entry.exposedAt > entry.expiresAt
+      || (
+        entry.deliveryAcknowledgedAt !== null
+        && (
+          entry.deliveryAcknowledgedAt < entry.exposedAt
+          || entry.sealedToken !== null
+        )
+      )
+      || (entry.deliveryAcknowledgedAt === null && entry.sealedToken === null)
+      || !identity
+      || identities.has(identity)
+    ) {
       throw new CredentialStoreIntegrityError("The pairing credential settlement journal contains a malformed entry.");
     }
     identities.add(identity);
     replays.push(entry);
   }
-  return { version: 1, transactions, replays };
+  return { version: SETTLEMENT_JOURNAL_VERSION, transactions, replays };
 }
 
 async function writeSettlementJournal(journal: CredentialSettlementJournal): Promise<void> {
@@ -846,6 +910,7 @@ function sealSettlementToken(
 }
 
 function unsealSettlementToken(entry: CredentialSettlementEntry, secret: string): string | null {
+  if (!entry.sealedToken) return null;
   try {
     const decipher = createDecipheriv(
       "aes-256-gcm",
@@ -929,7 +994,27 @@ function rollbackSettlementCredential(store: StoreFile, entry: CredentialSettlem
     ) {
       credential.revokedAt = replaced.previousRevokedAt;
     }
+
   }
+  return true;
+}
+
+/**
+ * An exposure-fenced credential that never makes a successful authenticated
+ * request may have been lost between HTTP response construction and delivery.
+ * Its predecessor stays revoked: reactivating an old bearer would create a
+ * second, equally unacknowledged authority. Instead revoke the uncertain
+ * replacement at the bounded delivery deadline and require a fresh pairing.
+ */
+function revokeUnacknowledgedSettlementCredential(
+  store: StoreFile,
+  entry: CredentialSettlementEntry,
+  now: number,
+): boolean {
+  const credential = store.credentials.find((candidate) => candidate.id === entry.credential.id);
+  if (!credential || credential.revokedAt !== null) return false;
+  credential.revokedAt = monotonicTimestamp(now, credential.createdAt, credential.lastUsedAt);
+  credential.revocationGeneration = nextRevocationGeneration(credential.revocationGeneration);
   return true;
 }
 
@@ -947,7 +1032,16 @@ function pruneSettlementJournal(
     }
     storeChanged = rollbackSettlementCredential(store, entry) || storeChanged;
   }
-  const replays = journal.replays.filter((entry) => entry.expiresAt > now);
+  const replays: CredentialSettlementEntry[] = [];
+  for (const entry of journal.replays) {
+    if (entry.expiresAt > now) {
+      replays.push(entry);
+      continue;
+    }
+    if (entry.deliveryAcknowledgedAt === null) {
+      storeChanged = revokeUnacknowledgedSettlementCredential(store, entry, now) || storeChanged;
+    }
+  }
   const journalChanged =
     transactions.length !== journal.transactions.length || replays.length !== journal.replays.length;
   journal.transactions = transactions;
@@ -1028,9 +1122,9 @@ function makeReplacementCredential(
 /**
  * Issue a pairing credential only after an encrypted, exact-request recovery
  * record has been atomically written under the credential store's existing
- * SQLite/file-lock transaction.  A hard crash can therefore either replay
- * this token to the holder of the original pairing secret or restore the
- * predecessor credential after the bounded claim lease.
+ * SQLite/file-lock transaction. A hard crash before the disclosure fence can
+ * recover this token exactly once; an unfinished transaction that outlives
+ * its bounded lease restores the predecessor credential instead.
  */
 export async function issueCredentialForPairingSettlement(
   approvedPairing: ApprovedPairing,
@@ -1070,6 +1164,8 @@ export async function issueCredentialForPairingSettlement(
       expiresAt: now + PAIRING_CREDENTIAL_RECOVERY_TTL_MS,
       recoveryClaimId: null,
       recoveryClaimStartedAt: null,
+      exposedAt: null,
+      deliveryAcknowledgedAt: null,
     };
     const entry: CredentialSettlementEntry = {
       ...entryWithoutToken,
@@ -1084,10 +1180,10 @@ export async function issueCredentialForPairingSettlement(
 }
 
 /**
- * Find a durable pairing issuance/replay for this exact request.  Recovering
- * an unfinished issuance itself takes a short journal lease, so concurrent
- * retries cannot both re-reveal the same token while one is promoting it to
- * a terminal replay receipt.
+ * Find durable state for this exact request. Recovering an unfinished
+ * issuance takes a short journal lease so concurrent retries cannot both
+ * cross the disclosure fence. A terminal receipt intentionally returns
+ * metadata only: it must never decrypt or re-reveal the bearer.
  */
 export async function recoverPairingCredentialSettlement(
   context: CredentialSettlementContext,
@@ -1108,15 +1204,9 @@ export async function recoverPairingCredentialSettlement(
         await writeSettlementJournal(journal);
         return { kind: "none" };
       }
-      const token = unsealSettlementToken(replay, context.pairingSecret);
-      if (!token || hashToken(token) !== replay.credential.tokenHash) {
-        throw new CredentialStoreIntegrityError("The pairing credential settlement journal could not be decrypted.");
-      }
       return {
-        kind: "replay",
-        token,
+        kind: "terminal",
         credential: toSafe(replay.credential),
-        recoveryClaimId: replay.recoveryClaimId,
         claimId: replay.claimId,
       };
     }
@@ -1163,11 +1253,10 @@ export async function recoverPairingCredentialSettlement(
 }
 
 /**
- * Promote an issued transaction to a bounded terminal replay receipt. The
- * plaintext token remains encrypted under the pairing secret, and only an
- * exact request that proves that secret can unseal it. Preserve the winning
- * recovery claimant and original transaction id so an older claimant cannot
- * pass the terminal fence after a newer one promotes settlement.
+ * Atomically cross the one-time disclosure fence for an issued transaction.
+ * The winning in-memory caller already has the plaintext token; after this
+ * function succeeds it may return that token once. Every retry sees only
+ * terminal metadata, even if the original HTTP response was lost.
  */
 export async function settlePairingCredentialSettlement(
   context: CredentialSettlementContext,
@@ -1186,19 +1275,14 @@ export async function settlePairingCredentialSettlement(
 
     const replay = journal.replays.find((entry) => isSettlementContextForEntry(entry, context));
     if (replay) {
-      // A terminal replay is owned by the exact transaction/recovery claimant
-      // that promoted it. An older claimant may still hold decrypted bytes in
-      // memory, but it must fail this fence before any caller can return them.
-      // Revalidate authority under THIS same credential transaction too:
-      // `recoverPairingCredentialSettlement` may have released its lock
-      // before a revocation/replacement committed, so its previously active
-      // token is not safe to return until this terminal fence confirms it.
+      // An older claimant may still have plaintext bytes in memory, but a
+      // terminal receipt is an absolute no-reveal fence, including for the
+      // claimant that originally wrote it.
       if (!hasActiveSettlementCredential(store, replay)) {
         journal.replays = journal.replays.filter((entry) => entry !== replay);
         await writeSettlementJournal(journal);
-        return false;
       }
-      return replay.claimId === claimId && replay.recoveryClaimId === recoveryClaimId;
+      return false;
     }
     const transaction = journal.transactions.find((entry) => isSettlementContextForEntry(entry, context));
     if (
@@ -1210,12 +1294,60 @@ export async function settlePairingCredentialSettlement(
     ) {
       return false;
     }
-    // A terminal receipt is the only recovery material for a response lost
-    // after settlement. Do not evict a still-live receipt for capacity: its
-    // defined retention policy is expiry, not unrelated pairing traffic.
+    // Do not evict a still-live terminal receipt for capacity: its defined
+    // retention policy is expiry, not unrelated pairing traffic.
     if (journal.replays.length >= PAIRING_CREDENTIAL_SETTLEMENT_MAX_ENTRIES) return false;
     journal.transactions = journal.transactions.filter((entry) => entry !== transaction);
-    journal.replays.push(transaction);
+    journal.replays.push({
+      ...transaction,
+      exposedAt: now,
+      deliveryAcknowledgedAt: null,
+    });
+    await writeSettlementJournal(journal);
+    return true;
+  });
+}
+
+/**
+ * Record that a holder has actually authenticated with a disclosure-fenced
+ * credential. HTTP cannot tell us whether a 200 response reached its peer, so
+ * this durable bearer-use acknowledgement is the only promotion signal we
+ * trust. It also redacts the encrypted recovery copy; terminal retries retain
+ * metadata, never recoverable bearer material.
+ */
+export async function acknowledgePairingCredentialDelivery(
+  id: string,
+  now = Date.now(),
+): Promise<boolean> {
+  assertValidNow(now);
+  // The production caller invokes this only after `verifyCredential`, whose
+  // persisted credential schema already requires a UUID. Returning true for
+  // an impossible no-journal id keeps injected authorizer tests independent
+  // of the durable store without weakening real authority decisions.
+  if (!isUuid(id)) return true;
+  return withCredentialTransaction(async () => {
+    const store = await readStoreForMutation();
+    const journal = await readSettlementJournalForMutation();
+    const cleanup = pruneSettlementJournal(store, journal, now);
+    await persistSettlementCleanup(store, journal, cleanup);
+
+    const replay = journal.replays.find((entry) => entry.credential.id === id);
+    if (!replay) {
+      // The normal no-journal path is intentionally true. A custom verifier
+      // in a unit test may not have a backing store; production reaches here
+      // only after `verifyCredential` already proved the bearer.
+      return store.credentials.find((credential) => credential.id === id)?.revokedAt !== null
+        ? false
+        : true;
+    }
+    if (!hasActiveSettlementCredential(store, replay)) {
+      journal.replays = journal.replays.filter((entry) => entry !== replay);
+      await writeSettlementJournal(journal);
+      return false;
+    }
+    if (replay.deliveryAcknowledgedAt !== null) return true;
+    replay.deliveryAcknowledgedAt = now;
+    replay.sealedToken = null;
     await writeSettlementJournal(journal);
     return true;
   });
@@ -1346,15 +1478,14 @@ export async function listCredentials(): Promise<SafeClientCredential[]> {
  * authority record; every stored hash is checked so timing does not vary with
  * how many earlier credentials in the store are unrelated non-matches.
  *
- * `now` is accepted for symmetry with the store's other time-taking
- * operations and to leave room for a future expiry policy; credentials
- * currently have no TTL of their own; only pairing requests do.
+ * `now` also bounds an exposure-fenced credential whose first response may
+ * have been lost: it is valid only until the holder makes the first
+ * authenticated request, which durably acknowledges delivery.
  */
 export async function verifyCredential(
   token: string,
   now = Date.now(),
 ): Promise<SafeClientCredential | null> {
-  void now;
   if (!token) return null;
   const { credentials } = await readStore();
   const suppliedHash = hashToken(token);
@@ -1363,6 +1494,21 @@ export async function verifyCredential(
     if (timingSafeEqualString(suppliedHash, credential.tokenHash)) match = credential;
   }
   if (!match || match.revokedAt !== null) return null;
+  // A malformed/unreadable journal must not turn an uncertain credential
+  // into an indefinitely valid bearer. Fail closed until the local authority
+  // can be repaired or the credential is explicitly revoked.
+  let journal: CredentialSettlementJournal;
+  try {
+    journal = await readSettlementJournalForMutation();
+  } catch {
+    return null;
+  }
+  const pendingDelivery = journal.replays.find(
+    (entry) =>
+      entry.credential.id === match.id
+      && entry.deliveryAcknowledgedAt === null,
+  );
+  if (pendingDelivery && pendingDelivery.expiresAt <= now) return null;
   return toSafe(match);
 }
 

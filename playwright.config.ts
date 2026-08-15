@@ -105,6 +105,7 @@ export default defineConfig({
     // synthetic mobile credential so proxy.ts owns the ingress marker.
     extraHTTPHeaders: {
       "x-coven-cave-local-peer": E2E_LOCAL_PEER_FIXTURE,
+      "x-coven-cave-token": E2E_MOBILE_ACCESS_FIXTURE,
       // COVEN_CAVE_ACCESS_TOKEN is armed on the webServer, so it is armed for
       // EVERY project — and since loopback stopped counting as identity
       // (cave-ruw4z), every e2e client is an access-gated client. The
@@ -231,6 +232,7 @@ export default defineConfig({
       COVEN_SOCKET: E2E_COVEN_SOCKET,
       COVEN_CAVE_LOCAL_PEER_SECRET: E2E_LOCAL_PEER_FIXTURE,
       COVEN_CAVE_ACCESS_TOKEN: E2E_MOBILE_ACCESS_FIXTURE,
+      COVEN_CAVE_AUTH_TOKEN: E2E_MOBILE_ACCESS_FIXTURE,
       CAVE_PROJECTS_PATH_OVERRIDE: E2E_PROJECTS_PATH,
       CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE: E2E_PROJECT_PERMISSIONS_PATH,
       CAVE_QUEUE_PROJECT_PATH_OVERRIDE: E2E_QUEUE_PROJECT_PATH,

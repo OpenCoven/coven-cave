@@ -7,9 +7,9 @@
 // / `rollbackApprovedPairingClaim` for the exclusivity invariants this relies
 // on: at most one claim can ever be outstanding per record, so this module
 // never needs to worry about issuing two active credentials for a retry. A
-// terminal receipt keeps the token encrypted under the pairing secret for a
-// bounded exact-retry window; a claimant fence is checked immediately before
-// every token-bearing success.
+// durable disclosure fence is checked immediately before every token-bearing
+// success. Terminal receipts contain only the metadata needed for a typed
+// `pairing_already_exchanged` result; no retry may decrypt or re-reveal.
 //
 // Every dependency this needs is injected (module-level default, overridable
 // per call) rather than imported and called directly inline — same pattern
@@ -103,8 +103,8 @@ export type PairingExchangeResult =
   // or a different key after completion all collapse to this same result.
   | { kind: "expired" }
   | { kind: "conflict" }
-  // Durable credential mutation succeeded but the caller must retry the
-  // exact request to recover and settle its encrypted replay record.
+  // Durable credential mutation succeeded but a different claimant owns the
+  // bounded unfinished-issuance recovery lease.
   | { kind: "recovery_pending" }
   // The claim succeeded (the request really was approved and live) but
   // `issueCredential` itself failed — a transient store problem, never a
@@ -148,7 +148,7 @@ function hasIssuedReplayReceipt(
 
 type RecoveredPairingCredential = Extract<
   CredentialSettlementRecovery,
-  { kind: "issued" | "replay" }
+  { kind: "issued" }
 >;
 
 async function completeRecoveredPairingExchange(
@@ -218,11 +218,13 @@ async function completeRecoveredPairingExchange(
 
   try {
     if (!await settle(context, recovered.recoveryClaimId, recovered.claimId, now)) {
-      // A terminal replay whose credential was revoked/replaced is removed
-      // under settle's credential fence. Confirm that no recovery material
-      // remains before returning a terminal, non-token result; an older
-      // claimant racing a newer valid recovery still sees pending instead.
+      // An older claimant can retain plaintext only in memory. Re-read the
+      // durable state after it loses the disclosure fence; a terminal winner
+      // gets metadata-only 409, never the retained bearer bytes.
       const remaining = await recover(context, now);
+      if (remaining.kind === "terminal") {
+        return { kind: "already_exchanged", credential: remaining.credential };
+      }
       if (remaining.kind === "none") return { kind: "expired" };
       return { kind: "recovery_pending" };
     }
@@ -246,8 +248,8 @@ async function completeRecoveredPairingExchange(
  *      id, still-pending/denied/expired/consumed request, or a DIFFERENT key
  *      after completion all fail generically (`classifyUnclaimable`). The
  *      exact same key gets a stronger answer: a concurrent duplicate reports
- *      `processing`, and a post-success replay returns its original bearer
- *      token only while the encrypted terminal receipt remains live.
+ *      `processing`, and every terminal exact retry gets metadata-only
+ *      `already_exchanged`.
  *   2. `await deps.issueCredential(...)` runs OUTSIDE any destructive
  *      mutation of the pairing store — a failure here has touched nothing
  *      the store cares about yet.
@@ -289,7 +291,10 @@ export async function exchangePairingRequest(
   if (recovered.kind === "pending") {
     return { kind: "processing", retryAfterMs: 1_000 };
   }
-  if (recovered.kind === "issued" || recovered.kind === "replay") {
+  if (recovered.kind === "terminal") {
+    return { kind: "already_exchanged", credential: recovered.credential };
+  }
+  if (recovered.kind === "issued") {
     return completeRecoveredPairingExchange(
       id,
       secret,
@@ -346,7 +351,10 @@ export async function exchangePairingRequest(
     if (reconciled.kind === "pending") {
       return { kind: "processing", retryAfterMs: 1_000 };
     }
-    if (reconciled.kind === "issued" || reconciled.kind === "replay") {
+    if (reconciled.kind === "terminal") {
+      return { kind: "already_exchanged", credential: reconciled.credential };
+    }
+    if (reconciled.kind === "issued") {
       return completeRecoveredPairingExchange(
         id,
         secret,
@@ -413,6 +421,11 @@ export async function exchangePairingRequest(
   crashAtPairingSettlementPoint("after-pairing-finalize");
   try {
     if (!await settle(settlementContext, null, claimed.claimId, now)) {
+      const remaining = await recover(settlementContext, now);
+      if (remaining.kind === "terminal") {
+        return { kind: "already_exchanged", credential: remaining.credential };
+      }
+      if (remaining.kind === "none") return { kind: "expired" };
       return { kind: "recovery_pending" };
     }
   } catch (error) {
