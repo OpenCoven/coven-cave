@@ -436,17 +436,17 @@ export async function resolveInstalledClaudeCompatibility(
 export function claudeCompatibilityDiagnostic(resolution: CompatibilityResolution): string | null {
   if (resolution.kind === "compatible") {
     return resolution.stale
-      ? "The cached Claude Code tool-activity profile has expired; tool bubbles are disabled until a trusted profile refresh succeeds."
+      ? "The cached Claude Code tool-activity profile has expired; stream-json tool bubbles are disabled until a trusted profile refresh succeeds, but local hook evidence will still be shown when available."
       : null;
   }
   switch (resolution.reason) {
     case "probe-failed":
-      return "Claude Code compatibility could not be verified; tool bubbles are disabled. Run `claude --version` and `claude --help`, then try again.";
+      return "Claude Code compatibility could not be verified; stream-json tool bubbles are disabled, but local hook evidence will still be shown when available. Run `claude --version` and `claude --help`, then try again.";
     case "unsupported-version":
-      return "This Claude Code version has no trusted tool-activity profile yet; chat text will continue without tool bubbles.";
+      return "This Claude Code version has no trusted stream-json tool profile yet; chat text and local hook evidence will still be shown when available.";
     case "missing-capability":
-      return "This Claude Code installation does not advertise the stream capability needed for tool bubbles; chat text will continue without them.";
+      return "This Claude Code installation does not advertise the stream capability needed for stream-json tool bubbles; chat text and local hook evidence will still be shown when available.";
     default:
-      return "Claude Code tool-activity profiles are unavailable or invalid; chat text will continue without tool bubbles.";
+      return "Claude Code stream-json tool profiles are unavailable or invalid; chat text and local hook evidence will still be shown when available.";
   }
 }
