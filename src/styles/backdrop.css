@@ -25,6 +25,26 @@ html[data-backdrop] .cave-backdrop-layer[data-on="true"] {
   opacity: var(--cave-backdrop-opacity, 0.35);
 }
 
+/* Accent wash — the tail of the fallback chain (familiar image → app image →
+   this). A familiar switched on with no upload used to enable an empty layer,
+   so the toggle read as broken; this gives it something that is still visibly
+   THEIRS, seeded from the same accent that drives their rail ring.
+
+   A top-anchored radial rather than a flat fill: the scrim below already
+   darkens toward the bottom where composers and transcripts sit, so a uniform
+   tint would fight it. Kept well under the image path's strength — this is a
+   hint of color on the canvas, not a picture, and it must not cost contrast on
+   surfaces the user cannot re-tune. --cave-backdrop-accent is set inline by
+   cave-backdrop-layer.tsx; the fallback keeps the rule valid if it is ever
+   missing. */
+html[data-backdrop] .cave-backdrop-layer[data-backdrop-style="accent"] {
+  background-image: radial-gradient(
+    120% 80% at 50% 0%,
+    color-mix(in oklch, var(--cave-backdrop-accent, var(--accent-presence)) 22%, transparent),
+    transparent 62%
+  );
+}
+
 /* Readability floor: bg-base gradient scrim, heavier toward the bottom where
    composers and transcripts live. Sits inside the layer so the intensity
    slider scales image and scrim together. */
