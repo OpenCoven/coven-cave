@@ -49,8 +49,16 @@ export async function GET(req: Request) {
   if (!isArxivResponse(response)) {
     return NextResponse.json({ ok: false, error: "upstream redirected away" }, { status: 502 });
   }
-  if (!response.ok) {
+  // Only a real 404 is "this paper does not exist". Collapsing every non-2xx
+  // into one made a rate-limit or an arXiv outage indistinguishable from a
+  // missing paper, and the viewer's error mapping reads this status: it would
+  // have told the reader the paper "isn't available" -- which reads as
+  // permanent -- when retrying seconds later would have worked.
+  if (response.status === 404) {
     return NextResponse.json({ ok: false, error: "paper not found" }, { status: 404 });
+  }
+  if (!response.ok) {
+    return NextResponse.json({ ok: false, error: "upstream unavailable" }, { status: 502 });
   }
 
   const headers = new Headers({ "content-type": "application/pdf" });

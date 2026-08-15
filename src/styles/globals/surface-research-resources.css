@@ -951,9 +951,11 @@
 /* Text layer — the essential rules from pdf.js' own text_layer.css, scoped
    to this viewer. The spans are transparent and positioned over the glyphs
    the canvas painted, which is what makes the page selectable and findable
-   instead of a picture of a paper. pdf.js writes --total-scale-factor,
-   --min-font-size, --font-height, --scale-x and --rotate; everything here
-   only consumes them. */
+   instead of a picture of a paper. pdf.js writes --min-font-size,
+   --font-height, --scale-x and --rotate onto the spans it creates, and
+   CONSUMES --total-scale-factor -- which it never sets. The viewer assigns
+   that one on this container before TextLayer.render (research-paper-viewer.tsx);
+   the fallbacks below only cover the moment before that assignment lands. */
 .research-paper-view__text {
   position: absolute;
   inset: 0;

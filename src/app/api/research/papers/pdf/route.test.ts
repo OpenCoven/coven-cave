@@ -149,6 +149,24 @@ test("an unreachable upstream is a 502 and a missing paper is a 404", async () =
   }
 });
 
+// Only a real 404 means the paper does not exist. These used to collapse into
+// one, which told the reader a rate-limited or briefly-down arXiv had no such
+// paper -- permanent-sounding, and wrong a second later. The viewer maps 404
+// to "isn't available" and everything else to "check your connection, then
+// retry", so the distinction has to survive at this layer to reach them.
+for (const status of [403, 429, 500, 503]) {
+  test(`an upstream ${status} is a transient 502, not a missing paper`, async () => {
+    const stub = stubFetch(() => upstreamPdf("upstream said no", { status }));
+    try {
+      const response = await GET(request());
+      assert.equal(response.status, 502);
+      assert.equal((await response.json()).error, "upstream unavailable");
+    } finally {
+      stub.restore();
+    }
+  });
+}
+
 test("a redirect chain that leaves arXiv is refused, not proxied", async () => {
   // fetch follows up to 20 hops by default, so the safety of the composed
   // request URL says nothing about where the streamed body came from.
