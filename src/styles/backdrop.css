@@ -121,17 +121,23 @@ html[data-backdrop-on] .cave-chat-linear {
    with no backdrop and wrong with one: everything below them goes translucent
    above, so the familiar's image stopped in a hard line at the top bar.
 
-   This is the SAME glass the native shell already gives itself — see
-   `:root[data-tauri-titlebar] .shell-top` in globals/desktop-chrome.css, which
-   is why the packaged app already looked right and the browser tab did not.
-   Reusing its exact values keeps the two shells identical rather than
-   introducing a second, slightly different titlebar treatment.
+   The lit state below copies the SAME glass the native shell already gives
+   itself — see `:root[data-tauri-titlebar] .shell-top` in
+   globals/desktop-chrome.css, which is why the packaged app already looked
+   right and the browser tab did not. Matching its values keeps the two shells
+   showing one titlebar treatment rather than two slightly different ones.
 
    Deliberately NOT `background: transparent` like .shell-root above: the bar
    carries controls and search text directly over the image, so it needs the
-   scrim-plus-blur that the content panes get from their own glass. Both
-   fallbacks below come from the native rule and matter here for the same
-   reasons — without them the band would drop to unscrimmed text on a photo. */
+   scrim-plus-blur that the content panes get from their own glass.
+
+   ⚠️ The two fallbacks below intentionally DIVERGE from the native rule, which
+   drops to `background: transparent`. Do not "resync" them. The native window
+   supplies its own material behind a transparent band; here the baseline is an
+   opaque var(--bg-base), so transparent would leave the bar's controls sitting
+   on unscrimmed photo the moment blur is unavailable or the reader asks for
+   reduced transparency. Restoring the opaque band is the safe direction in
+   both cases — and for prefers-reduced-transparency it is the correct one. */
 html[data-backdrop-on] .shell-top,
 html[data-backdrop-on] .top-bar {
   background: color-mix(in oklch, var(--bg-base) 46%, transparent);
