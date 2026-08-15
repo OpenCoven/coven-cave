@@ -651,7 +651,7 @@ export function readOnboardingInstall(
   return { ...jobView(job), ...npmLaneView() };
 }
 
-const SAFE_INSTALLER_ERROR_CODES = new Set([
+const SAFE_INSTALLER_ERROR_CODE_LIST = [
   "EACCES",
   "EAGAIN",
   "EINVAL",
@@ -661,7 +661,13 @@ const SAFE_INSTALLER_ERROR_CODES = new Set([
   "ENOMEM",
   "EPERM",
   "EROFS",
-]);
+] as const;
+const SAFE_INSTALLER_ERROR_CODES = new Set<string>(
+  SAFE_INSTALLER_ERROR_CODE_LIST,
+);
+const SAFE_INSTALLER_ERROR_CODE_PATTERN = new RegExp(
+  `\\b(${SAFE_INSTALLER_ERROR_CODE_LIST.join("|")})\\b`,
+);
 
 export function installerErrorCode(err: unknown): string | null {
   const direct =
@@ -670,9 +676,7 @@ export function installerErrorCode(err: unknown): string | null {
       : "";
   if (SAFE_INSTALLER_ERROR_CODES.has(direct)) return direct;
   const message = err instanceof Error ? err.message : String(err);
-  const matched = message
-    .toUpperCase()
-    .match(/\b(EACCES|EAGAIN|EINVAL|EMFILE|ENFILE|ENOENT|ENOMEM|EPERM|EROFS)\b/);
+  const matched = message.toUpperCase().match(SAFE_INSTALLER_ERROR_CODE_PATTERN);
   return matched?.[1] ?? null;
 }
 
@@ -691,7 +695,7 @@ export function installStartErrorMessage(err: unknown): string {
     code === "ENFILE" ||
     /resource temporarily unavailable|uv_thread_create/i.test(message)
   ) {
-    return "Cave could not start the installer because the system is temporarily out of process slots. Wait a moment, then click Install again.";
+    return "Cave could not start the installer because system resources are temporarily exhausted. Close other apps or processes, wait a moment, then click Install again.";
   }
   if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
     return `The operating system blocked Cave from starting the installer (${code}). Check the affected user-scoped location and security controls, then retry setup.`;

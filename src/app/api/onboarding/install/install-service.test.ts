@@ -139,4 +139,17 @@ test("missing installer executables produce an actionable restart message", () =
   assert.match(installStartErrorMessage(error), /Restart Cave/);
 });
 
+test("installer resource failures do not overstate the exhausted resource", () => {
+  const error = Object.assign(new Error("spawn node.exe ENFILE"), {
+    code: "ENFILE",
+  });
+
+  assert.equal(installerErrorCode(error), "ENFILE");
+  assert.equal(
+    installStartErrorMessage(error),
+    "Cave could not start the installer because system resources are temporarily exhausted. Close other apps or processes, wait a moment, then click Install again.",
+  );
+  assert.doesNotMatch(installStartErrorMessage(error), /process slots/);
+});
+
 console.log("onboarding install-service.test.ts: ok");
