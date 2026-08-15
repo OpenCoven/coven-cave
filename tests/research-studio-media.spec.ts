@@ -439,6 +439,76 @@ async function boot(
 test.describe("Research Studio media honesty and playback", () => {
   test.describe.configure({ timeout: 180_000 });
 
+  test("adds visual, tone, and custom audience direction to a blog draft", async ({
+    page,
+  }) => {
+    await boot(page, { ready: true });
+    let createBody: Record<string, unknown> | null = null;
+    await page.route(
+      /\/api\/research\/generations(?:\?.*)?$/,
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.fallback();
+          return;
+        }
+        createBody = route.request().postDataJSON() as Record<string, unknown>;
+        await route.fulfill({
+          json: {
+            ok: true,
+            generation: {
+              version: 2,
+              id: "gen-blog-1",
+              familiarId: FAMILIAR_ID,
+              kind: "blog",
+              sourceMissionId: MISSION_ID,
+              sourceTitle: MISSION.title,
+              sourceArtifactKey: "report-1",
+              status: "ready",
+              directions: createBody.directions,
+              createdAt: now,
+              updatedAt: now,
+              content: {
+                kind: "blog",
+                markdown: "# Media pipeline findings\n\nA cited draft.",
+              },
+            },
+          },
+        });
+      },
+    );
+
+    await page.getByRole("button", { name: /Blog \/ article/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "Generate Blog / article" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /Hero image/ }).click();
+    await page.getByLabel("Tone").click();
+    await page.getByRole("option", { name: "Analytical" }).click();
+    await page.keyboard.press("Escape");
+    await page.getByLabel("Audience").click();
+    await page.getByRole("searchbox", { name: "Search audiences" }).fill(
+      "Policy teams",
+    );
+    await page.getByRole("option", { name: "Add “Policy teams”" }).click();
+    await page.keyboard.press("Escape");
+    await page.getByLabel("Additional direction (optional)").fill(
+      "Lead with the benchmark.",
+    );
+    await page.getByRole("button", { name: "✦ Generate Blog / article" }).click();
+
+    await expect.poll(() => createBody).not.toBeNull();
+    expect(createBody?.directions).toBe(
+      [
+        "Visual direction: Hero image",
+        "Tone: Analytical",
+        "Audience: Policy teams",
+        "",
+        "Additional direction:",
+        "Lead with the benchmark.",
+      ].join("\n"),
+    );
+  });
+
   test("configures, reviews, renders, plays, and downloads a podcast", async ({
     page,
   }) => {

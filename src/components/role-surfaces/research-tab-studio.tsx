@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { composeBlogGenerationDirections } from "@/lib/research-generation-directions";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
   RESEARCH_GENERATION_CREATABLE_KINDS,
@@ -68,6 +69,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [sourceId, setSourceId] = useState<string | null>(null);
   const [configKind, setConfigKind] = useState<ResearchGenerationCreatableKind | null>(null);
   const [directions, setDirections] = useState("");
+  const [blogVisuals, setBlogVisuals] = useState<string[]>([]);
+  const [blogTones, setBlogTones] = useState<string[]>([]);
+  const [blogAudiences, setBlogAudiences] = useState<string[]>([]);
   const [mediaProvider, setMediaProvider] =
     useState<ResearchMediaProvider>("local");
   const [mediaVoice, setMediaVoice] = useState("");
@@ -264,6 +268,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const openConfig = useCallback((kind: ResearchGenerationCreatableKind) => {
     setCreateError(null);
     setDirections("");
+    setBlogVisuals([]);
+    setBlogTones([]);
+    setBlogAudiences([]);
     if (!isResearchGenerationKind(kind) && readiness) {
       const elevenLabsShortVideoDefaultIsReady =
         kind === "short-video" &&
@@ -303,12 +310,20 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     if (!configKind || !effectiveSourceId) return;
     setCreating(true);
     setCreateError(null);
-    const hasDirections = directions.trim().length > 0;
+    const configuredDirections =
+      configKind === "blog"
+        ? composeBlogGenerationDirections(directions, {
+            visuals: blogVisuals,
+            tones: blogTones,
+            audiences: blogAudiences,
+          })
+        : directions.trim();
+    const hasDirections = configuredDirections.length > 0;
     const result = await createResearchGeneration({
       familiarId,
       kind: configKind,
       sourceMissionId: effectiveSourceId,
-      ...(hasDirections ? { directions } : {}),
+      ...(hasDirections ? { directions: configuredDirections } : {}),
       ...(!isResearchGenerationKind(configKind)
         ? {
             renderConfig: {
@@ -345,6 +360,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     setGenerations((prev) => [created, ...prev.filter((g) => g.id !== created.id)]);
     setConfigKind(null);
     setDirections("");
+    setBlogVisuals([]);
+    setBlogTones([]);
+    setBlogAudiences([]);
     if (isResearchGenerationKind(created.kind)) {
       announce(`${studioMetaForKind(created.kind).label} drafted from ${created.sourceTitle}`);
     } else {
@@ -354,6 +372,9 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     }
   }, [
     announce,
+    blogAudiences,
+    blogTones,
+    blogVisuals,
     configKind,
     directions,
     effectiveSourceId,
@@ -819,6 +840,12 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onSelectSource={setSourceId}
           directions={directions}
           onDirectionsChange={setDirections}
+          blogVisuals={blogVisuals}
+          onBlogVisualsChange={setBlogVisuals}
+          blogTones={blogTones}
+          onBlogTonesChange={setBlogTones}
+          blogAudiences={blogAudiences}
+          onBlogAudiencesChange={setBlogAudiences}
           readiness={readiness}
           mediaProvider={mediaProvider}
           onMediaProviderChange={(provider) => {

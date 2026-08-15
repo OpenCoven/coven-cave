@@ -32,8 +32,13 @@ import {
 import { MarkdownBlock } from "@/components/message-bubble";
 import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
 import { AuthedImage } from "@/components/ui/authed-image";
+import { Popover, PopoverBody } from "@/components/ui/popover";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { copyText } from "@/lib/clipboard";
+import {
+  blogGenerationDirectionPrefix,
+  composeBlogGenerationDirections,
+} from "@/lib/research-generation-directions";
 import { useResearchMediaUrl } from "@/lib/research-media-client";
 import {
   RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
@@ -103,6 +108,31 @@ export const STUDIO_KIND_META: Record<ResearchGenerationKind, StudioKindMeta> = 
     tags: ["text"],
   },
 };
+
+export const BLOG_VISUAL_OPTIONS = [
+  { value: "Hero image", glyph: "▱", detail: "Opening image brief" },
+  { value: "Inline illustrations", glyph: "◫", detail: "Section-level visual moments" },
+  { value: "Data charts", glyph: "⌁", detail: "Charts for sourced numbers" },
+  { value: "Pull quotes", glyph: "❞", detail: "Highlighted cited lines" },
+] as const;
+
+export const BLOG_TONE_OPTIONS = [
+  "Analytical",
+  "Authoritative",
+  "Conversational",
+  "Concise",
+  "Narrative",
+  "Provocative",
+] as const;
+
+export const BLOG_AUDIENCE_OPTIONS = [
+  "General readers",
+  "Executives",
+  "Technical leaders",
+  "Practitioners",
+  "Researchers",
+  "Developers",
+] as const;
 
 /** Glyph/format for media cards. Labels and blurbs come from
  *  RESEARCH_GENERATION_MEDIA_KINDS — the single source of truth — so this map
@@ -554,6 +584,196 @@ export function GenerationReviewModal({
   );
 }
 
+function SearchableMultiSelect({
+  id,
+  label,
+  options,
+  values,
+  onChange,
+  searchPlaceholder,
+  allowCustom,
+}: {
+  id: string;
+  label: string;
+  options: readonly string[];
+  values: readonly string[];
+  onChange: (values: string[]) => void;
+  searchPlaceholder: string;
+  allowCustom: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const optionsRef = useRef<HTMLDivElement | null>(null);
+  const normalizedQuery = query.trim();
+  const filtered = options.filter((option) =>
+    option.toLocaleLowerCase().includes(normalizedQuery.toLocaleLowerCase()),
+  );
+  const hasValue = (value: string) =>
+    values.some((selected) => selected.toLocaleLowerCase() === value.toLocaleLowerCase());
+  const customAvailable =
+    allowCustom &&
+    normalizedQuery.length > 0 &&
+    normalizedQuery.length <= 48 &&
+    !hasValue(normalizedQuery) &&
+    !options.some(
+      (option) => option.toLocaleLowerCase() === normalizedQuery.toLocaleLowerCase(),
+    );
+  const toggle = (value: string) => {
+    onChange(
+      hasValue(value)
+        ? values.filter(
+            (selected) =>
+              selected.toLocaleLowerCase() !== value.toLocaleLowerCase(),
+          )
+        : [...values, value],
+    );
+  };
+  const focusOption = (position: "first" | "last" | "next" | "previous") => {
+    const optionButtons = Array.from(
+      optionsRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [],
+    );
+    if (optionButtons.length === 0) return;
+    const activeIndex = optionButtons.findIndex(
+      (option) => option === document.activeElement,
+    );
+    const nextIndex =
+      position === "first"
+        ? 0
+        : position === "last"
+          ? optionButtons.length - 1
+          : position === "next"
+            ? Math.min(activeIndex + 1, optionButtons.length - 1)
+            : Math.max(activeIndex - 1, 0);
+    optionButtons[nextIndex]?.focus();
+  };
+
+  return (
+    <div className="research-studio-config__field">
+      <label className="research-studio-config__label" htmlFor={id}>
+        {label}
+      </label>
+      <button
+        id={id}
+        ref={triggerRef}
+        type="button"
+        className="research-studio-multiselect__trigger focus-ring"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>
+          {values.length > 0
+            ? `${values.length} selected`
+            : `Choose ${label.toLocaleLowerCase()}`}
+        </span>
+        <span aria-hidden>⌄</span>
+      </button>
+      {values.length > 0 ? (
+        <div className="research-studio-multiselect__values" aria-label={`Selected ${label.toLocaleLowerCase()}`}>
+          {values.map((value) => (
+            <button
+              key={value}
+              type="button"
+              className="research-studio-multiselect__pill focus-ring"
+              onClick={() => toggle(value)}
+              aria-label={`Remove ${value}`}
+            >
+              {value}
+              <span aria-hidden>×</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setQuery("");
+        }}
+        anchorRef={triggerRef}
+        placement="bottom-start"
+        minWidth={280}
+        ariaLabel={`${label} selection`}
+        className="research-studio-multiselect__popover"
+      >
+        <PopoverBody className="research-studio-multiselect__body">
+          <input
+            className="research-studio-multiselect__search focus-ring"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                focusOption("first");
+              }
+            }}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder.replace("…", "")}
+          />
+          <div
+            ref={optionsRef}
+            className="research-studio-multiselect__options"
+            role="listbox"
+            aria-label={`${label} options`}
+            aria-multiselectable="true"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                focusOption("next");
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                focusOption("previous");
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                focusOption("first");
+              } else if (event.key === "End") {
+                event.preventDefault();
+                focusOption("last");
+              }
+            }}
+          >
+            {filtered.map((option) => {
+              const selected = hasValue(option);
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  className="research-studio-multiselect__option"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => toggle(option)}
+                >
+                  <span>{option}</span>
+                  <span aria-hidden>{selected ? "✓" : ""}</span>
+                </button>
+              );
+            })}
+            {customAvailable ? (
+              <button
+                type="button"
+                className="research-studio-multiselect__option research-studio-multiselect__option--custom"
+                role="option"
+                aria-selected="false"
+                onClick={() => {
+                  toggle(normalizedQuery);
+                  setQuery("");
+                }}
+              >
+                Add “{normalizedQuery}”
+              </button>
+            ) : null}
+            {filtered.length === 0 && !customAvailable ? (
+              <span className="research-studio-multiselect__empty">No matching options</span>
+            ) : null}
+          </div>
+        </PopoverBody>
+      </Popover>
+    </div>
+  );
+}
+
 export function GenerationConfigModal({
   kind,
   sources,
@@ -561,6 +781,12 @@ export function GenerationConfigModal({
   onSelectSource,
   directions,
   onDirectionsChange,
+  blogVisuals,
+  onBlogVisualsChange,
+  blogTones,
+  onBlogTonesChange,
+  blogAudiences,
+  onBlogAudiencesChange,
   readiness,
   mediaProvider,
   onMediaProviderChange,
@@ -583,6 +809,12 @@ export function GenerationConfigModal({
   onSelectSource: (id: string) => void;
   directions: string;
   onDirectionsChange: (value: string) => void;
+  blogVisuals: string[];
+  onBlogVisualsChange: (values: string[]) => void;
+  blogTones: string[];
+  onBlogTonesChange: (values: string[]) => void;
+  blogAudiences: string[];
+  onBlogAudiencesChange: (values: string[]) => void;
   readiness: ResearchGenerationReadiness | null;
   mediaProvider: ResearchMediaProvider;
   onMediaProviderChange: (provider: ResearchMediaProvider) => void;
@@ -604,7 +836,29 @@ export function GenerationConfigModal({
 }) {
   const meta = studioMetaForKind(kind);
   const isMedia = !isResearchGenerationKind(kind);
-  const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
+  const blogPreferences = {
+    visuals: blogVisuals,
+    tones: blogTones,
+    audiences: blogAudiences,
+  };
+  const directionPrefix =
+    kind === "blog" ? blogGenerationDirectionPrefix(blogPreferences) : "";
+  const composedDirections =
+    kind === "blog"
+      ? composeBlogGenerationDirections(directions, blogPreferences)
+      : directions;
+  const freeformMaxLength = Math.max(
+    0,
+    RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH - directionPrefix.length,
+  );
+  const nearCap =
+    composedDirections.length >=
+    RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
+  useEffect(() => {
+    if (kind === "blog" && directions.length > freeformMaxLength) {
+      onDirectionsChange(directions.slice(0, freeformMaxLength));
+    }
+  }, [directions, freeformMaxLength, kind, onDirectionsChange]);
   const mediaConfigurationError = (() => {
     if (!isMedia) return null;
     if (!readiness) return "Media readiness is still loading.";
@@ -695,24 +949,86 @@ export function GenerationConfigModal({
           The draft extracts from this run&rsquo;s newest markdown artifact.
           </span>
         </div>
+        {kind === "blog" ? (
+          <div className="research-studio-config__blog">
+            <fieldset className="research-studio-config__visuals">
+              <legend className="research-studio-config__label">Visual direction</legend>
+              <div className="research-studio-visuals" aria-label="Blog visual directions">
+                {BLOG_VISUAL_OPTIONS.map((option) => {
+                  const selected = blogVisuals.includes(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className="research-studio-visuals__option focus-ring"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        onBlogVisualsChange(
+                          selected
+                            ? blogVisuals.filter((value) => value !== option.value)
+                            : [...blogVisuals, option.value],
+                        )
+                      }
+                    >
+                      <span className="research-studio-visuals__glyph" aria-hidden>
+                        {option.glyph}
+                      </span>
+                      <span>
+                        <strong>{option.value}</strong>
+                        <small>{option.detail}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="research-studio-config__hint">
+                These choices become an art-direction brief; the extractive draft does not fabricate assets.
+              </span>
+            </fieldset>
+            <div className="research-studio-config__editorial">
+              <SearchableMultiSelect
+                id="research-studio-blog-tone"
+                label="Tone"
+                options={BLOG_TONE_OPTIONS}
+                values={blogTones}
+                onChange={onBlogTonesChange}
+                searchPlaceholder="Search tones…"
+                allowCustom
+              />
+              <SearchableMultiSelect
+                id="research-studio-blog-audience"
+                label="Audience"
+                options={BLOG_AUDIENCE_OPTIONS}
+                values={blogAudiences}
+                onChange={onBlogAudiencesChange}
+                searchPlaceholder="Search audiences…"
+                allowCustom
+              />
+            </div>
+          </div>
+        ) : null}
         <div className="research-studio-config__field">
           <label className="research-studio-config__label" htmlFor="research-studio-directions">
-            Directions (optional)
+            {kind === "blog" ? "Additional direction (optional)" : "Directions (optional)"}
           </label>
           <textarea
             id="research-studio-directions"
             className="research-studio-config__textarea"
             value={directions}
-            maxLength={RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
+            maxLength={kind === "blog" ? freeformMaxLength : RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
             onChange={(event) => onDirectionsChange(event.target.value)}
             aria-describedby="research-studio-directions-count"
-            placeholder="Audience, tone, emphasis — kept with the generation for future pipelines"
+            placeholder={
+              kind === "blog"
+                ? "Add emphasis, structure, or source-handling guidance…"
+                : "Audience, tone, emphasis — kept with the generation for future pipelines"
+            }
           />
           <span
             id="research-studio-directions-count"
             className={`research-studio-config__count${nearCap ? " research-studio-config__count--near" : ""}`}
           >
-            {directions.length.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
+            {composedDirections.length.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
           </span>
         </div>
         {isMedia ? (

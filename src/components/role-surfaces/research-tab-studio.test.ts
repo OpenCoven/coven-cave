@@ -87,12 +87,31 @@ test("create failures surface the server's message inline (409 no-artifact inclu
 });
 
 test("generation directions show a bounded, quiet character count", () => {
-  assert.match(modals, /maxLength=\{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\}/);
-  assert.match(modals, /directions\.length\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
+  assert.match(modals, /maxLength=\{kind === "blog" \? freeformMaxLength : RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\}/);
+  assert.match(modals, /composedDirections\.length\.toLocaleString\(\)\} \/ \{RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH\.toLocaleString\(\)/);
   assert.match(modals, /aria-describedby="research-studio-directions-count"/);
   assert.match(modals, /id="research-studio-directions-count"/);
   assert.doesNotMatch(modals, /research-studio-config__count" aria-live/);
   assert.match(css, /\.research-studio-config__count--near/);
+});
+
+test("blog generation exposes visual direction plus custom multiselect tone and audience", () => {
+  assert.match(modals, /kind === "blog"/);
+  assert.match(modals, /Visual direction/);
+  assert.match(modals, /BLOG_VISUAL_OPTIONS\.map/);
+  assert.match(modals, /aria-pressed=\{selected\}/);
+  assert.match(modals, /label="Tone"/);
+  assert.match(modals, /label="Audience"/);
+  assert.match(modals, /allowCustom/);
+  assert.match(modals, /Search tones…/);
+  assert.match(modals, /Search audiences…/);
+  assert.match(modals, /aria-multiselectable="true"/);
+  assert.match(modals, /role="option"/);
+  assert.match(modals, /aria-selected=\{selected\}/);
+  assert.match(tab, /composeBlogGenerationDirections/);
+  assert.match(tab, /blogVisuals/);
+  assert.match(tab, /blogTones/);
+  assert.match(tab, /blogAudiences/);
 });
 
 test("markdown editor never fakes persistence", () => {

@@ -130,6 +130,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
     "src/lib/research-generations.test.ts",
+    "src/lib/research-generation-directions.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
