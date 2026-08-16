@@ -191,8 +191,19 @@ test("mobile uses one focus-trapped right drawer and returns focus", async ({ pa
   await expect(drawer).toBeHidden();
   await expect(toggle).toBeFocused();
 
+  // The drawer intentionally spans the full viewport width on narrow phones
+  // (`.mobile-right-chat-drawer` under `@media (max-width: 480px)`), so on
+  // Pixel 5 (393px) and iPhone 13 (390px) its own header can legitimately sit
+  // on top of the backdrop button at every coordinate, including this one —
+  // Playwright's actionability check then waits (flakily) for a visually
+  // uncovered pixel that never appears. `force: true` dispatches the click
+  // straight to the backdrop button regardless of what's visually on top,
+  // which is exactly right here: the assertion is about the backdrop's own
+  // close handler, not about a hit-test that full-width drawers can't pass.
   await toggle.click();
-  await page.getByRole("button", { name: "Close drawer" }).click({ position: { x: 2, y: 2 } });
+  await page
+    .getByRole("button", { name: "Close drawer" })
+    .click({ position: { x: 2, y: 2 }, force: true });
   await expect(drawer).toBeHidden();
 
   await toggle.click();

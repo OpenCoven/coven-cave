@@ -125,15 +125,39 @@ const hydrationShellStorage = {
   setItem(_key: string, _value: string): void {},
 };
 
+// react-resizable-panels can hand back a non-null imperative handle for a
+// panel that hasn't finished registering with its PanelGroup yet — this
+// happens when a conditionally-rendered panel (right-chat, gated on
+// isMobile) remounts during a viewport resize that crosses the mobile
+// breakpoint in the same render pass an effect here runs in. Calling
+// `.isCollapsed()` on it then THROWS "Panel constraints not found for Panel
+// <id>" instead of returning a boolean — uncaught, that crashes the whole
+// shell into the root error boundary and takes every other panel (and every
+// other test sharing the dev server) down with it. There is nothing to
+// open/collapse in that instant, and the next relevant effect re-run retries
+// once the panel has registered, so treating "not ready" like "no panel"
+// (skip silently) is safe. See cave-ltl38.4.
+function readPanelCollapsed(panel: PanelImperativeHandle): boolean | undefined {
+  try {
+    return panel.isCollapsed();
+  } catch {
+    return undefined;
+  }
+}
+
 function togglePanel(panel: PanelImperativeHandle | null) {
   if (!panel) return;
-  if (panel.isCollapsed()) panel.expand();
+  const collapsed = readPanelCollapsed(panel);
+  if (collapsed === undefined) return;
+  if (collapsed) panel.expand();
   else panel.collapse();
 }
 
 function applyPanelOpenState(panel: PanelImperativeHandle | null, open: boolean) {
   if (!panel) return;
-  if (panel.isCollapsed() === !open) return;
+  const collapsed = readPanelCollapsed(panel);
+  if (collapsed === undefined) return;
+  if (collapsed === !open) return;
   if (open) panel.expand();
   else panel.collapse();
 }
@@ -851,18 +875,46 @@ function ShellInner({
     // Group keeps an in-memory layout keyed only by panel ids, even after its
     // id changes. Arm persistence immediately before replacing that stale
     // source layout so transition churn cannot overwrite the destination.
-    expandedLayoutRef.current = { groupId, layout: destinationLayout };
-    collapsedLayoutRef.current = null;
-    layoutPersistenceGroupRef.current = groupId;
-    restoredGroupRef.current = groupId;
-    group.setLayout(destinationLayout);
-    if (rememberedNavOpen !== null) {
-      railAutoCollapsedNavRef.current = false;
-      userOverrodeNavRef.current = false;
-      applyPanelOpenState(navRef.current, rememberedNavOpen);
-      setNavOpen(rememberedNavOpen);
-      minimizedGroupsRef.current.add(groupId);
-      markShellMinimizeApplied(groupId);
+    const commitDestinationLayout = () => {
+      group.setLayout(destinationLayout);
+      expandedLayoutRef.current = { groupId, layout: destinationLayout };
+      collapsedLayoutRef.current = null;
+      layoutPersistenceGroupRef.current = groupId;
+      restoredGroupRef.current = groupId;
+      if (rememberedNavOpen !== null) {
+        railAutoCollapsedNavRef.current = false;
+        userOverrodeNavRef.current = false;
+        applyPanelOpenState(navRef.current, rememberedNavOpen);
+        setNavOpen(rememberedNavOpen);
+        minimizedGroupsRef.current.add(groupId);
+        markShellMinimizeApplied(groupId);
+      }
+    };
+    try {
+      commitDestinationLayout();
+    } catch {
+      // destinationLayout's key count reflects panelIds/desktopRightChat for
+      // THIS render, but group.setLayout() validates against however many
+      // panels are actually registered with the group right now — and a
+      // groupId change (toggling desktopRightChat remounts the whole
+      // PanelGroup under a new key, see groupId above) can commit before the
+      // freshly-mounted right-chat Panel has finished registering its own
+      // constraints, so the two counts briefly disagree and the library
+      // throws "Invalid N panel layout" instead of applying it. Retry once
+      // after paint, by which point every panel's own mount effects have
+      // run; leaving restoredGroupRef unset until then means a re-render in
+      // between (or the retry itself) is what actually applies it. See
+      // cave-ltl38.4.
+      const groupAtThrow = group;
+      requestAnimationFrame(() => {
+        if (groupRef.current !== groupAtThrow) return;
+        try {
+          commitDestinationLayout();
+        } catch {
+          // Still not ready — leave restoredGroupRef unset so the next
+          // relevant effect re-run (any dependency change) tries again.
+        }
+      });
     }
   }, [
     mounted,
