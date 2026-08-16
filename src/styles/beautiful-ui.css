@@ -97,14 +97,18 @@
      shadow (cave-8ppoa), so these must never reference a token a theme can
      leave unset. */
   --bui-shadow-hairline: 0 0 0 1px var(--bui-line);
-  --bui-shadow-btn: 0 0 0 1px var(--bui-line-strong),
+  --bui-shadow-btn:
+    0 0 0 1px var(--bui-line-strong),
     0 1px 2px color-mix(in oklch, var(--shadow-color) 18%, transparent);
-  --bui-shadow-card: 0 0 0 1px var(--bui-line),
+  --bui-shadow-card:
+    0 0 0 1px var(--bui-line),
     0 1px 2px color-mix(in oklch, var(--shadow-color) 10%, transparent),
     0 2px 6px color-mix(in oklch, var(--shadow-color) 8%, transparent);
-  --bui-shadow-raised: 0 0 0 1px var(--bui-line),
+  --bui-shadow-raised:
+    0 0 0 1px var(--bui-line),
     0 2px 8px color-mix(in oklch, var(--shadow-color) 14%, transparent);
-  --bui-shadow-overlay: 0 0 0 1px var(--bui-line-strong),
+  --bui-shadow-overlay:
+    0 0 0 1px var(--bui-line-strong),
     0 8px 28px color-mix(in oklch, var(--shadow-color) 30%, transparent);
 
   /* Radii, as plain custom properties. The @theme block below registers the
@@ -880,4 +884,46 @@ a:hover .animated-underline:after {
   flex: 0 0 8px;
   width: 8px;
   height: 8px;
+}
+
+/* Status pills in FilterTable, and the linked-company affordance in
+   RecordsTable. These were missed by the first sweep of upstream's sheet
+   because the class names are held in constants (`PILLS[...].cls`) rather than
+   written into a className attribute, so a scan of literal attributes did not
+   see them.
+
+   The three hues are the same to-do / in-flight / finished trio the FILTERS
+   dots use, so they resolve to the same tokens. Upstream's own recipe here —
+   solid text, ~20% fill, ~34% border, all mixed from ONE hue — is already the
+   state-tint recipe the Cave design contract mandates, so the proportions are
+   kept as they are and only the hue changes. */
+.filter-status-todo,
+.filter-status-progress,
+.filter-status-done {
+  border: 1px solid transparent;
+}
+
+.filter-status-todo {
+  color: color-mix(in oklch, var(--bui-orange) 92%, var(--bui-ink));
+  background: color-mix(in oklch, var(--bui-orange) 20%, var(--bui-surface));
+  border-color: color-mix(in oklch, var(--bui-orange) 34%, var(--bui-surface));
+}
+
+.filter-status-progress {
+  color: color-mix(in oklch, var(--bui-accent) 92%, var(--bui-ink));
+  background: color-mix(in oklch, var(--bui-accent) 20%, var(--bui-surface));
+  border-color: color-mix(in oklch, var(--bui-accent) 34%, var(--bui-surface));
+}
+
+.filter-status-done {
+  color: color-mix(in oklch, var(--bui-green) 92%, var(--bui-ink));
+  background: color-mix(in oklch, var(--bui-green) 20%, var(--bui-surface));
+  border-color: color-mix(in oklch, var(--bui-green) 34%, var(--bui-surface));
+}
+
+.records-company-name.has-link:hover,
+.records-company-name.has-link:focus-visible {
+  color: var(--bui-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
