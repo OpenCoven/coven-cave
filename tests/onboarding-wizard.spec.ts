@@ -311,7 +311,7 @@ test.describe("onboarding bootstrap", () => {
     await expect.poll(() => confirmations).toBe(1);
 
     await expect(dialog.getByText(/private Node\.js and npm runtime/)).toBeVisible();
-    await expect(dialog.getByText(/First-time setup can take a few minutes/)).toBeVisible();
+    await expect(dialog.getByText(/few minutes/)).toHaveCount(0);
     await expect(dialog.getByText(/Next, Cave creates your defaults and starts its local service/)).toBeVisible();
     await expect(dialog.getByText(/Waiting for local components/)).toBeVisible();
     await expect(dialog.getByText(/Provider sign-in is deferred/)).toBeVisible();
