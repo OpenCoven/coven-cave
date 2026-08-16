@@ -92,6 +92,7 @@ test("public client v1 changes run Cave API, E2E, and documentation validation",
     "scripts/export-client-v1-contract.mjs",
     "src/app/api/client/v1/health/route.ts",
     "docs/api/client-v1.md",
+    ".gitattributes",
   ]) {
     const paths = classifyCiPaths([file]);
     assert.equal(paths.frontend, true, `${file} must run Cave API validation`);

@@ -178,6 +178,65 @@ test("preserves additive cursor fields through parsers and response helpers", ()
   );
 });
 
+test("accepts only JSON-safe additive public values", () => {
+  const fixture = createClientV1ContractFixture();
+  const nestedExtension = {
+    nested: [null, true, 3.5, "extension", { child: "accepted" }],
+  };
+  const response = {
+    ...fixture.examples.health,
+    extension: nestedExtension,
+    data: { ...fixture.examples.health.data, extension: nestedExtension },
+    cursor: {
+      current: "cursor-1",
+      hasMore: true,
+      extension: nestedExtension,
+    },
+  };
+
+  const parsed = parseClientV1SuccessEnvelope(response);
+  assert.deepEqual(parsed, response);
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed)), parsed);
+  assert.deepEqual(
+    parseClientV1Cursor(response.cursor),
+    response.cursor,
+  );
+  assert.deepEqual(
+    clientV1Success({ status: "ok", extension: nestedExtension }).data,
+    { status: "ok", extension: nestedExtension },
+  );
+
+  const cycle: Record<string, unknown> = {};
+  cycle.self = cycle;
+  for (const value of [
+    BigInt(1),
+    new Date("2026-08-15T00:00:00.000Z"),
+    new (class Extension {
+      value = "extension";
+    })(),
+    NaN,
+    Infinity,
+    -Infinity,
+    () => undefined,
+    Symbol("extension"),
+    undefined,
+    cycle,
+  ]) {
+    assert.throws(
+      () => parseClientV1SuccessEnvelope({ ...fixture.examples.health, extension: value }),
+      /JSON-safe/i,
+    );
+  }
+  assert.throws(
+    () => parseClientV1Cursor({ current: "cursor-1", hasMore: true, extension: BigInt(1) }),
+    /JSON-safe/i,
+  );
+  assert.throws(
+    () => clientV1SuccessResponse({ status: "ok", extension: BigInt(1) } as never),
+    /JSON-safe/i,
+  );
+});
+
 test("serializes the public contract deterministically by sorting object keys", () => {
   assert.deepEqual(
     sortClientV1JsonKeys({

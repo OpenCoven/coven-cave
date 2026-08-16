@@ -65,7 +65,10 @@ export type ClientV1Capability = (typeof CLIENT_V1_CAPABILITIES)[number];
 export type ClientV1ErrorCode = (typeof CLIENT_V1_ERROR_CODES)[number];
 export type ClientV1IdentityKind = (typeof CLIENT_V1_IDENTITY_KINDS)[number];
 
-export type ClientV1Record = Record<string, unknown>;
+export type JsonPrimitive = null | boolean | number | string;
+export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject;
+export type JsonObject = { [key: string]: JsonValue };
+export type ClientV1Record = JsonObject;
 export type ClientV1IdempotencyKey = string & {
   readonly __clientV1IdempotencyKey: unique symbol;
 };
@@ -191,16 +194,82 @@ export type ClientV1ContractFixture = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_8601_TIMESTAMP_RE =
   /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+const ARRAY_INDEX_RE = /^(?:0|[1-9]\d*)$/;
 const CLIENT_V1_SCOPE_SET = new Set<string>(CLIENT_V1_SCOPES);
 const CLIENT_V1_CAPABILITY_SET = new Set<string>(CLIENT_V1_CAPABILITIES);
 const CLIENT_V1_ERROR_CODE_SET = new Set<string>(CLIENT_V1_ERROR_CODES);
 const CLIENT_V1_IDENTITY_KIND_SET = new Set<string>(CLIENT_V1_IDENTITY_KINDS);
 
+function rejectNonJsonValue(): never {
+  throw new Error("Client v1 values must be JSON-safe plain values.");
+}
+
+function parseClientV1JsonValueInner(value: unknown, ancestors: Set<object>): JsonValue {
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return value;
+    return rejectNonJsonValue();
+  }
+  if (typeof value !== "object" || ancestors.has(value)) {
+    return rejectNonJsonValue();
+  }
+
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (const key of Reflect.ownKeys(value)) {
+        if (key === "length") continue;
+        if (typeof key !== "string" || !ARRAY_INDEX_RE.test(key) || Number(key) >= value.length) {
+          return rejectNonJsonValue();
+        }
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+          return rejectNonJsonValue();
+        }
+        parseClientV1JsonValueInner(descriptor.value, ancestors);
+      }
+      return value as JsonValue[];
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return rejectNonJsonValue();
+    }
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") return rejectNonJsonValue();
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+        return rejectNonJsonValue();
+      }
+      parseClientV1JsonValueInner(descriptor.value, ancestors);
+    }
+    return value as JsonObject;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+export function parseClientV1JsonValue(value: unknown): JsonValue {
+  return parseClientV1JsonValueInner(value, new Set());
+}
+
+export function parseClientV1JsonObject(value: unknown): JsonObject {
+  const parsed = parseClientV1JsonValue(value);
+  if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error("Client v1 values must be JSON-safe plain objects.");
+  }
+  return parsed;
+}
+
 function requiredRecord(value: unknown, name: string): ClientV1Record {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`Client v1 ${name} must be an object.`);
   }
-  return value as ClientV1Record;
+  return parseClientV1JsonObject(value);
 }
 
 function requiredString(value: unknown, name: string, maxLength?: number): string {
@@ -234,6 +303,7 @@ function parseUniqueStringEnumList<T extends string>(
   name: string,
   supported: ReadonlySet<string>,
 ): T[] {
+  parseClientV1JsonValue(value);
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`Client v1 ${name} must be a non-empty array.`);
   }
@@ -485,14 +555,15 @@ export function parseClientV1PublicSuccessResponse(value: unknown): ClientV1Succ
   throw new Error("Client v1 public success response data has no supported payload shape.");
 }
 
-export function sortClientV1JsonKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortClientV1JsonKeys);
-  if (value === null || typeof value !== "object") return value;
+export function sortClientV1JsonKeys(value: JsonValue): JsonValue {
+  const parsed = parseClientV1JsonValue(value);
+  if (Array.isArray(parsed)) return parsed.map(sortClientV1JsonKeys);
+  if (parsed === null || typeof parsed !== "object") return parsed;
   return Object.fromEntries(
-    Object.keys(value)
+    Object.keys(parsed)
       .sort()
-      .map((key) => [key, sortClientV1JsonKeys((value as ClientV1Record)[key])]),
-  );
+      .map((key) => [key, sortClientV1JsonKeys(parsed[key])]),
+  ) as JsonObject;
 }
 
 function defaultCapabilities(): ClientV1Capability[] {

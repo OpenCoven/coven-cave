@@ -9,6 +9,7 @@ import {
   parseClientV1ErrorDetails,
   parseClientV1ErrorEnvelope,
   parseClientV1Identity,
+  parseClientV1JsonObject,
   parseClientV1PublicSuccessResponse,
   parseClientV1RequestId,
   parseClientV1Revision,
@@ -47,7 +48,7 @@ function requiredRecord(value: unknown, name: string): ClientV1Record {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`Client v1 ${name} must be an object.`);
   }
-  return value as ClientV1Record;
+  return parseClientV1JsonObject(value);
 }
 
 function requiredErrorMessage(value: unknown): string {
