@@ -268,6 +268,15 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Next's traced output following new routes, at roughly two to four files
   // each. There is no subtree to prune — the closure grows because the app
   // does — which is why this is a tracked budget rather than a fixed one.
+  //
+  // 2026-08-16 (cave-boem6): v0.3.4 release validation measured 6,150 files
+  // on macOS, 6,154 on Ubuntu, and 6,156 on Windows. That is +197 over the
+  // governing 5,959-file Windows baseline in ten days (~19.7 files/day),
+  // consistent with the ~21/day rate above. Intermediate Windows release
+  // measurements were 5,960 on August 9, 6,036 on August 11, and 6,035 on
+  // August 12, confirming gradual growth rather than a sudden subtree inclusion.
+  // Restore the same one-week, 150-file headroom from the Windows maximum;
+  // leave the expanded-byte ceiling unchanged.
   fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
