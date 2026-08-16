@@ -51,6 +51,16 @@ function stageTone(status: OnboardingBootstrapStageStatus): string {
   return "border-[var(--border-hairline)] text-[var(--text-muted)]";
 }
 
+function nextSetupStep(activeStage: OnboardingBootstrapState["activeStage"]) {
+  if (activeStage === "core-tools") {
+    return "Next, Cave creates your defaults and starts its local service.";
+  }
+  if (activeStage === "workspace") {
+    return "Next, Cave starts its local service if it needs to.";
+  }
+  return "Cave is finishing its local setup.";
+}
+
 export function OnboardingOverlay({
   open,
   onDismiss,
@@ -285,6 +295,15 @@ export function OnboardingOverlay({
               </li>
             ))}
           </ol>
+
+          {running ? (
+            <div className="grid gap-1 rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] p-3 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+              <p className="font-medium text-[var(--text-primary)]">
+                First-time setup can take a few minutes. Cave keeps working if you run it in the background.
+              </p>
+              <p>{nextSetupStep(state.activeStage)}</p>
+            </div>
+          ) : null}
 
           {state.failure ? (
             <div
