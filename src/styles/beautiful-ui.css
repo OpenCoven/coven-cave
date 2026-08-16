@@ -1,0 +1,279 @@
+/* ── Beautiful UI adapter ────────────────────────────────────────────────────
+ *
+ * Beautiful UI (https://www.beautifului.dev, MIT, by Turbo) is a set of
+ * AI-native interface primitives. They are vendored into
+ * `src/components/ui/beautiful/` largely verbatim so they stay diffable
+ * against upstream; this sheet is the ONLY place their design vocabulary is
+ * defined.
+ *
+ * ── Why this sheet is NOT imported by src/app/globals.css ───────────────────
+ *
+ * Tailwind emits every utility it generates into the stylesheet that owns the
+ * scan, so vendoring 19 utility-heavy components into the root scan grows the
+ * root stylesheet that EVERY route downloads. Measured: root CSS is 599 KB
+ * against a 600 KB budget — one kilobyte of headroom — and the vendored set
+ * costs ~24 KB. Nothing in the app uses these components yet, so that would be
+ * 24 KB on every route for a gallery.
+ *
+ * So this file is its own Tailwind entry point. It pulls in the theme and
+ * utility layers with `source(none)` (no scanning), then points `@source` at
+ * exactly the vendored directory and the gallery that renders it. Preflight is
+ * deliberately NOT imported: the root sheet already applies it, and a second
+ * copy would re-reset every element on the page. `src/app/globals.css` carries
+ * the matching `@source not` so the same utilities are not also generated into
+ * the root bundle.
+ *
+ * The upshot: only `/aesthetic/beautiful` pays for this. When a component is
+ * parameterized and adopted on a real surface, move that surface into the
+ * `@source` list below — or, once adoption is broad enough to be worth it,
+ * fold the whole thing back into the root scan and raise the budget knowingly.
+ *
+ * ── Tokens ──────────────────────────────────────────────────────────────────
+ *
+ * Every `--bui-*` token below is an ALIAS onto a Cave token — never a literal.
+ * That is what makes the vendored components survive all 12 palettes x 2 modes
+ * for free: retheming Cave retunes them, and `themes.css` needs no per-palette
+ * entry for Beautiful UI at all.
+ *
+ * The `bui-` prefix is deliberate. Upstream ships generic names (`--ink`,
+ * `--surface`, `--line`) which, registered in `@theme`, would mint global
+ * `text-ink` / `bg-surface` utilities alongside Cave's own `--text-primary` /
+ * `--bg-panel` — a second vocabulary for the same concepts, reachable from
+ * every hand-written component. Namespacing keeps the vendored vocabulary
+ * legible AS vendored and stops it leaking into Cave code. The rename is
+ * applied mechanically (see docs/beautiful-ui.md).
+ *
+ * Upstream token -> Cave token:
+ *   --ink / -2 / -3       -> --text-primary / --text-secondary / --text-muted
+ *   --canvas              -> --bg-base
+ *   --surface             -> --bg-panel
+ *   --field               -> --bg-subtle
+ *   --inset               -> --bg-sunken
+ *   --hover / --hover-2   -> --bg-hover / --bg-raised
+ *   --line / --line-strong-> --border / --border-strong
+ *   --accent              -> --accent-presence      (OpenCoven lavender)
+ *   --accent-ink          -> --accent-presence-foreground
+ *   --accent-tint         -> --accent-presence-soft
+ *   --red / --green / --orange -> --color-danger / -success / -warning
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+@import "tailwindcss/theme.css" layer(theme) source(none);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../components/ui/beautiful";
+@source "../app/aesthetic/beautiful";
+
+:root {
+  --bui-ink: var(--text-primary);
+  --bui-ink-2: var(--text-secondary);
+  --bui-ink-3: var(--text-muted);
+
+  --bui-canvas: var(--bg-base);
+  --bui-surface: var(--bg-panel);
+  --bui-field: var(--bg-subtle);
+  --bui-inset: var(--bg-sunken);
+  --bui-hover: var(--bg-hover);
+  --bui-hover-2: var(--bg-raised);
+
+  --bui-line: var(--border);
+  --bui-line-strong: var(--border-strong);
+
+  --bui-accent: var(--accent-presence);
+  --bui-accent-ink: var(--accent-presence-foreground);
+  --bui-accent-tint: var(--accent-presence-soft);
+
+  /* Status hues. Cave ships danger pre-mixed; success and warning follow the
+     same color-mix recipe (solid text, ~14% fill) so all three read as one
+     family rather than three unrelated hues. */
+  --bui-red: var(--color-danger);
+  --bui-red-tint: var(--danger-bg);
+  --bui-green: var(--color-success);
+  --bui-green-tint: color-mix(in oklch, var(--color-success) 14%, transparent);
+  --bui-orange: var(--color-warning);
+  --bui-orange-tint: color-mix(in oklch, var(--color-warning) 14%, transparent);
+
+  /* Elevation. Mixed off --shadow-color, which every palette defines — an
+     undefined var collapses the whole color-mix and silently deletes the
+     shadow (cave-8ppoa), so these must never reference a token a theme can
+     leave unset. */
+  --bui-shadow-hairline: 0 0 0 1px var(--bui-line);
+  --bui-shadow-btn: 0 0 0 1px var(--bui-line-strong),
+    0 1px 2px color-mix(in oklch, var(--shadow-color) 18%, transparent);
+  --bui-shadow-card: 0 0 0 1px var(--bui-line),
+    0 1px 2px color-mix(in oklch, var(--shadow-color) 10%, transparent),
+    0 2px 6px color-mix(in oklch, var(--shadow-color) 8%, transparent);
+  --bui-shadow-raised: 0 0 0 1px var(--bui-line),
+    0 2px 8px color-mix(in oklch, var(--shadow-color) 14%, transparent);
+  --bui-shadow-overlay: 0 0 0 1px var(--bui-line-strong),
+    0 8px 28px color-mix(in oklch, var(--shadow-color) 30%, transparent);
+}
+
+/* Register the aliases with Tailwind so `bg-bui-surface`, `text-bui-ink-3`,
+   `border-bui-line`, `shadow-bui-card`, … resolve. `inline` keeps the
+   generated utilities pointing at the custom property (not its resolved
+   value), which is what lets a runtime theme switch repaint them. */
+@theme inline {
+  --color-bui-ink: var(--bui-ink);
+  --color-bui-ink-2: var(--bui-ink-2);
+  --color-bui-ink-3: var(--bui-ink-3);
+  --color-bui-canvas: var(--bui-canvas);
+  --color-bui-surface: var(--bui-surface);
+  --color-bui-field: var(--bui-field);
+  --color-bui-inset: var(--bui-inset);
+  --color-bui-hover: var(--bui-hover);
+  --color-bui-hover-2: var(--bui-hover-2);
+  --color-bui-line: var(--bui-line);
+  --color-bui-line-strong: var(--bui-line-strong);
+  --color-bui-accent: var(--bui-accent);
+  --color-bui-accent-ink: var(--bui-accent-ink);
+  --color-bui-accent-tint: var(--bui-accent-tint);
+  --color-bui-red: var(--bui-red);
+  --color-bui-red-tint: var(--bui-red-tint);
+  --color-bui-green: var(--bui-green);
+  --color-bui-green-tint: var(--bui-green-tint);
+  --color-bui-orange: var(--bui-orange);
+  --color-bui-orange-tint: var(--bui-orange-tint);
+
+  /* Upstream's card/chip radii (10px / 6px) land on Cave's existing steps
+     rather than introducing two more — 12px card, 6px chip, 8px control. */
+  --radius-bui-card: var(--radius-card);
+  --radius-bui-chip: var(--radius-sm);
+  --radius-bui-control: var(--radius-control);
+
+  --shadow-bui-hairline: var(--bui-shadow-hairline);
+  --shadow-bui-btn: var(--bui-shadow-btn);
+  --shadow-bui-card: var(--bui-shadow-card);
+  --shadow-bui-raised: var(--bui-shadow-raised);
+  --shadow-bui-overlay: var(--bui-shadow-overlay);
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────────
+ * Upstream defines these in its own global sheet; they ship here so the
+ * vendored components animate without pulling in the site's CSS. Names are
+ * prefixed for the same reason the tokens are — `fade-in` and `pop-in` are
+ * exactly the names a Cave sheet would otherwise want to claim. */
+
+@keyframes bui-pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  18%,
+  42% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes bui-shimmer-text {
+  0% {
+    background-position: 150%;
+  }
+  100% {
+    background-position: -50%;
+  }
+}
+
+@keyframes bui-fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bui-fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes bui-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bui-stream-in {
+  0% {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes bui-eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* PromptBar's flagship-model flourish. Replaces upstream's WebGL rainbow with
+   a single accent pulse on the composer shell — same beat, one hue, no shader.
+   `celebrate()` adds the class and removes it on animationend. */
+@keyframes bui-celebrate {
+  0% {
+    box-shadow: var(--bui-shadow-card);
+  }
+  35% {
+    box-shadow:
+      var(--bui-shadow-card),
+      0 0 0 3px color-mix(in oklch, var(--bui-accent) 42%, transparent);
+  }
+  100% {
+    box-shadow: var(--bui-shadow-card);
+  }
+}
+
+.bui-prompt-bar--celebrating {
+  animation: bui-celebrate 950ms var(--ease-emphasized, ease-out) 1;
+}
+
+/* Reduced motion: freeze every vendored animation to its resting state. The
+   design contract requires a prefers-reduced-motion story for anything that
+   moves, and upstream only ships one for the loader. Loaders settle to their
+   dim state rather than vanishing, so a long-running operation still reads as
+   pending; text that streams or fades in settles fully visible so nothing is
+   left permanently transparent. */
+@media (prefers-reduced-motion: reduce) {
+  .bui-animated,
+  .bui-animated *,
+  [class*="bui-"] {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .bui-shimmer {
+    background-image: none !important;
+    color: var(--bui-ink) !important;
+    -webkit-text-fill-color: var(--bui-ink) !important;
+  }
+
+  .bui-stream-in,
+  .bui-fade-in,
+  .bui-fade-up {
+    opacity: 1 !important;
+    filter: none !important;
+    transform: none !important;
+  }
+}
