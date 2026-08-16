@@ -19,6 +19,28 @@ const STRENGTH: Record<Strength, { label: string; color: string; rank: number }>
   none: { label: "No communication", color: "var(--bui-ink-3)", rank: 0 },
 };
 
+/* CAVE PORT — why these stay literal, unlike FilterTable's status dots.
+ *
+ * This is a CATEGORICAL palette: eight distinct hues whose only job is to make
+ * twelve tags tellable apart at a glance, several of which render side by side
+ * in one cell ("B2B · Local · Wholesale"). Cave has no token set that can
+ * express that:
+ *
+ *   - the semantic tokens are three status hues plus the accent — four values
+ *     with meanings ("danger", "success") that a tag named Gelato does not have;
+ *   - `--chart-1..5` is a per-theme RAMP, not a categorical scale. Under
+ *     `ghosty` it is five greys and under `claymorphism` five shades of one
+ *     indigo, so mapping tags onto it would render them identical in exactly
+ *     the themes a person is most likely to be using it in.
+ *
+ * Collapsing eight categories onto four or five values removes the feature
+ * rather than theming it, so the literals stay and the decision is recorded
+ * here instead of being left to look like an oversight. Defining a real
+ * categorical palette is a design-system change, tracked in cave-44pxd.
+ *
+ * Note the lint gate is NOT being suppressed: `no-render-hex-color` inspects
+ * JSX render position and passes on this file as written. The one literal that
+ * WAS in render position — the fallback for an unknown tag — is a token. */
 const TAG_COLORS: Record<string, string> = {
   B2B: "#f09a2f",
   B2C: "#92b72d",

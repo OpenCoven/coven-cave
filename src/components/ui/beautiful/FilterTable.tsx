@@ -11,6 +11,12 @@ type Status = "todo" | "progress" | "done";
 
 const FILTERS: { key: "all" | Status; label: string; dot?: string; count: number }[] = [
   { key: "all", label: "All", count: 5 },
+  // CAVE PORT: upstream's three literals are status semantics rather than an
+  // arbitrary categorical palette — to-do, in-flight, finished — so each maps
+  // onto the token that already means that in Cave. This themes across all 12
+  // palettes and both modes, and it is also more truthful than the hex was:
+  // "Completed" is now the same green as every other success state in the app.
+  // (Copilot Autofix reached the same three mappings independently in 6354f97.)
   { key: "todo", label: "To do", dot: "var(--bui-orange)", count: 2 },
   { key: "progress", label: "In Progress", dot: "var(--bui-accent)", count: 2 },
   { key: "done", label: "Completed", dot: "var(--bui-green)", count: 1 },
