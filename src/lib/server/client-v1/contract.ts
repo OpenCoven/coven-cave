@@ -91,6 +91,10 @@ export type ClientV1Cursor = {
   hasMore: boolean;
 } & ClientV1Record;
 
+export type ClientV1StatusRecord = {
+  status: string;
+} & ClientV1Record;
+
 export type ClientV1EnvelopeBase = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
@@ -116,63 +120,12 @@ export type ClientV1ErrorEnvelope = ClientV1EnvelopeBase & {
   error: ClientV1Error;
 };
 
-export type ClientV1HealthResponse = ClientV1SuccessEnvelope<{
-  status: "ok";
-} & ClientV1Record>;
-
-export type ClientV1CredentialResponse = ClientV1SuccessEnvelope<{
-  label: string;
-  scopes: ClientV1Scope[];
-  expiresAt: string | null;
-} & ClientV1Record>;
-
-export type ClientV1FamiliarResponse = ClientV1SuccessEnvelope<{
-  status: "ready" | "unavailable";
-} & ClientV1Record>;
-
-export type ClientV1ProjectResponse = ClientV1SuccessEnvelope<{
-  name: string;
-} & ClientV1Record>;
-
-export type ClientV1ConversationSummary = {
-  identity: ClientV1Identity;
-  title: string;
-  updatedAt: string;
-  revision: ClientV1Revision;
-} & ClientV1Record;
-
-export type ClientV1ConversationMessage = {
-  identity: ClientV1Identity;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: string;
-  revision?: ClientV1Revision;
-} & ClientV1Record;
-
-export type ClientV1ConversationListResponse = ClientV1SuccessEnvelope<{
-  conversations: ClientV1ConversationSummary[];
-} & ClientV1Record>;
-
-export type ClientV1ConversationDetailResponse = ClientV1SuccessEnvelope<{
-  familiar: ClientV1Identity;
-  title: string;
-  messages: ClientV1ConversationMessage[];
-} & ClientV1Record>;
-
-export type ClientV1StreamEvent = {
-  event: string;
-  data: ClientV1Record;
-  eventId?: string;
-  identity?: ClientV1Identity;
-  revision?: ClientV1Revision;
-  cursor?: ClientV1Cursor;
-} & ClientV1Record;
-
 export type ClientV1ContractManifest = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
   capabilities: ClientV1Capability[];
   pairingScopes: ClientV1Scope[];
+  identityKinds: ClientV1IdentityKind[];
   errorCodes: ClientV1ErrorCode[];
   limits: typeof CLIENT_V1_LIMITS;
 };
@@ -180,14 +133,12 @@ export type ClientV1ContractManifest = {
 export type ClientV1ContractFixture = {
   contract: ClientV1ContractManifest;
   examples: {
-    health: ClientV1HealthResponse;
-    error: ClientV1ErrorEnvelope;
-    credential: ClientV1CredentialResponse;
-    familiar: ClientV1FamiliarResponse;
-    project: ClientV1ProjectResponse;
-    conversationList: ClientV1ConversationListResponse;
-    conversationDetail: ClientV1ConversationDetailResponse;
-    streamEvent: ClientV1StreamEvent;
+    status: ClientV1StatusRecord;
+    identity: ClientV1Identity;
+    revision: ClientV1Revision;
+    cursor: ClientV1Cursor;
+    successEnvelope: ClientV1SuccessEnvelope<ClientV1StatusRecord>;
+    errorEnvelope: ClientV1ErrorEnvelope;
   };
 };
 
@@ -379,6 +330,12 @@ export function parseClientV1Cursor(value: unknown): ClientV1Cursor {
   return cursor as ClientV1Cursor;
 }
 
+export function parseClientV1StatusRecord(value: unknown): ClientV1StatusRecord {
+  const status = requiredRecord(value, "status");
+  requiredString(status.status, "status");
+  return status as ClientV1StatusRecord;
+}
+
 export function parseClientV1ErrorDetails(value: unknown): Record<string, string> {
   const details = requiredRecord(value, "error details");
   const entries = Object.entries(details);
@@ -416,13 +373,17 @@ function parseClientV1EnvelopeBase(value: unknown): ClientV1EnvelopeBase {
   return envelope as ClientV1EnvelopeBase;
 }
 
-export function parseClientV1SuccessEnvelope(value: unknown): ClientV1SuccessEnvelope {
+// Phase 0 intentionally validates only the shared success-envelope contract.
+// Future route modules can layer stricter payload discriminators on top.
+export function parseClientV1SuccessEnvelope<TData extends ClientV1Record = ClientV1Record>(
+  value: unknown,
+): ClientV1SuccessEnvelope<TData> {
   const envelope = parseClientV1EnvelopeBase(value);
   if (envelope.error !== undefined) {
     throw new Error("Client v1 success envelope must not contain an error.");
   }
   requiredRecord(envelope.data, "success response data");
-  return envelope as ClientV1SuccessEnvelope;
+  return envelope as ClientV1SuccessEnvelope<TData>;
 }
 
 export function parseClientV1ErrorEnvelope(value: unknown): ClientV1ErrorEnvelope {
@@ -440,122 +401,6 @@ export function parseClientV1ErrorEnvelope(value: unknown): ClientV1ErrorEnvelop
     throw new Error("Client v1 error retryable must be a boolean.");
   }
   return envelope as ClientV1ErrorEnvelope;
-}
-
-function successResponseData(value: unknown): {
-  envelope: ClientV1SuccessEnvelope;
-  data: ClientV1Record;
-} {
-  const envelope = parseClientV1SuccessEnvelope(value);
-  return { envelope, data: requiredRecord(envelope.data, "success response data") };
-}
-
-function parseClientV1ConversationSummary(value: unknown): ClientV1ConversationSummary {
-  const conversation = requiredRecord(value, "conversation");
-  parseClientV1Identity(conversation.identity);
-  requiredString(conversation.title, "conversation title");
-  requiredIsoTimestamp(conversation.updatedAt, "conversation updatedAt");
-  parseClientV1Revision(conversation.revision);
-  return conversation as ClientV1ConversationSummary;
-}
-
-function parseClientV1ConversationMessage(value: unknown): ClientV1ConversationMessage {
-  const message = requiredRecord(value, "conversation message");
-  parseClientV1Identity(message.identity);
-  if (message.role !== "user" && message.role !== "assistant") {
-    throw new Error("Client v1 conversation message role must be user or assistant.");
-  }
-  requiredString(message.content, "conversation message content");
-  requiredIsoTimestamp(message.createdAt, "conversation message createdAt");
-  if (message.revision !== undefined) parseClientV1Revision(message.revision);
-  return message as ClientV1ConversationMessage;
-}
-
-export function parseClientV1HealthResponse(value: unknown): ClientV1HealthResponse {
-  const { envelope, data } = successResponseData(value);
-  if (data.status !== "ok") throw new Error("Client v1 health status must be ok.");
-  return envelope as ClientV1HealthResponse;
-}
-
-export function parseClientV1CredentialResponse(value: unknown): ClientV1CredentialResponse {
-  const { envelope, data } = successResponseData(value);
-  requiredString(data.label, "credential label");
-  parseClientV1PairingScopes(data.scopes);
-  if (data.expiresAt !== null) requiredIsoTimestamp(data.expiresAt, "credential expiresAt");
-  return envelope as ClientV1CredentialResponse;
-}
-
-export function parseClientV1FamiliarResponse(value: unknown): ClientV1FamiliarResponse {
-  const { envelope, data } = successResponseData(value);
-  if (data.status !== "ready" && data.status !== "unavailable") {
-    throw new Error("Client v1 familiar status must be ready or unavailable.");
-  }
-  return envelope as ClientV1FamiliarResponse;
-}
-
-export function parseClientV1ProjectResponse(value: unknown): ClientV1ProjectResponse {
-  const { envelope, data } = successResponseData(value);
-  requiredString(data.name, "project name");
-  return envelope as ClientV1ProjectResponse;
-}
-
-export function parseClientV1ConversationListResponse(
-  value: unknown,
-): ClientV1ConversationListResponse {
-  const { envelope, data } = successResponseData(value);
-  if (!Array.isArray(data.conversations)) {
-    throw new Error("Client v1 conversation list conversations must be an array.");
-  }
-  data.conversations.forEach(parseClientV1ConversationSummary);
-  return envelope as ClientV1ConversationListResponse;
-}
-
-export function parseClientV1ConversationDetailResponse(
-  value: unknown,
-): ClientV1ConversationDetailResponse {
-  const { envelope, data } = successResponseData(value);
-  parseClientV1Identity(data.familiar);
-  requiredString(data.title, "conversation title");
-  if (!Array.isArray(data.messages)) {
-    throw new Error("Client v1 conversation detail messages must be an array.");
-  }
-  data.messages.forEach(parseClientV1ConversationMessage);
-  return envelope as ClientV1ConversationDetailResponse;
-}
-
-export function parseClientV1StreamEvent(value: unknown): ClientV1StreamEvent {
-  const event = requiredRecord(value, "stream event");
-  requiredString(event.event, "stream event");
-  requiredRecord(event.data, "stream event data");
-  if (event.eventId !== undefined) requiredString(event.eventId, "stream event id");
-  if (event.identity !== undefined) parseClientV1Identity(event.identity);
-  if (event.revision !== undefined) parseClientV1Revision(event.revision);
-  if (event.cursor !== undefined) parseClientV1Cursor(event.cursor);
-  return event as ClientV1StreamEvent;
-}
-
-export function parseClientV1PublicSuccessResponse(value: unknown): ClientV1SuccessEnvelope {
-  const envelope = parseClientV1SuccessEnvelope(value);
-  const candidates: ClientV1SuccessEnvelope[] = [];
-  for (const parse of [
-    parseClientV1HealthResponse,
-    parseClientV1FamiliarResponse,
-    parseClientV1CredentialResponse,
-    parseClientV1ProjectResponse,
-    parseClientV1ConversationListResponse,
-    parseClientV1ConversationDetailResponse,
-  ]) {
-    try {
-      candidates.push(parse(envelope));
-    } catch {
-      // A candidate must satisfy its complete required payload shape.
-    }
-  }
-  if (candidates.length === 1) return candidates[0]!;
-  if (candidates.length > 1) {
-    throw new Error("Client v1 public success response payload is ambiguous.");
-  }
-  throw new Error("Client v1 public success response data has no supported payload shape.");
 }
 
 export function sortClientV1JsonKeys(value: JsonValue): JsonValue {
@@ -588,38 +433,21 @@ function envelopeBase(
 }
 
 export function createClientV1ContractFixture(): ClientV1ContractFixture {
-  const credentialIdentity: ClientV1Identity = {
-    kind: "credential",
-    id: "credential-example",
-    displayName: "Example companion",
+  const status: ClientV1StatusRecord = {
+    status: "ok",
   };
-  const familiarIdentity: ClientV1Identity = {
-    kind: "familiar",
-    id: "familiar-example",
-    displayName: "Lumen",
-  };
-  const projectIdentity: ClientV1Identity = {
-    kind: "project",
-    id: "project-example",
-    displayName: "Example project",
-  };
-  const conversationIdentity: ClientV1Identity = {
+  const identity: ClientV1Identity = {
     kind: "conversation",
     id: "conversation-example",
     displayName: "Example conversation",
   };
-  const conversationRevision: ClientV1Revision = {
+  const revision: ClientV1Revision = {
     token: "conversation-example-revision-1",
     updatedAt: "2026-08-15T00:00:01.000Z",
   };
-  const conversationCursor: ClientV1Cursor = {
+  const cursor: ClientV1Cursor = {
     current: "conversation-list:cursor:0",
     next: "conversation-list:cursor:1",
-    hasMore: true,
-  };
-  const streamCursor: ClientV1Cursor = {
-    current: "conversation-example:stream:1",
-    next: "conversation-example:stream:2",
     hasMore: true,
   };
 
@@ -629,18 +457,28 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
       minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
       capabilities: defaultCapabilities(),
       pairingScopes: [...CLIENT_V1_SCOPES],
+      identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
       errorCodes: [...CLIENT_V1_ERROR_CODES],
       limits: CLIENT_V1_LIMITS,
     },
+    // Phase 0 fixture governance stays foundation-only: shared primitives,
+    // generic envelopes, and no route DTOs or success-shape guessing.
     examples: {
-      health: {
+      status,
+      identity,
+      revision,
+      cursor,
+      successEnvelope: {
         ...envelopeBase({
-          requestId: "request-example-health",
+          requestId: "request-example-success",
+          identity,
+          revision,
+          cursor,
           capabilities: defaultCapabilities(),
         }),
-        data: { status: "ok" },
+        data: { ...status },
       },
-      error: {
+      errorEnvelope: {
         ...envelopeBase({
           requestId: "request-example-error",
           capabilities: defaultCapabilities(),
@@ -650,120 +488,6 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
           message: "Client state must be reconciled.",
           details: { reason: "resume_from_canonical_state" },
           retryable: true,
-        },
-      },
-      credential: {
-        ...envelopeBase({
-          requestId: "request-example-credential",
-          identity: credentialIdentity,
-          revision: {
-            token: "credential-example-revision-1",
-            updatedAt: "2026-08-15T00:00:00.000Z",
-          },
-          capabilities: defaultCapabilities(),
-        }),
-        data: {
-          label: "Example companion",
-          scopes: [...CLIENT_V1_SCOPES],
-          expiresAt: null,
-        },
-      },
-      familiar: {
-        ...envelopeBase({
-          requestId: "request-example-familiar",
-          identity: familiarIdentity,
-          revision: {
-            token: "familiar-example-revision-1",
-            updatedAt: "2026-08-15T00:00:00.000Z",
-          },
-          capabilities: defaultCapabilities(),
-        }),
-        data: {
-          status: "ready",
-        },
-      },
-      project: {
-        ...envelopeBase({
-          requestId: "request-example-project",
-          identity: projectIdentity,
-          revision: {
-            token: "project-example-revision-1",
-            updatedAt: "2026-08-15T00:00:00.000Z",
-          },
-          capabilities: defaultCapabilities(),
-        }),
-        data: {
-          name: "Example project",
-        },
-      },
-      conversationList: {
-        ...envelopeBase({
-          requestId: "request-example-conversation-list",
-          cursor: conversationCursor,
-          capabilities: defaultCapabilities(),
-        }),
-        data: {
-          conversations: [
-            {
-              identity: conversationIdentity,
-              title: "Example conversation",
-              updatedAt: "2026-08-15T00:00:01.000Z",
-              revision: conversationRevision,
-            },
-          ],
-        },
-      },
-      conversationDetail: {
-        ...envelopeBase({
-          requestId: "request-example-conversation-detail",
-          identity: conversationIdentity,
-          revision: conversationRevision,
-          capabilities: defaultCapabilities(),
-        }),
-        data: {
-          familiar: familiarIdentity,
-          title: "Example conversation",
-          messages: [
-            {
-              identity: {
-                kind: "message",
-                id: "message-example-user",
-              },
-              role: "user",
-              content: "Hello",
-              createdAt: "2026-08-15T00:00:00.000Z",
-            },
-            {
-              identity: {
-                kind: "message",
-                id: "message-example-assistant",
-              },
-              role: "assistant",
-              content: "Hello. How can I help?",
-              createdAt: "2026-08-15T00:00:01.000Z",
-              revision: {
-                token: "message-example-assistant-revision-1",
-                updatedAt: "2026-08-15T00:00:01.000Z",
-              },
-            },
-          ],
-        },
-      },
-      streamEvent: {
-        event: "message.delta",
-        eventId: "event-example",
-        identity: {
-          kind: "event",
-          id: "event-example",
-        },
-        revision: {
-          token: "conversation-example-stream-revision-1",
-          updatedAt: "2026-08-15T00:00:01.000Z",
-        },
-        cursor: streamCursor,
-        data: {
-          conversationId: conversationIdentity.id,
-          text: "Hello",
         },
       },
     },

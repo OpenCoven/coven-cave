@@ -38,6 +38,52 @@ test("documents the tracked client v1 fixture paths and LF normalization", () =>
   }
 });
 
+test("checks generated contract bytes without rewriting committed files before any write path runs", () => {
+  const beforeFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
+  const beforeHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
+  const result = runExporter("--check");
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.deepEqual(readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH), beforeFixture);
+  assert.deepEqual(readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH), beforeHash);
+});
+
+test("fails read-only validation when the committed fixture bytes go stale", () => {
+  const fixtureBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
+  const digestBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
+
+  try {
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, `${fixtureBytes.toString("utf8").replace(/\n$/, "")} stale\n`, "utf8");
+    const staleFixture = runExporter("--check");
+    assert.notEqual(staleFixture.status, 0, staleFixture.stdout + staleFixture.stderr);
+    assert.match(
+      staleFixture.stderr || staleFixture.stdout,
+      /Client v1 contract fixture is stale/,
+    );
+  } finally {
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, fixtureBytes);
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, digestBytes);
+  }
+});
+
+test("fails read-only validation when the committed digest bytes go stale", () => {
+  const fixtureBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
+  const digestBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
+
+  try {
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, `${"0".repeat(64)}\n`, "utf8");
+    const staleDigest = runExporter("--check");
+    assert.notEqual(staleDigest.status, 0, staleDigest.stdout + staleDigest.stderr);
+    assert.match(
+      staleDigest.stderr || staleDigest.stdout,
+      /Client v1 contract fixture is stale/,
+    );
+  } finally {
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, fixtureBytes);
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, digestBytes);
+  }
+});
+
 test("exports deterministic client v1 bytes across consecutive writes", () => {
   const first = runExporter();
   assert.equal(first.status, 0, first.stderr || first.stdout);
@@ -55,41 +101,4 @@ test("exports deterministic client v1 bytes across consecutive writes", () => {
   assert.match(firstHash, /^[0-9a-f]{64}\n$/);
   assert.equal(firstHash, clientV1ContractFixtureSha256(firstFixture));
   assert.equal(firstHash, `${createHash("sha256").update(firstFixture).digest("hex")}\n`);
-});
-
-test("checks generated contract bytes without rewriting committed files", () => {
-  const beforeFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
-  const beforeHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
-  const result = runExporter("--check");
-
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.deepEqual(readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH), beforeFixture);
-  assert.deepEqual(readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH), beforeHash);
-});
-
-test("fails loudly when the committed fixture or digest goes stale", () => {
-  const fixtureBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
-  const digestBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
-
-  try {
-    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, `${fixtureBytes.toString("utf8").replace(/\n$/, "")} stale\n`, "utf8");
-    const staleFixture = runExporter("--check");
-    assert.notEqual(staleFixture.status, 0, staleFixture.stdout + staleFixture.stderr);
-    assert.match(
-      staleFixture.stderr || staleFixture.stdout,
-      /Client v1 contract fixture is stale/,
-    );
-
-    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, fixtureBytes);
-    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, `${"0".repeat(64)}\n`, "utf8");
-    const staleDigest = runExporter("--check");
-    assert.notEqual(staleDigest.status, 0, staleDigest.stdout + staleDigest.stderr);
-    assert.match(
-      staleDigest.stderr || staleDigest.stdout,
-      /Client v1 contract fixture is stale/,
-    );
-  } finally {
-    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, fixtureBytes);
-    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, digestBytes);
-  }
 });

@@ -27,6 +27,15 @@
       "reconcile_required",
       "internal_error"
     ],
+    "identityKinds": [
+      "client",
+      "credential",
+      "familiar",
+      "project",
+      "conversation",
+      "message",
+      "event"
+    ],
     "limits": {
       "cursorCharacters": 512,
       "defaultPageSize": 50,
@@ -49,139 +58,12 @@
     ]
   },
   "examples": {
-    "conversationDetail": {
-      "apiVersion": "1.0",
-      "capabilities": [
-        "pairing",
-        "credentials",
-        "familiars",
-        "projects",
-        "conversations",
-        "conversation-messages",
-        "streaming",
-        "cursors",
-        "revisions"
-      ],
-      "data": {
-        "familiar": {
-          "displayName": "Lumen",
-          "id": "familiar-example",
-          "kind": "familiar"
-        },
-        "messages": [
-          {
-            "content": "Hello",
-            "createdAt": "2026-08-15T00:00:00.000Z",
-            "identity": {
-              "id": "message-example-user",
-              "kind": "message"
-            },
-            "role": "user"
-          },
-          {
-            "content": "Hello. How can I help?",
-            "createdAt": "2026-08-15T00:00:01.000Z",
-            "identity": {
-              "id": "message-example-assistant",
-              "kind": "message"
-            },
-            "revision": {
-              "token": "message-example-assistant-revision-1",
-              "updatedAt": "2026-08-15T00:00:01.000Z"
-            },
-            "role": "assistant"
-          }
-        ],
-        "title": "Example conversation"
-      },
-      "identity": {
-        "displayName": "Example conversation",
-        "id": "conversation-example",
-        "kind": "conversation"
-      },
-      "minimumClientVersion": "0.1.0",
-      "requestId": "request-example-conversation-detail",
-      "revision": {
-        "token": "conversation-example-revision-1",
-        "updatedAt": "2026-08-15T00:00:01.000Z"
-      }
+    "cursor": {
+      "current": "conversation-list:cursor:0",
+      "hasMore": true,
+      "next": "conversation-list:cursor:1"
     },
-    "conversationList": {
-      "apiVersion": "1.0",
-      "capabilities": [
-        "pairing",
-        "credentials",
-        "familiars",
-        "projects",
-        "conversations",
-        "conversation-messages",
-        "streaming",
-        "cursors",
-        "revisions"
-      ],
-      "cursor": {
-        "current": "conversation-list:cursor:0",
-        "hasMore": true,
-        "next": "conversation-list:cursor:1"
-      },
-      "data": {
-        "conversations": [
-          {
-            "identity": {
-              "displayName": "Example conversation",
-              "id": "conversation-example",
-              "kind": "conversation"
-            },
-            "revision": {
-              "token": "conversation-example-revision-1",
-              "updatedAt": "2026-08-15T00:00:01.000Z"
-            },
-            "title": "Example conversation",
-            "updatedAt": "2026-08-15T00:00:01.000Z"
-          }
-        ]
-      },
-      "minimumClientVersion": "0.1.0",
-      "requestId": "request-example-conversation-list"
-    },
-    "credential": {
-      "apiVersion": "1.0",
-      "capabilities": [
-        "pairing",
-        "credentials",
-        "familiars",
-        "projects",
-        "conversations",
-        "conversation-messages",
-        "streaming",
-        "cursors",
-        "revisions"
-      ],
-      "data": {
-        "expiresAt": null,
-        "label": "Example companion",
-        "scopes": [
-          "chat:read",
-          "chat:write",
-          "conversations:write",
-          "attachments:write",
-          "tasks:write",
-          "github:write"
-        ]
-      },
-      "identity": {
-        "displayName": "Example companion",
-        "id": "credential-example",
-        "kind": "credential"
-      },
-      "minimumClientVersion": "0.1.0",
-      "requestId": "request-example-credential",
-      "revision": {
-        "token": "credential-example-revision-1",
-        "updatedAt": "2026-08-15T00:00:00.000Z"
-      }
-    },
-    "error": {
+    "errorEnvelope": {
       "apiVersion": "1.0",
       "capabilities": [
         "pairing",
@@ -205,35 +87,19 @@
       "minimumClientVersion": "0.1.0",
       "requestId": "request-example-error"
     },
-    "familiar": {
-      "apiVersion": "1.0",
-      "capabilities": [
-        "pairing",
-        "credentials",
-        "familiars",
-        "projects",
-        "conversations",
-        "conversation-messages",
-        "streaming",
-        "cursors",
-        "revisions"
-      ],
-      "data": {
-        "status": "ready"
-      },
-      "identity": {
-        "displayName": "Lumen",
-        "id": "familiar-example",
-        "kind": "familiar"
-      },
-      "minimumClientVersion": "0.1.0",
-      "requestId": "request-example-familiar",
-      "revision": {
-        "token": "familiar-example-revision-1",
-        "updatedAt": "2026-08-15T00:00:00.000Z"
-      }
+    "identity": {
+      "displayName": "Example conversation",
+      "id": "conversation-example",
+      "kind": "conversation"
     },
-    "health": {
+    "revision": {
+      "token": "conversation-example-revision-1",
+      "updatedAt": "2026-08-15T00:00:01.000Z"
+    },
+    "status": {
+      "status": "ok"
+    },
+    "successEnvelope": {
       "apiVersion": "1.0",
       "capabilities": [
         "pairing",
@@ -246,58 +112,23 @@
         "cursors",
         "revisions"
       ],
+      "cursor": {
+        "current": "conversation-list:cursor:0",
+        "hasMore": true,
+        "next": "conversation-list:cursor:1"
+      },
       "data": {
         "status": "ok"
       },
-      "minimumClientVersion": "0.1.0",
-      "requestId": "request-example-health"
-    },
-    "project": {
-      "apiVersion": "1.0",
-      "capabilities": [
-        "pairing",
-        "credentials",
-        "familiars",
-        "projects",
-        "conversations",
-        "conversation-messages",
-        "streaming",
-        "cursors",
-        "revisions"
-      ],
-      "data": {
-        "name": "Example project"
-      },
       "identity": {
-        "displayName": "Example project",
-        "id": "project-example",
-        "kind": "project"
+        "displayName": "Example conversation",
+        "id": "conversation-example",
+        "kind": "conversation"
       },
       "minimumClientVersion": "0.1.0",
-      "requestId": "request-example-project",
+      "requestId": "request-example-success",
       "revision": {
-        "token": "project-example-revision-1",
-        "updatedAt": "2026-08-15T00:00:00.000Z"
-      }
-    },
-    "streamEvent": {
-      "cursor": {
-        "current": "conversation-example:stream:1",
-        "hasMore": true,
-        "next": "conversation-example:stream:2"
-      },
-      "data": {
-        "conversationId": "conversation-example",
-        "text": "Hello"
-      },
-      "event": "message.delta",
-      "eventId": "event-example",
-      "identity": {
-        "id": "event-example",
-        "kind": "event"
-      },
-      "revision": {
-        "token": "conversation-example-stream-revision-1",
+        "token": "conversation-example-revision-1",
         "updatedAt": "2026-08-15T00:00:01.000Z"
       }
     }

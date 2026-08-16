@@ -10,9 +10,9 @@ import {
   parseClientV1ErrorEnvelope,
   parseClientV1Identity,
   parseClientV1JsonObject,
-  parseClientV1PublicSuccessResponse,
   parseClientV1RequestId,
   parseClientV1Revision,
+  parseClientV1SuccessEnvelope,
   type ClientV1Capability,
   type ClientV1Cursor,
   type ClientV1ErrorCode,
@@ -132,14 +132,16 @@ export function httpStatusForClientV1ErrorCode(code: ClientV1ErrorCode): number 
   }
 }
 
+// Phase 0 success helpers intentionally validate only the shared envelope
+// contract. Route-specific builders belong in later modules.
 export function clientV1Success<TData extends ClientV1Record>(
   data: TData,
   options: ClientV1EnvelopeOptions = {},
 ): ClientV1SuccessEnvelope<TData> {
-  return parseClientV1PublicSuccessResponse({
+  return parseClientV1SuccessEnvelope<TData>({
     ...envelopeBase(options),
     data: requiredRecord(data, "response data"),
-  }) as ClientV1SuccessEnvelope<TData>;
+  });
 }
 
 export function clientV1Error(

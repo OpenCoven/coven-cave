@@ -5,24 +5,18 @@ import {
   CLIENT_V1_API_VERSION,
   CLIENT_V1_CAPABILITIES,
   CLIENT_V1_ERROR_CODES,
+  CLIENT_V1_IDENTITY_KINDS,
   CLIENT_V1_LIMITS,
   CLIENT_V1_MIN_CLIENT_VERSION,
   CLIENT_V1_SCOPES,
   createClientV1ContractFixture,
-  parseClientV1ConversationDetailResponse,
-  parseClientV1ConversationListResponse,
-  parseClientV1CredentialResponse,
   parseClientV1Cursor,
   parseClientV1ErrorEnvelope,
-  parseClientV1FamiliarResponse,
-  parseClientV1HealthResponse,
   parseClientV1IdempotencyKey,
   parseClientV1Identity,
   parseClientV1PairingScopes,
-  parseClientV1ProjectResponse,
-  parseClientV1PublicSuccessResponse,
   parseClientV1Revision,
-  parseClientV1StreamEvent,
+  parseClientV1StatusRecord,
   parseClientV1SuccessEnvelope,
   renderClientV1ContractFixture,
   sortClientV1JsonKeys,
@@ -36,7 +30,7 @@ import {
   httpStatusForClientV1ErrorCode,
 } from "./responses.ts";
 
-test("publishes the locked v1 metadata, capabilities, scopes, and error codes", () => {
+test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");
   assert.equal(CLIENT_V1_MIN_CLIENT_VERSION, "0.1.0");
   assert.deepEqual(CLIENT_V1_CAPABILITIES, [
@@ -73,6 +67,15 @@ test("publishes the locked v1 metadata, capabilities, scopes, and error codes", 
     "reconcile_required",
     "internal_error",
   ]);
+  assert.deepEqual(CLIENT_V1_IDENTITY_KINDS, [
+    "client",
+    "credential",
+    "familiar",
+    "project",
+    "conversation",
+    "message",
+    "event",
+  ]);
 });
 
 test("publishes stable client v1 limits", () => {
@@ -89,7 +92,7 @@ test("publishes stable client v1 limits", () => {
   });
 });
 
-test("parses stable ids, scopes, identities, revisions, and cursors", () => {
+test("parses stable ids, scopes, identities, revisions, cursors, and status records", () => {
   assert.equal(
     parseClientV1IdempotencyKey("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
     "f47ac10b-58cc-4372-a567-0e02b2c3d479",
@@ -145,11 +148,18 @@ test("parses stable ids, scopes, identities, revisions, and cursors", () => {
     },
   );
   assert.throws(() => parseClientV1Cursor({ hasMore: true }), /cursor/i);
+
+  assert.deepEqual(
+    parseClientV1StatusRecord({ status: "ok", extension: "accepted" }),
+    { status: "ok", extension: "accepted" },
+  );
+  assert.throws(() => parseClientV1StatusRecord({}), /status/i);
+  assert.throws(() => parseClientV1StatusRecord({ status: "   " }), /status/i);
 });
 
 test("accepts only unambiguous public wire timestamps", () => {
   const fixture = createClientV1ContractFixture();
-  const canonicalTimestamp = fixture.examples.conversationDetail.revision?.updatedAt;
+  const canonicalTimestamp = fixture.examples.revision.updatedAt;
 
   assert.deepEqual(
     parseClientV1Revision({ token: "revision-1", updatedAt: canonicalTimestamp }),
@@ -184,12 +194,11 @@ test("accepts only JSON-safe additive public values", async () => {
     nested: [null, true, 3.5, "extension", { child: "accepted" }],
   };
   const response = {
-    ...fixture.examples.health,
+    ...fixture.examples.successEnvelope,
     extension: nestedExtension,
-    data: { ...fixture.examples.health.data, extension: nestedExtension },
+    data: { ...fixture.examples.successEnvelope.data, extension: nestedExtension },
     cursor: {
-      current: "cursor-1",
-      hasMore: true,
+      ...fixture.examples.successEnvelope.cursor!,
       extension: nestedExtension,
     },
   };
@@ -207,8 +216,8 @@ test("accepts only JSON-safe additive public values", async () => {
   );
   const ordinaryArray = ["extension", { nested: true }];
   assert.deepEqual(
-    parseClientV1SuccessEnvelope({ ...fixture.examples.health, extension: ordinaryArray }),
-    { ...fixture.examples.health, extension: ordinaryArray },
+    parseClientV1SuccessEnvelope({ ...fixture.examples.successEnvelope, extension: ordinaryArray }),
+    { ...fixture.examples.successEnvelope, extension: ordinaryArray },
   );
   const helper = clientV1Success({ status: "ok", extension: ordinaryArray });
   const helperResponse = clientV1SuccessResponse({ status: "ok", extension: ordinaryArray });
@@ -233,7 +242,7 @@ test("accepts only JSON-safe additive public values", async () => {
     -0,
   ]) {
     assert.throws(
-      () => parseClientV1SuccessEnvelope({ ...fixture.examples.health, extension: value }),
+      () => parseClientV1SuccessEnvelope({ ...fixture.examples.successEnvelope, extension: value }),
       /JSON-safe/i,
     );
   }
@@ -253,14 +262,14 @@ test("rejects custom array prototypes from public additions", () => {
 
   assert.throws(
     () => parseClientV1SuccessEnvelope({
-      ...fixture.examples.health,
+      ...fixture.examples.successEnvelope,
       extension: new FancyArray("extension"),
     }),
     /JSON-safe/i,
   );
   assert.deepEqual(
     parseClientV1SuccessEnvelope({
-      ...fixture.examples.health,
+      ...fixture.examples.successEnvelope,
       extension: ["extension", { nested: true }],
     }).extension,
     ["extension", { nested: true }],
@@ -288,10 +297,10 @@ test("serializes the public contract deterministically by sorting object keys", 
   );
 });
 
-test("builds explicit success envelopes with stable contract metadata", () => {
+test("builds explicit generic success envelopes with stable contract metadata", () => {
   assert.deepEqual(
     clientV1Success(
-      { status: "ok" },
+      { status: "ok", label: "foundation" },
       {
         capabilities: ["conversations", "streaming"],
         requestId: "request-1",
@@ -308,12 +317,12 @@ test("builds explicit success envelopes with stable contract metadata", () => {
       identity: { kind: "conversation", id: "conversation-1" },
       revision: { token: "revision-1", updatedAt: "2026-08-15T00:00:00.000Z" },
       cursor: { current: "cursor-1", next: "cursor-2", hasMore: true },
-      data: { status: "ok" },
+      data: { status: "ok", label: "foundation" },
     },
   );
 });
 
-test("maps explicit client v1 errors without masking failures as success", async () => {
+test("maps explicit client v1 errors without coupling success to route guesses", async () => {
   assert.equal(httpStatusForClientV1ErrorCode("invalid_request"), 400);
   assert.equal(httpStatusForClientV1ErrorCode("pairing_expired"), 410);
   assert.equal(httpStatusForClientV1ErrorCode("incompatible_version"), 426);
@@ -338,7 +347,7 @@ test("maps explicit client v1 errors without masking failures as success", async
   );
 
   const accepted = clientV1SuccessResponse(
-    { status: "ok" },
+    { contract: "foundation-only" },
     { capabilities: ["pairing"], status: 202 },
   );
   assert.equal(accepted.status, 202);
@@ -346,7 +355,7 @@ test("maps explicit client v1 errors without masking failures as success", async
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: ["pairing"],
-    data: { status: "ok" },
+    data: { contract: "foundation-only" },
   });
 
   const limited = clientV1ErrorResponse("rate_limited", "Please retry later.", {
@@ -399,7 +408,7 @@ test("represents in-progress operations as retryable conflicts", () => {
   });
 });
 
-test("builds a deterministic public contract fixture with shared metadata and examples", () => {
+test("builds a deterministic foundation-only contract fixture with shared primitives", () => {
   const fixture = createClientV1ContractFixture();
 
   assert.deepEqual(fixture.contract, {
@@ -407,29 +416,36 @@ test("builds a deterministic public contract fixture with shared metadata and ex
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
     pairingScopes: [...CLIENT_V1_SCOPES],
+    identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
     errorCodes: [...CLIENT_V1_ERROR_CODES],
     limits: CLIENT_V1_LIMITS,
   });
-  assert.equal(fixture.examples.health.minimumClientVersion, "0.1.0");
-  assert.equal(fixture.examples.health.capabilities.includes("pairing"), true);
-  assert.deepEqual(fixture.examples.credential.identity, {
-    kind: "credential",
-    id: "credential-example",
-    displayName: "Example companion",
+  assert.deepEqual(fixture.examples.status, { status: "ok" });
+  assert.deepEqual(fixture.examples.identity, {
+    kind: "conversation",
+    id: "conversation-example",
+    displayName: "Example conversation",
   });
-  assert.deepEqual(fixture.examples.conversationList.cursor, {
+  assert.deepEqual(fixture.examples.revision, {
+    token: "conversation-example-revision-1",
+    updatedAt: "2026-08-15T00:00:01.000Z",
+  });
+  assert.deepEqual(fixture.examples.cursor, {
     current: "conversation-list:cursor:0",
     next: "conversation-list:cursor:1",
     hasMore: true,
   });
-  assert.deepEqual(fixture.examples.conversationDetail.revision, {
-    token: "conversation-example-revision-1",
-    updatedAt: "2026-08-15T00:00:01.000Z",
-  });
-  assert.deepEqual(fixture.examples.streamEvent.cursor, {
-    current: "conversation-example:stream:1",
-    next: "conversation-example:stream:2",
-    hasMore: true,
+  assert.equal(fixture.examples.successEnvelope.minimumClientVersion, "0.1.0");
+  assert.equal(fixture.examples.successEnvelope.capabilities.includes("pairing"), true);
+  assert.deepEqual(fixture.examples.successEnvelope.identity, fixture.examples.identity);
+  assert.deepEqual(fixture.examples.successEnvelope.revision, fixture.examples.revision);
+  assert.deepEqual(fixture.examples.successEnvelope.cursor, fixture.examples.cursor);
+  assert.deepEqual(fixture.examples.successEnvelope.data, fixture.examples.status);
+  assert.deepEqual(fixture.examples.errorEnvelope.error, {
+    code: "reconcile_required",
+    message: "Client state must be reconciled.",
+    details: { reason: "resume_from_canonical_state" },
+    retryable: true,
   });
   assert.deepEqual(createClientV1ContractFixture(), fixture);
 });
@@ -437,14 +453,14 @@ test("builds a deterministic public contract fixture with shared metadata and ex
 test("parses complete public envelopes while preserving additive fields", () => {
   const fixture = createClientV1ContractFixture();
   const success = {
-    ...fixture.examples.health,
+    ...fixture.examples.successEnvelope,
     extension: "accepted",
-    data: { ...fixture.examples.health.data, extension: "accepted" },
+    data: { ...fixture.examples.successEnvelope.data, extension: "accepted" },
   };
   const error = {
-    ...fixture.examples.error,
+    ...fixture.examples.errorEnvelope,
     extension: "accepted",
-    error: { ...fixture.examples.error.error, extension: "accepted" },
+    error: { ...fixture.examples.errorEnvelope.error, extension: "accepted" },
   };
 
   assert.deepEqual(parseClientV1SuccessEnvelope(success), success);
@@ -454,166 +470,68 @@ test("parses complete public envelopes while preserving additive fields", () => 
     /apiVersion/i,
   );
   assert.throws(
-    () => parseClientV1ErrorEnvelope({ ...fixture.examples.error, error: {} }),
+    () => parseClientV1ErrorEnvelope({ ...fixture.examples.errorEnvelope, error: {} }),
     /error code/i,
   );
   assert.throws(
-    () => parseClientV1SuccessEnvelope({ ...fixture.examples.health, error: fixture.examples.error.error }),
+    () => parseClientV1SuccessEnvelope({ ...fixture.examples.successEnvelope, error: fixture.examples.errorEnvelope.error }),
     /must not contain an error/i,
   );
   assert.throws(
-    () => parseClientV1ErrorEnvelope({ ...fixture.examples.error, data: fixture.examples.health.data }),
+    () => parseClientV1ErrorEnvelope({ ...fixture.examples.errorEnvelope, data: fixture.examples.successEnvelope.data }),
     /must not contain data/i,
   );
 });
 
-test("parses concrete public responses with additions and rejects missing fields", () => {
+test("validates foundation primitives independently of future routes", () => {
   const fixture = createClientV1ContractFixture();
-  const cases: Array<{
-    response: Record<string, unknown>;
-    parse(value: unknown): unknown;
-    missing: Record<string, unknown>;
-  }> = [
-    {
-      response: fixture.examples.health,
-      parse: parseClientV1HealthResponse,
-      missing: { ...fixture.examples.health, data: {} },
-    },
-    {
-      response: fixture.examples.credential,
-      parse: parseClientV1CredentialResponse,
-      missing: {
-        ...fixture.examples.credential,
-        data: { scopes: ["chat:read"], expiresAt: null },
-      },
-    },
-    {
-      response: fixture.examples.familiar,
-      parse: parseClientV1FamiliarResponse,
-      missing: { ...fixture.examples.familiar, data: {} },
-    },
-    {
-      response: fixture.examples.project,
-      parse: parseClientV1ProjectResponse,
-      missing: { ...fixture.examples.project, data: {} },
-    },
-    {
-      response: fixture.examples.conversationList,
-      parse: parseClientV1ConversationListResponse,
-      missing: { ...fixture.examples.conversationList, data: {} },
-    },
-    {
-      response: fixture.examples.conversationDetail,
-      parse: parseClientV1ConversationDetailResponse,
-      missing: { ...fixture.examples.conversationDetail, data: {} },
-    },
-  ];
+  const identity = { ...fixture.examples.identity, extension: "accepted" };
+  const revision = { ...fixture.examples.revision, extension: "accepted" };
+  const cursor = { ...fixture.examples.cursor, extension: "accepted" };
+  const status = { ...fixture.examples.status, extension: "accepted" };
 
-  for (const { response, parse, missing } of cases) {
-    const additive = {
-      ...response,
-      extension: "accepted",
-      data: { ...(response.data as Record<string, unknown>), extension: "accepted" },
-    };
-    assert.deepEqual(parse(additive), additive);
-    assert.throws(() => parse(missing));
-  }
-
-  const streamEvent = {
-    ...fixture.examples.streamEvent,
-    extension: "accepted",
-    data: { ...fixture.examples.streamEvent.data, extension: "accepted" },
-  };
-  assert.deepEqual(parseClientV1StreamEvent(streamEvent), streamEvent);
-  assert.throws(
-    () => parseClientV1StreamEvent({ data: {} }),
-    /stream event/i,
-  );
+  assert.deepEqual(parseClientV1Identity(identity), identity);
+  assert.deepEqual(parseClientV1Revision(revision), revision);
+  assert.deepEqual(parseClientV1Cursor(cursor), cursor);
+  assert.deepEqual(parseClientV1StatusRecord(status), status);
 });
 
-test("recognizes complete success shapes without misclassifying additions", () => {
+test("uses explicit generic success envelopes instead of guessing future route payloads", async () => {
   const fixture = createClientV1ContractFixture();
-  const conversationDetail = {
-    ...fixture.examples.conversationDetail,
-    data: {
-      ...fixture.examples.conversationDetail.data,
-      label: "extension",
-    },
+  const futureRouteLike = {
+    status: "ok",
+    label: "Example companion",
+    scopes: ["chat:read"],
+    expiresAt: null,
+    name: "Example project",
+    conversations: [],
+    messages: [],
+    familiar: { kind: "familiar", id: "familiar-example" },
   };
 
+  const genericEnvelope = clientV1Success(futureRouteLike);
+  assert.deepEqual(genericEnvelope.data, futureRouteLike);
   assert.deepEqual(
-    parseClientV1PublicSuccessResponse(conversationDetail),
-    conversationDetail,
-  );
-  assert.deepEqual(
-    clientV1Success(conversationDetail.data).data,
-    conversationDetail.data,
+    parseClientV1SuccessEnvelope({ ...fixture.examples.successEnvelope, data: futureRouteLike }).data,
+    futureRouteLike,
   );
 
-  const { identity: _identity, ...conversationDetailWithoutIdentity } = conversationDetail;
-  const ambiguous = {
-    ...conversationDetailWithoutIdentity,
-    data: {
-      ...conversationDetail.data,
-      scopes: ["chat:read"],
-      expiresAt: null,
-    },
-  };
-  assert.throws(
-    () => parseClientV1PublicSuccessResponse(ambiguous),
-    /ambiguous/i,
-  );
-  assert.throws(
-    () => clientV1Success(ambiguous.data),
-    /ambiguous/i,
-  );
-});
+  const genericResponse = clientV1SuccessResponse(futureRouteLike, { status: 202 });
+  assert.equal(genericResponse.status, 202);
+  assert.deepEqual(await genericResponse.json(), {
+    apiVersion: "1.0",
+    minimumClientVersion: "0.1.0",
+    capabilities: [...CLIENT_V1_CAPABILITIES],
+    data: futureRouteLike,
+  });
 
-test("rejects conflicting health and credential shapes", () => {
-  const fixture = createClientV1ContractFixture();
-  const credentialWithHealthStatus = {
-    ...fixture.examples.credential,
-    data: {
-      ...fixture.examples.credential.data,
-      status: "ok",
-    },
-  };
-
-  assert.throws(
-    () => parseClientV1PublicSuccessResponse(credentialWithHealthStatus),
-    /ambiguous/i,
-  );
-  assert.throws(
-    () => clientV1Success(credentialWithHealthStatus.data),
-    /ambiguous/i,
-  );
-});
-
-test("uses the complete conversation-list shape despite unrelated identity metadata", () => {
-  const fixture = createClientV1ContractFixture();
-  const identity = { kind: "project" as const, id: "project-1" };
-  const conversationList = {
-    ...fixture.examples.conversationList,
-    identity,
-  };
-
-  assert.deepEqual(
-    parseClientV1PublicSuccessResponse(conversationList),
-    conversationList,
-  );
-  assert.deepEqual(
-    clientV1Success(conversationList.data, { identity }).data,
-    conversationList.data,
-  );
-});
-
-test("rejects incomplete concrete success data before producing responses", () => {
-  assert.throws(
-    () => clientV1Success({}),
-    /public success response data/i,
-  );
-  assert.throws(
-    () => clientV1SuccessResponse({}),
-    /public success response data/i,
-  );
+  const emptyEnvelope = clientV1Success({});
+  assert.deepEqual(emptyEnvelope.data, {});
+  const emptyResponse = clientV1SuccessResponse({});
+  assert.deepEqual(await emptyResponse.json(), {
+    apiVersion: "1.0",
+    minimumClientVersion: "0.1.0",
+    capabilities: [...CLIENT_V1_CAPABILITIES],
+    data: {},
+  });
 });

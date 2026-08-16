@@ -884,5 +884,10 @@ assert.match(
   /scripts\/export-client-v1-contract\.test\.mjs/,
   "scripts/run-tests.mjs must list the public client v1 exporter suite",
 );
+assert.match(
+  runnerSource,
+  /SUITE_PREFLIGHTS[\s\S]*api:\s*\[[\s\S]*\["scripts\/export-client-v1-contract\.mjs", "--check"\]/,
+  "scripts/run-tests.mjs must read-only check the public client v1 contract fixture before API tests",
+);
 
 console.log(`api-contracts.test.ts: ${contracts.length} route contracts passed`);
