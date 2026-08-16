@@ -123,8 +123,12 @@ test.describe("composer runtime picker (context chips)", () => {
     const pill = page.getByRole("button", { name: /change model/ });
     await expect(pill).toBeVisible({ timeout: 45_000 });
     await expect(pill).toContainText("GPT-5.5", { timeout: 15_000 });
-    // The landing identity line reads the roster's familiar.harness.
-    await expect(page.locator(".home-dash__meta")).toContainText("codex");
+    // The landing identity line reads the roster's familiar.harness. Scoped
+    // to the primary chat panel — the shell also mounts a persistent,
+    // closed-by-default auxiliary Chat panel (data-testid="right-chat") that
+    // renders its own copy of this same `.home-dash__meta` element while
+    // unopened, so an unscoped page-wide locator now matches two elements.
+    await expect(page.getByTestId("chat-main").locator(".home-dash__meta")).toContainText("codex");
     const servedBefore = state.familiarsServed;
     const modelStateGetsBefore = state.modelStateServed;
 
@@ -154,8 +158,9 @@ test.describe("composer runtime picker (context chips)", () => {
 
     // cave:familiars-refresh refetched the roster…
     await expect(() => expect(state.familiarsServed).toBeGreaterThan(servedBefore)).toPass({ timeout: 10_000 });
-    // …so the identity line catches up without a reload.
-    await expect(page.locator(".home-dash__meta")).toContainText("claude", { timeout: 10_000 });
+    // …so the identity line catches up without a reload. Scoped to the
+    // primary chat panel — see the earlier assertion in this test for why.
+    await expect(page.getByTestId("chat-main").locator(".home-dash__meta")).toContainText("claude", { timeout: 10_000 });
 
     // Let the runtime pick's reconciling model-state refetch land before the
     // model pick, so a stale in-flight GET can't overwrite the model PATCH.
