@@ -293,7 +293,7 @@ test.describe("onboarding bootstrap", () => {
               id: "core-tools",
               label: "Prepare local components",
               status: "running",
-              detail: "Setting up Cave’s private Node.js and npm runtime…",
+              detail: "Preparing Cave’s private Node.js and npm runtime…",
             },
             ...state().stages.slice(1),
           ],
@@ -304,13 +304,15 @@ test.describe("onboarding bootstrap", () => {
 
     const dialog = setup(page);
     await dialog.getByRole("button", { name: "Set up Cave", exact: true }).click();
-    await expect(dialog.getByText("Setting up Cave’s private Node.js and npm runtime…")).toBeVisible();
+    await expect(dialog.getByText("Preparing Cave’s private Node.js and npm runtime…")).toBeVisible();
     await expect(dialog.locator('[aria-current="step"]')).toContainText(
       "Prepare local components",
     );
     await expect.poll(() => confirmations).toBe(1);
 
     await expect(dialog.getByText(/private Node\.js and npm runtime/)).toBeVisible();
+    await expect(dialog.getByText(/few minutes/)).toHaveCount(0);
+    await expect(dialog.getByText(/Next, Cave checks your defaults, then checks the local service/)).toBeVisible();
     await expect(dialog.getByText(/Waiting for local components/)).toBeVisible();
     await expect(dialog.getByText(/Provider sign-in is deferred/)).toBeVisible();
     await expect(dialog.getByText(/never asks for an administrator password/)).toBeVisible();

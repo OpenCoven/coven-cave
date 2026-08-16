@@ -163,6 +163,16 @@ assert.match(
 );
 assert.match(
   source,
+  /Cave keeps working if you run setup in the background\./,
+  "running setup explains safe backgrounding without estimating completion",
+);
+assert.match(
+  source,
+  /Next, Cave checks your defaults, then checks the local service\./,
+  "running local-component setup explains the remaining stages",
+);
+assert.match(
+  source,
   /does not create Cave defaults or start a familiar runtime/,
   "a local-components failure says which later work did not happen",
 );
