@@ -94,7 +94,7 @@ function Checkbox({ checked, mixed = false, onChange, label }: { checked: boolea
 function Tag({ name }: { name: string }) {
   const color = TAG_COLORS[name] ?? "var(--bui-ink-3)";
   return (
-    <span className="records-tag" style={{ "--tag-color": color } as React.CSSProperties}>
+    <span className="records-tag" style={{ "--bui-tag-color": color } as React.CSSProperties}>
       <span className="records-tag-dot" style={{ background: color }} />
       {name}
     </span>

@@ -39,6 +39,8 @@ import {
   ToolChips,
 } from "@/components/ui/beautiful";
 
+import { ClientOnly } from "./client-only";
+
 import "@/styles/beautiful-ui.css";
 
 export const metadata = {
@@ -177,7 +179,10 @@ const ENTRIES: Entry[] = [
 
 export default function BeautifulUiGallery() {
   return (
-    <main className="mx-auto flex max-w-[900px] flex-col gap-8 p-6">
+    // h-dvh + overflow-y-auto: globals.css keeps the app shell viewport-locked
+    // with `overflow: hidden` on html/body, so the window never scrolls and a
+    // long reference page must own its own scrolling — same as /aesthetic.
+    <main className="mx-auto flex h-dvh max-w-[900px] flex-col gap-8 overflow-y-auto bg-bui-canvas p-6">
       <header className="flex flex-col gap-2">
         <h1 className="text-[length:var(--text-xl)] font-semibold text-bui-ink">
           Beautiful UI
@@ -212,8 +217,10 @@ export default function BeautifulUiGallery() {
               {entry.note}
             </p>
           </div>
-          <div className="rounded-bui-card border border-bui-line bg-bui-canvas p-4">
-            {entry.render()}
+          {/* Client-only: these are animation-driven showcases and are not
+              server-renderable as upstream ships them. See client-only.tsx. */}
+          <div className="min-h-[80px] rounded-bui-card border border-bui-line bg-bui-canvas p-4">
+            <ClientOnly>{entry.render()}</ClientOnly>
           </div>
         </section>
       ))}

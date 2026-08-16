@@ -106,6 +106,28 @@
     0 2px 8px color-mix(in oklch, var(--shadow-color) 14%, transparent);
   --bui-shadow-overlay: 0 0 0 1px var(--bui-line-strong),
     0 8px 28px color-mix(in oklch, var(--shadow-color) 30%, transparent);
+
+  /* Radii, as plain custom properties. The @theme block below registers the
+     same steps for Tailwind's `rounded-bui-*` utilities; these exist because
+     the ported component rules reference them through var() rather than a
+     utility class. Both point at the same Cave step, so a retune moves them
+     together. */
+  --bui-radius-card: var(--radius-card);
+  --bui-radius-control: var(--radius-control);
+  --bui-radius-chip: var(--radius-sm);
+
+  /* Easing. Upstream's two curves are both "settle hard at the end" shapes;
+     Cave's --ease-emphasized and --ease-decelerate are the same intent, so
+     they alias rather than introduce two more curves to the motion system. */
+  --bui-ease-link: var(--ease-emphasized);
+  --bui-ease-out-strong: var(--ease-emphasized);
+
+  /* Tooltips invert against the surface, which is the one place the vendored
+     set deliberately does NOT follow the ambient mode — a tooltip over a dark
+     panel is darker still, not lighter. */
+  --bui-tooltip-bg: var(--bg-sunken);
+  --bui-tooltip-fg: var(--text-primary);
+  --bui-tooltip-muted: var(--text-muted);
 }
 
 /* Register the aliases with Tailwind so `bg-bui-surface`, `text-bui-ink-3`,
@@ -276,4 +298,586 @@
     filter: none !important;
     transform: none !important;
   }
+}
+
+/* ── Component classes ───────────────────────────────────────────────────────
+ * Several vendored components style themselves with semantic class names
+ * (`records-table`, `insight-chart-tooltip`, `primitive-icon-button`, …) that
+ * live in the upstream site's own global stylesheet rather than in the
+ * component files. Without them RecordsTable renders as an unstyled table with
+ * collapsed columns, so they are ported here rather than left behind.
+ *
+ * These are upstream's rules with three substitutions, applied mechanically:
+ * every design token points at its `--bui-*` alias, upstream's `.dark` scope
+ * becomes Cave's `[data-mode="dark"]`, and the fourteen grey/wash literals
+ * resolve to ink tiers, borders and `--shadow-color` mixes. No hex literal
+ * survives, which is what lets these classes theme with everything else.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+@media (hover: none) and (pointer: coarse) {
+  .insight-chart-stage {
+    touch-action: pan-y;
+  }
+}
+.animated-underline {
+  display: inline-block;
+  position: relative;
+}
+.animated-underline:after {
+  content: "";
+  transform-origin: 0;
+  height: 1px;
+  transition: transform 0.28s var(--bui-ease-link);
+  background: currentColor;
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  transform: scaleX(0);
+}
+a:focus-visible .animated-underline:after,
+a:hover .animated-underline:after {
+  transform: scaleX(1);
+}
+.source-avatar {
+  box-shadow: 0 0 0 1px
+    color-mix(in oklch, var(--shadow-color) 10%, transparent);
+}
+[data-mode="dark"] .source-avatar {
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--bui-ink) 12%, transparent);
+}
+.primitive-card-pad {
+  padding: var(--space-3);
+}
+.primitive-card-bar,
+.primitive-card-footer,
+.primitive-table-cell {
+  padding: 10px var(--space-3);
+}
+.primitive-icon-button {
+  border-radius: var(--bui-radius-control);
+  justify-content: center;
+  align-items: center;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+}
+.records-shell {
+  border: 1px solid var(--bui-line);
+  background: var(--bui-surface);
+  border-radius: var(--bui-radius-card);
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--shadow-color) 6%, transparent);
+}
+.records-add-calculation,
+.records-company-header,
+.records-link,
+.records-primary-button,
+.records-quiet-button,
+.records-secondary-button,
+.records-select-button,
+.records-strength,
+.records-toolbar-left,
+.records-toolbar-right {
+  align-items: center;
+  display: inline-flex;
+}
+.records-add-calculation:active,
+.records-primary-button:active,
+.records-quiet-button:active,
+.records-secondary-button:active,
+.records-select-button:active {
+  transform: scale(0.96);
+}
+.records-scroll {
+  overscroll-behavior: none;
+  scrollbar-color: var(--bui-line-strong) transparent;
+  scrollbar-gutter: stable;
+  max-height: 438px;
+  overflow: auto;
+}
+.records-scroll:focus-visible {
+  outline: 2px solid var(--bui-accent);
+  outline-offset: -2px;
+}
+.records-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  min-width: 990px;
+  color: var(--bui-ink);
+  table-layout: fixed;
+  font-size: var(--text-sm);
+}
+.records-company-col {
+  width: 270px;
+}
+.records-category-col {
+  width: 275px;
+}
+.records-last-col {
+  width: 190px;
+}
+.records-strength-col {
+  width: 210px;
+}
+.records-link-col {
+  width: 175px;
+}
+.records-table td,
+.records-table th {
+  border-right: 1px solid var(--bui-line);
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-table td,
+  .records-table th {
+    border-right: 1px solid color-mix(in srgb, var(--bui-line) 78%, transparent);
+  }
+}
+.records-table td,
+.records-table th {
+  border-bottom: 1px solid var(--bui-line);
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-table td,
+  .records-table th {
+    border-bottom: 1px solid
+      color-mix(in srgb, var(--bui-line) 78%, transparent);
+  }
+}
+.records-table td,
+.records-table th {
+  text-align: left;
+  vertical-align: middle;
+}
+.records-table tr > :last-child {
+  border-right: 0;
+}
+.records-table thead th {
+  z-index: 5;
+  background: var(--bui-surface);
+  height: 42px;
+  color: var(--bui-ink-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+.records-header-cell {
+  padding: 0;
+}
+.records-header-cell.records-sticky-cell {
+  z-index: 7;
+}
+.records-company-header,
+.records-header-button {
+  gap: var(--space-2);
+  width: 100%;
+  height: 42px;
+  padding: 0 var(--space-3);
+}
+.records-company-header {
+  padding-left: 6px;
+}
+.records-header-button {
+  color: var(--bui-ink-2);
+  text-align: left;
+  align-items: center;
+  transition:
+    background-color 0.12s ease-out,
+    color 0.12s ease-out;
+  display: flex;
+}
+.records-header-button:hover {
+  background: var(--bui-hover);
+  color: var(--bui-ink);
+}
+.records-header-icon {
+  color: var(--bui-ink-3);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.records-header-button:hover .records-sort,
+.records-sort.is-visible {
+  opacity: 1;
+}
+.records-company-header {
+  display: flex;
+}
+.records-company-header > span:not(.records-checkbox-box) {
+  white-space: nowrap;
+}
+.records-add-field:focus-visible,
+.records-company-header:hover .records-add-field {
+  opacity: 1;
+}
+.records-checkbox {
+  border-radius: var(--bui-radius-chip);
+  flex: 0 0 24px;
+  justify-content: center;
+  align-items: center;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  position: relative;
+}
+.records-checkbox input {
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  position: absolute;
+}
+.records-checkbox-box {
+  color: var(--bui-ink-2);
+  width: 18px;
+  height: 18px;
+  transition:
+    border-color 0.14s ease-out,
+    background-color 0.14s ease-out,
+    box-shadow 0.14s ease-out,
+    transform 0.14s var(--bui-ease-out-strong);
+  background: var(--bui-surface);
+  border: 1px solid var(--bui-line-strong);
+  border-radius: var(--bui-radius-chip);
+  justify-content: center;
+  align-items: center;
+  display: inline-flex;
+}
+.records-checkbox:hover .records-checkbox-box {
+  background: var(--bui-field);
+  border-color: var(--bui-ink-3);
+}
+.records-checkbox:active .records-checkbox-box {
+  transform: scale(0.96);
+}
+.records-checkbox input:focus-visible + .records-checkbox-box {
+  outline: 2px solid var(--bui-accent);
+  outline-offset: 2px;
+}
+.records-checkbox-box.is-active {
+  border-color: var(--bui-accent);
+  color: var(--bui-surface);
+  background: var(--bui-accent);
+  box-shadow: none;
+}
+.records-checkbox-dash {
+  background: var(--bui-ink-2);
+  border-radius: var(--radius-pill);
+  width: 8px;
+  height: 1.5px;
+}
+[data-mode="dark"] .records-checkbox-box {
+  color: var(--bui-line-strong);
+  background: var(--bui-ink);
+  border-color: var(--bui-ink-2);
+}
+[data-mode="dark"] .records-checkbox:hover .records-checkbox-box {
+  background: var(--bui-ink-2);
+  border-color: var(--bui-ink-3);
+}
+[data-mode="dark"] .records-checkbox-box.is-active {
+  border-color: var(--bui-accent);
+  color: var(--bui-surface);
+  background: var(--bui-accent);
+}
+[data-mode="dark"] .records-checkbox-dash {
+  background: var(--bui-line-strong);
+}
+.records-cell {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  height: 42px;
+  padding: 0 var(--space-3);
+  overflow: hidden;
+}
+.records-sticky-cell {
+  z-index: 2;
+  background: var(--bui-surface);
+  position: sticky;
+  left: 0;
+  box-shadow: 5px 0 8px -10px
+    color-mix(in oklch, var(--shadow-color) 40%, transparent);
+}
+.records-company-cell {
+  align-items: center;
+  gap: var(--space-1);
+  padding-left: 6px;
+  display: flex;
+  overflow: visible;
+}
+.records-row > .records-cell {
+  transition:
+    background-color 0.12s ease-out,
+    color 0.12s ease-out;
+}
+.records-row:hover > .records-cell {
+  background: var(--bui-hover);
+}
+.records-row.is-selected > .records-cell {
+  background: var(--bui-accent);
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-row.is-selected > .records-cell {
+    background: color-mix(in srgb, var(--bui-accent) 7%, var(--bui-surface));
+  }
+}
+.records-company-mark {
+  width: 20px;
+  height: 20px;
+  color: var(--bui-ink-2);
+  background: var(--bui-field);
+  border: 0;
+  border-radius: var(--bui-radius-chip);
+  flex: 0 0 20px;
+  justify-content: center;
+  align-items: center;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  display: inline-flex;
+}
+.records-tags {
+  gap: var(--space-1);
+  min-width: 0;
+  display: flex;
+}
+.records-tag,
+.records-tags {
+  align-items: center;
+  overflow: hidden;
+}
+.records-tag {
+  cursor: pointer;
+  border: 1px solid var(--bui-tag-color);
+  flex-shrink: 0;
+  max-width: 115px;
+  height: 23px;
+  display: inline-flex;
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-tag {
+    border: 1px solid
+      color-mix(in srgb, var(--bui-tag-color) 24%, var(--bui-surface));
+  }
+}
+.records-tag {
+  color: var(--bui-tag-color);
+  border-radius: var(--bui-radius-chip);
+  padding: 0 7px;
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-tag {
+    color: color-mix(in srgb, var(--bui-tag-color) 82%, var(--bui-ink));
+  }
+}
+.records-tag {
+  background: var(--bui-tag-color);
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-tag {
+    background: color-mix(
+      in srgb,
+      var(--bui-tag-color) 13%,
+      var(--bui-surface)
+    );
+  }
+}
+.records-tag {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.records-more-tag {
+  border: 1px solid var(--bui-line-strong);
+  height: 23px;
+  border-radius: var(--bui-radius-chip);
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 7px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  display: inline-flex;
+}
+.records-tag-dot {
+  border-radius: 50%;
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+}
+.records-more-tag {
+  border-color: var(--bui-line-strong);
+  background: var(--bui-inset);
+}
+.records-more-tag,
+.records-muted {
+  color: var(--bui-ink-3);
+}
+.records-strength {
+  color: var(--bui-ink-2);
+  gap: var(--space-2);
+}
+.records-strength-dot {
+  border-radius: 50%;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+}
+.records-link {
+  max-width: 100%;
+  color: var(--bui-accent-ink);
+  text-overflow: ellipsis;
+  gap: 5px;
+  text-decoration: underline;
+  overflow: hidden;
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-link {
+    -webkit-text-decoration-color: color-mix(
+      in srgb,
+      currentColor 35%,
+      transparent
+    );
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  }
+}
+.records-link {
+  text-underline-offset: 3px;
+  transition:
+    color 0.12s ease-out,
+    text-decoration-color 0.12s ease-out;
+}
+.records-link:focus-visible,
+.records-link:hover {
+  color: var(--bui-ink);
+  text-decoration-color: currentColor;
+}
+.records-table tfoot td {
+  z-index: 4;
+  background: var(--bui-inset);
+  height: 38px;
+  color: var(--bui-ink-2);
+  /* Upstream's 11.5px, snapped to the scale step the TSX codemod already maps
+     11.5px onto, so the table footer matches every other 11.5px in the set. */
+  font-size: var(--text-sm);
+  position: sticky;
+  bottom: 0;
+}
+.records-table tfoot .records-sticky-cell {
+  z-index: 6;
+  background: var(--bui-inset);
+}
+.records-calculation-label {
+  color: var(--bui-ink-2);
+  font-weight: 550;
+}
+.records-calculation-number {
+  color: var(--bui-ink);
+  font-variant-numeric: tabular-nums;
+  margin-right: 3px;
+}
+.records-add-calculation {
+  color: var(--bui-ink-3);
+  transition:
+    color 0.12s ease-out,
+    transform 0.14s var(--bui-ease-out-strong);
+  gap: 6px;
+}
+.records-add-calculation:hover {
+  color: var(--bui-ink);
+}
+.records-average {
+  color: var(--bui-ink-2);
+  align-items: center;
+  gap: 7px;
+  display: inline-flex;
+}
+.records-calculation-row-secondary td {
+  background: var(--bui-inset);
+  position: sticky;
+  bottom: 38px;
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-calculation-row-secondary td {
+    background: color-mix(in srgb, var(--bui-inset) 70%, var(--bui-surface));
+  }
+}
+.records-calculation-row-secondary .records-sticky-cell {
+  background: var(--bui-inset);
+  position: sticky;
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .records-calculation-row-secondary .records-sticky-cell {
+    background: color-mix(in srgb, var(--bui-inset) 70%, var(--bui-surface));
+  }
+}
+.records-shell:hover .records-footer-hint {
+  opacity: 1;
+}
+.records-scroll-cue {
+  color: var(--bui-ink-3);
+  display: inline-flex;
+}
+.insight-chart-stage {
+  overflow: hidden;
+}
+.insight-chart-cursor {
+  z-index: 4;
+  background: var(--bui-ink);
+  opacity: 0.26;
+  pointer-events: none;
+  width: 1px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.insight-chart-tooltip-anchor {
+  z-index: 5;
+  pointer-events: none;
+  position: absolute;
+  top: 8px;
+  transform: translate(-50%);
+}
+.insight-chart-tooltip {
+  border: 1px solid var(--bui-line-strong);
+  min-width: 154px;
+  color: var(--bui-tooltip-fg);
+  background: var(--bui-tooltip-bg);
+  box-shadow: var(--bui-shadow-overlay);
+  border-radius: var(--bui-radius-card);
+  padding: 9px 10px;
+  font-size: var(--text-sm);
+}
+.insight-chart-tooltip-time {
+  color: var(--bui-tooltip-muted);
+  margin-bottom: 7px;
+  font-size: var(--text-xs);
+  display: block;
+}
+.insight-chart-tooltip-row {
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  line-height: 1.65;
+  display: flex;
+}
+.insight-chart-tooltip-label {
+  color: var(--bui-tooltip-fg);
+  align-items: center;
+  gap: 7px;
+  display: inline-flex;
+}
+.insight-chart-tooltip-row strong {
+  color: var(--bui-tooltip-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.insight-chart-tooltip-dot {
+  border-radius: 50%;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
 }
