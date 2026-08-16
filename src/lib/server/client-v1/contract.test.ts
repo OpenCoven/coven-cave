@@ -178,7 +178,7 @@ test("preserves additive cursor fields through parsers and response helpers", ()
   );
 });
 
-test("accepts only JSON-safe additive public values", () => {
+test("accepts only JSON-safe additive public values", async () => {
   const fixture = createClientV1ContractFixture();
   const nestedExtension = {
     nested: [null, true, 3.5, "extension", { child: "accepted" }],
@@ -205,6 +205,15 @@ test("accepts only JSON-safe additive public values", () => {
     clientV1Success({ status: "ok", extension: nestedExtension }).data,
     { status: "ok", extension: nestedExtension },
   );
+  const ordinaryArray = ["extension", { nested: true }];
+  assert.deepEqual(
+    parseClientV1SuccessEnvelope({ ...fixture.examples.health, extension: ordinaryArray }),
+    { ...fixture.examples.health, extension: ordinaryArray },
+  );
+  const helper = clientV1Success({ status: "ok", extension: ordinaryArray });
+  const helperResponse = clientV1SuccessResponse({ status: "ok", extension: ordinaryArray });
+  assert.deepEqual(await helperResponse.json(), helper);
+  assert.equal(Object.is(-0, JSON.parse(JSON.stringify(-0))), false);
 
   const cycle: Record<string, unknown> = {};
   cycle.self = cycle;
@@ -221,6 +230,7 @@ test("accepts only JSON-safe additive public values", () => {
     Symbol("extension"),
     undefined,
     cycle,
+    -0,
   ]) {
     assert.throws(
       () => parseClientV1SuccessEnvelope({ ...fixture.examples.health, extension: value }),
@@ -234,6 +244,26 @@ test("accepts only JSON-safe additive public values", () => {
   assert.throws(
     () => clientV1SuccessResponse({ status: "ok", extension: BigInt(1) } as never),
     /JSON-safe/i,
+  );
+});
+
+test("rejects custom array prototypes from public additions", () => {
+  const fixture = createClientV1ContractFixture();
+  class FancyArray extends Array<string> {}
+
+  assert.throws(
+    () => parseClientV1SuccessEnvelope({
+      ...fixture.examples.health,
+      extension: new FancyArray("extension"),
+    }),
+    /JSON-safe/i,
+  );
+  assert.deepEqual(
+    parseClientV1SuccessEnvelope({
+      ...fixture.examples.health,
+      extension: ["extension", { nested: true }],
+    }).extension,
+    ["extension", { nested: true }],
   );
 });
 

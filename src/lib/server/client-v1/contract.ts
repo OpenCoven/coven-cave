@@ -209,7 +209,7 @@ function parseClientV1JsonValueInner(value: unknown, ancestors: Set<object>): Js
     return value;
   }
   if (typeof value === "number") {
-    if (Number.isFinite(value)) return value;
+    if (Number.isFinite(value) && !Object.is(value, -0)) return value;
     return rejectNonJsonValue();
   }
   if (typeof value !== "object" || ancestors.has(value)) {
@@ -219,6 +219,9 @@ function parseClientV1JsonValueInner(value: unknown, ancestors: Set<object>): Js
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) {
+        return rejectNonJsonValue();
+      }
       for (const key of Reflect.ownKeys(value)) {
         if (key === "length") continue;
         if (typeof key !== "string" || !ARRAY_INDEX_RE.test(key) || Number(key) >= value.length) {
