@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -41,6 +41,17 @@ import {
   resolveShellNavWidth,
   type ShellPanelLayout,
 } from "./shell-layout";
+import {
+  normalizeRightChatOpen,
+  normalizeRightChatWidth,
+  RIGHT_CHAT_DEFAULT_PX,
+  RIGHT_CHAT_MAX_PX,
+  RIGHT_CHAT_MIN_PX,
+  RIGHT_CHAT_OPEN_PREF_KEY,
+  RIGHT_CHAT_WIDTH_PREF_KEY,
+  SHELL_DETAIL_MIN_PX,
+  shouldAutoCollapseNavForRightChat,
+} from "@/lib/shell-right-chat";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -114,14 +125,39 @@ const hydrationShellStorage = {
   setItem(_key: string, _value: string): void {},
 };
 
+// react-resizable-panels can hand back a non-null imperative handle for a
+// panel that hasn't finished registering with its PanelGroup yet — this
+// happens when a conditionally-rendered panel (right-chat, gated on
+// isMobile) remounts during a viewport resize that crosses the mobile
+// breakpoint in the same render pass an effect here runs in. Calling
+// `.isCollapsed()` on it then THROWS "Panel constraints not found for Panel
+// <id>" instead of returning a boolean — uncaught, that crashes the whole
+// shell into the root error boundary and takes every other panel (and every
+// other test sharing the dev server) down with it. There is nothing to
+// open/collapse in that instant, and the next relevant effect re-run retries
+// once the panel has registered, so treating "not ready" like "no panel"
+// (skip silently) is safe. See cave-ltl38.4.
+function readPanelCollapsed(panel: PanelImperativeHandle): boolean | undefined {
+  try {
+    return panel.isCollapsed();
+  } catch {
+    return undefined;
+  }
+}
+
 function togglePanel(panel: PanelImperativeHandle | null) {
   if (!panel) return;
-  if (panel.isCollapsed()) panel.expand();
+  const collapsed = readPanelCollapsed(panel);
+  if (collapsed === undefined) return;
+  if (collapsed) panel.expand();
   else panel.collapse();
 }
 
 function applyPanelOpenState(panel: PanelImperativeHandle | null, open: boolean) {
-  if (!panel || panel.isCollapsed() === !open) return;
+  if (!panel) return;
+  const collapsed = readPanelCollapsed(panel);
+  if (collapsed === undefined) return;
+  if (collapsed === !open) return;
   if (open) panel.expand();
   else panel.collapse();
 }
@@ -231,6 +267,9 @@ export type ShellHandle = {
   openList: () => void;
   closeList: () => void;
   toggleList: () => void;
+  openRightChat: () => void;
+  closeRightChat: () => void;
+  toggleRightChat: () => void;
   /** Dismiss the nav/list ONLY on mobile (where it's an overlay drawer over the
    *  content). On desktop these are persistent side panels, so selecting an
    *  option inside them must NOT collapse them — these are no-ops there. */
@@ -244,6 +283,7 @@ export type ShellListPolicy = "collapsible" | "persistent";
 type ShellMobileChromeState = {
   navDrawerOpen: boolean;
   listDrawerOpen: boolean;
+  rightChatDrawerOpen: boolean;
 };
 
 type ShellTopBar = ReactNode | ((state: ShellMobileChromeState) => ReactNode);
@@ -261,6 +301,8 @@ function ShellInner({
   onCloseSplitTile,
   onPromoteSplitTile,
   onDropSplitPage,
+  rightChat,
+  onRightChatOpenChange,
   onNavOpenChange,
   navPolicy = "remembered",
   listPolicy = "collapsible",
@@ -279,6 +321,8 @@ function ShellInner({
   onCloseSplitTile?: (id: string) => void;
   onPromoteSplitTile?: (id: string) => void;
   onDropSplitPage?: (mode: string, side: "left" | "right") => void;
+  rightChat?: ReactNode;
+  onRightChatOpenChange?: (open: boolean) => void;
   /** Mobile/tablet-only bottom tab bar. Kept in hydration-stable markup after
    *  `.shell-body`; CSS displays it only at the mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
@@ -296,6 +340,8 @@ function ShellInner({
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
+  const rightChatRef = useRef<PanelImperativeHandle | null>(null);
+  const rightChatToggleRef = useRef<HTMLButtonElement | null>(null);
   // Code-rail ↔ nav coupling bookkeeping (desktop only). When the code rail
   // opens we collapse the nav and remember that WE did it
   // (railAutoCollapsedNavRef); on rail close we restore it — unless the user
@@ -303,12 +349,42 @@ function ShellInner({
   // their intent wins and we leave the nav alone.
   const railAutoCollapsedNavRef = useRef(false);
   const userOverrodeNavRef = useRef(false);
+  const hasRightChat = rightChat != null;
+  const [rightChatOpen, setRightChatOpen] = useState(false);
+  const [preferredRightChatWidth, setPreferredRightChatWidth] = useState(RIGHT_CHAT_DEFAULT_PX);
+  const rightChatAutoCollapsedNavRef = useRef(false);
+  const rightChatNavOverrideRef = useRef(false);
   const [preferredNavWidth, setPreferredNavWidth] = useState(() =>
     resolveShellNavWidth(readNavWidthPref()),
   );
   const [mounted, setMounted] = useState(false);
   useLayoutEffect(() => setMounted(true), []);
   const layoutStorage = mounted ? shellStorage : hydrationShellStorage;
+  const isMobile = useIsMobile();
+  const [mobileDrawer, setMobileDrawer] = useState<MobileDrawerSlot>(null);
+  const twoPane = !list;
+  const hasBottom = !!bottom;
+  const desktopRightChat = hasRightChat && !isMobile;
+
+  useLayoutEffect(() => {
+    if (!mounted || !hasRightChat) return;
+    let open = false;
+    let width = RIGHT_CHAT_DEFAULT_PX;
+    try {
+      open = normalizeRightChatOpen(window.localStorage.getItem(RIGHT_CHAT_OPEN_PREF_KEY));
+      width = normalizeRightChatWidth(window.localStorage.getItem(RIGHT_CHAT_WIDTH_PREF_KEY));
+    } catch {
+      // closed/default is the safe storage-unavailable fallback
+    }
+    setPreferredRightChatWidth(width);
+    setRightChatOpen(open);
+    if (isMobile) {
+      setMobileDrawer(open ? "right-chat" : null);
+    } else {
+      if (open) rightChatRef.current?.resize(`${width}px`);
+      applyPanelOpenState(rightChatRef.current, open);
+    }
+  }, [hasRightChat, isMobile, mounted]);
 
   // Mobile drawer: which of the nav/list/agent panels is currently slid in
   // as a full-height overlay. On desktop this stays null and react-resizable-
@@ -317,9 +393,6 @@ function ShellInner({
   // this state drives the `[data-mobile-drawer]` attribute that triggers the
   // slide. We deliberately do NOT call panel.collapse/expand on mobile —
   // that would write to the persisted desktop layout for no benefit.
-  const isMobile = useIsMobile();
-  const [mobileDrawer, setMobileDrawer] = useState<MobileDrawerSlot>(null);
-
   // When the viewport crosses back to desktop, drop any open drawer state so
   // we don't end up with a stale [data-mobile-drawer] attribute applying to
   // a layout that's no longer in mobile mode. On mobile, if a list slot
@@ -360,6 +433,7 @@ function ShellInner({
   const mobileChromeState: ShellMobileChromeState = {
     navDrawerOpen: isMobile && mobileDrawer === "nav",
     listDrawerOpen: isMobile && mobileDrawer === "list",
+    rightChatDrawerOpen: isMobile && mobileDrawer === "right-chat",
   };
   const renderedTopBar = typeof topBar === "function" ? topBar(mobileChromeState) : topBar;
   const panelShortcuts = useMemo(
@@ -367,6 +441,102 @@ function ShellInner({
     [panelShortcutOverrides],
   );
   const leftPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleLeftPanel);
+  const rightPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleRightPanel);
+
+  const writeRightChatOpenPref = (open: boolean) => {
+    try {
+      window.localStorage.setItem(RIGHT_CHAT_OPEN_PREF_KEY, open ? "1" : "0");
+    } catch {}
+  };
+  const writeRightChatWidthPref = (width: number) => {
+    try {
+      window.localStorage.setItem(
+        RIGHT_CHAT_WIDTH_PREF_KEY,
+        String(normalizeRightChatWidth(String(width))),
+      );
+    } catch {}
+  };
+
+  const applyPreferredRightChatWidth = useCallback(() => {
+    const group = groupRef.current;
+    const groupElement = groupElementRef.current;
+    if (!group || !groupElement) return;
+    const layout = group.getLayout();
+    const detail = layout.detail;
+    const current = layout["right-chat"];
+    if (typeof detail !== "number" || typeof current !== "number") return;
+    const groupSize = Array.from(groupElement.children).reduce(
+      (size, child) =>
+        size +
+        (child instanceof HTMLElement && child.hasAttribute("data-panel")
+          ? child.offsetWidth
+          : 0),
+      0,
+    );
+    if (!Number.isFinite(groupSize) || groupSize <= 0) return;
+    const desired = Number.parseFloat(((preferredRightChatWidth / groupSize) * 100).toFixed(3));
+    if (Math.abs(desired - current) < 0.05) return;
+    const nextDetail = Number.parseFloat((detail - (desired - current)).toFixed(3));
+    if (nextDetail <= 0) return;
+    group.setLayout({ ...layout, detail: nextDetail, "right-chat": desired });
+  }, [preferredRightChatWidth]);
+
+  const openRightChat = () => {
+    if (!hasRightChat) return;
+    if (isMobile) {
+      setMobileDrawer("right-chat");
+    } else {
+      const navWidth = navRef.current?.getSize().inPixels ?? NAV_RAIL_PX;
+      const listWidth = twoPane ? 0 : listRef.current?.getSize().inPixels ?? 0;
+      if (
+        shouldAutoCollapseNavForRightChat({
+          viewportWidth: window.innerWidth,
+          navWidth,
+          listWidth,
+          rightChatWidth: preferredRightChatWidth,
+        }) &&
+        navOpen
+      ) {
+        rightChatAutoCollapsedNavRef.current = true;
+        rightChatNavOverrideRef.current = false;
+        navRef.current?.collapse();
+        setNavOpen(false);
+      }
+      applyPreferredRightChatWidth();
+      rightChatRef.current?.expand();
+      rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+      requestAnimationFrame(() => {
+        applyPreferredRightChatWidth();
+        rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+      });
+    }
+    setRightChatOpen(true);
+    writeRightChatOpenPref(true);
+  };
+
+  const closeRightChat = () => {
+    if (isMobile) {
+      setMobileDrawer((current) => (current === "right-chat" ? null : current));
+      requestAnimationFrame(() => rightChatToggleRef.current?.focus());
+    } else {
+      rightChatRef.current?.collapse();
+      const restoreNav =
+        rightChatAutoCollapsedNavRef.current && !rightChatNavOverrideRef.current;
+      rightChatAutoCollapsedNavRef.current = false;
+      rightChatNavOverrideRef.current = false;
+      if (restoreNav) {
+        navRef.current?.expand();
+        setNavOpen(true);
+      }
+    }
+    setRightChatOpen(false);
+    writeRightChatOpenPref(false);
+  };
+
+  const toggleRightChat = () => {
+    if (rightChatOpen) closeRightChat();
+    else openRightChat();
+  };
 
   useImperativeHandle(ref, () => {
     const toggleDrawer = (slot: NonNullable<MobileDrawerSlot>) => {
@@ -410,22 +580,25 @@ function ShellInner({
         if (listPolicy === "persistent") return;
         togglePanel(listRef.current);
       },
+      openRightChat,
+      closeRightChat,
+      toggleRightChat,
     };
-  }, [isMobile, listPolicy]);
+  }, [closeRightChat, isMobile, listPolicy, openRightChat, toggleRightChat]);
 
-  const twoPane = !list;
-  const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
+  if (desktopRightChat) panelIds.push("right-chat");
   const chatContextual = navPolicy === "chat-contextual";
-  const groupId = chatContextual
+  const baseGroupId = chatContextual
     ? `${SHELL_GROUP_ID}.chat-contextual`
     : twoPane
       ? `${SHELL_GROUP_ID}.two-pane`
       : listPolicy === "persistent"
         ? `${SHELL_GROUP_ID}.persistent-list`
         : SHELL_GROUP_ID;
+  const groupId = desktopRightChat ? `${baseGroupId}.right-chat` : baseGroupId;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -683,7 +856,14 @@ function ShellInner({
       panelIds,
       savedLayout: defaultLayout,
       groupSize,
-      defaultPanelPixels: { ...(!twoPane && { list: 260 }) },
+      defaultPanelPixels: {
+        ...(!twoPane && { list: 260 }),
+        // Reserve real space only while the panel should be visibly open —
+        // otherwise it must resolve to an explicit 0% share so it starts (and
+        // stays) collapsed. Falling through to the "flexible" bucket instead
+        // of naming a pixel value here would still hand it a nonzero share.
+        ...(desktopRightChat && { "right-chat": rightChatOpen ? preferredRightChatWidth : 0 }),
+      },
       preferredNavPixels: preferredNavWidth,
       // Matches the Panel's collapsedSize below — Chat collapses to the rail
       // now, not to zero, so the restored layout must describe the same width.
@@ -695,18 +875,46 @@ function ShellInner({
     // Group keeps an in-memory layout keyed only by panel ids, even after its
     // id changes. Arm persistence immediately before replacing that stale
     // source layout so transition churn cannot overwrite the destination.
-    expandedLayoutRef.current = { groupId, layout: destinationLayout };
-    collapsedLayoutRef.current = null;
-    layoutPersistenceGroupRef.current = groupId;
-    restoredGroupRef.current = groupId;
-    group.setLayout(destinationLayout);
-    if (rememberedNavOpen !== null) {
-      railAutoCollapsedNavRef.current = false;
-      userOverrodeNavRef.current = false;
-      applyPanelOpenState(navRef.current, rememberedNavOpen);
-      setNavOpen(rememberedNavOpen);
-      minimizedGroupsRef.current.add(groupId);
-      markShellMinimizeApplied(groupId);
+    const commitDestinationLayout = () => {
+      group.setLayout(destinationLayout);
+      expandedLayoutRef.current = { groupId, layout: destinationLayout };
+      collapsedLayoutRef.current = null;
+      layoutPersistenceGroupRef.current = groupId;
+      restoredGroupRef.current = groupId;
+      if (rememberedNavOpen !== null) {
+        railAutoCollapsedNavRef.current = false;
+        userOverrodeNavRef.current = false;
+        applyPanelOpenState(navRef.current, rememberedNavOpen);
+        setNavOpen(rememberedNavOpen);
+        minimizedGroupsRef.current.add(groupId);
+        markShellMinimizeApplied(groupId);
+      }
+    };
+    try {
+      commitDestinationLayout();
+    } catch {
+      // destinationLayout's key count reflects panelIds/desktopRightChat for
+      // THIS render, but group.setLayout() validates against however many
+      // panels are actually registered with the group right now — and a
+      // groupId change (toggling desktopRightChat remounts the whole
+      // PanelGroup under a new key, see groupId above) can commit before the
+      // freshly-mounted right-chat Panel has finished registering its own
+      // constraints, so the two counts briefly disagree and the library
+      // throws "Invalid N panel layout" instead of applying it. Retry once
+      // after paint, by which point every panel's own mount effects have
+      // run; leaving restoredGroupRef unset until then means a re-render in
+      // between (or the retry itself) is what actually applies it. See
+      // cave-ltl38.4.
+      const groupAtThrow = group;
+      requestAnimationFrame(() => {
+        if (groupRef.current !== groupAtThrow) return;
+        try {
+          commitDestinationLayout();
+        } catch {
+          // Still not ready — leave restoredGroupRef unset so the next
+          // relevant effect re-run (any dependency change) tries again.
+        }
+      });
     }
   }, [
     mounted,
@@ -716,7 +924,10 @@ function ShellInner({
     defaultLayout,
     twoPane,
     navPolicy,
+    desktopRightChat,
     preferredNavWidth,
+    preferredRightChatWidth,
+    rightChatOpen,
   ]);
 
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
@@ -782,9 +993,31 @@ function ShellInner({
     navPrefArmedGroupRef.current = groupId;
   }, [settled, isMobile, groupId, navPolicy]);
 
+  useLayoutEffect(() => {
+    if (!settled || !desktopRightChat) return;
+    if (rightChatOpen) {
+      // Only enforce the preferred pixel width while the panel is meant to be
+      // open. Calling this while closed fights applyPanelOpenState's collapse
+      // below: group.setLayout() writes group percentages directly and does
+      // not update the Panel's own imperative collapsed flag, so a stale read
+      // of a just-collapsed layout (current width 0) makes this function
+      // "restore" right-chat to its preferred width immediately after
+      // collapse() ran — leaving the panel visually open (and the group's nav/
+      // detail split throw off) while the Panel itself still reports
+      // collapsed. See cave-ltl38.4 shipping-gate investigation.
+      applyPreferredRightChatWidth();
+      rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
+    }
+    applyPanelOpenState(rightChatRef.current, rightChatOpen);
+  }, [applyPreferredRightChatWidth, desktopRightChat, groupId, preferredRightChatWidth, rightChatOpen, settled]);
+
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
+
+  useEffect(() => {
+    onRightChatOpenChange?.(hasRightChat ? rightChatOpen : false);
+  }, [hasRightChat, onRightChatOpenChange, rightChatOpen]);
 
   useEffect(() => {
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
@@ -803,6 +1036,14 @@ function ShellInner({
       }
     };
     const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const editable =
+        target?.matches("input, textarea, select, [contenteditable='true'], [role='textbox']") ?? false;
+      if (!editable && hasRightChat && matchesPanelShortcut(e, panelShortcuts.toggleRightPanel)) {
+        e.preventDefault();
+        toggleRightChat();
+        return;
+      }
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("nav");
@@ -844,7 +1085,7 @@ function ShellInner({
       window.removeEventListener("keydown", bottomToggle);
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasBottom, isMobile, listPolicy, panelShortcuts]);
+  }, [twoPane, hasBottom, hasRightChat, isMobile, listPolicy, panelShortcuts, preferredRightChatWidth, rightChatOpen, toggleRightChat]);
 
   // Couple the left nav to the code rail (desktop only — mobile nav is a
   // drawer, so this must never touch it). When the rail opens we collapse the
@@ -891,6 +1132,9 @@ function ShellInner({
     if (navOpen && railAutoCollapsedNavRef.current) {
       userOverrodeNavRef.current = true;
     }
+    if (navOpen && rightChatAutoCollapsedNavRef.current) {
+      rightChatNavOverrideRef.current = true;
+    }
   }, [navOpen]);
 
   // Clear coupling bookkeeping when the viewport crosses into mobile: the nav
@@ -902,6 +1146,8 @@ function ShellInner({
     if (isMobile) {
       railAutoCollapsedNavRef.current = false;
       userOverrodeNavRef.current = false;
+      rightChatAutoCollapsedNavRef.current = false;
+      rightChatNavOverrideRef.current = false;
     }
   }, [isMobile]);
 
@@ -947,6 +1193,21 @@ function ShellInner({
           const normalizedWidth = resolveShellNavWidth(String(pixelWidth));
           writeNavWidthPref(normalizedWidth);
           setPreferredNavWidth(normalizedWidth);
+        }
+        const rightChatWidth = rightChatRef.current?.getSize().inPixels;
+        if (
+          hasRightChat &&
+          meta.isUserInteraction &&
+          Number.isFinite(rightChatWidth)
+        ) {
+          const open = rightChatWidth! >= RIGHT_CHAT_MIN_PX;
+          setRightChatOpen(open);
+          writeRightChatOpenPref(open);
+          if (open) {
+            const normalized = normalizeRightChatWidth(String(rightChatWidth));
+            setPreferredRightChatWidth(normalized);
+            writeRightChatWidthPref(normalized);
+          }
         }
       }}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
@@ -1018,7 +1279,7 @@ function ShellInner({
           <Separator className="shell-separator" />
         </>
       )}
-      <Panel id="detail" className="shell-detail-panel">
+      <Panel id="detail" className="shell-detail-panel" minSize={`${SHELL_DETAIL_MIN_PX}px`}>
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
           {/* Peel-reveal (cave-3vgd): decorative page-curl toward the collapsed
               rail on HTML-in-canvas browsers; a bare Fragment everywhere else
@@ -1042,6 +1303,28 @@ function ShellInner({
           </ShellPeelReveal>
         </main>
       </Panel>
+      {desktopRightChat ? (
+        <>
+          <Separator className="shell-separator" />
+          <Panel
+            id="right-chat"
+            className="shell-right-chat-panel"
+            defaultSize={`${preferredRightChatWidth}px`}
+            minSize={`${RIGHT_CHAT_MIN_PX}px`}
+            maxSize={`${RIGHT_CHAT_MAX_PX}px`}
+            collapsible
+            collapsedSize={0}
+            panelRef={rightChatRef}
+            onResize={(size) => {
+              if ((size.inPixels ?? 0) <= 0) setRightChatOpen(false);
+            }}
+          >
+            <div id="shell-right-chat-panel" className="shell-right-chat">
+              {rightChat}
+            </div>
+          </Panel>
+        </>
+      ) : null}
     </Group>
   );
 
@@ -1095,6 +1378,26 @@ function ShellInner({
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   );
+  const rightChatToggle = (
+    hasRightChat ? (
+      <button
+        ref={rightChatToggleRef}
+        type="button"
+        className={`shell-top-toggle shell-top-toggle--right focus-ring${rightChatOpen ? " shell-top-toggle--active" : ""}`}
+        aria-label={rightChatOpen ? "Close Chat panel" : "Open Chat panel"}
+        aria-expanded={rightChatOpen}
+        aria-controls={isMobile ? "shell-right-chat-drawer" : "shell-right-chat-panel"}
+        title={`${rightChatOpen ? "Close" : "Open"} Chat panel (${rightPanelShortcutLabel})`}
+        onClick={toggleRightChat}
+      >
+        <Icon
+          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
+          width={CAVE_ICON_SIZE.shellToggle}
+          height={CAVE_ICON_SIZE.shellToggle}
+        />
+      </button>
+    ) : null
+  );
   // Workspace owns its destination stack, while the other shell surfaces use
   // browser history. Keep the app-scoped boundary controls intact there and
   // reuse the shared browser controls everywhere else.
@@ -1142,6 +1445,7 @@ function ShellInner({
         {navToggle}
         {historyNav}
         <div className="shell-top__bar" data-tauri-drag-region="deep">{renderedTopBar}</div>
+        {rightChatToggle}
       </div>
       <div className="shell-body flex flex-1 min-h-0">
         {hasBottom ? (
@@ -1174,7 +1478,11 @@ function ShellInner({
       {mobileTabs ?? null}
       <MobileDrawer
         open={isMobile ? mobileDrawer : null}
-        onClose={() => setMobileDrawer(null)}
+        onClose={() => {
+          if (mobileDrawer === "right-chat") closeRightChat();
+          else setMobileDrawer(null);
+        }}
+        rightChat={isMobile ? rightChat : undefined}
       />
     </div>
   );

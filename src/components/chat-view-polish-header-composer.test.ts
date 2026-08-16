@@ -939,8 +939,8 @@ assert.match(
 );
 assert.equal(
   (workspaceSource.match(/onSlashFromChat=\{handleSlashIntent\}/g) ?? []).length,
-  2,
-  "General chat and task work must both report unhandled slash commands honestly (no unconditional return-true wrappers)",
+  3,
+  "General chat, task work, and the persistent right Chat panel must all report unhandled slash commands honestly (no unconditional return-true wrappers)",
 );
 
 // — CHAT-D1-02: paste-to-attach (clipboard files route through attachFiles) —

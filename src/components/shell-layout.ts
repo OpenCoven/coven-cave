@@ -251,7 +251,21 @@ export function resolveShellDestinationLayout({
     layout.nav = navPercentage;
     layout.detail = detailPercentage;
 
-    return isCompleteLayout(layout, panelIds) ? layout : undefined;
+    // react-resizable-panels' PanelGroup.setLayout() validates a keyed layout
+    // object by zipping Object.values(layout) positionally against its
+    // internal per-panel constraints array, which is ordered by panel
+    // registration (DOM) order — it does not match by key. The loop above
+    // inserts non-nav/detail panel keys (e.g. "right-chat") before "nav" and
+    // "detail", so an object built in that order silently validates each
+    // panel's requested size against a DIFFERENT panel's min/max/collapsed
+    // constraints. Rebuilding the object in panelIds' order (which mirrors
+    // DOM order) keeps every value aligned with its own panel's constraints.
+    const orderedLayout: ShellPanelLayout = {};
+    for (const panelId of panelIds) {
+      orderedLayout[panelId] = layout[panelId];
+    }
+
+    return isCompleteLayout(orderedLayout, panelIds) ? orderedLayout : undefined;
   };
 
   const preserveSavedNonNavPanels = savedLayoutIsComplete && !savedNavIsCollapsed;
