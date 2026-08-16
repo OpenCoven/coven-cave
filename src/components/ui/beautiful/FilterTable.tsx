@@ -11,9 +11,9 @@ type Status = "todo" | "progress" | "done";
 
 const FILTERS: { key: "all" | Status; label: string; dot?: string; count: number }[] = [
   { key: "all", label: "All", count: 5 },
-  { key: "todo", label: "To do", dot: "#f09a2f", count: 2 },
-  { key: "progress", label: "In Progress", dot: "#16a6c7", count: 2 },
-  { key: "done", label: "Completed", dot: "#25a878", count: 1 },
+  { key: "todo", label: "To do", dot: "var(--bui-orange)", count: 2 },
+  { key: "progress", label: "In Progress", dot: "var(--bui-accent)", count: 2 },
+  { key: "done", label: "Completed", dot: "var(--bui-green)", count: 1 },
 ];
 
 const ROWS: { task: string; date: string; status: Status; owner: string }[] = [
