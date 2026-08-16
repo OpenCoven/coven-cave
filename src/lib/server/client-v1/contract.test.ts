@@ -92,6 +92,31 @@ test("publishes stable client v1 limits", () => {
   });
 });
 
+test("locks exported contract arrays and limits against runtime mutation", () => {
+  for (const frozenArray of [
+    CLIENT_V1_SCOPES,
+    CLIENT_V1_CAPABILITIES,
+    CLIENT_V1_ERROR_CODES,
+    CLIENT_V1_IDENTITY_KINDS,
+  ]) {
+    assert.equal(Object.isFrozen(frozenArray), true);
+    assert.throws(
+      () => Array.prototype.push.call(frozenArray, "mutated"),
+      TypeError,
+      "exported contract arrays cannot be mutated at runtime",
+    );
+  }
+
+  assert.equal(Object.isFrozen(CLIENT_V1_LIMITS), true);
+  assert.throws(
+    () => {
+      (CLIENT_V1_LIMITS as unknown as Record<string, number>).maxPageSize = 999;
+    },
+    TypeError,
+    "exported client v1 limits cannot be mutated at runtime",
+  );
+});
+
 test("parses stable ids, scopes, identities, revisions, cursors, and status records", () => {
   assert.equal(
     parseClientV1IdempotencyKey("f47ac10b-58cc-4372-a567-0e02b2c3d479"),
@@ -448,6 +473,26 @@ test("builds a deterministic foundation-only contract fixture with shared primit
     retryable: true,
   });
   assert.deepEqual(createClientV1ContractFixture(), fixture);
+});
+
+test("fixture limits are independent frozen copies that cannot leak mutations across calls", () => {
+  const first = createClientV1ContractFixture();
+  const second = createClientV1ContractFixture();
+
+  assert.notEqual(first.contract.limits, CLIENT_V1_LIMITS);
+  assert.notEqual(first.contract.limits, second.contract.limits);
+  assert.deepEqual(first.contract.limits, CLIENT_V1_LIMITS);
+  assert.deepEqual(second.contract.limits, CLIENT_V1_LIMITS);
+
+  assert.equal(Object.isFrozen(first.contract.limits), true);
+  assert.throws(
+    () => {
+      (first.contract.limits as unknown as Record<string, number>).maxPageSize = 1;
+    },
+    TypeError,
+    "a single fixture's limits object cannot be mutated at runtime",
+  );
+  assert.deepEqual(second.contract.limits, CLIENT_V1_LIMITS);
 });
 
 test("parses complete public envelopes while preserving additive fields", () => {

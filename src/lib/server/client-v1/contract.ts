@@ -1,16 +1,16 @@
 export const CLIENT_V1_API_VERSION = "1.0";
 export const CLIENT_V1_MIN_CLIENT_VERSION = "0.1.0";
 
-export const CLIENT_V1_SCOPES = [
+export const CLIENT_V1_SCOPES = Object.freeze([
   "chat:read",
   "chat:write",
   "conversations:write",
   "attachments:write",
   "tasks:write",
   "github:write",
-] as const;
+] as const);
 
-export const CLIENT_V1_CAPABILITIES = [
+export const CLIENT_V1_CAPABILITIES = Object.freeze([
   "pairing",
   "credentials",
   "familiars",
@@ -20,9 +20,9 @@ export const CLIENT_V1_CAPABILITIES = [
   "streaming",
   "cursors",
   "revisions",
-] as const;
+] as const);
 
-export const CLIENT_V1_ERROR_CODES = [
+export const CLIENT_V1_ERROR_CODES = Object.freeze([
   "invalid_request",
   "unauthorized",
   "scope_denied",
@@ -36,9 +36,9 @@ export const CLIENT_V1_ERROR_CODES = [
   "service_unavailable",
   "reconcile_required",
   "internal_error",
-] as const;
+] as const);
 
-export const CLIENT_V1_IDENTITY_KINDS = [
+export const CLIENT_V1_IDENTITY_KINDS = Object.freeze([
   "client",
   "credential",
   "familiar",
@@ -46,9 +46,9 @@ export const CLIENT_V1_IDENTITY_KINDS = [
   "conversation",
   "message",
   "event",
-] as const;
+] as const);
 
-export const CLIENT_V1_LIMITS = {
+export const CLIENT_V1_LIMITS = Object.freeze({
   idempotencyKeyCharacters: 36,
   requestIdCharacters: 64,
   revisionTokenCharacters: 128,
@@ -58,7 +58,7 @@ export const CLIENT_V1_LIMITS = {
   errorDetailValueCharacters: 256,
   defaultPageSize: 50,
   maxPageSize: 100,
-} as const;
+} as const);
 
 export type ClientV1Scope = (typeof CLIENT_V1_SCOPES)[number];
 export type ClientV1Capability = (typeof CLIENT_V1_CAPABILITIES)[number];
@@ -414,6 +414,12 @@ export function sortClientV1JsonKeys(value: JsonValue): JsonValue {
   ) as JsonObject;
 }
 
+// Each fixture invocation gets its own frozen limits copy so mutating one
+// fixture's output can never leak into CLIENT_V1_LIMITS or a later fixture.
+function cloneClientV1Limits(): typeof CLIENT_V1_LIMITS {
+  return Object.freeze({ ...CLIENT_V1_LIMITS });
+}
+
 function defaultCapabilities(): ClientV1Capability[] {
   return [...CLIENT_V1_CAPABILITIES];
 }
@@ -459,7 +465,7 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
       pairingScopes: [...CLIENT_V1_SCOPES],
       identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
       errorCodes: [...CLIENT_V1_ERROR_CODES],
-      limits: CLIENT_V1_LIMITS,
+      limits: cloneClientV1Limits(),
     },
     // Phase 0 fixture governance stays foundation-only: shared primitives,
     // generic envelopes, and no route DTOs or success-shape guessing.
