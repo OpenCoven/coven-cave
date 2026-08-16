@@ -18,6 +18,9 @@ struct CaveClient {
     var connection: CaveConnection
     private let injectedSession: URLSession?
     private let idempotentMutationRetryBudget: Duration
+    private static let pathSegmentAllowed = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
 
     init(
         connection: CaveConnection,
@@ -347,7 +350,7 @@ struct CaveClient {
         imageData: Data,
         contentType: String
     ) async throws -> FamiliarAvatarMutation {
-        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let escaped = try Self.encodedPathSegment(id)
         var req = try request(
             "api/familiars/\(escaped)/avatar",
             method: "POST",
@@ -358,9 +361,16 @@ struct CaveClient {
     }
 
     func deleteFamiliarAvatar(id: String) async throws -> FamiliarAvatarMutation {
-        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let escaped = try Self.encodedPathSegment(id)
         let req = try request("api/familiars/\(escaped)/avatar", method: "DELETE")
         return try await familiarAvatarMutation(for: req)
+    }
+
+    private static func encodedPathSegment(_ value: String) throws -> String {
+        guard let encoded = value.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) else {
+            throw CaveError.transport("Could not encode the familiar identifier.")
+        }
+        return encoded
     }
 
     private func familiarAvatarMutation(for req: URLRequest) async throws -> FamiliarAvatarMutation {
