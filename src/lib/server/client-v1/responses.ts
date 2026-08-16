@@ -133,15 +133,21 @@ export function httpStatusForClientV1ErrorCode(code: ClientV1ErrorCode): number 
 }
 
 // Phase 0 success helpers intentionally validate only the shared envelope
-// contract. Route-specific builders belong in later modules.
+// contract. Route-specific builders belong in later modules. `data` is
+// already statically known to be `TData` here (it's the caller's own typed
+// argument, not an `unknown` value being parsed), so re-asserting that type
+// after runtime validation is sound rather than a type-erasing escape hatch.
 export function clientV1Success<TData extends ClientV1Record>(
   data: TData,
   options: ClientV1EnvelopeOptions = {},
 ): ClientV1SuccessEnvelope<TData> {
-  return parseClientV1SuccessEnvelope<TData>({
-    ...envelopeBase(options),
-    data: requiredRecord(data, "response data"),
-  });
+  return parseClientV1SuccessEnvelope(
+    {
+      ...envelopeBase(options),
+      data: requiredRecord(data, "response data"),
+    },
+    (parsedData) => parsedData as TData,
+  );
 }
 
 export function clientV1Error(

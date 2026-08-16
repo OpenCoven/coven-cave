@@ -378,17 +378,33 @@ function parseClientV1EnvelopeBase(value: unknown): ClientV1EnvelopeBase {
   return envelope as ClientV1EnvelopeBase;
 }
 
+export type ClientV1DataParser<TData extends ClientV1Record> = (data: ClientV1Record) => TData;
+
 // Phase 0 intentionally validates only the shared success-envelope contract.
-// Future route modules can layer stricter payload discriminators on top.
-export function parseClientV1SuccessEnvelope<TData extends ClientV1Record = ClientV1Record>(
+// Without a `parseData` argument, the generic resolves to the broad
+// `ClientV1Record`, so a caller cannot claim an arbitrary DTO type (e.g.
+// `ClientV1StatusRecord`) for payload data that was never actually
+// validated against that type. To type `data` as anything narrower, callers
+// must supply a `parseData` validator that proves the shape at runtime.
+// Future route modules can layer stricter payload discriminators this way.
+export function parseClientV1SuccessEnvelope(value: unknown): ClientV1SuccessEnvelope<ClientV1Record>;
+export function parseClientV1SuccessEnvelope<TData extends ClientV1Record>(
   value: unknown,
+  parseData: ClientV1DataParser<TData>,
+): ClientV1SuccessEnvelope<TData>;
+export function parseClientV1SuccessEnvelope<TData extends ClientV1Record>(
+  value: unknown,
+  parseData?: ClientV1DataParser<TData>,
 ): ClientV1SuccessEnvelope<TData> {
   const envelope = parseClientV1EnvelopeBase(value);
   if (envelope.error !== undefined) {
     throw new Error("Client v1 success envelope must not contain an error.");
   }
-  requiredRecord(envelope.data, "success response data");
-  return envelope as ClientV1SuccessEnvelope<TData>;
+  const data = requiredRecord(envelope.data, "success response data");
+  return {
+    ...envelope,
+    data: parseData ? parseData(data) : (data as TData),
+  } as ClientV1SuccessEnvelope<TData>;
 }
 
 export function parseClientV1ErrorEnvelope(value: unknown): ClientV1ErrorEnvelope {

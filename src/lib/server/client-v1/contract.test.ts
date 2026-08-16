@@ -552,6 +552,31 @@ test("parses complete public envelopes while preserving additive fields", () => 
   );
 });
 
+test("cannot type malformed success data as a validated DTO without a payload parser", () => {
+  const fixture = createClientV1ContractFixture();
+  const malformed = { ...fixture.examples.successEnvelope, data: {} };
+
+  // @ts-expect-error parseClientV1SuccessEnvelope must not let a caller claim
+  // an arbitrary payload type (ClientV1StatusRecord) for data that was only
+  // checked to be a plain object; requesting that type without a `parseData`
+  // validator is now a compile-time error instead of unsound runtime data.
+  parseClientV1SuccessEnvelope<ClientV1StatusRecord>(malformed);
+
+  // Supplying the validator is required to type `data` as anything narrower
+  // than `ClientV1Record`, and it correctly rejects the malformed payload.
+  assert.throws(
+    () => parseClientV1SuccessEnvelope(malformed, parseClientV1StatusRecord),
+    /status/i,
+  );
+
+  // A well-formed payload still parses to the validated DTO successfully.
+  const validEnvelope = parseClientV1SuccessEnvelope(
+    { ...fixture.examples.successEnvelope },
+    parseClientV1StatusRecord,
+  );
+  assert.deepEqual(validEnvelope.data, fixture.examples.status);
+});
+
 test("validates foundation primitives independently of future routes", () => {
   const fixture = createClientV1ContractFixture();
   const identity = { ...fixture.examples.identity, extension: "accepted" };
