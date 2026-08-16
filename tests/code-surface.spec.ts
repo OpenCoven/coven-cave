@@ -294,6 +294,15 @@ test.describe("code surface (Coding familiar's room)", () => {
     await page.goto("/?mode=github", { waitUntil: "domcontentloaded" });
 
     const topTabs = page.getByRole("tablist", { name: "Code surface" });
+    // Wait for the tablist to MOUNT before asserting which tab is selected —
+    // the same gate the Sessions test above uses. Without it the assertion runs
+    // on Playwright's 5s default while the surface is still coming up, and
+    // fails with "element(s) not found" rather than a wrong aria-selected. That
+    // lost the race on roughly a third of CI runs, on main as well as on PR
+    // branches, which is what made this the repo's most persistent e2e flake
+    // (cave-u5fh7). Every other assertion for this surface in this file already
+    // carries the 30s budget.
+    await expect(topTabs).toBeVisible({ timeout: 30_000 });
     await expect(topTabs.getByRole("tab", { name: "Activity" })).toHaveAttribute(
       "aria-selected",
       "true",

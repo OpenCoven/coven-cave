@@ -69,6 +69,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Design
 
 - [`coven-design-language.md`](coven-design-language.md) — the consolidated reference for how the product looks, moves, and speaks, written from shipped code
+- [`beautiful-ui.md`](beautiful-ui.md) — the vendored Beautiful UI primitives: what the token adapter maps, why their CSS is scoped out of the root bundle, and why they are reference implementations rather than drop-in components
 
 ### Integrity and integrations
 
