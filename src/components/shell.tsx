@@ -132,7 +132,8 @@ function togglePanel(panel: PanelImperativeHandle | null) {
 }
 
 function applyPanelOpenState(panel: PanelImperativeHandle | null, open: boolean) {
-  if (!panel || panel.isCollapsed() === !open) return;
+  if (!panel) return;
+  if (panel.isCollapsed() === !open) return;
   if (open) panel.expand();
   else panel.collapse();
 }
@@ -356,7 +357,7 @@ function ShellInner({
     if (isMobile) {
       setMobileDrawer(open ? "right-chat" : null);
     } else {
-      rightChatRef.current?.resize(`${width}px`);
+      if (open) rightChatRef.current?.resize(`${width}px`);
       applyPanelOpenState(rightChatRef.current, open);
     }
   }, [hasRightChat, isMobile, mounted]);
@@ -833,7 +834,11 @@ function ShellInner({
       groupSize,
       defaultPanelPixels: {
         ...(!twoPane && { list: 260 }),
-        ...(desktopRightChat && { "right-chat": preferredRightChatWidth }),
+        // Reserve real space only while the panel should be visibly open —
+        // otherwise it must resolve to an explicit 0% share so it starts (and
+        // stays) collapsed. Falling through to the "flexible" bucket instead
+        // of naming a pixel value here would still hand it a nonzero share.
+        ...(desktopRightChat && { "right-chat": rightChatOpen ? preferredRightChatWidth : 0 }),
       },
       preferredNavPixels: preferredNavWidth,
       // Matches the Panel's collapsedSize below — Chat collapses to the rail
@@ -870,6 +875,7 @@ function ShellInner({
     desktopRightChat,
     preferredNavWidth,
     preferredRightChatWidth,
+    rightChatOpen,
   ]);
 
   const previousNavPolicyRef = useRef<ShellNavPolicy>("remembered");
@@ -937,8 +943,17 @@ function ShellInner({
 
   useLayoutEffect(() => {
     if (!settled || !desktopRightChat) return;
-    applyPreferredRightChatWidth();
     if (rightChatOpen) {
+      // Only enforce the preferred pixel width while the panel is meant to be
+      // open. Calling this while closed fights applyPanelOpenState's collapse
+      // below: group.setLayout() writes group percentages directly and does
+      // not update the Panel's own imperative collapsed flag, so a stale read
+      // of a just-collapsed layout (current width 0) makes this function
+      // "restore" right-chat to its preferred width immediately after
+      // collapse() ran — leaving the panel visually open (and the group's nav/
+      // detail split throw off) while the Panel itself still reports
+      // collapsed. See cave-ltl38.4 shipping-gate investigation.
+      applyPreferredRightChatWidth();
       rightChatRef.current?.resize(`${preferredRightChatWidth}px`);
     }
     applyPanelOpenState(rightChatRef.current, rightChatOpen);

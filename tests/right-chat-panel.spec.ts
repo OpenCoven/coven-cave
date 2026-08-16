@@ -131,7 +131,15 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   }
   expect(Math.abs((after?.width ?? 0) - before.width)).toBeGreaterThan(10);
 
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  const chatTab = page.getByRole("tablist", { name: "Workspace sections" }).getByRole("tab", { name: "Chat" });
+  // The keyboard resize above leaves the nav rail collapsed to its narrow icon
+  // width, close enough to the nav/detail separator that react-resizable-panels'
+  // separator hit-slop swallows the first pointerdown here as a phantom
+  // zero-delta drag (see node_modules/react-resizable-panels' `je`/`we`
+  // handlers). A harmless first click (still on "Home", a no-op) clears that
+  // state so the real navigation click below lands normally.
+  await chatTab.click();
+  await chatTab.click();
   await expect(page.locator(".chat-surface")).toBeVisible();
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("Newest Cody chat");

@@ -439,7 +439,7 @@ assert.match(
 );
 
 const destinationLayoutEffect =
-  shell.match(/const navPrefArmedGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[\s*mounted,[\s\S]*?preferredNavWidth,\s*\]\);/)?.[0] ?? "";
+  shell.match(/const navPrefArmedGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[\s*mounted,[\s\S]*?preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/)?.[0] ?? "";
 assert.ok(destinationLayoutEffect.length > 0, "the destination group restoration effect exists");
 assert.match(
   destinationLayoutEffect,
@@ -458,7 +458,7 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
@@ -473,8 +473,8 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*preferredNavWidth,\s*\]\);/,
-  "destination restoration reruns with the active nav policy and shared width",
+  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*desktopRightChat,\s*preferredNavWidth,\s*preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/,
+  "destination restoration reruns with the active nav policy, shared nav width, and right chat width",
 );
 assert.match(
   shell,
