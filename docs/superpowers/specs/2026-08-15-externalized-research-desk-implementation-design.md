@@ -7,15 +7,19 @@
 **Owner:** Research Desk
 
 **Approval note:** Reviewed against `src/lib/research-missions.ts` and the
-existing Salem-style model-connection pattern. Two blocking findings from
-review are resolved in this text: (1) §11.1 requires the dual v1/v2
-`parseResearchMission` to ship in Unit 3 itself, with rollback keeping v2
-records readable; (2) §12.2/§13.3 add the `POST
-/v1/model-tasks/{id}/lease/renew` endpoint and its idempotency/conflict rules.
-Two non-blocking findings are also resolved: the pack/run retention
-precedence rule (§8.4) and the complete four-value `ModelTaskV1.phase` enum
-mapped to run states (§8.7). No open blocking issues remain; approved for
-implementation planning of Units 0-5 per §21-23.
+existing Salem-style model-connection pattern. Three blocking findings from
+review and implementation handoff are resolved in this text: (1) §11.1
+requires the dual v1/v2 `parseResearchMission` to ship in Unit 3 itself, with
+rollback keeping v2 records readable; (2) §12.2/§13.3 add the `POST
+/v1/model-tasks/{id}/lease/renew` endpoint and its idempotency/conflict rules;
+(3) §8.8 defines the previously referenced `RunManifestV1` wire contract,
+revision chain, usage semantics, retention state, and deletion receipt. Two
+non-blocking findings are also resolved: the pack/run retention precedence
+rule (§8.4) and the complete four-value `ModelTaskV1.phase` enum mapped to run
+states (§8.7). The Research Resource amendment also fixes selector coordinate
+semantics, adds deterministic PDF page selectors, and separates mutable
+resource snapshots from immutable pack-owned blobs. No open blocking issues
+remain; approved for implementation planning of Units 0-5 per §21-23.
 
 **Scope:** Coven Cave local discovery, portable Research Run Protocol, hosted
 Research Cloud, and Cave-side user-model execution
@@ -365,8 +369,29 @@ type ContextSelectorV1 =
   | { type: "json-pointer"; pointer: string }
   | { type: "text-span"; start: number; end: number }
   | { type: "markdown-section"; headingPath: string[] }
+  | { type: "pdf-page-span"; page: number; start: number; end: number }
   | { type: "whole-resource" };
 ```
+
+Selector coordinates are part of the v1 wire contract:
+
+- `turn-range` uses zero-based turn indexes with inclusive `start`, exclusive
+  `end`, and `start < end`.
+- `json-pointer` is an RFC 6901 pointer evaluated against the exact normalized
+  JSON blob.
+- `text-span` uses zero-based UTF-8 byte offsets over the exact normalized
+  blob, with inclusive `start`, exclusive `end`, and `start < end`.
+- `markdown-section` contains a non-empty heading path evaluated against the
+  exact normalized Markdown blob.
+- `pdf-page-span` uses a one-based page number and zero-based UTF-8 byte
+  offsets within that page's normalized text, with inclusive `start`,
+  exclusive `end`, and `start < end`.
+- `whole-resource` selects the complete exact normalized blob.
+
+PDF normalization persists a page-boundary table so a selector can be
+reconciled to the corresponding half-open range in the whole normalized blob.
+For a given source digest and extractor version, normalized bytes and page
+boundaries must be deterministic.
 
 `whole-resource` requires an explicit per-resource confirmation when the
 resource is private or restricted.
@@ -511,7 +536,7 @@ type ResearchRunV1 = {
   schema: "opencoven.research-run/v1";
   id: string;
   tenantOpaqueId?: string;
-  context: ResearchContextBindingV1;
+  context?: ResearchContextBindingV1;
   acceptedTopic: {
     proposalId?: string;
     question: string;
@@ -649,6 +674,200 @@ Model phases map to run states as follows:
 creates no Model Task. `publishing` registers manifests and opted-in artifact
 content and also creates no Model Task.
 
+### 8.8 Run Manifest and artifact registration
+
+A Run Manifest is an append-only completion receipt. Artifact registration,
+source registration, retention changes, and deletion progress create new
+manifest revisions; they never mutate an existing revision. The current
+revision is referenced by `ResearchRunV1.artifactManifest`.
+
+```ts
+type ArtifactRegistrationV1 = {
+  id: string;
+  kind: string;
+  title: string;
+  mediaType: string;
+  digest: string;
+  bytes: number;
+  placement: "device-local" | "cloud-metadata" | "cloud-content";
+  contentSync: "not-requested" | "pending" | "synced" | "failed";
+  createdAt: string;
+};
+
+type RunManifestSourceV1 =
+  | {
+      kind: "context-pack";
+      id: string;
+      digest: string;
+      availability: "device-local";
+    }
+  | {
+      kind: "public-evidence";
+      id: string;
+      contentDigest: string;
+      snapshotDigest: string;
+      canonicalUrl: string;
+      fetchedAt: string;
+    };
+
+type RunManifestModelExecutionV1 = {
+  taskId: string;
+  phase: "scope" | "challenge" | "synthesize" | "control";
+  attempt: number;
+  inputDigest: string;
+  outputDigest: string;
+  receipt: ResearchModelReceiptV1;
+};
+
+type RunManifestUsageV1 = {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  costUsd: number | null;
+  completeness: "complete" | "partial" | "unreported";
+};
+
+type RunManifestRetentionV1 = {
+  policy: "run-only" | "7-days" | "project";
+  effectivePolicy: "run-only" | "7-days" | "project";
+  status:
+    | "active"
+    | "deletion_scheduled"
+    | "deletion_pending"
+    | "deleted";
+  contentExpiresAt: string | null;
+  updatedAt: string;
+};
+
+type RunManifestDeletionReceiptV1 = {
+  status:
+    | "not_scheduled"
+    | "scheduled"
+    | "pending"
+    | "completed"
+    | "partial_failure";
+  requestedAt?: string;
+  completedAt?: string;
+  deletedObjectCount?: number;
+  retainedAuditUntil?: string;
+  eventSequence?: number;
+};
+
+type RunManifestV1 = {
+  schema: "opencoven.run-manifest/v1";
+  id: string;
+  runId: string;
+  digest: string;
+  revision: number;
+  previousDigest?: string;
+  state: "assembling" | "final";
+  createdAt: string;
+  finalizedAt?: string;
+  context?: ResearchContextBindingV1;
+  sources: RunManifestSourceV1[];
+  artifacts: ArtifactRegistrationV1[];
+  modelExecutions: RunManifestModelExecutionV1[];
+  usage: RunManifestUsageV1;
+  retention: RunManifestRetentionV1;
+  deletion: RunManifestDeletionReceiptV1;
+};
+```
+
+Rules:
+
+- Manifest revisions begin at `1` and increase by one without gaps.
+- Revision `1` omits `previousDigest`; every later revision references the
+  immediately preceding manifest digest.
+- `id` and `runId` remain constant across every revision in a chain.
+- Each revision is immutable and content-addressed. Its `digest` is computed
+  using the canonical digest rules in §7.1.
+- Revision `1` may be either `assembling` or `final`; immediate cancellation,
+  failure, or expiry does not require a synthetic assembling revision.
+- `state: "assembling"` permits later revisions as sources, model executions,
+  artifacts, retention state, or deletion state are registered.
+- Entering a terminal run state creates the first `state: "final"` revision
+  exactly once.
+- Assembling revisions omit `finalizedAt`. The first final revision requires
+  it, and later revisions preserve it.
+- After the first final revision, no later revision may change sources,
+  artifacts, model executions, usage, or `retention.policy`.
+- Post-finalization revisions are permitted only for
+  `retention.effectivePolicy`, retention status/timestamps, and deletion
+  receipt updates. They retain `state: "final"` and preserve every other field
+  byte-for-byte after canonicalization.
+- `context` is present exactly when the run has a Context Pack binding. When
+  present, `sources` contains exactly one matching `context-pack` id and
+  digest; when absent, `sources` contains no `context-pack` entry.
+- Context Pack entries contain only opaque identity and digest metadata. They
+  never contain private excerpts, filenames, local paths, or blob contents.
+- Public-evidence entries identify the exact fetched snapshot. A changed live
+  URL does not alter an existing manifest.
+- `placement: "cloud-metadata"` records artifact metadata and digest only.
+  `placement: "cloud-content"` is valid only after separate artifact-content
+  sync consent.
+- `contentSync: "failed"` does not invalidate a locally durable artifact or
+  prevent manifest finalization; the failure remains inspectable.
+- Artifact titles persisted in a cloud manifest must be generic display labels
+  or explicitly user-approved. They must not contain private excerpts,
+  filenames, local paths, credentials, or object-store keys.
+- Usage values are copied only from runtime-supplied model receipts. Unknown
+  values remain `null`.
+- `usage.completeness` is:
+  - `complete` when at least one model execution exists and every execution
+    reports all three usage values;
+  - `partial` when at least one value is reported and at least one remains
+    unknown;
+  - `unreported` when no usage value is reported, including when there are no
+    model executions.
+- Aggregate token and cost fields sum reported values only. They remain `null`
+  when no corresponding value was reported.
+- `retention.policy` records the original run privacy policy and never changes.
+  It must not exceed the Context Pack consent defined in §8.4.
+- `retention.effectivePolicy` initially equals `retention.policy`. It may move
+  to a shorter policy; moving to a longer policy requires fresh consent and
+  still must not exceed the Context Pack consent.
+- `contentExpiresAt` is `null` before the deletion clock begins. It remains
+  `null` while the effective policy is `project`, until project deletion or a
+  shorter policy is explicitly approved.
+- Cancellation does not alter the effective retention policy.
+- Retention and deletion status pairs are constrained as follows:
+
+  | Retention status | Allowed deletion status |
+  | --- | --- |
+  | `active` | `not_scheduled` |
+  | `deletion_scheduled` | `scheduled` |
+  | `deletion_pending` | `pending`, `partial_failure` |
+  | `deleted` | `completed` |
+
+- `scheduled`, `pending`, and `partial_failure` deletion receipts require
+  `requestedAt`.
+- `deletion.status: "completed"` requires `completedAt`,
+  `requestedAt`, `deletedObjectCount`, and the sequence of the corresponding
+  `content.deleted` event.
+- Partial deletion failure sets both retention status `deletion_pending` and
+  deletion status `partial_failure`; retries create new manifest revisions.
+- Deletion receipts contain counts and timestamps only, never deleted content
+  or object-store keys.
+- A final manifest remains durable after content deletion as the minimized run
+  receipt required by §14.
+
+Conformance fixtures must cover:
+
+- initial assembling manifest;
+- revision-1 final manifest for an early-terminal run;
+- final manifest with local-only private artifacts;
+- final manifest with consented cloud artifact content;
+- deterministic revision-chain digests;
+- missing or incorrect `previousDigest`;
+- changed manifest or run id within a revision chain;
+- mutation of immutable fields after finalization;
+- complete, partial, and unreported usage;
+- invalid retention/deletion status pairs;
+- original or effective retention exceeding Context Pack consent;
+- effective retention shortening and consented lengthening;
+- scheduled, partial-failure, and completed deletion states;
+- completed deletion without a matching event sequence;
+- private path or private excerpt leakage in manifest fields.
+
 ## 9. Local Context Pack implementation
 
 ### 9.1 Storage
@@ -663,6 +882,13 @@ Use a dedicated local store:
   topic-jobs/<job-id>.json
   topic-proposals/<proposal-id>.json
 ```
+
+The Context Pack blob store is pack-owned and must not be shared with a mutable
+Research Resource snapshot store. When a selected resource subset is sealed,
+Cave copies the selected normalized bytes into a pack-owned blob and records a
+pack-local `whole-resource` selector over those exact bytes. This deliberate
+copy keeps a sealed pack readable after its source resource is refreshed,
+deleted, restored, or garbage-collected.
 
 Requirements:
 
