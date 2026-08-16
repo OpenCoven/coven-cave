@@ -8,6 +8,7 @@
  * set is adopted broadly enough that the root bundle is the right home; see
  * docs/beautiful-ui.md. */
 @source not "../components/ui/beautiful";
+@source not "./aesthetic/beautiful";
 
 /* Shell-level sheets intentionally remain before the global modules. */
 @import "../styles/sidebar-minimal.css";
