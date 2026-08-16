@@ -7,6 +7,14 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Fixed
+
+- Native iOS task, reminder, session, theme, and avatar mutations now retry
+  transient network failures only when the operation is explicitly replay-safe,
+  stay within the existing 20-second request budget, and treat a repeated delete
+  as already complete. The missing Familiar avatar mutation client required by
+  the shipped XCTest contract is now implemented as well (cave-ioswipe.1).
+
 ## [0.3.3] - 2026-08-12
 
 > Closes an access-gate bypass on mobile, keeps chat attachments and skills

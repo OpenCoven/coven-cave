@@ -88,11 +88,25 @@ assert.doesNotMatch(
   /URLSessionConfiguration|URLSession\(/,
   "developer API requests should not bypass the resilient client with a private session",
 );
-assert.match(client, /func data\(for req: URLRequest\) async throws -> \(Data, URLResponse\)/, "CaveClient should centralize resilient request data loading");
+assert.match(
+  client,
+  /func data\([\s\S]{0,120}?for req: URLRequest,[\s\S]{0,120}?retryingIdempotentMutation: Bool = false[\s\S]{0,80}?\) async throws -> \(Data, URLResponse\)/,
+  "CaveClient should centralize resilient request data loading with explicit mutation retry opt-in",
+);
 assert.match(
   client,
   /for attempt in 0\.\.\.retryDelays\.count[\s\S]*?session\.data\(for: req\)[\s\S]*?Task\.sleep/,
   "resilient data loading should retry transient failures with bounded backoff",
+);
+assert.match(
+  client,
+  /defaultIdempotentMutationRetryBudget: Duration = \.seconds\(20\)/,
+  "mutation retries should remain inside the existing 20-second request budget",
+);
+assert.match(
+  client,
+  /withThrowingTaskGroup\(of: RequestResult\.self\)[\s\S]*?Task\.sleep\(for: budget\)[\s\S]*?group\.cancelAll\(\)/,
+  "the mutation budget should cancel the active URLSession operation at its wall-clock deadline",
 );
 
 console.log("ios-self-healing-sync: OK");

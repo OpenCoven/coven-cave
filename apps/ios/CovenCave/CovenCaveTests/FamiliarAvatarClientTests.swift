@@ -23,6 +23,27 @@ private final class FamiliarAvatarURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+private extension URLRequest {
+    func capturedBody() throws -> Data? {
+        if let httpBody { return httpBody }
+        guard let stream = httpBodyStream else { return nil }
+
+        stream.open()
+        defer { stream.close() }
+        var body = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 {
+                throw stream.streamError ?? URLError(.cannotDecodeRawData)
+            }
+            if count == 0 { break }
+            body.append(contentsOf: buffer.prefix(count))
+        }
+        return body
+    }
+}
+
 final class FamiliarAvatarClientTests: XCTestCase {
     override func tearDown() {
         FamiliarAvatarURLProtocol.handler = nil
@@ -44,7 +65,8 @@ final class FamiliarAvatarClientTests: XCTestCase {
             XCTAssertEqual(request.url?.path, "/api/familiars/nova/avatar")
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "image/png")
-            XCTAssertEqual(request.httpBody, image)
+            XCTAssertNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+            XCTAssertEqual(try request.capturedBody(), image)
             let response = try XCTUnwrap(HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
                 statusCode: 200,
