@@ -53,7 +53,7 @@ function stageTone(status: OnboardingBootstrapStageStatus): string {
 
 function nextSetupStep(activeStage: OnboardingBootstrapState["activeStage"]) {
   if (activeStage === "core-tools") {
-    return "Next, Cave creates your defaults and starts its local service.";
+    return "Next, Cave checks your defaults, then checks the local service.";
   }
   if (activeStage === "workspace") {
     return "Next, Cave starts its local service if it needs to.";

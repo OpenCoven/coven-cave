@@ -168,7 +168,7 @@ assert.match(
 );
 assert.match(
   source,
-  /Next, Cave creates your defaults and starts its local service\./,
+  /Next, Cave checks your defaults, then checks the local service\./,
   "running local-component setup explains the remaining stages",
 );
 assert.match(
