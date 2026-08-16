@@ -299,7 +299,7 @@ export function OnboardingOverlay({
           {running ? (
             <div className="grid gap-1 rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] p-3 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
               <p className="font-medium text-[var(--text-primary)]">
-                First-time setup can take a few minutes. Cave keeps working if you run it in the background.
+                Cave keeps working if you run setup in the background.
               </p>
               <p>{nextSetupStep(state.activeStage)}</p>
             </div>

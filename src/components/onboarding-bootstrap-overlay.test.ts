@@ -163,8 +163,8 @@ assert.match(
 );
 assert.match(
   source,
-  /First-time setup can take a few minutes\. Cave keeps working if you run it in the background\./,
-  "running setup explains both the expected wait and safe backgrounding",
+  /Cave keeps working if you run setup in the background\./,
+  "running setup explains safe backgrounding without estimating completion",
 );
 assert.match(
   source,
