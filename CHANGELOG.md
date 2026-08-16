@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-08-16
+
+> Hardened iOS mutations and familiar avatars, now with corrected cross-platform packaging.
+
+Patch release on top of v0.3.4.
+
+v0.3.4 was tagged but stopped at release validation before any artifacts or
+TestFlight build were published. v0.3.5 supersedes it and carries its complete
+product payload.
+
+### Changes
+- Carry forward replay-safe iOS mutations and Familiar avatar management (#4695)
+- Restore cross-platform packaging with the measured sidecar runtime budget (#4698)
+- [Review every product change since v0.3.3](https://github.com/OpenCoven/coven-cave/compare/v0.3.3...v0.3.5)
+
+
 ## [0.3.4] - 2026-08-16
 
 > Faster iOS mutations, safer chat and research flows, and a more reliable first-run Cave.
