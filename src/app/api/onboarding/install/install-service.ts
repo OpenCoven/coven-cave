@@ -1031,7 +1031,10 @@ async function runManagedNodeInstallJob(job: InstallJob, npmLease?: NpmInstallLe
       onProgress: (line) => appendOutput(job, `${line}\n`),
     });
     if (result.ok && !job.cancelRequested) {
-      refreshCovenBin();
+      // Node setup is complete independently of the Coven CLI. On Windows,
+      // eagerly resolving the executable throws while the intentionally
+      // not-yet-installed CLI is absent, turning this success into a
+      // misleading installer_start_failed result.
       refreshCovenSpawnEnv();
       job.ok = true;
       job.code = 0;

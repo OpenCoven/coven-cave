@@ -84,6 +84,16 @@ assert.match(source, /shell: false/, "installer spawns never use a shell");
 assert.match(source, /commandPath\("npm", \{ refresh: true, refreshOnMiss: true \}\)/, "Coven CLI repair falls back to verified host npm only for its detected prefix");
 assert.match(source, /installManagedNodeToolchain\(/, "managed Node installer is routed through the endpoint");
 assert.match(source, /controller\.abort\(\)/, "managed Node installation supports cancellation");
+assert.match(
+  source,
+  /async function runManagedNodeInstallJob[\s\S]*?if \(result\.ok && !job\.cancelRequested\) \{[\s\S]*?refreshCovenSpawnEnv\(\);[\s\S]*?job\.ok = true;[\s\S]*?\}/,
+  "a successful managed Node install refreshes PATH without requiring the not-yet-installed Coven CLI",
+);
+assert.doesNotMatch(
+  source.match(/async function runManagedNodeInstallJob[\s\S]*?(?=export async function startOnboardingInstall)/)?.[0] ?? "",
+  /refreshCovenBin\(\)/,
+  "managed Node success must not resolve Coven before the distinct CLI install step",
+);
 assert.match(source, /reserveGlobalNpmInstall\(targetName\)/, "managed toolchain and npm operations serialize");
 assert.match(source, /if \(body\.confirmInstall !== true\)/, "installation requires explicit confirmation");
 assert.equal(source.match(/rejectNonLocalRequest\(req\)/g)?.length, 3, "all route methods are local-only");
