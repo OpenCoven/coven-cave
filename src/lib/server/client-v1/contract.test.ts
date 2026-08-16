@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ClientV1ErrorEnvelope, ClientV1StatusRecord, ClientV1SuccessEnvelope } from "./contract.ts";
 import {
   CLIENT_V1_API_VERSION,
   CLIENT_V1_CAPABILITIES,
@@ -29,6 +30,29 @@ import {
   clientV1SuccessResponse,
   httpStatusForClientV1ErrorCode,
 } from "./responses.ts";
+
+// Type-only compile-time assertions (see src/lib/x-api.test.ts for the same
+// pattern): the public envelope types must form a precise discriminated
+// union. Without `error?: never` / `data?: never`, ClientV1Record's string
+// index signature would let `error` and `data` type-check on either
+// envelope, so `Equal` here would resolve to `false` and `Assert` would fail
+// to compile.
+type Equal<Actual, Expected> =
+  (<Value>() => Value extends Actual ? 1 : 2) extends
+  (<Value>() => Value extends Expected ? 1 : 2)
+    ? (<Value>() => Value extends Expected ? 1 : 2) extends
+      (<Value>() => Value extends Actual ? 1 : 2)
+      ? true
+      : false
+    : false;
+type Assert<Condition extends true> = Condition;
+
+export type ClientV1SuccessEnvelopeExcludesErrorIsExact = Assert<
+  Equal<ClientV1SuccessEnvelope<ClientV1StatusRecord>["error"], undefined>
+>;
+export type ClientV1ErrorEnvelopeExcludesDataIsExact = Assert<
+  Equal<ClientV1ErrorEnvelope["data"], undefined>
+>;
 
 test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");
