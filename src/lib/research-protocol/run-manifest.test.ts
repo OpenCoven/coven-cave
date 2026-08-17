@@ -561,7 +561,7 @@ test("final revisions preserve finalizedAt and unknown additive immutable fields
   expectError(validateRunManifestRevision(previous, changedUnknown), "$.futureExtension", "semantic_conflict");
 });
 
-test("inherited fields are ignored while additive own fields survive", () => {
+test("custom-prototype artifacts and extensions are rejected rather than stripped of inherited fields", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const inheritedArtifact = Object.create({ inheritedField: "drop-me" });
   const inheritedExtension = Object.create({ inheritedNestedField: "drop-me" });
@@ -572,13 +572,7 @@ test("inherited fields are ignored while additive own fields survive", () => {
     ...local,
     artifacts: [inheritedArtifact],
   });
-  const parsed = expectOk(parseRunManifestV1(candidate));
-  assert.equal("inheritedField" in parsed.artifacts[0], false);
-  assert.equal(
-    "inheritedNestedField" in (parsed.artifacts[0].futureExtension as Record<string, unknown>),
-    false,
-  );
-  assert.deepEqual(parsed.artifacts[0].futureExtension, { preserve: true });
+  expectError(parseRunManifestV1(candidate), "$.digest", "invalid_value");
 });
 
 test("canonical copying preserves own __proto__ fields and rejects non-JSON objects", () => {
