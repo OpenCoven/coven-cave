@@ -147,13 +147,23 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const cancel = useCallback[\s\S]*activeSend\.normalStopRequested = true;[\s\S]*requestQuickChatStop\(activeSend\)[\s\S]*if \(activeSendRef\.current !== activeSend\) return;[\s\S]*!outcome\.stopped && !outcome\.queued[\s\S]*activeSendRef\.current = null;[\s\S]*activeSend\.controller\.abort\(\)/,
-  "user Stop waits for accepted run-scoped acknowledgement before taking and aborting the active stream",
+  /stopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*function beginQuickChatStop[\s\S]*if \(active\.stopOutcomePromise\) return active\.stopOutcomePromise;[\s\S]*active\.stopOutcomePromise = requestQuickChatStop\(active\)\.then/,
+  "the active send stores and deduplicates its out-of-band Stop outcome promise",
 );
 assert.match(
   quickHook,
-  /if \(!activeSend \|\| activeSend\.normalStopRequested\) return;[\s\S]*activeSend\.normalStopRequested = false;[\s\S]*catch\(\(cause\)[\s\S]*activeSend\.normalStopRequested = false;[\s\S]*setError\(/,
-  "duplicate Stop is guarded while no-op and failed requests permit retry",
+  /const stopOutcomePromise = activeSend\.stopOutcomePromise;[\s\S]*await stopOutcomePromise;[\s\S]*stopOutcome\.status === "stopped" \|\| stopOutcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*const ownsActiveSend = activeSendRef\.current === activeSend;/,
+  "definitive done awaits the same pending Stop outcome before normal settlement",
+);
+assert.match(
+  quickHook,
+  /const settleAcceptedStop = useCallback[\s\S]*if \(activeSendRef\.current !== activeSend\) return false;[\s\S]*activeSendRef\.current = null;[\s\S]*activeSend\.controller\.abort\(\);[\s\S]*lifecycle: "cancelled"/,
+  "only the continuation that still owns the active send can settle an accepted Stop",
+);
+assert.match(
+  quickHook,
+  /const cancel = useCallback[\s\S]*const stopOutcomePromise = beginQuickChatStop\(activeSend\);[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*activeSend\.stopOutcomePromise = undefined;[\s\S]*outcome\.status === "failure"[\s\S]*setError\(/,
+  "accepted Stop outcomes cancel while settled and failed outcomes release the promise for retry",
 );
 assert.match(
   quickHook,

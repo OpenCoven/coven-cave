@@ -60,7 +60,6 @@ export async function streamFamiliarText(opts: {
 }): Promise<{
   text: string;
   error: string | null;
-  cancelled: boolean;
   sessionId?: string;
   responseMetadata?: ChatResponseMetadata;
 }> {
@@ -91,22 +90,15 @@ export async function streamFamiliarText(opts: {
       signal: opts.signal,
     });
   } catch (err) {
-    return {
-      text: "",
-      error: (err as Error)?.message ?? "request failed",
-      cancelled: false,
-    };
+    return { text: "", error: (err as Error)?.message ?? "request failed" };
   }
-  if (!res.ok || !res.body) {
-    return { text: "", error: `chat bridge ${res.status}`, cancelled: false };
-  }
+  if (!res.ok || !res.body) return { text: "", error: `chat bridge ${res.status}` };
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   const attentionText = createAttentionSafeTextAccumulator();
   let error: string | null = null;
-  let cancelled = false;
   let receivedDone = false;
   let sessionId: string | undefined;
   let responseMetadata: ChatResponseMetadata | undefined;
@@ -129,7 +121,6 @@ export async function streamFamiliarText(opts: {
     else if (ev.kind === "done") {
       receivedDone = true;
       noteSession(ev.sessionId);
-      cancelled = ev.cancelled === true;
       if (ev.responseMetadata) {
         responseMetadata = ev.responseMetadata;
         opts.onResponseMetadata?.(ev.responseMetadata);
@@ -164,13 +155,8 @@ export async function streamFamiliarText(opts: {
     }
   }
   return {
-    text: cancelled
-      ? attentionText.cancelled()
-      : error !== null
-        ? attentionText.terminal()
-        : attentionText.settled(),
+    text: error !== null ? attentionText.terminal() : attentionText.settled(),
     error,
-    cancelled,
     sessionId,
     responseMetadata,
   };

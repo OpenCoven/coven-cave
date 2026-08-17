@@ -621,8 +621,8 @@ for (const contract of contracts) {
   ];
   assert.equal(
     cancelledFlags.length,
-    6,
-    "/chat/send: every adapter path must mark both its assistant turn and terminal event as cancelled",
+    3,
+    "/chat/send: every adapter path must mark its persisted assistant turn as cancelled without changing the SSE protocol",
   );
   assert.match(
     sendSource,

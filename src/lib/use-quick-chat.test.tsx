@@ -26,9 +26,7 @@ type ControlledSend = {
   signal: AbortSignal | null;
   close: () => void;
   complete: (text: string) => void;
-  cancel: (text: string) => void;
   completeThenError: (text: string) => void;
-  cancelThenError: (text: string) => void;
   truncate: (text: string) => void;
 };
 
@@ -36,9 +34,7 @@ function controlledSse(sessionId: string): {
   response: Response;
   close: () => void;
   complete: (text: string) => void;
-  cancel: (text: string) => void;
   completeThenError: (text: string) => void;
-  cancelThenError: (text: string) => void;
   truncate: (text: string) => void;
 } {
   const encoder = new TextEncoder();
@@ -46,10 +42,10 @@ function controlledSse(sessionId: string): {
   const enqueue = (event: Record<string, unknown>) => {
     streamController?.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
   };
-  const terminalThenError = (text: string, cancelled: boolean) => {
+  const terminalThenError = (text: string) => {
     const frames = [
       `data: ${JSON.stringify({ kind: "assistant_chunk", text })}\n\n`,
-      `data: ${JSON.stringify({ kind: "done", sessionId, cancelled })}\n\n`,
+      `data: ${JSON.stringify({ kind: "done", sessionId })}\n\n`,
     ].join("");
     streamController?.enqueue(encoder.encode(frames));
     streamController?.error(new Error("reader failed after done"));
@@ -71,13 +67,7 @@ function controlledSse(sessionId: string): {
       enqueue({ kind: "done", sessionId });
       streamController?.close();
     },
-    cancel: (text) => {
-      enqueue({ kind: "assistant_chunk", text });
-      enqueue({ kind: "done", durationMs: 25, isError: false, sessionId, cancelled: true });
-      streamController?.close();
-    },
-    completeThenError: (text) => terminalThenError(text, false),
-    cancelThenError: (text) => terminalThenError(text, true),
+    completeThenError: terminalThenError,
     truncate: (text) => {
       enqueue({ kind: "assistant_chunk", text });
       streamController?.close();
@@ -128,9 +118,7 @@ class QuickChatFetch {
         signal: init.signal ?? null,
         close: stream.close,
         complete: stream.complete,
-        cancel: stream.cancel,
         completeThenError: stream.completeThenError,
-        cancelThenError: stream.cancelThenError,
         truncate: stream.truncate,
       });
       return stream.response;
@@ -439,7 +427,7 @@ describe("useQuickChat send cancellation", () => {
     });
   });
 
-  test("settlement during an accepted Stop request keeps the definitive completion", async () => {
+  test("done before an accepted Stop response cancels the turn and parks the queue", async () => {
     const requests = new QuickChatFetch();
     requests.delayStops = true;
     globalThis.fetch = requests.fetch as typeof fetch;
@@ -462,29 +450,48 @@ describe("useQuickChat send cancellation", () => {
     });
     await waitFor(() => requests.sends.length === 1);
     await act(async () => {
+      state!.setDraft("queued follow-up");
+    });
+    await act(async () => {
+      await state!.send();
+    });
+    expect(state!.queued).toHaveLength(1);
+
+    await act(async () => {
       state!.cancel();
       await Promise.resolve();
       requests.sends[0]!.complete("Already finished");
-      await send;
+      await Promise.resolve();
     });
+    await waitFor(() => state!.messages.some((message) => message.text === "Already finished"));
     expect(requests.sends[0]!.signal?.aborted).toBe(false);
-    expect(state!.messages.at(-1)).toMatchObject({
+    expect(state!.messages.find((message) => message.text === "Already finished")).toMatchObject({
       text: "Already finished",
-      pending: false,
-      lifecycle: "complete",
+      pending: true,
+      lifecycle: "streaming",
     });
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
 
     requests.releaseNextStop();
     await act(async () => {
-      await Promise.resolve();
+      await send;
     });
-    expect(requests.sends[0]!.signal?.aborted).toBe(false);
-    expect(state!.messages.at(-1)?.lifecycle).toBe("complete");
-    expect(state!.sendState).toBe("done");
+    expect(requests.sends[0]!.signal?.aborted).toBe(true);
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Already finished",
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+    expect(state!.sendState).toBe("idle");
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
   });
 
-  test("server done.cancelled beats the Stop POST response and parks the queued prompt", async () => {
+  test("done before a settled Stop response completes and drains the queue", async () => {
     const requests = new QuickChatFetch();
+    requests.stopOutcome = { stopped: false, queued: false };
     requests.delayStops = true;
     globalThis.fetch = requests.fetch as typeof fetch;
     let state: UseQuickChat | null = null;
@@ -521,27 +528,94 @@ describe("useQuickChat send cancellation", () => {
     expect(requests.sends[0]!.signal?.aborted).toBe(false);
 
     await act(async () => {
-      requests.sends[0]!.cancel("Partial answer");
-      await send;
+      requests.sends[0]!.complete("Final answer");
+      await Promise.resolve();
     });
-    expect(state!.messages.at(-1)).toMatchObject({
-      text: "Partial answer",
-      pending: false,
-      lifecycle: "cancelled",
-      error: null,
+    await waitFor(() => state!.messages.some((message) => message.text === "Final answer"));
+    expect(state!.messages.find((message) => message.text === "Final answer")).toMatchObject({
+      text: "Final answer",
+      pending: true,
+      lifecycle: "streaming",
     });
-    expect(state!.sendState).toBe("idle");
     expect(state!.queued).toHaveLength(1);
     expect(requests.sends).toHaveLength(1);
     expect(requests.sends[0]!.signal?.aborted).toBe(false);
 
     requests.releaseNextStop();
+    await waitFor(() => requests.sends.length === 2);
+    expect(state!.messages.find((message) => message.text === "Final answer")).toMatchObject({
+      pending: false,
+      lifecycle: "complete",
+      error: null,
+    });
+    expect(state!.queued).toHaveLength(0);
+
     await act(async () => {
+      requests.sends[1]!.complete("Follow-up answer");
+      await send;
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Follow-up answer",
+      pending: false,
+      lifecycle: "complete",
+      error: null,
+    });
+  });
+
+  test("done before a failed Stop response stays complete and surfaces the Stop failure", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    requests.failStop = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
       await Promise.resolve();
     });
-    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
-    expect(state!.queued).toHaveLength(1);
-    expect(requests.sends).toHaveLength(1);
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+      requests.sends[0]!.complete("Final answer");
+      await Promise.resolve();
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Final answer",
+      pending: true,
+      lifecycle: "streaming",
+    });
+    expect(state!.error).toBeNull();
+
+    requests.releaseNextStop();
+    await act(async () => {
+      await send;
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Final answer",
+      pending: false,
+      lifecycle: "complete",
+      error: null,
+    });
+    expect(state!.sendState).toBe("done");
+    expect(state!.error).toContain("stop registry unavailable");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[Quick Chat] Failed to stop server-side response:",
+      expect.any(Error),
+    );
   });
 
   test("done before a reader error completes the turn and drains the queued prompt", async () => {
@@ -592,47 +666,6 @@ describe("useQuickChat send cancellation", () => {
       lifecycle: "complete",
       error: null,
     });
-  });
-
-  test("cancelled done before a reader error parks the queued prompt", async () => {
-    const requests = new QuickChatFetch();
-    globalThis.fetch = requests.fetch as typeof fetch;
-    let state: UseQuickChat | null = null;
-
-    await act(async () => {
-      renderer = create(<Probe onState={(next) => { state = next; }} />);
-    });
-    await waitFor(() => state?.projects.length === 1);
-    await act(async () => {
-      state!.setSelectedProjectRoot(PROJECT.root);
-      state!.setDraft("question");
-    });
-    await waitFor(() => state?.projectLaunchReady === true);
-
-    let send!: Promise<void>;
-    await act(async () => {
-      send = state!.send();
-      await Promise.resolve();
-    });
-    await waitFor(() => requests.sends.length === 1);
-    await act(async () => {
-      state!.setDraft("queued follow-up");
-    });
-    await act(async () => {
-      await state!.send();
-      requests.sends[0]!.cancelThenError("Partial answer");
-      await send;
-    });
-
-    expect(state!.messages.at(-1)).toMatchObject({
-      text: "Partial answer",
-      pending: false,
-      lifecycle: "cancelled",
-      error: null,
-    });
-    expect(state!.sendState).toBe("idle");
-    expect(state!.queued).toHaveLength(1);
-    expect(requests.sends).toHaveLength(1);
   });
 
   test("truncated SSE fails with partial text and parks the queued prompt", async () => {

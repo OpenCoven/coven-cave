@@ -388,7 +388,6 @@ try {
   );
   const cancelledDone = cancelledEvents.findLast((event) => event.kind === "done");
   assert.equal(cancelledDone?.isError, false);
-  assert.equal(cancelledDone?.cancelled, true, "the direct runtime exposes cancellation to SSE consumers");
   const cancelledConversation = await loadConversation(cancelledSessionId);
   const cancelledTurn = cancelledConversation?.turns.at(-1);
   assert.equal(cancelledTurn?.role, "assistant");
@@ -418,7 +417,6 @@ try {
   const { events: cancelledPartialEvents } = await readSse(cancelPartialResponse);
   const cancelledPartialDone = cancelledPartialEvents.findLast((event) => event.kind === "done");
   assert.equal(cancelledPartialDone?.isError, false);
-  assert.equal(cancelledPartialDone?.cancelled, true);
   const cancelledPartialConversation = await loadConversation("cancelled-partial-attention-session");
   const cancelledPartialTurn = cancelledPartialConversation?.turns.at(-1);
   assert.equal(cancelledPartialTurn?.text, "Visible answer.\n");

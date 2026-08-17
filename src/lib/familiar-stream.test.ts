@@ -50,22 +50,11 @@ describe("streamFamiliarText", () => {
       frame({ kind: "done" }),
     ])) as typeof fetch;
 
-    const { text, error, cancelled } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    const result = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    const { text, error } = result;
     assert.equal(text, "Hello world");
     assert.equal(error, null);
-    assert.equal(cancelled, false);
-  });
-
-  it("returns the server's cancelled terminal outcome", async () => {
-    globalThis.fetch = (async () => sseResponse([
-      frame({ kind: "assistant_chunk", text: "Partial answer" }),
-      frame({ kind: "done", cancelled: true }),
-    ])) as typeof fetch;
-
-    const result = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
-    assert.equal(result.text, "Partial answer");
-    assert.equal(result.error, null);
-    assert.equal(result.cancelled, true);
+    assert.equal("cancelled" in result, false);
   });
 
   it("preserves a successful done outcome when the next reader read fails", async () => {
@@ -90,35 +79,10 @@ describe("streamFamiliarText", () => {
     });
     assert.equal(result.text, "Definitive answer");
     assert.equal(result.error, null);
-    assert.equal(result.cancelled, false);
+    assert.equal("cancelled" in result, false);
     assert.equal(result.sessionId, "done-before-read-error");
     assert.deepEqual(result.responseMetadata, metadata);
     assert.deepEqual(published, metadata);
-  });
-
-  it("preserves a cancelled done outcome when the next reader read fails", async () => {
-    const metadata: ChatResponseMetadata = {
-      familiarId: "nova",
-      harness: "codex",
-      model: "gpt-5.5",
-      runtime: "local:/workspace",
-    };
-    globalThis.fetch = (async () => sseResponseThenReaderError([
-      frame({ kind: "assistant_chunk", text: "Partial answer" }),
-      frame({
-        kind: "done",
-        cancelled: true,
-        sessionId: "cancelled-before-read-error",
-        responseMetadata: metadata,
-      }),
-    ], new Error("socket reset after cancellation"))) as typeof fetch;
-
-    const result = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
-    assert.equal(result.text, "Partial answer");
-    assert.equal(result.error, null);
-    assert.equal(result.cancelled, true);
-    assert.equal(result.sessionId, "cancelled-before-read-error");
-    assert.deepEqual(result.responseMetadata, metadata);
   });
 
   it("includes sessionId in the request body only when provided", async () => {
@@ -251,13 +215,14 @@ describe("streamFamiliarText", () => {
       frame({ kind: "assistant_chunk", text: "Useful partial answer" }),
     ])) as typeof fetch;
 
-    const { text, error, cancelled } = await streamFamiliarText({
+    const result = await streamFamiliarText({
       familiarId: "nova",
       prompt: "hi",
     });
+    const { text, error } = result;
     assert.equal(text, "Useful partial answer");
     assert.equal(error, "the connection closed before the familiar finished responding");
-    assert.equal(cancelled, false);
+    assert.equal("cancelled" in result, false);
   });
 
   it("removes a partial attention marker after a failed done frame", async () => {

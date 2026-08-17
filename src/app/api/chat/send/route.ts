@@ -1178,7 +1178,6 @@ function openClawChatResponse(args: {
           durationMs,
           isError,
           sessionId: conversationId,
-          ...(cancelledByUser ? { cancelled: true } : {}),
           responseMetadata,
         });
         gatewayDispatch.close();
@@ -1560,7 +1559,6 @@ function openClawChatResponse(args: {
           durationMs,
           isError,
           sessionId: sessionId ?? undefined,
-          ...(cancelledByUser ? { cancelled: true } : {}),
           responseMetadata,
         });
         runBuffer?.finish();
@@ -5783,7 +5781,6 @@ export async function POST(req: Request) {
         durationMs: result.duration_ms,
         isError: result.is_error,
         sessionId: finalSessionId ?? undefined,
-        ...(cancelledByUser ? { cancelled: true } : {}),
         ...(result.usage ? { usage: result.usage } : {}),
         ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         responseMetadata,

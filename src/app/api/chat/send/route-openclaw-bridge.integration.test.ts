@@ -268,7 +268,6 @@ try {
     );
     const done = events.findLast((event) => event.kind === "done");
     assert.equal(done?.isError, false, `${mode} stop completes as success`);
-    assert.equal(done?.cancelled, true, `${mode} stop exposes cancellation to SSE consumers`);
     const conversation = await loadConversation(sessionId);
     const turn = conversation?.turns.at(-1);
     assert.equal(turn?.text, "(cancelled)", `${mode} stop persists the canonical cancelled text`);
