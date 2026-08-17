@@ -909,15 +909,26 @@ assert.match(
   /if \(followingRef\.current\) return;[\s\S]{0,200}gap <= 4\) updateFollowing\(true\)/,
   "Re-pin only on user scrolls reaching the true bottom (small epsilon); pin's own scroll events are no-ops while following",
 );
+// — CHAT-D10-03: released-reader response control stays boolean, not a badge —
 assert.match(
   source,
-  /updateFollowing\(true\);[\s\S]{0,600}prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduceMotion \? "auto" : "smooth"[\s\S]{0,400}aria-label=/,
-  "Scroll FAB must re-engage following and gate its smooth scroll on prefers-reduced-motion (CHAT-D10-03: aria-label now includes new message count)",
+  /const \[newResponseContent, setNewResponseContent\] = useState\(false\);/,
+  "Released-reader response control must track a boolean unseen-content flag, not a counter",
 );
 assert.match(
   source,
-  /aria-label=\{`Scroll to bottom\$\{newTurnsCount \? ` \(\$\{newTurnsCount\} new message\$\{newTurnsCount !== 1 \? "s" : ""\}\)` : ""\}`\}/,
-  "Scroll FAB aria-label must include the pluralized message noun for screen readers",
+  /if \(following\) \{\s*setNewResponseContent\(false\);\s*return;\s*\}\s*if \(activeAssistantTurnId !== null && \(turnChanged \|\| sourceChanged\)\) \{\s*setNewResponseContent\(true\);/,
+  "Released-reader unseen-content state flips true only on a new assistant turn or source update while released",
+);
+assert.match(
+  source,
+  /className="cave-new-response-content focus-ring"[\s\S]{0,200}onClick=\{\(\) => \{\s*updateFollowing\(true\);\s*schedulePin\(\);\s*\}\}[\s\S]{0,120}\{newResponseContent \? "New response content" : "Latest"\}/,
+  "The released-reader control re-engages following, schedules the instant pin, and labels readers without any numeric badge",
+);
+assert.doesNotMatch(
+  source,
+  /newTurnsCount|setNewTurnsCount|new message count|Scroll to bottom/,
+  "The released-reader control must stay boolean; do not restore numeric message-count labelling",
 );
 assert.match(
   source,
