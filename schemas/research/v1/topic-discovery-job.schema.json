@@ -38,14 +38,30 @@
         "properties": { "status": { "const": "running" } },
         "required": ["status"]
       },
-      "then": { "required": ["startedAt"] }
+      "then": {
+        "required": ["startedAt"],
+        "not": {
+          "anyOf": [
+            { "required": ["finishedAt"] },
+            { "required": ["failure"] }
+          ]
+        }
+      }
     },
     {
       "if": {
-        "properties": { "status": { "enum": ["completed", "failed", "cancelled"] } },
+        "properties": { "status": { "const": "queued" } },
         "required": ["status"]
       },
-      "then": { "required": ["finishedAt"] }
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["startedAt"] },
+            { "required": ["finishedAt"] },
+            { "required": ["failure"] }
+          ]
+        }
+      }
     },
     {
       "if": {
@@ -53,6 +69,9 @@
         "required": ["status"]
       },
       "then": {
+        "properties": {
+          "proposalIds": { "minItems": 1 }
+        },
         "not": { "required": ["failure"] }
       }
     },
@@ -61,7 +80,25 @@
         "properties": { "status": { "const": "failed" } },
         "required": ["status"]
       },
-      "then": { "required": ["failure"] }
+      "then": {
+        "required": ["failure"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "cancelled" } },
+        "required": ["status"]
+      },
+      "then": {
+        "not": { "required": ["failure"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["completed", "failed", "cancelled"] } },
+        "required": ["status"]
+      },
+      "then": { "required": ["finishedAt"] }
     }
   ],
   "$defs": {

@@ -688,17 +688,45 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
     failure = parsedFailure.value;
   }
 
-  if (status.value === "running" && typeof startedAt === "undefined") {
+  const hasStartedAt = typeof startedAt !== "undefined";
+  const hasFinishedAt = typeof finishedAt !== "undefined";
+  const hasFailure = typeof failure !== "undefined";
+
+  if (status.value === "queued") {
+    if (hasStartedAt) {
+      return fail("semantic_conflict", "$.startedAt", "queued jobs must not include startedAt");
+    }
+    if (hasFinishedAt) {
+      return fail("semantic_conflict", "$.finishedAt", "queued jobs must not include finishedAt");
+    }
+    if (hasFailure) {
+      return fail("semantic_conflict", "$.failure", "queued jobs must not include failure");
+    }
+  }
+
+  if (status.value === "running" && !hasStartedAt) {
     return fail("missing_field", "$.startedAt", "running jobs require startedAt");
   }
-  if (["completed", "failed", "cancelled"].includes(status.value) && typeof finishedAt === "undefined") {
+  if (status.value === "running" && hasFinishedAt) {
+    return fail("semantic_conflict", "$.finishedAt", "running jobs must not include finishedAt");
+  }
+  if (status.value === "running" && hasFailure) {
+    return fail("semantic_conflict", "$.failure", "running jobs must not include failure");
+  }
+  if (["completed", "failed", "cancelled"].includes(status.value) && !hasFinishedAt) {
     return fail("missing_field", "$.finishedAt", `${status.value} jobs require finishedAt`);
   }
-  if (status.value === "completed" && typeof failure !== "undefined") {
+  if (status.value === "completed" && proposalIds.value.length === 0) {
+    return fail("semantic_conflict", "$.proposalIds", "completed jobs require at least one proposalId");
+  }
+  if (status.value === "completed" && hasFailure) {
     return fail("semantic_conflict", "$.failure", "completed jobs must not include failure");
   }
-  if (status.value === "failed" && typeof failure === "undefined") {
+  if (status.value === "failed" && !hasFailure) {
     return fail("missing_field", "$.failure", "failed jobs require failure");
+  }
+  if (status.value === "cancelled" && hasFailure) {
+    return fail("semantic_conflict", "$.failure", "cancelled jobs must not include failure");
   }
 
   return pass({
