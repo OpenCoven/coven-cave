@@ -37,4 +37,3 @@ test("local preview card opens the Browser split callback", async () => {
   expect(onOpenPreview).toHaveBeenCalledWith("http://127.0.0.1:3000/demo");
   expect(textContent(renderer.root)).toContain("127.0.0.1:3000/demo");
 });
-
