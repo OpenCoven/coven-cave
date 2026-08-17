@@ -277,7 +277,7 @@ function parseUtc(value: unknown, path: string, label: string): ProtocolParseRes
     return fail("invalid_type", path, `${label} must be a string`);
   }
   if (!isUtcTimestamp(value)) {
-    return fail("invalid_value", path, `${label} must be a canonical UTC timestamp with millisecond precision`);
+    return fail("invalid_value", path, `${label} must be a UTC RFC 3339 timestamp`);
   }
   return pass(value);
 }

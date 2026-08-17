@@ -9,6 +9,7 @@ import {
   type ProtocolParseResult,
   type UnknownFields,
 } from "./common.ts";
+import { digestProtocolObject } from "./digest.ts";
 
 const CONTEXT_PACK_SCHEMA = "opencoven.context-pack/v1";
 const CONTEXT_PACK_SCHEMA_RE = /^opencoven\.context-pack\/v(\d+)$/;
@@ -242,7 +243,7 @@ function parseUtc(value: unknown, path: string, label: string): ProtocolParseRes
     return fail("invalid_type", path, `${label} must be a string`);
   }
   if (!isUtcTimestamp(value)) {
-    return fail("invalid_value", path, `${label} must be a canonical UTC timestamp with milliseconds`);
+    return fail("invalid_value", path, `${label} must be a UTC RFC 3339 timestamp`);
   }
   return pass(value);
 }
@@ -801,7 +802,7 @@ export function parseContextPackV1(value: unknown): ProtocolParseResult<ContextP
   const transforms = parseTransforms(transformsField.value, "$.transforms");
   if (!transforms.ok) return transforms;
 
-  return pass({
+  const parsed = {
     ...object.value,
     schema: CONTEXT_PACK_SCHEMA,
     id: id.value,
@@ -814,5 +815,21 @@ export function parseContextPackV1(value: unknown): ProtocolParseResult<ContextP
     resources,
     policy: policy.value,
     transforms: transforms.value,
-  });
+  } as ContextPackV1;
+
+  let expectedDigest: string;
+  try {
+    expectedDigest = digestProtocolObject(parsed);
+  } catch (error) {
+    return fail(
+      "invalid_value",
+      "$",
+      error instanceof Error ? error.message : "Context Pack must be canonical JSON",
+    );
+  }
+  if (parsed.digest !== expectedDigest) {
+    return fail("digest_mismatch", "$.digest", `digest must equal recomputed digest ${expectedDigest}`);
+  }
+
+  return pass(parsed);
 }

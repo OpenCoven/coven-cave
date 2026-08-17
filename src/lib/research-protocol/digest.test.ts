@@ -43,3 +43,35 @@ test("canonicalization rejects undefined and NaN", () => {
   assert.throws(() => canonicalJson({ value: undefined }), /canonical JSON/i);
   assert.throws(() => canonicalJson({ value: NaN }), /canonical JSON/i);
 });
+
+test("canonicalization rejects lone high and low surrogates in string values", () => {
+  assert.throws(
+    () => canonicalJson({ value: "\uD800" }),
+    /unpaired UTF-16 surrogate/i,
+  );
+  assert.throws(
+    () => canonicalJson({ nested: ["\uDC00"] }),
+    /unpaired UTF-16 surrogate/i,
+  );
+});
+
+test("canonicalization rejects lone high and low surrogates in object keys", () => {
+  assert.throws(
+    () => canonicalJson({ ["\uD800"]: "high" }),
+    /unpaired UTF-16 surrogate/i,
+  );
+  assert.throws(
+    () => canonicalJson({ nested: { ["\uDC00"]: "low" } }),
+    /unpaired UTF-16 surrogate/i,
+  );
+});
+
+test("canonicalization and digests accept paired supplementary characters", () => {
+  const value = { "familiar-🧙": "research-🔬", nested: ["𐐷"] };
+
+  assert.equal(
+    canonicalJson(value),
+    "{\"familiar-🧙\":\"research-🔬\",\"nested\":[\"𐐷\"]}",
+  );
+  assert.equal(digestProtocolObject({ digest: "ignored", ...value }), sha256Digest(canonicalJson(value)));
+});

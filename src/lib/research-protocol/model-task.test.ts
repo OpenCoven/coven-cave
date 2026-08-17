@@ -14,6 +14,7 @@ import {
   modelTaskResultSignaturePayload,
   parseModelTaskResultV1,
   parseModelTaskV1,
+  validateModelTaskResultV1,
 } from "./model-task.ts";
 
 const SAFE_INTEGER_OVERFLOW = 9007199254740992;
@@ -70,8 +71,8 @@ test("modelTaskResultSignaturePayload returns exactly the signed fields", () => 
     taskId: "modeltask_01",
     runId: "run_01",
     attempt: 1,
-    inputDigest: "a7a21a3895e180dfcce5b4aa1c7827bb7985a406b378399f6655d4f1a01229d5",
-    outputDigest: "0919f42fd41098c197abbe957594805f531ff4f7b9bccc68316c5f9db3adee17",
+    inputDigest: "6a28b9d62b79b42a133d52fe51636c161c67722929efa5f6178e2940c9136597",
+    outputDigest: "24c988fffd8b3c3a556595626c557b8c449ac24d063da6504ca350661748bdff",
     executorDeviceId: "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
     completedAt: "2026-08-15T20:10:00.000Z",
   });
@@ -165,6 +166,50 @@ test("fixture digests and device fingerprint match helper computations", () => {
   assert.equal(validModelTaskResult.executorDeviceId, FIXTURE_EXECUTOR_DEVICE_ID);
 });
 
+test("task and result parsers reject stale input and output digests", () => {
+  expectError(
+    parseModelTaskV1({
+      ...validModelTask,
+      input: {
+        ...validModelTask.input,
+        publicEvidenceRefs: ["evidence://new"],
+      },
+    }),
+    "$.inputDigest",
+    "digest_mismatch",
+  );
+
+  expectError(
+    parseModelTaskResultV1({
+      ...validModelTaskResult,
+      output: { decision: "stop" },
+    }),
+    "$.outputDigest",
+    "digest_mismatch",
+  );
+});
+
+test("validateModelTaskResultV1 accepts matching replays and rejects conflicting associations", () => {
+  const task = expectOk(parseModelTaskV1(validModelTask));
+  const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
+
+  assert.strictEqual(expectOk(validateModelTaskResultV1(task, result)), result);
+  assert.strictEqual(expectOk(validateModelTaskResultV1(task, result)), result);
+
+  for (const testCase of [
+    { field: "taskId", value: "modeltask_other", path: "$.taskId" },
+    { field: "runId", value: "run_other", path: "$.runId" },
+    { field: "attempt", value: 2, path: "$.attempt" },
+    { field: "inputDigest", value: VALID_SHA256_MISMATCH, path: "$.inputDigest" },
+  ] as const) {
+    expectError(
+      validateModelTaskResultV1(task, { ...result, [testCase.field]: testCase.value }),
+      testCase.path,
+      "semantic_conflict",
+    );
+  }
+});
+
 test("pinned model requires own model and resolve-at-run-start forbids model", () => {
   expectError(
     parseModelTaskV1({
@@ -217,7 +262,7 @@ test("attempt and maxOutputTokens enforce positive safe integers", () => {
   );
 });
 
-test("digests require lowercase sha256 and timestamps require canonical UTC milliseconds", () => {
+test("digests require lowercase sha256 and timestamps require UTC RFC 3339", () => {
   expectError(
     parseModelTaskV1({ ...validModelTask, inputDigest: "A7a21a3895e180dfcce5b4aa1c7827bb7985a406b378399f6655d4f1a01229d5" }),
     "$.inputDigest",
@@ -235,7 +280,7 @@ test("digests require lowercase sha256 and timestamps require canonical UTC mill
     "invalid_value",
   );
   expectError(
-    parseModelTaskV1({ ...validModelTask, leaseExpiresAt: "2026-08-15T20:15:00Z" }),
+    parseModelTaskV1({ ...validModelTask, leaseExpiresAt: "2026-08-15T20:15:00+00:00" }),
     "$.leaseExpiresAt",
     "invalid_value",
   );
@@ -246,7 +291,7 @@ test("digests require lowercase sha256 and timestamps require canonical UTC mill
     "invalid_value",
   );
   expectError(
-    parseModelTaskResultV1({ ...validModelTaskResult, completedAt: "2026-08-15T20:10:00Z" }),
+    parseModelTaskResultV1({ ...validModelTaskResult, completedAt: "2026-08-15T20:10:00.1234567890Z" }),
     "$.completedAt",
     "invalid_value",
   );
@@ -348,7 +393,11 @@ test("parser preserves nested canonical JSON output as deep own-property data", 
     },
   };
 
-  const parsed = expectOk(parseModelTaskResultV1({ ...validModelTaskResult, output }));
+  const parsed = expectOk(parseModelTaskResultV1({
+    ...validModelTaskResult,
+    output,
+    outputDigest: sha256Digest(canonicalJson(output)),
+  }));
   assert.deepEqual(parsed.output, output);
   assert.notStrictEqual(parsed.output, output);
   assert.notStrictEqual(parsed.output.findings, output.findings);
@@ -407,27 +456,27 @@ test("inherited required fields do not satisfy parser", () => {
   expectError(parseModelTaskResultV1(inheritedResult), "$.taskId", "missing_field");
 });
 
-test("parser validates digest syntax only and does not verify signature or recompute digests", () => {
+test("parser verifies content digests but leaves signature verification to the executor boundary", () => {
   const changedDigestTask = {
     ...validModelTask,
     inputDigest: VALID_SHA256_MISMATCH_B,
   };
   assert.ok(Value.Check(modelTaskSchema, changedDigestTask));
-  const parsedTask = expectOk(parseModelTaskV1(changedDigestTask));
-  assert.equal(parsedTask.inputDigest, VALID_SHA256_MISMATCH_B);
+  expectError(parseModelTaskV1(changedDigestTask), "$.inputDigest", "digest_mismatch");
 
   const changedDigestResult = {
     ...validModelTaskResult,
-    inputDigest: VALID_SHA256_MISMATCH_B,
     output: { decision: "stop" },
     outputDigest: VALID_SHA256_MISMATCH,
     signature: "still-not-verified",
   };
 
   assert.ok(Value.Check(modelTaskResultSchema, changedDigestResult));
-  const parsed = expectOk(parseModelTaskResultV1(changedDigestResult));
-  assert.equal(parsed.inputDigest, VALID_SHA256_MISMATCH_B);
-  assert.equal(parsed.outputDigest, VALID_SHA256_MISMATCH);
+  expectError(parseModelTaskResultV1(changedDigestResult), "$.outputDigest", "digest_mismatch");
+
+  const parsed = expectOk(parseModelTaskResultV1({
+    ...validModelTaskResult,
+    signature: "still-not-verified",
+  }));
   assert.equal(parsed.signature, "still-not-verified");
-  assert.equal(parsed.output.decision, "stop");
 });
