@@ -783,6 +783,10 @@ function copyOwnJson(value: unknown, stack = new WeakSet<object>()): unknown {
   }
   stack.add(value);
   if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      stack.delete(value);
+      throw new TypeError("only JSON objects and arrays are allowed");
+    }
     const result = value.map((entry) => copyOwnJson(entry, stack));
     stack.delete(value);
     return result;
