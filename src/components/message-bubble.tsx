@@ -774,6 +774,7 @@ async function mdToHtml(
 type MarkdownContentProps = {
   text: string;
   pending?: boolean;
+  showCaret?: boolean;
   onOpenUrl?: (url: string) => void;
   citations?: readonly Citation[];
   decorateResponse?: boolean;
@@ -786,6 +787,7 @@ type MarkdownContentProps = {
 function MarkdownContent({
   text,
   pending,
+  showCaret = true,
   onOpenUrl,
   citations = [],
   decorateResponse = false,
@@ -900,7 +902,7 @@ function MarkdownContent({
       return (
         <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
           {text}
-          {pending ? "▌" : ""}
+          {showCaret ? <>{pending ? "▌" : ""}</> : ""}
         </span>
       );
     }
@@ -932,15 +934,19 @@ function MarkdownContent({
       {/* This is a separate response status, not a cursor intended to trail the
           final rendered line. Keeping it outside sanitized HTML avoids malformed
           Markdown while making its standalone placement deliberate. */}
-      {pending ? (
-        <span className="cave-response-typing" role="status" aria-label="Familiar is writing">
-          <span className="cave-response-typing-dots" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>Writing</span>
-        </span>
+      {showCaret ? (
+        <>
+          {pending ? (
+            <span className="cave-response-typing" role="status" aria-label="Familiar is writing">
+              <span className="cave-response-typing-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span>Writing</span>
+            </span>
+          ) : null}
+        </>
       ) : null}
       <InlineCitationPreviews
         citations={citations}
@@ -955,11 +961,19 @@ function MarkdownContent({
 export function ProgressiveMarkdownBlock({
   text,
   pending,
-}: {
-  text: string;
-  pending?: boolean;
-}) {
-  return <MarkdownContent text={text} pending={pending} />;
+  onOpenUrl,
+  citations,
+  className,
+  showCaret = true,
+}: MarkdownContentProps) {
+  return (
+    <MarkdownContent text={text} pending={pending}
+      onOpenUrl={onOpenUrl}
+      citations={citations}
+      className={className}
+      showCaret={showCaret}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1036,6 +1050,9 @@ export type MessageBubbleProps = {
    *  the FULL text so the Copy/Expand actions are unchanged. Only the LAST
    *  text span streams (progressive markdown); earlier spans render settled. */
   segments?: MessageBubbleSegment[];
+  /** Shared assistant presentation. `content` remains the complete source for
+   * copy, reader, feedback, reply, and settled actions. */
+  assistantBody?: ReactNode;
   /** The turn's tool events, forwarded to the reader's "How this was made"
    *  footer (batches, skills, error count). Assistant role only; absent turns
    *  simply have no footer — see message-reader.tsx. */
@@ -1064,7 +1081,7 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, assistantBody, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [readerOpen, setReaderOpen] = useState(false);
@@ -1202,7 +1219,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         ) : (
           <div className="cave-response-body">
             <div className={isError ? "text-[var(--danger-text)]" : ""}>
-              {segments?.length ? (
+              {assistantBody !== undefined ? assistantBody : segments?.length ? (
                 segments.map((seg, i) => {
                   if (seg.kind === "block") {
                     return <div key={seg.key} className="my-2">{seg.node}</div>;
