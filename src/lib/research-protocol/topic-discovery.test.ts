@@ -49,7 +49,7 @@ test("valid fixtures satisfy schemas and parse", () => {
   assert.deepEqual(proposal.futureExtension, { preserve: true });
 });
 
-test("topicProposalVisibleTotal returns 25 and matching proposal parses", () => {
+test("topicProposalVisibleTotal applies the Section 10.3 weights in integer hundredths", () => {
   const scores = {
     groundability: 4,
     decisionValue: 3,
@@ -61,18 +61,76 @@ test("topicProposalVisibleTotal returns 25 and matching proposal parses", () => 
     feasibility: 3,
     humanResonance: 4,
     riskPenalty: 2,
-    visibleTotal: 25,
+    visibleTotal: 2.64,
   };
 
-  assert.equal(topicProposalVisibleTotal(scores), 25);
-  assert.equal(expectOk(parseTopicProposalV1({ ...validTopicProposal, scores })).scores.visibleTotal, 25);
+  assert.equal(topicProposalVisibleTotal(scores), 2.64);
+  assert.equal(expectOk(parseTopicProposalV1({ ...validTopicProposal, scores })).scores.visibleTotal, 2.64);
+});
+
+test("topicProposalVisibleTotal exposes each exact weight and its bounded range", () => {
+  const zeros = {
+    groundability: 0,
+    decisionValue: 0,
+    unresolvedness: 0,
+    recurrence: 0,
+    novelty: 0,
+    timeliness: 0,
+    familiarFit: 0,
+    feasibility: 0,
+    humanResonance: 0,
+    riskPenalty: 0,
+    visibleTotal: 0,
+  };
+  const expectedWeights = {
+    groundability: 0.18,
+    decisionValue: 0.16,
+    unresolvedness: 0.13,
+    recurrence: 0.10,
+    novelty: 0.10,
+    timeliness: 0.08,
+    familiarFit: 0.08,
+    feasibility: 0.08,
+    humanResonance: 0.09,
+  } as const;
+
+  for (const [key, weight] of Object.entries(expectedWeights)) {
+    assert.equal(topicProposalVisibleTotal({ ...zeros, [key]: 1 }), weight, key);
+  }
+  assert.equal(topicProposalVisibleTotal({ ...zeros, riskPenalty: 1 }), -0.20);
+  assert.equal(
+    topicProposalVisibleTotal({
+      ...zeros,
+      groundability: 4,
+      decisionValue: 4,
+      unresolvedness: 4,
+      recurrence: 4,
+      novelty: 4,
+      timeliness: 4,
+      familiarFit: 4,
+      feasibility: 4,
+      humanResonance: 4,
+    }),
+    4,
+  );
+  assert.equal(topicProposalVisibleTotal({ ...zeros, riskPenalty: 4 }), -0.8);
+});
+
+test("proposal visibleTotal schema and parser require hundredth precision in the weighted range", () => {
+  const tooPrecise = {
+    ...validTopicProposal,
+    scores: { ...validTopicProposal.scores, visibleTotal: 2.641 },
+  };
+
+  assert.equal(Value.Check(topicProposalSchema, tooPrecise), false);
+  expectError(parseTopicProposalV1(tooPrecise), "$.scores.visibleTotal", "invalid_value");
 });
 
 test("proposal visibleTotal mismatches reject with semantic_conflict", () => {
   expectError(
     parseTopicProposalV1({
       ...validTopicProposal,
-      scores: { ...validTopicProposal.scores, visibleTotal: 26 },
+      scores: { ...validTopicProposal.scores, visibleTotal: 2.63 },
     }),
     "$.scores.visibleTotal",
     "semantic_conflict",

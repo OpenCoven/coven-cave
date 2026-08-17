@@ -1767,6 +1767,7 @@ export const SUITES = {
   conformance: [
     "scripts/cross-environment.test.ts",
     "scripts/research-protocol-conformance.test.ts",
+    "src/lib/research-protocol/common.test.ts",
     "src/lib/research-protocol/digest.test.ts",
     "src/lib/research-protocol/context-pack.test.ts",
     "src/lib/research-protocol/topic-discovery.test.ts",

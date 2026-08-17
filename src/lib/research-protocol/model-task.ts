@@ -12,7 +12,7 @@ import {
   parseResearchModelReceiptV1,
   type ResearchModelReceiptV1,
 } from "./topic-discovery.ts";
-import { canonicalJson } from "./digest.ts";
+import { canonicalJson, sha256Digest } from "./digest.ts";
 
 const MODEL_TASK_SCHEMA = "opencoven.model-task/v1";
 const MODEL_TASK_SCHEMA_RE = /^opencoven\.model-task\/v(\d+)$/;
@@ -235,7 +235,7 @@ function parseUtc(value: unknown, path: string, label: string): ProtocolParseRes
     return fail(
       "invalid_value",
       path,
-      `${label} must be a canonical UTC ISO-8601 timestamp with millisecond precision`,
+      `${label} must be a UTC RFC 3339 timestamp`,
     );
   }
   return pass(value);
@@ -519,7 +519,7 @@ export function parseModelTaskV1(value: unknown): ProtocolParseResult<ModelTaskV
   const leaseExpiresAt = parseUtc(leaseExpiresAtField.value, "$.leaseExpiresAt", "leaseExpiresAt");
   if (!leaseExpiresAt.ok) return leaseExpiresAt;
 
-  return pass({
+  const parsed = {
     ...object.value,
     schema: schema.value,
     id: id.value,
@@ -532,7 +532,27 @@ export function parseModelTaskV1(value: unknown): ProtocolParseResult<ModelTaskV
     policy: policy.value,
     outputSchema: outputSchema.value,
     leaseExpiresAt: leaseExpiresAt.value,
-  });
+  } as ModelTaskV1;
+
+  let expectedInputDigest: string;
+  try {
+    expectedInputDigest = sha256Digest(canonicalJson(parsed.input));
+  } catch (error) {
+    return fail(
+      "invalid_value",
+      "$.input",
+      error instanceof Error ? error.message : "input must be canonical JSON",
+    );
+  }
+  if (parsed.inputDigest !== expectedInputDigest) {
+    return fail(
+      "digest_mismatch",
+      "$.inputDigest",
+      `inputDigest must equal recomputed digest ${expectedInputDigest}`,
+    );
+  }
+
+  return pass(parsed);
 }
 
 export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<ModelTaskResultV1> {
@@ -604,7 +624,7 @@ export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<Mode
   const signature = parseNonEmptyString(signatureField.value, "$.signature", "signature");
   if (!signature.ok) return signature;
 
-  return pass({
+  const parsed = {
     ...object.value,
     schema: schema.value,
     taskId: taskId.value,
@@ -617,7 +637,52 @@ export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<Mode
     modelReceipt: modelReceipt.value,
     completedAt: completedAt.value,
     signature: signature.value,
-  });
+  } as ModelTaskResultV1;
+
+  const expectedOutputDigest = sha256Digest(canonicalJson(parsed.output));
+  if (parsed.outputDigest !== expectedOutputDigest) {
+    return fail(
+      "digest_mismatch",
+      "$.outputDigest",
+      `outputDigest must equal recomputed digest ${expectedOutputDigest}`,
+    );
+  }
+
+  return pass(parsed);
+}
+
+/**
+ * Validates one parsed task/result association. Matching replays remain valid;
+ * comparing a result with an already persisted receipt is a later storage
+ * boundary concern.
+ */
+export function validateModelTaskResultV1(
+  task: ModelTaskV1,
+  result: ModelTaskResultV1,
+): ProtocolParseResult<ModelTaskResultV1> {
+  if (result.taskId !== task.id) {
+    return fail("semantic_conflict", "$.taskId", "taskId must equal the Model Task id");
+  }
+  if (result.runId !== task.runId) {
+    return fail("semantic_conflict", "$.runId", "runId must equal the Model Task runId");
+  }
+  if (result.attempt !== task.attempt) {
+    return fail("semantic_conflict", "$.attempt", "attempt must equal the Model Task attempt");
+  }
+  if (result.inputDigest !== task.inputDigest) {
+    return fail("semantic_conflict", "$.inputDigest", "inputDigest must equal the Model Task inputDigest");
+  }
+
+  const expectedOutputDigest = sha256Digest(canonicalJson(result.output));
+  if (result.outputDigest !== expectedOutputDigest) {
+    return fail(
+      "digest_mismatch",
+      "$.outputDigest",
+      `outputDigest must equal recomputed digest ${expectedOutputDigest}`,
+    );
+  }
+
+  return pass(result);
 }
 
 export function modelTaskResultSignaturePayload(
