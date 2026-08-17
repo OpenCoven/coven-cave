@@ -1761,6 +1761,7 @@ export const SUITES = {
   // the matrix is where per-OS behavior is verified.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/research-protocol-conformance.test.ts",
     "src/lib/research-protocol/digest.test.ts",
     "src/lib/research-protocol/context-pack.test.ts",
     "src/lib/research-protocol/topic-discovery.test.ts",
