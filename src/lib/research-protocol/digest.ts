@@ -1,7 +1,4 @@
 import { createHash } from "node:crypto";
-import canonicalize from "canonicalize";
-
-import { isRecord } from "./common.ts";
 
 function jsonPathForProperty(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
@@ -18,7 +15,7 @@ function createCanonicalJsonError(path: string, reason: string): TypeError {
 }
 
 function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value)) return false;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
@@ -44,7 +41,7 @@ function isCanonicalArrayIndex(key: string): boolean {
   return Number.isInteger(index) && index >= 0 && index < 0xffffffff;
 }
 
-function copyCanonicalJsonValue(
+function copyCanonicalJsonValueAtPath(
   value: unknown,
   path: string,
   stack: WeakSet<object>,
@@ -85,8 +82,10 @@ function copyCanonicalJsonValue(
       !lengthDescriptor
       || !("value" in lengthDescriptor)
       || lengthDescriptor.enumerable
+      || lengthDescriptor.configurable
+      || !lengthDescriptor.writable
     ) {
-      throw createCanonicalJsonError(path, "arrays must have the standard non-enumerable length property");
+      throw createCanonicalJsonError(path, "arrays must have the standard length property");
     }
     const length = lengthDescriptor.value;
     if (
@@ -145,7 +144,7 @@ function copyCanonicalJsonValue(
     try {
       for (const entry of entries) {
         Object.defineProperty(copy, entry.key, {
-          value: copyCanonicalJsonValue(
+          value: copyCanonicalJsonValueAtPath(
             entry.descriptor.value,
             jsonPathForIndex(path, entry.index),
             stack,
@@ -167,8 +166,7 @@ function copyCanonicalJsonValue(
     throw createCanonicalJsonError(path, "cyclic structures are not allowed");
   }
 
-  const prototype = Object.getPrototypeOf(value);
-  const copy = Object.create(prototype) as Record<string, unknown>;
+  const copy = Object.create(null) as Record<string, unknown>;
   stack.add(value);
   try {
     for (const key of Reflect.ownKeys(value)) {
@@ -188,7 +186,7 @@ function copyCanonicalJsonValue(
         throw createCanonicalJsonError(propertyPath, "accessor properties are not allowed");
       }
       Object.defineProperty(copy, key, {
-        value: copyCanonicalJsonValue(descriptor.value, propertyPath, stack),
+        value: copyCanonicalJsonValueAtPath(descriptor.value, propertyPath, stack),
         enumerable: true,
         configurable: true,
         writable: true,
@@ -200,20 +198,46 @@ function copyCanonicalJsonValue(
   return copy;
 }
 
-export function copyCanonicalJson(value: unknown): unknown {
-  return copyCanonicalJsonValue(value, "$", new WeakSet<object>());
+export function copyCanonicalJsonValue<T>(value: T): T {
+  return copyCanonicalJsonValueAtPath(value, "$", new WeakSet<object>()) as T;
 }
 
-function canonicalizeCopy(value: unknown): string {
-  const serialized = canonicalize(value);
+export function copyCanonicalJson(value: unknown): unknown {
+  return copyCanonicalJsonValue(value);
+}
+
+function stringifyJsonPrimitive(value: string | number): string {
+  const serialized = JSON.stringify(value);
   if (typeof serialized !== "string") {
-    throw new TypeError("Value at $ is not canonical JSON: canonicalization failed");
+    throw new TypeError("Value at $ is not canonical JSON: serialization failed");
   }
   return serialized;
 }
 
+function serializeCanonicalJson(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string" || typeof value === "number") {
+    return stringifyJsonPrimitive(value);
+  }
+  if (Array.isArray(value)) {
+    const entries: string[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+      entries.push(serializeCanonicalJson(value[index]));
+    }
+    return `[${entries.join(",")}]`;
+  }
+
+  const object = value as Record<string, unknown>;
+  const entries: string[] = [];
+  for (const key of Object.keys(object).sort()) {
+    entries.push(`${stringifyJsonPrimitive(key)}:${serializeCanonicalJson(object[key])}`);
+  }
+  return `{${entries.join(",")}}`;
+}
+
 export function canonicalJson(value: unknown): string {
-  return canonicalizeCopy(copyCanonicalJson(value));
+  return serializeCanonicalJson(copyCanonicalJsonValue(value));
 }
 
 export function sha256Digest(value: string | Uint8Array): string {
@@ -221,10 +245,10 @@ export function sha256Digest(value: string | Uint8Array): string {
 }
 
 export function digestProtocolObject(value: unknown): string {
-  if (!isRecord(value) || !isPlainJsonObject(value)) {
+  if (!isPlainJsonObject(value)) {
     throw new TypeError("digestProtocolObject expects a JSON record");
   }
-  const copy = copyCanonicalJson(value) as Record<string, unknown>;
+  const copy = copyCanonicalJsonValue(value);
   Reflect.deleteProperty(copy, "digest");
-  return sha256Digest(canonicalizeCopy(copy));
+  return sha256Digest(serializeCanonicalJson(copy));
 }

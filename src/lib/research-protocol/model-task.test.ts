@@ -50,17 +50,117 @@ test("valid fixtures satisfy schemas, parse, and preserve additive fields", () =
   assert.ok(Value.Check(modelTaskResultSchema, validModelTaskResult));
 
   const task = expectOk(parseModelTaskV1(validModelTask));
-  assert.deepEqual(task.futureExtension, { preserve: true });
-  assert.deepEqual(task.input.futureExtension, { preserve: true });
-  assert.deepEqual(task.input.contextPack.futureExtension, { preserve: true });
-  assert.deepEqual(task.modelBinding.futureExtension, { preserve: true });
-  assert.deepEqual(task.policy.futureExtension, { preserve: true });
+  assert.equal((task.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((task.input.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((task.input.contextPack.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((task.modelBinding.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((task.policy.futureExtension as { preserve: boolean }).preserve, true);
 
   const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
-  assert.deepEqual(result.futureExtension, { preserve: true });
-  assert.deepEqual(result.output.futureExtension, { preserve: true });
-  assert.deepEqual(result.modelReceipt.futureExtension, { preserve: true });
-  assert.deepEqual(result.modelReceipt.usage.futureExtension, { preserve: true });
+  assert.equal((result.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((result.output.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((result.modelReceipt.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((result.modelReceipt.usage.futureExtension as { preserve: boolean }).preserve, true);
+});
+
+test("Model Task and Result reject non-canonical wire data before invoking accessors", () => {
+  class CustomArray<T> extends Array<T> {}
+  let accessorCalls = 0;
+
+  const parsers = [
+    {
+      base: validModelTask as Record<string, unknown>,
+      parse: (value: unknown) => parseModelTaskV1(value),
+    },
+    {
+      base: validModelTaskResult as Record<string, unknown>,
+      parse: (value: unknown) => parseModelTaskResultV1(value),
+    },
+  ];
+
+  for (const { base, parse } of parsers) {
+    const accessor = { ...base };
+    Object.defineProperty(accessor, "schema", {
+      get() {
+        accessorCalls += 1;
+        return base.schema;
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    expectError(parse(accessor), "$", "invalid_value");
+
+    const hidden = { ...base };
+    Object.defineProperty(hidden, "hidden", {
+      value: "not-json",
+      enumerable: false,
+    });
+    expectError(parse(hidden), "$", "invalid_value");
+
+    const symbolKeyed = { ...base };
+    Object.defineProperty(symbolKeyed, Symbol("hidden"), {
+      value: "not-json",
+      enumerable: true,
+    });
+    expectError(parse(symbolKeyed), "$", "invalid_value");
+
+    const hiddenToJson = { ...base };
+    Object.defineProperty(hiddenToJson, "toJSON", {
+      value() {
+        accessorCalls += 1;
+        return base;
+      },
+      enumerable: false,
+    });
+    expectError(parse(hiddenToJson), "$", "invalid_value");
+
+    const extraProperty = [1, 2];
+    Object.defineProperty(extraProperty, "extra", {
+      value: true,
+      enumerable: true,
+    });
+    for (const values of [[1, , 3], CustomArray.from([1, 2]), extraProperty]) {
+      expectError(parse({ ...base, wireExtension: { values } }), "$", "invalid_value");
+    }
+  }
+
+  assert.equal(accessorCalls, 0);
+});
+
+test("Model Task and Result detach additive wire objects and arrays", () => {
+  for (const { base, parse } of [
+    {
+      base: validModelTask as Record<string, unknown>,
+      parse: (value: unknown) => parseModelTaskV1(value),
+    },
+    {
+      base: validModelTaskResult as Record<string, unknown>,
+      parse: (value: unknown) => parseModelTaskResultV1(value),
+    },
+  ]) {
+    const extension = {
+      nested: { state: "original" },
+      items: [{ value: 1 }],
+    };
+    const result = parse({ ...base, wireExtension: extension });
+    if (!result.ok) {
+      assert.fail(`${result.error.path}: ${result.error.message}`);
+    }
+    const parsed = result.value as unknown as Record<string, unknown>;
+    const parsedExtension = parsed.wireExtension as typeof extension;
+
+    assert.notStrictEqual(parsedExtension, extension);
+    assert.notStrictEqual(parsedExtension.nested, extension.nested);
+    assert.notStrictEqual(parsedExtension.items, extension.items);
+    assert.notStrictEqual(parsedExtension.items[0], extension.items[0]);
+
+    extension.nested.state = "mutated";
+    extension.items[0].value = 99;
+    extension.items.push({ value: 2 });
+    assert.equal(parsedExtension.nested.state, "original");
+    assert.equal(parsedExtension.items[0].value, 1);
+    assert.equal(parsedExtension.items.length, 1);
+  }
 });
 
 test("modelTaskResultSignaturePayload returns exactly the signed fields", () => {
@@ -208,6 +308,26 @@ test("validateModelTaskResultV1 accepts matching replays and rejects conflicting
       "semantic_conflict",
     );
   }
+});
+
+test("validateModelTaskResultV1 rejects task input and result output mutations after parsing", () => {
+  const mutatedTask = expectOk(parseModelTaskV1(validModelTask));
+  const matchingResult = expectOk(parseModelTaskResultV1(validModelTaskResult));
+  mutatedTask.input.publicEvidenceRefs.push("evidence://mutated");
+  expectError(
+    validateModelTaskResultV1(mutatedTask, matchingResult),
+    "$.inputDigest",
+    "digest_mismatch",
+  );
+
+  const matchingTask = expectOk(parseModelTaskV1(validModelTask));
+  const mutatedResult = expectOk(parseModelTaskResultV1(validModelTaskResult));
+  mutatedResult.output.decision = "mutated";
+  expectError(
+    validateModelTaskResultV1(matchingTask, mutatedResult),
+    "$.outputDigest",
+    "digest_mismatch",
+  );
 });
 
 test("validateModelTaskResultV1 binds the result receipt to the task familiar", () => {
@@ -464,7 +584,7 @@ test("Model Result rejects symbol keys, hidden data, and hidden or accessor toJS
   });
   expectError(
     parseModelTaskResultV1({ ...validModelTaskResult, output: symbolKeyed }),
-    "$.output",
+    "$",
     "invalid_value",
   );
 
@@ -475,7 +595,7 @@ test("Model Result rejects symbol keys, hidden data, and hidden or accessor toJS
   });
   expectError(
     parseModelTaskResultV1({ ...validModelTaskResult, output: hidden }),
-    "$.output.hidden",
+    "$",
     "invalid_value",
   );
 
@@ -490,7 +610,7 @@ test("Model Result rejects symbol keys, hidden data, and hidden or accessor toJS
   });
   expectError(
     parseModelTaskResultV1({ ...validModelTaskResult, output: hiddenToJson }),
-    "$.output.toJSON",
+    "$",
     "invalid_value",
   );
 
@@ -504,7 +624,7 @@ test("Model Result rejects symbol keys, hidden data, and hidden or accessor toJS
   });
   expectError(
     parseModelTaskResultV1({ ...validModelTaskResult, output: accessorToJson }),
-    "$.output.toJSON",
+    "$",
     "invalid_value",
   );
   assert.equal(calls, 0);
@@ -518,7 +638,7 @@ test("Model Result rejects sparse and custom arrays in output", () => {
       ...validModelTaskResult,
       output: { ...validModelTaskResult.output, values: [1, , 3] },
     }),
-    "$.output.values[1]",
+    "$",
     "invalid_value",
   );
   expectError(
@@ -529,7 +649,7 @@ test("Model Result rejects sparse and custom arrays in output", () => {
         values: CustomArray.from([1, 2, 3]),
       },
     }),
-    "$.output.values",
+    "$",
     "invalid_value",
   );
 });
@@ -568,7 +688,7 @@ test("parser rejects nested output custom-prototype objects and non-json values"
       nested: Object.assign(Object.create({ inherited: true }), { ok: true }),
     },
   };
-  expectError(parseModelTaskResultV1(nestedCustomPrototype), "$.output.nested", "invalid_value");
+  expectError(parseModelTaskResultV1(nestedCustomPrototype), "$", "invalid_value");
 
   const nestedNaN = {
     ...validModelTaskResult,
@@ -578,10 +698,10 @@ test("parser rejects nested output custom-prototype objects and non-json values"
       },
     },
   };
-  expectError(parseModelTaskResultV1(nestedNaN), "$.output.metrics.score", "invalid_value");
+  expectError(parseModelTaskResultV1(nestedNaN), "$", "invalid_value");
 });
 
-test("inherited required fields do not satisfy parser", () => {
+test("custom-prototype top-level objects are rejected", () => {
   const inheritedTask = Object.create({ schema: validModelTask.schema });
   Object.assign(inheritedTask, {
     id: validModelTask.id,
@@ -595,7 +715,7 @@ test("inherited required fields do not satisfy parser", () => {
     outputSchema: validModelTask.outputSchema,
     leaseExpiresAt: validModelTask.leaseExpiresAt,
   });
-  expectError(parseModelTaskV1(inheritedTask), "$.schema", "missing_field");
+  expectError(parseModelTaskV1(inheritedTask), "$", "invalid_value");
 
   const inheritedResult = Object.create({ taskId: validModelTaskResult.taskId });
   Object.assign(inheritedResult, {
@@ -610,7 +730,7 @@ test("inherited required fields do not satisfy parser", () => {
     completedAt: validModelTaskResult.completedAt,
     signature: validModelTaskResult.signature,
   });
-  expectError(parseModelTaskResultV1(inheritedResult), "$.taskId", "missing_field");
+  expectError(parseModelTaskResultV1(inheritedResult), "$", "invalid_value");
 });
 
 test("parser verifies content digests but leaves signature verification to the executor boundary", () => {

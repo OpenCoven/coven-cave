@@ -1,3 +1,5 @@
+import { copyCanonicalJsonValue } from "./digest.ts";
+
 export type UnknownFields = Record<string, unknown>;
 
 export type ProtocolErrorCode =
@@ -103,6 +105,39 @@ export function pass<T>(value: T): ProtocolParseResult<T> {
   return { ok: true, value };
 }
 
+function toOrdinaryJsonValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return value.map((entry) => toOrdinaryJsonValue(entry));
+  }
+
+  const copy: Record<string, unknown> = {};
+  for (const key of Object.keys(value)) {
+    Object.defineProperty(copy, key, {
+      value: toOrdinaryJsonValue((value as Record<string, unknown>)[key]),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return copy;
+}
+
+export function copyProtocolJsonValue<T>(
+  value: T,
+  path = "$",
+): ProtocolParseResult<T> {
+  try {
+    return pass(toOrdinaryJsonValue(copyCanonicalJsonValue(value)) as T);
+  } catch {
+    return fail(
+      "invalid_value",
+      path,
+      "Protocol value must contain only canonical JSON data",
+    );
+  }
+}
+
 export type ResearchContextBindingV1 = {
   contextPackId: string;
   contextPackDigest: string;
@@ -166,7 +201,10 @@ export function parseResearchContextBindingV1(
   value: unknown,
   path: string,
 ): ProtocolParseResult<ResearchContextBindingV1> {
-  const object = parseObject(value, path);
+  const wireValue = copyProtocolJsonValue(value, path);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, path);
   if (!object.ok) return object;
 
   const contextPackIdField = parseRequiredField(object.value, "contextPackId", path);

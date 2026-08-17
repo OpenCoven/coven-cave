@@ -1,4 +1,5 @@
 import {
+  copyProtocolJsonValue,
   fail,
   isJsonPointer,
   isOpaqueId,
@@ -9,7 +10,7 @@ import {
   type ProtocolParseResult,
   type UnknownFields,
 } from "./common.ts";
-import { copyCanonicalJson, digestProtocolObject } from "./digest.ts";
+import { digestProtocolObject } from "./digest.ts";
 
 const CONTEXT_PACK_SCHEMA = "opencoven.context-pack/v1";
 const CONTEXT_PACK_SCHEMA_RE = /^opencoven\.context-pack\/v(\d+)$/;
@@ -336,7 +337,10 @@ export function parseContextSelectorV1(
   value: unknown,
   path = "$.selector",
 ): ProtocolParseResult<ContextSelectorV1> {
-  const object = parseObject(value, path);
+  const wireValue = copyProtocolJsonValue(value, path);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, path);
   if (!object.ok) return object;
 
   const typeField = parseRequiredField(object.value, "type", path);
@@ -430,7 +434,10 @@ export function parseContextPackResourceV1(
   value: unknown,
   path: string,
 ): ProtocolParseResult<ContextPackResourceV1> {
-  const object = parseObject(value, path);
+  const wireValue = copyProtocolJsonValue(value, path);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, path);
   if (!object.ok) return object;
 
   const idField = parseRequiredField(object.value, "id", path);
@@ -728,21 +735,10 @@ function parseTransforms(value: unknown, path: string): ProtocolParseResult<Cont
 }
 
 export function parseContextPackV1(value: unknown): ProtocolParseResult<ContextPackV1> {
-  const inputObject = parseObject(value, "$");
-  if (!inputObject.ok) return inputObject;
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
 
-  let canonicalValue: unknown;
-  try {
-    canonicalValue = copyCanonicalJson(inputObject.value);
-  } catch (error) {
-    return fail(
-      "invalid_value",
-      "$",
-      error instanceof Error ? error.message : "Context Pack must be canonical JSON",
-    );
-  }
-
-  const object = parseObject(canonicalValue, "$");
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");

@@ -40,7 +40,7 @@ function expectError(
 
 test("valid Context Pack parses and preserves unknown additive fields", () => {
   const parsed = expectOk(parseContextPackV1(validContextPack));
-  assert.deepEqual(parsed.futureExtension, { preserve: true });
+  assert.equal((parsed.futureExtension as { preserve: boolean }).preserve, true);
 
   const nestedPack = {
     ...validContextPack,
@@ -122,8 +122,13 @@ test("Context Pack rejects symbol keys, hidden data, and hidden or accessor toJS
 
 test("Context Pack rejects sparse and custom arrays in additive data", () => {
   class CustomArray<T> extends Array<T> {}
+  const extraProperty = [1, 2, 3];
+  Object.defineProperty(extraProperty, "extra", {
+    value: true,
+    enumerable: true,
+  });
 
-  for (const values of [[1, , 3], CustomArray.from([1, 2, 3])]) {
+  for (const values of [[1, , 3], CustomArray.from([1, 2, 3]), extraProperty]) {
     expectError(
       parseContextPackV1({
         ...validContextPack,
@@ -154,11 +159,42 @@ test("Context Pack accepts safe canonical extensions", () => {
   const parsed = expectOk(parseContextPackV1(pack));
   const parsedExtension = parsed.futureExtension as Record<string, unknown>;
 
-  assert.equal(Object.getPrototypeOf(parsedExtension), null);
+  assert.equal(Object.getPrototypeOf(parsedExtension), Object.prototype);
   assert.equal(Object.hasOwn(parsedExtension, "__proto__"), true);
-  assert.deepEqual(parsedExtension.__proto__, { preserve: true });
+  assert.equal(Object.getPrototypeOf(parsedExtension.__proto__ as object), Object.prototype);
+  assert.equal((parsedExtension.__proto__ as { preserve: boolean }).preserve, true);
   assert.deepEqual(parsedExtension.values, [1, 2, 3]);
   assert.equal(parsedExtension.label, "research-🔬");
+});
+
+test("Context Pack returns detached additive objects and arrays", () => {
+  const extension = {
+    nested: { state: "original" },
+    items: [{ value: 1 }],
+  };
+  const pack = {
+    ...validContextPack,
+    futureExtension: extension,
+  };
+  pack.digest = digestProtocolObject(pack);
+
+  const parsed = expectOk(parseContextPackV1(pack));
+  const parsedExtension = parsed.futureExtension as {
+    nested: { state: string };
+    items: Array<{ value: number }>;
+  };
+
+  assert.notStrictEqual(parsedExtension, extension);
+  assert.notStrictEqual(parsedExtension.nested, extension.nested);
+  assert.notStrictEqual(parsedExtension.items, extension.items);
+  assert.notStrictEqual(parsedExtension.items[0], extension.items[0]);
+
+  extension.nested.state = "mutated";
+  extension.items[0].value = 99;
+  extension.items.push({ value: 2 });
+  assert.equal(parsedExtension.nested.state, "original");
+  assert.equal(parsedExtension.items[0].value, 1);
+  assert.equal(parsedExtension.items.length, 1);
 });
 
 test("Context Pack JSON Schema validates the valid fixture and purpose contract", () => {
@@ -317,6 +353,32 @@ test("turn-range accepts 2..3 and rejects empty or reversed spans", () => {
 
   expectError(parseContextSelectorV1({ type: "turn-range", start: 2, end: 2 }), "$.selector", "semantic_conflict");
   expectError(parseContextSelectorV1({ type: "turn-range", start: 3, end: 2 }), "$.selector", "semantic_conflict");
+});
+
+test("standalone Context Pack child parsers reject accessors without invoking them", () => {
+  let calls = 0;
+  const selector = { type: "whole-resource" };
+  Object.defineProperty(selector, "type", {
+    get() {
+      calls += 1;
+      return "whole-resource";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  expectError(parseContextSelectorV1(selector), "$.selector", "invalid_value");
+
+  const resource = { ...validContextPack.resources[0] };
+  Object.defineProperty(resource, "id", {
+    get() {
+      calls += 1;
+      return validContextPack.resources[0].id;
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  expectError(parseContextPackResourceV1(resource, "$.resource"), "$.resource", "invalid_value");
+  assert.equal(calls, 0);
 });
 
 test("json-pointer accepts RFC 6901 pointers and rejects malformed escapes", () => {

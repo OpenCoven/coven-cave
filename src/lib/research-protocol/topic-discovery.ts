@@ -1,4 +1,5 @@
 import {
+  copyProtocolJsonValue,
   fail,
   isOpaqueId,
   isRecord,
@@ -601,7 +602,10 @@ export function parseResearchModelReceiptV1(
   value: unknown,
   path: string,
 ): ProtocolParseResult<ResearchModelReceiptV1> {
-  const object = parseObject(value, path);
+  const wireValue = copyProtocolJsonValue(value, path);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, path);
   if (!object.ok) return object;
 
   const familiarIdField = parseRequiredField(object.value, "familiarId", path);
@@ -657,7 +661,10 @@ export function parseResearchModelReceiptV1(
 }
 
 export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<TopicDiscoveryJobV1> {
-  const object = parseObject(value, "$");
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");
@@ -790,7 +797,10 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
 }
 
 export function parseTopicProposalV1(value: unknown): ProtocolParseResult<TopicProposalV1> {
-  const object = parseObject(value, "$");
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");

@@ -1,4 +1,5 @@
 import {
+  copyProtocolJsonValue,
   fail,
   isOpaqueId,
   isRecord,
@@ -461,7 +462,10 @@ function parseOutputObject(value: unknown, path: string): ProtocolParseResult<Re
 }
 
 export function parseModelTaskV1(value: unknown): ProtocolParseResult<ModelTaskV1> {
-  const object = parseObject(value, "$");
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");
@@ -556,7 +560,10 @@ export function parseModelTaskV1(value: unknown): ProtocolParseResult<ModelTaskV
 }
 
 export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<ModelTaskResultV1> {
-  const object = parseObject(value, "$");
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");
@@ -660,6 +667,35 @@ export function validateModelTaskResultV1(
   task: ModelTaskV1,
   result: ModelTaskResultV1,
 ): ProtocolParseResult<ModelTaskResultV1> {
+  let expectedInputDigest: string;
+  try {
+    expectedInputDigest = sha256Digest(canonicalJson(task.input));
+  } catch {
+    return fail("invalid_value", "$.input", "Model Task input must be canonical JSON");
+  }
+
+  let expectedOutputDigest: string;
+  try {
+    expectedOutputDigest = sha256Digest(canonicalJson(result.output));
+  } catch {
+    return fail("invalid_value", "$.output", "Model Task Result output must be canonical JSON");
+  }
+
+  if (task.inputDigest !== expectedInputDigest) {
+    return fail(
+      "digest_mismatch",
+      "$.inputDigest",
+      `Model Task inputDigest must equal recomputed digest ${expectedInputDigest}`,
+    );
+  }
+  if (result.outputDigest !== expectedOutputDigest) {
+    return fail(
+      "digest_mismatch",
+      "$.outputDigest",
+      `outputDigest must equal recomputed digest ${expectedOutputDigest}`,
+    );
+  }
+
   if (result.taskId !== task.id) {
     return fail("semantic_conflict", "$.taskId", "taskId must equal the Model Task id");
   }
@@ -687,15 +723,6 @@ export function validateModelTaskResultV1(
       "semantic_conflict",
       "$.modelReceipt.effectiveModel",
       "modelReceipt effectiveModel must equal the pinned Model Task model",
-    );
-  }
-
-  const expectedOutputDigest = sha256Digest(canonicalJson(result.output));
-  if (result.outputDigest !== expectedOutputDigest) {
-    return fail(
-      "digest_mismatch",
-      "$.outputDigest",
-      `outputDigest must equal recomputed digest ${expectedOutputDigest}`,
     );
   }
 
