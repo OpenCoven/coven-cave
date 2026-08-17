@@ -223,8 +223,8 @@
       "required": ["type", "start", "end"],
       "properties": {
         "type": { "const": "turn-range" },
-        "start": { "type": "integer", "minimum": 0 },
-        "end": { "type": "integer", "minimum": 0 }
+        "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
     },
     "jsonPointerSelector": {
@@ -245,8 +245,8 @@
       "required": ["type", "start", "end"],
       "properties": {
         "type": { "const": "text-span" },
-        "start": { "type": "integer", "minimum": 0 },
-        "end": { "type": "integer", "minimum": 0 }
+        "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
     },
     "markdownSectionSelector": {
@@ -268,9 +268,9 @@
       "required": ["type", "page", "start", "end"],
       "properties": {
         "type": { "const": "pdf-page-span" },
-        "page": { "type": "integer", "minimum": 1 },
-        "start": { "type": "integer", "minimum": 0 },
-        "end": { "type": "integer", "minimum": 0 }
+        "page": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
     },
     "wholeResourceSelector": {
