@@ -87,7 +87,7 @@
      CodeBlock keywords were effectively invisible in 19 of 24 palette/mode
      combinations (cave-j80ph). Verified against every call site: all eight use
      it as text on a surface or on --bui-accent-tint, and none on a solid accent
-     fill. Ink for a solid accent fill is --bui-accent-on, above. */
+     fill. Ink for a solid accent fill is --bui-accent-on, below. */
   /* Pulled toward the page's own ink so it clears 4.5:1 on the 14% accent
      wash the tint chips use. The accent alone measured 2.32:1 there in
      nine combinations, and 3.05:1 at 68/32; mixing toward --foreground keeps hue while

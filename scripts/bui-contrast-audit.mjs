@@ -45,10 +45,6 @@ const THEMES = [
 ];
 const MODES = ["dark", "light"];
 
-// WCAG 2.1: 4.5:1 for normal text, 3:1 for large (>=18.66px bold or >=24px).
-const NORMAL_MIN = 4.5;
-const LARGE_MIN = 3;
-
 // The palette switch and the measurement happen in ONE evaluate, with no await
 // between them. src/lib/theme-runtime.ts reconciles data-theme/data-mode from
 // stored preferences, so attributes written in a separate round-trip get
