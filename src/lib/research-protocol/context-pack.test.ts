@@ -14,6 +14,8 @@ import {
   parseContextSelectorV1,
 } from "./context-pack.ts";
 
+const SAFE_INTEGER_OVERFLOW = 9007199254740992;
+
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
     assert.fail(`${result.error.path}: ${result.error.message}`);
@@ -269,6 +271,49 @@ test("pdf-page-span accepts page 1 and rejects page 0, empty, or reversed spans"
   expectError(parseContextSelectorV1({ type: "pdf-page-span", page: 0, start: 0, end: 12 }), "$.selector.page", "invalid_value");
   expectError(parseContextSelectorV1({ type: "pdf-page-span", page: 1, start: 12, end: 12 }), "$.selector", "semantic_conflict");
   expectError(parseContextSelectorV1({ type: "pdf-page-span", page: 1, start: 13, end: 12 }), "$.selector", "semantic_conflict");
+});
+
+test("selector coordinates above the safe integer limit are rejected by schema and parser", () => {
+  const cases = [
+    {
+      selector: { type: "turn-range", start: SAFE_INTEGER_OVERFLOW, end: 1 },
+      path: "$.resources[0].selector.start",
+    },
+    {
+      selector: { type: "turn-range", start: 1, end: SAFE_INTEGER_OVERFLOW },
+      path: "$.resources[0].selector.end",
+    },
+    {
+      selector: { type: "text-span", start: SAFE_INTEGER_OVERFLOW, end: 1 },
+      path: "$.resources[0].selector.start",
+    },
+    {
+      selector: { type: "text-span", start: 1, end: SAFE_INTEGER_OVERFLOW },
+      path: "$.resources[0].selector.end",
+    },
+    {
+      selector: { type: "pdf-page-span", page: SAFE_INTEGER_OVERFLOW, start: 0, end: 1 },
+      path: "$.resources[0].selector.page",
+    },
+    {
+      selector: { type: "pdf-page-span", page: 1, start: SAFE_INTEGER_OVERFLOW, end: 1 },
+      path: "$.resources[0].selector.start",
+    },
+    {
+      selector: { type: "pdf-page-span", page: 1, start: 0, end: SAFE_INTEGER_OVERFLOW },
+      path: "$.resources[0].selector.end",
+    },
+  ] as const;
+
+  for (const { selector, path } of cases) {
+    const pack = {
+      ...validContextPack,
+      resources: [{ ...validContextPack.resources[0], selector }],
+    };
+
+    assert.equal(Value.Check(contextPackSchema, pack), false);
+    expectError(parseContextPackV1(pack), path, "invalid_value");
+  }
 });
 
 test("invalid PDF fixture rejects", () => {
