@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencoven.research-run/v1",
+  "title": "OpenCoven Research Run v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "id",
+    "acceptedTopic",
+    "execution",
+    "privacy",
+    "bounds",
+    "status",
+    "createdAt",
+    "updatedAt",
+    "nextEventSequence"
+  ],
+  "properties": {
+    "schema": { "const": "opencoven.research-run/v1" },
+    "id": { "$ref": "#/$defs/runId" },
+    "tenantOpaqueId": { "type": "string" },
+    "context": { "$ref": "#/$defs/contextBinding" },
+    "acceptedTopic": { "$ref": "#/$defs/acceptedTopic" },
+    "execution": { "$ref": "#/$defs/execution" },
+    "privacy": { "$ref": "#/$defs/privacy" },
+    "bounds": { "$ref": "#/$defs/bounds" },
+    "status": { "$ref": "#/$defs/status" },
+    "waitingReason": { "$ref": "#/$defs/waitingReason" },
+    "waitingForPhase": { "$ref": "#/$defs/waitingForPhase" },
+    "createdAt": { "$ref": "#/$defs/utcTimestamp" },
+    "updatedAt": { "$ref": "#/$defs/utcTimestamp" },
+    "nextEventSequence": { "$ref": "#/$defs/positiveSafeInteger" },
+    "artifactManifest": { "$ref": "opencoven.run-manifest/v1" },
+    "failure": { "$ref": "#/$defs/failure" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "waiting_for_executor" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["waitingForPhase"]
+      },
+      "else": {
+        "not": { "required": ["waitingForPhase"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "waitingReason": { "const": "checkpoint" } },
+        "required": ["waitingReason"]
+      },
+      "then": {
+        "properties": { "status": { "const": "awaiting_checkpoint" } },
+        "required": ["status"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "waitingReason": {
+            "enum": ["executor", "provider-attention"]
+          }
+        },
+        "required": ["waitingReason"]
+      },
+      "then": {
+        "properties": { "status": { "const": "waiting_for_executor" } },
+        "required": ["status"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "failed" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["failure"]
+      },
+      "else": {
+        "not": { "required": ["failure"] }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[A-Za-z0-9_-]+$"
+    },
+    "contextPackId": {
+      "type": "string",
+      "pattern": "^ctx_[A-Za-z0-9_-]+$"
+    },
+    "topicProposalId": {
+      "type": "string",
+      "pattern": "^proposal_[A-Za-z0-9_-]+$"
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "scoping",
+        "gathering_public_sources",
+        "waiting_for_executor",
+        "challenging",
+        "synthesizing",
+        "controlling",
+        "awaiting_checkpoint",
+        "publishing",
+        "completed",
+        "failed",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "waitingReason": {
+      "enum": ["executor", "checkpoint", "provider-attention"]
+    },
+    "waitingForPhase": {
+      "enum": ["scope", "challenge", "synthesize", "control"]
+    },
+    "contextBinding": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["contextPackId", "contextPackDigest"],
+      "properties": {
+        "contextPackId": { "$ref": "#/$defs/contextPackId" },
+        "contextPackDigest": { "$ref": "#/$defs/sha256" },
+        "topicProposalId": { "$ref": "#/$defs/topicProposalId" }
+      }
+    },
+    "acceptedTopic": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["question", "editedByUser"],
+      "properties": {
+        "proposalId": { "$ref": "#/$defs/topicProposalId" },
+        "question": { "type": "string" },
+        "editedByUser": { "type": "boolean" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["location", "modelExecution", "modelBinding", "strategy"],
+      "properties": {
+        "location": { "enum": ["local", "hosted"] },
+        "modelExecution": { "enum": ["cave-device", "user-hosted-executor"] },
+        "modelBinding": { "$ref": "#/$defs/modelBinding" },
+        "strategy": { "enum": ["single-agent", "orchestrator-workers"] }
+      }
+    },
+    "modelBinding": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["familiarId", "selection"],
+      "properties": {
+        "familiarId": { "type": "string" },
+        "selection": { "enum": ["resolve-at-run-start", "pinned"] },
+        "model": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "selection": { "const": "pinned" } },
+            "required": ["selection"]
+          },
+          "then": {
+            "required": ["model"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "selection": { "const": "resolve-at-run-start" } },
+            "required": ["selection"]
+          },
+          "then": {
+            "not": { "required": ["model"] }
+          }
+        }
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "remoteQueries",
+        "remoteContent",
+        "artifactContentSync",
+        "retention",
+        "allowMemoryPromotion"
+      ],
+      "properties": {
+        "remoteQueries": { "type": "boolean" },
+        "remoteContent": { "type": "boolean" },
+        "artifactContentSync": { "type": "boolean" },
+        "retention": { "enum": ["run-only", "7-days", "project"] },
+        "allowMemoryPromotion": { "const": false }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "wallClockMinutes",
+        "maxIterations",
+        "sourceTarget",
+        "checkpointEvery",
+        "stopWhenCostUnavailable"
+      ],
+      "properties": {
+        "wallClockMinutes": { "$ref": "#/$defs/positiveSafeInteger" },
+        "maxIterations": { "$ref": "#/$defs/positiveSafeInteger" },
+        "sourceTarget": { "$ref": "#/$defs/positiveSafeInteger" },
+        "maxSpendUsd": { "$ref": "#/$defs/nonNegativeNumber" },
+        "checkpointEvery": { "$ref": "#/$defs/positiveSafeInteger" },
+        "stopWhenCostUnavailable": { "type": "boolean" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "runManifestPlaceholder": {
+      "$id": "opencoven.run-manifest/v1",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema"],
+      "properties": {
+        "schema": { "const": "opencoven.run-manifest/v1" }
+      }
+    }
+  }
+}
