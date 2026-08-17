@@ -32,26 +32,44 @@ function defaultCancelTimer(handle: SchedulerHandle): void {
   clearTimeout(handle as Parameters<typeof clearTimeout>[0]);
 }
 
-function isBoundaryLine(line: string): boolean {
-  return /^[ \t]*(?:[-*+]|(?:\d+[.)]))[ \t]+/.test(line) || /^[ \t]*(?:```+|~~~+)/.test(line);
+function longestCommonPrefixLength(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < limit && left[index] === right[index]) index += 1;
+  return index;
 }
 
-function getTailLine(source: string): string {
-  if (source.length === 0) return "";
-  const searchFrom = source.endsWith("\n") ? source.length - 2 : source.length - 1;
-  const start = source.lastIndexOf("\n", searchFrom) + 1;
-  return source.slice(start);
+function hasCompletionAfter(source: string, unchangedPrefixLength: number, pattern: RegExp): boolean {
+  for (const match of source.matchAll(pattern)) {
+    const completion = (match.index ?? 0) + match[0].length;
+    if (completion > unchangedPrefixLength) return true;
+  }
+  return false;
 }
 
-function hasNaturalBoundary(_previousSource: string, source: string): boolean {
-  const tailLine = getTailLine(source);
-  if (!tailLine) return false;
+function hasSentenceCompletionAfter(source: string, unchangedPrefixLength: number): boolean {
+  for (const match of source.matchAll(/[.!?…](?:[ \t\r\n]|$)/g)) {
+    const punctuationIndex = match.index ?? 0;
+    const lineStart = source.lastIndexOf("\n", punctuationIndex - 1) + 1;
+    const isOrderedListPeriod =
+      source[punctuationIndex] === "." && /^[ \t]*\d+$/.test(source.slice(lineStart, punctuationIndex));
+    if (isOrderedListPeriod) continue;
 
-  const hasNewline = tailLine.endsWith("\n");
-  const body = hasNewline ? tailLine.replace(/\r?\n$/, "") : tailLine;
-  if (hasNewline && /^[ \t]*$/.test(body)) return true;
-  if (isBoundaryLine(body)) return true;
-  return /[.!?…](?:\s|$)/.test(body);
+    const completion = punctuationIndex + match[0].length;
+    if (completion > unchangedPrefixLength) return true;
+  }
+  return false;
+}
+
+function hasNaturalBoundary(previousSource: string, source: string): boolean {
+  const unchangedPrefixLength = longestCommonPrefixLength(previousSource, source);
+
+  if (source.indexOf("\n", unchangedPrefixLength) !== -1) return true;
+  if (hasSentenceCompletionAfter(source, unchangedPrefixLength)) return true;
+  if (hasCompletionAfter(source, unchangedPrefixLength, /(?:^|\n)[ \t]*(?:[-*+]|\d+[.)])[ \t]/g)) {
+    return true;
+  }
+  return hasCompletionAfter(source, unchangedPrefixLength, /(?:^|\n)[ \t]*(?:`{3}|~{3})/g);
 }
 
 export function createStreamingPresentationBuffer(options: {
@@ -72,7 +90,6 @@ export function createStreamingPresentationBuffer(options: {
   const maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS;
 
   let latestSource = options.initialSource;
-  let presentedSource = options.initialSource;
   let hasPresentedContent = options.initialSource.length > 0;
   let disposed = false;
   let windowOpen = false;
@@ -111,7 +128,6 @@ export function createStreamingPresentationBuffer(options: {
   const flush = () => {
     if (disposed || !windowOpen) return;
     const source = latestSource;
-    presentedSource = source;
     hasPresentedContent = true;
     cancelWindow();
     options.onFlush(source);
@@ -160,17 +176,17 @@ export function createStreamingPresentationBuffer(options: {
     update(source, settled) {
       if (disposed) return;
       if (!settled && source === latestSource) return;
+      const previousSource = latestSource;
       latestSource = source;
 
       if (settled) {
-        presentedSource = source;
         hasPresentedContent = true;
         cancelWindow();
         options.onFlush(source);
         return;
       }
 
-      const queueFrame = !hasPresentedContent || hasNaturalBoundary(presentedSource, source);
+      const queueFrame = !hasPresentedContent || hasNaturalBoundary(previousSource, source);
       if (!windowOpen) {
         openWindow(queueFrame);
         return;

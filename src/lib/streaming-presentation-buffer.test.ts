@@ -103,45 +103,60 @@ test("presented quiet tails wait for idle while internal punctuation stays quiet
   assert.deepEqual(flushed, ["Version 1.2", "Version 1.2 tail"]);
 });
 
-test("plain newlines stay quiet while completed list and fence markers queue a frame", () => {
+test("a newly introduced newline queues one frame for the newest snapshot", () => {
+  const queues = makeQueues();
+  const flushed: string[] = [];
+  const buffer = createStreamingPresentationBuffer({
+    initialSource: "Alpha",
+    onFlush: (source) => flushed.push(source),
+    scheduleFrame: queues.scheduleFrame,
+    cancelFrame: queues.cancelFrame,
+    scheduleTimer: queues.scheduleTimer,
+    cancelTimer: queues.cancelTimer,
+  });
+
+  buffer.update("Alpha\nBeta", false);
+  buffer.update("Alpha\nBeta grows", false);
+
+  assert.equal(queues.counts().frames, 1);
+  queues.fireFrame();
+  assert.deepEqual(flushed, ["Alpha\nBeta grows"]);
+});
+
+test("sentence boundaries require newly completed punctuation or following whitespace", () => {
   const scenarios = [
-    {
-      label: "sentence",
-      updates: ["Alpha."],
-      frameCount: 1,
-    },
-    {
-      label: "plain newline",
-      updates: ["Alpha\nBeta"],
-      frameCount: 0,
-    },
-    {
-      label: "unordered list",
-      updates: ["Alpha\n-", "Alpha\n- beta"],
-      frameCount: 1,
-    },
-    {
-      label: "ordered list",
-      updates: ["Alpha\n1.", "Alpha\n1. beta"],
-      frameCount: 1,
-    },
-    {
-      label: "backtick fence",
-      updates: ["Alpha\n```", "Alpha\n```ts"],
-      frameCount: 1,
-    },
-    {
-      label: "tilde fence",
-      updates: ["Alpha\n~~~", "Alpha\n~~~ts"],
-      frameCount: 1,
-    },
+    { label: "new end punctuation", initial: "Alpha", source: "Alpha.", frameCount: 1 },
+    { label: "new separator", initial: "Alpha.", source: "Alpha. ", frameCount: 1 },
+    { label: "old punctuation and separator", initial: "Alpha. ", source: "Alpha. tail", frameCount: 0 },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    const queues = makeQueues();
+    const buffer = createStreamingPresentationBuffer({
+      initialSource: scenario.initial,
+      onFlush: () => {},
+      scheduleFrame: queues.scheduleFrame,
+      cancelFrame: queues.cancelFrame,
+      scheduleTimer: queues.scheduleTimer,
+      cancelTimer: queues.cancelTimer,
+    });
+
+    buffer.update(scenario.source, false);
+    assert.equal(queues.counts().frames, scenario.frameCount, scenario.label);
+  }
+});
+
+test("list markers queue only when their following whitespace becomes complete", () => {
+  const scenarios = [
+    { label: "unordered", partial: "Alpha\n-", complete: "Alpha\n- ", appended: "Alpha\n- item" },
+    { label: "ordered", partial: "Alpha\n1.", complete: "Alpha\n1. ", appended: "Alpha\n1. item" },
   ] as const;
 
   for (const scenario of scenarios) {
     const queues = makeQueues();
     const flushed: string[] = [];
     const buffer = createStreamingPresentationBuffer({
-      initialSource: "",
+      initialSource: "Alpha\n",
       onFlush: (source) => flushed.push(source),
       scheduleFrame: queues.scheduleFrame,
       cancelFrame: queues.cancelFrame,
@@ -149,23 +164,66 @@ test("plain newlines stay quiet while completed list and fence markers queue a f
       cancelTimer: queues.cancelTimer,
     });
 
-    buffer.update("Alpha", false);
+    buffer.update(scenario.partial, false);
+    assert.equal(queues.counts().frames, 0, `${scenario.label}: incomplete marker stays quiet`);
+    buffer.update(scenario.complete, false);
+    assert.equal(queues.counts().frames, 1, `${scenario.label}: split marker completion queues a frame`);
     queues.fireFrame();
-    assert.deepEqual(flushed, ["Alpha"], `${scenario.label}: initial visible progress should still coalesce once`);
+    assert.deepEqual(flushed, [scenario.complete]);
 
-    for (const update of scenario.updates) {
-      buffer.update(update, false);
-    }
-
-    assert.equal(queues.counts().frames, scenario.frameCount, `${scenario.label}: marker recognition, not newline alone, controls frame scheduling`);
-    assert.equal(queues.timersByDelay(90).length, 1, `${scenario.label}: idle timer stays resettable`);
-    assert.equal(queues.timersByDelay(180).length, 1, `${scenario.label}: max timer remains singular`);
-
-    if (scenario.frameCount === 1) {
-      queues.fireFrame();
-      assert.deepEqual(flushed.at(-1), scenario.updates.at(-1), `${scenario.label}: the queued frame flushes the completed boundary snapshot`);
-    }
+    buffer.update(scenario.appended, false);
+    assert.equal(queues.counts().frames, 0, `${scenario.label}: appending text to a complete marker stays quiet`);
   }
+});
+
+test("fences queue when the run first reaches three markers and do not retrigger", () => {
+  const scenarios = [
+    { label: "backtick", partial: "Alpha\n``", complete: "Alpha\n```", appended: "Alpha\n```ts" },
+    { label: "tilde", partial: "Alpha\n~~", complete: "Alpha\n~~~", appended: "Alpha\n~~~text" },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    const queues = makeQueues();
+    const flushed: string[] = [];
+    const buffer = createStreamingPresentationBuffer({
+      initialSource: "Alpha\n",
+      onFlush: (source) => flushed.push(source),
+      scheduleFrame: queues.scheduleFrame,
+      cancelFrame: queues.cancelFrame,
+      scheduleTimer: queues.scheduleTimer,
+      cancelTimer: queues.cancelTimer,
+    });
+
+    buffer.update(scenario.partial, false);
+    assert.equal(queues.counts().frames, 0, `${scenario.label}: a two-marker run stays quiet`);
+    buffer.update(scenario.complete, false);
+    assert.equal(queues.counts().frames, 1, `${scenario.label}: third marker queues a frame`);
+    queues.fireFrame();
+    assert.deepEqual(flushed, [scenario.complete]);
+
+    buffer.update(scenario.appended, false);
+    assert.equal(queues.counts().frames, 0, `${scenario.label}: language or text after a complete fence stays quiet`);
+  }
+});
+
+test("a boundary earlier in newly appended multiline content queues a frame", () => {
+  const queues = makeQueues();
+  const flushed: string[] = [];
+  const buffer = createStreamingPresentationBuffer({
+    initialSource: "Alpha\n",
+    onFlush: (source) => flushed.push(source),
+    scheduleFrame: queues.scheduleFrame,
+    cancelFrame: queues.cancelFrame,
+    scheduleTimer: queues.scheduleTimer,
+    cancelTimer: queues.cancelTimer,
+  });
+  const source = "Alpha\nFirst sentence. continuation\nquiet tail";
+
+  buffer.update(source, false);
+
+  assert.equal(queues.counts().frames, 1);
+  queues.fireFrame();
+  assert.deepEqual(flushed, [source]);
 });
 
 test("settled=true cancels pending callbacks and synchronously flushes complete source", () => {
