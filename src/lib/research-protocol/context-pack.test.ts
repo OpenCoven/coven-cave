@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Value } from "typebox/value";
 
 import invalidPdfSelectorPack from "../../../schemas/research/v1/fixtures/invalid/context-pack-pdf-selector.json" with { type: "json" };
 import invalidRetentionPack from "../../../schemas/research/v1/fixtures/invalid/context-pack-retention.json" with { type: "json" };
+import contextPackSchema from "../../../schemas/research/v1/context-pack.schema.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
 
 import {
@@ -60,6 +62,30 @@ test("valid Context Pack parses and preserves unknown additive fields", () => {
   assert.equal(nested.resources[0].selector.marker, 1);
   assert.equal(nested.policy.note, "strict");
   assert.equal(nested.transforms.marker, "preserved");
+});
+
+test("Context Pack JSON Schema validates the valid fixture and purpose contract", () => {
+  assert.ok(Value.Check(contextPackSchema, validContextPack));
+  assert.equal(
+    Value.Check(contextPackSchema, {
+      ...validContextPack,
+      purpose: "topic-discovery",
+      policy: { ...validContextPack.policy, allowedPurposes: ["research-run"] },
+    }),
+    false,
+  );
+  assert.equal(
+    Value.Check(contextPackSchema, {
+      ...validContextPack,
+      resources: [
+        {
+          ...validContextPack.resources[0],
+          selector: { type: "json-pointer", pointer: "items/0" },
+        },
+      ],
+    }),
+    false,
+  );
 });
 
 test("empty plain-string fields are accepted", () => {
