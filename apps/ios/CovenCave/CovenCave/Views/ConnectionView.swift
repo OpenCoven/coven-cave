@@ -177,7 +177,7 @@ struct ConnectionView: View {
             glyph
             VStack(spacing: 8) {
                 Text("Connect to Cave")
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.title.weight(.bold))
                     .kerning(-0.6)
                     .foregroundStyle(chrome.textPrimary)
                 Text("Pair this iPhone with Cave on your desktop.")

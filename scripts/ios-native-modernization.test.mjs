@@ -35,4 +35,8 @@ const tasks = await read(`${root}/Views/TasksView.swift`);
 assert.match(tasks, /Theme\.status\(status, chrome: chrome\)/,
   "task status pills should resolve their colour from the active chrome palette");
 
+const connection = await read(`${root}/Views/ConnectionView.swift`);
+assert.doesNotMatch(connection, /font\(\.system\(size: 30, weight: \.bold\)\)/,
+  "connection hero title should scale with Dynamic Type");
+
 console.log("ios-native-modernization: ok");
