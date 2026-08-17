@@ -26,8 +26,8 @@ assert.match(chatView, /function splitSegmentsForArtifacts\(/, "has a segment-pr
 assert.match(chatView, /<ImageCarousel images=\{p\.carousel\.images\} \/>/, "mounts the carousel as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
-  "settled path splits images before GitHub/artifact cards, so one group deck can span either boundary",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
+  "settled path splits images before preview/GitHub/artifact cards, so one group deck can span any boundary",
 );
 assert.match(
   chatView,
@@ -36,13 +36,13 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
-  "image markers strip unconditionally and LAST, after skill/auto-status/attention/next-path extraction — raw tags never flash on pending OR settled turns",
+  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)\)/,
+  "preview/image/GitHub markers strip unconditionally and LAST, after skill/auto-status/attention/next-path extraction — raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(
   renderedText,
-  /pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
-  "image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
+  /pending\s*\?\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(/,
+  "preview/image/GitHub stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(
   chatView,
