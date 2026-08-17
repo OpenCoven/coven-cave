@@ -825,7 +825,7 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
     sequence: sequence.value,
     type: type.value,
     at: at.value,
-    data: data.value,
+    data: { ...data.value },
   });
 }
 

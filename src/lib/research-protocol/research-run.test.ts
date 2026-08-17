@@ -19,8 +19,16 @@ import {
 } from "./research-run.ts";
 import { parseResearchContextBindingV1 } from "./common.ts";
 
-const RESEARCH_RUN_SCHEMA_CONTEXT = {
-  "opencoven.run-manifest/v1": researchRunSchema.$defs.runManifestPlaceholder,
+const RUN_MANIFEST_PLACEHOLDER_SCHEMA_CONTEXT = {
+  "opencoven.run-manifest/v1": {
+    $id: "opencoven.run-manifest/v1",
+    type: "object",
+    additionalProperties: true,
+    required: ["schema"],
+    properties: {
+      schema: { const: "opencoven.run-manifest/v1" },
+    },
+  },
 };
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
@@ -46,12 +54,12 @@ function expectError(
 }
 
 test("waiting_for_executor without waitingForPhase rejects", () => {
-  assert.equal(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, invalidResearchRunWaitingPhase), false);
+  assert.equal(Value.Check(researchRunSchema, invalidResearchRunWaitingPhase), false);
   expectError(parseResearchRunV1(invalidResearchRunWaitingPhase), "$.waitingForPhase", "missing_field");
 });
 
 test("valid waiting_for_executor run with resumable phase accepts", () => {
-  assert.ok(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, validResearchRun));
+  assert.ok(Value.Check(researchRunSchema, validResearchRun));
   const parsed = expectOk(parseResearchRunV1(validResearchRun));
   assert.equal(parsed.status, "waiting_for_executor");
   assert.equal(parsed.waitingForPhase, "challenge");
@@ -73,7 +81,7 @@ test("waitingForPhase is absent for every non waiting_for_executor status", () =
     "expired",
   ] as const) {
     const run = { ...validResearchRun, status, waitingForPhase: "scope" as const };
-    assert.equal(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, run), false);
+    assert.equal(Value.Check(researchRunSchema, run), false);
     expectError(parseResearchRunV1(run), "$.waitingForPhase", "semantic_conflict");
   }
 });
@@ -81,18 +89,18 @@ test("waitingForPhase is absent for every non waiting_for_executor status", () =
 test("waitingReason values only match their allowed statuses", () => {
   const checkpointRun = { ...validResearchRun, status: "awaiting_checkpoint" as const, waitingReason: "checkpoint" as const };
   delete (checkpointRun as Record<string, unknown>).waitingForPhase;
-  assert.ok(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, checkpointRun));
+  assert.ok(Value.Check(researchRunSchema, checkpointRun));
   assert.equal(expectOk(parseResearchRunV1(checkpointRun)).waitingReason, "checkpoint");
 
   for (const waitingReason of ["executor", "provider-attention"] as const) {
     const run = { ...validResearchRun, status: "awaiting_checkpoint" as const, waitingReason };
     delete (run as Record<string, unknown>).waitingForPhase;
-    assert.equal(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, run), false);
+    assert.equal(Value.Check(researchRunSchema, run), false);
     expectError(parseResearchRunV1(run), "$.waitingReason", "semantic_conflict");
   }
 
   const badCheckpoint = { ...validResearchRun, waitingReason: "checkpoint" as const };
-  assert.equal(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, badCheckpoint), false);
+  assert.equal(Value.Check(researchRunSchema, badCheckpoint), false);
   expectError(parseResearchRunV1(badCheckpoint), "$.waitingReason", "semantic_conflict");
 });
 
@@ -100,21 +108,21 @@ test("failure is required exactly for failed and absent otherwise", () => {
   const failedWithoutFailure = { ...validResearchRun, status: "failed" as const, waitingReason: undefined, waitingForPhase: undefined };
   delete (failedWithoutFailure as Record<string, unknown>).waitingReason;
   delete (failedWithoutFailure as Record<string, unknown>).waitingForPhase;
-  assert.equal(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, failedWithoutFailure), false);
+  assert.equal(Value.Check(researchRunSchema, failedWithoutFailure), false);
   expectError(parseResearchRunV1(failedWithoutFailure), "$.failure", "missing_field");
 
   const validFailed = {
     ...failedWithoutFailure,
     failure: { code: "runtime_error", message: "try again", retryable: true },
   };
-  assert.ok(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, validFailed));
+  assert.ok(Value.Check(researchRunSchema, validFailed));
   assert.equal(expectOk(parseResearchRunV1(validFailed)).failure?.retryable, true);
 
   const nonFailedWithFailure = {
     ...validResearchRun,
     failure: { code: "runtime_error", message: "try again", retryable: true },
   };
-  assert.equal(Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, nonFailedWithFailure), false);
+  assert.equal(Value.Check(researchRunSchema, nonFailedWithFailure), false);
   expectError(parseResearchRunV1(nonFailedWithFailure), "$.failure", "semantic_conflict");
 });
 
@@ -241,6 +249,20 @@ test("context parser validates ids and digest, preserves additive fields, and ig
   assert.equal("topicProposalId" in parsed, false);
 });
 
+test("run manifest placeholder seam preserves additive fields", () => {
+  const runWithPlaceholderManifest = {
+    ...validResearchRun,
+    artifactManifest: {
+      schema: "opencoven.run-manifest/v1",
+      futureExtension: { preserve: true },
+    },
+  };
+
+  assert.ok(Value.Check(RUN_MANIFEST_PLACEHOLDER_SCHEMA_CONTEXT, researchRunSchema, runWithPlaceholderManifest));
+  const parsed = expectOk(parseResearchRunV1(runWithPlaceholderManifest));
+  assert.deepEqual(parsed.artifactManifest?.futureExtension, { preserve: true });
+});
+
 test("events parse and validateRunEventSequence enforces contiguous same-run sequences", () => {
   assert.ok(Value.Check(runEventSchema, validRunEvent));
   const parsedEvent = expectOk(parseRunEventV1(validRunEvent));
@@ -272,22 +294,46 @@ test("events parse and validateRunEventSequence enforces contiguous same-run seq
 test("schema and parser agree on expressible constraints and additive fields survive", () => {
   const run = expectOk(parseResearchRunV1(validResearchRun));
   assert.deepEqual(run.futureExtension, { preserve: true });
-  assert.deepEqual((run.context as Record<string, unknown> | undefined)?.futureExtension, { preserve: true });
+  assert.deepEqual(run.context?.futureExtension, { preserve: true });
   assert.deepEqual(run.execution.modelBinding.futureExtension, { preserve: true });
   assert.deepEqual(run.privacy.futureExtension, { preserve: true });
   assert.deepEqual(run.bounds.futureExtension, { preserve: true });
-  assert.deepEqual(run.artifactManifest?.futureExtension, { preserve: true });
+  assert.equal("artifactManifest" in run, false);
+  assert.equal(run.artifactManifest, undefined);
 
   const event = expectOk(parseRunEventV1(validRunEvent));
   assert.deepEqual(event.futureExtension, { preserve: true });
   assert.deepEqual(event.data.futureExtension, { preserve: true });
 
   assert.equal(
-    Value.Check(RESEARCH_RUN_SCHEMA_CONTEXT, researchRunSchema, { ...validResearchRun, schema: "opencoven.research-run/v2" }),
+    Value.Check(researchRunSchema, { ...validResearchRun, schema: "opencoven.research-run/v2" }),
     false,
   );
   expectError(parseResearchRunV1({ ...validResearchRun, schema: "opencoven.research-run/v2" }), "$.schema", "unknown_major");
 
   assert.equal(Value.Check(runEventSchema, { ...validRunEvent, schema: "opencoven.run-event/v2" }), false);
   expectError(parseRunEventV1({ ...validRunEvent, schema: "opencoven.run-event/v2" }), "$.schema", "unknown_major");
+});
+
+test("run event data drops inherited fields while preserving own fields", () => {
+  const inheritedData = Object.create({ inheritedField: "drop-me" });
+  Object.assign(inheritedData, {
+    status: "queued",
+    customField: "kept",
+    futureExtension: { preserve: true },
+  });
+
+  const parsed = expectOk(
+    parseRunEventV1({
+      ...validRunEvent,
+      data: inheritedData,
+    }),
+  );
+
+  assert.equal("inheritedField" in parsed.data, false);
+  assert.deepEqual(parsed.data, {
+    status: "queued",
+    customField: "kept",
+    futureExtension: { preserve: true },
+  });
 });
