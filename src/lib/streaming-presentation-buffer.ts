@@ -36,12 +36,22 @@ function isBoundaryLine(line: string): boolean {
   return /^[ \t]*(?:[-*+]|(?:\d+[.)]))[ \t]+/.test(line) || /^[ \t]*(?:```+|~~~+)/.test(line);
 }
 
-function hasNaturalBoundary(previousSource: string, source: string): boolean {
-  const tail = source.startsWith(previousSource) ? source.slice(previousSource.length) : source;
-  if (!tail) return false;
-  if (isBoundaryLine(tail)) return true;
-  if (/\n/.test(tail)) return true;
-  return /[.!?…](?:\s|$)/.test(tail);
+function getTailLine(source: string): string {
+  if (source.length === 0) return "";
+  const searchFrom = source.endsWith("\n") ? source.length - 2 : source.length - 1;
+  const start = source.lastIndexOf("\n", searchFrom) + 1;
+  return source.slice(start);
+}
+
+function hasNaturalBoundary(_previousSource: string, source: string): boolean {
+  const tailLine = getTailLine(source);
+  if (!tailLine) return false;
+
+  const hasNewline = tailLine.endsWith("\n");
+  const body = hasNewline ? tailLine.replace(/\r?\n$/, "") : tailLine;
+  if (hasNewline && /^[ \t]*$/.test(body)) return true;
+  if (isBoundaryLine(body)) return true;
+  return /[.!?…](?:\s|$)/.test(body);
 }
 
 export function createStreamingPresentationBuffer(options: {

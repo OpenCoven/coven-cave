@@ -103,12 +103,38 @@ test("presented quiet tails wait for idle while internal punctuation stays quiet
   assert.deepEqual(flushed, ["Version 1.2", "Version 1.2 tail"]);
 });
 
-test("sentence, newline, list, and fence tails queue exactly one next frame", () => {
+test("plain newlines stay quiet while completed list and fence markers queue a frame", () => {
   const scenarios = [
-    { label: "sentence", source: "Alpha." },
-    { label: "newline", source: "Alpha\nBeta" },
-    { label: "list", source: "Alpha\n- beta" },
-    { label: "fence", source: "Alpha\n```ts" },
+    {
+      label: "sentence",
+      updates: ["Alpha."],
+      frameCount: 1,
+    },
+    {
+      label: "plain newline",
+      updates: ["Alpha\nBeta"],
+      frameCount: 0,
+    },
+    {
+      label: "unordered list",
+      updates: ["Alpha\n-", "Alpha\n- beta"],
+      frameCount: 1,
+    },
+    {
+      label: "ordered list",
+      updates: ["Alpha\n1.", "Alpha\n1. beta"],
+      frameCount: 1,
+    },
+    {
+      label: "backtick fence",
+      updates: ["Alpha\n```", "Alpha\n```ts"],
+      frameCount: 1,
+    },
+    {
+      label: "tilde fence",
+      updates: ["Alpha\n~~~", "Alpha\n~~~ts"],
+      frameCount: 1,
+    },
   ] as const;
 
   for (const scenario of scenarios) {
@@ -127,13 +153,18 @@ test("sentence, newline, list, and fence tails queue exactly one next frame", ()
     queues.fireFrame();
     assert.deepEqual(flushed, ["Alpha"], `${scenario.label}: initial visible progress should still coalesce once`);
 
-    buffer.update(scenario.source, false);
-    assert.equal(queues.counts().frames, 1, `${scenario.label}: natural boundary queues one next frame`);
+    for (const update of scenario.updates) {
+      buffer.update(update, false);
+    }
+
+    assert.equal(queues.counts().frames, scenario.frameCount, `${scenario.label}: marker recognition, not newline alone, controls frame scheduling`);
     assert.equal(queues.timersByDelay(90).length, 1, `${scenario.label}: idle timer stays resettable`);
     assert.equal(queues.timersByDelay(180).length, 1, `${scenario.label}: max timer remains singular`);
 
-    queues.fireFrame();
-    assert.deepEqual(flushed.at(-1), scenario.source, `${scenario.label}: the queued frame flushes the boundary snapshot`);
+    if (scenario.frameCount === 1) {
+      queues.fireFrame();
+      assert.deepEqual(flushed.at(-1), scenario.updates.at(-1), `${scenario.label}: the queued frame flushes the completed boundary snapshot`);
+    }
   }
 });
 
