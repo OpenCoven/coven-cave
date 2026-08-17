@@ -55,6 +55,15 @@ try {
     forbiddenStandaloneRoot(".worktree-lifecycle-fixture-sample/repo/README.md"),
     ".worktree-lifecycle-fixture-sample",
   );
+  assert.equal(
+    forbiddenStandaloneRoot("apps/ios/CovenCave/build/Release/CovenCave.app"),
+    "apps/ios/CovenCave/build",
+  );
+  assert.equal(
+    forbiddenStandaloneRoot("apps/ios/CovenCave/build-cody-cma81/Release/CovenCave.app"),
+    "apps/ios/CovenCave/build-cody-cma81",
+  );
+  assert.equal(forbiddenStandaloneRoot("apps/ios/CovenCave/building-notes/file.txt"), undefined);
   assert.equal(forbiddenStandaloneRoot("node_modules/target/index.js"), undefined);
 
   const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
@@ -68,11 +77,24 @@ try {
     /"\.\/\.tmp\/\*\*\/\*"/,
     "Next tracing excludes checkout-local temporary artifacts",
   );
+  assert.match(
+    nextConfig,
+    /"\.\/apps\/ios\/\*\*\/build-\*\/\*\*\/\*"/,
+    "Next tracing excludes suffixed local iOS build roots",
+  );
 
   const leaked = path.join(fixture, "target-windows");
   await write(leaked, "debug/build.exe", "binary\n");
   await assert.rejects(verifyStandaloneArtifact(fixture), /forbidden root leaked.*target-windows/);
   await rm(leaked, { recursive: true, force: true });
+
+  const leakedIosBuild = path.join(fixture, "apps/ios/CovenCave/build-cody-cma81");
+  await write(leakedIosBuild, "Release/CovenCave.app", "binary\n");
+  await assert.rejects(
+    verifyStandaloneArtifact(fixture),
+    /forbidden root leaked.*apps\/ios\/CovenCave\/build-cody-cma81/,
+  );
+  await rm(path.join(fixture, "apps"), { recursive: true, force: true });
 
   try {
     await symlink("server.js", path.join(fixture, "server-link.js"));

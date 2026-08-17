@@ -78,6 +78,7 @@ const nextConfig: NextConfig = {
       "./src/**/*",
       "./apps/**/*.test.*",
       "./apps/ios/**/build/**/*",
+      "./apps/ios/**/build-*/**/*",
     ],
   },
   // Next's tracer misses runtime-required packages that go through its
