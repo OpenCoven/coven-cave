@@ -33,6 +33,68 @@
     "policy": { "$ref": "#/$defs/policy" },
     "transforms": { "$ref": "#/$defs/transforms" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "purpose": {
+            "const": "topic-discovery"
+          }
+        },
+        "required": [
+          "purpose"
+        ]
+      },
+      "then": {
+        "properties": {
+          "policy": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "allowedPurposes"
+            ],
+            "properties": {
+              "allowedPurposes": {
+                "contains": {
+                  "const": "topic-discovery"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "purpose": {
+            "const": "research-run"
+          }
+        },
+        "required": [
+          "purpose"
+        ]
+      },
+      "then": {
+        "properties": {
+          "policy": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "allowedPurposes"
+            ],
+            "properties": {
+              "allowedPurposes": {
+                "contains": {
+                  "const": "research-run"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "sha256": {
       "type": "string",
@@ -169,7 +231,10 @@
       "required": ["type", "pointer"],
       "properties": {
         "type": { "const": "json-pointer" },
-        "pointer": { "type": "string" }
+        "pointer": {
+          "type": "string",
+          "pattern": "^(?:$|/.*)$"
+        }
       }
     },
     "textSpanSelector": {
