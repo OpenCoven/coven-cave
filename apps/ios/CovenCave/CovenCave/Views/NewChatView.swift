@@ -60,7 +60,12 @@ struct NewChatView: View {
                     }
                 }
                 if fixedFamiliarId == nil {
-                    Section(selected.isEmpty ? "Start with a familiar" : "\(selected.count) selected") {
+                    Section(selected.isEmpty ? "Choose familiars" : "\(selected.count) selected") {
+                        if selected.isEmpty {
+                            Text("Start with a familiar")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                         if app.familiars.isEmpty {
                             Text("No familiars found. Pull to refresh on the Chats screen, or check the desktop connection.")
                                 .font(.footnote).foregroundStyle(.secondary)
