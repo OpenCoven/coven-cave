@@ -97,8 +97,13 @@ assert.match(
 );
 assert.match(
   main,
-  /isError=\{streamingModel\.emptySuccessful\}[\s\S]*?assistantBody=\{\s*streamingModel\.emptySuccessful\s*\?\s*\([\s\S]*?\{supplementaryContent\}[\s\S]*?\{activityDetails\}[\s\S]*?:\s*\(\s*<StreamingTurnResponse/,
-  "an empty successful response uses MessageBubble's explicit error/retry treatment without dropping supplementary content",
+  /const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback\(\{[\s\S]*visibleProse: visible,[\s\S]*hasRichBlocks: renderSegments\?\.some\(\(segment\) => segment\.kind === "block"\) \?\? false,[\s\S]*resultCount: streamingModel\.results\.length,[\s\S]*attachmentCount: turn\.attachments\?\.length \?\? 0,[\s\S]*skillUpdateCount: skillUpdates\.length,[\s\S]*hasAutoStatusUpdate: autoStatusUpdate != null,[\s\S]*editCardCount: editCards\.length,[\s\S]*responseModelStatusCount: responseModelLines\.length,[\s\S]*responseControlStatusCount: responseControlLines\.length,[\s\S]*followUpCount: nextPaths\.length,[\s\S]*hasAttentionRequest: attentionRequest != null,[\s\S]*\}\);/,
+  "Main Chat derives the empty-success fallback from prose plus meaningful structured output owned by the turn",
+);
+assert.match(
+  main,
+  /isError=\{showEmptySuccessfulFallback\}[\s\S]*?assistantBody=\{\s*showEmptySuccessfulFallback\s*\?\s*\([\s\S]*?\{supplementaryContent\}[\s\S]*?\{activityDetails\}[\s\S]*?:\s*\(\s*<StreamingTurnResponse/,
+  "only a truly empty successful response uses MessageBubble's explicit empty-response treatment",
 );
 assert.match(main, /activityDetails=\{activityDetails\}/, "Main Chat supplies the activity slot");
 assert.match(

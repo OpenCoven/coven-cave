@@ -1,8 +1,9 @@
 // @ts-nocheck — react-test-renderer ships no types; matches the repository convention.
-import { Children, isValidElement } from "react";
+import { Children, isValidElement, type ReactNode } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { shouldUseEmptySuccessfulFallback, type MeaningfulAssistantOutputInput } from "@/lib/chat-assistant-output";
 import { partitionStreamingMarkdown } from "@/lib/streaming-markdown-blocks";
 import type { StreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { OverflowMenu } from "./ui/overflow-menu";
@@ -156,6 +157,59 @@ function response(
       model={model()}
       density="full"
       {...props}
+    />
+  );
+}
+
+function chatSurfaceResponse(
+  options: {
+    content?: string;
+    model?: StreamingTurnViewModel;
+    proseContent?: ReactNode;
+    supplementaryContent?: ReactNode;
+    activityDetails?: ReactNode;
+    guard?: Partial<MeaningfulAssistantOutputInput>;
+  } = {},
+) {
+  const surfaceModel = options.model ?? model({ status: "complete", activeBlock: null, emptySuccessful: true, committedText: "" });
+  const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
+    emptySuccessful: surfaceModel.emptySuccessful,
+    visibleProse: options.guard?.visibleProse ?? options.content ?? "",
+    hasRichBlocks: options.guard?.hasRichBlocks ?? false,
+    resultCount: options.guard?.resultCount ?? surfaceModel.results.length,
+    attachmentCount: options.guard?.attachmentCount ?? 0,
+    skillUpdateCount: options.guard?.skillUpdateCount ?? 0,
+    hasAutoStatusUpdate: options.guard?.hasAutoStatusUpdate ?? false,
+    editCardCount: options.guard?.editCardCount ?? 0,
+    responseModelStatusCount: options.guard?.responseModelStatusCount ?? 0,
+    responseControlStatusCount: options.guard?.responseControlStatusCount ?? 0,
+    followUpCount: options.guard?.followUpCount ?? 0,
+    hasAttentionRequest: options.guard?.hasAttentionRequest ?? false,
+  });
+
+  return (
+    <MessageBubble
+      role="assistant"
+      content={options.content ?? ""}
+      isError={showEmptySuccessfulFallback}
+      assistantBody={
+        showEmptySuccessfulFallback ? (
+          <>
+            {options.supplementaryContent}
+            {options.activityDetails}
+          </>
+        ) : (
+          <StreamingTurnResponse
+            turnId="t"
+            familiarName="Nova"
+            model={surfaceModel}
+            density="full"
+            proseContent={options.proseContent}
+            supplementaryContent={options.supplementaryContent}
+            activityDetails={options.activityDetails}
+          />
+        )
+      }
     />
   );
 }
@@ -928,6 +982,58 @@ describe("StreamingTurnResponse", () => {
       (node) => node.props.className === "cave-response-body",
     );
     expect(renderedMarkdown(legacyBody)).toContain("Legacy Markdown body");
+  });
+
+  it("keeps the shared response for settled card-only turns instead of showing Response interrupted", async () => {
+    const renderer = await render(chatSurfaceResponse({
+      proseContent: <div data-shared-card={true}>GitHub card only</div>,
+      guard: { hasRichBlocks: true },
+    }));
+
+    expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ "data-shared-card": true })).toHaveLength(1);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Response interrupted");
+  });
+
+  it("keeps the shared response for settled result-only turns instead of showing Response interrupted", async () => {
+    const renderer = await render(chatSurfaceResponse({
+      model: model({
+        status: "complete",
+        activeBlock: null,
+        committedText: "",
+        emptySuccessful: true,
+        results: [{
+          id: "tests",
+          label: "Focused tests",
+          state: "passed",
+          source: "verified-event",
+        }],
+      }),
+      guard: { resultCount: 1 },
+    }));
+
+    expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ "data-turn-results": true })).toHaveLength(1);
+    expect(textContent(renderer.root)).toContain("Focused tests");
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Response interrupted");
+  });
+
+  it("keeps the shared response for settled attachment-only turns instead of showing Response interrupted", async () => {
+    const renderer = await render(chatSurfaceResponse({
+      supplementaryContent: <div data-attachment-output={true}>Attachment list</div>,
+      guard: { attachmentCount: 1 },
+    }));
+
+    expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ "data-attachment-output": true })).toHaveLength(1);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Response interrupted");
+  });
+
+  it("preserves the explicit empty-success fallback for truly empty settled turns", async () => {
+    const renderer = await render(chatSurfaceResponse());
+
+    expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(0);
+    expect(textContent(renderer.root)).toContain("Response interrupted");
   });
 
   it("inherits assistant Markdown URL, citation, and response-decoration integrations", async () => {

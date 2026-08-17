@@ -138,8 +138,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /function ResponseModelStatus\([\s\S]*?Requested model:[\s\S]*?Applied model:[\s\S]*?<ResponseModelStatus metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows render requested, forwarded, and effective model state",
+  /function responseModelStatusLines\([\s\S]*?Requested model:[\s\S]*?Applied model:[\s\S]*?function ResponseModelStatus\([\s\S]*?const lines = responseModelStatusLines\(metadata\);[\s\S]*?<ResponseModelStatus metadata=\{turn\.responseMetadata\} \/>/,
+  "Assistant turn rows render requested, forwarded, and effective model state through shared metadata lines",
 );
 
 assert.match(

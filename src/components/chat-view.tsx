@@ -218,6 +218,7 @@ import {
   chatTurnVisibleText,
   extractChatRenderedText,
 } from "@/lib/chat-rendered-text";
+import { shouldUseEmptySuccessfulFallback } from "@/lib/chat-assistant-output";
 import { verificationEvidenceFromTools } from "@/lib/chat-tool-verification";
 import { createStreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { useStreamingPresentationSource } from "@/lib/use-streaming-presentation-source";
@@ -1282,11 +1283,8 @@ function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
   );
 }
 
-/** The model application trail is separate from controls: a runtime echo can
- * prove forwarding without proving provider application, and a runtime-owned
- * default may intentionally have no model id at all. */
-function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
-  if (!metadata) return null;
+function responseModelStatusLines(metadata?: ChatResponseMetadata): string[] {
+  if (!metadata) return [];
   const requested = metadata.requestedModel;
   const desired = metadata.desiredModel ?? metadata.model;
   const forwarded = metadata.forwardedModel;
@@ -1301,6 +1299,14 @@ function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) 
   else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
   if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
   if (metadata.modelApplicationReason && !confirmed) lines.push(metadata.modelApplicationReason);
+  return lines;
+}
+
+/** The model application trail is separate from controls: a runtime echo can
+ * prove forwarding without proving provider application, and a runtime-owned
+ * default may intentionally have no model id at all. */
+function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+  const lines = responseModelStatusLines(metadata);
   if (lines.length === 0) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response model. ${lines.join(". ")}`}>
@@ -1313,15 +1319,14 @@ function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) 
   );
 }
 
-/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
-function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+function responseControlStatusLines(metadata?: ChatResponseMetadata): string[] {
   const requested = Object.entries(metadata?.requestedControls ?? {});
   const rejected = new Set(metadata?.rejectedControlFamilies ?? []);
   const promptOnly = new Set(Object.keys(metadata?.promptGuidanceControls ?? {}));
   const forwarded = new Set(Object.keys(metadata?.forwardedControls ?? {}));
   const applied = new Set(Object.keys(metadata?.appliedControls ?? {}));
-  if (!requested.length && !rejected.size) return null;
-  const lines = [
+  if (!requested.length && !rejected.size) return [];
+  return [
     ...requested.map(([family, value]) => {
       const prefix = rejected.has(family)
         ? "Rejected"
@@ -1337,6 +1342,12 @@ function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }
     ...[...rejected].filter((family) => !requested.some(([requestedFamily]) => requestedFamily === family))
       .map((family) => `Rejected: ${family}`),
   ];
+}
+
+/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
+function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+  const lines = responseControlStatusLines(metadata);
+  if (lines.length === 0) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response controls. ${lines.join(". ")}`}>
       {lines.map((line) => (
@@ -8818,6 +8829,8 @@ function TurnRowImpl({
     skillUpdates,
     autoStatusUpdate,
     authoredResults,
+    attentionRequest,
+    nextPaths,
   } = currentProjection;
   const presentedProjection = extractChatRenderedText(
     presentedRawText,
@@ -8964,6 +8977,22 @@ function TurnRowImpl({
           ),
         )
       : undefined;
+  const responseModelLines = responseModelStatusLines(turn.responseMetadata);
+  const responseControlLines = responseControlStatusLines(turn.responseMetadata);
+  const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
+    emptySuccessful: streamingModel.emptySuccessful,
+    visibleProse: visible,
+    hasRichBlocks: renderSegments?.some((segment) => segment.kind === "block") ?? false,
+    resultCount: streamingModel.results.length,
+    attachmentCount: turn.attachments?.length ?? 0,
+    skillUpdateCount: skillUpdates.length,
+    hasAutoStatusUpdate: autoStatusUpdate != null,
+    editCardCount: editCards.length,
+    responseModelStatusCount: responseModelLines.length,
+    responseControlStatusCount: responseControlLines.length,
+    followUpCount: nextPaths.length,
+    hasAttentionRequest: attentionRequest != null,
+  });
 
   const supplementaryContent = (
     <div data-main-chat-supplementary-content={true}>
@@ -9142,7 +9171,7 @@ function TurnRowImpl({
                 timestamp={turn.createdAt}
                 showTimestamp={false}
                 pending={turn.pending}
-                isError={streamingModel.emptySuccessful}
+                isError={showEmptySuccessfulFallback}
                 label={familiar.display_name}
                 messageId={turn.id}
                 feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
@@ -9150,7 +9179,7 @@ function TurnRowImpl({
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 assistantBody={
-                  streamingModel.emptySuccessful ? (
+                  showEmptySuccessfulFallback ? (
                     <>
                       {supplementaryContent}
                       {activityDetails}
