@@ -37,6 +37,18 @@ const SCORE_KEYS = [
   "feasibility",
   "humanResonance",
 ] as const;
+const TOPIC_SCORE_WEIGHT_HUNDREDTHS = {
+  groundability: 18,
+  decisionValue: 16,
+  unresolvedness: 13,
+  recurrence: 10,
+  novelty: 10,
+  timeliness: 8,
+  familiarFit: 8,
+  feasibility: 8,
+  humanResonance: 9,
+  riskPenalty: -20,
+} as const;
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 export type TopicEvidenceRefV1 = {
@@ -275,7 +287,7 @@ function parseUtc(value: unknown, path: string, label: string): ProtocolParseRes
     return fail("invalid_type", path, `${label} must be a string`);
   }
   if (!isUtcTimestamp(value)) {
-    return fail("invalid_value", path, `${label} must be a canonical UTC timestamp with milliseconds`);
+    return fail("invalid_value", path, `${label} must be a UTC RFC 3339 timestamp`);
   }
   return pass(value);
 }
@@ -377,11 +389,45 @@ function parseUniqueIdArray(
 }
 
 export function topicProposalVisibleTotal(scores: TopicProposalV1["scores"]): number {
+  return topicProposalVisibleTotalHundredths(scores) / 100;
+}
+
+function topicProposalVisibleTotalHundredths(scores: TopicProposalV1["scores"]): number {
+  // v1 weights have exactly two decimal places. Keeping the complete
+  // calculation in integer hundredths makes wire comparisons deterministic.
   let total = 0;
   for (const key of SCORE_KEYS) {
-    total += scores[key];
+    total += scores[key] * TOPIC_SCORE_WEIGHT_HUNDREDTHS[key];
   }
-  return total - scores.riskPenalty;
+  return total + scores.riskPenalty * TOPIC_SCORE_WEIGHT_HUNDREDTHS.riskPenalty;
+}
+
+function parseHundredthNumberInRange(
+  value: unknown,
+  path: string,
+  label: string,
+  minimumHundredths: number,
+  maximumHundredths: number,
+): ProtocolParseResult<{ value: number; hundredths: number }> {
+  if (typeof value !== "number") {
+    return fail("invalid_type", path, `${label} must be a number`);
+  }
+  if (!Number.isFinite(value)) {
+    return fail("invalid_value", path, `${label} must be finite`);
+  }
+
+  const hundredths = Math.round(value * 100);
+  if (hundredths / 100 !== value) {
+    return fail("invalid_value", path, `${label} must have at most two decimal places`);
+  }
+  if (hundredths < minimumHundredths || hundredths > maximumHundredths) {
+    return fail(
+      "invalid_value",
+      path,
+      `${label} must be between ${minimumHundredths / 100} and ${maximumHundredths / 100}`,
+    );
+  }
+  return pass({ value, hundredths });
 }
 
 function parseScores(value: unknown, path: string): ProtocolParseResult<TopicProposalScoresV1> {
@@ -404,12 +450,12 @@ function parseScores(value: unknown, path: string): ProtocolParseResult<TopicPro
 
   const visibleTotalField = parseRequiredField(object.value, "visibleTotal", path);
   if (!visibleTotalField.ok) return visibleTotalField;
-  const visibleTotal = parseSafeIntegerInRange(
+  const visibleTotal = parseHundredthNumberInRange(
     visibleTotalField.value,
     childPath(path, "visibleTotal"),
     "visibleTotal",
-    -4,
-    36,
+    -80,
+    400,
   );
   if (!visibleTotal.ok) return visibleTotal;
 
@@ -417,14 +463,14 @@ function parseScores(value: unknown, path: string): ProtocolParseResult<TopicPro
     ...object.value,
     ...parsedScores,
     riskPenalty: riskPenalty.value,
-    visibleTotal: visibleTotal.value,
+    visibleTotal: visibleTotal.value.value,
   } as TopicProposalScoresV1;
-  const expectedVisibleTotal = topicProposalVisibleTotal(scores);
-  if (visibleTotal.value !== expectedVisibleTotal) {
+  const expectedVisibleTotalHundredths = topicProposalVisibleTotalHundredths(scores);
+  if (visibleTotal.value.hundredths !== expectedVisibleTotalHundredths) {
     return fail(
       "semantic_conflict",
       childPath(path, "visibleTotal"),
-      `visibleTotal must equal recomputed total ${expectedVisibleTotal}`,
+      `visibleTotal must equal recomputed total ${expectedVisibleTotalHundredths / 100}`,
     );
   }
 

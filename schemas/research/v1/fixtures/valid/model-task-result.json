@@ -3,12 +3,13 @@
   "taskId": "modeltask_01",
   "runId": "run_01",
   "attempt": 1,
-  "inputDigest": "a7a21a3895e180dfcce5b4aa1c7827bb7985a406b378399f6655d4f1a01229d5",
+  "inputDigest": "6a28b9d62b79b42a133d52fe51636c161c67722929efa5f6178e2940c9136597",
   "output": {
     "decision": "continue",
+    "digest": "output-field-is-canonical-data",
     "futureExtension": { "preserve": true }
   },
-  "outputDigest": "0919f42fd41098c197abbe957594805f531ff4f7b9bccc68316c5f9db3adee17",
+  "outputDigest": "24c988fffd8b3c3a556595626c557b8c449ac24d063da6504ca350661748bdff",
   "executorDeviceId": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
   "modelReceipt": {
     "familiarId": "sage",

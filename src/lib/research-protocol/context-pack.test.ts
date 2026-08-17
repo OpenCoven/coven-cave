@@ -42,21 +42,23 @@ test("valid Context Pack parses and preserves unknown additive fields", () => {
   const parsed = expectOk(parseContextPackV1(validContextPack));
   assert.deepEqual(parsed.futureExtension, { preserve: true });
 
-  const nested = expectOk(
-    parseContextPackV1({
-      ...validContextPack,
-      createdBy: { ...validContextPack.createdBy, nickname: "archivist" },
-      subject: { ...validContextPack.subject, lane: "shared" },
-      consent: { ...validContextPack.consent, extraConsent: true },
-      resources: [{
+  const nestedPack = {
+    ...validContextPack,
+    createdBy: { ...validContextPack.createdBy, nickname: "archivist" },
+    subject: { ...validContextPack.subject, lane: "shared" },
+    consent: { ...validContextPack.consent, extraConsent: true },
+    resources: [
+      {
         ...validContextPack.resources[0],
         note: "kept",
         selector: { type: "whole-resource", marker: 1 },
-      }],
-      policy: { ...validContextPack.policy, note: "strict" },
-      transforms: { ...validContextPack.transforms, marker: "preserved" },
-    }),
-  );
+      },
+    ],
+    policy: { ...validContextPack.policy, note: "strict" },
+    transforms: { ...validContextPack.transforms, marker: "preserved" },
+  };
+  nestedPack.digest = digestProtocolObject(nestedPack);
+  const nested = expectOk(parseContextPackV1(nestedPack));
 
   assert.equal(nested.createdBy.nickname, "archivist");
   assert.equal(nested.subject.lane, "shared");
@@ -69,6 +71,15 @@ test("valid Context Pack parses and preserves unknown additive fields", () => {
 
 test("valid Context Pack fixture digest matches implementation", () => {
   assert.equal(validContextPack.digest, digestProtocolObject(validContextPack));
+});
+
+test("Context Pack parsing rejects a structurally valid object with a stale root digest", () => {
+  const tampered = {
+    ...validContextPack,
+    subject: { ...validContextPack.subject, familiarId: "tampered-familiar" },
+  };
+
+  expectError(parseContextPackV1(tampered), "$.digest", "digest_mismatch");
 });
 
 test("Context Pack JSON Schema validates the valid fixture and purpose contract", () => {
@@ -95,58 +106,64 @@ test("Context Pack JSON Schema validates the valid fixture and purpose contract"
   );
 });
 
-test("UTC timestamps accept canonical millisecond precision and reject missing milliseconds", () => {
-  const canonical = {
-    ...validContextPack,
-    createdAt: "2026-08-15T20:00:00.000Z",
-    resources: [
-      {
-        ...validContextPack.resources[0],
-        capturedAt: "2026-08-15T20:00:00.000Z",
-      },
-    ],
-  };
-  assert.ok(Value.Check(contextPackSchema, canonical));
-  assert.equal(expectOk(parseContextPackV1(canonical)).createdAt, "2026-08-15T20:00:00.000Z");
-  assert.equal(expectOk(parseContextPackV1(canonical)).resources[0].capturedAt, "2026-08-15T20:00:00.000Z");
+test("protocol timestamps accept UTC RFC 3339 with zero through nine fractional digits", () => {
+  for (const timestamp of [
+    "2026-08-15T20:00:00Z",
+    "2026-08-15T20:00:00.1Z",
+    "2026-08-15T20:00:00.123456789Z",
+  ]) {
+    const pack = {
+      ...validContextPack,
+      createdAt: timestamp,
+      resources: [{ ...validContextPack.resources[0], capturedAt: timestamp }],
+    };
+    pack.digest = digestProtocolObject(pack);
 
-  const withoutMilliseconds = {
-    ...validContextPack,
-    createdAt: "2026-08-15T20:00:00Z",
-  };
-  assert.equal(Value.Check(contextPackSchema, withoutMilliseconds), false);
-  expectError(parseContextPackV1(withoutMilliseconds), "$.createdAt", "invalid_value");
+    assert.equal(Value.Check(contextPackSchema, pack), true, timestamp);
+    const parsed = expectOk(parseContextPackV1(pack));
+    assert.equal(parsed.createdAt, timestamp);
+    assert.equal(parsed.resources[0].capturedAt, timestamp);
+  }
+});
 
-  const resourceWithoutMilliseconds = {
-    ...validContextPack,
-    resources: [
-      {
-        ...validContextPack.resources[0],
-        capturedAt: "2026-08-15T20:00:00Z",
-      },
-    ],
-  };
-  assert.equal(Value.Check(contextPackSchema, resourceWithoutMilliseconds), false);
-  expectError(parseContextPackV1(resourceWithoutMilliseconds), "$.resources[0].capturedAt", "invalid_value");
+test("protocol timestamps reject offsets, invalid values, noncanonical syntax, and excessive precision", () => {
+  for (const timestamp of [
+    "2026-08-15T20:00:00+00:00",
+    "2026-08-15T20:00:00-05:00",
+    "2026-08-15T20:00:00z",
+    "2026-08-15 20:00:00Z",
+    "2026-08-15T20:00:00.1234567890Z",
+    "2023-02-29T20:00:00Z",
+    "2026-04-31T20:00:00Z",
+    "2026-08-15T24:00:00Z",
+    "2026-08-15T20:60:00Z",
+    "2026-08-15T20:00:60Z",
+  ]) {
+    const pack = { ...validContextPack, createdAt: timestamp };
+    pack.digest = digestProtocolObject(pack);
+
+    assert.equal(Value.Check(contextPackSchema, pack), false, timestamp);
+    expectError(parseContextPackV1(pack), "$.createdAt", "invalid_value");
+  }
 });
 
 test("empty plain-string fields are accepted", () => {
-  const parsed = expectOk(
-    parseContextPackV1({
-      ...validContextPack,
-      createdBy: { ...validContextPack.createdBy, userId: "" },
-      subject: { familiarId: "", projectId: "" },
-      resources: [
-        {
-          ...validContextPack.resources[0],
-          uri: "",
-          title: "",
-          mediaType: "",
-        },
-      ],
-      transforms: { ...validContextPack.transforms, secretScanVersion: "" },
-    }),
-  );
+  const pack = {
+    ...validContextPack,
+    createdBy: { ...validContextPack.createdBy, userId: "" },
+    subject: { familiarId: "", projectId: "" },
+    resources: [
+      {
+        ...validContextPack.resources[0],
+        uri: "",
+        title: "",
+        mediaType: "",
+      },
+    ],
+    transforms: { ...validContextPack.transforms, secretScanVersion: "" },
+  };
+  pack.digest = digestProtocolObject(pack);
+  const parsed = expectOk(parseContextPackV1(pack));
 
   assert.equal(parsed.createdBy.userId, "");
   assert.equal(parsed.subject.familiarId, "");
@@ -345,9 +362,15 @@ test("prototype optional fields are ignored", () => {
   });
   transforms.secretScanVersion = validContextPack.transforms.secretScanVersion;
 
+  const digest = digestProtocolObject({
+    ...validContextPack,
+    subject: { familiarId: validContextPack.subject.familiarId },
+    transforms: { secretScanVersion: validContextPack.transforms.secretScanVersion },
+  });
   const parsed = expectOk(
     parseContextPackV1({
       ...validContextPack,
+      digest,
       subject,
       transforms,
     }),

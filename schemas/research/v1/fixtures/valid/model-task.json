@@ -4,7 +4,7 @@
   "runId": "run_01",
   "phase": "scope",
   "attempt": 1,
-  "inputDigest": "a7a21a3895e180dfcce5b4aa1c7827bb7985a406b378399f6655d4f1a01229d5",
+  "inputDigest": "6a28b9d62b79b42a133d52fe51636c161c67722929efa5f6178e2940c9136597",
   "input": {
     "contextPack": {
       "id": "ctx_01",
@@ -13,6 +13,7 @@
       "futureExtension": { "preserve": true }
     },
     "publicEvidenceRefs": [],
+    "digest": "input-field-is-canonical-data",
     "futureExtension": { "preserve": true }
   },
   "modelBinding": {
