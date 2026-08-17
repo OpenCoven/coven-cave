@@ -147,13 +147,13 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /stopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*function beginQuickChatStop[\s\S]*if \(active\.stopOutcomePromise\) return active\.stopOutcomePromise;[\s\S]*active\.stopOutcomePromise = requestQuickChatStop\(active, options\)\.then/,
-  "the active send stores and deduplicates its out-of-band Stop outcome promise",
+  /normalStopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*cleanupStopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*function beginQuickChatStop[\s\S]*options\.keepalive[\s\S]*"cleanupStopOutcomePromise"[\s\S]*"normalStopOutcomePromise"[\s\S]*const existingPromise = active\[promiseField\];[\s\S]*if \(existingPromise\) return existingPromise;[\s\S]*active\[promiseField\] = stopOutcomePromise/,
+  "normal and cleanup Stop requests have independently deduplicated outcome promises",
 );
 assert.match(
   quickHook,
-  /const stopOutcomePromise = activeSend\.stopOutcomePromise;[\s\S]*await stopOutcomePromise;[\s\S]*stopOutcome\.status === "stopped" \|\| stopOutcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*const ownsActiveSend = activeSendRef\.current === activeSend;/,
-  "definitive done awaits the same pending Stop outcome before normal settlement",
+  /const stopOutcomePromises = \[[\s\S]*activeSend\.normalStopOutcomePromise,[\s\S]*activeSend\.cleanupStopOutcomePromise,[\s\S]*await Promise\.all\(stopOutcomePromises\)[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*const ownsActiveSend = activeSendRef\.current === activeSend;/,
+  "definitive done awaits both independently owned Stop outcomes before normal settlement",
 );
 assert.match(
   quickHook,
@@ -162,13 +162,13 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const reconcileStopOutcome = useCallback[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*activeSend\.stopOutcomePromise = undefined;[\s\S]*outcome\.status !== "failure"[\s\S]*activeSendRef\.current !== activeSend[\s\S]*setError\(/,
-  "accepted Stop outcomes cancel while settled and owned failures preserve the stream",
+  /const reconcileStopOutcome = useCallback[\s\S]*promiseField: "normalStopOutcomePromise" \| "cleanupStopOutcomePromise"[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*activeSend\[promiseField\] === stopOutcomePromise[\s\S]*activeSend\[promiseField\] = undefined;[\s\S]*activeSend\.cleanupStopSent = false;[\s\S]*outcome\.status !== "failure"[\s\S]*!ownsActiveSend[\s\S]*setError\(/,
+  "reconciliation clears only its exact failed request owner and accepted outcomes cancel atomically",
 );
 assert.match(
   quickHook,
-  /const terminateActiveSend = useCallback[\s\S]*activeSendRef\.current = null;[\s\S]*if \(options\.keepalive && !activeSend\.cleanupStopSent\)[\s\S]*requestQuickChatStop\(activeSend[\s\S]*keepalive: true[\s\S]*activeSend\.controller\.abort\(\)/,
-  "cleanup atomically takes, sends one independent keepalive Stop, and immediately aborts",
+  /const terminateActiveSend = useCallback[\s\S]*beginQuickChatStop\(activeSend, \{ keepalive: true \}\)[\s\S]*activeSendRef\.current = null;[\s\S]*"cleanupStopOutcomePromise"[\s\S]*activeSend\.controller\.abort\(\)/,
+  "cleanup reuses its independently owned keepalive Stop before atomically taking and aborting",
 );
 assert.match(
   quickHook,
@@ -177,7 +177,7 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const stopForPageHide = \(event: PageTransitionEvent\)[\s\S]*if \(event\.persisted\)[\s\S]*beginQuickChatStop\(activeSend, \{[\s\S]*keepalive: true[\s\S]*reconcileStopOutcome\(activeSend, stopOutcomePromise, outcome\)[\s\S]*suppressSettlementUi: true[\s\S]*window\.addEventListener\("pagehide", stopForPageHide\)[\s\S]*suppressSettlementUi: true/,
+  /const stopForPageHide = \(event: PageTransitionEvent\)[\s\S]*if \(event\.persisted\)[\s\S]*beginQuickChatStop\(activeSend, \{[\s\S]*keepalive: true[\s\S]*reconcileStopOutcome\([\s\S]*activeSend,[\s\S]*"cleanupStopOutcomePromise",[\s\S]*stopOutcomePromise,[\s\S]*outcome[\s\S]*suppressSettlementUi: true[\s\S]*window\.addEventListener\("pagehide", stopForPageHide\)[\s\S]*suppressSettlementUi: true/,
   "BFCache waits for its keepalive Stop outcome while discarded pages and unmount abort immediately",
 );
 assert.match(

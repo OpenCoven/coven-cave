@@ -90,7 +90,8 @@ type ActiveQuickChatSend = {
   controller: AbortController;
   runId: string;
   sessionId: string | null;
-  stopOutcomePromise?: Promise<QuickChatStopOutcome>;
+  normalStopOutcomePromise?: Promise<QuickChatStopOutcome>;
+  cleanupStopOutcomePromise?: Promise<QuickChatStopOutcome>;
   cleanupStopSent: boolean;
   suppressSettlementUi?: boolean;
 };
@@ -139,8 +140,13 @@ function beginQuickChatStop(
   active: ActiveQuickChatSend,
   options: { keepalive?: boolean } = {},
 ): Promise<QuickChatStopOutcome> {
-  if (active.stopOutcomePromise) return active.stopOutcomePromise;
-  active.stopOutcomePromise = requestQuickChatStop(active, options).then(
+  const promiseField = options.keepalive
+    ? "cleanupStopOutcomePromise"
+    : "normalStopOutcomePromise";
+  const existingPromise = active[promiseField];
+  if (existingPromise) return existingPromise;
+  if (options.keepalive) active.cleanupStopSent = true;
+  const stopOutcomePromise = requestQuickChatStop(active, options).then(
     (outcome): QuickChatStopOutcome =>
       outcome.stopped
         ? { status: "stopped" }
@@ -149,7 +155,8 @@ function beginQuickChatStop(
           : { status: "settled" },
     (cause): QuickChatStopOutcome => ({ status: "failure", cause }),
   );
-  return active.stopOutcomePromise;
+  active[promiseField] = stopOutcomePromise;
+  return stopOutcomePromise;
 }
 
 export type UseQuickChat = {
@@ -373,35 +380,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // Files that rode with the last user turn, so regenerate() re-sends them.
   const lastUserAttachmentsRef = useRef<ChatAttachment[]>([]);
 
-  const terminateActiveSend = useCallback(
-    (
-      options: {
-        keepalive?: boolean;
-        suppressSettlementUi?: boolean;
-      },
-    ): ActiveQuickChatSend | null => {
-      const activeSend = activeSendRef.current;
-      if (!activeSend) return null;
-
-      // Claim this exact record before any async work or abort callbacks run.
-      // Every reset path shares this take, so only its first caller can issue
-      // Stop and a late completion cannot clear a replacement send.
-      activeSendRef.current = null;
-      activeSend.suppressSettlementUi = options.suppressSettlementUi === true;
-      if (options.keepalive && !activeSend.cleanupStopSent) {
-        activeSend.cleanupStopSent = true;
-        void requestQuickChatStop(activeSend, {
-          keepalive: true,
-        }).catch((cause) => {
-          console.error("[Quick Chat] Failed to stop server-side response:", cause);
-        });
-      }
-      activeSend.controller.abort();
-      return activeSend;
-    },
-    [],
-  );
-
   const settleAcceptedStop = useCallback((activeSend: ActiveQuickChatSend): boolean => {
     if (activeSendRef.current !== activeSend) return false;
     activeSendRef.current = null;
@@ -428,6 +406,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const reconcileStopOutcome = useCallback(
     (
       activeSend: ActiveQuickChatSend,
+      promiseField: "normalStopOutcomePromise" | "cleanupStopOutcomePromise",
       stopOutcomePromise: Promise<QuickChatStopOutcome>,
       outcome: QuickChatStopOutcome,
     ) => {
@@ -435,15 +414,25 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         settleAcceptedStop(activeSend);
         return;
       }
-      if (activeSend.stopOutcomePromise === stopOutcomePromise) {
-        activeSend.stopOutcomePromise = undefined;
+      const ownsActiveSend = activeSendRef.current === activeSend;
+      if (
+        activeSend[promiseField] === stopOutcomePromise
+        && (
+          promiseField === "normalStopOutcomePromise"
+          || outcome.status === "failure"
+        )
+      ) {
+        activeSend[promiseField] = undefined;
+        if (promiseField === "cleanupStopOutcomePromise" && ownsActiveSend) {
+          activeSend.cleanupStopSent = false;
+        }
       }
       if (outcome.status !== "failure") return;
 
       console.error("[Quick Chat] Failed to stop server-side response:", outcome.cause);
       if (
         activeSend.suppressSettlementUi
-        || activeSendRef.current !== activeSend
+        || !ownsActiveSend
         || latestSendRunIdRef.current !== activeSend.runId
       ) {
         return;
@@ -455,6 +444,40 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       );
     },
     [settleAcceptedStop],
+  );
+
+  const terminateActiveSend = useCallback(
+    (
+      options: {
+        keepalive?: boolean;
+        suppressSettlementUi?: boolean;
+      },
+    ): ActiveQuickChatSend | null => {
+      const activeSend = activeSendRef.current;
+      if (!activeSend) return null;
+
+      const cleanupStopOutcomePromise = options.keepalive
+        ? beginQuickChatStop(activeSend, { keepalive: true })
+        : undefined;
+      // Claim this exact record before any async work or abort callbacks run.
+      // Every reset path shares this take, so only its first caller can issue
+      // Stop and a late completion cannot clear a replacement send.
+      activeSendRef.current = null;
+      activeSend.suppressSettlementUi = options.suppressSettlementUi === true;
+      if (cleanupStopOutcomePromise) {
+        void cleanupStopOutcomePromise.then((outcome) => {
+          reconcileStopOutcome(
+            activeSend,
+            "cleanupStopOutcomePromise",
+            cleanupStopOutcomePromise,
+            outcome,
+          );
+        });
+      }
+      activeSend.controller.abort();
+      return activeSend;
+    },
+    [reconcileStopOutcome],
   );
 
   // Clear the conversation; keeps the familiar + control choices intact.
@@ -557,12 +580,16 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       if (event.persisted) {
         const activeSend = activeSendRef.current;
         if (!activeSend || activeSend.cleanupStopSent) return;
-        activeSend.cleanupStopSent = true;
         const stopOutcomePromise = beginQuickChatStop(activeSend, {
           keepalive: true,
         });
         void stopOutcomePromise.then((outcome) => {
-          reconcileStopOutcome(activeSend, stopOutcomePromise, outcome);
+          reconcileStopOutcome(
+            activeSend,
+            "cleanupStopOutcomePromise",
+            stopOutcomePromise,
+            outcome,
+          );
         });
         return;
       }
@@ -768,10 +795,19 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         return "stopped";
       }
 
-      const stopOutcomePromise = activeSend.stopOutcomePromise;
-      if (activeSendRef.current === activeSend && stopOutcomePromise) {
-        const stopOutcome = await stopOutcomePromise;
-        if (stopOutcome.status === "stopped" || stopOutcome.status === "queued") {
+      const stopOutcomePromises = [
+        activeSend.normalStopOutcomePromise,
+        activeSend.cleanupStopOutcomePromise,
+      ].filter(
+        (promise): promise is Promise<QuickChatStopOutcome> => promise !== undefined,
+      );
+      if (activeSendRef.current === activeSend && stopOutcomePromises.length > 0) {
+        const stopOutcomes = await Promise.all(stopOutcomePromises);
+        if (
+          stopOutcomes.some(
+            (outcome) => outcome.status === "stopped" || outcome.status === "queued",
+          )
+        ) {
           settleAcceptedStop(activeSend);
           return "stopped";
         }
@@ -994,7 +1030,12 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
     const stopOutcomePromise = beginQuickChatStop(activeSend);
     void stopOutcomePromise.then((outcome) => {
-      reconcileStopOutcome(activeSend, stopOutcomePromise, outcome);
+      reconcileStopOutcome(
+        activeSend,
+        "normalStopOutcomePromise",
+        stopOutcomePromise,
+        outcome,
+      );
     });
   }, [reconcileStopOutcome]);
 

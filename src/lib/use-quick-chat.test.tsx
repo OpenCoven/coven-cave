@@ -83,10 +83,17 @@ class QuickChatFetch {
   stopFailureError = "stop registry unavailable";
   delayStops = false;
   stopOutcome = { stopped: true, queued: false };
-  private readonly stopReleases: Array<() => void> = [];
+  private readonly stopReleases: Array<(() => void) | undefined> = [];
 
   releaseNextStop(): void {
-    this.stopReleases.shift()?.();
+    const index = this.stopReleases.findIndex((release) => release !== undefined);
+    if (index >= 0) this.releaseStop(index);
+  }
+
+  releaseStop(index: number): void {
+    const release = this.stopReleases[index];
+    this.stopReleases[index] = undefined;
+    release?.();
   }
 
   readonly fetch = async (
@@ -124,13 +131,14 @@ class QuickChatFetch {
       return stream.response;
     }
     if (url === "/api/chat/stop") {
+      const stopIndex = this.stops.length;
       this.stops.push(JSON.parse(String(init.body)) as Record<string, unknown>);
       this.stopKeepalives.push(init.keepalive === true);
       const failStop = this.failStop;
       const stopOutcome = { ...this.stopOutcome };
       if (this.delayStops) {
         await new Promise<void>((resolve) => {
-          this.stopReleases.push(resolve);
+          this.stopReleases[stopIndex] = resolve;
         });
       }
       return failStop
@@ -1148,6 +1156,285 @@ describe("useQuickChat send cancellation", () => {
 
     requests.releaseNextStop();
     requests.releaseNextStop();
+    requests.sends[0]!.close();
+    await send;
+  });
+
+  test("a persisted pagehide owns a keepalive Stop independently from a pending normal Stop", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+
+    expect(requests.stops).toEqual([
+      { runId: requests.sends[0]!.body.runId },
+      { runId: requests.sends[0]!.body.runId },
+    ]);
+    expect(requests.stopKeepalives).toEqual([false, true]);
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+
+    requests.releaseStop(1);
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    requests.releaseStop(0);
+    await act(async () => {
+      requests.sends[0]!.close();
+      await send;
+    });
+  });
+
+  test("a failed keepalive Stop can be retried by a later pagehide and reused by unmount", async () => {
+    const requests = new QuickChatFetch();
+    requests.failStop = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+    await waitFor(() => state?.error?.includes("stop registry unavailable") === true);
+    expect(requests.stopKeepalives).toEqual([true]);
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+
+    requests.failStop = false;
+    requests.delayStops = true;
+    await act(async () => {
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+    expect(requests.stopKeepalives).toEqual([true, true]);
+
+    await act(async () => {
+      renderer!.unmount();
+    });
+    renderer = null;
+    expect(requests.stops).toHaveLength(2);
+    expect(requests.sends[0]!.signal?.aborted).toBe(true);
+
+    requests.releaseStop(1);
+    requests.sends[0]!.close();
+    await send;
+    expect(consoleError).toHaveBeenCalledWith(
+      "[Quick Chat] Failed to stop server-side response:",
+      expect.any(Error),
+    );
+  });
+
+  test("an accepted cleanup Stop cancels once while a normal Stop remains pending", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    let abortCount = 0;
+    requests.sends[0]!.signal?.addEventListener("abort", () => {
+      abortCount += 1;
+    });
+    await act(async () => {
+      state!.cancel();
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+
+    requests.releaseStop(1);
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    expect(abortCount).toBe(1);
+    expect(state!.messages.at(-1)).toMatchObject({
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+
+    requests.releaseStop(0);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(abortCount).toBe(1);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+
+    await act(async () => {
+      requests.sends[0]!.close();
+      await send;
+    });
+  });
+
+  test("a settled cleanup Stop preserves the stream while the normal Stop remains authoritative", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+    });
+    requests.stopOutcome = { stopped: false, queued: false };
+    await act(async () => {
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+
+    requests.releaseStop(1);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("streaming");
+
+    requests.releaseStop(0);
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    expect(state!.messages.at(-1)).toMatchObject({
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+
+    await act(async () => {
+      requests.sends[0]!.close();
+      await send;
+    });
+  });
+
+  test("repeated cleanup paths never start a third Stop while keepalive is pending", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      window.dispatchEvent(pageTransitionEvent("pagehide", false));
+      await Promise.resolve();
+    });
+    expect(requests.stopKeepalives).toEqual([false, true]);
+    expect(requests.stops).toHaveLength(2);
+    expect(requests.sends[0]!.signal?.aborted).toBe(true);
+
+    await act(async () => {
+      renderer!.unmount();
+    });
+    renderer = null;
+    expect(requests.stops).toHaveLength(2);
+
+    requests.releaseStop(1);
+    requests.releaseStop(0);
     requests.sends[0]!.close();
     await send;
   });
