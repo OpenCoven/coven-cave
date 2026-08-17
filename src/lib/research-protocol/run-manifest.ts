@@ -1,4 +1,5 @@
 import {
+  copyProtocolJsonValue,
   fail,
   isOpaqueId,
   isRecord,
@@ -776,51 +777,18 @@ function validateRetentionClock(
   return pass(undefined);
 }
 
-function copyOwnJson(value: unknown, stack = new WeakSet<object>()): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (stack.has(value)) {
-    throw new TypeError("cyclic structures are not allowed");
-  }
-  stack.add(value);
-  if (Array.isArray(value)) {
-    if (Object.getPrototypeOf(value) !== Array.prototype) {
-      stack.delete(value);
-      throw new TypeError("only JSON objects and arrays are allowed");
-    }
-    const result = value.map((entry) => copyOwnJson(entry, stack));
-    stack.delete(value);
-    return result;
-  }
-  if (isRecord(value)) {
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      stack.delete(value);
-      throw new TypeError("only JSON objects and arrays are allowed");
-    }
-    const result: Record<string, unknown> = {};
-    for (const key of Object.keys(value)) {
-      Object.defineProperty(result, key, {
-        value: copyOwnJson(value[key], stack),
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      });
-    }
-    stack.delete(value);
-    return result;
-  }
-  stack.delete(value);
-  return value;
-}
-
 function manifestDigest(value: unknown): string {
-  return digestProtocolObject(copyOwnJson(value));
+  return digestProtocolObject(value);
 }
 
 function canonicalField(record: Record<string, unknown>, key: string): string {
+  const descriptor = Object.getOwnPropertyDescriptor(record, key);
+  if (descriptor && (!descriptor.enumerable || !("value" in descriptor))) {
+    return canonicalJson(record);
+  }
   return canonicalJson({
-    present: hasOwn(record, key),
-    ...(hasOwn(record, key) ? { value: copyOwnJson(record[key]) } : {}),
+    present: Boolean(descriptor),
+    ...(descriptor && "value" in descriptor ? { value: descriptor.value } : {}),
   });
 }
 
@@ -944,7 +912,10 @@ export function aggregateManifestUsage(
 }
 
 export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManifestV1> {
-  const object = parseObject(value, "$");
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");
@@ -1161,7 +1132,7 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
 
   let computedDigest: string;
   try {
-    computedDigest = manifestDigest(value);
+    computedDigest = manifestDigest(object.value);
   } catch (error) {
     return fail(
       "invalid_value",
@@ -1196,7 +1167,7 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     retention: retention.value,
     deletion: deletion.value,
   };
-  return pass(copyOwnJson(parsedManifest) as RunManifestV1);
+  return pass(parsedManifest as RunManifestV1);
 }
 
 export function validateManifestRetentionConsent(
