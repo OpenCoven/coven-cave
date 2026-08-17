@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   canonicalJson,
+  copyCanonicalJsonValue,
   digestProtocolObject,
   sha256Digest,
 } from "./digest.ts";
@@ -195,4 +196,92 @@ test("canonicalization and digests accept paired supplementary characters", () =
     "{\"familiar-🧙\":\"research-🔬\",\"nested\":[\"𐐷\"]}",
   );
   assert.equal(digestProtocolObject({ digest: "ignored", ...value }), sha256Digest(canonicalJson(value)));
+});
+
+test("copyCanonicalJsonValue detaches objects and arrays without mistaking shared references for cycles", () => {
+  const shared = { label: "shared-🧙", values: [1, 2] };
+  const source = {
+    left: shared,
+    right: shared,
+  };
+
+  const copy = copyCanonicalJsonValue(source);
+
+  assert.equal(Object.getPrototypeOf(copy), null);
+  assert.equal(Object.getPrototypeOf(copy.left), null);
+  assert.equal(Object.getPrototypeOf(copy.left.values), Array.prototype);
+  assert.notStrictEqual(copy, source);
+  assert.notStrictEqual(copy.left, shared);
+  assert.notStrictEqual(copy.right, shared);
+  assert.notStrictEqual(copy.left, copy.right);
+  assert.notStrictEqual(copy.left.values, shared.values);
+
+  shared.label = "mutated";
+  shared.values[0] = 99;
+  assert.equal(copy.left.label, "shared-🧙");
+  assert.deepEqual(copy.left.values, [1, 2]);
+});
+
+test("copyCanonicalJsonValue preserves own __proto__ as detached null-prototype data", () => {
+  const source = Object.create(null) as Record<string, unknown>;
+  const protoValue = { preserve: true };
+  Object.defineProperty(source, "__proto__", {
+    value: protoValue,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+
+  const copy = copyCanonicalJsonValue(source);
+
+  assert.equal(Object.getPrototypeOf(copy), null);
+  assert.equal(Object.hasOwn(copy, "__proto__"), true);
+  assert.notStrictEqual(copy.__proto__, protoValue);
+  assert.equal(Object.getPrototypeOf(copy.__proto__ as object), null);
+  assert.equal((copy.__proto__ as { preserve: boolean }).preserve, true);
+  assert.equal(({} as { preserve?: boolean }).preserve, undefined);
+});
+
+test("canonical JSON and digests ignore inherited Object and Array toJSON pollution", () => {
+  const objectToJson = Object.getOwnPropertyDescriptor(Object.prototype, "toJSON");
+  const arrayToJson = Object.getOwnPropertyDescriptor(Array.prototype, "toJSON");
+  let calls = 0;
+
+  try {
+    Object.defineProperty(Object.prototype, "toJSON", {
+      value() {
+        calls += 1;
+        return { polluted: "object" };
+      },
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(Array.prototype, "toJSON", {
+      value() {
+        calls += 1;
+        return ["polluted-array"];
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const value = { z: [2, { a: "🧙" }], a: 1 };
+    assert.equal(canonicalJson(value), "{\"a\":1,\"z\":[2,{\"a\":\"🧙\"}]}");
+    assert.equal(
+      digestProtocolObject({ digest: "ignored", ...value }),
+      sha256Digest("{\"a\":1,\"z\":[2,{\"a\":\"🧙\"}]}"),
+    );
+    assert.equal(calls, 0);
+  } finally {
+    if (objectToJson) {
+      Object.defineProperty(Object.prototype, "toJSON", objectToJson);
+    } else {
+      Reflect.deleteProperty(Object.prototype, "toJSON");
+    }
+    if (arrayToJson) {
+      Object.defineProperty(Array.prototype, "toJSON", arrayToJson);
+    } else {
+      Reflect.deleteProperty(Array.prototype, "toJSON");
+    }
+  }
 });

@@ -206,15 +206,96 @@ test("valid fixtures satisfy the schema, parse, and recalculate their root diges
     assert.equal(Value.Check(runManifestSchema, fixture), true);
     const parsed = expectOk(parseRunManifestV1(fixture));
     assert.equal(parsed.digest, digestProtocolObject(fixture));
-    assert.deepEqual(parsed.futureExtension, { preserve: true });
+    assert.equal((parsed.futureExtension as { preserve: boolean }).preserve, true);
   }
 
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
-  assert.deepEqual(local.artifacts[0].futureExtension, { preserve: true });
-  assert.deepEqual(local.retention.futureExtension, { preserve: true });
-  assert.deepEqual(local.deletion.futureExtension, { preserve: true });
-  assert.deepEqual(local.usage.futureExtension, { preserve: true });
-  assert.deepEqual(local.sources[0].futureExtension, { preserve: true });
+  assert.equal((local.artifacts[0].futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((local.retention.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((local.deletion.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((local.usage.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((local.sources[0].futureExtension as { preserve: boolean }).preserve, true);
+});
+
+test("Run Manifest rejects non-canonical wire data before invoking accessors", () => {
+  class CustomArray<T> extends Array<T> {}
+  let accessorCalls = 0;
+
+  const accessor = { ...finalLocalManifestJson } as Record<string, unknown>;
+  Object.defineProperty(accessor, "schema", {
+    get() {
+      accessorCalls += 1;
+      return finalLocalManifestJson.schema;
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  expectError(parseRunManifestV1(accessor), "$", "invalid_value");
+
+  const hidden = { ...finalLocalManifestJson };
+  Object.defineProperty(hidden, "hidden", {
+    value: "not-json",
+    enumerable: false,
+  });
+  expectError(parseRunManifestV1(hidden), "$", "invalid_value");
+
+  const symbolKeyed = { ...finalLocalManifestJson };
+  Object.defineProperty(symbolKeyed, Symbol("hidden"), {
+    value: "not-json",
+    enumerable: true,
+  });
+  expectError(parseRunManifestV1(symbolKeyed), "$", "invalid_value");
+
+  const hiddenToJson = { ...finalLocalManifestJson };
+  Object.defineProperty(hiddenToJson, "toJSON", {
+    value() {
+      accessorCalls += 1;
+      return finalLocalManifestJson;
+    },
+    enumerable: false,
+  });
+  expectError(parseRunManifestV1(hiddenToJson), "$", "invalid_value");
+
+  const extraProperty = [1, 2];
+  Object.defineProperty(extraProperty, "extra", {
+    value: true,
+    enumerable: true,
+  });
+  for (const values of [[1, , 3], CustomArray.from([1, 2]), extraProperty]) {
+    expectError(
+      parseRunManifestV1({ ...finalLocalManifestJson, wireExtension: { values } }),
+      "$",
+      "invalid_value",
+    );
+  }
+
+  assert.equal(accessorCalls, 0);
+});
+
+test("Run Manifest returns detached additive objects and arrays", () => {
+  const extension = {
+    nested: { state: "original" },
+    items: [{ value: 1 }],
+  };
+  const candidate = recalculate({
+    ...finalLocalManifestJson,
+    wireExtension: extension,
+  });
+
+  const parsed = expectOk(parseRunManifestV1(candidate));
+  const parsedExtension = parsed.wireExtension as typeof extension;
+
+  assert.notStrictEqual(parsedExtension, extension);
+  assert.notStrictEqual(parsedExtension.nested, extension.nested);
+  assert.notStrictEqual(parsedExtension.items, extension.items);
+  assert.notStrictEqual(parsedExtension.items[0], extension.items[0]);
+
+  extension.nested.state = "mutated";
+  extension.items[0].value = 99;
+  extension.items.push({ value: 2 });
+  assert.equal(parsedExtension.nested.state, "original");
+  assert.equal(parsedExtension.items[0].value, 1);
+  assert.equal(parsedExtension.items.length, 1);
 });
 
 test("rejects unknown schema majors and wrong root digests", () => {
@@ -572,7 +653,7 @@ test("custom-prototype artifacts and extensions are rejected rather than strippe
     ...local,
     artifacts: [inheritedArtifact],
   });
-  expectError(parseRunManifestV1(candidate), "$.digest", "invalid_value");
+  expectError(parseRunManifestV1(candidate), "$", "invalid_value");
 });
 
 test("custom-prototype arrays in additive fields are rejected while normal arrays are accepted", () => {
@@ -585,14 +666,15 @@ test("custom-prototype arrays in additive fields are rejected while normal array
     ...local,
     futureExtension: { values: customPrototypeArray },
   });
-  expectError(parseRunManifestV1(withCustomArray), "$.digest", "invalid_value");
+  expectError(parseRunManifestV1(withCustomArray), "$", "invalid_value");
 
   const withNormalArray = recalculate({
     ...local,
     futureExtension: { values: [1, 2, 3] },
   });
   const parsed = expectOk(parseRunManifestV1(withNormalArray));
-  assert.deepEqual(parsed.futureExtension, { values: [1, 2, 3] });
+  assert.equal(Object.getPrototypeOf(parsed.futureExtension as object), Object.prototype);
+  assert.deepEqual((parsed.futureExtension as { values: number[] }).values, [1, 2, 3]);
 });
 
 test("canonical copying preserves own __proto__ fields and rejects non-JSON objects", () => {
@@ -604,14 +686,13 @@ test("canonical copying preserves own __proto__ fields and rejects non-JSON obje
   });
   const parsed = expectOk(parseRunManifestV1(withProtoKey));
   assert.equal(Object.hasOwn(parsed.futureExtension as object, "__proto__"), true);
-  assert.deepEqual(
-    (parsed.futureExtension as Record<string, unknown>).__proto__,
-    { preserve: true },
-  );
+  const protoValue = (parsed.futureExtension as Record<string, unknown>).__proto__ as Record<string, unknown>;
+  assert.equal(Object.getPrototypeOf(protoValue), Object.prototype);
+  assert.equal(protoValue.preserve, true);
 
   const withDate = {
     ...local,
     futureExtension: { capturedAt: new Date("2026-08-16T20:00:00.000Z") },
   };
-  expectError(parseRunManifestV1(withDate), "$.digest", "invalid_value");
+  expectError(parseRunManifestV1(withDate), "$", "invalid_value");
 });

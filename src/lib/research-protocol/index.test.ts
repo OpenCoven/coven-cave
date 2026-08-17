@@ -111,3 +111,94 @@ test("dispatch preserves the underlying parser's result exactly", () => {
   const dispatched = parseResearchProtocolObject(invalidContextPackPdfSelector);
   assert.deepEqual(dispatched, direct);
 });
+
+test("dispatcher rejects non-canonical wire data for discovery, proposal, run, and event families", () => {
+  class CustomArray<T> extends Array<T> {}
+
+  const fixtures = [
+    validTopicDiscoveryJob,
+    validTopicProposal,
+    validResearchRun,
+    validRunEvent,
+  ] as ReadonlyArray<Record<string, unknown>>;
+
+  for (const fixture of fixtures) {
+    const hidden = { ...fixture };
+    Object.defineProperty(hidden, "hidden", {
+      value: "not-json",
+      enumerable: false,
+    });
+    expectError(parseResearchProtocolObject(hidden), "$", "invalid_value");
+
+    const symbolKeyed = { ...fixture };
+    Object.defineProperty(symbolKeyed, Symbol("hidden"), {
+      value: "not-json",
+      enumerable: true,
+    });
+    expectError(parseResearchProtocolObject(symbolKeyed), "$", "invalid_value");
+
+    const hiddenToJson = { ...fixture };
+    Object.defineProperty(hiddenToJson, "toJSON", {
+      value() {
+        return fixture;
+      },
+      enumerable: false,
+    });
+    expectError(parseResearchProtocolObject(hiddenToJson), "$", "invalid_value");
+
+    const extraProperty = [1, 2];
+    Object.defineProperty(extraProperty, "extra", {
+      value: true,
+      enumerable: true,
+    });
+    for (const values of [[1, , 3], CustomArray.from([1, 2]), extraProperty]) {
+      expectError(
+        parseResearchProtocolObject({ ...fixture, wireExtension: { values } }),
+        "$",
+        "invalid_value",
+      );
+    }
+  }
+});
+
+test("dispatcher rejects a schema accessor without invoking it", () => {
+  let calls = 0;
+  const value = { ...validRunEvent } as Record<string, unknown>;
+  Object.defineProperty(value, "schema", {
+    get() {
+      calls += 1;
+      return validRunEvent.schema;
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  expectError(parseResearchProtocolObject(value), "$", "invalid_value");
+  assert.equal(calls, 0);
+});
+
+test("dispatcher returns detached additive data", () => {
+  const extension = {
+    nested: { state: "original" },
+    items: [{ value: 1 }],
+  };
+  const parsed = expectOk(
+    parseResearchProtocolObject({
+      ...validRunEvent,
+      wireExtension: extension,
+    }),
+  ) as Record<string, unknown>;
+  const parsedExtension = parsed.wireExtension as typeof extension;
+
+  assert.notStrictEqual(parsedExtension, extension);
+  assert.notStrictEqual(parsedExtension.nested, extension.nested);
+  assert.notStrictEqual(parsedExtension.items, extension.items);
+  assert.notStrictEqual(parsedExtension.items[0], extension.items[0]);
+
+  extension.nested.state = "mutated";
+  extension.items[0].value = 99;
+  extension.items.push({ value: 2 });
+  assert.equal(parsedExtension.nested.state, "original");
+  assert.equal(parsedExtension.items[0].value, 1);
+  assert.equal(parsedExtension.items.length, 1);
+});

@@ -44,9 +44,9 @@ test("valid fixtures satisfy schemas and parse", () => {
   const job = expectOk(parseTopicDiscoveryJobV1(validTopicDiscoveryJob));
   const proposal = expectOk(parseTopicProposalV1(validTopicProposal));
 
-  assert.deepEqual(job.futureExtension, { preserve: true });
-  assert.deepEqual(job.modelReceipt?.futureExtension, { preserve: true });
-  assert.deepEqual(proposal.futureExtension, { preserve: true });
+  assert.equal((job.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((job.modelReceipt?.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((proposal.futureExtension as { preserve: boolean }).preserve, true);
 });
 
 test("topicProposalVisibleTotal applies the Section 10.3 weights in integer hundredths", () => {
@@ -327,6 +327,22 @@ test("receipt usage semantics enforce nullability/reporting rules", () => {
   );
 });
 
+test("standalone model receipt parser rejects accessors without invoking them", () => {
+  let calls = 0;
+  const receipt = { ...validTopicDiscoveryJob.modelReceipt };
+  Object.defineProperty(receipt, "familiarId", {
+    get() {
+      calls += 1;
+      return validTopicDiscoveryJob.modelReceipt.familiarId;
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  expectError(parseResearchModelReceiptV1(receipt, "$.receipt"), "$.receipt", "invalid_value");
+  assert.equal(calls, 0);
+});
+
 test("unknown additive fields survive at top and nested levels", () => {
   const proposal = expectOk(
     parseTopicProposalV1({
@@ -367,7 +383,7 @@ test("unknown additive fields survive at top and nested levels", () => {
   assert.equal(job.modelReceipt?.usage.marker, 1);
 });
 
-test("inherited required fields do not count", () => {
+test("custom-prototype top-level objects are rejected", () => {
   const proposal = Object.create({ schema: validTopicProposal.schema });
   Object.assign(proposal, {
     id: validTopicProposal.id,
@@ -384,7 +400,7 @@ test("inherited required fields do not count", () => {
     relatedMissionIds: validTopicProposal.relatedMissionIds,
     createdAt: validTopicProposal.createdAt,
   });
-  expectError(parseTopicProposalV1(proposal), "$.schema", "missing_field");
+  expectError(parseTopicProposalV1(proposal), "$", "invalid_value");
 
   const job = Object.create({ schema: validTopicDiscoveryJob.schema });
   Object.assign(job, {
@@ -399,7 +415,7 @@ test("inherited required fields do not count", () => {
     proposalIds: validTopicDiscoveryJob.proposalIds,
     modelReceipt: validTopicDiscoveryJob.modelReceipt,
   });
-  expectError(parseTopicDiscoveryJobV1(job), "$.schema", "missing_field");
+  expectError(parseTopicDiscoveryJobV1(job), "$", "invalid_value");
 });
 
 test("invalid score fixture rejects", () => {

@@ -1,4 +1,5 @@
 import {
+  copyProtocolJsonValue,
   fail,
   isRecord,
   type ProtocolParseResult,
@@ -60,39 +61,41 @@ export type ResearchProtocolObjectV1 =
 
 /**
  * Dispatches a value to the parser for its exact `schema` string. This is a
- * thin router, not a validator: it only ever inspects `schema` to pick a
- * parser and then hands the value off unchanged, so the returned result
- * (success or failure) is identical to calling the underlying parser
- * directly. Any schema string that isn't one of `RESEARCH_PROTOCOL_SCHEMAS`
- * exactly — including a different major version of a known family, such as
- * `opencoven.run-event/v2` — is rejected as `unknown_major` without ever
- * reaching a parser.
+ * thin router: it first applies the protocol JSON boundary, then inspects the
+ * detached `schema` value and dispatches it to the matching parser. Any schema
+ * string that isn't one of `RESEARCH_PROTOCOL_SCHEMAS` exactly — including a
+ * different major version of a known family, such as
+ * `opencoven.run-event/v2` — is rejected as `unknown_major` without reaching a
+ * schema parser.
  */
 export function parseResearchProtocolObject(
   value: unknown,
 ): ProtocolParseResult<ResearchProtocolObjectV1> {
-  if (!isRecord(value) || typeof value.schema !== "string") {
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  if (!isRecord(wireValue.value) || typeof wireValue.value.schema !== "string") {
     return fail("missing_field", "$.schema", "Missing required field schema");
   }
 
-  switch (value.schema) {
+  switch (wireValue.value.schema) {
     case "opencoven.context-pack/v1":
-      return parseContextPackV1(value);
+      return parseContextPackV1(wireValue.value);
     case "opencoven.topic-discovery-job/v1":
-      return parseTopicDiscoveryJobV1(value);
+      return parseTopicDiscoveryJobV1(wireValue.value);
     case "opencoven.topic-proposal/v1":
-      return parseTopicProposalV1(value);
+      return parseTopicProposalV1(wireValue.value);
     case "opencoven.research-run/v1":
-      return parseResearchRunV1(value);
+      return parseResearchRunV1(wireValue.value);
     case "opencoven.run-event/v1":
-      return parseRunEventV1(value);
+      return parseRunEventV1(wireValue.value);
     case "opencoven.model-task/v1":
-      return parseModelTaskV1(value);
+      return parseModelTaskV1(wireValue.value);
     case "opencoven.model-task-result/v1":
-      return parseModelTaskResultV1(value);
+      return parseModelTaskResultV1(wireValue.value);
     case "opencoven.run-manifest/v1":
-      return parseRunManifestV1(value);
+      return parseRunManifestV1(wireValue.value);
     default:
-      return fail("unknown_major", "$.schema", `Unsupported schema ${value.schema}`);
+      return fail("unknown_major", "$.schema", `Unsupported schema ${wireValue.value.schema}`);
   }
 }
