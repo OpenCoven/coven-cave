@@ -7,6 +7,7 @@ import invalidRetentionPack from "../../../schemas/research/v1/fixtures/invalid/
 import contextPackSchema from "../../../schemas/research/v1/context-pack.schema.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
 
+import { digestProtocolObject } from "./digest.ts";
 import {
   parseContextPackResourceV1,
   parseContextPackV1,
@@ -62,6 +63,10 @@ test("valid Context Pack parses and preserves unknown additive fields", () => {
   assert.equal(nested.resources[0].selector.marker, 1);
   assert.equal(nested.policy.note, "strict");
   assert.equal(nested.transforms.marker, "preserved");
+});
+
+test("valid Context Pack fixture digest matches implementation", () => {
+  assert.equal(validContextPack.digest, digestProtocolObject(validContextPack));
 });
 
 test("Context Pack JSON Schema validates the valid fixture and purpose contract", () => {

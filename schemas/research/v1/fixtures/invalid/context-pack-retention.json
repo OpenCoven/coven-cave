@@ -1,7 +1,7 @@
 {
   "schema": "opencoven.context-pack/v1",
   "id": "ctx_01",
-  "digest": "f1a36e4a3e458fbb62c3e868988c0b3ed735efca17b994216e1a78f050891d5f",
+  "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
   "createdAt": "2026-08-15T20:00:00.000Z",
   "createdBy": { "client": "coven-cave" },
   "purpose": "research-run",
