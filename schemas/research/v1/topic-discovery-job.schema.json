@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencoven.topic-discovery-job/v1",
+  "title": "OpenCoven Topic Discovery Job v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "id",
+    "contextPackId",
+    "contextPackDigest",
+    "familiarId",
+    "status",
+    "requestedAt",
+    "proposalIds"
+  ],
+  "properties": {
+    "schema": { "const": "opencoven.topic-discovery-job/v1" },
+    "id": { "$ref": "#/$defs/topicDiscoveryJobId" },
+    "contextPackId": { "$ref": "#/$defs/contextPackId" },
+    "contextPackDigest": { "$ref": "#/$defs/sha256" },
+    "familiarId": { "type": "string" },
+    "status": { "$ref": "#/$defs/jobStatus" },
+    "requestedAt": { "$ref": "#/$defs/utcTimestamp" },
+    "startedAt": { "$ref": "#/$defs/utcTimestamp" },
+    "finishedAt": { "$ref": "#/$defs/utcTimestamp" },
+    "proposalIds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/topicProposalId" },
+      "uniqueItems": true
+    },
+    "modelReceipt": { "$ref": "#/$defs/modelReceipt" },
+    "failure": { "$ref": "#/$defs/failure" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "running" } },
+        "required": ["status"]
+      },
+      "then": { "required": ["startedAt"] }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["completed", "failed", "cancelled"] } },
+        "required": ["status"]
+      },
+      "then": { "required": ["finishedAt"] }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "completed" } },
+        "required": ["status"]
+      },
+      "then": {
+        "not": { "required": ["failure"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "failed" } },
+        "required": ["status"]
+      },
+      "then": { "required": ["failure"] }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "contextPackId": {
+      "type": "string",
+      "pattern": "^ctx_[A-Za-z0-9_-]+$"
+    },
+    "topicDiscoveryJobId": {
+      "type": "string",
+      "pattern": "^topicjob_[A-Za-z0-9_-]+$"
+    },
+    "topicProposalId": {
+      "type": "string",
+      "pattern": "^proposal_[A-Za-z0-9_-]+$"
+    },
+    "jobStatus": {
+      "enum": ["queued", "running", "completed", "failed", "cancelled"]
+    },
+    "nullableSafeInteger": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nullableNonNegativeNumber": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "modelUsage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["inputTokens", "outputTokens", "costUsd", "reportedByRuntime"],
+      "properties": {
+        "inputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "outputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "costUsd": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "reportedByRuntime": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "reportedByRuntime": { "const": false } },
+            "required": ["reportedByRuntime"]
+          },
+          "then": {
+            "properties": {
+              "inputTokens": { "const": null },
+              "outputTokens": { "const": null },
+              "costUsd": { "const": null }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reportedByRuntime": { "const": true } },
+            "required": ["reportedByRuntime"]
+          },
+          "then": {
+            "anyOf": [
+              { "properties": { "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } }, "required": ["inputTokens"] },
+              { "properties": { "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } }, "required": ["outputTokens"] },
+              { "properties": { "costUsd": { "type": "number", "minimum": 0 } }, "required": ["costUsd"] }
+            ]
+          }
+        }
+      ]
+    },
+    "modelReceipt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "familiarId",
+        "runtime",
+        "effectiveModel",
+        "modelSource",
+        "providerBilling",
+        "usage"
+      ],
+      "properties": {
+        "familiarId": { "type": "string" },
+        "runtime": { "type": "string" },
+        "effectiveModel": { "type": ["string", "null"] },
+        "modelSource": {
+          "enum": [
+            "next-message",
+            "session",
+            "familiar-default",
+            "runtime-default",
+            "global-default"
+          ]
+        },
+        "providerBilling": { "const": "user-connected" },
+        "usage": { "$ref": "#/$defs/modelUsage" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    }
+  }
+}
