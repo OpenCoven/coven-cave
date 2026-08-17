@@ -148,6 +148,20 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
+function contextBindingsMatch(
+  runContext: ResearchContextBindingV1 | undefined,
+  manifestContext: ResearchContextBindingV1 | undefined,
+): boolean {
+  if (runContext === undefined || manifestContext === undefined) {
+    return runContext === manifestContext;
+  }
+  return (
+    runContext.contextPackId === manifestContext.contextPackId &&
+    runContext.contextPackDigest === manifestContext.contextPackDigest &&
+    runContext.topicProposalId === manifestContext.topicProposalId
+  );
+}
+
 function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
   if (!isRecord(value)) {
     return fail("invalid_type", path, "Expected an object");
@@ -725,6 +739,20 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
       };
     }
     artifactManifest = parsedArtifactManifest.value;
+    if (artifactManifest.runId !== id.value) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.runId",
+        "artifactManifest.runId must match the enclosing run id",
+      );
+    }
+    if (!contextBindingsMatch(context, artifactManifest.context)) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.context",
+        "artifactManifest context must match the enclosing run context",
+      );
+    }
   }
 
   let failure: ResearchRunFailureV1 | undefined;
