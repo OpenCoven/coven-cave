@@ -135,9 +135,12 @@ type QuickChatStopOutcome =
   | { status: "settled" }
   | { status: "failure"; cause: unknown };
 
-function beginQuickChatStop(active: ActiveQuickChatSend): Promise<QuickChatStopOutcome> {
+function beginQuickChatStop(
+  active: ActiveQuickChatSend,
+  options: { keepalive?: boolean } = {},
+): Promise<QuickChatStopOutcome> {
   if (active.stopOutcomePromise) return active.stopOutcomePromise;
-  active.stopOutcomePromise = requestQuickChatStop(active).then(
+  active.stopOutcomePromise = requestQuickChatStop(active, options).then(
     (outcome): QuickChatStopOutcome =>
       outcome.stopped
         ? { status: "stopped" }
@@ -374,7 +377,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     (
       options: {
         keepalive?: boolean;
-        settleUi?: boolean;
         suppressSettlementUi?: boolean;
       },
     ): ActiveQuickChatSend | null => {
@@ -385,8 +387,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       // Every reset path shares this take, so only its first caller can issue
       // Stop and a late completion cannot clear a replacement send.
       activeSendRef.current = null;
-      activeSend.suppressSettlementUi =
-        options.settleUi === true || options.suppressSettlementUi === true;
+      activeSend.suppressSettlementUi = options.suppressSettlementUi === true;
       if (options.keepalive && !activeSend.cleanupStopSent) {
         activeSend.cleanupStopSent = true;
         void requestQuickChatStop(activeSend, {
@@ -396,23 +397,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         });
       }
       activeSend.controller.abort();
-      if (options.settleUi) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === activeSend.assistantId && message.pending
-              ? {
-                  ...message,
-                  pending: false,
-                  lifecycle: "cancelled",
-                  error: null,
-                }
-              : message,
-          ),
-        );
-        if (latestSendRunIdRef.current === activeSend.runId) {
-          setSendState("idle");
-        }
-      }
       return activeSend;
     },
     [],
@@ -440,6 +424,38 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     }
     return true;
   }, []);
+
+  const reconcileStopOutcome = useCallback(
+    (
+      activeSend: ActiveQuickChatSend,
+      stopOutcomePromise: Promise<QuickChatStopOutcome>,
+      outcome: QuickChatStopOutcome,
+    ) => {
+      if (outcome.status === "stopped" || outcome.status === "queued") {
+        settleAcceptedStop(activeSend);
+        return;
+      }
+      if (activeSend.stopOutcomePromise === stopOutcomePromise) {
+        activeSend.stopOutcomePromise = undefined;
+      }
+      if (outcome.status !== "failure") return;
+
+      console.error("[Quick Chat] Failed to stop server-side response:", outcome.cause);
+      if (
+        activeSend.suppressSettlementUi
+        || activeSendRef.current !== activeSend
+        || latestSendRunIdRef.current !== activeSend.runId
+      ) {
+        return;
+      }
+      setError(
+        outcome.cause instanceof Error
+          ? outcome.cause.message
+          : "Could not stop the server-side response.",
+      );
+    },
+    [settleAcceptedStop],
+  );
 
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
@@ -533,14 +549,26 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setSelectedFamiliarId(preferredFamiliarId);
   }, [preferredFamiliarId, familiars]);
 
-  // Deliberately stop the captured run on tab closure or unmount. pagehide can
-  // enter BFCache without unmounting, so it also settles the owned local turn
-  // synchronously. Unmount only suppresses later async settlement updates.
+  // A BFCache page remains live: wait for the authoritative Stop outcome before
+  // changing its stream. A discarded page can abort immediately because its UI
+  // cannot be restored. Cleanup reuses any keepalive already started here.
   useEffect(() => {
-    const stopForPageHide = () => {
+    const stopForPageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        const activeSend = activeSendRef.current;
+        if (!activeSend || activeSend.cleanupStopSent) return;
+        activeSend.cleanupStopSent = true;
+        const stopOutcomePromise = beginQuickChatStop(activeSend, {
+          keepalive: true,
+        });
+        void stopOutcomePromise.then((outcome) => {
+          reconcileStopOutcome(activeSend, stopOutcomePromise, outcome);
+        });
+        return;
+      }
       terminateActiveSend({
         keepalive: true,
-        settleUi: true,
+        suppressSettlementUi: true,
       });
     };
     if (typeof window !== "undefined") {
@@ -555,7 +583,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         suppressSettlementUi: true,
       });
     };
-  }, [terminateActiveSend]);
+  }, [reconcileStopOutcome, terminateActiveSend]);
 
   const selectedFamiliar = useMemo(
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? familiars[0] ?? null,
@@ -966,29 +994,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
     const stopOutcomePromise = beginQuickChatStop(activeSend);
     void stopOutcomePromise.then((outcome) => {
-      if (outcome.status === "stopped" || outcome.status === "queued") {
-        settleAcceptedStop(activeSend);
-        return;
-      }
-      if (activeSend.stopOutcomePromise === stopOutcomePromise) {
-        activeSend.stopOutcomePromise = undefined;
-      }
-      if (outcome.status === "failure") {
-        console.error("[Quick Chat] Failed to stop server-side response:", outcome.cause);
-        if (
-          activeSend.suppressSettlementUi
-          || latestSendRunIdRef.current !== activeSend.runId
-        ) {
-          return;
-        }
-        setError(
-          outcome.cause instanceof Error
-            ? outcome.cause.message
-            : "Could not stop the server-side response.",
-        );
-      }
+      reconcileStopOutcome(activeSend, stopOutcomePromise, outcome);
     });
-  }, [settleAcceptedStop]);
+  }, [reconcileStopOutcome]);
 
   // Manual picks flow through here: they override the workspace-active default
   // from then on, and switching to a different familiar starts a fresh thread.

@@ -147,7 +147,7 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /stopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*function beginQuickChatStop[\s\S]*if \(active\.stopOutcomePromise\) return active\.stopOutcomePromise;[\s\S]*active\.stopOutcomePromise = requestQuickChatStop\(active\)\.then/,
+  /stopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*function beginQuickChatStop[\s\S]*if \(active\.stopOutcomePromise\) return active\.stopOutcomePromise;[\s\S]*active\.stopOutcomePromise = requestQuickChatStop\(active, options\)\.then/,
   "the active send stores and deduplicates its out-of-band Stop outcome promise",
 );
 assert.match(
@@ -162,8 +162,8 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const cancel = useCallback[\s\S]*const stopOutcomePromise = beginQuickChatStop\(activeSend\);[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*activeSend\.stopOutcomePromise = undefined;[\s\S]*outcome\.status === "failure"[\s\S]*setError\(/,
-  "accepted Stop outcomes cancel while settled and failed outcomes release the promise for retry",
+  /const reconcileStopOutcome = useCallback[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*activeSend\.stopOutcomePromise = undefined;[\s\S]*outcome\.status !== "failure"[\s\S]*activeSendRef\.current !== activeSend[\s\S]*setError\(/,
+  "accepted Stop outcomes cancel while settled and owned failures preserve the stream",
 );
 assert.match(
   quickHook,
@@ -177,8 +177,8 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const stopForPageHide[\s\S]*settleUi: true[\s\S]*window\.addEventListener\("pagehide", stopForPageHide\)[\s\S]*suppressSettlementUi: true/,
-  "pagehide settles BFCache UI while unmount suppresses unsafe async updates",
+  /const stopForPageHide = \(event: PageTransitionEvent\)[\s\S]*if \(event\.persisted\)[\s\S]*beginQuickChatStop\(activeSend, \{[\s\S]*keepalive: true[\s\S]*reconcileStopOutcome\(activeSend, stopOutcomePromise, outcome\)[\s\S]*suppressSettlementUi: true[\s\S]*window\.addEventListener\("pagehide", stopForPageHide\)[\s\S]*suppressSettlementUi: true/,
+  "BFCache waits for its keepalive Stop outcome while discarded pages and unmount abort immediately",
 );
 assert.match(
   quickHook,
