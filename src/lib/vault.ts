@@ -538,8 +538,13 @@ export function resolveCachedVaultManagedSecret(
   options?: VaultResolutionOptions,
 ): string | undefined {
   if (!entry || entry.storage === "environment") return undefined;
-  const current = process.env[key]?.trim();
-  if (current && currentMirroredMetadata(key, current)?.source === "vault") {
+  const rawCurrent = process.env[key];
+  const current = rawCurrent?.trim();
+  if (
+    current
+    && rawCurrent
+    && currentMirroredMetadata(key, rawCurrent)?.source === "vault"
+  ) {
     return current;
   }
 
@@ -564,9 +569,12 @@ type ResolvedSecret = {
 
 /** Resolve one key with the same precedence used by every secret consumer. */
 function resolveSecretWithSource(key: string, map = loadVaultMap()): ResolvedSecret | undefined {
-  const fromProcess = process.env[key]?.trim();
+  const rawProcessValue = process.env[key];
+  const fromProcess = rawProcessValue?.trim();
   if (fromProcess) {
-    const mirrored = currentMirroredMetadata(key, fromProcess);
+    const mirrored = rawProcessValue
+      ? currentMirroredMetadata(key, rawProcessValue)
+      : null;
     return {
       value: fromProcess,
       source: mirrored?.source ?? "process-env",
@@ -711,8 +719,11 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
   const map = loadVaultMap(true); // always fresh for status checks
   const envLocal = readEnvLocalAll(); // read once for all entries
   return Object.entries(map).map(([key, entry]) => {
-    const processValue = process.env[key]?.trim();
-    const mirrored = processValue ? currentMirroredMetadata(key, processValue) : null;
+    const rawProcessValue = process.env[key];
+    const processValue = rawProcessValue?.trim();
+    const mirrored = rawProcessValue
+      ? currentMirroredMetadata(key, rawProcessValue)
+      : null;
     const externallyOwnedEnv =
       key in envLocal
       || (!!processValue && mirrored?.source !== "vault");
@@ -797,8 +808,11 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
 export function getVaultStatuses(): VaultMappingStatus[] {
   const map = loadVaultMap(true); // always fresh for status checks
   return Object.entries(map).map(([key, entry]) => {
-    const processValue = process.env[key]?.trim();
-    const mirrored = processValue ? currentMirroredMetadata(key, processValue) : null;
+    const rawProcessValue = process.env[key];
+    const processValue = rawProcessValue?.trim();
+    const mirrored = rawProcessValue
+      ? currentMirroredMetadata(key, rawProcessValue)
+      : null;
     const fromEnvFile = processValue ? undefined : readEnvLocalValue(key);
     if (fromEnvFile) {
       mirrorVaultSecretToProcessEnv(key, fromEnvFile, { source: "env-local", storage: null });

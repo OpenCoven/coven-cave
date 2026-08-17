@@ -273,15 +273,21 @@ try {
   });
   setLocalEncryptedSecret("COVEN_STATUS_STORED", "stored-value");
   setLocalEncryptedSecret("COVEN_STATUS_CACHE", "cached-value");
-  assert.equal(
-    vaultModule.resolveCachedVaultManagedSecret("COVEN_STATUS_CACHE"),
-    "cached-value",
+  mirrorVaultSecretToProcessEnv(
+    "COVEN_STATUS_CACHE",
+    "cached-value\n",
+    { source: "vault", storage: "encrypted" },
   );
   setLocalEncryptedSecret("COVEN_STATUS_CACHE", "updated-value");
   assert.equal(
     vaultModule.resolveCachedVaultManagedSecret("COVEN_STATUS_CACHE"),
     "cached-value",
-    "Vault-owned provider cache is reused across harness environment builds",
+    "Vault-owned cache provenance survives trailing newlines while consumers receive a trimmed value",
+  );
+  assert.equal(
+    process.env.COVEN_STATUS_CACHE,
+    "cached-value\n",
+    "provenance checks do not rewrite the exact mirrored process value",
   );
   process.env.COVEN_STATUS_EXTERNAL = "launcher-owned";
   setLocalEncryptedSecret("COVEN_STATUS_EXTERNAL", "vault-owned");
@@ -314,6 +320,18 @@ try {
   assert.equal(statuses.COVEN_STATUS_MISSING.hasValue, false);
   assert.equal(statuses.COVEN_STATUS_REF.status, "resolved");
   assert.equal(statuses.COVEN_STATUS_REF.hasValue, true);
+  assert.equal(
+    statuses.COVEN_STATUS_CACHE.status,
+    "encrypted",
+    "metadata status keeps newline-terminated mirrored values Vault-owned",
+  );
+  assert.equal(
+    Object.fromEntries(
+      vaultModule.getVaultStatuses().map((status) => [status.key, status]),
+    ).COVEN_STATUS_CACHE.status,
+    "encrypted",
+    "materializing status keeps newline-terminated mirrored values Vault-owned",
+  );
 
   writeFileSync(process.env.COVEN_CAVE_LOCAL_VAULT_FILE, "{not valid json");
   const corrupt = Object.fromEntries(
