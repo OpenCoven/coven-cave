@@ -789,16 +789,7 @@ function copyOwnJson(value: unknown, stack = new WeakSet<object>()): unknown {
   }
   if (isRecord(value)) {
     const prototype = Object.getPrototypeOf(value);
-    const prototypeConstructor =
-      prototype === null
-        ? undefined
-        : Object.getOwnPropertyDescriptor(prototype, "constructor")?.value;
-    if (
-      prototype !== Object.prototype &&
-      prototype !== null &&
-      prototypeConstructor !== undefined &&
-      prototypeConstructor !== Object
-    ) {
+    if (prototype !== Object.prototype && prototype !== null) {
       stack.delete(value);
       throw new TypeError("only JSON objects and arrays are allowed");
     }
