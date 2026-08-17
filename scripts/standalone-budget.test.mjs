@@ -6,9 +6,12 @@ import path from "node:path";
 import {
   forbiddenStandaloneRoot,
   standaloneMetrics,
+  STANDALONE_BUDGETS,
   STANDALONE_FORBIDDEN_ROOTS,
   verifyStandaloneArtifact,
 } from "./standalone-budget.mjs";
+
+assert.equal(STANDALONE_BUDGETS.fileCount, 12_000, "standalone output allows at most 12,000 files");
 
 async function write(root, relativePath, contents = "fixture\n") {
   const output = path.join(root, relativePath);
