@@ -120,6 +120,7 @@ import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
 import { ArchiveChatButton, ChatTitleEditable, DeleteChatButton, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
@@ -216,6 +217,10 @@ import {
   chatTurnVisibleText,
   extractChatRenderedText,
 } from "@/lib/chat-rendered-text";
+import { verificationEvidenceFromTools } from "@/lib/chat-tool-verification";
+import { createStreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
+import { useStreamingPresentationSource } from "@/lib/use-streaming-presentation-source";
+import { copyText } from "@/lib/clipboard";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
@@ -5581,6 +5586,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       });
     }
     abortRef.current?.abort();
+    announce("Response stopped.", "polite");
   };
 
   function retryFailedSend(optionOverrides?: Partial<ChatSendOptions>) {
@@ -6013,6 +6019,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     rerunWithFor,
     send,
   };
+  transcriptHandlersRef.current.cancelSend = cancelSend;
 
   // Auto-send a prompt handed off from the home composer. Deferred one
   // macrotask so it runs after strict-mode's mount-effect replay — sending
@@ -8381,6 +8388,7 @@ type TranscriptHandlers = {
   askAboutFor: (turn: Turn) => ((quote: string) => void) | undefined;
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
+  cancelSend?: () => void;
   send: (override?: string) => Promise<void>;
 };
 
@@ -8500,6 +8508,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
           onRequest={(prompt) => void handlers().send(prompt)}
+          handlersRef={handlersRef}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -8565,6 +8574,7 @@ const TranscriptRows = memo(function TranscriptRows({
               onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
               onRequest={(prompt) => void handlers().send(prompt)}
+              handlersRef={handlersRef}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -8620,12 +8630,15 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onRequest,
+  handlersRef,
   feedbackContext,
   branchNav,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
   onRequest?: (prompt: string) => void;
+  /** Stable latest-ref for stream controls; avoids a fresh Stop callback prop. */
+  handlersRef: React.RefObject<TranscriptHandlers>;
   familiar: Familiar;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
@@ -8702,6 +8715,17 @@ function TurnRowImpl({
   const ghFamiliar = useMemo(
     () => ({ id: familiar.id, name: familiar.display_name }),
     [familiar.id, familiar.display_name],
+  );
+  const rawText = turn.role === "assistant" ? turn.text : "";
+  const pending = turn.role === "assistant" && Boolean(turn.pending);
+  // Main Chat accepts authoritative assistant_replace events in addition to
+  // accumulated chunks. Buffer the raw protocol source in replacement-safe mode,
+  // then project markers; treating the already-projected visible text as
+  // append-only would retain text that a correction deliberately removed.
+  const presentedRawText = useStreamingPresentationSource(
+    rawText,
+    pending,
+    { sourceMode: "replaceable" },
   );
 
   if (turn.role === "system" || turn.role === "user") {
@@ -8785,15 +8809,32 @@ function TurnRowImpl({
     );
   }
 
+  const currentProjection = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
   const {
     visible,
     cardText: visibleWithGh,
     inlineReasoning,
     skillUpdates,
     autoStatusUpdate,
-  } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
+    authoredResults,
+  } = currentProjection;
+  const presentedProjection = extractChatRenderedText(
+    presentedRawText,
+    { pending },
+  );
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
+  const streamingModel = createStreamingTurnViewModel({
+    turnId: turn.id,
+    visibleText: pending ? presentedProjection.visible : visible,
+    pending,
+    lifecycle: turnStatus,
+    failed: Boolean(turn.error),
+    progress: turn.progress,
+    tools: turn.tools,
+    authoredResults,
+    verifiedResults: verificationEvidenceFromTools(turn.tools),
+  });
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
   // visible text yet), a Queued/Connecting/Writing chip in the same meta row
   // duplicates it — suppress the chip until text flows or the turn settles.
@@ -8873,6 +8914,129 @@ function TurnRowImpl({
   const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
   const editCards = settledTools.filter(isEditCard);
   const otherTools = settledTools.filter((t) => !isEditCard(t));
+  const activityDetails =
+    reasoning
+    || indicatorVisible
+    || turn.progress?.length
+    || (pending && bubbleSegments?.some((segment) => segment.kind === "block"))
+    || (!pending && otherTools.length)
+      ? (
+          <div data-main-chat-activity-details={true}>
+            {reasoning ? (
+              <ReasoningBlock
+                reasoning={reasoning}
+                durationMs={turn.durationMs}
+                pending={pending}
+              />
+            ) : null}
+            {indicatorVisible ? (
+              <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
+            ) : null}
+            {turn.progress?.length ? (
+              <ProgressGroup progress={turn.progress} pending={pending} />
+            ) : null}
+            {pending
+              ? bubbleSegments?.map((segment) =>
+                  segment.kind === "block"
+                    ? <div key={segment.key} className="my-2">{segment.node}</div>
+                    : null,
+                )
+              : null}
+            {!pending && otherTools.length ? (
+              <ToolGroup tools={otherTools} durationMs={turn.durationMs} />
+            ) : null}
+          </div>
+        )
+      : undefined;
+
+  const supplementaryContent = (
+    <div data-main-chat-supplementary-content={true}>
+      {!pending
+        ? renderSegments?.map((segment) =>
+            segment.kind === "block"
+              ? <div key={segment.key} className="my-2">{segment.node}</div>
+              : null,
+          )
+        : null}
+      <ResponseModelStatus metadata={turn.responseMetadata} />
+      <ResponseControlStatus metadata={turn.responseMetadata} />
+      {/* Agent-produced inline attachments: images render full-bleed
+          (e.g. /image generations), audio/video mount as players, and
+          everything else stays a file chip that opens the lightbox. */}
+      {turn.attachments?.length ? (
+        <>
+          <InlineImageAttachments attachments={turn.attachments} />
+          <InlineMediaAttachments attachments={turn.attachments} />
+          {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+            <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
+          ) : null}
+        </>
+      ) : null}
+      {/* Skill stage cards (design §5): one per skill name per turn,
+          updated in place by repeated <coven:skill> markers. */}
+      {skillUpdates.length ? (
+        <div className="mt-2 space-y-1.5">
+          {skillUpdates.map((update) => (
+            <SkillStageCard
+              key={update.name}
+              name={update.name}
+              stage={update.stage}
+              note={update.note}
+            />
+          ))}
+        </div>
+      ) : null}
+      {autoStatusUpdate ? (
+        <div className="mt-2">
+          <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
+        </div>
+      ) : null}
+      {/* Edit cards stay visible rather than being buried in activity. */}
+      {!pending && turn.tools?.length && editCards.length
+        ? (() => {
+            const editedFiles = Array.from(
+              new Set(
+                editCards
+                  .map((tool) => toolTargetFile(tool.name, tool.input))
+                  .filter((path): path is string => Boolean(path)),
+              ),
+            );
+            return (
+              <div className="cave-edit-cards mt-3 space-y-2">
+                {editedFiles.length > 1 ? (
+                  <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
+                    <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
+                      {editedFiles.length} files changed
+                    </span>
+                    <button
+                      type="button"
+                      className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
+                        )
+                      }
+                    >
+                      Review all
+                    </button>
+                  </div>
+                ) : null}
+                {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+              </div>
+            );
+          })()
+        : null}
+      {/* Comment on substantial settled markdown artifacts. */}
+      {!pending && !turn.error && visible.trim().length > 80 ? (
+        <ArtifactComments
+          turnId={turn.id}
+          familiarName={familiar.display_name}
+          onRequest={(prompt) => onRequest?.(prompt)}
+        />
+      ) : null}
+    </div>
+  );
 
   return (
     <div
@@ -8959,147 +9123,59 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
-            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} /> : null}
-            {/* Chat-revamp 1b: the collapsed agent-work line sits ABOVE the
-                answer, so the reader sees "Worked for … · N steps" first and
-                the prose below reads uninterrupted. */}
-            {otherTools.length ? <ToolGroup tools={otherTools} durationMs={turn.durationMs} /> : null}
-            {indicatorVisible ? (
-              <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
-            ) : (
-              // `cave-artifact-content` scopes the comment-on-artifact text
-              // selection to this turn's rendered markdown (see ArtifactComments).
-              <div className="cave-artifact-content">
-                <MessageBubble
-                  role="assistant"
-                  content={visible || (turn.pending ? "…" : "")}
-                  timestamp={turn.createdAt}
-                  showTimestamp={false}
-                  pending={turn.pending}
-                  isError={turn.error}
-                  label={familiar.display_name}
-                  messageId={turn.id}
-                  feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                  onRegenerate={onRegenerate}
-                  onReply={onReply}
-                  onOpenUrl={onOpenUrl}
-                  // CHAT-D13-01: with tools hidden, fall back to plain content —
-                  // the text segments concatenate to `visible` anyway, so prose
-                  // renders identically with the tool blocks omitted.
-                  segments={renderSegments}
-                  // The reader's "How this was made" footer reads the same
-                  // settled tool events the stream already renders, so the
-                  // provenance it shows can never disagree with the transcript.
-                  readerTools={settledTools}
-                  readerDurationMs={turn.durationMs}
-                  onAskAbout={onAskAbout}
-                  readerPrompt={readerPrompt}
-                  onRerunWith={onRerunWith}
-                  readerFamiliarId={familiar.id}
-                  branchNav={branchNav}
-                />
-                <ResponseModelStatus metadata={turn.responseMetadata} />
-                <ResponseControlStatus metadata={turn.responseMetadata} />
-              </div>
-            )}
-            {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
-                (research-style turns) — show them inline immediately so
-                they don't teleport out of a rollup once text arrives. */}
-            {indicatorVisible && segments?.length ? (
-              <div className="mt-3 space-y-2">
-                {segments.map((seg, index) =>
-                  seg.kind === "tools"
-                    ? <ToolRuns key={`tools-${seg.tools[0]?.id ?? index}`} tools={seg.tools} />
-                    : null,
-                )}
-              </div>
-            ) : null}
-            {/* Agent-produced inline attachments: images render full-bleed
-                (e.g. /image generations), audio/video mount as players, and
-                everything else stays a file chip that opens the lightbox. */}
-            {turn.attachments?.length ? (
-              <>
-                <InlineImageAttachments attachments={turn.attachments} />
-                <InlineMediaAttachments attachments={turn.attachments} />
-                {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
-                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
-                ) : null}
-              </>
-            ) : null}
-            {/* Skill stage cards (design §5): one per skill name per turn,
-                updated in place by repeated <coven:skill> markers — live
-                while streaming, settled state after. */}
-            {skillUpdates.length ? (
-              <div className="mt-2 space-y-1.5">
-                {skillUpdates.map((u) => (
-                  <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
-                ))}
-              </div>
-            ) : null}
-            {/* Auto-mission status card: one per turn, updated in place by
-                repeated <coven:auto-status> markers — the human-visible half
-                of the /auto watcher above that fires the blocked/done ping. */}
-            {autoStatusUpdate ? (
-              <div className="mt-2">
-                <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
-              </div>
-            ) : null}
-            {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-            {/* Edit cards on settled turns (the work line above the answer
-                already collapsed everything else). */}
-            {!turn.pending && turn.tools?.length && editCards.length
-              ? (() => {
-                  // Golden path 4 (cave-qva4): a multi-file turn gets ONE
-                  // aggregate entry into the working-tree review — the
-                  // per-card Review buttons remain, but "which of these five
-                  // cards do I click" shouldn't be the first question. The
-                  // chip rides the cards' existing cave:open-file-diff
-                  // contract (the Changes panel suffix-matches the path and
-                  // shows every changed file once open).
-                  const editedFiles = Array.from(
-                    new Set(
-                      editCards
-                        .map((t) => toolTargetFile(t.name, t.input))
-                        .filter((p): p is string => Boolean(p)),
-                    ),
-                  );
-                  return (
-                    <div className="cave-edit-cards mt-3 space-y-2">
-                      {editedFiles.length > 1 ? (
-                        <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
-                          <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-                            {editedFiles.length} files changed
-                          </span>
-                          <button
-                            type="button"
-                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                            aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
-                            onClick={() =>
-                              window.dispatchEvent(
-                                new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
-                              )
-                            }
-                          >
-                            Review all
-                          </button>
-                        </div>
-                      ) : null}
-                      {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
-                    </div>
-                  );
-                })()
-              : null}
-            {/* Comment on the markdown artifact this turn produced: select any
-                passage above to leave a comment, then request a revision that
-                sends every comment back to the agent. Settled, substantial
-                assistant turns only (skip tiny replies and errors). */}
-            {!turn.pending && !turn.error && visible.trim().length > 80 ? (
-              <ArtifactComments
-                turnId={turn.id}
-                familiarName={familiar.display_name}
-                onRequest={(prompt) => onRequest?.(prompt)}
+            {/* `cave-artifact-content` keeps artifact selection scoped to this
+                turn while MessageBubble continues owning the exact source and
+                every durable action (copy, reader, feedback, reply, retry). */}
+            <div className="cave-artifact-content">
+              <MessageBubble
+                role="assistant"
+                content={visible || (turn.pending ? "…" : "")}
+                timestamp={turn.createdAt}
+                showTimestamp={false}
+                pending={turn.pending}
+                isError={streamingModel.emptySuccessful}
+                label={familiar.display_name}
+                messageId={turn.id}
+                feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
+                onRegenerate={onRegenerate}
+                onReply={onReply}
+                onOpenUrl={onOpenUrl}
+                assistantBody={
+                  streamingModel.emptySuccessful ? (
+                    <>
+                      {supplementaryContent}
+                      {activityDetails}
+                    </>
+                  ) : (
+                    <StreamingTurnResponse
+                      turnId={turn.id}
+                      familiarName={familiar.display_name}
+                      model={streamingModel}
+                      density="full"
+                      onStop={pending ? () => handlersRef.current.cancelSend?.() : undefined}
+                      canContinue={false}
+                      onRetry={turn.error ? onRegenerate : undefined}
+                      onCopyCompleted={
+                        pending && streamingModel.committedText
+                          ? () => { void copyText(streamingModel.committedText); }
+                          : undefined
+                      }
+                      activityDetails={activityDetails}
+                      supplementaryContent={supplementaryContent}
+                    />
+                  )
+                }
+                // The reader's "How this was made" footer reads the same
+                // settled tool events the stream already renders.
+                readerTools={settledTools}
+                readerDurationMs={turn.durationMs}
+                onAskAbout={onAskAbout}
+                readerPrompt={readerPrompt}
+                onRerunWith={onRerunWith}
+                readerFamiliarId={familiar.id}
+                branchNav={branchNav}
               />
-            ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -9726,6 +9802,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
+    prev.handlersRef === next.handlersRef &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

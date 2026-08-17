@@ -40,8 +40,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /inlineReasoning,[\s\S]*\} = extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\)/,
-  "Assistant turns should use the shared visible-text projection for reasoning and control-marker stripping",
+  /const currentProjection = extractChatRenderedText\(turn\.text, \{ pending: Boolean\(turn\.pending\) \}\);[\s\S]*inlineReasoning,[\s\S]*authoredResults,[\s\S]*\} = currentProjection/,
+  "Assistant turns should use the shared current projection for reasoning, results, and control-marker stripping",
 );
 
 assert.match(
@@ -65,8 +65,8 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /<ReasoningBlock reasoning=\{reasoning\} durationMs=\{turn\.durationMs\} pending=\{!!turn\.pending\} \/>[\s\S]*?<MessageBubble/,
-  "assistant reasoning renders before the streamed answer instead of trailing it",
+  /const activityDetails =[\s\S]*?<ReasoningBlock[\s\S]*?reasoning=\{reasoning\}[\s\S]*?durationMs=\{turn\.durationMs\}[\s\S]*?pending=\{pending\}/,
+  "assistant reasoning remains available through the shared activityDetails slot",
 );
 assert.match(
   sessionHeader,
@@ -160,8 +160,8 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /segments=\{renderSegments\}/,
-  "MessageBubble renders the artifact-aware renderSegments",
+  /const supplementaryContent =[\s\S]*?renderSegments[\s\S]*?segment\.kind === "block"[\s\S]*?segment\.node/,
+  "the supplementaryContent slot renders artifact-aware block segments",
 );
 
 assert.match(
@@ -172,13 +172,13 @@ assert.match(
 
 assert.match(
   turnRow,
-  /!turn\.pending && turn\.tools\?\.length/,
-  "settled turns that used tools render a designated tool section",
+  /const activityDetails =[\s\S]*?!pending && otherTools\.length/,
+  "settled turns that used non-edit tools keep a designated activityDetails section",
 );
 assert.match(
   turnRow,
-  /cave-edit-cards[\s\S]*editCards\.map\(\(tool\) => <ToolBlock/,
-  "edit-tool cards stay visible inline on settled turns (not buried in the collapsed rollup)",
+  /const supplementaryContent =[\s\S]*?cave-edit-cards[\s\S]*editCards\.map\(\(tool\) => <ToolBlock/,
+  "edit-tool cards stay visible in supplementaryContent (not buried in activity)",
 );
 assert.match(
   turnRow,
@@ -189,7 +189,7 @@ assert.match(
 // the working-tree review, riding the per-card cave:open-file-diff contract.
 assert.match(
   turnRow,
-  /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(t\) => toolTargetFile\(t\.name, t\.input\)\)/,
+  /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(tool\) => toolTargetFile\(tool\.name, tool\.input\)\)/,
   "the aggregate counts DISTINCT edited files (the same file edited twice is one change)",
 );
 assert.match(
@@ -204,12 +204,12 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /otherTools\.length \? <ToolGroup tools=\{otherTools\}/,
-  "non-edit tool activity still collapses into the designated ToolGroup",
+  /const activityDetails =[\s\S]*?otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\}/,
+  "non-edit tool activity still collapses into the activityDetails ToolGroup",
 );
 
 assert.match(
   turnRow,
-  /<MessageBubble[\s\S]*role="assistant"[\s\S]*content=\{visible \|\| \(turn\.pending \? "…" : ""\)\}/,
-  "Assistant turns should render only filtered visible content",
+  /<MessageBubble[\s\S]*role="assistant"[\s\S]*content=\{visible \|\| \(turn\.pending \? "…" : ""\)\}[\s\S]*assistantBody=\{[\s\S]*?<StreamingTurnResponse/,
+  "MessageBubble keeps filtered source ownership while the shared response owns presentation",
 );
