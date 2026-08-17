@@ -9,13 +9,55 @@ function stripListMarker(source: string): string {
   return source.replace(/^\s*(?:[-+*]|\d+[.)])\s+/, "");
 }
 
+function parseStreamingListItem(source: string, active: boolean) {
+  const text = active ? stripListMarker(source) : stripListMarker(source).trimEnd();
+  const task = /^\[([ xX])\](?:[ \t]+|$)/.exec(text);
+  if (!task) return { text, task: null };
+  return {
+    text: text.slice(task[0].length),
+    task: { checked: task[1].toLowerCase() === "x" },
+  };
+}
+
+type StreamingBlockProps = {
+  block: StreamingContentBlock;
+  live: boolean;
+};
+
+function sameListItem(
+  left: { id: string; source: string } | undefined,
+  right: { id: string; source: string } | undefined,
+): boolean {
+  return left?.id === right?.id && left?.source === right?.source;
+}
+
+function streamingBlockPropsEqual(
+  previous: StreamingBlockProps,
+  next: StreamingBlockProps,
+): boolean {
+  if (previous.live !== next.live) return false;
+  const left = previous.block;
+  const right = next.block;
+  if (left.id !== right.id || left.kind !== right.kind || left.source !== right.source) {
+    return false;
+  }
+  if (left.kind === "markdown") {
+    return right.kind === "markdown" && left.renderMode === right.renderMode;
+  }
+  if (right.kind === "markdown") return false;
+  return (
+    left.ordered === right.ordered
+    && left.committedItems.length === right.committedItems.length
+    && left.committedItems.every((item, index) =>
+      sameListItem(item, right.committedItems[index]))
+    && sameListItem(left.activeItem, right.activeItem)
+  );
+}
+
 const StreamingBlock = memo(function StreamingBlock({
   block,
   live,
-}: {
-  block: StreamingContentBlock;
-  live: boolean;
-}) {
+}: StreamingBlockProps) {
   if (block.kind === "list") {
     const List = block.ordered ? "ol" : "ul";
     const items = block.activeItem
@@ -25,14 +67,28 @@ const StreamingBlock = memo(function StreamingBlock({
       <List data-stream-block-id={block.id}>
         {items.map((item) => {
           const active = item.id === block.activeItem?.id;
+          const renderedItem = parseStreamingListItem(item.source, active);
+          const taskLabel = renderedItem.task
+            ? `${renderedItem.task.checked ? "Completed" : "Incomplete"} task${
+              renderedItem.text.trim() ? `: ${renderedItem.text.trim()}` : ""
+            }`
+            : undefined;
           return (
-            <li key={item.id} data-stream-list-item-id={item.id}>
+            <li
+              key={item.id}
+              data-stream-list-item-id={item.id}
+              className={renderedItem.task ? "task-list-item" : undefined}
+            >
+              {renderedItem.task ? (
+                <input
+                  type="checkbox"
+                  checked={renderedItem.task.checked}
+                  disabled
+                  aria-label={taskLabel}
+                />
+              ) : null}
               <ProgressiveMarkdownBlock
-                text={
-                  active
-                    ? stripListMarker(item.source)
-                    : stripListMarker(item.source).trimEnd()
-                }
+                text={renderedItem.text}
                 pending={active && live}
                 showCaret={false}
               />
@@ -78,7 +134,7 @@ const StreamingBlock = memo(function StreamingBlock({
       ) : null}
     </div>
   );
-});
+}, streamingBlockPropsEqual);
 
 export function StreamingMarkdownBlocks({
   committedBlocks,

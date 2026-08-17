@@ -12,16 +12,32 @@ const markdownRenderer = vi.hoisted(() => ({
   blocked: false,
   renderAsync: vi.fn((blocks: unknown[]) => {
     if (markdownRenderer.blocked) return new Promise<string>(() => {});
-    const text = JSON.stringify(blocks)
-      .match(/"text":"([^"]*)"/g)
-      ?.map((entry) => JSON.parse(`{${entry}}`).text)
-      .join("") ?? "";
+    const text = blocks
+      .flatMap((block) => {
+        if (!block || typeof block !== "object" || !("content" in block)) return [];
+        const content = (block as { content?: Array<{ text?: string }> }).content;
+        return content?.map((span) => span.text ?? "") ?? [];
+      })
+      .join("");
     return Promise.resolve(`<div class="cm-preview"><p>${text}</p></div>`);
   }),
 }));
 
 const clipboard = vi.hoisted(() => ({
   copyText: vi.fn(async () => true),
+}));
+
+const markdownDomWiring = vi.hoisted(() => ({
+  calls: [] as Array<[string | null, ((url: string) => void) | undefined]>,
+}));
+
+const responseDecorator = vi.hoisted(() => ({
+  decorate: vi.fn((html: string) =>
+    html.replace(
+      "[DONE]",
+      '<span class="cave-response-status" aria-label="Status: done">[DONE]</span>',
+    ),
+  ),
 }));
 
 vi.mock("@/lib/markdown-preview", () => ({
@@ -33,11 +49,39 @@ vi.mock("@/lib/html-sanitize", () => ({
 }));
 
 vi.mock("@/lib/response-status-tokens", () => ({
-  decorateResponseHtml: (html: string) => html,
+  decorateResponseHtml: responseDecorator.decorate,
 }));
 
 vi.mock("@/lib/clipboard", () => ({
   copyText: clipboard.copyText,
+}));
+
+vi.mock("./message-dom-wiring", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./message-dom-wiring")>();
+  return {
+    ...actual,
+    useWireCopyButtons: (
+      html: string | null,
+      onOpenUrl?: (url: string) => void,
+    ) => {
+      markdownDomWiring.calls.push([html, onOpenUrl]);
+      return { current: null };
+    },
+  };
+});
+
+vi.mock("@/components/ui/citation", () => ({
+  InlineCitationPreviews: ({
+    citations,
+  }: {
+    citations: Array<{ title: string; url?: string }>;
+  }) => (
+    <span
+      data-inline-citations={citations.length}
+      data-citation-title={citations[0]?.title}
+      data-citation-url={citations[0]?.url}
+    />
+  ),
 }));
 
 vi.mock("next/dynamic", () => ({
@@ -53,6 +97,8 @@ beforeEach(() => {
   markdownRenderer.blocked = false;
   markdownRenderer.renderAsync.mockClear();
   clipboard.copyText.mockClear();
+  markdownDomWiring.calls.length = 0;
+  responseDecorator.decorate.mockClear();
 });
 
 const firstActivity = {
@@ -164,6 +210,120 @@ describe("StreamingTurnResponse", () => {
     expect(renderer.root.findAllByProps({ "data-stream-caret": true })).toHaveLength(1);
   });
 
+  it("does not rerender an unchanged committed block when fresh partitions update the active block", async () => {
+    markdownRenderer.blocked = true;
+    const renderer = await render(response());
+    markdownDomWiring.calls.length = 0;
+
+    await act(async () => {
+      renderer.update(
+        response({
+          model: model({
+            committedBlocks: [
+              {
+                id: "t:0-5",
+                kind: "markdown",
+                source: "Done\n\n",
+                renderMode: "markdown",
+              },
+            ],
+            activeBlock: {
+              id: "t:6-15",
+              kind: "markdown",
+              source: "More words",
+              renderMode: "markdown",
+            },
+          }),
+        }),
+      );
+    });
+
+    expect(markdownDomWiring.calls).toHaveLength(1);
+  });
+
+  it("rerenders each list item once for value changes and the live-to-committed transition", async () => {
+    markdownRenderer.blocked = true;
+    const activeList = {
+      id: "t:0-list",
+      kind: "list" as const,
+      ordered: false,
+      committedItems: [{ id: "t:0-item-0", source: "- one\n" }],
+      activeItem: { id: "t:0-item-1", source: "- two" },
+      source: "- one\n- two",
+    };
+    const renderer = await render(
+      response({
+        model: model({
+          committedBlocks: [],
+          activeBlock: activeList,
+          committedText: "- one\n",
+        }),
+      }),
+    );
+    markdownDomWiring.calls.length = 0;
+
+    const updatedList = {
+      ...activeList,
+      activeItem: { ...activeList.activeItem, source: "- two updated" },
+      source: "- one\n- two updated",
+    };
+    await act(async () => {
+      renderer.update(
+        response({
+          model: model({
+            committedBlocks: [],
+            activeBlock: updatedList,
+            committedText: "- one\n",
+          }),
+        }),
+      );
+    });
+    expect(markdownDomWiring.calls).toHaveLength(2);
+
+    markdownDomWiring.calls.length = 0;
+    const committedList = {
+      ...updatedList,
+      committedItems: [
+        ...updatedList.committedItems,
+        { id: updatedList.activeItem.id, source: "- two updated" },
+      ],
+      activeItem: undefined,
+    };
+    await act(async () => {
+      renderer.update(
+        response({
+          model: model({
+            status: "complete",
+            committedBlocks: [committedList],
+            activeBlock: null,
+            committedText: updatedList.source,
+          }),
+        }),
+      );
+    });
+
+    expect(markdownDomWiring.calls).toHaveLength(2);
+    expect(renderer.root.findAllByProps({ "data-stream-caret": true })).toHaveLength(0);
+
+    markdownDomWiring.calls.length = 0;
+    await act(async () => {
+      renderer.update(
+        response({
+          model: model({
+            status: "complete",
+            committedBlocks: [{
+              ...committedList,
+              committedItems: committedList.committedItems.map((item) => ({ ...item })),
+            }],
+            activeBlock: null,
+            committedText: updatedList.source,
+          }),
+        }),
+      );
+    });
+    expect(markdownDomWiring.calls).toHaveLength(0);
+  });
+
   it("keeps an active list and item host mounted when the item settles", async () => {
     markdownRenderer.blocked = true;
     const activeList = {
@@ -246,6 +406,53 @@ describe("StreamingTurnResponse", () => {
         renderer.root.findByProps({ "data-stream-list-item-id": "t:0-item-0" }),
       ),
     ).toBe("committed item");
+  });
+
+  it("preserves checked and unchecked task-list semantics for committed and active items", async () => {
+    markdownRenderer.blocked = true;
+    const renderer = await render(
+      response({
+        model: model({
+          committedBlocks: [],
+          activeBlock: {
+            id: "t:0-list",
+            kind: "list",
+            ordered: false,
+            committedItems: [{ id: "t:0-item-0", source: "- [x] done\n" }],
+            activeItem: { id: "t:0-item-1", source: "- [ ] todo" },
+            source: "- [x] done\n- [ ] todo",
+          },
+          committedText: "- [x] done\n",
+        }),
+      }),
+    );
+
+    const checked = renderer.root.findByProps({
+      "data-stream-list-item-id": "t:0-item-0",
+    });
+    const unchecked = renderer.root.findByProps({
+      "data-stream-list-item-id": "t:0-item-1",
+    });
+    const checkedInput = checked.findByType("input");
+    const uncheckedInput = unchecked.findByType("input");
+
+    expect(checked.props.className).toContain("task-list-item");
+    expect(checkedInput.props).toMatchObject({
+      type: "checkbox",
+      checked: true,
+      disabled: true,
+      "aria-label": "Completed task: done",
+    });
+    expect(uncheckedInput.props).toMatchObject({
+      type: "checkbox",
+      checked: false,
+      disabled: true,
+      "aria-label": "Incomplete task: todo",
+    });
+    expect(textContent(checked)).toBe("done");
+    expect(textContent(unchecked)).toBe("todo");
+    expect(checked.findAllByType("ul")).toHaveLength(0);
+    expect(unchecked.findAllByType("ul")).toHaveLength(0);
   });
 
   it("uses the real progressive Markdown path to gate fallback and rendered cursors", async () => {
@@ -633,5 +840,82 @@ describe("StreamingTurnResponse", () => {
       (node) => node.props.className === "cave-response-body",
     );
     expect(renderedMarkdown(legacyBody)).toContain("Legacy Markdown body");
+  });
+
+  it("inherits assistant Markdown URL, citation, and response-decoration integrations", async () => {
+    const onOpenUrl = vi.fn();
+    const content = [
+      "Read [the guide](https://example.com/guide), then [DONE][^source].",
+      "",
+      '[^source]: https://example.com/source "Source title" — Preview excerpt',
+    ].join("\n");
+    const renderer = await render(
+      <div>
+        <div data-render-case="fallback">
+          <MessageBubble role="assistant" content={content} pending onOpenUrl={onOpenUrl} />
+        </div>
+        <div data-render-case="assistant-body">
+          <MessageBubble
+            role="assistant"
+            content={content}
+            pending
+            onOpenUrl={onOpenUrl}
+            assistantBody={<ProgressiveMarkdownBlock text={content} pending />}
+          />
+        </div>
+      </div>,
+    );
+    await flushMarkdown();
+
+    const fallback = renderer.root.findByProps({ "data-render-case": "fallback" });
+    const assistantBody = renderer.root.findByProps({ "data-render-case": "assistant-body" });
+    expect(renderedMarkdown(assistantBody)).toBe(renderedMarkdown(fallback));
+    expect(renderedMarkdown(assistantBody)).toContain('aria-label="Status: done"');
+    expect(renderedMarkdown(assistantBody)).not.toContain("[^source]");
+    expect(renderedMarkdown(assistantBody)).not.toContain("https://example.com/source");
+    expect(JSON.stringify(markdownRenderer.renderAsync.mock.calls)).toContain("#cite-1");
+
+    const citation = assistantBody.findByProps({ "data-inline-citations": 1 });
+    expect(citation.props).toMatchObject({
+      "data-citation-title": "Source title",
+      "data-citation-url": "https://example.com/source",
+    });
+
+    const inheritedOpenUrl = markdownDomWiring.calls
+      .map(([, handler]) => handler)
+      .find((handler) => handler === onOpenUrl);
+    expect(inheritedOpenUrl).toBe(onOpenUrl);
+    inheritedOpenUrl!("https://example.com/guide");
+    expect(onOpenUrl).toHaveBeenCalledWith("https://example.com/guide");
+  });
+
+  it("lets explicit ProgressiveMarkdownBlock props override assistant context", async () => {
+    const inheritedOpenUrl = vi.fn();
+    const explicitOpenUrl = vi.fn();
+    const renderer = await render(
+      <MessageBubble
+        role="assistant"
+        content={'Context[^source]\n\n[^source]: https://example.com/source "Context source"'}
+        onOpenUrl={inheritedOpenUrl}
+        assistantBody={
+          <ProgressiveMarkdownBlock
+            text="Explicit [DONE]"
+            onOpenUrl={explicitOpenUrl}
+            citations={[]}
+            decorateResponse={false}
+          />
+        }
+      />,
+    );
+    await flushMarkdown();
+
+    expect(renderedMarkdown(renderer.root)).toContain("[DONE]");
+    expect(renderedMarkdown(renderer.root)).not.toContain("Status: done");
+    expect(renderer.root.findAllByProps({ "data-inline-citations": 0 })).toHaveLength(1);
+    const handler = markdownDomWiring.calls
+      .map(([, candidate]) => candidate)
+      .find((candidate) => candidate === explicitOpenUrl);
+    expect(handler).toBe(explicitOpenUrl);
+    expect(responseDecorator.decorate).not.toHaveBeenCalled();
   });
 });

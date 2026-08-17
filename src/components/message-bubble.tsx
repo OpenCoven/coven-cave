@@ -24,6 +24,7 @@ import "@/styles/cave-md.css";
  */
 
 import {
+  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -45,6 +46,7 @@ import {
   renderCitedBody,
   renderCitationReferences,
   type Citation,
+  type ParsedCitations,
 } from "@/lib/citations";
 import { InlineCitationPreviews } from "@/components/ui/citation";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
@@ -784,6 +786,42 @@ type MarkdownContentProps = {
   className?: string;
 };
 
+type AssistantMarkdownRenderContextValue = {
+  onOpenUrl?: (url: string) => void;
+  citations: readonly Citation[];
+  parsedCitations: Pick<ParsedCitations, "citations" | "order">;
+  decorateResponse: boolean;
+  citationSignature: string;
+};
+
+const AssistantMarkdownRenderContext =
+  createContext<AssistantMarkdownRenderContextValue | null>(null);
+
+function useStableAssistantMarkdownRenderContext(
+  onOpenUrl: ((url: string) => void) | undefined,
+  parsedCitations: ParsedCitations,
+): AssistantMarkdownRenderContextValue {
+  const citationSignature = JSON.stringify([
+    parsedCitations.citations,
+    [...parsedCitations.order],
+  ]);
+  const valueRef = useRef<AssistantMarkdownRenderContextValue | null>(null);
+  if (
+    valueRef.current === null
+    || valueRef.current.onOpenUrl !== onOpenUrl
+    || valueRef.current.citationSignature !== citationSignature
+  ) {
+    valueRef.current = {
+      onOpenUrl,
+      citations: parsedCitations.citations,
+      parsedCitations,
+      decorateResponse: true,
+      citationSignature,
+    };
+  }
+  return valueRef.current;
+}
+
 function MarkdownContent({
   text,
   pending,
@@ -963,13 +1001,20 @@ export function ProgressiveMarkdownBlock({
   pending,
   onOpenUrl,
   citations,
+  decorateResponse,
   className,
   showCaret = true,
 }: MarkdownContentProps) {
+  const assistantContext = useContext(AssistantMarkdownRenderContext);
+  const hasExplicitCitations = citations !== undefined;
+  const renderedText = assistantContext && !hasExplicitCitations
+    ? renderCitationReferences(text, assistantContext.parsedCitations)
+    : text;
   return (
-    <MarkdownContent text={text} pending={pending}
-      onOpenUrl={onOpenUrl}
-      citations={citations}
+    <MarkdownContent text={renderedText} pending={pending}
+      onOpenUrl={onOpenUrl ?? assistantContext?.onOpenUrl}
+      citations={citations ?? assistantContext?.citations}
+      decorateResponse={decorateResponse ?? assistantContext?.decorateResponse}
       className={className}
       showCaret={showCaret}
     />
@@ -1119,9 +1164,11 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   // pipeline). Bodies without footnotes pass through unchanged. Mid-stream the
   // definition block hasn't arrived, so this is a no-op until the turn settles.
   const cited = useMemo(() => renderCitedBody(content), [content]);
-  const segmentedCitations = useMemo(
-    () => (segments?.length ? parseCitations(content) : null),
-    [content, segments],
+  const parsedCitations = useMemo(() => parseCitations(content), [content]);
+  const segmentedCitations = segments?.length ? parsedCitations : null;
+  const assistantMarkdownContext = useStableAssistantMarkdownRenderContext(
+    onOpenUrl,
+    parsedCitations,
   );
 
   if (role === "system") {
@@ -1219,7 +1266,11 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         ) : (
           <div className="cave-response-body">
             <div className={isError ? "text-[var(--danger-text)]" : ""}>
-              {assistantBody !== undefined ? assistantBody : segments?.length ? (
+              {assistantBody !== undefined ? (
+                <AssistantMarkdownRenderContext.Provider value={assistantMarkdownContext}>
+                  {assistantBody}
+                </AssistantMarkdownRenderContext.Provider>
+              ) : segments?.length ? (
                 segments.map((seg, i) => {
                   if (seg.kind === "block") {
                     return <div key={seg.key} className="my-2">{seg.node}</div>;
