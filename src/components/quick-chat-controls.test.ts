@@ -341,8 +341,8 @@ assert.match(
 // pausing near the bottom — stays gone.
 assert.match(
   thread,
-  /const \{ schedulePin, stick \} = useStickToBottom\(scrollRef\)/,
-  "the thread follows via the shared intent-release hook",
+  /const \[stuck, setStuck\] = useState\(true\);[\s\S]*const \[newResponseContent, setNewResponseContent\] = useState\(false\);[\s\S]*const \{ schedulePin, stick \} = useStickToBottom\(scrollRef, \{\s*onStickChange: setStuck,\s*\}\)/,
+  "the thread observes the shared intent-release hook and owns one unseen-content boolean",
 );
 assert.doesNotMatch(
   source,
@@ -351,13 +351,23 @@ assert.doesNotMatch(
 );
 assert.match(
   thread,
-  /schedulePin\(\);\s*\}, \[messages\.length, lastText, schedulePin\]\)/,
+  /schedulePin\(\);\s*\}, \[messages\.length, latestAssistantSource, schedulePin\]\)/,
   "streamed tokens pin through the coalesced scheduler",
 );
 assert.match(
   thread,
-  /stick\(\);\s*\}, \[messages\.length, stick\]\)/,
-  "a new turn re-engages follow-along scrolling",
+  /lastUserMessageId[\s\S]*observedUserMessageIdRef[\s\S]*setNewResponseContent\(false\);[\s\S]*stick\(\);/,
+  "a new user message or thread reset clears unseen content and re-engages following",
+);
+assert.match(
+  thread,
+  /message\.role === "assistant" && message\.local !== true[\s\S]*formatQuickChatAssistantMessage[\s\S]*latestAssistantSource[\s\S]*if \(stuck\) \{[\s\S]*setNewResponseContent\(false\);[\s\S]*if \(latestAssistantId !== null && \(turnChanged \|\| sourceChanged\)\) \{[\s\S]*setNewResponseContent\(true\);/,
+  "only the latest non-local assistant projection creates unseen response content while released",
+);
+assert.match(
+  thread,
+  /className="quick-chat-new-response-content focus-ring"[\s\S]*setNewResponseContent\(false\);\s*stick\(\);[\s\S]*\{newResponseContent \? "New response content" : "Latest"\}/,
+  "the released Quick Chat reader gets the shared focused response control",
 );
 {
   const hook = readFileSync(new URL("../lib/use-stick-to-bottom.ts", import.meta.url), "utf8");

@@ -299,17 +299,65 @@ export function QuickChatThread({
   onStop?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { schedulePin, stick } = useStickToBottom(scrollRef);
-  const lastText = messages.length > 0 ? messages[messages.length - 1].text : "";
-
-  useEffect(() => { stick(); }, [messages.length, stick]);
-  useEffect(() => { schedulePin(); }, [messages.length, lastText, schedulePin]);
-
-  const lastAssistantId = lastRegenerableQuickChatMessageId(messages);
-  const latestAssistantId =
+  const [stuck, setStuck] = useState(true);
+  const [newResponseContent, setNewResponseContent] = useState(false);
+  const { schedulePin, stick } = useStickToBottom(scrollRef, {
+    onStickChange: setStuck,
+  });
+  const latestAssistant =
     messages.findLast(
       (message) => message.role === "assistant" && message.local !== true,
-    )?.id ?? null;
+    ) ?? null;
+  const latestAssistantId = latestAssistant?.id ?? null;
+  const latestAssistantProjection = latestAssistant
+    ? formatQuickChatAssistantMessage(
+        latestAssistant.text,
+        Boolean(latestAssistant.pending),
+      )
+    : null;
+  const latestAssistantSource = latestAssistantProjection
+    ? JSON.stringify(latestAssistantProjection)
+    : "";
+  const observedAssistantTurnIdRef = useRef(latestAssistantId);
+  const observedAssistantSourceRef = useRef(latestAssistantSource);
+  const lastUserMessageId =
+    messages.findLast((message) => message.role === "user")?.id ?? null;
+  const observedUserMessageIdRef = useRef(lastUserMessageId);
+
+  useEffect(() => {
+    schedulePin();
+  }, [messages.length, latestAssistantSource, schedulePin]);
+
+  useEffect(() => {
+    const userMessageChanged = observedUserMessageIdRef.current !== lastUserMessageId;
+    const turnChanged = observedAssistantTurnIdRef.current !== latestAssistantId;
+    const sourceChanged = observedAssistantSourceRef.current !== latestAssistantSource;
+    observedUserMessageIdRef.current = lastUserMessageId;
+    observedAssistantTurnIdRef.current = latestAssistantId;
+    observedAssistantSourceRef.current = latestAssistantSource;
+
+    if (messages.length === 0 || userMessageChanged) {
+      setNewResponseContent(false);
+      stick();
+      return;
+    }
+    if (stuck) {
+      setNewResponseContent(false);
+      return;
+    }
+    if (latestAssistantId !== null && (turnChanged || sourceChanged)) {
+      setNewResponseContent(true);
+    }
+  }, [
+    lastUserMessageId,
+    latestAssistantId,
+    latestAssistantSource,
+    messages.length,
+    stick,
+    stuck,
+  ]);
+
+  const lastAssistantId = lastRegenerableQuickChatMessageId(messages);
 
   return (
     <div ref={scrollRef} className="quick-chat-thread">
@@ -334,6 +382,20 @@ export function QuickChatThread({
           onStop={onStop}
         />
       ))}
+      {!stuck ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="secondary"
+          className="quick-chat-new-response-content focus-ring"
+          onClick={() => {
+            setNewResponseContent(false);
+            stick();
+          }}
+        >
+          {newResponseContent ? "New response content" : "Latest"}
+        </Button>
+      ) : null}
     </div>
   );
 }

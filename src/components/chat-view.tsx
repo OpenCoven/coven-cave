@@ -2642,7 +2642,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // read the live value without re-subscribing.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
-  const [newTurnsCount, setNewTurnsCount] = useState(0);
+  const [newResponseContent, setNewResponseContent] = useState(false);
+  const observedAssistantTurnIdRef = useRef<string | null>(null);
+  const observedAssistantSourceRef = useRef("");
   // Transcript render cap (see TRANSCRIPT_RENDER_CAP). Sticky for the session:
   // once the reader leaves the bottom we mount the whole transcript and keep it
   // mounted, so re-pinning doesn't churn rows in/out.
@@ -2712,8 +2714,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     followingRef.current = next;
     setFollowing(next);
     if (next) {
-      // Reset count when returning to the bottom
-      setNewTurnsCount(0);
+      setNewResponseContent(false);
       releasedScrollAnchorRef.current = null;
       if (releasedAnchorFrameRef.current !== null) {
         cancelAnimationFrame(releasedAnchorFrameRef.current);
@@ -3863,6 +3864,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
 
+  const activeAssistantResponse = useMemo(() => {
+    const turn = activePath.findLast((turn) => turn.role === "assistant");
+    return {
+      turnId: turn?.id ?? null,
+      source: turn
+        ? JSON.stringify(
+            extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) }),
+          )
+        : "",
+    };
+  }, [activePath]);
+  const activeAssistantTurnId = activeAssistantResponse.turnId;
+  const activeAssistantSource = activeAssistantResponse.source;
+
+  useEffect(() => {
+    const turnChanged = observedAssistantTurnIdRef.current !== activeAssistantTurnId;
+    const sourceChanged = observedAssistantSourceRef.current !== activeAssistantSource;
+    observedAssistantTurnIdRef.current = activeAssistantTurnId;
+    observedAssistantSourceRef.current = activeAssistantSource;
+
+    if (following) {
+      setNewResponseContent(false);
+      return;
+    }
+    if (activeAssistantTurnId !== null && (turnChanged || sourceChanged)) {
+      setNewResponseContent(true);
+    }
+  }, [activeAssistantSource, activeAssistantTurnId, following]);
+
   // The last settled assistant turn's first reply next-path. Typed task/action
   // suggestions are deliberately excluded: keyboard fill may only prepare
   // editable chat text, never start a task or navigate as a side effect.
@@ -4364,13 +4394,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Auto-grow the composer with its content (shared with the home composer).
   useAutogrowTextarea(inputRef, input, { fallbackMaxHeight: COMPOSER_MAX_HEIGHT });
 
-  // CHAT-D10-03: Track new turns arriving while not following
-  const appendTurn = (newTurn: Turn | Turn[]) => {
-    if (!followingRef.current) {
-      setNewTurnsCount((c) => c + (Array.isArray(newTurn) ? newTurn.length : 1));
-    }
-  };
-
   const appendSystem = (text: string) => {
     const newTurn = {
       id: crypto.randomUUID(),
@@ -4378,7 +4401,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       text,
       createdAt: new Date().toISOString(),
     };
-    appendTurn(newTurn);
     // Route through the live registry (cave-7ft): while a response streams the
     // registry is the source of truth — a raw setTurns append would be
     // discarded when the next assistant_chunk mirrors the registry snapshot
@@ -4442,7 +4464,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         { id: "image-gen", label: "Generating image", status: "running", createdAt: now },
       ],
     };
-    appendTurn([userTurn, assistantTurn]);
     updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
     setActiveLeafId(assistantTurn.id);
     announce("Generating image");
@@ -5234,7 +5255,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     streamOwnerRef.current = true;
     refetchOnSettleRef.current = null;
     const nextTurns = [...turnsRef.current, userTurn, assistantTurn];
-    appendTurn([userTurn, assistantTurn]);
     turnsRef.current = nextTurns;
     setTurns(nextTurns);
     setActiveLeafId(assistantTurn.id);
@@ -5923,6 +5943,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(projectLaunchMessage, "assertive");
       return;
     }
+    updateFollowing(true);
+    schedulePin();
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
     // Only mentions whose `@path` token survived editing ride along — a
     // deleted reference must not silently re-enter the prompt.
@@ -7970,28 +7992,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <div ref={tailRef} />
         </div>
 
-        {/* Scroll-to-bottom FAB (CHAT-D10-03: shows count of new messages) */}
+        {/* Released-reader response control (CHAT-D10-03). */}
         {!following && (
           <button
             type="button"
+            className="cave-new-response-content focus-ring"
             onClick={() => {
               updateFollowing(true);
-              const el = scrollRef.current;
-              if (!el) return;
-              // CHAT-D13-03: the global `scroll-behavior: auto !important`
-              // kill switch does NOT override explicit scrollTo options, so
-              // gate the smooth animation on prefers-reduced-motion here.
-              const reduceMotion =
-                typeof window !== "undefined" &&
-                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-              el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
+              schedulePin();
             }}
-            aria-label={`Scroll to bottom${newTurnsCount ? ` (${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""})` : ""}`}
-            className="cave-scroll-bottom-button sticky bottom-4 ml-auto z-[60] flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"
-            title={newTurnsCount ? `${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""}` : undefined}
           >
-            <Icon name="ph:caret-down-bold" width={12} />
-            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence-foreground)]">{newTurnsCount}</span>}
+            {newResponseContent ? "New response content" : "Latest"}
           </button>
         )}
       </div>
