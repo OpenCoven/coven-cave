@@ -10,24 +10,29 @@ export function useStreamingPresentationSource(source: string, pending: boolean)
   setPresentedRef.current = setPresented;
 
   const bufferRef = useRef<ReturnType<typeof createStreamingPresentationBuffer> | null>(null);
-  if (!bufferRef.current) {
-    bufferRef.current = createStreamingPresentationBuffer({
+  const ensureBuffer = () => {
+    if (bufferRef.current) return bufferRef.current;
+    const buffer = createStreamingPresentationBuffer({
       initialSource: source,
       onFlush: (next) => setPresentedRef.current(next),
     });
-  }
+    bufferRef.current = buffer;
+    return buffer;
+  };
+  ensureBuffer();
 
   useEffect(() => {
-    bufferRef.current?.update(source, !pending);
+    ensureBuffer().update(source, !pending);
   }, [pending, source]);
 
   useEffect(
     () => () => {
-      bufferRef.current?.dispose();
+      const buffer = bufferRef.current;
+      bufferRef.current = null;
+      buffer?.dispose();
     },
     [],
   );
 
   return pending ? presented : source;
 }
-
