@@ -190,7 +190,7 @@ export default function BeautifulUiGallery() {
         <p className="max-w-[64ch] text-[length:var(--text-base)] text-bui-ink-2">
           {ENTRIES.length} AI-native primitives vendored from{" "}
           <a
-            className="text-bui-accent underline underline-offset-2"
+            className="text-bui-accent-ink underline underline-offset-2"
             href="https://www.beautifului.dev"
             target="_blank"
             rel="noreferrer"

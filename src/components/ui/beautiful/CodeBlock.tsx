@@ -23,8 +23,8 @@ const LINES: Tok[][] = [
 
 const COLORS: Record<string, string> = {
   kw: "var(--bui-accent-ink)",
-  str: "var(--bui-green)",
-  num: "var(--bui-orange)",
+  str: "var(--bui-green-text)",
+  num: "var(--bui-orange-text)",
   fn: "var(--bui-ink)",
   dim: "var(--bui-ink-3)",
 };
@@ -69,7 +69,7 @@ export function CodeBlock() {
           onClick={copy}
           className={`flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-[length:var(--text-sm)]
             font-medium transition-colors duration-100 hover:bg-bui-hover
-            ${copied ? "text-bui-green" : "text-bui-ink-3 hover:text-bui-ink"}`}
+            ${copied ? "text-bui-green-text" : "text-bui-ink-3 hover:text-bui-ink"}`}
         >
           {copied ? (
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -87,7 +87,7 @@ export function CodeBlock() {
             key={i}
             className="flex [animation:bui-fade-up_250ms_cubic-bezier(0.23,1,0.32,1)_both]!"
           >
-            <span className="w-5 shrink-0 text-right text-[length:var(--text-xs)] leading-[1.86] text-bui-ink-3/60 select-none">
+            <span className="w-5 shrink-0 text-right text-[length:var(--text-xs)] leading-[1.86] text-bui-ink-3 select-none">
               {i + 1}
             </span>
             <span className="pl-2.5 whitespace-pre">

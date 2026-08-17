@@ -54,8 +54,8 @@ function SpinnerRing({ active, children }: { active?: boolean; children?: React.
 function Badge({ tone, children }: { tone: "red" | "green"; children: React.ReactNode }) {
   return (
     <span
-      className={[(`flex size-5.5 shrink-0 items-center justify-center rounded-full text-white
-        ${tone === "red" ? "bg-bui-red" : "bg-bui-green"}`), "[animation:bui-pop-in_300ms_cubic-bezier(0.23,1,0.32,1)_both]!"].filter(Boolean).join(" ")}
+      className={[(`flex size-5.5 shrink-0 items-center justify-center rounded-full
+        ${tone === "red" ? "bg-bui-red text-bui-red-ink" : "bg-bui-green text-bui-green-ink"}`), "[animation:bui-pop-in_300ms_cubic-bezier(0.23,1,0.32,1)_both]!"].filter(Boolean).join(" ")}
     >
       {children}
     </span>
@@ -84,7 +84,7 @@ export function TaskRows({ variant = "Capsules" }: { variant?: string }) {
       label: "Verified vendor records",
       amount: "12 suppliers",
       pill: (
-        <span className="inline-flex h-5.5 items-center rounded-full bg-bui-green-tint px-2 text-[length:var(--text-sm)] font-medium text-bui-green">
+        <span className="inline-flex h-5.5 items-center rounded-full bg-bui-green-tint px-2 text-[length:var(--text-sm)] font-medium text-bui-green-text">
           Completed
         </span>
       ),
@@ -118,11 +118,11 @@ export function TaskRows({ variant = "Capsules" }: { variant?: string }) {
       amount: "2 messages",
       pill:
         row2 === "failed" ? (
-          <span className="inline-flex h-5.5 items-center gap-1.5 rounded-full bg-bui-red-tint px-2 text-[length:var(--text-sm)] font-medium text-bui-red [animation:bui-fade-in_200ms_ease-out_both]!">
+          <span className="inline-flex h-5.5 items-center gap-1.5 rounded-full bg-bui-red-tint px-2 text-[length:var(--text-sm)] font-medium text-bui-red-text [animation:bui-fade-in_200ms_ease-out_both]!">
             Failed <span className="flex [animation:spin_1.2s_linear_infinite]!">{RetryIcon}</span>
           </span>
         ) : row2 === "done" ? (
-          <span className="inline-flex h-5.5 items-center gap-1.5 rounded-full bg-bui-green-tint px-2 text-[length:var(--text-sm)] font-medium text-bui-green [animation:bui-fade-in_200ms_ease-out_both]!">
+          <span className="inline-flex h-5.5 items-center gap-1.5 rounded-full bg-bui-green-tint px-2 text-[length:var(--text-sm)] font-medium text-bui-green-text [animation:bui-fade-in_200ms_ease-out_both]!">
             Completed
           </span>
         ) : null,

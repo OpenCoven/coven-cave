@@ -80,7 +80,7 @@ export function ApprovalCard() {
         {sent ? (
           <div className="flex h-37 flex-col items-center justify-center gap-2">
             <span
-              className="flex size-6 items-center justify-center rounded-full bg-bui-green text-white [animation:bui-pop-in_300ms_cubic-bezier(0.23,1,0.32,1)_both]!"
+              className="flex size-6 items-center justify-center rounded-full bg-bui-green text-bui-green-ink [animation:bui-pop-in_300ms_cubic-bezier(0.23,1,0.32,1)_both]!"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
             </span>

@@ -68,7 +68,7 @@ export function DiffTable() {
                 >
                   <td
                     className="primitive-table-cell text-[length:var(--text-base)] font-medium tabular-nums transition-colors duration-400"
-                    style={{ color: out ? "var(--bui-red)" : "var(--bui-ink)" }}
+                    style={{ color: out ? "var(--bui-red-text)" : "var(--bui-ink)" }}
                   >
                     {row.id}
                   </td>
@@ -84,7 +84,7 @@ export function DiffTable() {
                   <td
                     className="primitive-table-cell text-[length:var(--text-base)] whitespace-nowrap transition-colors duration-400"
                     style={{
-                      color: out ? "var(--bui-red)" : "var(--bui-ink-2)",
+                      color: out ? "var(--bui-red-text)" : "var(--bui-ink-2)",
                       textDecorationLine: out ? "line-through" : "none",
                       textDecorationColor: "color-mix(in srgb, var(--bui-red) 50%, transparent)",
                     }}
@@ -107,7 +107,7 @@ export function DiffTable() {
                 >
                   <div className="overflow-hidden [background:var(--bui-green-tint)]!">
                     <div className="grid grid-cols-[34%_30%_36%] items-center border-t border-bui-line">
-                      <span className="primitive-table-cell text-[length:var(--text-base)] font-medium text-bui-green tabular-nums">
+                      <span className="primitive-table-cell text-[length:var(--text-base)] font-medium text-bui-green-text tabular-nums">
                         Pistachio
                       </span>
                       <span className="primitive-table-cell">
@@ -116,7 +116,7 @@ export function DiffTable() {
                           <span className="text-bui-ink-2">Seasonal</span>
                         </span>
                       </span>
-                      <span className="primitive-table-cell text-[length:var(--text-base)] text-bui-green">
+                      <span className="primitive-table-cell text-[length:var(--text-base)] text-bui-green-text">
                         maple-orbit
                       </span>
                     </div>

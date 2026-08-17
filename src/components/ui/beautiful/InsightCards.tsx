@@ -43,7 +43,7 @@ function Entity({ name, tone }: { name: string; tone: string }) {
 
 function Mono({ children, tone }: { children: React.ReactNode; tone: "red" | "green" }) {
   return (
-    <code className={`font-mono text-[length:var(--text-sm)] ${tone === "red" ? "text-bui-red" : "text-bui-green"}`}>
+    <code className={`font-mono text-[length:var(--text-sm)] ${tone === "red" ? "text-bui-red-text" : "text-bui-green-text"}`}>
       {children}
     </code>
   );
@@ -124,7 +124,7 @@ function CompareCard() {
               <span className={`size-2 rounded-full ${s.dot}`} />
               {s.name}
             </span>
-            <span className={`block text-[length:var(--text-lg)] font-semibold tracking-[-0.01em] tabular-nums ${s.tone === "red" ? "text-bui-red" : "text-bui-green"}`}>
+            <span className={`block text-[length:var(--text-lg)] font-semibold tracking-[-0.01em] tabular-nums ${s.tone === "red" ? "text-bui-red-text" : "text-bui-green-text"}`}>
               {s.delta}
             </span>
             <Mono tone={s.tone as "red" | "green"}>{s.sub}</Mono>
@@ -258,7 +258,7 @@ function AnomalyCard() {
 /* 3 — allocation: hero number + segmented bar + legend */
 function AllocationCard() {
   const segments = [
-    { name: "VAN", label: "Vanilla", pct: 72.5, amount: "$51,785", cls: "bg-bui-orange", tone: "text-bui-orange" },
+    { name: "VAN", label: "Vanilla", pct: 72.5, amount: "$51,785", cls: "bg-bui-orange", tone: "text-bui-orange-text" },
     { name: "CHOC", label: "Chocolate", pct: 22.8, amount: "$16,278", cls: "bg-bui-line-strong", tone: "text-bui-ink-2" },
     { name: "MINT", label: "Mint", pct: 4.7, amount: "$3,357", cls: "bg-bui-line", tone: "text-bui-ink-3" },
   ];
@@ -268,7 +268,7 @@ function AllocationCard() {
   return (
     <div className="min-h-[278px] rounded-bui-card bg-bui-surface p-3 shadow-bui-hairline">
       <span className="flex items-center gap-1.5 text-[length:var(--text-sm)] font-medium text-bui-ink">
-        <span className="flex size-3.5 items-center justify-center rounded-full bg-bui-orange text-[length:var(--text-2xs)] font-bold text-white">
+        <span className="flex size-3.5 items-center justify-center rounded-full bg-bui-orange text-[length:var(--text-2xs)] font-bold text-bui-orange-ink">
           V
         </span>
         Vanilla allocation
