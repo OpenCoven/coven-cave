@@ -44,6 +44,127 @@ test("canonicalization rejects undefined and NaN", () => {
   assert.throws(() => canonicalJson({ value: NaN }), /canonical JSON/i);
 });
 
+test("canonicalization rejects symbol-keyed and non-enumerable state", () => {
+  const symbolKeyed = { visible: true };
+  Object.defineProperty(symbolKeyed, Symbol("hidden"), {
+    value: "not-json",
+    enumerable: true,
+  });
+  assert.throws(() => canonicalJson(symbolKeyed), /symbol-keyed own properties/i);
+
+  const hidden = { digest: "ignored", visible: true };
+  Object.defineProperty(hidden, "secret", {
+    value: "not-json",
+    enumerable: false,
+  });
+  assert.throws(() => canonicalJson(hidden), /non-enumerable own properties/i);
+  assert.throws(() => digestProtocolObject(hidden), /non-enumerable own properties/i);
+});
+
+test("canonicalization rejects accessors and toJSON functions without invoking them", () => {
+  let calls = 0;
+  const accessor = {};
+  Object.defineProperty(accessor, "value", {
+    get() {
+      calls += 1;
+      return "not-json";
+    },
+    enumerable: true,
+  });
+  assert.throws(() => canonicalJson(accessor), /accessor properties/i);
+
+  const hiddenToJson = { visible: true };
+  Object.defineProperty(hiddenToJson, "toJSON", {
+    value() {
+      calls += 1;
+      return { replaced: true };
+    },
+    enumerable: false,
+  });
+  assert.throws(() => canonicalJson(hiddenToJson), /non-enumerable own properties/i);
+
+  const accessorToJson = { visible: true };
+  Object.defineProperty(accessorToJson, "toJSON", {
+    get() {
+      calls += 1;
+      return () => ({ replaced: true });
+    },
+    enumerable: true,
+  });
+  assert.throws(() => canonicalJson(accessorToJson), /accessor properties/i);
+
+  const enumerableToJson = {
+    toJSON() {
+      calls += 1;
+      return { replaced: true };
+    },
+  };
+  assert.throws(() => canonicalJson(enumerableToJson), /functions are not allowed/i);
+  assert.equal(calls, 0);
+});
+
+test("canonicalization enforces exact dense JSON arrays", () => {
+  const sparse = [1, , 3];
+  assert.throws(() => canonicalJson(sparse), /sparse array holes/i);
+
+  const extraProperty = [1];
+  Object.defineProperty(extraProperty, "extra", {
+    value: 2,
+    enumerable: true,
+  });
+  assert.throws(() => canonicalJson(extraProperty), /extra string properties/i);
+
+  const symbolProperty = [1];
+  Object.defineProperty(symbolProperty, Symbol("extra"), {
+    value: 2,
+    enumerable: true,
+  });
+  assert.throws(() => canonicalJson(symbolProperty), /symbol-keyed own properties/i);
+
+  let accessorCalls = 0;
+  const accessorIndex = new Array<unknown>(1);
+  Object.defineProperty(accessorIndex, "0", {
+    get() {
+      accessorCalls += 1;
+      return "not-json";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  assert.throws(() => canonicalJson(accessorIndex), /array indices must be data properties/i);
+
+  const hiddenIndex = new Array<unknown>(1);
+  Object.defineProperty(hiddenIndex, "0", {
+    value: "not-json",
+    enumerable: false,
+    configurable: true,
+  });
+  assert.throws(() => canonicalJson(hiddenIndex), /array indices must be enumerable/i);
+
+  class CustomArray<T> extends Array<T> {}
+  const customPrototype = CustomArray.from([1, 2, 3]);
+  assert.throws(() => canonicalJson(customPrototype), /exact Array\.prototype/i);
+  assert.equal(accessorCalls, 0);
+});
+
+test("canonicalization safely accepts own __proto__, null-prototype objects, and normal arrays", () => {
+  const value = Object.create(null) as Record<string, unknown>;
+  Object.defineProperty(value, "__proto__", {
+    value: { polluted: true },
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+  value.items = [1, { ok: true }];
+  value.label = "familiar-🧙";
+
+  assert.equal(
+    canonicalJson(value),
+    "{\"__proto__\":{\"polluted\":true},\"items\":[1,{\"ok\":true}],\"label\":\"familiar-🧙\"}",
+  );
+  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
+});
+
 test("canonicalization rejects lone high and low surrogates in string values", () => {
   assert.throws(
     () => canonicalJson({ value: "\uD800" }),
