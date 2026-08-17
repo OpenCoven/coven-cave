@@ -34,7 +34,8 @@ const DELETION_STATUSES = ["not_scheduled", "scheduled", "pending", "completed",
 const MANIFEST_STATES = ["assembling", "final"] as const;
 const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 
-const ARTIFACT_TITLE_URI_SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+const ARTIFACT_TITLE_URI_SCHEME_RE =
+  /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:about|blob|chrome|data|did|file|ftp|git|http|https|ipfs|irc|ircs|mailto|magnet|npm|s3|sftp|sms|ssh|tel|urn|vscode|ws|wss):)/i;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 
@@ -855,34 +856,63 @@ function compareUnknownFields(
   return pass(undefined);
 }
 
+function addTokenTotal(current: number | null, value: unknown, label: string, index: number): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`execution ${index} ${label} must be a non-negative safe integer`);
+  }
+  const total = (current ?? 0) + value;
+  if (!Number.isSafeInteger(total) || total < 0) {
+    throw new RangeError(`${label} aggregate exceeds Number.MAX_SAFE_INTEGER`);
+  }
+  return total;
+}
+
+function addCostTotal(current: number | null, value: unknown, index: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new TypeError(`execution ${index} costUsd must be a finite number >= 0`);
+  }
+  const total = (current ?? 0) + value;
+  if (!Number.isFinite(total) || total < 0) {
+    throw new RangeError("costUsd aggregate is not a finite non-negative number");
+  }
+  return total;
+}
+
 export function aggregateManifestUsage(
   executions: readonly RunManifestModelExecutionV1[],
 ): RunManifestUsageV1 {
+  if (!Array.isArray(executions)) {
+    throw new TypeError("model executions must be an array");
+  }
+
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
   let costUsd: number | null = null;
   let anyReported = false;
   let anyMissing = false;
 
-  for (const execution of executions) {
-    const usage = execution.receipt.usage;
+  for (const [index, execution] of executions.entries()) {
+    const usage = (execution as RunManifestModelExecutionV1 | null | undefined)?.receipt?.usage;
+    if (!isRecord(usage)) {
+      throw new TypeError(`execution ${index} has invalid receipt usage`);
+    }
     if (usage.inputTokens === null) {
       anyMissing = true;
     } else {
       anyReported = true;
-      inputTokens = (inputTokens ?? 0) + usage.inputTokens;
+      inputTokens = addTokenTotal(inputTokens, usage.inputTokens, "inputTokens", index);
     }
     if (usage.outputTokens === null) {
       anyMissing = true;
     } else {
       anyReported = true;
-      outputTokens = (outputTokens ?? 0) + usage.outputTokens;
+      outputTokens = addTokenTotal(outputTokens, usage.outputTokens, "outputTokens", index);
     }
     if (usage.costUsd === null) {
       anyMissing = true;
     } else {
       anyReported = true;
-      costUsd = (costUsd ?? 0) + usage.costUsd;
+      costUsd = addCostTotal(costUsd, usage.costUsd, index);
     }
   }
 
@@ -1080,7 +1110,16 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     );
   }
 
-  const expectedUsage = aggregateManifestUsage(modelExecutions);
+  let expectedUsage: RunManifestUsageV1;
+  try {
+    expectedUsage = aggregateManifestUsage(modelExecutions);
+  } catch (error) {
+    return fail(
+      "invalid_value",
+      "$.usage",
+      error instanceof Error ? `usage aggregation failed: ${error.message}` : "usage aggregation failed",
+    );
+  }
   for (const key of ["inputTokens", "outputTokens", "costUsd", "completeness"] as const) {
     if (usage.value[key] !== expectedUsage[key]) {
       return fail(
@@ -1242,6 +1281,11 @@ export function validateRunManifestRevision(
     return fail("semantic_conflict", "$.digest", "next manifest digest is not correct");
   }
 
+  const previousRetention = previous.retention as unknown as Record<string, unknown>;
+  const nextRetention = next.retention as unknown as Record<string, unknown>;
+  const policy = compareImmutableField(previousRetention, nextRetention, "policy", "$.retention.policy");
+  if (!policy.ok) return policy;
+
   if (previous.state === "final") {
     if (next.state !== "final") {
       return fail("semantic_conflict", "$.state", "a final manifest must remain final");
@@ -1262,8 +1306,6 @@ export function validateRunManifestRevision(
       const result = compareImmutableField(previous, next, key, `$.${key}`);
       if (!result.ok) return result;
     }
-    const previousRetention = previous.retention as unknown as Record<string, unknown>;
-    const nextRetention = next.retention as unknown as Record<string, unknown>;
     const retentionUnknowns = compareUnknownFields(
       previousRetention,
       nextRetention,
@@ -1271,8 +1313,6 @@ export function validateRunManifestRevision(
       "$.retention",
     );
     if (!retentionUnknowns.ok) return retentionUnknowns;
-    const policy = compareImmutableField(previousRetention, nextRetention, "policy", "$.retention.policy");
-    if (!policy.ok) return policy;
 
     const previousDeletion = previous.deletion as unknown as Record<string, unknown>;
     const nextDeletion = next.deletion as unknown as Record<string, unknown>;
@@ -1308,6 +1348,9 @@ export function validateRunManifestRevision(
     if (!rootUnknowns.ok) return rootUnknowns;
   }
 
+  const consent = validateManifestRetentionConsent(next, options?.contextConsent);
+  if (!consent.ok) return consent;
+
   if (RETENTION_ORDER[next.retention.effectivePolicy] > RETENTION_ORDER[previous.retention.effectivePolicy]) {
     if (options.freshConsent !== true) {
       return fail(
@@ -1316,11 +1359,6 @@ export function validateRunManifestRevision(
         "lengthening effective retention requires freshConsent",
       );
     }
-  }
-
-  if (hasOwn(options as unknown as Record<string, unknown>, "contextConsent")) {
-    const consent = validateManifestRetentionConsent(next, options.contextConsent);
-    if (!consent.ok) return consent;
   }
 
   return pass(next);
