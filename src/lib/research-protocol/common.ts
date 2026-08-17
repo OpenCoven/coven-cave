@@ -80,3 +80,102 @@ export type ResearchContextBindingV1 = {
   contextPackDigest: string;
   topicProposalId?: string;
 };
+
+function childPath(path: string, key: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+    ? `${path}.${key}`
+    : `${path}[${JSON.stringify(key)}]`;
+}
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
+  if (!isRecord(value)) {
+    return fail("invalid_type", path, "Expected an object");
+  }
+  return pass(value);
+}
+
+function parseRequiredField(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+): ProtocolParseResult<unknown> {
+  if (!hasOwn(record, key)) {
+    return fail("missing_field", childPath(path, key), `Missing required field ${key}`);
+  }
+  return pass(record[key]);
+}
+
+function parseOpaqueIdentifier(
+  value: unknown,
+  prefix: string,
+  path: string,
+  label: string,
+): ProtocolParseResult<string> {
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, `${label} must be a string`);
+  }
+  if (!isOpaqueId(value, prefix)) {
+    return fail("invalid_value", path, `${label} must match ${prefix}_...`);
+  }
+  return pass(value);
+}
+
+function parseSha256(value: unknown, path: string, label: string): ProtocolParseResult<string> {
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, `${label} must be a string`);
+  }
+  if (!isSha256(value)) {
+    return fail("invalid_value", path, `${label} must be a lowercase SHA-256 digest`);
+  }
+  return pass(value);
+}
+
+export function parseResearchContextBindingV1(
+  value: unknown,
+  path: string,
+): ProtocolParseResult<ResearchContextBindingV1> {
+  const object = parseObject(value, path);
+  if (!object.ok) return object;
+
+  const contextPackIdField = parseRequiredField(object.value, "contextPackId", path);
+  if (!contextPackIdField.ok) return contextPackIdField;
+  const contextPackId = parseOpaqueIdentifier(
+    contextPackIdField.value,
+    "ctx",
+    childPath(path, "contextPackId"),
+    "contextPackId",
+  );
+  if (!contextPackId.ok) return contextPackId;
+
+  const contextPackDigestField = parseRequiredField(object.value, "contextPackDigest", path);
+  if (!contextPackDigestField.ok) return contextPackDigestField;
+  const contextPackDigest = parseSha256(
+    contextPackDigestField.value,
+    childPath(path, "contextPackDigest"),
+    "contextPackDigest",
+  );
+  if (!contextPackDigest.ok) return contextPackDigest;
+
+  let topicProposalId: string | undefined;
+  if (hasOwn(object.value, "topicProposalId")) {
+    const parsedTopicProposalId = parseOpaqueIdentifier(
+      object.value.topicProposalId,
+      "proposal",
+      childPath(path, "topicProposalId"),
+      "topicProposalId",
+    );
+    if (!parsedTopicProposalId.ok) return parsedTopicProposalId;
+    topicProposalId = parsedTopicProposalId.value;
+  }
+
+  return pass({
+    ...object.value,
+    contextPackId: contextPackId.value,
+    contextPackDigest: contextPackDigest.value,
+    ...(typeof topicProposalId === "string" ? { topicProposalId } : {}),
+  });
+}
