@@ -1,0 +1,33 @@
+{
+  "schema": "opencoven.model-task/v1",
+  "id": "modeltask_01",
+  "runId": "run_01",
+  "phase": "scope",
+  "attempt": 1,
+  "inputDigest": "89f8f6710042193f16a5cd49f3ae469f299f00a9efbee7f0bfa037dcae0efb97",
+  "input": {
+    "contextPack": {
+      "id": "ctx_01",
+      "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+      "availability": "device-local",
+      "futureExtension": { "preserve": true }
+    },
+    "publicEvidenceRefs": [],
+    "futureExtension": { "preserve": true }
+  },
+  "modelBinding": {
+    "familiarId": "sage",
+    "selection": "resolve-at-run-start",
+    "futureExtension": { "preserve": true }
+  },
+  "policy": {
+    "permissionMode": "write",
+    "allowedOutputs": ["scope"],
+    "allowRemoteQueries": false,
+    "maxOutputTokens": 1000,
+    "futureExtension": { "preserve": true }
+  },
+  "outputSchema": "opencoven.scope-output/v1",
+  "leaseExpiresAt": "2026-08-15T20:15:00.000Z",
+  "futureExtension": { "preserve": true }
+}
