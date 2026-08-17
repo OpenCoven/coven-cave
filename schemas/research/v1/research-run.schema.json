@@ -247,15 +247,6 @@
         "message": { "type": "string" },
         "retryable": { "type": "boolean" }
       }
-    },
-    "runManifestPlaceholder": {
-      "$id": "opencoven.run-manifest/v1",
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["schema"],
-      "properties": {
-        "schema": { "const": "opencoven.run-manifest/v1" }
-      }
     }
   }
 }
