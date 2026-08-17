@@ -75,6 +75,41 @@ test("tool-derived progress yields to sanitized tool activity when tool events e
   assert.doesNotMatch(JSON.stringify(model.activity), /secret|Tool call running|Grep\(/);
 });
 
+test("later settled progress stays later than an earlier mirrored tool span", () => {
+  const model = createStreamingTurnViewModel(
+    input({
+      progress: [
+        { id: "harness-start", label: "Starting Hermes API", status: "done", createdAt: "2026-08-08T10:00:00Z" },
+        {
+          id: "tools",
+          label: "Tool call finished",
+          detail: 'Grep({"pattern":"secret"})',
+          status: "done",
+          createdAt: "2026-08-08T10:00:01Z",
+        },
+        {
+          id: "save-transcript",
+          label: "Saving transcript",
+          detail: "Persisting the latest draft",
+          status: "done",
+          createdAt: "2026-08-08T10:00:02Z",
+        },
+      ],
+      tools: [{ id: "grep-1", name: "Grep", input: '{"pattern":"secret"}', status: "ok" }],
+    }),
+  );
+
+  assert.deepEqual(model.activity.map((event) => event.id), [
+    "progress:harness-start",
+    "tool:grep-1",
+    "progress:save-transcript",
+  ]);
+  assert.equal(model.currentActivity?.id, "progress:save-transcript");
+  assert.equal(model.currentActivity?.label, "Saving transcript");
+  assert.equal(model.currentActivity?.detail, "Persisting the latest draft");
+  assert.doesNotMatch(JSON.stringify(model.activity), /secret|Tool call finished|Grep\(/);
+});
+
 test("normalized running progress keeps priority and detail even when tools are active", () => {
   const model = createStreamingTurnViewModel(
     input({
@@ -101,6 +136,40 @@ test("normalized running progress keeps priority and detail even when tools are 
   assert.equal(model.currentActivity?.id, "progress:save-transcript");
   assert.equal(model.currentActivity?.label, "Saving transcript");
   assert.equal(model.currentActivity?.detail, "Persisting the latest draft");
+});
+
+test("multiple tool events replace one mirrored progress row in place", () => {
+  const model = createStreamingTurnViewModel(
+    input({
+      progress: [
+        { id: "harness-start", label: "Starting Hermes API", status: "done", createdAt: "2026-08-08T10:00:00Z" },
+        {
+          id: "tools",
+          label: "Tool call running",
+          detail: 'Grep({"pattern":"secret"})',
+          status: "running",
+          createdAt: "2026-08-08T10:00:01Z",
+        },
+        { id: "summary", label: "Summarized", status: "done", createdAt: "2026-08-08T10:00:02Z" },
+      ],
+      tools: [
+        { id: "grep-1", name: "Grep", input: '{"pattern":"secret"}', status: "ok" },
+        { id: "tests-1", name: "Vitest", input: '{"command":"pnpm test"}', status: "running" },
+      ],
+    }),
+  );
+
+  assert.deepEqual(model.activity.map((event) => event.id), [
+    "progress:harness-start",
+    "tool:grep-1",
+    "tool:tests-1",
+    "progress:summary",
+  ]);
+  assert.equal(model.currentActivity?.id, "tool:tests-1");
+  assert.equal(model.currentActivity?.label, "Running focused tests…");
+  assert.equal(model.currentActivity?.detail, undefined);
+  assert.equal(model.activity.filter((event) => event.id === "progress:tools").length, 0);
+  assert.doesNotMatch(JSON.stringify(model.activity), /secret|Tool call running|Grep\(|pnpm test/);
 });
 
 test("trusted failure cannot be overwritten by an authored pass", () => {

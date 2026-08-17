@@ -96,20 +96,47 @@ function normalizeToolEvent(tool: ToolEvent): ActivityEvent {
 
 function isToolDerivedProgressEvent(
   progress: ProgressEvent,
-  tools: readonly ToolEvent[],
 ): boolean {
-  return tools.length > 0 && TOOL_DERIVED_PROGRESS_IDS.has(progress.id);
+  return TOOL_DERIVED_PROGRESS_IDS.has(progress.id);
+}
+
+function mergeChronologicalActivity(
+  progress: readonly ProgressEvent[],
+  tools: readonly ToolEvent[],
+): ActivityEvent[] {
+  if (tools.length === 0) return progress.map(normalizeProgressEvent);
+
+  const normalizedTools = tools.map(normalizeToolEvent);
+  const activity: ActivityEvent[] = [];
+  let insertedTools = false;
+
+  for (const event of progress) {
+    if (isToolDerivedProgressEvent(event)) {
+      if (!insertedTools) {
+        // The mirrored tools progress row is the only cross-stream chronology
+        // anchor the shared model has. Replace that single raw row in place with
+        // the sanitized tool activity span instead of dropping it and appending
+        // tools to the end, which would fabricate a later chronology.
+        activity.push(...normalizedTools);
+        insertedTools = true;
+      }
+      continue;
+    }
+    activity.push(normalizeProgressEvent(event));
+  }
+
+  if (!insertedTools) {
+    // Legacy/persisted transcripts can carry tool events without the mirrored
+    // progress row. Preserve the tool order we have without inventing a
+    // timestamp relative to progress updates.
+    activity.push(...normalizedTools);
+  }
+
+  return activity;
 }
 
 function normalizeActivity(input: StreamingTurnInput): ActivityEvent[] {
-  const tools = input.tools ?? [];
-  const progress = (input.progress ?? []).filter(
-    (event) => !isToolDerivedProgressEvent(event, tools),
-  );
-  return [
-    ...progress.map(normalizeProgressEvent),
-    ...tools.map(normalizeToolEvent),
-  ];
+  return mergeChronologicalActivity(input.progress ?? [], input.tools ?? []);
 }
 
 function findLast<Activity extends ActivityEvent>(
