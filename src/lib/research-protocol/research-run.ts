@@ -1,4 +1,5 @@
 import {
+  copyProtocolJsonValue,
   fail,
   isOpaqueId,
   isRecord,
@@ -376,7 +377,10 @@ export function parseResearchExecutionProfileV1(
   value: unknown,
   path: string,
 ): ProtocolParseResult<ResearchExecutionProfileV1> {
-  const object = parseObject(value, path);
+  const wireValue = copyProtocolJsonValue(value, path);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, path);
   if (!object.ok) return object;
 
   const locationField = parseRequiredField(object.value, "location", path);
@@ -427,7 +431,10 @@ export function parseResearchPrivacyPolicyV1(
   value: unknown,
   path: string,
 ): ProtocolParseResult<ResearchPrivacyPolicyV1> {
-  const object = parseObject(value, path);
+  const wireValue = copyProtocolJsonValue(value, path);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, path);
   if (!object.ok) return object;
 
   const remoteQueriesField = parseRequiredField(object.value, "remoteQueries", path);
@@ -595,7 +602,10 @@ function parseResearchRunFailureV1(
 }
 
 export function parseResearchRunV1(value: unknown): ProtocolParseResult<ResearchRunV1> {
-  const object = parseObject(value, "$");
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");
@@ -789,7 +799,10 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
 }
 
 export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1> {
-  const object = parseObject(value, "$");
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) return wireValue;
+
+  const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");

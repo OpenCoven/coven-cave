@@ -55,6 +55,32 @@ test("valid waiting_for_executor run with resumable phase accepts", () => {
   assert.equal(parsed.waitingForPhase, "challenge");
 });
 
+test("Research Run and Run Event reject schema accessors without invoking them", () => {
+  let calls = 0;
+  for (const { base, parse } of [
+    {
+      base: validResearchRun as Record<string, unknown>,
+      parse: (value: unknown) => parseResearchRunV1(value),
+    },
+    {
+      base: validRunEvent as Record<string, unknown>,
+      parse: (value: unknown) => parseRunEventV1(value),
+    },
+  ]) {
+    const value = { ...base };
+    Object.defineProperty(value, "schema", {
+      get() {
+        calls += 1;
+        return base.schema;
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    expectError(parse(value), "$", "invalid_value");
+  }
+  assert.equal(calls, 0);
+});
+
 test("waitingForPhase is absent for every non waiting_for_executor status", () => {
   for (const status of [
     "queued",
@@ -158,6 +184,42 @@ test("booleans stay booleans and allowMemoryPromotion is literal false", () => {
   );
 });
 
+test("standalone research child parsers reject accessors without invoking them", () => {
+  let calls = 0;
+  for (const testCase of [
+    {
+      value: { ...validResearchRun.context },
+      key: "contextPackId",
+      path: "$.context",
+      parse: (value: unknown) => parseResearchContextBindingV1(value, "$.context"),
+    },
+    {
+      value: { ...validResearchRun.execution },
+      key: "location",
+      path: "$.execution",
+      parse: (value: unknown) => parseResearchExecutionProfileV1(value, "$.execution"),
+    },
+    {
+      value: { ...validResearchRun.privacy },
+      key: "remoteQueries",
+      path: "$.privacy",
+      parse: (value: unknown) => parseResearchPrivacyPolicyV1(value, "$.privacy"),
+    },
+  ]) {
+    const original = testCase.value[testCase.key as keyof typeof testCase.value];
+    Object.defineProperty(testCase.value, testCase.key, {
+      get() {
+        calls += 1;
+        return original;
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    expectError(testCase.parse(testCase.value), testCase.path, "invalid_value");
+  }
+  assert.equal(calls, 0);
+});
+
 test("bounds and nextEventSequence enforce safe integer and spend constraints", () => {
   const boundsCases = [
     { field: "wallClockMinutes", value: 0, code: "invalid_value" },
@@ -193,7 +255,7 @@ test("bounds and nextEventSequence enforce safe integer and spend constraints", 
   );
 });
 
-test("context parser validates ids and digest, preserves additive fields, and ignores inherited optional fields", () => {
+test("context parser validates ids and digest, preserves additive fields, and rejects custom prototypes", () => {
   const context = expectOk(
     parseResearchContextBindingV1(
       {
@@ -203,7 +265,7 @@ test("context parser validates ids and digest, preserves additive fields, and ig
       "$.context",
     ),
   );
-  assert.deepEqual(context.futureExtension, { preserve: true });
+  assert.equal((context.futureExtension as { preserve: boolean }).preserve, true);
 
   expectError(
     parseResearchContextBindingV1(
@@ -235,8 +297,11 @@ test("context parser validates ids and digest, preserves additive fields, and ig
     contextPackId: validResearchRun.context.contextPackId,
     contextPackDigest: validResearchRun.context.contextPackDigest,
   });
-  const parsed = expectOk(parseResearchContextBindingV1(inheritedOptional, "$.context"));
-  assert.equal("topicProposalId" in parsed, false);
+  expectError(
+    parseResearchContextBindingV1(inheritedOptional, "$.context"),
+    "$.context",
+    "invalid_value",
+  );
 });
 
 test("events parse and validateRunEventSequence enforces contiguous same-run sequences", () => {
@@ -269,17 +334,17 @@ test("events parse and validateRunEventSequence enforces contiguous same-run seq
 
 test("schema and parser agree on expressible constraints and additive fields survive", () => {
   const run = expectOk(parseResearchRunV1(validResearchRun));
-  assert.deepEqual(run.futureExtension, { preserve: true });
-  assert.deepEqual(run.context?.futureExtension, { preserve: true });
-  assert.deepEqual(run.execution.modelBinding.futureExtension, { preserve: true });
-  assert.deepEqual(run.privacy.futureExtension, { preserve: true });
-  assert.deepEqual(run.bounds.futureExtension, { preserve: true });
+  assert.equal((run.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((run.context?.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((run.execution.modelBinding.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((run.privacy.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((run.bounds.futureExtension as { preserve: boolean }).preserve, true);
   assert.equal("artifactManifest" in run, false);
   assert.equal(run.artifactManifest, undefined);
 
   const event = expectOk(parseRunEventV1(validRunEvent));
-  assert.deepEqual(event.futureExtension, { preserve: true });
-  assert.deepEqual(event.data.futureExtension, { preserve: true });
+  assert.equal((event.futureExtension as { preserve: boolean }).preserve, true);
+  assert.equal((event.data.futureExtension as { preserve: boolean }).preserve, true);
 
   assert.equal(
     Value.Check(researchRunSchema, { ...validResearchRun, schema: "opencoven.research-run/v2" }),
@@ -291,7 +356,7 @@ test("schema and parser agree on expressible constraints and additive fields sur
   expectError(parseRunEventV1({ ...validRunEvent, schema: "opencoven.run-event/v2" }), "$.schema", "unknown_major");
 });
 
-test("run event data drops inherited fields while preserving own fields", () => {
+test("run event rejects custom-prototype nested data", () => {
   const inheritedData = Object.create({ inheritedField: "drop-me" });
   Object.assign(inheritedData, {
     status: "queued",
@@ -299,19 +364,14 @@ test("run event data drops inherited fields while preserving own fields", () => 
     futureExtension: { preserve: true },
   });
 
-  const parsed = expectOk(
+  expectError(
     parseRunEventV1({
       ...validRunEvent,
       data: inheritedData,
     }),
+    "$",
+    "invalid_value",
   );
-
-  assert.equal("inheritedField" in parsed.data, false);
-  assert.deepEqual(parsed.data, {
-    status: "queued",
-    customField: "kept",
-    futureExtension: { preserve: true },
-  });
 });
 
 test("research runs parse full run manifests and reject invalid embedded manifests", () => {
@@ -335,7 +395,7 @@ test("research runs parse full run manifests and reject invalid embedded manifes
     }),
   );
   assert.equal(valid.artifactManifest?.id, linkedManifest.id);
-  assert.deepEqual(valid.artifactManifest?.futureExtension, { preserve: true });
+  assert.equal((valid.artifactManifest?.futureExtension as { preserve: boolean }).preserve, true);
 
   const invalidManifest = {
     ...linkedManifest,
