@@ -150,6 +150,19 @@ extension View {
 /// A familiar's live presence, mirroring the desktop `statusMeta()` mapping so
 /// the iOS dots match the colours the daemon publishes.
 enum Presence {
+    /// Compatibility mapping retained for source consumers that do not yet have
+    /// the active chrome palette. New rendered surfaces use the overload below.
+    static func color(for status: String?) -> Color? {
+        switch status?.lowercased() {
+        case "active", "online": return Color(hex: "#4ade80")
+        case "idle": return Color(hex: "#60a5fa")
+        case "busy", "running": return Color(hex: "#fbbf24")
+        case "offline": return Color(hex: "#8a8a8e")
+        case .some(let value) where !value.isEmpty: return Color(hex: "#8a8a8e")
+        default: return nil
+        }
+    }
+
     /// Dot colour for a daemon status string, or nil when there's nothing
     /// meaningful to show (no status reported).
     static func color(for status: String?, chrome: ChromePalette) -> Color? {
