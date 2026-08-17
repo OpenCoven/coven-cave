@@ -79,7 +79,7 @@ const VARIANTS: Record<
 
 function Dot({ tone }: { tone: string }) {
   return (
-    <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-full text-white ${tone}`}>
+    <span className={`flex size-3.5 shrink-0 items-center justify-center rounded-full ${tone}`}>
       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
         <circle cx="12" cy="12" r="9" />
         <path d="M3.5 12h17M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
@@ -88,7 +88,11 @@ function Dot({ tone }: { tone: string }) {
   );
 }
 
-const TONES = ["bg-bui-accent", "bg-bui-orange", "bg-bui-green"];
+const TONES = [
+  "bg-bui-accent text-bui-accent-on",
+  "bg-bui-orange text-bui-orange-ink",
+  "bg-bui-green text-bui-green-ink",
+];
 
 export function ThinkingState({ variant = "Steps" }: { variant?: string }) {
   const stage = useSequence(STAGES);
@@ -189,8 +193,8 @@ export function ThinkingState({ variant = "Steps" }: { variant?: string }) {
                 )}
                 {row.add !== undefined && (
                   <span className="shrink-0 font-mono text-[length:var(--text-xs)] tabular-nums">
-                    <span className="text-bui-green">+{row.add}</span>{" "}
-                    <span className="text-bui-red">−{row.del}</span>
+                    <span className="text-bui-green-text">+{row.add}</span>{" "}
+                    <span className="text-bui-red-text">−{row.del}</span>
                   </span>
                 )}
                 </>

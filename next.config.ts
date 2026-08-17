@@ -77,7 +77,16 @@ const nextConfig: NextConfig = {
       // causing NFT to copy the entire checkout into the desktop sidecar.
       "./src/**/*",
       "./apps/**/*.test.*",
-      "./apps/ios/**/build/**/*",
+      // Xcode build output. The glob is `build*` rather than `build` because
+      // Xcode writes a per-configuration directory whenever one is passed a
+      // custom name or derived-data path — a real checkout carries
+      // `apps/ios/CovenCave/build` (806 MB) alongside
+      // `apps/ios/CovenCave/build-cody-cma81` (180 MB), and only the first was
+      // matched. NFT swept 85.6 MB of the second into the standalone, which is
+      // what pushed unpackedBytes to 524,402,366 against the 480 MiB cap and
+      // failed the build. That is exactly the "local build state" this block
+      // exists to keep out, so the fix is the pattern, not a bigger cap.
+      "./apps/ios/**/build*/**/*",
     ],
   },
   // Next's tracer misses runtime-required packages that go through its

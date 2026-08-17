@@ -36,14 +36,14 @@ const OPTIONS: Option[] = [
     tone: "var(--bui-green)",
     label: "High confidence",
     cta: "Accept",
-    ctaStyle: "bg-bui-accent text-white",
+    ctaStyle: "bg-bui-accent text-bui-accent-on",
   },
   {
     key: "review",
     body: (
       <>
         Switch vanilla to{" "}
-        <code className="rounded-md bg-bui-orange-tint px-1.5 py-0.5 font-mono text-[length:var(--text-sm)] text-bui-orange">vanilla_madagascar</code>{" "}
+        <code className="rounded-md bg-bui-orange-tint px-1.5 py-0.5 font-mono text-[length:var(--text-sm)] text-bui-orange-text">vanilla_madagascar</code>{" "}
         for peak season.
       </>
     ),
@@ -164,7 +164,7 @@ export function RecommendationCard() {
             className={`h-7 rounded-bui-control px-3 text-[length:var(--text-base)] font-medium
               shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_0_0_1px_rgba(16,24,40,0.12),0_1px_2px_rgba(16,24,40,0.1)]
               transition-[background-color,transform] duration-150 active:scale-[0.96]
-              ${accepted ? "bg-bui-green text-white" : active.ctaStyle}`}
+              ${accepted ? "bg-bui-green text-bui-green-ink" : active.ctaStyle}`}
           >
             {accepted ? "Accepted" : active.cta}
           </button>

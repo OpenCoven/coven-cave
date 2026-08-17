@@ -79,8 +79,27 @@
   --bui-line-strong: var(--border-strong);
 
   --bui-accent: var(--accent-presence);
-  --bui-accent-ink: var(--accent-presence-foreground);
-  --bui-accent-tint: var(--accent-presence-soft);
+  /* Upstream's `--accent-ink` is "the accent, AS INK" — accent-coloured text on
+     an ordinary surface (#0170dd light / #7ec0ff dark). It is NOT "ink to paint
+     on the accent", which is what Cave's `--accent-presence-foreground` means.
+     The two are near-opposites, and mapping to the foreground token made every
+     accent-coloured string in the vendored set paint at roughly 1.07:1 — the
+     CodeBlock keywords were effectively invisible in 19 of 24 palette/mode
+     combinations (cave-j80ph). Verified against every call site: all eight use
+     it as text on a surface or on --bui-accent-tint, and none on a solid accent
+     fill. Ink for a solid accent fill is --bui-accent-on, below. */
+  /* Pulled toward the page's own ink so it clears 4.5:1 on the 14% accent
+     wash the tint chips use. The accent alone measured 2.32:1 there in
+     nine combinations, and 3.05:1 at 68/32; mixing toward --foreground keeps hue while
+     buying lightness separation, the same move --ring-focus makes. */
+  --bui-accent-ink: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
+  /* A WASH behind accent-coloured text, not a fill. Upstream's value was the
+     accent at ~16% alpha (#3d9aff29); Cave's `--accent-presence-soft` is
+     oklch(0.70 0.10 293) — a mid-lightness violet meant for dots and fills, so
+     using it here put accent text on a near-identical background. This follows
+     the design contract's state-tint recipe instead (solid text, ~14% fill),
+     which is the same shape --bui-red/green/orange-tint already use. */
+  --bui-accent-tint: color-mix(in oklch, var(--accent-presence) 14%, transparent);
 
   /* Status hues. Cave ships danger pre-mixed; success and warning follow the
      same color-mix recipe (solid text, ~14% fill) so all three read as one
@@ -91,6 +110,36 @@
   --bui-green-tint: color-mix(in oklch, var(--color-success) 14%, transparent);
   --bui-orange: var(--color-warning);
   --bui-orange-tint: color-mix(in oklch, var(--color-warning) 14%, transparent);
+
+  /* Ink to paint ON a solid status fill.
+     Upstream hardcodes `text-white` on every badge, which works against its two
+     modes and fails against ours: Cave's status hues INVERT polarity between
+     modes (success is oklch 0.78 in dark and 0.52 in light), so white is right
+     in one and unreadable in the other. Measured before this existed: the
+     RecommendationCard Accept button hit 1.18:1 and the ContextCards source
+     badges 1.89:1 (cave-j80ph).
+     Cave already ships the correctly-flipping ink for success and danger.
+     Warning has no `-foreground` of its own, and shares success's polarity in
+     every palette — light hue in dark mode, dark hue in light — so it borrows
+     the same ink rather than inventing a second one to keep in sync. */
+  --bui-green-ink: var(--color-success-foreground);
+  --bui-red-ink: var(--color-danger-foreground);
+  --bui-orange-ink: var(--color-success-foreground);
+  /* Ink on a SOLID accent fill — distinct from --bui-accent-ink below, which is
+     accent-coloured text on an ordinary surface. */
+  --bui-accent-on: var(--accent-presence-foreground);
+
+  /* Status hue AS TEXT, for the chips that put a hue on its own tint
+     (TaskRows' Completed pill, DiffTable's removed rows, FilterTable's status
+     pills). The solid hue is the right FILL but not always a legible TEXT
+     colour on a wash of itself: measured at 2.86-4.04:1 across a third of the
+     palettes, short of the 4.5:1 these 12-13px labels need. Mixing toward the
+     page's ink keeps the hue readable as "this is the success one" while
+     buying the lightness separation, exactly as --bui-accent-ink does.
+     The fills keep using --bui-red/green/orange unchanged. */
+  --bui-red-text: color-mix(in oklch, var(--color-danger) 68%, var(--foreground) 32%);
+  --bui-green-text: color-mix(in oklch, var(--color-success) 68%, var(--foreground) 32%);
+  --bui-orange-text: color-mix(in oklch, var(--color-warning) 68%, var(--foreground) 32%);
 
   /* Elevation. Mixed off --shadow-color, which every palette defines — an
      undefined var collapses the whole color-mix and silently deletes the
@@ -158,6 +207,13 @@
   --color-bui-green: var(--bui-green);
   --color-bui-green-tint: var(--bui-green-tint);
   --color-bui-orange: var(--bui-orange);
+  --color-bui-green-ink: var(--bui-green-ink);
+  --color-bui-red-ink: var(--bui-red-ink);
+  --color-bui-orange-ink: var(--bui-orange-ink);
+  --color-bui-accent-on: var(--bui-accent-on);
+  --color-bui-red-text: var(--bui-red-text);
+  --color-bui-green-text: var(--bui-green-text);
+  --color-bui-orange-text: var(--bui-orange-text);
   --color-bui-orange-tint: var(--bui-orange-tint);
 
   /* Upstream's card/chip radii (10px / 6px) land on Cave's existing steps
@@ -904,20 +960,20 @@ a:hover .animated-underline:after {
 }
 
 .filter-status-todo {
-  color: color-mix(in oklch, var(--bui-orange) 92%, var(--bui-ink));
-  background: color-mix(in oklch, var(--bui-orange) 20%, var(--bui-surface));
+  color: var(--bui-orange-text);
+  background: color-mix(in oklch, var(--bui-orange) 14%, var(--bui-surface));
   border-color: color-mix(in oklch, var(--bui-orange) 34%, var(--bui-surface));
 }
 
 .filter-status-progress {
-  color: color-mix(in oklch, var(--bui-accent) 92%, var(--bui-ink));
-  background: color-mix(in oklch, var(--bui-accent) 20%, var(--bui-surface));
+  color: var(--bui-accent-ink);
+  background: color-mix(in oklch, var(--bui-accent) 14%, var(--bui-surface));
   border-color: color-mix(in oklch, var(--bui-accent) 34%, var(--bui-surface));
 }
 
 .filter-status-done {
-  color: color-mix(in oklch, var(--bui-green) 92%, var(--bui-ink));
-  background: color-mix(in oklch, var(--bui-green) 20%, var(--bui-surface));
+  color: var(--bui-green-text);
+  background: color-mix(in oklch, var(--bui-green) 14%, var(--bui-surface));
   border-color: color-mix(in oklch, var(--bui-green) 34%, var(--bui-surface));
 }
 

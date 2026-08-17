@@ -390,7 +390,7 @@ export function PromptBar({ variant = "Rounded" }: { variant?: string }) {
                       setConnected((current) => !current);
                     }}
                     className={`shrink-0 text-[length:var(--text-sm)] font-medium transition-colors duration-100 ${
-                      connected ? "text-bui-green" : "text-bui-accent-ink hover:underline"
+                      connected ? "text-bui-green-text" : "text-bui-accent-ink hover:underline"
                     }`}
                   >
                     {connected ? "Connected" : "Connect"}
