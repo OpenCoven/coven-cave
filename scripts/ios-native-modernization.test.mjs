@@ -31,4 +31,8 @@ const newChat = await read(`${root}/Views/NewChatView.swift`);
 assert.match(newChat, /"Start with a familiar"/,
   "New Chat should name familiar selection as the first intentional step");
 
+const tasks = await read(`${root}/Views/TasksView.swift`);
+assert.match(tasks, /Theme\.status\(status, chrome: chrome\)/,
+  "task status pills should resolve their colour from the active chrome palette");
+
 console.log("ios-native-modernization: ok");

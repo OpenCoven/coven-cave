@@ -586,9 +586,10 @@ struct LabelChip: View {
 }
 
 struct StatusPill: View {
+    @Environment(\.chrome) private var chrome
     let status: CardStatus
     var body: some View {
-        let color = Theme.color(for: status)
+        let color = Theme.status(status, chrome: chrome)
         Label(status.label, systemImage: status.systemImage)
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 8).padding(.vertical, 3)
