@@ -18,8 +18,11 @@ import {
 import { resolveSecret } from "../vault.ts";
 import {
   DEFAULT_ELEVENLABS_MODEL_ID,
+  DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,
   DEFAULT_ELEVENLABS_VOICE_ID,
+  DEFAULT_ELEVENLABS_VOICE_SETTINGS,
   isValidElevenLabsVoiceId,
+  type ElevenLabsVoiceSettings,
 } from "../voice/elevenlabs-shared.ts";
 import {
   RESEARCH_AUDIO_MAX_BYTES,
@@ -282,10 +285,66 @@ export async function readBoundedElevenLabsAudio(
   return bytes;
 }
 
+export type ElevenLabsSynthesisOptions = {
+  /** Model id; callers default to `DEFAULT_ELEVENLABS_MODEL_ID`. */
+  model?: string;
+  /** Delivery controls; callers default to the shared baseline settings. */
+  voiceSettings?: ElevenLabsVoiceSettings;
+  /** The previous segment's text, for cross-segment prosody continuity. */
+  previousText?: string;
+  /** The next segment's text, for cross-segment prosody continuity. */
+  nextText?: string;
+};
+
+export type ElevenLabsTtsBody = {
+  text: string;
+  model_id: string;
+  voice_settings: {
+    stability: number;
+    similarity_boost: number;
+    style: number;
+    use_speaker_boost: boolean;
+    speed: number;
+  };
+  previous_text?: string;
+  next_text?: string;
+};
+
+/**
+ * Build the ElevenLabs text-to-speech request body for one render segment.
+ * Pure and exported so the body shape is unit-testable without a network call.
+ */
+export function buildElevenLabsTtsBody(
+  text: string,
+  options: {
+    modelId?: string;
+    voiceSettings?: ElevenLabsVoiceSettings;
+    previousText?: string;
+    nextText?: string;
+  } = {},
+): ElevenLabsTtsBody {
+  const settings = options.voiceSettings ?? DEFAULT_ELEVENLABS_VOICE_SETTINGS;
+  const body: ElevenLabsTtsBody = {
+    text,
+    model_id: options.modelId ?? DEFAULT_ELEVENLABS_MODEL_ID,
+    voice_settings: {
+      stability: settings.stability,
+      similarity_boost: settings.similarityBoost,
+      style: settings.style,
+      use_speaker_boost: settings.useSpeakerBoost,
+      speed: settings.speed,
+    },
+  };
+  if (options.previousText) body.previous_text = options.previousText;
+  if (options.nextText) body.next_text = options.nextText;
+  return body;
+}
+
 async function synthesizeElevenLabs(
   text: string,
   requestedVoice: string | undefined,
   signal: AbortSignal,
+  options: ElevenLabsSynthesisOptions = {},
 ): Promise<{ bytes: Uint8Array; voice: string }> {
   const apiKey = resolveSecret("ELEVENLABS_API_KEY");
   if (!apiKey) throw new Error("Set ELEVENLABS_API_KEY in Vault settings.");
@@ -300,7 +359,12 @@ async function synthesizeElevenLabs(
     {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ text, model_id: DEFAULT_ELEVENLABS_MODEL_ID }),
+      body: JSON.stringify(buildElevenLabsTtsBody(text, {
+        modelId: options.model,
+        voiceSettings: options.voiceSettings,
+        previousText: options.previousText,
+        nextText: options.nextText,
+      })),
       signal: requestSignal,
     },
   );
@@ -315,10 +379,11 @@ export async function synthesizeResearchPodcastSegment(
   provider: "local" | "elevenlabs",
   voice: string | undefined,
   signal: AbortSignal,
+  options: ElevenLabsSynthesisOptions = {},
 ): Promise<{ bytes: Uint8Array; voice: string }> {
   return provider === "local"
     ? synthesizeLocal(text, voice, signal)
-    : synthesizeElevenLabs(text, voice, signal);
+    : synthesizeElevenLabs(text, voice, signal, options);
 }
 
 export type PodcastMediaJobInput = {
@@ -334,6 +399,7 @@ export type PodcastPipelineDependencies = {
     provider: ResearchMediaRenderConfig["provider"],
     voice: string,
     signal: AbortSignal,
+    options?: ElevenLabsSynthesisOptions,
   ) => Promise<{ bytes: Uint8Array; voice: string }>;
 };
 
@@ -397,6 +463,12 @@ export function createPodcastMediaJobDefinition(
               provider,
               segmentVoice,
               context.signal,
+              {
+                model: input.renderConfig.model ?? DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,
+                voiceSettings: input.renderConfig.voiceSettings,
+                previousText: input.script[index - 1]?.text,
+                nextText: input.script[index + 1]?.text,
+              },
             );
             if (synthesized.voice !== segmentVoice) {
               throw new Error(

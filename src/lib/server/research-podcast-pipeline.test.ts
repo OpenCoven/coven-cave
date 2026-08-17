@@ -9,12 +9,17 @@ import {
   type ResearchMediaRenderConfig,
 } from "../research-generations.ts";
 import type { ResearchMediaJobContext } from "./research-media-job-contract.ts";
+import {
+  DEFAULT_ELEVENLABS_MODEL_ID,
+  DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,
+} from "../voice/elevenlabs-shared.ts";
 
 const mediaRoot = await mkdtemp(path.join(tmpdir(), "cave-podcast-pipeline-"));
 const previousMediaRoot = process.env.COVEN_RESEARCH_MEDIA_DIR;
 process.env.COVEN_RESEARCH_MEDIA_DIR = mediaRoot;
 
 const {
+  buildElevenLabsTtsBody,
   concatPcmWav,
   createPodcastMediaJobDefinition,
   readBoundedElevenLabsAudio,
@@ -426,5 +431,94 @@ test("stored bytes equal the single assembled WAV", async () => {
       "podcast.wav",
     ),
     concatPcmWav(chunks),
+  );
+});
+
+test("ElevenLabs TTS body carries delivery controls and optional segment context", () => {
+  const full = buildElevenLabsTtsBody("Hello.", {
+    modelId: "eleven_v3",
+    voiceSettings: {
+      stability: 0.3,
+      similarityBoost: 0.9,
+      style: 0.1,
+      useSpeakerBoost: false,
+      speed: 1.1,
+    },
+    previousText: "Before.",
+    nextText: "After.",
+  });
+  assert.deepEqual(full, {
+    text: "Hello.",
+    model_id: "eleven_v3",
+    voice_settings: {
+      stability: 0.3,
+      similarity_boost: 0.9,
+      style: 0.1,
+      use_speaker_boost: false,
+      speed: 1.1,
+    },
+    previous_text: "Before.",
+    next_text: "After.",
+  });
+
+  // A bare call stays on the latency default and sends the baseline settings,
+  // with no segment context keys.
+  const minimal = buildElevenLabsTtsBody("Hello.");
+  assert.equal(minimal.model_id, DEFAULT_ELEVENLABS_MODEL_ID);
+  assert.deepEqual(minimal.voice_settings, {
+    stability: 0.5,
+    similarity_boost: 0.75,
+    style: 0,
+    use_speaker_boost: true,
+    speed: 1,
+  });
+  assert.equal("previous_text" in minimal, false);
+  assert.equal("next_text" in minimal, false);
+});
+
+test("podcast segments synthesize with cross-segment context and the offline model default", async () => {
+  type SeenOptions = {
+    model: string;
+    voiceSettings?: unknown;
+    previousText?: string;
+    nextText?: string;
+  };
+  const seen: Array<{ text: string; options: SeenOptions }> = [];
+  const config = renderConfig({
+    provider: "elevenlabs",
+    voice: "21m00Tcm4TlvDq8ikWAM",
+  });
+  const definition = createPodcastMediaJobDefinition(
+    {
+      familiarId: "nova",
+      generationId: "podcast-context",
+      script: [
+        { id: "segment-1", text: "Opening" },
+        { id: "segment-2", text: "Findings", speaker: "guest" },
+        { id: "segment-3", text: "Closing" },
+      ],
+      renderConfig: config,
+    },
+    {
+      synthesize: async (text, _provider, voice, _signal, options) => {
+        seen.push({ text, options: options as SeenOptions });
+        return { bytes: wav([1]), voice };
+      },
+    },
+  );
+  await definition.run(jobContext());
+  assert.deepEqual(
+    seen.map((call) => call.text),
+    ["Opening", "Findings", "Closing"],
+  );
+  assert.equal(seen[0].options.previousText, undefined);
+  assert.equal(seen[0].options.nextText, "Findings");
+  assert.equal(seen[1].options.previousText, "Opening");
+  assert.equal(seen[1].options.nextText, "Closing");
+  assert.equal(seen[2].options.previousText, "Findings");
+  assert.equal(seen[2].options.nextText, undefined);
+  assert.ok(
+    seen.every((call) => call.options.model === DEFAULT_ELEVENLABS_PODCAST_MODEL_ID),
+    "the offline render defaults to the quality-tier model, not the live-voice turbo default",
   );
 });

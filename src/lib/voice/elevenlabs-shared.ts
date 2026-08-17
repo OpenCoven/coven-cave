@@ -11,6 +11,74 @@ export const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5";
  *  the provider speaks out of the box before the user picks a voice. */
 export const DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
+/**
+ * Quality-tier default for offline renders (podcast / short-video voiceover).
+ * The live voice-call path keeps `DEFAULT_ELEVENLABS_MODEL_ID` (turbo) because
+ * latency is the binding constraint there; an offline render is a queued,
+ * character-capped job, so it can afford a higher-fidelity model and is
+ * overridable per render through the render configuration's `model` field.
+ */
+export const DEFAULT_ELEVENLABS_PODCAST_MODEL_ID = "eleven_multilingual_v2";
+
+/** Delivery controls sent as ElevenLabs `voice_settings` on the render path. */
+export type ElevenLabsVoiceSettings = {
+  /** 0..1 — how much the model holds a consistent speaking style. */
+  stability: number;
+  /** 0..1 — how closely the model matches the reference voice. */
+  similarityBoost: number;
+  /** 0..1 — style exaggeration (an eleven_v3 control; ignored elsewhere). */
+  style: number;
+  /** Whether to apply the speaker-boost filter. */
+  useSpeakerBoost: boolean;
+  /** 0.7..1.2 — speaking rate. */
+  speed: number;
+};
+
+/** ElevenLabs' own baseline settings — delivery-neutral, safe on every model. */
+export const DEFAULT_ELEVENLABS_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
+  stability: 0.5,
+  similarityBoost: 0.75,
+  style: 0,
+  useSpeakerBoost: true,
+  speed: 1,
+};
+
+const ELEVENLABS_VOICE_SETTINGS_RANGES: Record<
+  "stability" | "similarityBoost" | "style" | "speed",
+  [number, number]
+> = {
+  stability: [0, 1],
+  similarityBoost: [0, 1],
+  style: [0, 1],
+  speed: [0.7, 1.2],
+};
+
+/**
+ * Normalize an optional `voice_settings` object into the canonical shape,
+ * defaulting omitted fields. Returns null when a field is the wrong type or
+ * out of range — the caller decides how to surface the rejection.
+ */
+export function validateElevenLabsVoiceSettings(
+  value: unknown,
+): ElevenLabsVoiceSettings | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const out: ElevenLabsVoiceSettings = { ...DEFAULT_ELEVENLABS_VOICE_SETTINGS };
+  for (const key of ["stability", "similarityBoost", "style", "speed"] as const) {
+    const candidate = raw[key];
+    if (candidate === undefined) continue;
+    if (typeof candidate !== "number" || !Number.isFinite(candidate)) return null;
+    const [min, max] = ELEVENLABS_VOICE_SETTINGS_RANGES[key];
+    if (candidate < min || candidate > max) return null;
+    out[key] = candidate;
+  }
+  if (raw.useSpeakerBoost !== undefined) {
+    if (typeof raw.useSpeakerBoost !== "boolean") return null;
+    out.useSpeakerBoost = raw.useSpeakerBoost;
+  }
+  return out;
+}
+
 /** Per-utterance cap shared by the client mouth (clamps before posting) and
  *  the proxy (hard 400 over it) — sentence chunks are small; this only guards
  *  degenerate unterminated tails and direct callers. */

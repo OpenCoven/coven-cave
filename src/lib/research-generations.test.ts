@@ -220,6 +220,83 @@ test("podcast style is podcast-only with an explicit vocabulary", () => {
   );
 });
 
+test("podcast model and voice settings are ElevenLabs-only, podcast-only, and normalized", () => {
+  assert.deepEqual(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "standard",
+      model: "eleven_v3",
+      voiceSettings: { stability: 0.3 },
+    }),
+    {
+      ok: true,
+      value: {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        model: "eleven_v3",
+        voiceSettings: {
+          stability: 0.3,
+          similarityBoost: 0.75,
+          style: 0,
+          useSpeakerBoost: true,
+          speed: 1,
+        },
+      },
+    },
+  );
+  // Absent model/voiceSettings stay absent — old configs revalidate unchanged.
+  const bare = validateResearchMediaRenderConfig("podcast", {
+    provider: "elevenlabs",
+    voice: "21m00Tcm4TlvDq8ikWAM",
+    length: "standard",
+  });
+  assert.ok(bare.ok);
+  if (bare.ok) {
+    assert.equal("model" in bare.value, false);
+    assert.equal("voiceSettings" in bare.value, false);
+  }
+  // Model/voiceSettings are rejected on the local provider and on non-podcast kinds.
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      model: "eleven_v3",
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("short-video", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "brief",
+      model: "eleven_v3",
+    }).ok,
+    false,
+  );
+  // Malformed model ids and out-of-range settings are rejected.
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "standard",
+      model: "a/b",
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "standard",
+      voiceSettings: { stability: 1.5 },
+    }).ok,
+    false,
+  );
+});
+
 test("chapter progress accepts bounded real units and rejects invented ranges", () => {
   assert.equal(
     isResearchGenerationProgress({
