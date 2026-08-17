@@ -2,35 +2,57 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { createStreamingPresentationBuffer } from "./streaming-presentation-buffer.ts";
+import {
+  createStreamingPresentationBuffer,
+  type StreamingPresentationSourceMode,
+} from "./streaming-presentation-buffer.ts";
 
-export function useStreamingPresentationSource(source: string, pending: boolean): string {
+export type StreamingPresentationSourceOptions = {
+  sourceMode?: StreamingPresentationSourceMode;
+};
+
+type BufferEntry = {
+  buffer: ReturnType<typeof createStreamingPresentationBuffer>;
+  sourceMode: StreamingPresentationSourceMode;
+};
+
+export function useStreamingPresentationSource(
+  source: string,
+  pending: boolean,
+  options: StreamingPresentationSourceOptions = {},
+): string {
   const [presented, setPresented] = useState(source);
   const setPresentedRef = useRef(setPresented);
   setPresentedRef.current = setPresented;
+  const presentedRef = useRef(presented);
+  presentedRef.current = presented;
 
-  const bufferRef = useRef<ReturnType<typeof createStreamingPresentationBuffer> | null>(null);
+  const sourceMode = options.sourceMode ?? "replaceable";
+  const bufferRef = useRef<BufferEntry | null>(null);
   const ensureBuffer = () => {
-    if (bufferRef.current) return bufferRef.current;
+    const current = bufferRef.current;
+    if (current?.sourceMode === sourceMode) return current.buffer;
+    current?.buffer.dispose();
+
     const buffer = createStreamingPresentationBuffer({
-      initialSource: source,
+      initialSource: presentedRef.current,
       onFlush: (next) => setPresentedRef.current(next),
-      sourceMode: "append-only",
+      sourceMode,
     });
-    bufferRef.current = buffer;
+    bufferRef.current = { buffer, sourceMode };
     return buffer;
   };
   ensureBuffer();
 
   useEffect(() => {
     ensureBuffer().update(source, !pending);
-  }, [pending, source]);
+  }, [pending, source, sourceMode]);
 
   useEffect(
     () => () => {
-      const buffer = bufferRef.current;
+      const entry = bufferRef.current;
       bufferRef.current = null;
-      buffer?.dispose();
+      entry?.buffer.dispose();
     },
     [],
   );
