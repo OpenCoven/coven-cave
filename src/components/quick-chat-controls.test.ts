@@ -8,6 +8,7 @@ const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url),
 const messageFormat = readFileSync(new URL("../lib/quick-chat-message-format.ts", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 const quickHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+const streamingResponse = readFileSync(new URL("./streaming-turn-response.tsx", import.meta.url), "utf8");
 
 assert.match(primitives, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
 assert.doesNotMatch(primitives, /PopoverBody|PopoverItem|anchorRef/, "quick-chat select helper should not maintain its own popover implementation");
@@ -32,7 +33,7 @@ assert.doesNotMatch(
 );
 assert.match(
   thread,
-  /formatQuickChatAssistantMessage\(message\.text, streaming\)/,
+  /const formatted = formatQuickChatAssistantMessage\([\s\S]*message\.text[\s\S]*streaming/,
   "quick chat uses the shared marker-safe formatter for human-readable reply details",
 );
 assert.match(thread, /<SkillStageCard/, "quick chat renders live skill details as readable status cards");
@@ -40,11 +41,38 @@ assert.match(thread, /<GitHubCard/, "quick chat renders settled GitHub details a
 assert.match(thread, /<GitHubActionCard/, "quick chat renders GitHub write proposals as explicit action cards");
 assert.match(
   thread,
-  /if \(streaming\) return null;/,
-  "quick chat keeps GitHub placeholders stable while streaming without mounting their cards",
+  /!streaming && pieces\.some\(\(piece\) => piece\.kind !== "text"\)[\s\S]*pieces\.map[\s\S]*piece\.kind === "text"[\s\S]*<ProgressiveMarkdownBlock[\s\S]*piece\.kind === "action"[\s\S]*<GitHubActionCard[\s\S]*<GitHubCard/,
+  "settled Quick Chat renders text, cards, and actions once in their original order",
+);
+assert.match(
+  thread,
+  /proseContent=\{orderedProseContent\}[\s\S]*supplementaryContent=\{quickChatSupplementaryContent\}/,
+  "ordered rich pieces use the shared prose slot while independent metadata stays supplementary",
+);
+const quickSupplementary = /const quickChatSupplementaryContent = \(([\s\S]*?)\n  \);\n  return/.exec(thread)?.[1] ?? "";
+assert.ok(quickSupplementary, "Quick Chat supplementary content exists");
+assert.doesNotMatch(
+  quickSupplementary,
+  /GitHubCard|GitHubActionCard/,
+  "ordered GitHub pieces are not duplicated in supplementary content",
 );
 assert.match(thread, /copyText\(visible\)/, "each familiar reply can be copied to the clipboard — the visible text, not the raw next-paths trailer");
-assert.match(thread, /aria-live="polite"/, "the thread is a polite live region so streamed replies are announced");
+assert.match(
+  thread,
+  /formatQuickChatAssistantMessage\([\s\S]*useStreamingPresentationSource\([\s\S]*formatted\.visibleProse/,
+  "Quick Chat buffers the formatter's prose-only visible projection",
+);
+assert.doesNotMatch(
+  thread,
+  /sourceMode:\s*"(?:append-only|appendOnly)"/,
+  "Quick Chat keeps the safe replaceable presentation-buffer mode",
+);
+assert.doesNotMatch(thread, /aria-live=/, "the thread does not nest a second live region");
+assert.match(
+  streamingResponse,
+  /className="streaming-turn-current" role="status"/,
+  "the shared live response owns the one explicit current-state announcement",
+);
 assert.match(
   quickHook,
   /lifecycle\?: ChatTurnLifecycle/,
@@ -74,6 +102,31 @@ assert.match(
   quickHook,
   /m\.id === activeSend\.assistantId && m\.pending[\s\S]*lifecycle: "cancelled"/,
   "Stop marks only the active Quick Chat turn cancelled",
+);
+assert.match(
+  quickHook,
+  /body: JSON\.stringify\(\{ runId: active\.runId \}\)/,
+  "Quick Chat Stop is scoped only to the captured run id",
+);
+assert.doesNotMatch(
+  /async function requestQuickChatStop[\s\S]*?\n\}/.exec(quickHook)?.[0] ?? "",
+  /sessionId/,
+  "Quick Chat never adds a reusable session id to Stop requests",
+);
+assert.match(
+  quickHook,
+  /const terminateActiveSend = useCallback[\s\S]*activeSendRef\.current = null;[\s\S]*requestQuickChatStop\(activeSend[\s\S]*activeSend\.controller\.abort\(\)/,
+  "all deliberate termination paths atomically take ownership before Stop and local abort",
+);
+assert.match(
+  quickHook,
+  /const newThread = useCallback[\s\S]*terminateActiveSend\(\{ surfaceFailure: false, keepalive: true \}\)/,
+  "thread resets explicitly stop their captured server run",
+);
+assert.match(
+  quickHook,
+  /window\.addEventListener\("pagehide", stopForCleanup\)[\s\S]*stopForCleanup\(\)/,
+  "page closure and unmount use the keepalive cleanup Stop path",
 );
 assert.match(
   quickHook,

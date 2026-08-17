@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { GitHubCard } from "@/components/github-card";
+import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { Button } from "@/components/ui/button";
@@ -91,10 +92,13 @@ function QuickChatBubble({
 }) {
   const [copied, setCopied] = useState(false);
   const streaming = message.role === "assistant" && Boolean(message.pending);
-  const presentedRawText = useStreamingPresentationSource(
+  const formatted = formatQuickChatAssistantMessage(
     message.role === "assistant" ? message.text : "",
     streaming,
-    { sourceMode: "replaceable" },
+  );
+  const presentedVisible = useStreamingPresentationSource(
+    formatted.visibleProse,
+    streaming,
   );
 
   useEffect(() => {
@@ -125,12 +129,7 @@ function QuickChatBubble({
     skillUpdates,
     authoredResults,
     suggestions: typedSuggestions,
-  } = formatQuickChatAssistantMessage(message.text, streaming);
-  const presentedProjection = formatQuickChatAssistantMessage(
-    presentedRawText,
-    streaming,
-  );
-  const presentedVisible = presentedProjection.copyText;
+  } = formatted;
   // Quick chat is intentionally a compact reply-only surface. Task and action
   // intents stay hidden because this tray cannot review or execute them.
   const suggestions = typedSuggestions
@@ -156,12 +155,18 @@ function QuickChatBubble({
     skillUpdateCount: skillUpdates.length,
     followUpCount: suggestions.length,
   });
-  const quickChatCardsAndSkills = (
-    <div data-quick-chat-supplementary-content={true}>
+  const orderedProseContent =
+    !streaming && pieces.some((piece) => piece.kind !== "text") ? (
       <div className="quick-chat-md">
         {pieces.map((piece, index) => {
-          if (piece.kind === "text") return null;
-          if (streaming) return null;
+          if (piece.kind === "text") {
+            return (
+              <ProgressiveMarkdownBlock
+                key={`prose-${index}`}
+                text={piece.text}
+              />
+            );
+          }
           if (piece.kind === "action") {
             return (
               <div key={`action-${index}`} className="my-2">
@@ -176,7 +181,9 @@ function QuickChatBubble({
           );
         })}
       </div>
-
+    ) : undefined;
+  const quickChatSupplementaryContent = (
+    <div data-quick-chat-supplementary-content={true}>
       {skillUpdates.length ? (
         <div className="mt-2 space-y-2">
           {skillUpdates.map((update) => (
@@ -240,7 +247,7 @@ function QuickChatBubble({
                 </Button>
               ) : null}
             </div>
-            {quickChatCardsAndSkills}
+            {quickChatSupplementaryContent}
           </>
         ) : (
           <StreamingTurnResponse
@@ -248,6 +255,7 @@ function QuickChatBubble({
             familiarName={familiar?.display_name ?? "Unknown familiar"}
             model={streamingModel}
             density="compact"
+            proseContent={orderedProseContent}
             onStop={streaming ? onStop : undefined}
             onRetry={message.error && isLastAssistant ? onRegenerate : undefined}
             canContinue={false}
@@ -256,7 +264,7 @@ function QuickChatBubble({
                 ? () => { void copyText(streamingModel.committedText); }
                 : undefined
             }
-            supplementaryContent={quickChatCardsAndSkills}
+            supplementaryContent={quickChatSupplementaryContent}
           />
         )}
       </div>
@@ -295,7 +303,7 @@ export function QuickChatThread({
   const lastAssistantId = lastRegenerableQuickChatMessageId(messages);
 
   return (
-    <div ref={scrollRef} className="quick-chat-thread" aria-live="polite">
+    <div ref={scrollRef} className="quick-chat-thread">
       {messages.length === 0 ? (
         <div className="quick-chat-empty">
           <span className="quick-chat-empty__glyph" aria-hidden><Icon name={emptyIcon} width={22} /></span>

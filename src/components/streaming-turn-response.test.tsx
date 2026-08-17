@@ -9,6 +9,7 @@ import { partitionStreamingMarkdown } from "@/lib/streaming-markdown-blocks";
 import type { StreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { OverflowMenu } from "./ui/overflow-menu";
 import { MessageBubble, ProgressiveMarkdownBlock } from "./message-bubble";
+import { QuickChatThread } from "./quick-chat-thread";
 import { StreamingMarkdownBlocks } from "./streaming-markdown-blocks";
 import { StreamingTurnResponse } from "./streaming-turn-response";
 
@@ -86,6 +87,22 @@ vi.mock("@/components/ui/citation", () => ({
       data-citation-url={citations[0]?.url}
     />
   ),
+}));
+
+vi.mock("@/components/github-card", () => ({
+  GitHubCard: () => <div data-quick-github-card={true}>GitHub card</div>,
+}));
+
+vi.mock("@/components/github-action-card", () => ({
+  GitHubActionCard: () => <div data-quick-github-action={true}>GitHub action</div>,
+}));
+
+vi.mock("@/lib/use-stick-to-bottom", () => ({
+  useStickToBottom: () => ({
+    schedulePin: vi.fn(),
+    stick: vi.fn(),
+    stuckRef: { current: true },
+  }),
 }));
 
 vi.mock("next/dynamic", () => ({
@@ -789,11 +806,16 @@ describe("StreamingTurnResponse", () => {
       response({ familiarName: "Sage", model: model({ status: "working" }) }),
     );
     expect(JSON.stringify(working.toJSON())).toContain("Sage is working");
+    expect(working.root.findAllByProps({ role: "status" })).toHaveLength(1);
+    expect(working.root.findByProps({ role: "status" }).props.className).toBe(
+      "streaming-turn-current",
+    );
 
     const answering = await render(
       response({ familiarName: "Echo", model: model({ status: "answering" }) }),
     );
     expect(JSON.stringify(answering.toJSON())).toContain("Echo is responding");
+    expect(answering.root.findAllByProps({ role: "status" })).toHaveLength(1);
   });
 
   it("renders one current activity line before prose, results, state, supplementary content, and disclosure", async () => {
@@ -912,6 +934,77 @@ describe("StreamingTurnResponse", () => {
     expect(serialized.indexOf("Closing prose")).toBeLessThan(
       serialized.indexOf("streaming-turn-results"),
     );
+  });
+
+  it("keeps settled Quick Chat text, cards, and actions ordered before Results", async () => {
+    const renderer = await render(
+      <QuickChatThread
+        familiar={null}
+        messages={[
+          {
+            id: "quick-rich",
+            role: "assistant",
+            lifecycle: "complete",
+            text: [
+              "Opening prose",
+              '<coven:github kind="issue" repo="OpenCoven/coven-cave" number="42" />',
+              "Middle prose",
+              '<coven:github-action kind="comment" repo="OpenCoven/coven-cave" number="42" body="Looks good" />',
+              "Closing prose",
+              '<coven:result id="tests" state="passed" label="Focused tests" />',
+            ].join("\n"),
+          },
+        ]}
+      />,
+    );
+    await flushMarkdown();
+
+    expect(renderer.root.findAllByType(StreamingMarkdownBlocks)).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ "data-quick-github-card": true })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ "data-quick-github-action": true })).toHaveLength(1);
+    const serialized = JSON.stringify(renderer.toJSON());
+    const orderedTokens = [
+      "Opening prose",
+      "GitHub card",
+      "Middle prose",
+      "GitHub action",
+      "Closing prose",
+    ];
+    for (const token of orderedTokens) {
+      expect(serialized.split(token)).toHaveLength(2);
+    }
+    for (let index = 1; index < orderedTokens.length; index += 1) {
+      expect(serialized.indexOf(orderedTokens[index - 1])).toBeLessThan(
+        serialized.indexOf(orderedTokens[index]),
+      );
+    }
+    expect(serialized).not.toContain("coven:github");
+    expect(serialized).not.toContain("coven:result");
+    expect(serialized.indexOf("Closing prose")).toBeLessThan(
+      serialized.indexOf("streaming-turn-results"),
+    );
+  });
+
+  it("renders a settled bare GitHub URL only as a card without duplicate URL prose", async () => {
+    const url = "https://github.com/OpenCoven/coven-cave/issues/42";
+    const renderer = await render(
+      <QuickChatThread
+        familiar={null}
+        messages={[
+          {
+            id: "quick-bare-url",
+            role: "assistant",
+            lifecycle: "complete",
+            text: url,
+          },
+        ]}
+      />,
+    );
+    await flushMarkdown();
+
+    expect(renderer.root.findAllByProps({ "data-quick-github-card": true })).toHaveLength(1);
+    expect(renderer.root.findAllByType(StreamingMarkdownBlocks)).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain(url);
   });
 
   it("keeps StreamingMarkdownBlocks when no ordered prose override is supplied", async () => {

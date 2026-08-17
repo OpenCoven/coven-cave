@@ -14,6 +14,7 @@ import {
 
 export type QuickChatAssistantMessage = {
   copyText: string;
+  visibleProse: string;
   pieces: GitHubTextPiece[];
   skillUpdates: SkillStageUpdate[];
   authoredResults: ReturnType<typeof extractChatResultMarkers>["results"];
@@ -44,9 +45,14 @@ export function formatQuickChatAssistantMessage(
         }
       : piece,
   );
+  const visibleProse = pieces
+    .filter((piece): piece is Extract<GitHubTextPiece, { kind: "text" }> => piece.kind === "text")
+    .map((piece) => piece.text)
+    .join("");
 
   return {
     copyText,
+    visibleProse,
     pieces,
     skillUpdates: skillSplit.updates,
     authoredResults: resultSplit.results,

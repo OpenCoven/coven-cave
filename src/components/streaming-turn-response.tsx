@@ -193,7 +193,7 @@ export function StreamingTurnResponse({
       data-turn-id={turnId}
     >
       {live ? (
-        <div className="streaming-turn-current">
+        <div className="streaming-turn-current" role="status">
           <div className="streaming-turn-current__phase">
             {`${familiarName} is ${model.status === "working" ? "working" : "responding"}`}
           </div>

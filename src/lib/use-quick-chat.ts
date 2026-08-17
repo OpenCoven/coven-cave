@@ -92,14 +92,15 @@ type ActiveQuickChatSend = {
   sessionId: string | null;
 };
 
-async function requestQuickChatStop(active: ActiveQuickChatSend): Promise<void> {
+async function requestQuickChatStop(
+  active: ActiveQuickChatSend,
+  options: { keepalive?: boolean } = {},
+): Promise<void> {
   const response = await fetch("/api/chat/stop", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      runId: active.runId,
-      ...(active.sessionId ? { sessionId: active.sessionId } : {}),
-    }),
+    body: JSON.stringify({ runId: active.runId }),
+    keepalive: options.keepalive,
   });
   const payload = await response.json().catch(() => null) as {
     ok?: unknown;
@@ -334,10 +335,40 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // Files that rode with the last user turn, so regenerate() re-sends them.
   const lastUserAttachmentsRef = useRef<ChatAttachment[]>([]);
 
+  const terminateActiveSend = useCallback(
+    (
+      options: {
+        surfaceFailure: boolean;
+        keepalive?: boolean;
+      },
+    ): ActiveQuickChatSend | null => {
+      const activeSend = activeSendRef.current;
+      if (!activeSend) return null;
+
+      // Claim this exact record before any async work or abort callbacks run.
+      // Every reset path shares this take, so only its first caller can issue
+      // Stop and a late completion cannot clear a replacement send.
+      activeSendRef.current = null;
+      void requestQuickChatStop(activeSend, {
+        keepalive: options.keepalive,
+      }).catch((cause) => {
+        console.error("[Quick Chat] Failed to stop server-side response:", cause);
+        if (!options.surfaceFailure || latestSendRunIdRef.current !== activeSend.runId) return;
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not stop the server-side response.",
+        );
+      });
+      activeSend.controller.abort();
+      return activeSend;
+    },
+    [],
+  );
+
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
-    activeSendRef.current?.controller.abort();
-    activeSendRef.current = null;
+    terminateActiveSend({ surfaceFailure: false, keepalive: true });
     latestSendRunIdRef.current = null;
     sessionIdRef.current = null;
     threadFamiliarRef.current = null;
@@ -355,7 +386,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setMessages([]);
     setError(null);
     setSendState("idle");
-  }, []);
+  }, [terminateActiveSend]);
 
   useEffect(() => {
     if (!enabled || rosterStartedRef.current) return;
@@ -424,13 +455,23 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setSelectedFamiliarId(preferredFamiliarId);
   }, [preferredFamiliarId, familiars]);
 
-  // Abort any in-flight stream when the consumer unmounts. (The roster load
-  // aborts through its own effect cleanup above.)
+  // Deliberately stop the captured run on tab closure or unmount. Keepalive
+  // gives the explicit Stop request a chance to outlive page teardown; the
+  // shared atomic take prevents pagehide + cleanup from sending it twice.
   useEffect(() => {
-    return () => {
-      activeSendRef.current?.controller.abort();
+    const stopForCleanup = () => {
+      terminateActiveSend({ surfaceFailure: false, keepalive: true });
     };
-  }, []);
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", stopForCleanup);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pagehide", stopForCleanup);
+      }
+      stopForCleanup();
+    };
+  }, [terminateActiveSend]);
 
   const selectedFamiliar = useMemo(
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? familiars[0] ?? null,
@@ -822,20 +863,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   ]);
 
   const cancel = useCallback(() => {
-    const activeSend = activeSendRef.current;
+    const activeSend = terminateActiveSend({ surfaceFailure: true });
     if (!activeSend) return;
 
-    void requestQuickChatStop(activeSend).catch((cause) => {
-      console.error("[Quick Chat] Failed to stop server-side response:", cause);
-      if (latestSendRunIdRef.current !== activeSend.runId) return;
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not stop the server-side response.",
-      );
-    });
-    activeSend.controller.abort();
-    if (activeSendRef.current === activeSend) activeSendRef.current = null;
     // Keep whatever streamed so far, but stop the spinner on the open turn.
     setMessages((prev) =>
       prev.map((m) =>
@@ -845,7 +875,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       ),
     );
     setSendState("idle");
-  }, []);
+  }, [terminateActiveSend]);
 
   // Manual picks flow through here: they override the workspace-active default
   // from then on, and switching to a different familiar starts a fresh thread.

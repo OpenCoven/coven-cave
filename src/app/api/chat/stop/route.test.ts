@@ -61,3 +61,26 @@ test("returns stopped:false once a run has already settled", async () => {
     unregisterChatRun(handle);
   }
 });
+
+test("a delayed old runId cannot stop a newer run that reused its session", async () => {
+  let newerKills = 0;
+  const old = registerChatRun(["old-route-run", "shared-route-session"], () => {});
+  const newer = registerChatRun(["new-route-run", "shared-route-session"], () => {
+    newerKills += 1;
+  });
+  unregisterChatRun(old);
+
+  try {
+    const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: "old-route-run" }),
+    }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await readJson(response), { ok: true, stopped: false });
+    assert.equal(newer.stopRequested, false, "the newer session run remains untouched");
+    assert.equal(newerKills, 0, "the delayed old run-scoped Stop cannot kill the newer run");
+  } finally {
+    unregisterChatRun(newer);
+  }
+});

@@ -145,17 +145,12 @@ assert.match(
 
 assert.match(
   quick,
-  /useStreamingPresentationSource\(\s*message\.role === "assistant" \? message\.text : "",\s*streaming,\s*\{ sourceMode: "replaceable" \},?\s*\)/,
-  "Quick Chat buffers raw assistant source in replacement-safe mode",
-);
-assert.match(
-  quick,
-  /const presentedProjection = formatQuickChatAssistantMessage\(\s*presentedRawText,\s*streaming,\s*\)/,
-  "Quick Chat projects protocol markers only after buffering raw source",
+  /const formatted = formatQuickChatAssistantMessage\([\s\S]*message\.text[\s\S]*streaming[\s\S]*useStreamingPresentationSource\(\s*formatted\.visibleProse,\s*streaming,\s*\)/,
+  "Quick Chat formats first and buffers only ordered visible prose in replacement-safe mode",
 );
 assert.doesNotMatch(
   quick,
-  /useStreamingPresentationSource\([\s\S]{0,120}(?:copyText|visible)[\s\S]{0,120}sourceMode: "append-only"/,
+  /useStreamingPresentationSource\([\s\S]{0,120}sourceMode:\s*"(?:append-only|appendOnly)"/,
   "Quick Chat never labels marker-projected visible text append-only",
 );
 assert.match(
