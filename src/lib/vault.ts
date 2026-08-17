@@ -1,13 +1,13 @@
 /**
- * Cave Vault — resolves env vars from encrypted local secrets or 1Password references
+ * Cave Vault — resolves environment-owned, encrypted, and provider-backed secrets
  *
- * vault.yaml maps ENV_VAR_NAME → { storage: "encrypted" } or { ref: "op://Vault/Item/field", ... }
+ * vault.yaml maps ENV_VAR_NAME to storage metadata or an op:// / dl:// reference.
  *
  * Resolution priority:
  *   1. Already in process.env (e.g. set by .env.local or OS env) → use as-is
  *   2. Writable .env.local legacy fallback → use as-is
  *   3. Local encrypted vault → decrypt into process memory
- *   4. vault.yaml has a ref for this key → resolve via `op read`
+ *   4. vault.yaml has a ref for this key → resolve through its provider CLI
  *   5. undefined
  *
  * The vault.yaml mapping declares which backend a key uses: when it carries a
@@ -21,15 +21,24 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
+import { isSidecarInternalEnvKey, scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
+import { vaultStorageForReference, type VaultStorageId } from "./vault-storage.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,7 +52,7 @@ export type VaultScope = "shared" | string[];
 
 export type VaultEntry = {
   ref?: string;
-  storage?: "1password" | "encrypted" | "dashlane";
+  storage?: VaultStorageId;
   description?: string;
   required?: boolean;
   scope?: VaultScope;
@@ -55,7 +64,7 @@ export type VaultSecretSource = "process-env" | "env-local" | "vault" | null;
 
 type MirroredSecretMetadata = {
   source: Exclude<VaultSecretSource, "process-env" | null>;
-  storage: "1password" | "encrypted" | "dashlane" | null;
+  storage: Exclude<VaultStorageId, "environment"> | null;
 };
 
 const mirroredSecretMetadata = new Map<string, MirroredSecretMetadata & { digest: string }>();
@@ -85,7 +94,10 @@ const VAULT_PROCESS_ENV_DENYLIST = new Set([
 ]);
 
 export function canMirrorVaultKeyToProcessEnv(key: string): boolean {
-  return !VAULT_PROCESS_ENV_DENYLIST.has(key.trim().toUpperCase());
+  return (
+    !VAULT_PROCESS_ENV_DENYLIST.has(key.trim().toUpperCase()) &&
+    !isSidecarInternalEnvKey(key)
+  );
 }
 
 /** Cache a resolved vault value only when the key cannot steer this process. */
@@ -101,6 +113,16 @@ export function mirrorVaultSecretToProcessEnv(
   } else {
     mirroredSecretMetadata.delete(key);
   }
+  return true;
+}
+
+/** Remove only a value this process previously mirrored from the Vault. */
+export function clearMirroredVaultSecretFromProcessEnv(key: string): boolean {
+  const current = process.env[key];
+  const mirrored = current ? currentMirroredMetadata(key, current) : null;
+  mirroredSecretMetadata.delete(key);
+  if (!current || !mirrored || mirrored.source !== "vault") return false;
+  delete process.env[key];
   return true;
 }
 
@@ -155,7 +177,7 @@ export type VaultStatus = "resolved" | "configured" | "encrypted" | "env-only" |
 export type VaultMappingStatus = {
   key: string;
   ref: string | null;
-  storage: "1password" | "encrypted" | "dashlane" | null;
+  storage: VaultStorageId | null;
   description: string | null;
   required: boolean;
   status: VaultStatus;
@@ -227,36 +249,60 @@ function seedVaultIfNeeded(): void {
 
 let _vaultMap: VaultMap | null = null;
 
+function readVaultMap(strict: boolean): VaultMap {
+  const vaultYaml = vaultYamlPath();
+  if (!existsSync(/* turbopackIgnore: true */ vaultYaml)) return {};
+  try {
+    const raw = readFileSync(/* turbopackIgnore: true */ vaultYaml, "utf8");
+    const parsed = parseYaml(raw) as unknown;
+    if (
+      parsed == null
+      || typeof parsed !== "object"
+      || Array.isArray(parsed)
+      || Object.values(parsed).some(
+        (entry) => !entry || typeof entry !== "object" || Array.isArray(entry),
+      )
+    ) {
+      throw new Error("invalid Vault metadata shape");
+    }
+    return parsed as VaultMap;
+  } catch {
+    if (strict) {
+      throw new Error("Vault metadata is invalid; repair vault.yaml before saving changes");
+    }
+    return {};
+  }
+}
+
 export function loadVaultMap(force = false): VaultMap {
   if (_vaultMap && !force) return _vaultMap;
   seedVaultIfNeeded();
-  const vaultYaml = vaultYamlPath();
-  if (!existsSync(/* turbopackIgnore: true */ vaultYaml)) { _vaultMap = {}; return {}; }
-  try {
-    const raw = readFileSync(/* turbopackIgnore: true */ vaultYaml, "utf8");
-    const parsed = parseYaml(raw) as VaultMap | null;
-    _vaultMap = parsed ?? {};
-    return _vaultMap;
-  } catch {
-    _vaultMap = {};
-    return {};
-  }
+  _vaultMap = readVaultMap(false);
+  return _vaultMap;
+}
+
+export function loadVaultMapForMutation(): VaultMap {
+  seedVaultIfNeeded();
+  _vaultMap = readVaultMap(true);
+  return _vaultMap;
 }
 
 export function saveVaultMap(map: VaultMap): void {
   // Serialise back to YAML manually (keeps comments stripped but structure clean)
   const lines = [
-    "# Cave Vault — env var → encrypted local secret or 1Password reference map",
+    "# Cave Vault — env var → encrypted secret, external reference, or environment mapping",
     "#",
     "# Format:",
     '#   ENV_VAR_NAME:',
     '#     storage: "encrypted"',
     "#   ANOTHER_ENV_VAR:",
     '#     ref: "op://VaultName/ItemTitle/field"',
+    "#   ENVIRONMENT_OWNED_VAR:",
+    '#     storage: "environment"',
     '#     description: "human-readable note"',
     "#     required: false",
     "#",
-    "# Secrets are NEVER stored here — only storage metadata or an op:// reference.",
+    "# Secrets are NEVER stored here — only storage metadata or secure references.",
     "# Safe to commit; contains no credentials.",
     "",
   ];
@@ -264,6 +310,8 @@ export function saveVaultMap(map: VaultMap): void {
     lines.push(`${key}:`);
     if (entry.storage === "encrypted") {
       lines.push('  storage: "encrypted"');
+    } else if (entry.storage === "environment") {
+      lines.push('  storage: "environment"');
     } else if (entry.ref) {
       lines.push(`  ref: "${entry.ref}"`);
     }
@@ -280,7 +328,23 @@ export function saveVaultMap(map: VaultMap): void {
   }
   const vaultYaml = vaultYamlPath();
   mkdirSync(/* turbopackIgnore: true */ dirname(vaultYaml), { recursive: true });
-  writeFileSync(/* turbopackIgnore: true */ vaultYaml, lines.join("\n"), "utf8");
+  const temporary = `${vaultYaml}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+  try {
+    writeFileSync(/* turbopackIgnore: true */ temporary, lines.join("\n"), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    renameSync(
+      /* turbopackIgnore: true */ temporary,
+      /* turbopackIgnore: true */ vaultYaml,
+    );
+  } finally {
+    try {
+      unlinkSync(/* turbopackIgnore: true */ temporary);
+    } catch {
+      // Rename removes the temporary path.
+    }
+  }
   _vaultMap = map; // bust cache
 }
 
@@ -343,26 +407,45 @@ function refReadRetryTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
 }
 
+function refFailureCacheMs(): number {
+  const raw = Number(process.env.COVEN_CAVE_REF_FAILURE_CACHE_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 5_000;
+}
+
+export type VaultResolutionOptions = {
+  deadlineMs?: number;
+};
+
+const failedRefUntil = new Map<string, number>();
+
 function isTimeoutError(e: unknown): boolean {
   return !!e && typeof e === "object" && (e as NodeJS.ErrnoException).code === "ETIMEDOUT";
 }
 
 /** Run `<cli> read <ref>`, retrying once with a longer timeout if the first
  *  attempt was killed by the base timeout. Returns null on failure. */
-function cliRead(cli: "op" | "dcli", ref: string): string | null {
+function cliRead(
+  cli: "op" | "dcli",
+  ref: string,
+  options: VaultResolutionOptions = {},
+): string | null {
+  const remainingMs = () => options.deadlineMs === undefined
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, options.deadlineMs - Date.now());
   const run = (timeout: number) =>
     String(Reflect.apply(execFileSync, undefined, [cli, ["read", ref], {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
-      timeout,
+      timeout: Math.max(1, Math.min(timeout, remainingMs())),
       env: resolverEnv(),
       windowsHide: true,
     }])).trim();
 
+  if (remainingMs() <= 0) return null;
   try {
     return run(refReadTimeoutMs()) || null;
   } catch (e) {
-    if (!isTimeoutError(e)) return null;
+    if (!isTimeoutError(e) || remainingMs() <= 0) return null;
     try {
       return run(refReadRetryTimeoutMs()) || null;
     } catch {
@@ -372,9 +455,9 @@ function cliRead(cli: "op" | "dcli", ref: string): string | null {
 }
 
 /** Call `op read` to fetch a secret reference. Returns null on failure. */
-function opRead(ref: string): string | null {
+function opRead(ref: string, options?: VaultResolutionOptions): string | null {
   if (validateOpRef(ref)) return null;
-  return cliRead("op", ref);
+  return cliRead("op", ref, options);
 }
 
 // ── dashlane (dcli) resolver ────────────────────────────────────────────────
@@ -400,14 +483,14 @@ export function validateDashlaneRef(ref: unknown): string | null {
 }
 
 /** Call `dcli read` to fetch a Dashlane secret reference. Returns null on failure. */
-function dcliRead(ref: string): string | null {
+function dcliRead(ref: string, options?: VaultResolutionOptions): string | null {
   if (validateDashlaneRef(ref)) return null;
-  return cliRead("dcli", ref);
+  return cliRead("dcli", ref, options);
 }
 
 /** The storage backend a reference resolves through, implied by its scheme. */
 export function refStorage(ref: string): "1password" | "dashlane" {
-  return ref.startsWith(DL_REF_PREFIX) ? "dashlane" : "1password";
+  return vaultStorageForReference(ref);
 }
 
 /** Validate a secret reference, dispatching by scheme (op:// vs dl://). */
@@ -418,20 +501,64 @@ export function validateRef(ref: unknown): string | null {
 }
 
 /** Resolve a secret reference via the appropriate CLI, dispatching by scheme. */
-function readRef(ref: string): string | null {
-  return ref.startsWith(DL_REF_PREFIX) ? dcliRead(ref) : opRead(ref);
+function readRef(ref: string, options?: VaultResolutionOptions): string | null {
+  if ((failedRefUntil.get(ref) ?? 0) > Date.now()) return null;
+  const value = ref.startsWith(DL_REF_PREFIX)
+    ? dcliRead(ref, options)
+    : opRead(ref, options);
+  if (value) {
+    failedRefUntil.delete(ref);
+  } else {
+    failedRefUntil.set(ref, Date.now() + refFailureCacheMs());
+  }
+  return value;
 }
 
 /** Resolve a mapped secret without reading or changing process.env. */
-export function resolveVaultManagedSecret(key: string, entry = loadVaultMap()[key]): string | undefined {
+export function resolveVaultManagedSecret(
+  key: string,
+  entry = loadVaultMap()[key],
+  options?: VaultResolutionOptions,
+): string | undefined {
   if (!entry) return undefined;
+  if (entry.storage === "environment") return undefined;
 
   // The map's declared backend wins: a ref mapping is never shadowed by a
   // stale/orphaned entry in the local encrypted store.
   if (entry.storage === "encrypted") {
     return getLocalEncryptedSecret(key)?.trim() || undefined;
   }
-  return entry.ref ? readRef(entry.ref) || undefined : undefined;
+  return entry.ref ? readRef(entry.ref, options) || undefined : undefined;
+}
+
+/** Resolve one declared Vault backend and reuse only values cached by the Vault. */
+export function resolveCachedVaultManagedSecret(
+  key: string,
+  entry = loadVaultMap()[key],
+  options?: VaultResolutionOptions,
+): string | undefined {
+  if (!entry || entry.storage === "environment") return undefined;
+  const rawCurrent = process.env[key];
+  const current = rawCurrent?.trim();
+  if (
+    current
+    && rawCurrent
+    && currentMirroredMetadata(key, rawCurrent)?.source === "vault"
+  ) {
+    return current;
+  }
+
+  const value = resolveVaultManagedSecret(key, entry, options);
+  if (!value || current) return value;
+  const storage = entry.storage === "encrypted"
+    ? "encrypted"
+    : entry.ref
+      ? refStorage(entry.ref)
+      : null;
+  if (storage) {
+    mirrorVaultSecretToProcessEnv(key, value, { source: "vault", storage });
+  }
+  return value;
 }
 
 type ResolvedSecret = {
@@ -442,9 +569,12 @@ type ResolvedSecret = {
 
 /** Resolve one key with the same precedence used by every secret consumer. */
 function resolveSecretWithSource(key: string, map = loadVaultMap()): ResolvedSecret | undefined {
-  const fromProcess = process.env[key]?.trim();
+  const rawProcessValue = process.env[key];
+  const fromProcess = rawProcessValue?.trim();
   if (fromProcess) {
-    const mirrored = currentMirroredMetadata(key, fromProcess);
+    const mirrored = rawProcessValue
+      ? currentMirroredMetadata(key, rawProcessValue)
+      : null;
     return {
       value: fromProcess,
       source: mirrored?.source ?? "process-env",
@@ -464,12 +594,16 @@ function resolveSecretWithSource(key: string, map = loadVaultMap()): ResolvedSec
   }
 
   const entry = map[key];
+  if (entry?.storage === "environment") return undefined;
   const value = entry
     ? resolveVaultManagedSecret(key, entry)
     : hasLocalEncryptedSecret(key) ? getLocalEncryptedSecret(key)?.trim() : undefined;
   if (!value) return undefined;
 
-  const storage = entry?.storage === "encrypted" || (!entry?.ref && hasLocalEncryptedSecret(key))
+  const storage = entry?.storage === "encrypted" || (
+    !entry?.ref
+    && hasLocalEncryptedSecret(key)
+  )
     ? "encrypted"
     : entry?.ref
       ? refStorage(entry.ref)
@@ -516,7 +650,11 @@ export function getSecretStatus(key: string): VaultSecretStatus {
       key,
       status: "error",
       hasValue: false,
-      storage: entry?.storage === "encrypted" || (!entry?.ref && hasLocalEncryptedSecret(key))
+      storage: entry?.storage === "encrypted" || (
+        entry?.storage !== "environment"
+        && !entry?.ref
+        && hasLocalEncryptedSecret(key)
+      )
         ? "encrypted"
         : entry?.ref
           ? refStorage(entry.ref)
@@ -526,7 +664,11 @@ export function getSecretStatus(key: string): VaultSecretStatus {
     };
   }
 
-  const storage = entry?.storage === "encrypted" || (!entry?.ref && hasLocalEncryptedSecret(key))
+  const storage = entry?.storage === "encrypted" || (
+    entry?.storage !== "environment"
+    && !entry?.ref
+    && hasLocalEncryptedSecret(key)
+  )
     ? "encrypted"
     : entry?.ref
       ? refStorage(entry.ref)
@@ -566,6 +708,7 @@ export function hasConfiguredSecretMetadata(key: string): boolean {
 
   const map = loadVaultMap();
   const entry = map[key];
+  if (entry?.storage === "environment") return true;
   if (entry?.storage === "encrypted" || hasLocalEncryptedSecret(key)) return true;
   return !!entry?.ref;
 }
@@ -576,12 +719,23 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
   const map = loadVaultMap(true); // always fresh for status checks
   const envLocal = readEnvLocalAll(); // read once for all entries
   return Object.entries(map).map(([key, entry]) => {
-    const inEnv = !!(process.env[key]?.trim()) || key in envLocal;
+    const rawProcessValue = process.env[key];
+    const processValue = rawProcessValue?.trim();
+    const mirrored = rawProcessValue
+      ? currentMirroredMetadata(key, rawProcessValue)
+      : null;
+    const externallyOwnedEnv =
+      key in envLocal
+      || (!!processValue && mirrored?.source !== "vault");
     // A ref mapping reports its ref backend even if an orphaned encrypted
     // entry lingers in the local store (cave-6iee).
-    const hasEncrypted = entry.storage === "encrypted" || (!entry.ref && hasLocalEncryptedSecret(key));
+    const encryptedMapping = entry.storage === "encrypted";
+    const legacyEncryptedCandidate =
+      entry.storage !== "environment"
+      && !entry.ref
+      && entry.storage !== "encrypted";
 
-    if (inEnv) {
+    if (externallyOwnedEnv) {
       return {
         key, ref: entry.ref ?? null, description: entry.description ?? null,
         storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : null),
@@ -590,16 +744,46 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
       };
     }
 
-    if (hasEncrypted) {
-      return {
-        key, ref: entry.ref ?? null, description: entry.description ?? null,
-        storage: "encrypted",
-        required: entry.required ?? false,
-        status: "encrypted" as VaultStatus, hasValue: true,
-      };
+    if (encryptedMapping || legacyEncryptedCandidate) {
+      try {
+        if (!hasLocalEncryptedSecret(key)) {
+          if (encryptedMapping) {
+            return {
+              key, ref: entry.ref ?? null, description: entry.description ?? null,
+              storage: "encrypted",
+              required: entry.required ?? false,
+              status: "unresolved" as VaultStatus, hasValue: false,
+              error: "encrypted local secret is missing",
+            };
+          }
+        } else {
+          return {
+            key, ref: entry.ref ?? null, description: entry.description ?? null,
+            storage: "encrypted",
+            required: entry.required ?? false,
+            status: "encrypted" as VaultStatus, hasValue: true,
+          };
+        }
+      } catch (error) {
+        return {
+          key, ref: entry.ref ?? null, description: entry.description ?? null,
+          storage: "encrypted",
+          required: entry.required ?? false,
+          status: "error" as VaultStatus, hasValue: false,
+          error: error instanceof Error ? error.message : "local encrypted vault is unavailable",
+        };
+      }
     }
 
     if (entry.ref) {
+      if (processValue && mirrored?.source === "vault") {
+        return {
+          key, ref: entry.ref, description: entry.description ?? null,
+          storage: refStorage(entry.ref),
+          required: entry.required ?? false,
+          status: "resolved" as VaultStatus, hasValue: true,
+        };
+      }
       return {
         key, ref: entry.ref, description: entry.description ?? null,
         storage: refStorage(entry.ref),
@@ -612,7 +796,11 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
       key, ref: null, description: entry.description ?? null,
       storage: entry.storage ?? null,
       required: entry.required ?? false,
-      status: "no-ref" as VaultStatus, hasValue: false,
+      status: entry.storage === "environment" ? "unresolved" as VaultStatus : "no-ref" as VaultStatus,
+      hasValue: false,
+      error: entry.storage === "environment"
+        ? "not present in the process environment or .env.local"
+        : undefined,
     };
   });
 }
@@ -620,14 +808,21 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
 export function getVaultStatuses(): VaultMappingStatus[] {
   const map = loadVaultMap(true); // always fresh for status checks
   return Object.entries(map).map(([key, entry]) => {
-    const processValue = process.env[key]?.trim();
-    const mirrored = processValue ? currentMirroredMetadata(key, processValue) : null;
+    const rawProcessValue = process.env[key];
+    const processValue = rawProcessValue?.trim();
+    const mirrored = rawProcessValue
+      ? currentMirroredMetadata(key, rawProcessValue)
+      : null;
     const fromEnvFile = processValue ? undefined : readEnvLocalValue(key);
     if (fromEnvFile) {
       mirrorVaultSecretToProcessEnv(key, fromEnvFile, { source: "env-local", storage: null });
     }
 
-    const storage = entry.storage === "encrypted" || (!entry.ref && hasLocalEncryptedSecret(key))
+    const storage = entry.storage === "encrypted" || (
+      entry.storage !== "environment"
+      && !entry.ref
+      && hasLocalEncryptedSecret(key)
+    )
       ? "encrypted"
       : entry.ref
         ? refStorage(entry.ref)
@@ -654,7 +849,14 @@ export function getVaultStatuses(): VaultMappingStatus[] {
 
     // Same backend-priority rule as resolveSecret: an orphaned encrypted
     // entry must not make a ref mapping report (or resolve) as "encrypted".
-    if (entry.storage === "encrypted" || (!entry.ref && hasLocalEncryptedSecret(key))) {
+    if (
+      entry.storage === "encrypted"
+      || (
+        entry.storage !== "environment"
+        && !entry.ref
+        && hasLocalEncryptedSecret(key)
+      )
+    ) {
       try {
         const value = getLocalEncryptedSecret(key);
         if (value) {
@@ -689,7 +891,11 @@ export function getVaultStatuses(): VaultMappingStatus[] {
         key, ref: null, description: entry.description ?? null,
         storage: entry.storage ?? null,
         required: entry.required ?? false,
-        status: "no-ref" as VaultStatus, hasValue: false,
+        status: entry.storage === "environment" ? "unresolved" as VaultStatus : "no-ref" as VaultStatus,
+        hasValue: false,
+        error: entry.storage === "environment"
+          ? "not present in the process environment or .env.local"
+          : undefined,
       };
     }
 

@@ -232,12 +232,26 @@ function readStore(): LocalVaultStore {
       parsed.version !== 1
       || !parsed.secrets
       || typeof parsed.secrets !== "object"
+      || Array.isArray(parsed.secrets)
     ) {
-      return { version: 1, secrets: {} };
+      throw fixedVaultError("local encrypted vault is unavailable");
+    }
+    for (const entry of Object.values(parsed.secrets)) {
+      if (
+        !entry
+        || entry.v !== 1
+        || entry.alg !== "aes-256-gcm"
+        || typeof entry.iv !== "string"
+        || typeof entry.tag !== "string"
+        || typeof entry.ciphertext !== "string"
+        || typeof entry.updatedAt !== "string"
+      ) {
+        throw fixedVaultError("local encrypted vault is unavailable");
+      }
     }
     return { version: 1, secrets: parsed.secrets };
-  } catch {
-    return { version: 1, secrets: {} };
+  } catch (error) {
+    return sanitizedVaultError(error);
   }
 }
 
@@ -345,6 +359,49 @@ export function setLocalEncryptedSecret(key: string, value: string): void {
     const store = readStore();
     store.secrets[normalized] = encryptSecret(normalized, value, vaultKey);
     writeStore(store);
+  });
+}
+
+export function commitLocalEncryptedSecretBatch(
+  changes: ReadonlyArray<{ key: string; value: string | null }>,
+  commitMetadata: () => void,
+  rollbackMetadata: () => void,
+): void {
+  const prepared = changes.map(({ key, value }) => {
+    const normalized = requireNormalizedKey(key);
+    if (value !== null) requireSecretValue(value);
+    return { normalized, value };
+  });
+
+  withVaultMutationLock(() => {
+    const store = readStore();
+    let changed = false;
+    let vaultKey: Buffer | null = null;
+    for (const { normalized, value } of prepared) {
+      if (value === null) {
+        if (store.secrets[normalized]) {
+          delete store.secrets[normalized];
+          changed = true;
+        }
+        continue;
+      }
+      vaultKey ??= readOrCreateKey();
+      store.secrets[normalized] = encryptSecret(normalized, value, vaultKey);
+      changed = true;
+    }
+
+    commitMetadata();
+    if (!changed) return;
+    try {
+      writeStore(store);
+    } catch (error) {
+      try {
+        rollbackMetadata();
+      } catch {
+        throw fixedVaultError("local encrypted vault is unavailable");
+      }
+      throw error;
+    }
   });
 }
 
