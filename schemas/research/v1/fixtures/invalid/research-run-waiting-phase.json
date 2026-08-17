@@ -1,0 +1,36 @@
+{
+  "schema": "opencoven.research-run/v1",
+  "id": "run_01",
+  "acceptedTopic": {
+    "question": "How should the research executor resume this run?",
+    "editedByUser": false
+  },
+  "execution": {
+    "location": "hosted",
+    "modelExecution": "cave-device",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "resolve-at-run-start"
+    },
+    "strategy": "orchestrator-workers"
+  },
+  "privacy": {
+    "remoteQueries": false,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false
+  },
+  "bounds": {
+    "wallClockMinutes": 30,
+    "maxIterations": 3,
+    "sourceTarget": 6,
+    "checkpointEvery": 1,
+    "stopWhenCostUnavailable": true
+  },
+  "status": "waiting_for_executor",
+  "waitingReason": "executor",
+  "createdAt": "2026-08-15T20:00:00.000Z",
+  "updatedAt": "2026-08-15T20:01:00.000Z",
+  "nextEventSequence": 1
+}
