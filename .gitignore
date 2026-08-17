@@ -75,6 +75,7 @@ __pycache__/
 .env.*
 !.env.example
 !.env.*.example
+.env.local
 
 # Secrets & credentials — defense in depth alongside the pre-commit hook
 *.pem
@@ -99,7 +100,6 @@ credentials/
 
 # Git worktrees
 .worktrees/
-.env.local
 
 # Playwright debug artifacts (console/page dumps from headless runs)
 .playwright-cli/
