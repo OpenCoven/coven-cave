@@ -89,7 +89,7 @@
       "required": ["client"],
       "properties": {
         "client": { "const": "coven-cave" },
-        "userId": { "type": "string", "minLength": 1 }
+        "userId": { "type": "string" }
       }
     },
     "subject": {
@@ -97,8 +97,8 @@
       "additionalProperties": true,
       "required": ["familiarId"],
       "properties": {
-        "familiarId": { "type": "string", "minLength": 1 },
-        "projectId": { "type": "string", "minLength": 1 }
+        "familiarId": { "type": "string" },
+        "projectId": { "type": "string" }
       }
     },
     "consent": {
@@ -139,7 +139,7 @@
       "additionalProperties": true,
       "required": ["secretScanVersion"],
       "properties": {
-        "secretScanVersion": { "type": "string", "minLength": 1 },
+        "secretScanVersion": { "type": "string" },
         "redactionMapDigest": { "$ref": "#/$defs/sha256" }
       }
     },
@@ -232,15 +232,15 @@
       "properties": {
         "id": { "$ref": "#/$defs/resourceId" },
         "kind": { "$ref": "#/$defs/resourceKind" },
-        "uri": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string" },
         "digest": { "$ref": "#/$defs/sha256" },
         "localBlobDigest": { "$ref": "#/$defs/sha256" },
         "selector": { "$ref": "#/$defs/selector" },
         "trust": { "$ref": "#/$defs/resourceTrust" },
         "sensitivity": { "$ref": "#/$defs/resourceSensitivity" },
         "capturedAt": { "$ref": "#/$defs/utcTimestamp" },
-        "title": { "type": "string", "minLength": 1 },
-        "mediaType": { "type": "string", "minLength": 1 }
+        "title": { "type": "string" },
+        "mediaType": { "type": "string" }
       }
     }
   }

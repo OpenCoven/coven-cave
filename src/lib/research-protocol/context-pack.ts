@@ -156,6 +156,10 @@ function indexPath(path: string, index: number): string {
   return `${path}[${index}]`;
 }
 
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
 function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
   if (!isRecord(value)) {
     return fail("invalid_type", path, "Expected an object");
@@ -168,7 +172,7 @@ function parseRequiredField(
   key: string,
   path: string,
 ): ProtocolParseResult<unknown> {
-  if (!(key in record)) {
+  if (!hasOwn(record, key)) {
     return fail("missing_field", childPath(path, key), `Missing required field ${key}`);
   }
   return pass(record[key]);
@@ -216,10 +220,10 @@ function parseOptionalString(
   key: string,
   path: string,
 ): ProtocolParseResult<string | undefined> {
-  if (!(key in record)) {
+  if (!hasOwn(record, key)) {
     return pass(undefined);
   }
-  return parseString(record[key], childPath(path, key), key);
+  return parseString(record[key], childPath(path, key), key, { allowEmpty: true });
 }
 
 function parseSha256(value: unknown, path: string, label: string): ProtocolParseResult<string> {
@@ -439,7 +443,7 @@ export function parseContextPackResourceV1(
 
   const uriField = parseRequiredField(object.value, "uri", path);
   if (!uriField.ok) return uriField;
-  const uri = parseString(uriField.value, childPath(path, "uri"), "uri");
+  const uri = parseString(uriField.value, childPath(path, "uri"), "uri", { allowEmpty: true });
   if (!uri.ok) return uri;
 
   const digestField = parseRequiredField(object.value, "digest", path);
@@ -486,7 +490,12 @@ export function parseContextPackResourceV1(
 
   const mediaTypeField = parseRequiredField(object.value, "mediaType", path);
   if (!mediaTypeField.ok) return mediaTypeField;
-  const mediaType = parseString(mediaTypeField.value, childPath(path, "mediaType"), "mediaType");
+  const mediaType = parseString(
+    mediaTypeField.value,
+    childPath(path, "mediaType"),
+    "mediaType",
+    { allowEmpty: true },
+  );
   if (!mediaType.ok) return mediaType;
 
   return pass({
@@ -533,7 +542,12 @@ function parseSubject(value: unknown, path: string): ProtocolParseResult<Context
 
   const familiarIdField = parseRequiredField(object.value, "familiarId", path);
   if (!familiarIdField.ok) return familiarIdField;
-  const familiarId = parseString(familiarIdField.value, childPath(path, "familiarId"), "familiarId");
+  const familiarId = parseString(
+    familiarIdField.value,
+    childPath(path, "familiarId"),
+    "familiarId",
+    { allowEmpty: true },
+  );
   if (!familiarId.ok) return familiarId;
 
   const projectId = parseOptionalString(object.value, "projectId", path);
@@ -689,11 +703,12 @@ function parseTransforms(value: unknown, path: string): ProtocolParseResult<Cont
     secretScanVersionField.value,
     childPath(path, "secretScanVersion"),
     "secretScanVersion",
+    { allowEmpty: true },
   );
   if (!secretScanVersion.ok) return secretScanVersion;
 
   let redactionMapDigest: string | undefined;
-  if ("redactionMapDigest" in object.value) {
+  if (hasOwn(object.value, "redactionMapDigest")) {
     const parsedDigest = parseSha256(
       object.value.redactionMapDigest,
       childPath(path, "redactionMapDigest"),
