@@ -61,6 +61,7 @@ export const STANDALONE_FORBIDDEN_ROOTS = Object.freeze([
 ]);
 
 const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-"]);
+const IOS_BUILD_ROOT_PATTERN = /^(apps\/ios\/(?:[^/]+\/)*build(?:-[^/]+)?)(?:\/|$)/;
 
 function portable(relativePath) {
   return relativePath.split(path.sep).join("/");
@@ -72,6 +73,8 @@ export function forbiddenStandaloneRoot(relativePath) {
   if (STANDALONE_FORBIDDEN_ROOT_PREFIXES.some((prefix) => candidateRoot.startsWith(prefix))) {
     return candidateRoot;
   }
+  const iosBuildRoot = candidate.match(IOS_BUILD_ROOT_PATTERN)?.[1];
+  if (iosBuildRoot) return iosBuildRoot;
   return STANDALONE_FORBIDDEN_ROOTS.find(
     (root) => candidate === root || candidate.startsWith(`${root}/`),
   );

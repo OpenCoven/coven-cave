@@ -121,6 +121,25 @@ test.describe("sessions list", () => {
     await expect(rows(page)).toHaveCount(SEEDS.length);
   });
 
+  test("the reference toolbar keeps search, status, and sort on one compact line", async ({ page }) => {
+    const search = page.getByPlaceholder("Search sessions…");
+    const all = chip(page, "All");
+    const sort = page.locator(".chat-sessions-sort");
+    const [searchBox, allBox, sortBox] = await Promise.all([
+      search.boundingBox(),
+      all.boundingBox(),
+      sort.boundingBox(),
+    ]);
+
+    expect(searchBox).not.toBeNull();
+    expect(allBox).not.toBeNull();
+    expect(sortBox).not.toBeNull();
+    expect(searchBox!.width).toBeLessThanOrEqual(260);
+    expect(Math.abs(searchBox!.y - allBox!.y)).toBeLessThanOrEqual(4);
+    expect(Math.abs(searchBox!.y - sortBox!.y)).toBeLessThanOrEqual(4);
+    await expect(page.getByRole("button", { name: "Session view options" })).toBeVisible();
+  });
+
   test("clear filters appears for any applied filter and restores familiar scope", async ({ page }) => {
     const clearFilters = page.getByRole("button", { name: "Clear filters" });
     await expect(clearFilters).toHaveCount(0);
@@ -142,11 +161,13 @@ test.describe("sessions list", () => {
     await expect(search).toHaveValue("");
     await expect(rows(page)).toHaveCount(SEEDS.length);
 
-    const archived = page.getByRole("button", { name: "Show archived sessions" });
-    await archived.click();
+    const viewOptions = page.getByRole("button", { name: "Session view options" });
+    await viewOptions.click();
+    await page.getByRole("menuitemcheckbox", { name: "Show archived sessions" }).click();
     await expect(clearFilters).toBeVisible();
     await clearFilters.click();
-    await expect(page.getByRole("button", { name: "Show archived sessions" })).toHaveAttribute("aria-pressed", "false");
+    await viewOptions.click();
+    await expect(page.getByRole("menuitemcheckbox", { name: "Show archived sessions" })).toHaveAttribute("aria-checked", "false");
   });
 
   test("running work floats into Active now regardless of when it started", async ({ page }) => {

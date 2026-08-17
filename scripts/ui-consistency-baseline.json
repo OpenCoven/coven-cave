@@ -18,11 +18,6 @@
   "findings": [
     {
       "rule": "components/no-native-select",
-      "path": "src/components/chat-list.tsx",
-      "excerpt": "<select value={groupBy} onChange={(e) => setGroupBy(normalizeChatGroupBy(e.target.value))} aria-label=\"Group sessions by\" className=\"chat-list-group-select focus-ring h-7 shrink-0 cursor-pointer rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-transparent px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]\" >"
-    },
-    {
-      "rule": "components/no-native-select",
       "path": "src/components/chat-view.tsx",
       "excerpt": "<select className=\"focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/60 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)]\" defaultValue=\"\" disabled={busy} aria-label=\"Pick a project to run this chat in\" onChange={(event) => { if (event.target.value) onPickProject(event.target.value); }} >"
     },
