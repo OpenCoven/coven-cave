@@ -62,6 +62,33 @@ test("valid Context Pack parses and preserves unknown additive fields", () => {
   assert.equal(nested.transforms.marker, "preserved");
 });
 
+test("empty plain-string fields are accepted", () => {
+  const parsed = expectOk(
+    parseContextPackV1({
+      ...validContextPack,
+      createdBy: { ...validContextPack.createdBy, userId: "" },
+      subject: { familiarId: "", projectId: "" },
+      resources: [
+        {
+          ...validContextPack.resources[0],
+          uri: "",
+          title: "",
+          mediaType: "",
+        },
+      ],
+      transforms: { ...validContextPack.transforms, secretScanVersion: "" },
+    }),
+  );
+
+  assert.equal(parsed.createdBy.userId, "");
+  assert.equal(parsed.subject.familiarId, "");
+  assert.equal(parsed.subject.projectId, "");
+  assert.equal(parsed.resources[0].uri, "");
+  assert.equal(parsed.resources[0].title, "");
+  assert.equal(parsed.resources[0].mediaType, "");
+  assert.equal(parsed.transforms.secretScanVersion, "");
+});
+
 test("unsupported schema major returns unknown_major", () => {
   expectError(
     parseContextPackV1({ ...validContextPack, schema: "opencoven.context-pack/v2" }),
@@ -72,6 +99,24 @@ test("unsupported schema major returns unknown_major", () => {
 
 test("unknown retention fails at $.consent.retention", () => {
   expectError(parseContextPackV1(invalidRetentionPack), "$.consent.retention", "invalid_value");
+});
+
+test("prototype-only required fields are rejected", () => {
+  const prototypePack = Object.create({ schema: validContextPack.schema });
+  Object.assign(prototypePack, {
+    id: validContextPack.id,
+    digest: validContextPack.digest,
+    createdAt: validContextPack.createdAt,
+    createdBy: validContextPack.createdBy,
+    purpose: validContextPack.purpose,
+    subject: validContextPack.subject,
+    consent: validContextPack.consent,
+    resources: validContextPack.resources,
+    policy: validContextPack.policy,
+    transforms: validContextPack.transforms,
+  });
+
+  expectError(parseContextPackV1(prototypePack), "$.schema", "missing_field");
 });
 
 test("policy.allowedPurposes must include the pack purpose", () => {
@@ -160,4 +205,27 @@ test("resource parser preserves unknown fields", () => {
 
   assert.equal(resource.marker, "resource");
   assert.equal(resource.selector.nestedMarker, true);
+});
+
+test("prototype optional fields are ignored", () => {
+  const subject = Object.create({ projectId: "proto-project" });
+  subject.familiarId = validContextPack.subject.familiarId;
+
+  const transforms = Object.create({
+    redactionMapDigest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  });
+  transforms.secretScanVersion = validContextPack.transforms.secretScanVersion;
+
+  const parsed = expectOk(
+    parseContextPackV1({
+      ...validContextPack,
+      subject,
+      transforms,
+    }),
+  );
+
+  assert.equal(Object.hasOwn(parsed.subject, "projectId"), false);
+  assert.equal(parsed.subject.projectId, undefined);
+  assert.equal(Object.hasOwn(parsed.transforms, "redactionMapDigest"), false);
+  assert.equal(parsed.transforms.redactionMapDigest, undefined);
 });
