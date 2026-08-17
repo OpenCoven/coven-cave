@@ -49,7 +49,7 @@ that diverge. It pairs with the conformance suite that enforces them.
 | E2E (Playwright) port | `3100` (fixed, avoids colliding with `pnpm dev`) | `PORT` env ([`playwright.config.ts`](../playwright.config.ts)) |
 | Config / state home | `~/.coven/` | `COVEN_HOME` env ([`src/lib/coven-paths.ts`](../src/lib/coven-paths.ts)) |
 | Familiar workspaces | `~/.coven/workspaces/familiars/<id>/` | via `COVEN_HOME` |
-| `coven` CLI binary | discovered on PATH / well-known install dirs | `COVEN_BIN` env ([`src/lib/coven-bin.ts`](../src/lib/coven-bin.ts)) |
+| `coven` CLI binary | discovered on PATH / well-known install dirs | `COVEN_BIN` env ([`src/lib/coven-bin.ts`](../src/lib/coven-bin.ts), [`src-tauri/src/sidecar_discovery.rs`](../src-tauri/src/sidecar_discovery.rs)) |
 | CI Node.js | `22` | — |
 
 ## Per-OS deltas

@@ -7,6 +7,16 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-08-17
+
+> Seamless familiar credential intake and a Chat panel that stays with you across the Cave.
+
+Patch release on top of v0.3.5.
+
+### Changes
+- Make familiar Vault credential intake dynamic, secure, and copy-paste friendly (#4700)
+- Add a global shell-owned right Chat panel (#4697)
+
 ## [0.3.5] - 2026-08-16
 
 > Hardened iOS mutations and familiar avatars, now with corrected cross-platform packaging.

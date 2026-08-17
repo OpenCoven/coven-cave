@@ -35,7 +35,11 @@ export const STANDALONE_BUDGETS = Object.freeze({
   //
   // Both ceilings still catch what this guard is for: a renewed repository-root
   // trace overshoots by gigabytes and thousands of entries, not by 8%.
-  fileCount: 7_600,
+  //
+  // 2026-08-17: release operators raised the file-count ceiling to 12,000.
+  // Keep the independent 480 MiB ceiling and forbidden-root checks intact so
+  // larger artifacts and known local build roots still fail closed.
+  fileCount: 12_000,
   unpackedBytes: 480 * 1024 * 1024,
 });
 

@@ -680,8 +680,15 @@ fn run_sidecar_runtime(
     }
     match find_coven() {
         Some(coven) => {
-            log::info!("[cave] using coven at {}", coven.display());
-            if let Some(directory) = coven.parent() {
+            // Name the lane, not just the path: this is the line read while
+            // working out which CLI is in play, and a path alone cannot say
+            // whether a COVEN_BIN override was honored.
+            log::info!(
+                "[cave] using coven at {} (source: {})",
+                coven.path.display(),
+                coven.source.label()
+            );
+            if let Some(directory) = coven.path.parent() {
                 augmented_path = format!("{}{}{}", directory.display(), path_sep, augmented_path);
             }
         }
