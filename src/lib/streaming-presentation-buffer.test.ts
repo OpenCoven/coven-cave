@@ -77,7 +77,7 @@ test("burst snapshots H→He→Hello schedule one frame and flush newest Hello",
   assert.deepEqual(flushed, ["Hello"]);
 });
 
-test("natural boundary flushes next frame and idle timer flushes quiet tail", () => {
+test("presented quiet tails wait for idle while internal punctuation stays quiet", () => {
   const queues = makeQueues();
   const flushed: string[] = [];
   const buffer = createStreamingPresentationBuffer({
@@ -89,15 +89,52 @@ test("natural boundary flushes next frame and idle timer flushes quiet tail", ()
     cancelTimer: queues.cancelTimer,
   });
 
-  buffer.update("Sentence.", false);
+  buffer.update("Version 1.2", false);
   queues.fireFrame();
-  assert.deepEqual(flushed, ["Sentence."]);
+  assert.deepEqual(flushed, ["Version 1.2"]);
 
-  buffer.update("Sentence. tail", false);
-  const idleHandle = queues.timersByDelay(90).at(-1);
-  assert.ok(idleHandle, "idle timer is scheduled for the quiet tail");
+  buffer.update("Version 1.2 tail", false);
+  assert.equal(queues.counts().frames, 0, "quiet tail does not queue a new frame");
+  assert.equal(queues.timersByDelay(90).length, 1, "quiet tail keeps only the resettable idle timer");
+  assert.equal(queues.timersByDelay(180).length, 1, "quiet tail keeps the non-resetting max timer");
+
+  const idleHandle = queues.timersByDelay(90)[0];
   queues.fireTimer(idleHandle);
-  assert.deepEqual(flushed, ["Sentence.", "Sentence. tail"]);
+  assert.deepEqual(flushed, ["Version 1.2", "Version 1.2 tail"]);
+});
+
+test("sentence, newline, list, and fence tails queue exactly one next frame", () => {
+  const scenarios = [
+    { label: "sentence", source: "Alpha." },
+    { label: "newline", source: "Alpha\nBeta" },
+    { label: "list", source: "Alpha\n- beta" },
+    { label: "fence", source: "Alpha\n```ts" },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    const queues = makeQueues();
+    const flushed: string[] = [];
+    const buffer = createStreamingPresentationBuffer({
+      initialSource: "",
+      onFlush: (source) => flushed.push(source),
+      scheduleFrame: queues.scheduleFrame,
+      cancelFrame: queues.cancelFrame,
+      scheduleTimer: queues.scheduleTimer,
+      cancelTimer: queues.cancelTimer,
+    });
+
+    buffer.update("Alpha", false);
+    queues.fireFrame();
+    assert.deepEqual(flushed, ["Alpha"], `${scenario.label}: initial visible progress should still coalesce once`);
+
+    buffer.update(scenario.source, false);
+    assert.equal(queues.counts().frames, 1, `${scenario.label}: natural boundary queues one next frame`);
+    assert.equal(queues.timersByDelay(90).length, 1, `${scenario.label}: idle timer stays resettable`);
+    assert.equal(queues.timersByDelay(180).length, 1, `${scenario.label}: max timer remains singular`);
+
+    queues.fireFrame();
+    assert.deepEqual(flushed.at(-1), scenario.source, `${scenario.label}: the queued frame flushes the boundary snapshot`);
+  }
 });
 
 test("settled=true cancels pending callbacks and synchronously flushes complete source", () => {

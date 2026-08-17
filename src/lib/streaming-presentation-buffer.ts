@@ -32,6 +32,18 @@ function defaultCancelTimer(handle: SchedulerHandle): void {
   clearTimeout(handle as Parameters<typeof clearTimeout>[0]);
 }
 
+function isBoundaryLine(line: string): boolean {
+  return /^[ \t]*(?:[-*+]|(?:\d+[.)]))[ \t]+/.test(line) || /^[ \t]*(?:```+|~~~+)/.test(line);
+}
+
+function hasNaturalBoundary(previousSource: string, source: string): boolean {
+  const tail = source.startsWith(previousSource) ? source.slice(previousSource.length) : source;
+  if (!tail) return false;
+  if (isBoundaryLine(tail)) return true;
+  if (/\n/.test(tail)) return true;
+  return /[.!?…](?:\s|$)/.test(tail);
+}
+
 export function createStreamingPresentationBuffer(options: {
   initialSource: string;
   onFlush: (source: string) => void;
@@ -50,6 +62,8 @@ export function createStreamingPresentationBuffer(options: {
   const maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS;
 
   let latestSource = options.initialSource;
+  let presentedSource = options.initialSource;
+  let hasPresentedContent = options.initialSource.length > 0;
   let disposed = false;
   let windowOpen = false;
   let frameHandle: SchedulerHandle | null = null;
@@ -87,26 +101,30 @@ export function createStreamingPresentationBuffer(options: {
   const flush = () => {
     if (disposed || !windowOpen) return;
     const source = latestSource;
+    presentedSource = source;
+    hasPresentedContent = true;
     cancelWindow();
     options.onFlush(source);
   };
 
-  const scheduleWindow = () => {
-    if (windowOpen || disposed) return;
-    windowOpen = true;
-
+  const scheduleFrameFlush = () => {
+    if (disposed || frameHandle !== null) return;
     const frame = scheduleFrame(() => {
       if (disposed || frameHandle !== frame) return;
       flush();
     });
     frameHandle = frame;
+  };
 
+  const scheduleIdleFlush = () => {
     const idle = scheduleTimer(() => {
       if (disposed || idleHandle !== idle) return;
       flush();
     }, idleMs);
     idleHandle = idle;
+  };
 
+  const scheduleMaxFlush = () => {
     const max = scheduleTimer(() => {
       if (disposed || maxHandle !== max) return;
       flush();
@@ -114,29 +132,41 @@ export function createStreamingPresentationBuffer(options: {
     maxHandle = max;
   };
 
+  const openWindow = (queueFrame: boolean) => {
+    if (windowOpen || disposed) return;
+    windowOpen = true;
+    if (queueFrame) scheduleFrameFlush();
+    scheduleIdleFlush();
+    scheduleMaxFlush();
+  };
+
   const rescheduleIdle = () => {
     if (!windowOpen || disposed) return;
     clearIdleHandle();
-    const idle = scheduleTimer(() => {
-      if (disposed || idleHandle !== idle) return;
-      flush();
-    }, idleMs);
-    idleHandle = idle;
+    scheduleIdleFlush();
   };
 
   return {
     update(source, settled) {
       if (disposed) return;
+      if (!settled && source === latestSource) return;
       latestSource = source;
 
       if (settled) {
+        presentedSource = source;
+        hasPresentedContent = true;
         cancelWindow();
         options.onFlush(source);
         return;
       }
 
-      scheduleWindow();
+      const queueFrame = !hasPresentedContent || hasNaturalBoundary(presentedSource, source);
+      if (!windowOpen) {
+        openWindow(queueFrame);
+        return;
+      }
       rescheduleIdle();
+      if (queueFrame) scheduleFrameFlush();
     },
     dispose() {
       if (disposed) return;
