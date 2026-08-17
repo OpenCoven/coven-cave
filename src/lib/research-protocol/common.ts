@@ -79,7 +79,7 @@ export type ResearchContextBindingV1 = {
   contextPackId: string;
   contextPackDigest: string;
   topicProposalId?: string;
-};
+} & UnknownFields;
 
 function childPath(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
