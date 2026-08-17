@@ -210,6 +210,58 @@ test("validateModelTaskResultV1 accepts matching replays and rejects conflicting
   }
 });
 
+test("validateModelTaskResultV1 binds the result receipt to the task familiar", () => {
+  const task = expectOk(parseModelTaskV1(validModelTask));
+  const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
+
+  expectError(
+    validateModelTaskResultV1(task, {
+      ...result,
+      modelReceipt: { ...result.modelReceipt, familiarId: "other-familiar" },
+    }),
+    "$.modelReceipt.familiarId",
+    "semantic_conflict",
+  );
+});
+
+test("validateModelTaskResultV1 binds pinned models but allows run-start resolution", () => {
+  const pinnedTask = expectOk(
+    parseModelTaskV1({
+      ...validModelTask,
+      modelBinding: {
+        familiarId: "sage",
+        selection: "pinned",
+        model: "gpt-5.6-sol",
+      },
+    }),
+  );
+  const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
+
+  assert.strictEqual(expectOk(validateModelTaskResultV1(pinnedTask, result)), result);
+  for (const effectiveModel of ["other-model", null]) {
+    expectError(
+      validateModelTaskResultV1(pinnedTask, {
+        ...result,
+        modelReceipt: { ...result.modelReceipt, effectiveModel },
+      }),
+      "$.modelReceipt.effectiveModel",
+      "semantic_conflict",
+    );
+  }
+
+  const resolvingTask = expectOk(parseModelTaskV1(validModelTask));
+  for (const effectiveModel of ["runtime-selected-model", null]) {
+    const resolvingResult = {
+      ...result,
+      modelReceipt: { ...result.modelReceipt, effectiveModel },
+    };
+    assert.strictEqual(
+      expectOk(validateModelTaskResultV1(resolvingTask, resolvingResult)),
+      resolvingResult,
+    );
+  }
+});
+
 test("pinned model requires own model and resolve-at-run-start forbids model", () => {
   expectError(
     parseModelTaskV1({
@@ -402,6 +454,111 @@ test("parser preserves nested canonical JSON output as deep own-property data", 
   assert.notStrictEqual(parsed.output, output);
   assert.notStrictEqual(parsed.output.findings, output.findings);
   assert.notStrictEqual(parsed.output.metadata, output.metadata);
+});
+
+test("Model Result rejects symbol keys, hidden data, and hidden or accessor toJSON", () => {
+  const symbolKeyed = { ...validModelTaskResult.output };
+  Object.defineProperty(symbolKeyed, Symbol("hidden"), {
+    value: "not-json",
+    enumerable: true,
+  });
+  expectError(
+    parseModelTaskResultV1({ ...validModelTaskResult, output: symbolKeyed }),
+    "$.output",
+    "invalid_value",
+  );
+
+  const hidden = { ...validModelTaskResult.output };
+  Object.defineProperty(hidden, "hidden", {
+    value: "not-json",
+    enumerable: false,
+  });
+  expectError(
+    parseModelTaskResultV1({ ...validModelTaskResult, output: hidden }),
+    "$.output.hidden",
+    "invalid_value",
+  );
+
+  let calls = 0;
+  const hiddenToJson = { ...validModelTaskResult.output };
+  Object.defineProperty(hiddenToJson, "toJSON", {
+    value() {
+      calls += 1;
+      return validModelTaskResult.output;
+    },
+    enumerable: false,
+  });
+  expectError(
+    parseModelTaskResultV1({ ...validModelTaskResult, output: hiddenToJson }),
+    "$.output.toJSON",
+    "invalid_value",
+  );
+
+  const accessorToJson = { ...validModelTaskResult.output };
+  Object.defineProperty(accessorToJson, "toJSON", {
+    get() {
+      calls += 1;
+      return () => validModelTaskResult.output;
+    },
+    enumerable: true,
+  });
+  expectError(
+    parseModelTaskResultV1({ ...validModelTaskResult, output: accessorToJson }),
+    "$.output.toJSON",
+    "invalid_value",
+  );
+  assert.equal(calls, 0);
+});
+
+test("Model Result rejects sparse and custom arrays in output", () => {
+  class CustomArray<T> extends Array<T> {}
+
+  expectError(
+    parseModelTaskResultV1({
+      ...validModelTaskResult,
+      output: { ...validModelTaskResult.output, values: [1, , 3] },
+    }),
+    "$.output.values[1]",
+    "invalid_value",
+  );
+  expectError(
+    parseModelTaskResultV1({
+      ...validModelTaskResult,
+      output: {
+        ...validModelTaskResult.output,
+        values: CustomArray.from([1, 2, 3]),
+      },
+    }),
+    "$.output.values",
+    "invalid_value",
+  );
+});
+
+test("Model Result accepts safe canonical output", () => {
+  const output = Object.create(null) as Record<string, unknown>;
+  Object.assign(output, validModelTaskResult.output);
+  Object.defineProperty(output, "__proto__", {
+    value: { preserve: true },
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+  output.values = [1, 2, 3];
+  output.label = "result-𐐷";
+
+  const parsed = expectOk(
+    parseModelTaskResultV1({
+      ...validModelTaskResult,
+      output,
+      outputDigest: sha256Digest(canonicalJson(output)),
+    }),
+  );
+
+  assert.equal(Object.hasOwn(parsed.output, "__proto__"), true);
+  assert.deepEqual(parsed.output.__proto__, { preserve: true });
+  assert.deepEqual(parsed.output.values, [1, 2, 3]);
+  assert.equal(parsed.output.label, "result-𐐷");
+  assert.equal(({} as { preserve?: boolean }).preserve, undefined);
 });
 
 test("parser rejects nested output custom-prototype objects and non-json values", () => {
