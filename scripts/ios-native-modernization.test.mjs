@@ -27,4 +27,8 @@ assert.doesNotMatch(drawer, /font\(\.system\(size: 17\)\)/,
 assert.doesNotMatch(drawer, /font\(\.system\(size: 26, weight: \.semibold, design: \.serif\)\)/,
   "drawer title should scale with Dynamic Type");
 
+const newChat = await read(`${root}/Views/NewChatView.swift`);
+assert.match(newChat, /"Start with a familiar"/,
+  "New Chat should name familiar selection as the first intentional step");
+
 console.log("ios-native-modernization: ok");
