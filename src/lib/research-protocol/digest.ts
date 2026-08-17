@@ -23,8 +23,27 @@ function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+function assertPairedUtf16Surrogates(value: string, path: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1);
+      if (index + 1 >= value.length || nextCodeUnit < 0xdc00 || nextCodeUnit > 0xdfff) {
+        throw createCanonicalJsonError(path, "unpaired UTF-16 surrogate is not allowed");
+      }
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      throw createCanonicalJsonError(path, "unpaired UTF-16 surrogate is not allowed");
+    }
+  }
+}
+
 function assertCanonicalJson(value: unknown, path = "$", stack = new WeakSet<object>()): void {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "string") {
+    assertPairedUtf16Surrogates(value, path);
+    return;
+  }
+  if (value === null || typeof value === "boolean") return;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw createCanonicalJsonError(path, "non-finite numbers are not allowed");
@@ -62,7 +81,9 @@ function assertCanonicalJson(value: unknown, path = "$", stack = new WeakSet<obj
   }
   stack.add(value);
   for (const key of Object.keys(value)) {
-    assertCanonicalJson(value[key], jsonPathForProperty(path, key), stack);
+    const propertyPath = jsonPathForProperty(path, key);
+    assertPairedUtf16Surrogates(key, propertyPath);
+    assertCanonicalJson(value[key], propertyPath, stack);
   }
   stack.delete(value);
 }

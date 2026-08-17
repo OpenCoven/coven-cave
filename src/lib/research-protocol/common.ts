@@ -28,7 +28,8 @@ export type RetentionPolicyV1 = keyof typeof RETENTION_ORDER;
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const OPAQUE_ID_BODY_RE = /^[A-Za-z0-9_-]+$/;
-const UTC_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const UTC_TIMESTAMP_RE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
 const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -36,9 +37,36 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isUtcTimestamp(value: unknown): value is string {
-  if (typeof value !== "string" || !UTC_TIMESTAMP_RE.test(value)) return false;
-  const parsed = new Date(value);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+  if (typeof value !== "string") return false;
+  const match = UTC_TIMESTAMP_RE.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
+    return false;
+  }
+
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  return day >= 1 && day <= daysInMonth[month - 1]!;
 }
 
 export function isJsonPointer(value: unknown): value is string {
