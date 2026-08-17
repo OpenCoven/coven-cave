@@ -408,6 +408,7 @@ export const SUITES = {
     "src/lib/retro-runs.test.ts",
     "src/lib/eval-loop-daemon.test.ts",
     "src/lib/familiar-stream.test.ts",
+    "src/lib/use-streaming-presentation-source.test.tsx",
     "src/lib/quick-chat.test.ts",
     "src/lib/command-controls.test.ts",
     "src/lib/travel-client-state.test.ts",
@@ -2015,6 +2016,7 @@ const VITEST_TESTS = new Set([
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer
   "src/lib/use-surface-history.test.tsx",
+  "src/lib/use-streaming-presentation-source.test.tsx",
   "src/lib/use-focus-trap-stack.test.tsx",
   // drives the inline slash menu's keydown path through react-test-renderer
   "src/lib/use-inline-slash-menus-behavior.test.tsx",

@@ -8,7 +8,6 @@ export type StreamingPresentationBuffer = {
 const DEFAULT_IDLE_MS = 90;
 const DEFAULT_MAX_WAIT_MS = 180;
 const FRAME_FALLBACK_MS = 16;
-const APPEND_SUFFIX_CHECK_LENGTH = 256;
 const BOUNDARY_LOOKBEHIND_LENGTH = 256;
 const APPEND_BOUNDARY_PATTERN =
   /(?:^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]|(?:`{3}|~{3})))|(\n)|([.!?…])(?:[ \t\r]|(?=\n)|$)/gm;
@@ -34,17 +33,6 @@ function defaultScheduleTimer(callback: () => void, delayMs: number): SchedulerH
 
 function defaultCancelTimer(handle: SchedulerHandle): void {
   clearTimeout(handle as Parameters<typeof clearTimeout>[0]);
-}
-
-function hasMatchingAppendSuffix(previousSource: string, source: string): boolean {
-  if (source.length <= previousSource.length) return false;
-
-  const checkLength = Math.min(previousSource.length, APPEND_SUFFIX_CHECK_LENGTH);
-  const checkStart = previousSource.length - checkLength;
-  for (let index = checkStart; index < previousSource.length; index += 1) {
-    if (previousSource.charCodeAt(index) !== source.charCodeAt(index)) return false;
-  }
-  return true;
 }
 
 function isOrderedListPeriod(source: string, punctuationIndex: number, scanStart: number): boolean {
@@ -83,7 +71,7 @@ function hasAppendBoundary(source: string, previousLength: number): boolean {
 }
 
 function hasNaturalBoundary(previousSource: string, source: string): boolean {
-  if (!hasMatchingAppendSuffix(previousSource, source)) return true;
+  if (!source.startsWith(previousSource)) return true;
   return hasAppendBoundary(source, previousSource.length);
 }
 

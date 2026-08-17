@@ -253,6 +253,30 @@ test("replacement and shrinking snapshots queue a conservative frame with the ne
   }
 });
 
+test("an earlier replacement cannot hide behind an unchanged long tail", () => {
+  const queues = makeQueues();
+  const flushed: string[] = [];
+  const unchangedTail = "x".repeat(300);
+  const initialSource = `Alpha old ${unchangedTail}`;
+  const source = `Omega.\n!! ${unchangedTail} grows`;
+  const buffer = createStreamingPresentationBuffer({
+    initialSource,
+    onFlush: (value) => flushed.push(value),
+    scheduleFrame: queues.scheduleFrame,
+    cancelFrame: queues.cancelFrame,
+    scheduleTimer: queues.scheduleTimer,
+    cancelTimer: queues.cancelTimer,
+  });
+
+  assert.ok(source.length > initialSource.length);
+  assert.equal(source.slice(10, initialSource.length), initialSource.slice(10));
+  buffer.update(source, false);
+
+  assert.equal(queues.counts().frames, 1);
+  queues.fireFrame();
+  assert.deepEqual(flushed, [source]);
+});
+
 test("long accumulated streams process append deltas within a stable budget", () => {
   const queues = makeQueues();
   const buffer = createStreamingPresentationBuffer({
