@@ -1,16 +1,20 @@
 export const CLIENT_V1_API_VERSION = "1.0";
 export const CLIENT_V1_MIN_CLIENT_VERSION = "0.1.0";
 
-export const CLIENT_V1_SCOPES = [
+const freezeReadonlyArray = <const T extends readonly string[]>(value: T): T => Object.freeze([...value]) as T;
+const freezeReadonlyObject = <const T extends Record<string, unknown>>(value: T): Readonly<T> =>
+  Object.freeze({ ...value });
+
+export const CLIENT_V1_SCOPES = freezeReadonlyArray([
   "chat:read",
   "chat:write",
   "conversations:write",
   "attachments:write",
   "tasks:write",
   "github:write",
-] as const;
+] as const);
 
-export const CLIENT_V1_CAPABILITIES = [
+export const CLIENT_V1_CAPABILITIES = freezeReadonlyArray([
   "pairing",
   "credentials",
   "familiars",
@@ -20,9 +24,9 @@ export const CLIENT_V1_CAPABILITIES = [
   "streaming",
   "cursors",
   "revisions",
-] as const;
+] as const);
 
-export const CLIENT_V1_ERROR_CODES = [
+export const CLIENT_V1_ERROR_CODES = freezeReadonlyArray([
   "invalid_request",
   "unauthorized",
   "scope_denied",
@@ -36,9 +40,9 @@ export const CLIENT_V1_ERROR_CODES = [
   "service_unavailable",
   "reconcile_required",
   "internal_error",
-] as const;
+] as const);
 
-export const CLIENT_V1_IDENTITY_KINDS = [
+export const CLIENT_V1_IDENTITY_KINDS = freezeReadonlyArray([
   "client",
   "credential",
   "familiar",
@@ -46,9 +50,9 @@ export const CLIENT_V1_IDENTITY_KINDS = [
   "conversation",
   "message",
   "event",
-] as const;
+] as const);
 
-export const CLIENT_V1_LIMITS = {
+export const CLIENT_V1_LIMITS = freezeReadonlyObject({
   idempotencyKeyCharacters: 36,
   requestIdCharacters: 64,
   revisionTokenCharacters: 128,
@@ -58,7 +62,7 @@ export const CLIENT_V1_LIMITS = {
   errorDetailValueCharacters: 256,
   defaultPageSize: 50,
   maxPageSize: 100,
-} as const;
+} as const);
 
 export type ClientV1Scope = (typeof CLIENT_V1_SCOPES)[number];
 export type ClientV1Capability = (typeof CLIENT_V1_CAPABILITIES)[number];
@@ -414,6 +418,34 @@ export function sortClientV1JsonKeys(value: JsonValue): JsonValue {
   ) as JsonObject;
 }
 
+function defineEnumerableValue(target: JsonObject, key: string, value: JsonValue) {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+function cloneClientV1JsonValue<T extends JsonValue>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cloneClientV1JsonValue(entry)) as T;
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const clone = Object.create(Object.getPrototypeOf(value)) as JsonObject;
+  for (const [key, entry] of Object.entries(value)) {
+    defineEnumerableValue(clone, key, cloneClientV1JsonValue(entry));
+  }
+  return clone as T;
+}
+
+function cloneClientV1Record<T extends ClientV1Record>(value: T): T {
+  return cloneClientV1JsonValue(value);
+}
+
 function defaultCapabilities(): ClientV1Capability[] {
   return [...CLIENT_V1_CAPABILITIES];
 }
@@ -426,9 +458,9 @@ function envelopeBase(
     minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
     capabilities: overrides.capabilities ? [...overrides.capabilities] : defaultCapabilities(),
     ...(overrides.requestId ? { requestId: overrides.requestId } : {}),
-    ...(overrides.identity ? { identity: { ...overrides.identity } } : {}),
-    ...(overrides.revision ? { revision: { ...overrides.revision } } : {}),
-    ...(overrides.cursor ? { cursor: { ...overrides.cursor } } : {}),
+    ...(overrides.identity ? { identity: cloneClientV1Record(overrides.identity) } : {}),
+    ...(overrides.revision ? { revision: cloneClientV1Record(overrides.revision) } : {}),
+    ...(overrides.cursor ? { cursor: cloneClientV1Record(overrides.cursor) } : {}),
   };
 }
 
@@ -459,7 +491,7 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
       pairingScopes: [...CLIENT_V1_SCOPES],
       identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
       errorCodes: [...CLIENT_V1_ERROR_CODES],
-      limits: CLIENT_V1_LIMITS,
+      limits: cloneClientV1Record(CLIENT_V1_LIMITS),
     },
     // Phase 0 fixture governance stays foundation-only: shared primitives,
     // generic envelopes, and no route DTOs or success-shape guessing.

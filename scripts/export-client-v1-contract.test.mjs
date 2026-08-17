@@ -21,6 +21,18 @@ function runExporter(...args) {
   });
 }
 
+function withTrackedFixtureRestored(run) {
+  const fixtureBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
+  const digestBytes = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
+
+  try {
+    return run();
+  } finally {
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, fixtureBytes);
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, digestBytes);
+  }
+}
+
 test("documents the tracked client v1 fixture paths and LF normalization", () => {
   assert.equal(
     CLIENT_V1_CONTRACT_FIXTURE_PATH,
@@ -84,21 +96,55 @@ test("fails read-only validation when the committed digest bytes go stale", () =
   }
 });
 
+test("restores tracked client v1 bytes when a write-path assertion fails", () => {
+  const originalFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
+  const originalHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
+  const dirtyFixture = Buffer.from(
+    `${originalFixture.toString("utf8").replace(/\n$/, "")}\n// local-only dirty bytes\n`,
+    "utf8",
+  );
+  const dirtyHash = Buffer.from(`${"f".repeat(64)}\n`, "utf8");
+
+  try {
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, dirtyFixture);
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, dirtyHash);
+    const foundFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH);
+    const foundHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH);
+
+    assert.throws(
+      () =>
+        withTrackedFixtureRestored(() => {
+          const first = runExporter();
+          assert.equal(first.status, 0, first.stderr || first.stdout);
+          throw new Error("simulated failure after write");
+        }),
+      /simulated failure after write/,
+    );
+    assert.deepEqual(readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH), foundFixture);
+    assert.deepEqual(readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH), foundHash);
+  } finally {
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, originalFixture);
+    writeFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, originalHash);
+  }
+});
+
 test("exports deterministic client v1 bytes across consecutive writes", () => {
-  const first = runExporter();
-  assert.equal(first.status, 0, first.stderr || first.stdout);
-  const firstFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, "utf8");
-  const firstHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, "utf8");
+  withTrackedFixtureRestored(() => {
+    const first = runExporter();
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, "utf8");
+    const firstHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, "utf8");
 
-  const second = runExporter();
-  assert.equal(second.status, 0, second.stderr || second.stdout);
-  const secondFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, "utf8");
-  const secondHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, "utf8");
+    const second = runExporter();
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondFixture = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_PATH, "utf8");
+    const secondHash = readFileSync(CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH, "utf8");
 
-  assert.equal(firstFixture, renderClientV1ContractFixture());
-  assert.equal(firstFixture, secondFixture);
-  assert.equal(firstHash, secondHash);
-  assert.match(firstHash, /^[0-9a-f]{64}\n$/);
-  assert.equal(firstHash, clientV1ContractFixtureSha256(firstFixture));
-  assert.equal(firstHash, `${createHash("sha256").update(firstFixture).digest("hex")}\n`);
+    assert.equal(firstFixture, renderClientV1ContractFixture());
+    assert.equal(firstFixture, secondFixture);
+    assert.equal(firstHash, secondHash);
+    assert.match(firstHash, /^[0-9a-f]{64}\n$/);
+    assert.equal(firstHash, clientV1ContractFixtureSha256(firstFixture));
+    assert.equal(firstHash, `${createHash("sha256").update(firstFixture).digest("hex")}\n`);
+  });
 });

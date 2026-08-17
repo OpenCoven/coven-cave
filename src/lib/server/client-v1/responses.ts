@@ -63,6 +63,30 @@ function requiredErrorMessage(value: unknown): string {
   return value;
 }
 
+function defineEnumerableValue(target: Record<string, unknown>, key: string, value: unknown) {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
+function cloneClientV1JsonValue<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => cloneClientV1JsonValue(entry)) as T;
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const clone = Object.create(Object.getPrototypeOf(value)) as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(value)) {
+    defineEnumerableValue(clone, key, cloneClientV1JsonValue(entry));
+  }
+  return clone as T;
+}
+
 function defaultCapabilities(): ClientV1Capability[] {
   return [...CLIENT_V1_CAPABILITIES];
 }
@@ -71,11 +95,17 @@ function envelopeBase(options: ClientV1EnvelopeOptions = {}): ClientV1EnvelopeBa
   return {
     apiVersion: CLIENT_V1_API_VERSION,
     minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
-    capabilities: options.capabilities ? parseClientV1Capabilities(options.capabilities) : defaultCapabilities(),
+    capabilities: options.capabilities ? [...parseClientV1Capabilities(options.capabilities)] : defaultCapabilities(),
     ...(options.requestId !== undefined ? { requestId: parseClientV1RequestId(options.requestId) } : {}),
-    ...(options.identity !== undefined ? { identity: parseClientV1Identity(options.identity) } : {}),
-    ...(options.revision !== undefined ? { revision: parseClientV1Revision(options.revision) } : {}),
-    ...(options.cursor !== undefined ? { cursor: parseClientV1Cursor(options.cursor) } : {}),
+    ...(options.identity !== undefined
+      ? { identity: cloneClientV1JsonValue(parseClientV1Identity(options.identity)) }
+      : {}),
+    ...(options.revision !== undefined
+      ? { revision: cloneClientV1JsonValue(parseClientV1Revision(options.revision)) }
+      : {}),
+    ...(options.cursor !== undefined
+      ? { cursor: cloneClientV1JsonValue(parseClientV1Cursor(options.cursor)) }
+      : {}),
   };
 }
 
@@ -99,6 +129,20 @@ function assertErrorStatus(status: number) {
   if (!Number.isInteger(status) || status < 400 || status > 599) {
     throw new Error("Client v1 error responses must use a 4xx or 5xx HTTP status.");
   }
+}
+
+function canonicalErrorStatus(code: ClientV1ErrorCode, status?: number): number {
+  const canonicalStatus = httpStatusForClientV1ErrorCode(code);
+  if (status === undefined) {
+    return canonicalStatus;
+  }
+  assertErrorStatus(status);
+  if (status !== canonicalStatus) {
+    throw new Error(
+      `Client v1 error response status must match canonical HTTP status ${canonicalStatus} for ${code}.`,
+    );
+  }
+  return canonicalStatus;
 }
 
 export function httpStatusForClientV1ErrorCode(code: ClientV1ErrorCode): number {
@@ -140,7 +184,7 @@ export function clientV1Success<TData extends ClientV1Record>(
 ): ClientV1SuccessEnvelope<TData> {
   return parseClientV1SuccessEnvelope<TData>({
     ...envelopeBase(options),
-    data: requiredRecord(data, "response data"),
+    data: cloneClientV1JsonValue(requiredRecord(data, "response data")),
   });
 }
 
@@ -149,7 +193,7 @@ export function clientV1Error(
   message: string,
   options: Omit<ClientV1ErrorResponseOptions, "status"> = {},
 ): ClientV1ErrorEnvelope {
-  const details = options.details === undefined ? undefined : parseClientV1ErrorDetails(options.details);
+  const details = options.details === undefined ? undefined : { ...parseClientV1ErrorDetails(options.details) };
   return parseClientV1ErrorEnvelope({
     ...envelopeBase(options),
     error: {
@@ -175,8 +219,7 @@ export function clientV1ErrorResponse(
   message: string,
   options: ClientV1ErrorResponseOptions = {},
 ): Response {
-  const status = options.status ?? httpStatusForClientV1ErrorCode(code);
-  assertErrorStatus(status);
+  const status = canonicalErrorStatus(code, options.status);
   return Response.json(clientV1Error(code, message, options), { status });
 }
 

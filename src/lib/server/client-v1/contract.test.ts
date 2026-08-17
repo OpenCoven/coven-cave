@@ -14,12 +14,16 @@ import {
   parseClientV1ErrorEnvelope,
   parseClientV1IdempotencyKey,
   parseClientV1Identity,
+  type ClientV1Record,
   parseClientV1PairingScopes,
   parseClientV1Revision,
   parseClientV1StatusRecord,
   parseClientV1SuccessEnvelope,
   renderClientV1ContractFixture,
   sortClientV1JsonKeys,
+  type ClientV1Cursor,
+  type ClientV1Identity,
+  type ClientV1Revision,
 } from "./contract.ts";
 import {
   clientV1Error,
@@ -29,6 +33,10 @@ import {
   clientV1SuccessResponse,
   httpStatusForClientV1ErrorCode,
 } from "./responses.ts";
+
+function parseJson<T>(value: string): T {
+  return JSON.parse(value) as T;
+}
 
 test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");
@@ -90,6 +98,27 @@ test("publishes stable client v1 limits", () => {
     defaultPageSize: 50,
     maxPageSize: 100,
   });
+});
+
+test("freezes exported protocol collections at runtime", () => {
+  assert.equal(Object.isFrozen(CLIENT_V1_SCOPES), true);
+  assert.equal(Object.isFrozen(CLIENT_V1_CAPABILITIES), true);
+  assert.equal(Object.isFrozen(CLIENT_V1_ERROR_CODES), true);
+  assert.equal(Object.isFrozen(CLIENT_V1_IDENTITY_KINDS), true);
+  assert.equal(Object.isFrozen(CLIENT_V1_LIMITS), true);
+
+  assert.throws(
+    () => {
+      (CLIENT_V1_CAPABILITIES as unknown as string[]).push("poisoned");
+    },
+    /TypeError|Cannot add property|object is not extensible/i,
+  );
+  assert.throws(
+    () => {
+      (CLIENT_V1_LIMITS as { maxPageSize: number }).maxPageSize = 1;
+    },
+    /TypeError|Cannot assign to read only property|read only/i,
+  );
 });
 
 test("parses stable ids, scopes, identities, revisions, cursors, and status records", () => {
@@ -186,6 +215,54 @@ test("preserves additive cursor fields through parsers and response helpers", ()
     clientV1Success({ status: "ok" }, { cursor }).cursor,
     cursor,
   );
+});
+
+test("preserves own __proto__ payload fields without mutating builder clones", async () => {
+  const payload = parseJson<ClientV1Record>(
+    '{"status":"ok","__proto__":{"preserved":"payload"},"nested":{"label":"accepted","__proto__":{"preserved":"nested"}}}',
+  );
+
+  assert.equal(Object.hasOwn(payload, "__proto__"), true);
+  assert.equal(Object.hasOwn(payload.nested as ClientV1Record, "__proto__"), true);
+
+  const success = clientV1Success(payload);
+
+  assert.notStrictEqual(success.data, payload);
+  assert.deepEqual(success.data, payload);
+  assert.equal(Object.hasOwn(success.data, "__proto__"), true);
+  assert.equal(Object.hasOwn(success.data.nested as ClientV1Record, "__proto__"), true);
+  assert.equal(Object.getPrototypeOf(success.data), Object.prototype);
+  assert.equal(Object.getPrototypeOf(success.data.nested as ClientV1Record), Object.prototype);
+
+  const roundTrip = (await clientV1SuccessResponse(payload).json()) as { data: ClientV1Record };
+  assert.deepEqual(roundTrip, success);
+  assert.equal(Object.hasOwn(roundTrip.data, "__proto__"), true);
+  assert.equal(Object.hasOwn(roundTrip.data.nested as ClientV1Record, "__proto__"), true);
+});
+
+test("preserves own __proto__ cursor metadata without mutating builder clones", async () => {
+  const cursor = parseJson<ClientV1Cursor>(
+    '{"current":"cursor-1","hasMore":true,"__proto__":{"preserved":"cursor"},"nested":{"label":"accepted","__proto__":{"preserved":"cursor-nested"}}}',
+  );
+
+  assert.equal(Object.hasOwn(cursor, "__proto__"), true);
+  assert.equal(Object.hasOwn(cursor.nested as ClientV1Record, "__proto__"), true);
+
+  const success = clientV1Success({ status: "ok" }, { cursor });
+
+  assert.notStrictEqual(success.cursor, cursor);
+  assert.deepEqual(success.cursor, cursor);
+  assert.equal(Object.hasOwn(success.cursor!, "__proto__"), true);
+  assert.equal(Object.hasOwn(success.cursor!.nested as ClientV1Record, "__proto__"), true);
+  assert.equal(Object.getPrototypeOf(success.cursor!), Object.prototype);
+  assert.equal(Object.getPrototypeOf(success.cursor!.nested as ClientV1Record), Object.prototype);
+
+  const roundTrip = (await clientV1SuccessResponse({ status: "ok" }, { cursor }).json()) as {
+    cursor: ClientV1Cursor;
+  };
+  assert.deepEqual(roundTrip.cursor, cursor);
+  assert.equal(Object.hasOwn(roundTrip.cursor, "__proto__"), true);
+  assert.equal(Object.hasOwn(roundTrip.cursor.nested as ClientV1Record, "__proto__"), true);
 });
 
 test("accepts only JSON-safe additive public values", async () => {
@@ -391,6 +468,25 @@ test("maps explicit client v1 errors without coupling success to route guesses",
   }
 });
 
+test("rejects contradictory client v1 error status overrides", () => {
+  assert.equal(
+    clientV1ErrorResponse("rate_limited", "Please retry later.", { status: 429 }).status,
+    429,
+  );
+  assert.equal(
+    clientV1ErrorResponse("service_unavailable", "Please retry later.", { status: 503 }).status,
+    503,
+  );
+  assert.throws(
+    () => clientV1ErrorResponse("rate_limited", "Please retry later.", { status: 503 }),
+    /canonical HTTP status/i,
+  );
+  assert.throws(
+    () => clientV1ErrorResponse("not_found", "Missing conversation.", { status: 409 }),
+    /canonical HTTP status/i,
+  );
+});
+
 test("represents in-progress operations as retryable conflicts", () => {
   assert.deepEqual(clientV1OperationInProgressError("send-message"), {
     apiVersion: "1.0",
@@ -448,6 +544,74 @@ test("builds a deterministic foundation-only contract fixture with shared primit
     retryable: true,
   });
   assert.deepEqual(createClientV1ContractFixture(), fixture);
+});
+
+test("copies protocol defaults into fixtures and envelope metadata", () => {
+  const fixture = createClientV1ContractFixture();
+  assert.notStrictEqual(fixture.contract.capabilities, CLIENT_V1_CAPABILITIES);
+  assert.notStrictEqual(fixture.contract.pairingScopes, CLIENT_V1_SCOPES);
+  assert.notStrictEqual(fixture.contract.errorCodes, CLIENT_V1_ERROR_CODES);
+  assert.notStrictEqual(fixture.contract.identityKinds, CLIENT_V1_IDENTITY_KINDS);
+  assert.notStrictEqual(fixture.contract.limits, CLIENT_V1_LIMITS);
+
+  fixture.contract.capabilities.pop();
+  fixture.contract.pairingScopes.pop();
+  fixture.contract.errorCodes.pop();
+  fixture.contract.identityKinds.pop();
+  (fixture.contract.limits as { maxPageSize: number }).maxPageSize = 1;
+
+  assert.deepEqual(clientV1Success({ status: "ok" }).capabilities, [...CLIENT_V1_CAPABILITIES]);
+  assert.deepEqual(createClientV1ContractFixture().contract.limits, CLIENT_V1_LIMITS);
+
+  const identity: ClientV1Identity & { extension: { labels: string[] } } = {
+    kind: "conversation",
+    id: "conversation-1",
+    extension: {
+      labels: ["stable"],
+    },
+  };
+  const revision: ClientV1Revision & { extension: { labels: string[] } } = {
+    token: "revision-1",
+    updatedAt: "2026-08-15T00:00:00.000Z",
+    extension: {
+      labels: ["stable"],
+    },
+  };
+  const cursor: ClientV1Cursor & { extension: { labels: string[] } } = {
+    current: "cursor-1",
+    hasMore: true,
+    extension: {
+      labels: ["stable"],
+    },
+  };
+
+  const success = clientV1Success(
+    { status: "ok" },
+    {
+      identity,
+      revision,
+      cursor,
+    },
+  );
+
+  const successIdentity = success.identity! as ClientV1Identity & { extension: { labels: string[] } };
+  const successRevision = success.revision! as ClientV1Revision & { extension: { labels: string[] } };
+  const successCursor = success.cursor! as ClientV1Cursor & { extension: { labels: string[] } };
+
+  assert.notStrictEqual(success.identity, identity);
+  assert.notStrictEqual(success.revision, revision);
+  assert.notStrictEqual(success.cursor, cursor);
+  assert.notStrictEqual(successIdentity.extension, identity.extension);
+  assert.notStrictEqual(successRevision.extension, revision.extension);
+  assert.notStrictEqual(successCursor.extension, cursor.extension);
+
+  identity.extension.labels[0] = "mutated";
+  revision.extension.labels[0] = "mutated";
+  cursor.extension.labels[0] = "mutated";
+
+  assert.deepEqual(successIdentity.extension, { labels: ["stable"] });
+  assert.deepEqual(successRevision.extension, { labels: ["stable"] });
+  assert.deepEqual(successCursor.extension, { labels: ["stable"] });
 });
 
 test("parses complete public envelopes while preserving additive fields", () => {
