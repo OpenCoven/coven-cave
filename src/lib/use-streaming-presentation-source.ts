@@ -15,6 +15,7 @@ export function useStreamingPresentationSource(source: string, pending: boolean)
     const buffer = createStreamingPresentationBuffer({
       initialSource: source,
       onFlush: (next) => setPresentedRef.current(next),
+      sourceMode: "append-only",
     });
     bufferRef.current = buffer;
     return buffer;

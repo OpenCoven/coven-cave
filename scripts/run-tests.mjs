@@ -408,6 +408,7 @@ export const SUITES = {
     "src/lib/retro-runs.test.ts",
     "src/lib/eval-loop-daemon.test.ts",
     "src/lib/familiar-stream.test.ts",
+    "src/lib/streaming-presentation-buffer.test.ts",
     "src/lib/use-streaming-presentation-source.test.tsx",
     "src/lib/quick-chat.test.ts",
     "src/lib/command-controls.test.ts",

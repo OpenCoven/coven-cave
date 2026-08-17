@@ -266,6 +266,7 @@ test("an earlier replacement cannot hide behind an unchanged long tail", () => {
     cancelFrame: queues.cancelFrame,
     scheduleTimer: queues.scheduleTimer,
     cancelTimer: queues.cancelTimer,
+    sourceMode: "replaceable",
   });
 
   assert.ok(source.length > initialSource.length);
@@ -277,6 +278,54 @@ test("an earlier replacement cannot hide behind an unchanged long tail", () => {
   assert.deepEqual(flushed, [source]);
 });
 
+test("append-only mode trusts longer-prefix metadata and scans the appended delta", () => {
+  const queues = makeQueues();
+  const flushed: string[] = [];
+  const buffer = createStreamingPresentationBuffer({
+    initialSource: "Alpha tail",
+    onFlush: (source) => flushed.push(source),
+    scheduleFrame: queues.scheduleFrame,
+    cancelFrame: queues.cancelFrame,
+    scheduleTimer: queues.scheduleTimer,
+    cancelTimer: queues.cancelTimer,
+    sourceMode: "append-only",
+  });
+
+  buffer.update("Omega tail grows", false);
+  assert.equal(queues.counts().frames, 0, "longer sources do not trigger prefix validation");
+  queues.fireTimer(queues.timersByDelay(90)[0]);
+  assert.deepEqual(flushed, ["Omega tail grows"]);
+
+  buffer.update("Omega tail grows.", false);
+  assert.equal(queues.counts().frames, 1, "a boundary in the appended delta queues a frame");
+});
+
+test("append-only mode keeps equal and shrinking changes conservative", () => {
+  const scenarios = [
+    { label: "same-length replacement", initial: "Alpha tail", source: "Omega tail" },
+    { label: "shrinking replacement", initial: "Alpha tail", source: "short" },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    const queues = makeQueues();
+    const flushed: string[] = [];
+    const buffer = createStreamingPresentationBuffer({
+      initialSource: scenario.initial,
+      onFlush: (source) => flushed.push(source),
+      scheduleFrame: queues.scheduleFrame,
+      cancelFrame: queues.cancelFrame,
+      scheduleTimer: queues.scheduleTimer,
+      cancelTimer: queues.cancelTimer,
+      sourceMode: "append-only",
+    });
+
+    buffer.update(scenario.source, false);
+    assert.equal(queues.counts().frames, 1, scenario.label);
+    queues.fireFrame();
+    assert.deepEqual(flushed, [scenario.source], scenario.label);
+  }
+});
+
 test("long accumulated streams process append deltas within a stable budget", () => {
   const queues = makeQueues();
   const buffer = createStreamingPresentationBuffer({
@@ -286,19 +335,25 @@ test("long accumulated streams process append deltas within a stable budget", ()
     cancelFrame: queues.cancelFrame,
     scheduleTimer: queues.scheduleTimer,
     cancelTimer: queues.cancelTimer,
+    sourceMode: "append-only",
   });
-  let source = "seed";
+  const updateCount = 50_000;
+  const chunk = "abcdefghij";
+  const completeSource = `seed${chunk.repeat(updateCount)}`;
 
   const startedAt = performance.now();
-  for (let index = 0; index < 5_000; index += 1) {
-    source += index % 10 === 0 ? "word. tail" : "abcdefghij";
+  for (let index = 1; index <= updateCount; index += 1) {
+    const source = completeSource.slice(0, 4 + index * chunk.length);
     buffer.update(source, false);
   }
   const elapsedMs = performance.now() - startedAt;
   buffer.dispose();
 
-  assert.equal(source.length, 50_004);
-  assert.ok(elapsedMs < 2_000, `50k characters across 5k snapshots took ${elapsedMs.toFixed(1)}ms`);
+  assert.equal(completeSource.length, 500_004);
+  assert.ok(
+    elapsedMs < 10_000,
+    `500k characters across 50k snapshots took ${elapsedMs.toFixed(1)}ms`,
+  );
 });
 
 test("settled=true cancels pending callbacks and synchronously flushes complete source", () => {

@@ -5,6 +5,11 @@ export type StreamingPresentationBuffer = {
   dispose(): void;
 };
 
+export type StreamingPresentationSourceMode =
+  | "replaceable"
+  /** Longer pending snapshots preserve the complete prior source prefix; equal or shrinking snapshots may replace it. */
+  | "append-only";
+
 const DEFAULT_IDLE_MS = 90;
 const DEFAULT_MAX_WAIT_MS = 180;
 const FRAME_FALLBACK_MS = 16;
@@ -70,8 +75,16 @@ function hasAppendBoundary(source: string, previousLength: number): boolean {
   return false;
 }
 
-function hasNaturalBoundary(previousSource: string, source: string): boolean {
-  if (!source.startsWith(previousSource)) return true;
+function hasNaturalBoundary(
+  previousSource: string,
+  source: string,
+  sourceMode: StreamingPresentationSourceMode,
+): boolean {
+  if (sourceMode === "append-only") {
+    if (source.length <= previousSource.length) return true;
+  } else if (!source.startsWith(previousSource)) {
+    return true;
+  }
   return hasAppendBoundary(source, previousSource.length);
 }
 
@@ -84,6 +97,7 @@ export function createStreamingPresentationBuffer(options: {
   cancelTimer?: (handle: SchedulerHandle) => void;
   idleMs?: number;
   maxWaitMs?: number;
+  sourceMode?: StreamingPresentationSourceMode;
 }): StreamingPresentationBuffer {
   const scheduleFrame = options.scheduleFrame ?? defaultScheduleFrame;
   const cancelFrame = options.cancelFrame ?? defaultCancelFrame;
@@ -91,6 +105,7 @@ export function createStreamingPresentationBuffer(options: {
   const cancelTimer = options.cancelTimer ?? defaultCancelTimer;
   const idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
   const maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS;
+  const sourceMode = options.sourceMode ?? "replaceable";
 
   let latestSource = options.initialSource;
   let hasPresentedContent = options.initialSource.length > 0;
@@ -189,7 +204,8 @@ export function createStreamingPresentationBuffer(options: {
         return;
       }
 
-      const queueFrame = !hasPresentedContent || hasNaturalBoundary(previousSource, source);
+      const queueFrame =
+        !hasPresentedContent || hasNaturalBoundary(previousSource, source, sourceMode);
       if (!windowOpen) {
         openWindow(queueFrame);
         return;
