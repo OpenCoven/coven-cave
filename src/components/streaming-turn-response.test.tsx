@@ -763,6 +763,92 @@ describe("StreamingTurnResponse", () => {
     ]);
   });
 
+  it("renders ordered rich prose once before Results instead of the raw fallback source", async () => {
+    const rawSource = [
+      "Opening prose",
+      '<coven:github kind="issue" repo="OpenCoven/coven-cave" number="42" />',
+      "Middle prose",
+      "```coven-spec",
+      "raw-spec-source-should-not-render",
+      "```",
+      "Closing prose",
+    ].join("\n");
+    const orderedProse = [
+      <ProgressiveMarkdownBlock key="opening" text="Opening prose" />,
+      <div key="github" className="my-2" data-ordered-step="github-card">
+        GitHub card
+      </div>,
+      <ProgressiveMarkdownBlock key="middle" text="Middle prose" />,
+      <div key="spec" className="my-2" data-ordered-step="spec-card">
+        Spec card
+      </div>,
+      <ProgressiveMarkdownBlock key="closing" text="Closing prose" />,
+    ];
+    const settledModel = model({
+      status: "complete",
+      committedBlocks: [{
+        id: "t:raw",
+        kind: "markdown",
+        source: rawSource,
+        renderMode: "markdown",
+      }],
+      activeBlock: null,
+      committedText: rawSource,
+      results: [{
+        id: "tests",
+        label: "Focused tests",
+        state: "passed",
+        source: "verified-event",
+      }],
+    });
+    const renderer = await render(
+      <MessageBubble
+        role="assistant"
+        content={rawSource}
+        assistantBody={
+          <StreamingTurnResponse
+            turnId="t"
+            familiarName="Nova"
+            model={settledModel}
+            density="full"
+            proseContent={orderedProse}
+          />
+        }
+      />,
+    );
+    await flushMarkdown();
+
+    expect(renderer.root.findAllByType(StreamingMarkdownBlocks)).toHaveLength(0);
+    const serialized = JSON.stringify(renderer.toJSON());
+    const orderedTokens = [
+      "Opening prose",
+      "GitHub card",
+      "Middle prose",
+      "Spec card",
+      "Closing prose",
+    ];
+    for (const token of orderedTokens) {
+      expect(serialized.split(token)).toHaveLength(2);
+    }
+    for (let index = 1; index < orderedTokens.length; index += 1) {
+      expect(serialized.indexOf(orderedTokens[index - 1])).toBeLessThan(
+        serialized.indexOf(orderedTokens[index]),
+      );
+    }
+    expect(serialized).not.toContain("raw-spec-source-should-not-render");
+    expect(serialized.indexOf("Closing prose")).toBeLessThan(
+      serialized.indexOf("streaming-turn-results"),
+    );
+  });
+
+  it("keeps StreamingMarkdownBlocks when no ordered prose override is supplied", async () => {
+    const renderer = await render(
+      response({ model: model({ status: "complete", activeBlock: null }) }),
+    );
+
+    expect(renderer.root.findAllByType(StreamingMarkdownBlocks)).toHaveLength(1);
+  });
+
   it("lets assistantBody replace only prose while preserving MessageBubble sources and actions", async () => {
     const content = "Original **answer** for copy and reader";
     const onRegenerate = vi.fn();

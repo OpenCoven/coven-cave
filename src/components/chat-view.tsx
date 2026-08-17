@@ -16,6 +16,7 @@ import {
   CodeReadingContext,
   FileLinkResolverContext,
   MessageBubble,
+  ProgressiveMarkdownBlock,
   SyntaxBlock,
   type CodeReading,
   type MessageBubbleSegment,
@@ -8880,7 +8881,8 @@ function TurnRowImpl({
     // designated ToolGroup section below. Image splitting runs first, while
     // every marker is still in one prose span, so `group` decks can cross an
     // artifact or GitHub card. The later splitters refine only the remaining
-    // prose; the `visible` fallback/content path is marker-free either way.
+    // prose. MessageBubble still owns `visible` as the complete durable source;
+    // this splitter output owns only the settled inline presentation.
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
@@ -8949,15 +8951,22 @@ function TurnRowImpl({
         )
       : undefined;
 
+  const proseContent =
+    !pending && renderSegments
+      ? renderSegments.map((segment, index) =>
+          segment.kind === "text" ? (
+            <ProgressiveMarkdownBlock
+              key={`rich-prose-${index}`}
+              text={segment.text}
+            />
+          ) : (
+            <div key={segment.key} className="my-2">{segment.node}</div>
+          ),
+        )
+      : undefined;
+
   const supplementaryContent = (
     <div data-main-chat-supplementary-content={true}>
-      {!pending
-        ? renderSegments?.map((segment) =>
-            segment.kind === "block"
-              ? <div key={segment.key} className="my-2">{segment.node}</div>
-              : null,
-          )
-        : null}
       <ResponseModelStatus metadata={turn.responseMetadata} />
       <ResponseControlStatus metadata={turn.responseMetadata} />
       {/* Agent-produced inline attachments: images render full-bleed
@@ -9160,6 +9169,7 @@ function TurnRowImpl({
                           ? () => { void copyText(streamingModel.committedText); }
                           : undefined
                       }
+                      proseContent={proseContent}
                       activityDetails={activityDetails}
                       supplementaryContent={supplementaryContent}
                     />

@@ -21,6 +21,7 @@ export type StreamingTurnResponseProps = {
   familiarName: string;
   model: StreamingTurnViewModel;
   density: "full" | "compact";
+  proseContent?: ReactNode;
   activityDetails?: ReactNode;
   supplementaryContent?: ReactNode;
   onStop?: () => void;
@@ -159,6 +160,7 @@ export function StreamingTurnResponse({
   familiarName,
   model,
   density,
+  proseContent,
   activityDetails,
   supplementaryContent,
   onStop,
@@ -229,11 +231,15 @@ export function StreamingTurnResponse({
       ) : null}
 
       <div className="streaming-turn-prose">
-        <StreamingMarkdownBlocks
-          committedBlocks={model.committedBlocks}
-          activeBlock={model.activeBlock}
-          live={live}
-        />
+        {proseContent !== undefined ? (
+          proseContent
+        ) : (
+          <StreamingMarkdownBlocks
+            committedBlocks={model.committedBlocks}
+            activeBlock={model.activeBlock}
+            live={live}
+          />
+        )}
       </div>
 
       <TurnResults model={model} />

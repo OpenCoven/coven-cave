@@ -160,14 +160,22 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /const supplementaryContent =[\s\S]*?renderSegments[\s\S]*?segment\.kind === "block"[\s\S]*?segment\.node/,
-  "the supplementaryContent slot renders artifact-aware block segments",
+  /const proseContent =[\s\S]*?!pending && renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node/,
+  "settled artifact-aware segments render as one ordered prose sequence",
 );
 
 assert.match(
   turnRow,
   /renderSegments = split\.some\(\(s\) => s\.kind === "block"\) \? split : undefined/,
-  "settled turns render prose (+ artifacts) only — tool blocks are not woven into the text",
+  "settled turns override prose only when a rich block exists",
+);
+const supplementary = turnRow.match(
+  /const supplementaryContent = \([\s\S]*?\n  \);\n\n  return \(/,
+)?.[0] ?? "";
+assert.doesNotMatch(
+  supplementary,
+  /renderSegments|segment\.node/,
+  "inline rich blocks are not duplicated in supplementaryContent",
 );
 
 assert.match(

@@ -35,8 +35,8 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]*const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]*const attentionSplit = extractChatAttentionMarker\(autoStatusSplit\.visible,[\s\S]*const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);/,
-  "the shared projection resolves skill, auto-status, attention, then next paths before card markers",
+  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]*const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]*const resultSplit = extractChatResultMarkers\(autoStatusSplit\.visible,[\s\S]*const attentionSplit = extractChatAttentionMarker\(resultSplit\.visible,[\s\S]*const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);/,
+  "the shared projection resolves skill, auto-status, results, attention, then next paths before card markers",
 );
 assert.match(
   renderedText,

@@ -79,8 +79,21 @@ assert.match(
 );
 assert.match(
   main,
-  /const supplementaryContent =[\s\S]*?renderSegments[\s\S]*?<ResponseModelStatus[\s\S]*?<ResponseControlStatus[\s\S]*?<InlineImageAttachments[\s\S]*?<SkillStageCard[\s\S]*?<AutoStatusCard[\s\S]*?editCards\.map[\s\S]*?<ArtifactComments/,
-  "supplementaryContent preserves marker cards, metadata, attachments, skill status, edits, and comments",
+  /const proseContent =[\s\S]*?!pending && renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?text=\{segment\.text\}[\s\S]*?<div key=\{segment\.key\} className="my-2">\{segment\.node\}<\/div>/,
+  "settled rich turns render every prose and card segment in sequence through the real Markdown path",
+);
+const supplementary = main.match(
+  /const supplementaryContent = \([\s\S]*?\n  \);\n\n  return \(/,
+)?.[0] ?? "";
+assert.doesNotMatch(
+  supplementary,
+  /renderSegments|segment\.node/,
+  "supplementaryContent does not duplicate inline splitter blocks",
+);
+assert.match(
+  supplementary,
+  /<ResponseModelStatus[\s\S]*?<ResponseControlStatus[\s\S]*?<InlineImageAttachments[\s\S]*?<SkillStageCard[\s\S]*?<AutoStatusCard[\s\S]*?editCards\.map[\s\S]*?<ArtifactComments/,
+  "supplementaryContent preserves metadata, attachments, skill status, edits, and comments",
 );
 assert.match(
   main,
@@ -92,6 +105,11 @@ assert.match(
   main,
   /supplementaryContent=\{supplementaryContent\}/,
   "Main Chat supplies the supplementary slot",
+);
+assert.match(
+  main,
+  /proseContent=\{proseContent\}/,
+  "Main Chat supplies ordered rich prose without replacing the default streaming path",
 );
 assert.match(
   main,
