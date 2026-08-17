@@ -6,10 +6,13 @@ import {
   isUtcTimestamp,
   parseResearchContextBindingV1,
   pass,
+  retentionDoesNotExceed,
+  RETENTION_ORDER,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
   type UnknownFields,
 } from "./common.ts";
+import type { ContextPackV1 } from "./context-pack.ts";
 import {
   parseRunManifestV1,
   type RunManifestV1,
@@ -43,6 +46,15 @@ const RUN_STATUSES = [
 ] as const;
 const WAITING_REASONS = ["executor", "checkpoint", "provider-attention"] as const;
 const WAITING_PHASES = ["scope", "challenge", "synthesize", "control"] as const;
+const CHECKPOINT_WAITING_STATUSES = new Set([
+  "scoping",
+  "gathering_public_sources",
+  "challenging",
+  "synthesizing",
+  "controlling",
+  "awaiting_checkpoint",
+]);
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "expired"]);
 const RUN_EVENT_TYPES = [
   "run.created",
   "run.status",
@@ -161,6 +173,87 @@ function contextBindingsMatch(
     runContext.contextPackDigest === manifestContext.contextPackDigest &&
     runContext.topicProposalId === manifestContext.topicProposalId
   );
+}
+
+/**
+ * Validates two already-parsed objects. Run-field errors use run JSON paths;
+ * pack-only policy errors use the synthetic `$.contextPack` path.
+ */
+export function validateResearchRunContextPackV1(
+  run: ResearchRunV1,
+  contextPack?: ContextPackV1,
+): ProtocolParseResult<ResearchRunV1> {
+  if (!run.context) {
+    if (contextPack !== undefined) {
+      return fail(
+        "semantic_conflict",
+        "$.context",
+        "A Context Pack must not be supplied when the run has no context binding",
+      );
+    }
+    return pass(run);
+  }
+  if (contextPack === undefined) {
+    return fail(
+      "semantic_conflict",
+      "$.context",
+      "A run context binding requires its parsed Context Pack",
+    );
+  }
+  if (run.context.contextPackId !== contextPack.id) {
+    return fail(
+      "semantic_conflict",
+      "$.context.contextPackId",
+      "Run contextPackId must match the Context Pack id",
+    );
+  }
+  if (run.context.contextPackDigest !== contextPack.digest) {
+    return fail(
+      "semantic_conflict",
+      "$.context.contextPackDigest",
+      "Run contextPackDigest must match the Context Pack digest",
+    );
+  }
+  if (contextPack.purpose !== "research-run") {
+    return fail(
+      "semantic_conflict",
+      "$.contextPack.purpose",
+      "Context Pack purpose must be research-run",
+    );
+  }
+  if (!contextPack.policy.allowedPurposes.includes("research-run")) {
+    return fail(
+      "semantic_conflict",
+      "$.contextPack.policy.allowedPurposes",
+      "Context Pack allowedPurposes must include research-run",
+    );
+  }
+
+  for (const [runKey, consentKey] of [
+    ["remoteQueries", "allowRemoteQueries"],
+    ["remoteContent", "allowRemoteContent"],
+    ["artifactContentSync", "artifactContentSync"],
+  ] as const) {
+    if (run.privacy[runKey] && !contextPack.consent[consentKey]) {
+      return fail(
+        "semantic_conflict",
+        `$.privacy.${runKey}`,
+        `${runKey} exceeds Context Pack consent`,
+      );
+    }
+  }
+  if (
+    RETENTION_ORDER[run.privacy.retention] >
+    RETENTION_ORDER[contextPack.consent.retention]
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.privacy.retention",
+      "Run retention exceeds Context Pack consent",
+    );
+  }
+
+  return pass(run);
 }
 
 function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
@@ -696,11 +789,14 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
     );
   }
 
-  if (waitingReason === "checkpoint" && status.value !== "awaiting_checkpoint") {
+  if (
+    waitingReason === "checkpoint" &&
+    !CHECKPOINT_WAITING_STATUSES.has(status.value)
+  ) {
     return fail(
       "semantic_conflict",
       "$.waitingReason",
-      "waitingReason checkpoint is only valid with awaiting_checkpoint",
+      "waitingReason checkpoint is only valid while an active phase is paused or awaiting a checkpoint",
     );
   }
   if (
@@ -763,6 +859,35 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "artifactManifest context must match the enclosing run context",
       );
     }
+    if (artifactManifest.retention.policy !== privacy.value.retention) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.retention.policy",
+        "artifactManifest retention policy must match run privacy retention",
+      );
+    }
+    if (
+      !retentionDoesNotExceed(
+        artifactManifest.retention.effectivePolicy,
+        privacy.value.retention,
+      )
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.retention.effectivePolicy",
+        "artifactManifest effective retention must not exceed run privacy retention",
+      );
+    }
+    const cloudContentIndex = artifactManifest.artifacts.findIndex(
+      (artifact) => artifact.placement === "cloud-content",
+    );
+    if (cloudContentIndex >= 0 && !privacy.value.artifactContentSync) {
+      return fail(
+        "semantic_conflict",
+        `$.artifactManifest.artifacts[${cloudContentIndex}].placement`,
+        "cloud-content artifacts require run artifactContentSync consent",
+      );
+    }
   }
 
   let failure: ResearchRunFailureV1 | undefined;
@@ -775,6 +900,29 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
     failure = parsedFailure.value;
   } else if (hasOwn(object.value, "failure")) {
     return fail("semantic_conflict", "$.failure", "failure is only valid with failed");
+  }
+
+  if (TERMINAL_RUN_STATUSES.has(status.value)) {
+    if (!artifactManifest) {
+      return fail(
+        "missing_field",
+        "$.artifactManifest",
+        "Terminal runs require an embedded final artifactManifest",
+      );
+    }
+    if (artifactManifest.state !== "final") {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.state",
+        "Terminal runs require a final artifactManifest",
+      );
+    }
+  } else if (artifactManifest?.state === "final") {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.state",
+      "Nonterminal runs must not include a final artifactManifest",
+    );
   }
 
   return pass({
@@ -891,4 +1039,79 @@ export function validateRunEventSequence(
   }
 
   return pass(events);
+}
+
+/**
+ * Validates a manifest deletion receipt against the run's complete event stream.
+ * Non-empty streams must start at sequence 1 and be contiguous. An empty stream
+ * is accepted only while deletion is not completed.
+ */
+export function validateRunManifestDeletionEventV1(
+  manifest: RunManifestV1,
+  events: readonly RunEventV1[],
+): ProtocolParseResult<RunManifestV1> {
+  if (events.length === 0) {
+    if (manifest.deletion.status === "completed") {
+      return fail(
+        "semantic_conflict",
+        "$.deletion.eventSequence",
+        "Completed deletion requires its content.deleted event",
+      );
+    }
+    return pass(manifest);
+  }
+
+  const orderedEvents = validateRunEventSequence(events);
+  if (!orderedEvents.ok) return orderedEvents;
+  if (manifest.deletion.status !== "completed") {
+    return pass(manifest);
+  }
+  if (events[0].runId !== manifest.runId) {
+    return fail(
+      "semantic_conflict",
+      "$[0].runId",
+      "Event stream runId must match the manifest runId",
+    );
+  }
+
+  const eventSequence = manifest.deletion.eventSequence;
+  if (eventSequence === undefined || !Number.isSafeInteger(eventSequence) || eventSequence < 1) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.eventSequence",
+      "Completed deletion requires a valid eventSequence",
+    );
+  }
+  const eventIndex = eventSequence - 1;
+  const event = events[eventIndex];
+  if (!event || event.sequence !== eventSequence || event.runId !== manifest.runId) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.eventSequence",
+      "Deletion eventSequence must identify an event in the complete run stream",
+    );
+  }
+  if (event.type !== "content.deleted") {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].type`,
+      "Deletion eventSequence must identify content.deleted",
+    );
+  }
+  if (event.data.deletedObjectCount !== manifest.deletion.deletedObjectCount) {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].data.deletedObjectCount`,
+      "content.deleted object count must match the deletion receipt",
+    );
+  }
+  if (event.data.manifestStatus !== "deleted") {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].data.manifestStatus`,
+      "content.deleted manifestStatus must equal deleted",
+    );
+  }
+
+  return pass(manifest);
 }
