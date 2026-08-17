@@ -86,6 +86,10 @@
           "deletion": {
             "properties": { "status": { "const": "not_scheduled" } },
             "required": ["status"]
+          },
+          "retention": {
+            "properties": { "contentExpiresAt": { "const": null } },
+            "required": ["contentExpiresAt"]
           }
         }
       }

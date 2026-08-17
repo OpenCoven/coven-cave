@@ -140,6 +140,57 @@ test("aggregates complete usage with exact sums", () => {
   );
 });
 
+test("rejects aggregate token and cost overflow", () => {
+  assert.throws(
+    () =>
+      aggregateManifestUsage([
+        execution("modeltask_overflow_1", 1, Number.MAX_SAFE_INTEGER, null, null),
+        execution("modeltask_overflow_2", 1, 1, null, null),
+      ]),
+    RangeError,
+  );
+  assert.throws(
+    () =>
+      aggregateManifestUsage([
+        execution("modeltask_overflow_1", 1, null, null, Number.MAX_VALUE),
+        execution("modeltask_overflow_2", 1, null, null, Number.MAX_VALUE),
+      ]),
+    RangeError,
+  );
+});
+
+test("parser rejects manifests whose aggregate usage overflows", () => {
+  const tokenOverflow = recalculate({
+    ...finalCloudManifestJson,
+    modelExecutions: [
+      execution("modeltask_overflow_1", 1, Number.MAX_SAFE_INTEGER, null, null),
+      execution("modeltask_overflow_2", 1, 1, null, null),
+    ],
+    usage: {
+      inputTokens: 0,
+      outputTokens: null,
+      costUsd: null,
+      completeness: "partial" as const,
+    },
+  });
+  expectError(parseRunManifestV1(tokenOverflow), "$.usage", "invalid_value");
+
+  const costOverflow = recalculate({
+    ...finalCloudManifestJson,
+    modelExecutions: [
+      execution("modeltask_overflow_1", 1, null, null, Number.MAX_VALUE),
+      execution("modeltask_overflow_2", 1, null, null, Number.MAX_VALUE),
+    ],
+    usage: {
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: 0,
+      completeness: "partial" as const,
+    },
+  });
+  expectError(parseRunManifestV1(costOverflow), "$.usage", "invalid_value");
+});
+
 test("valid fixtures satisfy the schema, parse, and recalculate their root digests", () => {
   for (const fixture of [
     assemblingManifestJson,
@@ -252,6 +303,18 @@ test("artifact titles reject paths, URI schemes, controls, and known secret pref
     "$.artifacts[0].title",
     "invalid_value",
   );
+
+  const mailto = recalculate({
+    ...local,
+    artifacts: [{ ...local.artifacts[0], title: "mailto:notes@example.test" }],
+  });
+  expectError(parseRunManifestV1(mailto), "$.artifacts[0].title", "invalid_value");
+
+  const genericTitle = recalculate({
+    ...local,
+    artifacts: [{ ...local.artifacts[0], title: "Decision: summary" }],
+  });
+  assert.equal(expectOk(parseRunManifestV1(genericTitle)).artifacts[0].title, "Decision: summary");
 });
 
 test("retention and deletion status pairs and receipt requirements are enforced", () => {
@@ -279,6 +342,7 @@ test("retention and deletion status pairs and receipt requirements are enforced"
     ...local,
     retention: { ...local.retention, contentExpiresAt: "2026-08-20T00:00:00.000Z" },
   });
+  assert.equal(Value.Check(runManifestSchema, activeWithExpiry), false);
   expectError(parseRunManifestV1(activeWithExpiry), "$.retention.contentExpiresAt", "semantic_conflict");
 });
 
@@ -314,11 +378,17 @@ test("revision chains accept assembling-to-final and allowed retention updates",
       }),
     ),
   );
-  assert.equal(validateRunManifestRevision(assembling, finalLocalRevision2).ok, true);
+  assert.equal(
+    validateRunManifestRevision(assembling, finalLocalRevision2, { contextConsent: "7-days" }).ok,
+    true,
+  );
 
   const finalLocal = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const update = expectOk(parseRunManifestV1(retentionUpdateJson));
-  assert.deepEqual(expectOk(validateRunManifestRevision(finalLocal, update)), update);
+  assert.deepEqual(
+    expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
+    update,
+  );
 });
 
 test("revision chains reject bad links, immutable final mutations, and retention changes", () => {
@@ -348,20 +418,69 @@ test("revision chains reject bad links, immutable final mutations, and retention
     ...next,
     retention: { ...next.retention, effectivePolicy: "run-only" as const },
   });
-  assert.equal(validateRunManifestRevision(previous, shortened).ok, true);
+  expectError(
+    validateRunManifestRevision(previous, shortened),
+    "$.retention.policy",
+    "semantic_conflict",
+  );
+  assert.equal(
+    validateRunManifestRevision(previous, shortened, { contextConsent: "7-days" }).ok,
+    true,
+  );
 
   const lengthened = recalculate({
     ...next,
     retention: { ...next.retention, effectivePolicy: "project" as const },
   });
-  expectError(validateRunManifestRevision(previous, lengthened), "$.retention.effectivePolicy", "semantic_conflict");
-  assert.equal(validateRunManifestRevision(previous, lengthened, { freshConsent: true }).ok, true);
+  expectError(
+    validateRunManifestRevision(previous, lengthened, { contextConsent: "project" }),
+    "$.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestRevision(previous, lengthened, { freshConsent: true }),
+    "$.retention.policy",
+    "semantic_conflict",
+  );
   expectError(
     validateRunManifestRevision(previous, lengthened, {
       freshConsent: true,
       contextConsent: "7-days",
     }),
     "$.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+  assert.equal(
+    validateRunManifestRevision(previous, lengthened, {
+      freshConsent: true,
+      contextConsent: "project",
+    }).ok,
+    true,
+  );
+});
+
+test("assembling revisions cannot change the original retention policy", () => {
+  const previous = expectOk(parseRunManifestV1(assemblingManifestJson));
+  const changedPolicy = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...previous,
+        revision: 2,
+        previousDigest: previous.digest,
+        retention: {
+          ...previous.retention,
+          policy: "project" as const,
+          effectivePolicy: "project" as const,
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previous, changedPolicy, {
+      freshConsent: true,
+      contextConsent: "project",
+    }),
+    "$.retention.policy",
     "semantic_conflict",
   );
 });
