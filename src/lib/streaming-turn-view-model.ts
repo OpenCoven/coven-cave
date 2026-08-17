@@ -50,6 +50,10 @@ const TOOL_ACTIVITY: ReadonlyArray<[RegExp, string]> = [
   [/(build|compile)/i, "Checking the production build…"],
   [/(diff|review)/i, "Reviewing the final changes…"],
 ];
+// ChatView mirrors live tool status into one synthetic progress row. Once the
+// turn has real ToolEvent records, that row is only a duplicate and may carry
+// raw tool summaries that the shared activity model must not expose.
+const TOOL_DERIVED_PROGRESS_IDS = new Set(["tools"]);
 
 function deriveStatus(input: StreamingTurnInput): StreamingTurnStatus {
   if (input.pending) return input.visibleText.length > 0 ? "answering" : "working";
@@ -90,10 +94,21 @@ function normalizeToolEvent(tool: ToolEvent): ActivityEvent {
   };
 }
 
+function isToolDerivedProgressEvent(
+  progress: ProgressEvent,
+  tools: readonly ToolEvent[],
+): boolean {
+  return tools.length > 0 && TOOL_DERIVED_PROGRESS_IDS.has(progress.id);
+}
+
 function normalizeActivity(input: StreamingTurnInput): ActivityEvent[] {
+  const tools = input.tools ?? [];
+  const progress = (input.progress ?? []).filter(
+    (event) => !isToolDerivedProgressEvent(event, tools),
+  );
   return [
-    ...(input.progress ?? []).map(normalizeProgressEvent),
-    ...(input.tools ?? []).map(normalizeToolEvent),
+    ...progress.map(normalizeProgressEvent),
+    ...tools.map(normalizeToolEvent),
   ];
 }
 

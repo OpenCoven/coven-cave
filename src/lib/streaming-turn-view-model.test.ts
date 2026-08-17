@@ -51,6 +51,58 @@ test("tool activity uses product copy and never raw arguments or names", () => {
   assert.doesNotMatch(model.currentActivity?.label ?? "", /secret|Grep/);
 });
 
+test("tool-derived progress yields to sanitized tool activity when tool events exist", () => {
+  const model = createStreamingTurnViewModel(
+    input({
+      progress: [
+        { id: "harness-start", label: "Starting Hermes API", status: "done", createdAt: "2026-08-08T10:00:00Z" },
+        {
+          id: "tools",
+          label: "Tool call running",
+          detail: 'Grep({"pattern":"secret"})',
+          status: "running",
+          createdAt: "2026-08-08T10:00:01Z",
+        },
+      ],
+      tools: [{ id: "grep-1", name: "Grep", input: '{"pattern":"secret"}', status: "running" }],
+    }),
+  );
+
+  assert.deepEqual(model.activity.map((event) => event.id), ["progress:harness-start", "tool:grep-1"]);
+  assert.equal(model.currentActivity?.id, "tool:grep-1");
+  assert.equal(model.currentActivity?.label, "Searching the chat implementation…");
+  assert.equal(model.currentActivity?.detail, undefined);
+  assert.doesNotMatch(JSON.stringify(model.activity), /secret|Tool call running|Grep\(/);
+});
+
+test("normalized running progress keeps priority and detail even when tools are active", () => {
+  const model = createStreamingTurnViewModel(
+    input({
+      progress: [
+        {
+          id: "save-transcript",
+          label: "Saving transcript",
+          detail: "Persisting the latest draft",
+          status: "running",
+          createdAt: "2026-08-08T10:00:00Z",
+        },
+        {
+          id: "tools",
+          label: "Tool call running",
+          detail: 'Grep({"pattern":"secret"})',
+          status: "running",
+          createdAt: "2026-08-08T10:00:01Z",
+        },
+      ],
+      tools: [{ id: "grep-1", name: "Grep", input: '{"pattern":"secret"}', status: "running" }],
+    }),
+  );
+
+  assert.equal(model.currentActivity?.id, "progress:save-transcript");
+  assert.equal(model.currentActivity?.label, "Saving transcript");
+  assert.equal(model.currentActivity?.detail, "Persisting the latest draft");
+});
+
 test("trusted failure cannot be overwritten by an authored pass", () => {
   const model = createStreamingTurnViewModel(
     input({
