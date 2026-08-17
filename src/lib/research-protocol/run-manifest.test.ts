@@ -51,7 +51,12 @@ function recalculate<T extends Record<string, unknown>>(value: T): T {
     if (Array.isArray(input)) return input.map(ownJson);
     const result: Record<string, unknown> = {};
     for (const key of Object.keys(input)) {
-      result[key] = ownJson((input as Record<string, unknown>)[key]);
+      Object.defineProperty(result, key, {
+        value: ownJson((input as Record<string, unknown>)[key]),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return result;
   };
@@ -459,6 +464,58 @@ test("revision chains reject bad links, immutable final mutations, and retention
   );
 });
 
+test("completed deletion cannot be resurrected by a later revision", () => {
+  const final = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const deleted = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...final,
+        revision: 2,
+        previousDigest: final.digest,
+        retention: {
+          ...final.retention,
+          status: "deleted" as const,
+          contentExpiresAt: "2026-08-16T20:06:00.000Z",
+          updatedAt: "2026-08-16T20:06:00.000Z",
+        },
+        deletion: {
+          ...final.deletion,
+          status: "completed" as const,
+          requestedAt: "2026-08-16T20:05:00.000Z",
+          completedAt: "2026-08-16T20:06:00.000Z",
+          deletedObjectCount: 1,
+          eventSequence: 2,
+        },
+      }),
+    ),
+  );
+  const resurrected = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...deleted,
+        revision: 3,
+        previousDigest: deleted.digest,
+        retention: {
+          ...deleted.retention,
+          status: "active" as const,
+          contentExpiresAt: null,
+          updatedAt: "2026-08-16T20:07:00.000Z",
+        },
+        deletion: {
+          status: "not_scheduled" as const,
+          futureExtension: { preserve: true },
+        },
+      }),
+    ),
+  );
+
+  expectError(
+    validateRunManifestRevision(deleted, resurrected, { contextConsent: "7-days" }),
+    "$.deletion.status",
+    "semantic_conflict",
+  );
+});
+
 test("assembling revisions cannot change the original retention policy", () => {
   const previous = expectOk(parseRunManifestV1(assemblingManifestJson));
   const changedPolicy = expectOk(
@@ -522,4 +579,25 @@ test("inherited fields are ignored while additive own fields survive", () => {
     false,
   );
   assert.deepEqual(parsed.artifacts[0].futureExtension, { preserve: true });
+});
+
+test("canonical copying preserves own __proto__ fields and rejects non-JSON objects", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const extension = JSON.parse('{"__proto__":{"preserve":true}}') as Record<string, unknown>;
+  const withProtoKey = recalculate({
+    ...local,
+    futureExtension: extension,
+  });
+  const parsed = expectOk(parseRunManifestV1(withProtoKey));
+  assert.equal(Object.hasOwn(parsed.futureExtension as object, "__proto__"), true);
+  assert.deepEqual(
+    (parsed.futureExtension as Record<string, unknown>).__proto__,
+    { preserve: true },
+  );
+
+  const withDate = {
+    ...local,
+    futureExtension: { capturedAt: new Date("2026-08-16T20:00:00.000Z") },
+  };
+  expectError(parseRunManifestV1(withDate), "$.digest", "invalid_value");
 });

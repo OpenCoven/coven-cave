@@ -788,9 +788,28 @@ function copyOwnJson(value: unknown, stack = new WeakSet<object>()): unknown {
     return result;
   }
   if (isRecord(value)) {
+    const prototype = Object.getPrototypeOf(value);
+    const prototypeConstructor =
+      prototype === null
+        ? undefined
+        : Object.getOwnPropertyDescriptor(prototype, "constructor")?.value;
+    if (
+      prototype !== Object.prototype &&
+      prototype !== null &&
+      prototypeConstructor !== undefined &&
+      prototypeConstructor !== Object
+    ) {
+      stack.delete(value);
+      throw new TypeError("only JSON objects and arrays are allowed");
+    }
     const result: Record<string, unknown> = {};
     for (const key of Object.keys(value)) {
-      result[key] = copyOwnJson(value[key], stack);
+      Object.defineProperty(result, key, {
+        value: copyOwnJson(value[key], stack),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     stack.delete(value);
     return result;
@@ -1285,6 +1304,21 @@ export function validateRunManifestRevision(
   const nextRetention = next.retention as unknown as Record<string, unknown>;
   const policy = compareImmutableField(previousRetention, nextRetention, "policy", "$.retention.policy");
   if (!policy.ok) return policy;
+
+  if (previous.deletion.status === "completed" && next.deletion.status !== "completed") {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.status",
+      "completed deletion is terminal",
+    );
+  }
+  if (previous.retention.status === "deleted" && next.retention.status !== "deleted") {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "deleted retention is terminal",
+    );
+  }
 
   if (previous.state === "final") {
     if (next.state !== "final") {

@@ -315,23 +315,36 @@ test("run event data drops inherited fields while preserving own fields", () => 
 });
 
 test("research runs parse full run manifests and reject invalid embedded manifests", () => {
+  const linkedManifest = {
+    ...validRunManifest,
+    runId: validResearchRun.id,
+    context: validResearchRun.context,
+    sources: [
+      {
+        ...validRunManifest.sources[0],
+        id: validResearchRun.context.contextPackId,
+        digest: validResearchRun.context.contextPackDigest,
+      },
+    ],
+  };
+  linkedManifest.digest = digestProtocolObject(linkedManifest);
   const valid = expectOk(
     parseResearchRunV1({
       ...validResearchRun,
-      artifactManifest: validRunManifest,
+      artifactManifest: linkedManifest,
     }),
   );
-  assert.equal(valid.artifactManifest?.id, validRunManifest.id);
+  assert.equal(valid.artifactManifest?.id, linkedManifest.id);
   assert.deepEqual(valid.artifactManifest?.futureExtension, { preserve: true });
 
   const invalidManifest = {
-    ...validRunManifest,
+    ...linkedManifest,
     retention: {
-      ...validRunManifest.retention,
+      ...linkedManifest.retention,
       status: "deleted",
     },
     deletion: {
-      ...validRunManifest.deletion,
+      ...linkedManifest.deletion,
       status: "not_scheduled",
     },
   };
@@ -341,4 +354,46 @@ test("research runs parse full run manifests and reject invalid embedded manifes
     artifactManifest: invalidManifest,
   });
   expectError(invalid, "$.artifactManifest.retention.status", "semantic_conflict");
+});
+
+test("research runs reject embedded manifests for another run or context", () => {
+  const linkedManifest = {
+    ...validRunManifest,
+    runId: validResearchRun.id,
+    context: validResearchRun.context,
+    sources: [
+      {
+        ...validRunManifest.sources[0],
+        id: validResearchRun.context.contextPackId,
+        digest: validResearchRun.context.contextPackDigest,
+      },
+    ],
+  };
+  linkedManifest.digest = digestProtocolObject(linkedManifest);
+
+  const wrongRun = { ...linkedManifest, runId: "run_other" };
+  wrongRun.digest = digestProtocolObject(wrongRun);
+  expectError(
+    parseResearchRunV1({ ...validResearchRun, artifactManifest: wrongRun }),
+    "$.artifactManifest.runId",
+    "semantic_conflict",
+  );
+
+  const wrongContext = {
+    ...linkedManifest,
+    context: {
+      ...linkedManifest.context,
+      contextPackDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    },
+    sources: linkedManifest.sources.map((source) => ({
+      ...source,
+      digest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    })),
+  };
+  wrongContext.digest = digestProtocolObject(wrongContext);
+  expectError(
+    parseResearchRunV1({ ...validResearchRun, artifactManifest: wrongContext }),
+    "$.artifactManifest.context",
+    "semantic_conflict",
+  );
 });
