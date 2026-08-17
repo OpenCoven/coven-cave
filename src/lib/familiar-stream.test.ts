@@ -31,9 +31,22 @@ describe("streamFamiliarText", () => {
       frame({ kind: "done" }),
     ])) as typeof fetch;
 
-    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    const { text, error, cancelled } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
     assert.equal(text, "Hello world");
     assert.equal(error, null);
+    assert.equal(cancelled, false);
+  });
+
+  it("returns the server's cancelled terminal outcome", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Partial answer" }),
+      frame({ kind: "done", cancelled: true }),
+    ])) as typeof fetch;
+
+    const result = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(result.text, "Partial answer");
+    assert.equal(result.error, null);
+    assert.equal(result.cancelled, true);
   });
 
   it("includes sessionId in the request body only when provided", async () => {

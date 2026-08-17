@@ -26,12 +26,14 @@ type ControlledSend = {
   signal: AbortSignal | null;
   close: () => void;
   complete: (text: string) => void;
+  cancel: (text: string) => void;
 };
 
 function controlledSse(sessionId: string): {
   response: Response;
   close: () => void;
   complete: (text: string) => void;
+  cancel: (text: string) => void;
 } {
   const encoder = new TextEncoder();
   let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
@@ -53,6 +55,11 @@ function controlledSse(sessionId: string): {
     complete: (text) => {
       enqueue({ kind: "assistant_chunk", text });
       enqueue({ kind: "done", sessionId });
+      streamController?.close();
+    },
+    cancel: (text) => {
+      enqueue({ kind: "assistant_chunk", text });
+      enqueue({ kind: "done", sessionId, cancelled: true });
       streamController?.close();
     },
   };
@@ -100,6 +107,7 @@ class QuickChatFetch {
         signal: init.signal ?? null,
         close: stream.close,
         complete: stream.complete,
+        cancel: stream.cancel,
       });
       return stream.response;
     }
@@ -444,6 +452,66 @@ describe("useQuickChat send cancellation", () => {
     expect(state!.sendState).toBe("done");
   });
 
+  test("server cancellation wins while Stop is pending and parks the queued prompt", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.setDraft("queued follow-up");
+    });
+    await act(async () => {
+      await state!.send();
+    });
+    expect(state!.queued).toHaveLength(1);
+
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+    });
+    expect(requests.stops).toHaveLength(1);
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+
+    await act(async () => {
+      requests.sends[0]!.cancel("Partial answer");
+      await send;
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Partial answer",
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+    expect(state!.sendState).toBe("idle");
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
+
+    requests.releaseNextStop();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
+  });
+
   test("newThread stops one captured run before clearing the local thread", async () => {
     const requests = new QuickChatFetch();
     globalThis.fetch = requests.fetch as typeof fetch;
@@ -564,5 +632,70 @@ describe("useQuickChat send cancellation", () => {
 
     requests.sends[1]!.close();
     await restoredSend;
+  });
+
+  test("pagehide reissues a pending normal Stop once with keepalive", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    const testWindow = Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    });
+    vi.stubGlobal("window", testWindow);
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+    });
+    expect(requests.stops).toHaveLength(1);
+    expect(requests.stopKeepalives).toEqual([false]);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+    expect(requests.stops).toEqual([
+      { runId: requests.sends[0]!.body.runId },
+      { runId: requests.sends[0]!.body.runId },
+    ]);
+    expect(requests.stopKeepalives).toEqual([false, true]);
+    expect(requests.sends[0]!.signal?.aborted).toBe(true);
+    expect(state!.messages.at(-1)).toMatchObject({
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+    expect(state!.sendState).toBe("idle");
+
+    await act(async () => {
+      renderer!.unmount();
+    });
+    renderer = null;
+    expect(requests.stops).toHaveLength(2);
+
+    requests.releaseNextStop();
+    requests.releaseNextStop();
+    requests.sends[0]!.close();
+    await send;
   });
 });

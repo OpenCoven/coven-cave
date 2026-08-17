@@ -97,6 +97,27 @@ test("returns stopped:false once a run has already settled", async () => {
   }
 });
 
+test("returns stopped:false and queued:false after a settled run unregisters", async () => {
+  const handle = registerChatRun(
+    ["unregistered-settled-route-run"],
+    () => {
+      throw new Error("settled run must not be killed");
+    },
+    { runId: "unregistered-settled-route-run" },
+  );
+  markChatRunTransportSettled(handle);
+  unregisterChatRun(handle);
+
+  const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId: "unregistered-settled-route-run" }),
+  }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await readJson(response), { ok: true, stopped: false, queued: false });
+  assert.equal(pendingChatStopCountForTests(), 0);
+});
+
 test("a delayed old runId cannot stop a newer run that reused its session", async () => {
   let oldKills = 0;
   let newerKills = 0;

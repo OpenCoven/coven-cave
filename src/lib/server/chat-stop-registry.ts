@@ -34,13 +34,22 @@ export type ChatRunHandle = {
 
 const active = new Map<string, ChatRunEntry>();
 const pendingStops = new Map<string, number>();
+const settledKeys = new Map<string, number>();
 export const PENDING_CHAT_STOP_TTL_MS = 5_000;
 export const MAX_PENDING_CHAT_STOPS = 256;
+export const SETTLED_CHAT_RUN_TTL_MS = 30_000;
+export const MAX_SETTLED_CHAT_RUNS = 512;
 let registryNow = () => Date.now();
 
 function prunePendingStops(now = registryNow()): void {
   for (const [runId, expiresAt] of pendingStops) {
     if (expiresAt <= now) pendingStops.delete(runId);
+  }
+}
+
+function pruneSettledKeys(now = registryNow()): void {
+  for (const [key, expiresAt] of settledKeys) {
+    if (expiresAt <= now) settledKeys.delete(key);
   }
 }
 
@@ -53,6 +62,18 @@ function queuePendingStop(runId: string, now: number): void {
   pendingStops.set(runId, now + PENDING_CHAT_STOP_TTL_MS);
 }
 
+function rememberSettledKeys(keys: readonly string[], now: number): void {
+  pruneSettledKeys(now);
+  for (const key of keys) {
+    pendingStops.delete(key);
+    if (!settledKeys.has(key) && settledKeys.size >= MAX_SETTLED_CHAT_RUNS) {
+      const oldestKey = settledKeys.keys().next().value;
+      if (oldestKey !== undefined) settledKeys.delete(oldestKey);
+    }
+    settledKeys.set(key, now + SETTLED_CHAT_RUN_TTL_MS);
+  }
+}
+
 /** Register a streaming run under every non-empty key. `kill` must be safe to
  *  call more than once and after child exit. */
 export function registerChatRun(
@@ -62,6 +83,7 @@ export function registerChatRun(
 ): ChatRunHandle {
   const now = registryNow();
   prunePendingStops(now);
+  pruneSettledKeys(now);
   const handle: ChatRunHandle = {
     stopRequested: false,
     acceptingStop: true,
@@ -166,6 +188,8 @@ export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
   }
 
   const now = registryNow();
+  pruneSettledKeys(now);
+  if (settledKeys.has(runId)) return "settled";
   queuePendingStop(runId, now);
   return "queued";
 }
@@ -173,7 +197,9 @@ export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
 /** Freeze cancellation semantics as soon as the transport reaches a
  * definitive outcome. Projection stays live until persistence/final cleanup. */
 export function markChatRunTransportSettled(handle: ChatRunHandle): void {
+  if (!handle.acceptingStop) return;
   handle.acceptingStop = false;
+  rememberSettledKeys(handle.keys, registryNow());
 }
 
 /** Sessions/list should stop presenting the run as live once persistence/final
@@ -189,6 +215,7 @@ export function resetChatStopRegistryForTests(options: { now?: () => number } = 
   const hadActiveRuns = active.size > 0;
   active.clear();
   pendingStops.clear();
+  settledKeys.clear();
   registryNow = options.now ?? (() => Date.now());
   if (hadActiveRuns) invalidateSessionsListCache();
 }
@@ -196,4 +223,9 @@ export function resetChatStopRegistryForTests(options: { now?: () => number } = 
 export function pendingChatStopCountForTests(): number {
   prunePendingStops();
   return pendingStops.size;
+}
+
+export function settledChatRunCountForTests(): number {
+  pruneSettledKeys();
+  return settledKeys.size;
 }

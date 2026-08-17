@@ -13,9 +13,12 @@ const {
   markChatRunTransportSettled,
   markChatRunProjectionSettled,
   pendingChatStopCountForTests,
+  settledChatRunCountForTests,
   resetChatStopRegistryForTests,
   MAX_PENDING_CHAT_STOPS,
+  MAX_SETTLED_CHAT_RUNS,
   PENDING_CHAT_STOP_TTL_MS,
+  SETTLED_CHAT_RUN_TTL_MS,
 } =
   await import("./chat-stop-registry.ts");
 
@@ -199,6 +202,49 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   assert.equal(kills, 0);
   assert.equal(pendingChatStopCountForTests(), 0);
   unregisterChatRun(settled);
+  assert.equal(
+    requestOrQueueChatStop("already-settled"),
+    "settled",
+    "the tombstone survives unregister",
+  );
+  assert.equal(pendingChatStopCountForTests(), 0, "a late settled Stop is never queued");
+  assert.equal(settledChatRunCountForTests(), 1);
+}
+
+// Tombstones expire so an identifier can eventually describe a genuinely new
+// run, and deterministic oldest-first eviction bounds abandoned settled keys.
+{
+  let now = 30_000;
+  resetChatStopRegistryForTests({ now: () => now });
+  const expired = registerChatRun(["expired-settled"], () => {}, {
+    runId: "expired-settled",
+  });
+  markChatRunTransportSettled(expired);
+  unregisterChatRun(expired);
+  now += SETTLED_CHAT_RUN_TTL_MS;
+  assert.equal(
+    requestOrQueueChatStop("expired-settled"),
+    "queued",
+    "an id is unseen again at the tombstone TTL boundary",
+  );
+  assert.equal(settledChatRunCountForTests(), 0, "expired tombstones are pruned");
+  assert.equal(pendingChatStopCountForTests(), 1, "the new early intent can queue");
+
+  resetChatStopRegistryForTests({ now: () => now });
+  for (let index = 0; index < MAX_SETTLED_CHAT_RUNS + 20; index += 1) {
+    const runId = `settled-bounded-${index}`;
+    const handle = registerChatRun([runId], () => {}, { runId });
+    markChatRunTransportSettled(handle);
+    unregisterChatRun(handle);
+  }
+  assert.equal(
+    settledChatRunCountForTests(),
+    MAX_SETTLED_CHAT_RUNS,
+    "settled tombstone storage remains bounded",
+  );
+  assert.equal(pendingChatStopCountForTests(), 0, "settlement leaves no pending intent leak");
+  resetChatStopRegistryForTests();
+  assert.equal(settledChatRunCountForTests(), 0, "test reset clears tombstones");
 }
 
 resetChatStopRegistryForTests();

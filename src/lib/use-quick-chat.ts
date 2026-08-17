@@ -90,7 +90,8 @@ type ActiveQuickChatSend = {
   controller: AbortController;
   runId: string;
   sessionId: string | null;
-  stopRequested: boolean;
+  normalStopRequested: boolean;
+  cleanupStopSent: boolean;
   suppressSettlementUi?: boolean;
 };
 
@@ -366,10 +367,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       activeSendRef.current = null;
       activeSend.suppressSettlementUi =
         options.settleUi === true || options.suppressSettlementUi === true;
-      if (!activeSend.stopRequested) {
-        activeSend.stopRequested = true;
+      if (options.keepalive && !activeSend.cleanupStopSent) {
+        activeSend.cleanupStopSent = true;
         void requestQuickChatStop(activeSend, {
-          keepalive: options.keepalive,
+          keepalive: true,
         }).catch((cause) => {
           console.error("[Quick Chat] Failed to stop server-side response:", cause);
         });
@@ -606,7 +607,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         controller,
         runId,
         sessionId: resume ? sessionIdRef.current : null,
-        stopRequested: false,
+        normalStopRequested: false,
+        cleanupStopSent: false,
       };
       activeSendRef.current = activeSend;
       latestSendRunIdRef.current = runId;
@@ -705,6 +707,23 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
             m.id === assistantId
               ? { ...m, pending: false, lifecycle: "cancelled", error: null }
               : m,
+          ),
+        );
+        if (ownsActiveSend) setSendState("idle");
+        return "stopped";
+      }
+      if (result.cancelled) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  text: result.text,
+                  pending: false,
+                  lifecycle: "cancelled",
+                  error: null,
+                }
+              : message,
           ),
         );
         if (ownsActiveSend) setSendState("idle");
@@ -907,15 +926,15 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   const cancel = useCallback(() => {
     const activeSend = activeSendRef.current;
-    if (!activeSend || activeSend.stopRequested) return;
-    activeSend.stopRequested = true;
+    if (!activeSend || activeSend.normalStopRequested) return;
+    activeSend.normalStopRequested = true;
     setError(null);
 
     void requestQuickChatStop(activeSend)
       .then((outcome) => {
         if (activeSendRef.current !== activeSend) return;
         if (!outcome.stopped && !outcome.queued) {
-          activeSend.stopRequested = false;
+          activeSend.normalStopRequested = false;
           return;
         }
 
@@ -939,7 +958,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       .catch((cause) => {
         console.error("[Quick Chat] Failed to stop server-side response:", cause);
         if (activeSendRef.current !== activeSend) return;
-        activeSend.stopRequested = false;
+        activeSend.normalStopRequested = false;
         setError(
           cause instanceof Error
             ? cause.message

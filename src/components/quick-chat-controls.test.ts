@@ -147,18 +147,18 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const cancel = useCallback[\s\S]*activeSend\.stopRequested = true;[\s\S]*requestQuickChatStop\(activeSend\)[\s\S]*if \(activeSendRef\.current !== activeSend\) return;[\s\S]*!outcome\.stopped && !outcome\.queued[\s\S]*activeSendRef\.current = null;[\s\S]*activeSend\.controller\.abort\(\)/,
+  /const cancel = useCallback[\s\S]*activeSend\.normalStopRequested = true;[\s\S]*requestQuickChatStop\(activeSend\)[\s\S]*if \(activeSendRef\.current !== activeSend\) return;[\s\S]*!outcome\.stopped && !outcome\.queued[\s\S]*activeSendRef\.current = null;[\s\S]*activeSend\.controller\.abort\(\)/,
   "user Stop waits for accepted run-scoped acknowledgement before taking and aborting the active stream",
 );
 assert.match(
   quickHook,
-  /if \(!activeSend \|\| activeSend\.stopRequested\) return;[\s\S]*activeSend\.stopRequested = false;[\s\S]*catch\(\(cause\)[\s\S]*activeSend\.stopRequested = false;[\s\S]*setError\(/,
+  /if \(!activeSend \|\| activeSend\.normalStopRequested\) return;[\s\S]*activeSend\.normalStopRequested = false;[\s\S]*catch\(\(cause\)[\s\S]*activeSend\.normalStopRequested = false;[\s\S]*setError\(/,
   "duplicate Stop is guarded while no-op and failed requests permit retry",
 );
 assert.match(
   quickHook,
-  /const terminateActiveSend = useCallback[\s\S]*activeSendRef\.current = null;[\s\S]*if \(!activeSend\.stopRequested\)[\s\S]*requestQuickChatStop\(activeSend[\s\S]*activeSend\.controller\.abort\(\)/,
-  "cleanup atomically takes and immediately aborts while keeping Stop best-effort and once-only",
+  /const terminateActiveSend = useCallback[\s\S]*activeSendRef\.current = null;[\s\S]*if \(options\.keepalive && !activeSend\.cleanupStopSent\)[\s\S]*requestQuickChatStop\(activeSend[\s\S]*keepalive: true[\s\S]*activeSend\.controller\.abort\(\)/,
+  "cleanup atomically takes, sends one independent keepalive Stop, and immediately aborts",
 );
 assert.match(
   quickHook,

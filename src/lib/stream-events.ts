@@ -39,6 +39,7 @@ export type StreamEvent =
       sessionId?: string;
       usage?: TurnUsage;
       costUsd?: number;
+      cancelled?: boolean;
       responseMetadata?: ChatResponseMetadata;
     }
   | { kind: "error"; message: string; code?: string };
