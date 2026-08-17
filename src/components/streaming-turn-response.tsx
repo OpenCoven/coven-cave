@@ -237,6 +237,17 @@ export function StreamingTurnResponse({
         </div>
       ) : null}
 
+      {announceLifecycle && model.status === "complete" ? (
+        <span
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {`${familiarName} completed response`}
+        </span>
+      ) : null}
+
       <div className="streaming-turn-prose">
         {proseContent !== undefined ? (
           proseContent

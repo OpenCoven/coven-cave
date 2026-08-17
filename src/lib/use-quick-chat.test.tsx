@@ -27,6 +27,7 @@ type ControlledSend = {
   close: () => void;
   complete: (text: string) => void;
   cancel: (text: string) => void;
+  truncate: (text: string) => void;
 };
 
 function controlledSse(sessionId: string): {
@@ -34,6 +35,7 @@ function controlledSse(sessionId: string): {
   close: () => void;
   complete: (text: string) => void;
   cancel: (text: string) => void;
+  truncate: (text: string) => void;
 } {
   const encoder = new TextEncoder();
   let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
@@ -62,6 +64,10 @@ function controlledSse(sessionId: string): {
       enqueue({ kind: "done", durationMs: 25, isError: false, sessionId, cancelled: true });
       streamController?.close();
     },
+    truncate: (text) => {
+      enqueue({ kind: "assistant_chunk", text });
+      streamController?.close();
+    },
   };
 }
 
@@ -70,6 +76,7 @@ class QuickChatFetch {
   readonly stops: Record<string, unknown>[] = [];
   readonly stopKeepalives: boolean[] = [];
   failStop = false;
+  stopFailureError = "stop registry unavailable";
   delayStops = false;
   stopOutcome = { stopped: true, queued: false };
   private readonly stopReleases: Array<() => void> = [];
@@ -108,6 +115,7 @@ class QuickChatFetch {
         close: stream.close,
         complete: stream.complete,
         cancel: stream.cancel,
+        truncate: stream.truncate,
       });
       return stream.response;
     }
@@ -122,7 +130,13 @@ class QuickChatFetch {
         });
       }
       return failStop
-        ? Response.json({ ok: false, error: "stop registry unavailable" }, { status: 503 })
+        ? Response.json({
+            ok: false,
+            stopped: false,
+            queued: false,
+            retryable: true,
+            error: this.stopFailureError,
+          }, { status: 503 })
         : Response.json({ ok: true, ...stopOutcome });
     }
 
@@ -316,9 +330,10 @@ describe("useQuickChat send cancellation", () => {
     expect(state!.sendState).toBe("done");
   });
 
-  test("a stop API failure stays visible, keeps the stream attached, and permits retry", async () => {
+  test("a full Stop queue stays visible, keeps the stream attached, and permits retry", async () => {
     const requests = new QuickChatFetch();
     requests.failStop = true;
+    requests.stopFailureError = "The pending Stop queue is full. Retry shortly.";
     globalThis.fetch = requests.fetch as typeof fetch;
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     let state: UseQuickChat | null = null;
@@ -346,7 +361,7 @@ describe("useQuickChat send cancellation", () => {
     });
     expect(requests.sends[0]!.signal?.aborted).toBe(false);
     expect(state!.messages.at(-1)?.lifecycle).toBe("streaming");
-    await waitFor(() => state?.error?.includes("stop registry unavailable") === true);
+    await waitFor(() => state?.error?.includes("pending Stop queue is full") === true);
     expect(consoleError).toHaveBeenCalledWith(
       "[Quick Chat] Failed to stop server-side response:",
       expect.any(Error),
@@ -509,6 +524,50 @@ describe("useQuickChat send cancellation", () => {
       await Promise.resolve();
     });
     expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
+  });
+
+  test("truncated SSE fails with partial text and parks the queued prompt", async () => {
+    const requests = new QuickChatFetch();
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.setDraft("queued follow-up");
+    });
+    await act(async () => {
+      await state!.send();
+    });
+    expect(state!.queued).toHaveLength(1);
+
+    await act(async () => {
+      requests.sends[0]!.truncate("Useful partial answer");
+      await send;
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Useful partial answer",
+      pending: false,
+      lifecycle: "failed",
+      error: "the connection closed before the familiar finished responding",
+    });
+    expect(state!.sendState).toBe("idle");
     expect(state!.queued).toHaveLength(1);
     expect(requests.sends).toHaveLength(1);
   });

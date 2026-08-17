@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { POST } from "./route.ts";
 import {
+  MAX_PENDING_CHAT_STOPS,
   markChatRunTransportSettled,
   pendingChatStopCountForTests,
   registerChatRun,
+  requestOrQueueChatStop,
   resetChatStopRegistryForTests,
   unregisterChatRun,
 } from "@/lib/server/chat-stop-registry";
@@ -177,6 +179,42 @@ test("queues a runId Stop that arrives before registration", async () => {
   } finally {
     unregisterChatRun(handle);
   }
+});
+
+test("returns a retryable failure without evicting queued Stops at capacity", async () => {
+  for (let index = 0; index < MAX_PENDING_CHAT_STOPS; index += 1) {
+    assert.equal(requestOrQueueChatStop(`capacity-route-${index}`), "queued");
+  }
+
+  const full = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId: "capacity-route-overflow" }),
+  }));
+  assert.equal(full.status, 503);
+  assert.deepEqual(await readJson(full), {
+    ok: false,
+    stopped: false,
+    queued: false,
+    retryable: true,
+    error: "The pending Stop queue is full. Retry shortly.",
+  });
+  assert.equal(pendingChatStopCountForTests(), MAX_PENDING_CHAT_STOPS);
+
+  const first = registerChatRun(["capacity-route-0"], () => {}, {
+    runId: "capacity-route-0",
+  });
+  assert.equal(first.stopRequested, true, "the first acknowledged intent was not evicted");
+  unregisterChatRun(first);
+
+  const retry = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId: "capacity-route-overflow" }),
+  }));
+  assert.equal(retry.status, 200);
+  assert.deepEqual(await readJson(retry), { ok: true, stopped: false, queued: true });
+  assert.equal(pendingChatStopCountForTests(), MAX_PENDING_CHAT_STOPS);
 });
 
 test("does not queue a missing sessionId", async () => {

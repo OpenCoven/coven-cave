@@ -13,7 +13,7 @@ type ChatRunEntry = {
   kill: () => void;
 };
 
-export type ChatStopRequestOutcome = "stopped" | "queued" | "settled";
+export type ChatStopRequestOutcome = "stopped" | "queued" | "settled" | "full";
 
 type RegisterChatRunOptions = {
   /** The per-send client token. Session/liveness-only registrations omit it. */
@@ -34,7 +34,8 @@ export type ChatRunHandle = {
 
 const active = new Map<string, ChatRunEntry>();
 // Early runId Stops cannot safely expire: setup can outlive any wall-clock
-// guess. Bound them by capacity instead, with Map order as the LRU queue.
+// guess. Bound them by capacity and reject new intent rather than invalidating
+// a Stop the route already acknowledged as queued.
 const pendingStops = new Map<string, true>();
 const settledKeys = new Map<string, number>();
 export const MAX_PENDING_CHAT_STOPS = 256;
@@ -48,17 +49,11 @@ function pruneSettledKeys(now = registryNow()): void {
   }
 }
 
-function queuePendingStop(runId: string): void {
-  // Repeated cleanup requests coalesce while refreshing this intent's recency.
-  if (pendingStops.delete(runId)) {
-    pendingStops.set(runId, true);
-    return;
-  }
-  if (pendingStops.size >= MAX_PENDING_CHAT_STOPS) {
-    const oldestRunId = pendingStops.keys().next().value;
-    if (oldestRunId !== undefined) pendingStops.delete(oldestRunId);
-  }
+function queuePendingStop(runId: string): boolean {
+  if (pendingStops.has(runId)) return true;
+  if (pendingStops.size >= MAX_PENDING_CHAT_STOPS) return false;
   pendingStops.set(runId, true);
+  return true;
 }
 
 function rememberSettledKeys(keys: readonly string[], now: number): void {
@@ -176,7 +171,7 @@ export function requestChatStop(key: string): boolean {
 
 /**
  * Deliberate run-scoped Stop used by /api/chat/stop. If async send setup has
- * not registered the run yet, retain one capacity-bounded LRU intent for that
+ * not registered the run yet, retain one capacity-bounded intent for that
  * runId only until registration consumes it. A registered, transport-settled
  * run remains a late-stop no-op via an independently expiring tombstone.
  */
@@ -189,8 +184,7 @@ export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
   const now = registryNow();
   pruneSettledKeys(now);
   if (settledKeys.has(runId)) return "settled";
-  queuePendingStop(runId);
-  return "queued";
+  return queuePendingStop(runId) ? "queued" : "full";
 }
 
 /** Freeze cancellation semantics as soon as the transport reaches a

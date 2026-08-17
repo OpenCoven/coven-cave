@@ -1049,6 +1049,83 @@ describe("StreamingTurnResponse", () => {
     ).toHaveLength(4);
   });
 
+  it("announces only the latest completed Quick reply without making prose live", async () => {
+    const renderer = await render(
+      <QuickChatThread
+        familiar={{ id: "nova", display_name: "Nova", role: "generalist" }}
+        messages={[
+          {
+            id: "quick-history",
+            role: "assistant",
+            lifecycle: "complete",
+            text: "Earlier completed prose",
+          },
+          {
+            id: "quick-latest",
+            role: "assistant",
+            lifecycle: "complete",
+            text: "Latest completed prose",
+          },
+        ]}
+      />,
+    );
+    await flushMarkdown();
+
+    const liveRegions = renderer.root.findAll(
+      (node) =>
+        node.props.role === "status" ||
+        node.props.role === "alert" ||
+        node.props["aria-live"] !== undefined,
+    );
+    expect(liveRegions).toHaveLength(1);
+    expect(textContent(liveRegions[0])).toBe("Nova completed response");
+    expect(liveRegions[0].props["aria-live"]).toBe("polite");
+    expect(textContent(renderer.root).match(/Nova completed response/g)).toHaveLength(1);
+    expect(
+      renderer.root.findAll(
+        (node) =>
+          node.props.className === "streaming-turn-prose" &&
+          (node.props.role !== undefined || node.props["aria-live"] !== undefined),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("replaces the live phase status with one completion announcement", async () => {
+    const renderer = await render(response({
+      familiarName: "Nova",
+      announceLifecycle: true,
+      model: model({ status: "answering" }),
+    }));
+    expect(
+      renderer.root.findAll((node) => node.props.role === "status"),
+    ).toHaveLength(1);
+    expect(textContent(renderer.root)).not.toContain("completed response");
+
+    await act(async () => {
+      renderer.update(response({
+        familiarName: "Nova",
+        announceLifecycle: true,
+        model: model({
+          status: "complete",
+          activeBlock: null,
+          currentActivity: null,
+        }),
+      }));
+    });
+
+    const statuses = renderer.root.findAll((node) => node.props.role === "status");
+    expect(statuses).toHaveLength(1);
+    expect(textContent(statuses[0])).toBe("Nova completed response");
+    expect(textContent(renderer.root).match(/Nova completed response/g)).toHaveLength(1);
+    expect(
+      renderer.root.findAll(
+        (node) =>
+          node.props.className === "streaming-turn-prose" &&
+          node.props["aria-live"] !== undefined,
+      ),
+    ).toHaveLength(0);
+  });
+
   it("shows No response and Retry when routine metadata accompanies an otherwise empty Quick reply", async () => {
     const renderer = await render(
       <QuickChatThread

@@ -18,9 +18,11 @@ export const runtime = "nodejs";
  * the client recovers the full reply on resync.
  *
  * Body: `{ runId?, sessionId? }` — runId is the authoritative per-send client
- * token. A missing runId is queued briefly while async send setup registers;
+ * token. An unknown runId is queued while async send setup registers;
  * its response is `{ stopped: false, queued: true }`, and sessionId is not
- * consulted. A sessionId-only request retains the legacy live-key behavior.
+ * consulted. If that bounded queue is full, the route returns a retryable 503
+ * without dropping any previously acknowledged intent. A sessionId-only
+ * request retains the legacy live-key behavior.
  * `{ stopped: false, queued: false }` means the keyed run was already settled
  * or no live session-keyed run exists (not an error).
  */
@@ -44,6 +46,15 @@ export async function POST(req: Request) {
 
   if (runId) {
     const outcome = requestOrQueueChatStop(runId);
+    if (outcome === "full") {
+      return NextResponse.json({
+        ok: false,
+        stopped: false,
+        queued: false,
+        retryable: true,
+        error: "The pending Stop queue is full. Retry shortly.",
+      }, { status: 503 });
+    }
     return NextResponse.json({
       ok: true,
       stopped: outcome === "stopped",

@@ -163,7 +163,7 @@ describe("streamFamiliarText", () => {
     assert.equal(published?.requestedControls?.reasoning, "high");
   });
 
-  it("surfaces an error frame", async () => {
+  it("preserves an explicit error frame when EOF arrives without done", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" }),
       frame({ kind: "error", message: "boom" }),
@@ -172,6 +172,20 @@ describe("streamFamiliarText", () => {
     const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
     assert.equal(text, "Useful text.");
     assert.equal(error, "boom");
+  });
+
+  it("treats chunk-only EOF as a transport failure and preserves partial text", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Useful partial answer" }),
+    ])) as typeof fetch;
+
+    const { text, error, cancelled } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+    });
+    assert.equal(text, "Useful partial answer");
+    assert.equal(error, "the connection closed before the familiar finished responding");
+    assert.equal(cancelled, false);
   });
 
   it("removes a partial attention marker after a failed done frame", async () => {

@@ -8472,6 +8472,8 @@ const TranscriptRows = memo(function TranscriptRows({
     : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
       ? groupedTurns
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
+  const latestAssistantId =
+    allTurns.findLast((turn) => turn.role === "assistant")?.id ?? null;
   const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
@@ -8510,6 +8512,7 @@ const TranscriptRows = memo(function TranscriptRows({
           key={t.id}
           turn={t}
           familiar={familiar}
+          announceLifecycle={t.id === latestAssistantId}
           showTimestamp={showTimestamp}
           found={foundTurnId === t.id}
           onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8576,6 +8579,7 @@ const TranscriptRows = memo(function TranscriptRows({
               key={t.id}
               turn={t}
               familiar={familiar}
+              announceLifecycle={t.id === latestAssistantId}
               showTimestamp={showTimestamp}
               found={foundTurnId === t.id}
               onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8630,6 +8634,7 @@ const TranscriptRows = memo(function TranscriptRows({
 function TurnRowImpl({
   turn,
   familiar,
+  announceLifecycle,
   showTimestamp = true,
   found = false,
   onEdit,
@@ -8652,6 +8657,7 @@ function TurnRowImpl({
   /** Stable latest-ref for stream controls; avoids a fresh Stop callback prop. */
   handlersRef: React.RefObject<TranscriptHandlers>;
   familiar: Familiar;
+  announceLifecycle: boolean;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
    *  applies the temporary cave-turn-found highlight flash. */
@@ -9187,6 +9193,7 @@ function TurnRowImpl({
                       familiarName={familiar.display_name}
                       model={streamingModel}
                       density="full"
+                      announceLifecycle={announceLifecycle}
                       onStop={pending ? () => handlersRef.current.cancelSend?.() : undefined}
                       canContinue={false}
                       onRetry={turn.error ? onRegenerate : undefined}
@@ -9835,6 +9842,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
   return (
     prev.turn === next.turn &&
     prev.familiar === next.familiar &&
+    prev.announceLifecycle === next.announceLifecycle &&
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&

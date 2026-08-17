@@ -178,36 +178,50 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   unregisterChatRun(slowSetup);
 }
 
-// Capacity remains strict, duplicate requests refresh LRU recency, and overflow
-// evicts the deterministic oldest intent rather than expiring by time.
+// Capacity remains strict without revoking any intent already acknowledged as
+// queued. A duplicate remains idempotently accepted, while a new runId can be
+// retried after registration consumes a slot.
 {
   resetChatStopRegistryForTests();
   for (let index = 0; index < MAX_PENDING_CHAT_STOPS; index += 1) {
-    requestOrQueueChatStop(`bounded-${index}`);
+    assert.equal(
+      requestOrQueueChatStop(`bounded-${index}`),
+      "queued",
+      `intent ${index} is accepted`,
+    );
   }
-  assert.equal(requestOrQueueChatStop("bounded-0"), "queued", "a duplicate refreshes the oldest intent");
-  assert.equal(requestOrQueueChatStop("bounded-overflow"), "queued");
+  assert.equal(requestOrQueueChatStop("bounded-0"), "queued", "a duplicate remains accepted");
+  assert.equal(requestOrQueueChatStop("bounded-overflow"), "full");
   assert.equal(
     pendingChatStopCountForTests(),
     MAX_PENDING_CHAT_STOPS,
-    "pending intent storage remains strictly capacity-bounded",
+    "rejecting overflow neither inserts nor evicts",
   );
 
-  let evictedKills = 0;
-  const evicted = registerChatRun(["bounded-1"], () => {
-    evictedKills += 1;
-  }, { runId: "bounded-1" });
-  assert.equal(evicted.stopRequested, false, "overflow evicts the deterministic least-recent intent");
-  assert.equal(evictedKills, 0);
-  unregisterChatRun(evicted);
-
-  let refreshedKills = 0;
-  const refreshed = registerChatRun(["bounded-0"], () => {
-    refreshedKills += 1;
-  }, { runId: "bounded-0" });
-  assert.equal(refreshed.stopRequested, true, "the refreshed intent survives the same overflow");
-  assert.equal(refreshedKills, 1);
-  unregisterChatRun(refreshed);
+  const consumed = new Set<string>();
+  const consume = (runId: string) => {
+    const handle = registerChatRun([runId], () => {
+      consumed.add(runId);
+    }, { runId });
+    assert.equal(handle.stopRequested, true, `${runId} retains its accepted Stop`);
+    unregisterChatRun(handle);
+  };
+  consume("bounded-0");
+  assert.equal(
+    requestOrQueueChatStop("bounded-overflow"),
+    "queued",
+    "the rejected intent can retry after a slot is consumed",
+  );
+  for (let index = 1; index < MAX_PENDING_CHAT_STOPS; index += 1) {
+    consume(`bounded-${index}`);
+  }
+  assert.equal(
+    [...consumed].filter((runId) => runId.startsWith("bounded-")).length,
+    MAX_PENDING_CHAT_STOPS,
+    "all first 256 acknowledged intents remain consumable",
+  );
+  consume("bounded-overflow");
+  assert.equal(pendingChatStopCountForTests(), 0, "every accepted intent was consumed");
 
   resetChatStopRegistryForTests();
   assert.equal(pendingChatStopCountForTests(), 0, "test reset clears bounded pending intents");
