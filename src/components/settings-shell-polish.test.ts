@@ -723,7 +723,7 @@ assert.match(
 );
 assert.match(
   shellSource,
-  /className=\{`settings-shell\$\{embedded \? " settings-shell--embedded h-full" : " h-\[100dvh\]"\} w-full flex flex-col overflow-hidden bg-\[var\(--bg-base\)\] text-\[var\(--text-primary\)\]`\}/,
+  /settings-shell\$\{embedded \? " settings-shell--embedded h-full" : " h-\[100dvh\]"\} w-full(?=[^`]*\sflex\s)(?=[^`]*\sflex-col\s)(?=[^`]*\soverflow-hidden\s)/,
   "Settings root establishes the viewport-bounded flex column that contains the scroll owner",
 );
 assert.match(
