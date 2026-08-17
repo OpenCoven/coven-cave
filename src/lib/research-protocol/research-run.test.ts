@@ -205,7 +205,7 @@ test("context parser validates ids and digest, preserves additive fields, and ig
       "$.context",
     ),
   );
-  assert.deepEqual((context as Record<string, unknown>).futureExtension, { preserve: true });
+  assert.deepEqual(context.futureExtension, { preserve: true });
 
   expectError(
     parseResearchContextBindingV1(
