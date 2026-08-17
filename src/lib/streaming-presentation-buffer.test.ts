@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { performance } from "node:perf_hooks";
 import test from "node:test";
 
 import {
@@ -224,6 +225,56 @@ test("a boundary earlier in newly appended multiline content queues a frame", ()
   assert.equal(queues.counts().frames, 1);
   queues.fireFrame();
   assert.deepEqual(flushed, [source]);
+});
+
+test("replacement and shrinking snapshots queue a conservative frame with the newest source", () => {
+  const scenarios = [
+    { label: "same-length replacement", initial: "Alpha tail", source: "Omega tail" },
+    { label: "shrinking replacement", initial: "Alpha tail", source: "short" },
+    { label: "longer replacement", initial: "Alpha tail", source: "Omega tail grows" },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    const queues = makeQueues();
+    const flushed: string[] = [];
+    const buffer = createStreamingPresentationBuffer({
+      initialSource: scenario.initial,
+      onFlush: (source) => flushed.push(source),
+      scheduleFrame: queues.scheduleFrame,
+      cancelFrame: queues.cancelFrame,
+      scheduleTimer: queues.scheduleTimer,
+      cancelTimer: queues.cancelTimer,
+    });
+
+    buffer.update(scenario.source, false);
+    assert.equal(queues.counts().frames, 1, scenario.label);
+    queues.fireFrame();
+    assert.deepEqual(flushed, [scenario.source], scenario.label);
+  }
+});
+
+test("long accumulated streams process append deltas within a stable budget", () => {
+  const queues = makeQueues();
+  const buffer = createStreamingPresentationBuffer({
+    initialSource: "seed",
+    onFlush: () => {},
+    scheduleFrame: queues.scheduleFrame,
+    cancelFrame: queues.cancelFrame,
+    scheduleTimer: queues.scheduleTimer,
+    cancelTimer: queues.cancelTimer,
+  });
+  let source = "seed";
+
+  const startedAt = performance.now();
+  for (let index = 0; index < 5_000; index += 1) {
+    source += index % 10 === 0 ? "word. tail" : "abcdefghij";
+    buffer.update(source, false);
+  }
+  const elapsedMs = performance.now() - startedAt;
+  buffer.dispose();
+
+  assert.equal(source.length, 50_004);
+  assert.ok(elapsedMs < 2_000, `50k characters across 5k snapshots took ${elapsedMs.toFixed(1)}ms`);
 });
 
 test("settled=true cancels pending callbacks and synchronously flushes complete source", () => {

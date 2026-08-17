@@ -8,6 +8,10 @@ export type StreamingPresentationBuffer = {
 const DEFAULT_IDLE_MS = 90;
 const DEFAULT_MAX_WAIT_MS = 180;
 const FRAME_FALLBACK_MS = 16;
+const APPEND_SUFFIX_CHECK_LENGTH = 256;
+const BOUNDARY_LOOKBEHIND_LENGTH = 256;
+const APPEND_BOUNDARY_PATTERN =
+  /(?:^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]|(?:`{3}|~{3})))|(\n)|([.!?…])(?:[ \t\r]|(?=\n)|$)/gm;
 
 function defaultScheduleFrame(callback: () => void): SchedulerHandle {
   if (typeof globalThis.requestAnimationFrame === "function") {
@@ -32,44 +36,55 @@ function defaultCancelTimer(handle: SchedulerHandle): void {
   clearTimeout(handle as Parameters<typeof clearTimeout>[0]);
 }
 
-function longestCommonPrefixLength(left: string, right: string): number {
-  const limit = Math.min(left.length, right.length);
-  let index = 0;
-  while (index < limit && left[index] === right[index]) index += 1;
-  return index;
-}
+function hasMatchingAppendSuffix(previousSource: string, source: string): boolean {
+  if (source.length <= previousSource.length) return false;
 
-function hasCompletionAfter(source: string, unchangedPrefixLength: number, pattern: RegExp): boolean {
-  for (const match of source.matchAll(pattern)) {
-    const completion = (match.index ?? 0) + match[0].length;
-    if (completion > unchangedPrefixLength) return true;
+  const checkLength = Math.min(previousSource.length, APPEND_SUFFIX_CHECK_LENGTH);
+  const checkStart = previousSource.length - checkLength;
+  for (let index = checkStart; index < previousSource.length; index += 1) {
+    if (previousSource.charCodeAt(index) !== source.charCodeAt(index)) return false;
   }
-  return false;
+  return true;
 }
 
-function hasSentenceCompletionAfter(source: string, unchangedPrefixLength: number): boolean {
-  for (const match of source.matchAll(/[.!?…](?:[ \t\r\n]|$)/g)) {
-    const punctuationIndex = match.index ?? 0;
-    const lineStart = source.lastIndexOf("\n", punctuationIndex - 1) + 1;
-    const isOrderedListPeriod =
-      source[punctuationIndex] === "." && /^[ \t]*\d+$/.test(source.slice(lineStart, punctuationIndex));
-    if (isOrderedListPeriod) continue;
+function isOrderedListPeriod(source: string, punctuationIndex: number, scanStart: number): boolean {
+  let cursor = punctuationIndex - 1;
+  if (cursor < scanStart || source.charCodeAt(cursor) < 48 || source.charCodeAt(cursor) > 57) {
+    return false;
+  }
 
-    const completion = punctuationIndex + match[0].length;
-    if (completion > unchangedPrefixLength) return true;
+  while (cursor >= scanStart) {
+    const code = source.charCodeAt(cursor);
+    if (code < 48 || code > 57) break;
+    cursor -= 1;
+  }
+  while (cursor >= scanStart) {
+    const code = source.charCodeAt(cursor);
+    if (code !== 32 && code !== 9) break;
+    cursor -= 1;
+  }
+  return cursor < 0 || source.charCodeAt(cursor) === 10;
+}
+
+function hasAppendBoundary(source: string, previousLength: number): boolean {
+  const scanStart = Math.max(0, previousLength - BOUNDARY_LOOKBEHIND_LENGTH);
+  APPEND_BOUNDARY_PATTERN.lastIndex = scanStart;
+
+  let match: RegExpExecArray | null;
+  while ((match = APPEND_BOUNDARY_PATTERN.exec(source)) !== null) {
+    const completion = match.index + match[0].length;
+    if (completion <= previousLength) continue;
+
+    const punctuation = match[2];
+    if (punctuation === "." && isOrderedListPeriod(source, match.index, scanStart)) continue;
+    return true;
   }
   return false;
 }
 
 function hasNaturalBoundary(previousSource: string, source: string): boolean {
-  const unchangedPrefixLength = longestCommonPrefixLength(previousSource, source);
-
-  if (source.indexOf("\n", unchangedPrefixLength) !== -1) return true;
-  if (hasSentenceCompletionAfter(source, unchangedPrefixLength)) return true;
-  if (hasCompletionAfter(source, unchangedPrefixLength, /(?:^|\n)[ \t]*(?:[-*+]|\d+[.)])[ \t]/g)) {
-    return true;
-  }
-  return hasCompletionAfter(source, unchangedPrefixLength, /(?:^|\n)[ \t]*(?:`{3}|~{3})/g);
+  if (!hasMatchingAppendSuffix(previousSource, source)) return true;
+  return hasAppendBoundary(source, previousSource.length);
 }
 
 export function createStreamingPresentationBuffer(options: {
