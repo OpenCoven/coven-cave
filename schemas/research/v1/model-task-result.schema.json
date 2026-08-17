@@ -28,7 +28,7 @@
       "additionalProperties": true
     },
     "outputDigest": { "$ref": "#/$defs/sha256" },
-    "executorDeviceId": { "type": "string" },
+    "executorDeviceId": { "$ref": "#/$defs/sha256" },
     "modelReceipt": { "$ref": "#/$defs/modelReceipt" },
     "completedAt": { "$ref": "#/$defs/utcTimestamp" },
     "signature": { "$ref": "#/$defs/nonEmptyString" }
