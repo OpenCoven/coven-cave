@@ -196,6 +196,12 @@
     }
   ],
   "$defs": {
+    "sensitivePropertyName": {
+      "type": "string",
+      "not": {
+        "pattern": "^(?:[Ee][Xx][Cc][Ee][Rr][Pp][Tt]|[Tt][Ee][Xx][Tt]|[Cc][Oo][Nn][Tt][Ee][Nn][Tt]|[Bb][Ll][Oo][Bb]|[Ff][Ii][Ll][Ee][Nn][Aa][Mm][Ee]|[Ll][Oo][Cc][Aa][Ll][Pp][Aa][Tt][Hh]|[Ff][Ii][Ll][Ee][Pp][Aa][Tt][Hh]|[Pp][Aa][Tt][Hh]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll][Ss]?|[Ss][Ee][Cc][Rr][Ee][Tt]|[Oo][Bb][Jj][Ee][Cc][Tt][Kk][Ee][Yy]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee][Kk][Ee][Yy]|[Bb][Uu][Cc][Kk][Ee][Tt][Kk][Ee][Yy]|[Dd][Ee][Ll][Ee][Tt][Ee][Dd][Cc][Oo][Nn][Tt][Ee][Nn][Tt])$"
+      }
+    },
     "sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
@@ -283,6 +289,7 @@
     "contextPackSource": {
       "type": "object",
       "additionalProperties": true,
+      "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
       "required": ["kind", "id", "digest", "availability"],
       "properties": {
         "kind": { "const": "context-pack" },
@@ -317,6 +324,7 @@
     "artifact": {
       "type": "object",
       "additionalProperties": true,
+      "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
       "required": [
         "id",
         "kind",
@@ -491,6 +499,7 @@
     "deletion": {
       "type": "object",
       "additionalProperties": true,
+      "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
       "required": ["status"],
       "properties": {
         "status": {

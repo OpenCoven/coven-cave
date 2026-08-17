@@ -1,25 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Value } from "typebox/value";
+import type { TSchema } from "typebox";
+import { Check, Value } from "typebox/value";
 
 import researchRunSchema from "../../../schemas/research/v1/research-run.schema.json" with { type: "json" };
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
+import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
+import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
+import assemblingRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
+import validCloudRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-cloud.json" with { type: "json" };
 import validRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-local.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
+import { parseContextPackV1, type ContextPackV1 } from "./context-pack.ts";
 import {
   parseResearchExecutionProfileV1,
   parseResearchPrivacyPolicyV1,
   parseResearchRunV1,
   parseRunEventV1,
+  validateResearchRunContextPackV1,
+  validateRunManifestDeletionEventV1,
   validateRunEventSequence,
+  type ResearchRunStatusV1,
   type RunEventV1,
 } from "./research-run.ts";
 import { parseResearchContextBindingV1 } from "./common.ts";
+import { parseRunManifestV1 } from "./run-manifest.ts";
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
@@ -41,6 +51,74 @@ function expectError(
     assert.equal(result.error.code, code);
   }
   return result.error;
+}
+
+const researchSchemaContext: Record<string, TSchema> = {
+  [runManifestSchema.$id]: runManifestSchema as TSchema,
+};
+
+function checkResearchRunSchema(value: unknown): boolean {
+  return Check(researchSchemaContext, researchRunSchema as TSchema, value);
+}
+
+function linkedManifest(
+  manifest: Record<string, unknown> & { sources: Array<Record<string, unknown>> },
+): Record<string, unknown> {
+  const linked: Record<string, unknown> = {
+    ...manifest,
+    runId: validResearchRun.id,
+    context: validResearchRun.context,
+    sources: manifest.sources.map((source) =>
+      source.kind === "context-pack"
+        ? {
+            ...source,
+            id: validResearchRun.context.contextPackId,
+            digest: validResearchRun.context.contextPackDigest,
+          }
+        : source,
+    ),
+  };
+  linked.digest = digestProtocolObject(linked);
+  return linked;
+}
+
+function runForStatus(
+  status: ResearchRunStatusV1,
+  artifactManifest?: Record<string, unknown>,
+): Record<string, unknown> {
+  const run: Record<string, unknown> = {
+    ...validResearchRun,
+    status,
+    ...(artifactManifest ? { artifactManifest } : {}),
+  };
+  delete run.waitingReason;
+  delete run.waitingForPhase;
+  delete run.failure;
+  if (status === "waiting_for_executor") {
+    run.waitingReason = "executor";
+    run.waitingForPhase = "scope";
+  }
+  if (status === "failed") {
+    run.failure = { code: "runtime_error", message: "failed", retryable: false };
+  }
+  return run;
+}
+
+function parsedEvent(
+  sequence: number,
+  type: RunEventV1["type"],
+  data: Record<string, unknown>,
+  runId = validResearchRun.id,
+): RunEventV1 {
+  return expectOk(
+    parseRunEventV1({
+      ...validRunEvent,
+      runId,
+      sequence,
+      type,
+      data,
+    }),
+  );
 }
 
 test("waiting_for_executor without waitingForPhase rejects", () => {
@@ -102,22 +180,44 @@ test("waitingForPhase is absent for every non waiting_for_executor status", () =
   }
 });
 
-test("waitingReason values only match their allowed statuses", () => {
-  const checkpointRun = { ...validResearchRun, status: "awaiting_checkpoint" as const, waitingReason: "checkpoint" as const };
-  delete (checkpointRun as Record<string, unknown>).waitingForPhase;
-  assert.ok(Value.Check(researchRunSchema, checkpointRun));
-  assert.equal(expectOk(parseResearchRunV1(checkpointRun)).waitingReason, "checkpoint");
+test("checkpoint pauses preserve active phases and reject inactive phases", () => {
+  for (const status of [
+    "scoping",
+    "gathering_public_sources",
+    "challenging",
+    "synthesizing",
+    "controlling",
+    "awaiting_checkpoint",
+  ] as const) {
+    const checkpointRun = runForStatus(status);
+    checkpointRun.waitingReason = "checkpoint";
+    assert.ok(Value.Check(researchRunSchema, checkpointRun), status);
+    assert.equal(expectOk(parseResearchRunV1(checkpointRun)).waitingReason, "checkpoint");
+  }
 
+  for (const status of [
+    "queued",
+    "waiting_for_executor",
+    "publishing",
+    "completed",
+    "failed",
+    "cancelled",
+    "expired",
+  ] as const) {
+    const checkpointRun = runForStatus(status);
+    checkpointRun.waitingReason = "checkpoint";
+    assert.equal(Value.Check(researchRunSchema, checkpointRun), false, status);
+    expectError(parseResearchRunV1(checkpointRun), "$.waitingReason", "semantic_conflict");
+  }
+});
+
+test("executor and provider attention waiting reasons remain exclusive to waiting_for_executor", () => {
   for (const waitingReason of ["executor", "provider-attention"] as const) {
     const run = { ...validResearchRun, status: "awaiting_checkpoint" as const, waitingReason };
     delete (run as Record<string, unknown>).waitingForPhase;
     assert.equal(Value.Check(researchRunSchema, run), false);
     expectError(parseResearchRunV1(run), "$.waitingReason", "semantic_conflict");
   }
-
-  const badCheckpoint = { ...validResearchRun, waitingReason: "checkpoint" as const };
-  assert.equal(Value.Check(researchRunSchema, badCheckpoint), false);
-  expectError(parseResearchRunV1(badCheckpoint), "$.waitingReason", "semantic_conflict");
 });
 
 test("failure is required exactly for failed and absent otherwise", () => {
@@ -130,8 +230,9 @@ test("failure is required exactly for failed and absent otherwise", () => {
   const validFailed = {
     ...failedWithoutFailure,
     failure: { code: "runtime_error", message: "try again", retryable: true },
+    artifactManifest: linkedManifest(validRunManifest),
   };
-  assert.ok(Value.Check(researchRunSchema, validFailed));
+  assert.ok(checkResearchRunSchema(validFailed));
   assert.equal(expectOk(parseResearchRunV1(validFailed)).failure?.retryable, true);
 
   const nonFailedWithFailure = {
@@ -304,6 +405,173 @@ test("context parser validates ids and digest, preserves additive fields, and re
   );
 });
 
+test("run and Context Pack composition requires matching presence and binding", () => {
+  const pack = expectOk(parseContextPackV1(validContextPack));
+  const boundRun = expectOk(
+    parseResearchRunV1({
+      ...validResearchRun,
+      context: {
+        ...validResearchRun.context,
+        contextPackId: pack.id,
+        contextPackDigest: pack.digest,
+      },
+    }),
+  );
+  assert.equal(expectOk(validateResearchRunContextPackV1(boundRun, pack)), boundRun);
+
+  const contextlessValue: Record<string, unknown> = { ...validResearchRun };
+  delete contextlessValue.context;
+  const contextlessRun = expectOk(parseResearchRunV1(contextlessValue));
+  assert.equal(expectOk(validateResearchRunContextPackV1(contextlessRun)), contextlessRun);
+  expectError(
+    validateResearchRunContextPackV1(contextlessRun, pack),
+    "$.context",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(boundRun),
+    "$.context",
+    "semantic_conflict",
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(
+      {
+        ...boundRun,
+        context: { ...boundRun.context!, contextPackId: "ctx_other" },
+      },
+      pack,
+    ),
+    "$.context.contextPackId",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(
+      {
+        ...boundRun,
+        context: {
+          ...boundRun.context!,
+          contextPackDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        },
+      },
+      pack,
+    ),
+    "$.context.contextPackDigest",
+    "semantic_conflict",
+  );
+});
+
+test("run and Context Pack composition requires research-run purpose and policy", () => {
+  const pack = expectOk(parseContextPackV1(validContextPack));
+  const boundRun = expectOk(
+    parseResearchRunV1({
+      ...validResearchRun,
+      context: {
+        ...validResearchRun.context,
+        contextPackId: pack.id,
+        contextPackDigest: pack.digest,
+      },
+    }),
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(
+      boundRun,
+      { ...pack, purpose: "topic-discovery" },
+    ),
+    "$.contextPack.purpose",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(
+      boundRun,
+      {
+        ...pack,
+        policy: {
+          ...pack.policy,
+          allowedPurposes: ["topic-discovery"],
+        },
+      } as ContextPackV1,
+    ),
+    "$.contextPack.policy.allowedPurposes",
+    "semantic_conflict",
+  );
+});
+
+test("run privacy cannot exceed Context Pack consent", () => {
+  const pack = expectOk(parseContextPackV1(validContextPack));
+  const boundRun = expectOk(
+    parseResearchRunV1({
+      ...validResearchRun,
+      context: {
+        ...validResearchRun.context,
+        contextPackId: pack.id,
+        contextPackDigest: pack.digest,
+      },
+    }),
+  );
+
+  for (const [runKey, consentKey] of [
+    ["remoteQueries", "allowRemoteQueries"],
+    ["remoteContent", "allowRemoteContent"],
+    ["artifactContentSync", "artifactContentSync"],
+  ] as const) {
+    expectError(
+      validateResearchRunContextPackV1(
+        {
+          ...boundRun,
+          privacy: { ...boundRun.privacy, [runKey]: true },
+        },
+        {
+          ...pack,
+          consent: { ...pack.consent, [consentKey]: false },
+        },
+      ),
+      `$.privacy.${runKey}`,
+      "semantic_conflict",
+    );
+  }
+
+  expectError(
+    validateResearchRunContextPackV1(
+      {
+        ...boundRun,
+        privacy: { ...boundRun.privacy, retention: "project" },
+      },
+      pack,
+    ),
+    "$.privacy.retention",
+    "semantic_conflict",
+  );
+
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(
+        {
+          ...boundRun,
+          privacy: {
+            ...boundRun.privacy,
+            remoteQueries: true,
+            remoteContent: true,
+            artifactContentSync: true,
+            retention: "run-only",
+          },
+        },
+        {
+          ...pack,
+          consent: {
+            ...pack.consent,
+            allowRemoteQueries: true,
+            allowRemoteContent: true,
+            artifactContentSync: true,
+          },
+        },
+      ),
+    ).privacy.retention,
+    "run-only",
+  );
+});
+
 test("events parse and validateRunEventSequence enforces contiguous same-run sequences", () => {
   assert.ok(Value.Check(runEventSchema, validRunEvent));
   const parsedEvent = expectOk(parseRunEventV1(validRunEvent));
@@ -374,86 +642,341 @@ test("run event rejects custom-prototype nested data", () => {
   );
 });
 
-test("research runs parse full run manifests and reject invalid embedded manifests", () => {
-  const linkedManifest = {
-    ...validRunManifest,
-    runId: validResearchRun.id,
-    context: validResearchRun.context,
-    sources: [
-      {
-        ...validRunManifest.sources[0],
-        id: validResearchRun.context.contextPackId,
-        digest: validResearchRun.context.contextPackDigest,
-      },
-    ],
-  };
-  linkedManifest.digest = digestProtocolObject(linkedManifest);
-  const valid = expectOk(
+test("embedded manifests bind run privacy retention and cloud-content consent", () => {
+  const finalManifest = linkedManifest(validRunManifest);
+
+  expectError(
     parseResearchRunV1({
-      ...validResearchRun,
-      artifactManifest: linkedManifest,
+      ...runForStatus("completed", finalManifest),
+      privacy: { ...validResearchRun.privacy, retention: "run-only" },
+    }),
+    "$.artifactManifest.retention.policy",
+    "semantic_conflict",
+  );
+
+  const excessiveEffectivePolicy = linkedManifest({
+    ...validRunManifest,
+    revision: 2,
+    previousDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    retention: {
+      ...validRunManifest.retention,
+      policy: "run-only",
+      effectivePolicy: "7-days",
+    },
+  });
+  expectError(
+    parseResearchRunV1({
+      ...runForStatus("completed", excessiveEffectivePolicy),
+      privacy: { ...validResearchRun.privacy, retention: "run-only" },
+    }),
+    "$.artifactManifest.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+
+  const cloudManifest = linkedManifest(validCloudRunManifest);
+  expectError(
+    parseResearchRunV1({
+      ...runForStatus("completed", cloudManifest),
+      privacy: {
+        ...validResearchRun.privacy,
+        retention: "project",
+        artifactContentSync: false,
+      },
+    }),
+    "$.artifactManifest.artifacts[0].placement",
+    "semantic_conflict",
+  );
+  assert.equal(
+    expectOk(
+      parseResearchRunV1({
+        ...runForStatus("completed", cloudManifest),
+        privacy: {
+          ...validResearchRun.privacy,
+          retention: "project",
+          artifactContentSync: true,
+        },
+      }),
+    ).artifactManifest?.artifacts[0].placement,
+    "cloud-content",
+  );
+
+  const cloudMetadataManifest = linkedManifest({
+    ...validCloudRunManifest,
+    artifacts: validCloudRunManifest.artifacts.map((artifact) => ({
+      ...artifact,
+      placement: "cloud-metadata",
+      contentSync: "not-requested",
+    })),
+  });
+  const cloudMetadataRun = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", cloudMetadataManifest),
+      privacy: {
+        ...validResearchRun.privacy,
+        retention: "project",
+        artifactContentSync: false,
+      },
     }),
   );
-  assert.equal(valid.artifactManifest?.id, linkedManifest.id);
+  assert.equal(cloudMetadataRun.artifactManifest?.artifacts[0].placement, "cloud-metadata");
+
+  const shortenedEffectivePolicy = linkedManifest({
+    ...validRunManifest,
+    revision: 2,
+    previousDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    retention: {
+      ...validRunManifest.retention,
+      effectivePolicy: "run-only",
+    },
+  });
+  assert.equal(
+    expectOk(
+      parseResearchRunV1(runForStatus("completed", shortenedEffectivePolicy)),
+    ).artifactManifest?.retention.effectivePolicy,
+    "run-only",
+  );
+});
+
+test("terminal runs require final manifests and nonterminal runs permit only assembling manifests", () => {
+  const finalManifest = linkedManifest(validRunManifest);
+  const assemblingManifest = linkedManifest(assemblingRunManifest);
+  const terminalStatuses = ["completed", "failed", "cancelled", "expired"] as const;
+  const nonterminalStatuses = [
+    "queued",
+    "scoping",
+    "gathering_public_sources",
+    "waiting_for_executor",
+    "challenging",
+    "synthesizing",
+    "controlling",
+    "awaiting_checkpoint",
+    "publishing",
+  ] as const;
+
+  for (const status of terminalStatuses) {
+    expectError(
+      parseResearchRunV1(runForStatus(status)),
+      "$.artifactManifest",
+      "missing_field",
+    );
+    expectError(
+      parseResearchRunV1(runForStatus(status, assemblingManifest)),
+      "$.artifactManifest.state",
+      "semantic_conflict",
+    );
+    assert.equal(
+      expectOk(parseResearchRunV1(runForStatus(status, finalManifest))).artifactManifest?.state,
+      "final",
+    );
+  }
+
+  for (const status of nonterminalStatuses) {
+    expectError(
+      parseResearchRunV1(runForStatus(status, finalManifest)),
+      "$.artifactManifest.state",
+      "semantic_conflict",
+    );
+    assert.equal(
+      expectOk(parseResearchRunV1(runForStatus(status, assemblingManifest))).artifactManifest?.state,
+      "assembling",
+    );
+  }
+
+  assert.deepEqual(
+    researchRunSchema.properties.artifactManifest,
+    { $ref: "opencoven.run-manifest/v1" },
+  );
+});
+
+test("research runs parse full run manifests and reject invalid embedded manifests", () => {
+  const manifest = linkedManifest(validRunManifest);
+  const valid = expectOk(
+    parseResearchRunV1(runForStatus("completed", manifest)),
+  );
+  assert.equal(valid.artifactManifest?.id, manifest.id);
   assert.equal((valid.artifactManifest?.futureExtension as { preserve: boolean }).preserve, true);
 
-  const invalidManifest = {
-    ...linkedManifest,
+  const invalidManifest: Record<string, unknown> = {
+    ...manifest,
     retention: {
-      ...linkedManifest.retention,
+      ...(manifest.retention as Record<string, unknown>),
       status: "deleted",
     },
     deletion: {
-      ...linkedManifest.deletion,
+      ...(manifest.deletion as Record<string, unknown>),
       status: "not_scheduled",
     },
   };
   invalidManifest.digest = digestProtocolObject(invalidManifest);
-  const invalid = parseResearchRunV1({
-    ...validResearchRun,
-    artifactManifest: invalidManifest,
-  });
+  const invalid = parseResearchRunV1(runForStatus("completed", invalidManifest));
   expectError(invalid, "$.artifactManifest.retention.status", "semantic_conflict");
 });
 
 test("research runs reject embedded manifests for another run or context", () => {
-  const linkedManifest = {
-    ...validRunManifest,
-    runId: validResearchRun.id,
-    context: validResearchRun.context,
-    sources: [
-      {
-        ...validRunManifest.sources[0],
-        id: validResearchRun.context.contextPackId,
-        digest: validResearchRun.context.contextPackDigest,
-      },
-    ],
-  };
-  linkedManifest.digest = digestProtocolObject(linkedManifest);
+  const manifest = linkedManifest(validRunManifest);
 
-  const wrongRun = { ...linkedManifest, runId: "run_other" };
+  const wrongRun: Record<string, unknown> = { ...manifest, runId: "run_other" };
   wrongRun.digest = digestProtocolObject(wrongRun);
   expectError(
-    parseResearchRunV1({ ...validResearchRun, artifactManifest: wrongRun }),
+    parseResearchRunV1(runForStatus("completed", wrongRun)),
     "$.artifactManifest.runId",
     "semantic_conflict",
   );
 
-  const wrongContext = {
-    ...linkedManifest,
+  const wrongContext: Record<string, unknown> = {
+    ...manifest,
     context: {
-      ...linkedManifest.context,
+      ...(manifest.context as Record<string, unknown>),
       contextPackDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     },
-    sources: linkedManifest.sources.map((source) => ({
+    sources: (manifest.sources as Array<Record<string, unknown>>).map((source) => ({
       ...source,
       digest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     })),
   };
   wrongContext.digest = digestProtocolObject(wrongContext);
   expectError(
-    parseResearchRunV1({ ...validResearchRun, artifactManifest: wrongContext }),
+    parseResearchRunV1(runForStatus("completed", wrongContext)),
     "$.artifactManifest.context",
+    "semantic_conflict",
+  );
+});
+
+test("completed deletion requires its exact content.deleted event in a full ordered stream", () => {
+  const finalManifest = linkedManifest(validRunManifest);
+  const deletedManifestValue: Record<string, unknown> = {
+    ...finalManifest,
+    retention: {
+      ...(finalManifest.retention as Record<string, unknown>),
+      status: "deleted",
+      contentExpiresAt: "2026-08-17T20:00:00.000Z",
+    },
+    deletion: {
+      status: "completed",
+      requestedAt: "2026-08-17T19:00:00.000Z",
+      completedAt: "2026-08-17T20:00:00.000Z",
+      deletedObjectCount: 3,
+      eventSequence: 2,
+    },
+  };
+  deletedManifestValue.digest = digestProtocolObject(deletedManifestValue);
+  const deletedManifest = expectOk(parseRunManifestV1(deletedManifestValue));
+  const first = parsedEvent(1, "run.created", { status: "queued" });
+  const deletion = parsedEvent(2, "content.deleted", {
+    deletedObjectCount: 3,
+    manifestStatus: "deleted",
+  });
+
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(deletedManifest, [first, deletion])),
+    deletedManifest,
+  );
+  const activeManifest = expectOk(parseRunManifestV1(finalManifest));
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(activeManifest, [])),
+    activeManifest,
+  );
+
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [first]),
+    "$.deletion.eventSequence",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      first,
+      parsedEvent(2, "run.status", { status: "completed" }),
+    ]),
+    "$[1].type",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      first,
+      parsedEvent(2, "content.deleted", { manifestStatus: "deleted" }),
+    ]),
+    "$[1].data.deletedObjectCount",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      first,
+      parsedEvent(2, "content.deleted", {
+        deletedObjectCount: 4,
+        manifestStatus: "deleted",
+      }),
+    ]),
+    "$[1].data.deletedObjectCount",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      first,
+      parsedEvent(2, "content.deleted", { deletedObjectCount: 3 }),
+    ]),
+    "$[1].data.manifestStatus",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      first,
+      parsedEvent(2, "content.deleted", {
+        deletedObjectCount: 3,
+        manifestStatus: "active",
+      }),
+    ]),
+    "$[1].data.manifestStatus",
+    "semantic_conflict",
+  );
+});
+
+test("deletion event composition rejects wrong runs, duplicate sequences, and gaps", () => {
+  const finalManifest = linkedManifest(validRunManifest);
+  const deletedManifestValue: Record<string, unknown> = {
+    ...finalManifest,
+    retention: {
+      ...(finalManifest.retention as Record<string, unknown>),
+      status: "deleted",
+      contentExpiresAt: "2026-08-17T20:00:00.000Z",
+    },
+    deletion: {
+      status: "completed",
+      requestedAt: "2026-08-17T19:00:00.000Z",
+      completedAt: "2026-08-17T20:00:00.000Z",
+      deletedObjectCount: 3,
+      eventSequence: 2,
+    },
+  };
+  deletedManifestValue.digest = digestProtocolObject(deletedManifestValue);
+  const deletedManifest = expectOk(parseRunManifestV1(deletedManifestValue));
+  const first = parsedEvent(1, "run.created", { status: "queued" });
+  const deletion = parsedEvent(2, "content.deleted", {
+    deletedObjectCount: 3,
+    manifestStatus: "deleted",
+  });
+
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      { ...first, runId: "run_other" },
+      { ...deletion, runId: "run_other" },
+    ]),
+    "$[0].runId",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      first,
+      { ...deletion, sequence: 1 },
+    ]),
+    "$[1].sequence",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedManifest, [
+      first,
+      { ...deletion, sequence: 3 },
+    ]),
+    "$[1].sequence",
     "semantic_conflict",
   );
 });

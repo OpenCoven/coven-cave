@@ -53,7 +53,18 @@
         "required": ["waitingReason"]
       },
       "then": {
-        "properties": { "status": { "const": "awaiting_checkpoint" } },
+        "properties": {
+          "status": {
+            "enum": [
+              "scoping",
+              "gathering_public_sources",
+              "challenging",
+              "synthesizing",
+              "controlling",
+              "awaiting_checkpoint"
+            ]
+          }
+        },
         "required": ["status"]
       }
     },
@@ -81,6 +92,35 @@
       },
       "else": {
         "not": { "required": ["failure"] }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["completed", "failed", "cancelled", "expired"]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["artifactManifest"],
+        "properties": {
+          "artifactManifest": {
+            "type": "object",
+            "properties": { "state": { "const": "final" } },
+            "required": ["state"]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "artifactManifest": {
+            "type": "object",
+            "properties": { "state": { "const": "assembling" } },
+            "required": ["state"]
+          }
+        }
       }
     }
   ],
