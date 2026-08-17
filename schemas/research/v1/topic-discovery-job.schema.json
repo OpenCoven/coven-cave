@@ -56,7 +56,6 @@
       "then": {
         "not": {
           "anyOf": [
-            { "required": ["startedAt"] },
             { "required": ["finishedAt"] },
             { "required": ["failure"] }
           ]

@@ -693,9 +693,6 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
   const hasFailure = typeof failure !== "undefined";
 
   if (status.value === "queued") {
-    if (hasStartedAt) {
-      return fail("semantic_conflict", "$.startedAt", "queued jobs must not include startedAt");
-    }
     if (hasFinishedAt) {
       return fail("semantic_conflict", "$.finishedAt", "queued jobs must not include finishedAt");
     }

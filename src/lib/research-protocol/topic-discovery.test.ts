@@ -115,17 +115,18 @@ test("running job forbids finishedAt and failure", () => {
   expectError(parseTopicDiscoveryJobV1(runningWithFailure), "$.failure", "semantic_conflict");
 });
 
-test("queued job forbids startedAt, finishedAt, and failure", () => {
+test("queued job accepts startedAt but forbids finishedAt and failure", () => {
   const runtimeFailure = { code: "runtime_error", message: "Retry later", retryable: true };
-  const { startedAt: _startedAt, finishedAt: _finishedAt, ...queuedBase } = validTopicDiscoveryJob;
+  const { finishedAt: _finishedAt, ...queuedBase } = validTopicDiscoveryJob;
 
   const queuedWithStartedAt = {
     ...queuedBase,
     status: "queued" as const,
     startedAt: validTopicDiscoveryJob.startedAt,
   };
-  assert.equal(Value.Check(topicDiscoveryJobSchema, queuedWithStartedAt), false);
-  expectError(parseTopicDiscoveryJobV1(queuedWithStartedAt), "$.startedAt", "semantic_conflict");
+  assert.equal(Value.Check(topicDiscoveryJobSchema, queuedWithStartedAt), true);
+  const parsedQueuedWithStartedAt = expectOk(parseTopicDiscoveryJobV1(queuedWithStartedAt));
+  assert.equal(parsedQueuedWithStartedAt.startedAt, validTopicDiscoveryJob.startedAt);
 
   const queuedWithFinishedAt = {
     ...queuedBase,
