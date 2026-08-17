@@ -99,7 +99,11 @@ assert.match(
   /familiarId \?[\s\S]*?updateFamiliarGrant[\s\S]*?:[\s\S]*?handleDelete/,
   "The familiar-scoped action cannot invoke the global secret deletion path",
 );
-assert.match(vaultRoute, /normalizeVaultScope\(body\.scope\)/, "Vault writes can persist a familiar grant");
+assert.match(
+  vaultRoute,
+  /input\.scope === undefined[\s\S]*?normalizeVaultScope\(input\.scope\)/,
+  "Vault writes can persist a familiar grant while preserving existing scope by default",
+);
 assert.match(vaultRoute, /export async function PATCH/, "Vault exposes a scope-only mutation");
 
 // Preserve the four real Studio surfaces and the fixed autosave/offline footer.

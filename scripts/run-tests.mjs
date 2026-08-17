@@ -16,6 +16,8 @@
 // allowlisted there).
 
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -2073,17 +2075,34 @@ function main(argv) {
   }
   const list = names.flatMap((n) => SUITES[n]);
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
+  const secretRoot = mkdtempSync(path.join(tmpdir(), "coven-test-secrets-"));
+  const testEnv = {
+    ...process.env,
+    COVEN_VAULT_FILE: path.join(secretRoot, "vault.yaml"),
+    COVEN_CAVE_ENV_FILE: path.join(secretRoot, ".env.local"),
+    COVEN_CAVE_LOCAL_VAULT_FILE: path.join(secretRoot, "local-vault.enc.json"),
+    COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(secretRoot, "local-vault.key"),
+  };
   let passed = 0;
-  for (const file of list) {
-    const args = VITEST_TESTS.has(file)
-      ? ["./node_modules/vitest/vitest.mjs", "run", file]
-      : nodeArgsFor(file);
-    const res = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });
-    if (res.status !== 0) {
-      console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
-      process.exit(res.status ?? 1);
+  try {
+    for (const file of list) {
+      const args = VITEST_TESTS.has(file)
+        ? ["./node_modules/vitest/vitest.mjs", "run", file]
+        : nodeArgsFor(file);
+      const res = spawnSync(process.execPath, args, {
+        stdio: "inherit",
+        cwd: root,
+        env: testEnv,
+      });
+      if (res.status !== 0) {
+        console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
+        process.exitCode = res.status ?? 1;
+        return;
+      }
+      passed++;
     }
-    passed++;
+  } finally {
+    rmSync(secretRoot, { recursive: true, force: true });
   }
   console.log(`\n✓ ${passed} test file(s) passed [${names.join(", ")}]`);
 }

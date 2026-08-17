@@ -1,0 +1,96 @@
+.vault-row:focus-within .vault-row-actions {
+  opacity: 1;
+}
+
+.vault-status-badge {
+  color: var(--text-muted);
+  border-color: color-mix(in oklch, var(--text-muted) 35%, transparent);
+}
+
+.vault-status-badge--resolved,
+.vault-status-badge--configured {
+  color: var(--color-success);
+  border-color: color-mix(in oklch, var(--color-success) 38%, transparent);
+}
+
+.vault-status-badge--encrypted {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+
+.vault-status-badge--env-only {
+  color: var(--color-info);
+  border-color: color-mix(in oklch, var(--color-info) 38%, transparent);
+}
+
+.vault-status-badge--unresolved {
+  color: var(--color-warning);
+  border-color: color-mix(in oklch, var(--color-warning) 38%, transparent);
+}
+
+.vault-status-badge--error {
+  color: var(--color-danger);
+  border-color: var(--danger-border);
+}
+
+.vault-provider-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.vault-provider-description {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: var(--leading-normal);
+}
+
+.vault-paste-field {
+  position: relative;
+}
+
+.vault-paste-input {
+  min-height: calc(var(--space-4) * 4);
+  padding-right: calc(var(--space-4) * 6);
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+  line-height: var(--leading-normal);
+}
+
+.vault-paste-input--masked {
+  -webkit-text-security: disc;
+}
+
+.vault-paste-actions {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+
+.vault-paste-summary {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.vault-environment-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--color-info) 38%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-info) 14%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.vault-btn:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+}
