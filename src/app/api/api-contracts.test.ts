@@ -537,6 +537,21 @@ for (const contract of contracts) {
     3,
     "/chat/send: all three dispatch paths must register with the stop registry",
   );
+  assert.equal(
+    [...sendSource.matchAll(/\{ runId: (?:args\.body|body)\.runId \}/g)].length,
+    3,
+    "/chat/send: every dispatch registration must identify the runId that can consume an early Stop",
+  );
+  assert.match(
+    sendSource,
+    /let stopChildOnLaunch = false;[\s\S]*if \(stopChildOnLaunch\)[\s\S]*const killChild = \(\) => \{\s*stopChildOnLaunch = true;/,
+    "/chat/send: OpenClaw must carry an early registered Stop through its later child launch",
+  );
+  assert.match(
+    sendSource,
+    /const runAttempt = [\s\S]*if \(runHandle\.stopRequested\) return Promise\.resolve\(\);/,
+    "/chat/send: shared direct dispatch must not launch after consuming an early Stop",
+  );
   assert.match(
     sendSource,
     /setTimeout\(kill(?:Child|CurrentChild), CHAT_DETACH_MAX_MS\)/,
@@ -548,8 +563,18 @@ for (const contract of contracts) {
   );
   assert.match(
     stopSource,
-    /requestChatStop/,
-    "/chat/stop must resolve stops through the shared run registry",
+    /requestOrQueueChatStop\(runId\)/,
+    "/chat/stop must accept a run-scoped Stop before async registration",
+  );
+  assert.match(
+    stopSource,
+    /stopped: outcome === "stopped"[\s\S]*queued: outcome === "queued"/,
+    "/chat/stop must distinguish an immediate stop from a queued runId intent",
+  );
+  assert.match(
+    stopSource,
+    /requestChatStop\(sessionId!\)/,
+    "/chat/stop must preserve session-only registry behavior without queueing it",
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(

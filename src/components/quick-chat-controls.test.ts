@@ -68,6 +68,18 @@ assert.doesNotMatch(
   "Quick Chat keeps the safe replaceable presentation-buffer mode",
 );
 assert.doesNotMatch(thread, /aria-live=/, "the thread does not nest a second live region");
+const responseMetadataComponent =
+  /function QuickChatResponseMetadata[\s\S]*?\n\}/.exec(thread)?.[0] ?? "";
+assert.match(
+  responseMetadataComponent,
+  /role="group"/,
+  "response metadata is a labelled semantic group",
+);
+assert.doesNotMatch(
+  responseMetadataComponent,
+  /role="status"|aria-live=/,
+  "response metadata never creates another live region",
+);
 assert.match(
   streamingResponse,
   /className="streaming-turn-current" role="status"/,
@@ -100,7 +112,7 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /m\.id === activeSend\.assistantId && m\.pending[\s\S]*lifecycle: "cancelled"/,
+  /message\.id === activeSend\.assistantId && message\.pending[\s\S]*lifecycle: "cancelled"/,
   "Stop marks only the active Quick Chat turn cancelled",
 );
 assert.match(
@@ -120,13 +132,13 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const newThread = useCallback[\s\S]*terminateActiveSend\(\{ surfaceFailure: false, keepalive: true \}\)/,
+  /const newThread = useCallback[\s\S]*terminateActiveSend\(\{[\s\S]*surfaceFailure: false,[\s\S]*keepalive: true,[\s\S]*suppressSettlementUi: true/,
   "thread resets explicitly stop their captured server run",
 );
 assert.match(
   quickHook,
-  /window\.addEventListener\("pagehide", stopForCleanup\)[\s\S]*stopForCleanup\(\)/,
-  "page closure and unmount use the keepalive cleanup Stop path",
+  /const stopForPageHide[\s\S]*settleUi: true[\s\S]*window\.addEventListener\("pagehide", stopForPageHide\)[\s\S]*suppressSettlementUi: true/,
+  "pagehide settles BFCache UI while unmount suppresses unsafe async updates",
 );
 assert.match(
   quickHook,
@@ -541,6 +553,11 @@ assert.match(
     thread,
     /quickChatResponseMetadataLines[\s\S]*?Forwarded — not confirmed[\s\S]*?<QuickChatResponseMetadata lines=\{responseMetadataLines\}/,
     "quick chat renders requested, forwarded, and applied model/control outcomes",
+  );
+  assert.doesNotMatch(
+    /hasRichBlocks:[\s\S]*?resultCount:/.exec(thread)?.[0] ?? "",
+    /responseMetadataLines/,
+    "routine response metadata cannot hide the empty-success fallback",
   );
 }
 

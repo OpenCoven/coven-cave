@@ -90,6 +90,7 @@ type ActiveQuickChatSend = {
   controller: AbortController;
   runId: string;
   sessionId: string | null;
+  suppressSettlementUi?: boolean;
 };
 
 async function requestQuickChatStop(
@@ -340,6 +341,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       options: {
         surfaceFailure: boolean;
         keepalive?: boolean;
+        settleUi?: boolean;
+        suppressSettlementUi?: boolean;
       },
     ): ActiveQuickChatSend | null => {
       const activeSend = activeSendRef.current;
@@ -349,6 +352,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       // Every reset path shares this take, so only its first caller can issue
       // Stop and a late completion cannot clear a replacement send.
       activeSendRef.current = null;
+      activeSend.suppressSettlementUi =
+        options.settleUi === true || options.suppressSettlementUi === true;
       void requestQuickChatStop(activeSend, {
         keepalive: options.keepalive,
       }).catch((cause) => {
@@ -361,6 +366,23 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         );
       });
       activeSend.controller.abort();
+      if (options.settleUi) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === activeSend.assistantId && message.pending
+              ? {
+                  ...message,
+                  pending: false,
+                  lifecycle: "cancelled",
+                  error: null,
+                }
+              : message,
+          ),
+        );
+        if (latestSendRunIdRef.current === activeSend.runId) {
+          setSendState("idle");
+        }
+      }
       return activeSend;
     },
     [],
@@ -368,7 +390,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
-    terminateActiveSend({ surfaceFailure: false, keepalive: true });
+    terminateActiveSend({
+      surfaceFailure: false,
+      keepalive: true,
+      suppressSettlementUi: true,
+    });
     latestSendRunIdRef.current = null;
     sessionIdRef.current = null;
     threadFamiliarRef.current = null;
@@ -455,21 +481,29 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setSelectedFamiliarId(preferredFamiliarId);
   }, [preferredFamiliarId, familiars]);
 
-  // Deliberately stop the captured run on tab closure or unmount. Keepalive
-  // gives the explicit Stop request a chance to outlive page teardown; the
-  // shared atomic take prevents pagehide + cleanup from sending it twice.
+  // Deliberately stop the captured run on tab closure or unmount. pagehide can
+  // enter BFCache without unmounting, so it also settles the owned local turn
+  // synchronously. Unmount only suppresses later async settlement updates.
   useEffect(() => {
-    const stopForCleanup = () => {
-      terminateActiveSend({ surfaceFailure: false, keepalive: true });
+    const stopForPageHide = () => {
+      terminateActiveSend({
+        surfaceFailure: false,
+        keepalive: true,
+        settleUi: true,
+      });
     };
     if (typeof window !== "undefined") {
-      window.addEventListener("pagehide", stopForCleanup);
+      window.addEventListener("pagehide", stopForPageHide);
     }
     return () => {
       if (typeof window !== "undefined") {
-        window.removeEventListener("pagehide", stopForCleanup);
+        window.removeEventListener("pagehide", stopForPageHide);
       }
-      stopForCleanup();
+      terminateActiveSend({
+        surfaceFailure: false,
+        keepalive: true,
+        suppressSettlementUi: true,
+      });
     };
   }, [terminateActiveSend]);
 
@@ -638,6 +672,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         if (ownsActiveSend) activeSendRef.current = null;
         const aborted = controller.signal.aborted;
         if (!ownsActiveSend && !aborted) return "stopped";
+        if (activeSend.suppressSettlementUi) return "stopped";
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -657,6 +692,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       const ownsActiveSend = activeSendRef.current === activeSend;
       if (ownsActiveSend) activeSendRef.current = null;
       if (!ownsActiveSend || controller.signal.aborted) {
+        if (activeSend.suppressSettlementUi) return "stopped";
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -863,18 +899,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   ]);
 
   const cancel = useCallback(() => {
-    const activeSend = terminateActiveSend({ surfaceFailure: true });
-    if (!activeSend) return;
-
-    // Keep whatever streamed so far, but stop the spinner on the open turn.
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === activeSend.assistantId && m.pending
-          ? { ...m, pending: false, lifecycle: "cancelled" }
-          : m,
-      ),
-    );
-    setSendState("idle");
+    terminateActiveSend({
+      surfaceFailure: true,
+      settleUi: true,
+    });
   }, [terminateActiveSend]);
 
   // Manual picks flow through here: they override the workspace-active default

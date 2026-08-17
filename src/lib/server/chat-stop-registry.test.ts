@@ -7,12 +7,19 @@ const {
   registerChatRun,
   unregisterChatRun,
   requestChatStop,
+  requestOrQueueChatStop,
   addChatRunKeys,
   hasActiveChatRun,
   markChatRunTransportSettled,
   markChatRunProjectionSettled,
+  pendingChatStopCountForTests,
+  resetChatStopRegistryForTests,
+  MAX_PENDING_CHAT_STOPS,
+  PENDING_CHAT_STOP_TTL_MS,
 } =
   await import("./chat-stop-registry.ts");
+
+resetChatStopRegistryForTests();
 
 // Deliberate stop: kills through the registration and flags the handle.
 {
@@ -134,4 +141,65 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   assert.equal(requestChatStop("conv-6"), false, "the late key never registers");
 }
 
+// A Stop can beat async send setup. The run-scoped intent is consumed exactly
+// once after registration, even when teardown sends the same request twice.
+{
+  const now = 10_000;
+  let kills = 0;
+  resetChatStopRegistryForTests({ now: () => now });
+  assert.equal(requestOrQueueChatStop("early-run"), "queued");
+  assert.equal(requestOrQueueChatStop("early-run"), "queued");
+  assert.equal(pendingChatStopCountForTests(), 1, "duplicate early Stops coalesce by runId");
+  const handle = registerChatRun(["early-run", "shared-session"], () => {
+    kills += 1;
+  }, { runId: "early-run" });
+  assert.equal(handle.stopRequested, true, "registration consumes the pending intent");
+  assert.equal(kills, 1, "one pending intent invokes the safe kill exactly once");
+  assert.equal(pendingChatStopCountForTests(), 0, "consumed intents do not leak");
+  unregisterChatRun(handle);
+}
+
+// Pending runId intents expire deterministically and pruning keeps the bounded
+// map from retaining stale or attacker-controlled identifiers.
+{
+  let now = 20_000;
+  let kills = 0;
+  resetChatStopRegistryForTests({ now: () => now });
+  assert.equal(requestOrQueueChatStop("expiring-run"), "queued");
+  now += PENDING_CHAT_STOP_TTL_MS;
+  const expired = registerChatRun(["expiring-run"], () => {
+    kills += 1;
+  }, { runId: "expiring-run" });
+  assert.equal(expired.stopRequested, false, "an intent at its TTL boundary is expired");
+  assert.equal(kills, 0, "expired intents never kill a later run");
+  assert.equal(pendingChatStopCountForTests(), 0, "registration prunes expired intent state");
+  unregisterChatRun(expired);
+
+  for (let index = 0; index < MAX_PENDING_CHAT_STOPS + 20; index += 1) {
+    requestOrQueueChatStop(`bounded-${index}`);
+  }
+  assert.equal(
+    pendingChatStopCountForTests(),
+    MAX_PENDING_CHAT_STOPS,
+    "pending intent storage remains bounded before TTL expiry",
+  );
+}
+
+// A live but transport-settled run keeps the existing late-stop behavior: it
+// is neither killed nor replaced with a fresh pending intent.
+{
+  let kills = 0;
+  resetChatStopRegistryForTests();
+  const settled = registerChatRun(["already-settled"], () => {
+    kills += 1;
+  }, { runId: "already-settled" });
+  markChatRunTransportSettled(settled);
+  assert.equal(requestOrQueueChatStop("already-settled"), "settled");
+  assert.equal(settled.stopRequested, false);
+  assert.equal(kills, 0);
+  assert.equal(pendingChatStopCountForTests(), 0);
+  unregisterChatRun(settled);
+}
+
+resetChatStopRegistryForTests();
 console.log("chat-stop-registry.test.ts: ok");

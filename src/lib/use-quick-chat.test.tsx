@@ -312,7 +312,7 @@ describe("useQuickChat send cancellation", () => {
     });
   });
 
-  test("pagehide and unmount share one keepalive Stop for the captured run", async () => {
+  test("pagehide settles BFCache UI without unmount and stale cleanup cannot own the restored send", async () => {
     const requests = new QuickChatFetch();
     globalThis.fetch = requests.fetch as typeof fetch;
     const testWindow = Object.assign(new EventTarget(), {
@@ -348,14 +348,50 @@ describe("useQuickChat send cancellation", () => {
     expect(requests.stops).toEqual([{ runId: requests.sends[0]!.body.runId }]);
     expect(requests.stopKeepalives).toEqual([true]);
     expect(requests.sends[0]!.signal?.aborted).toBe(true);
+    expect(state!.messages.at(-1)).toMatchObject({
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+    expect(state!.sendState).toBe("idle");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("pageshow"));
+      await Promise.resolve();
+    });
+    expect(state!.sendState).toBe("idle");
+
+    await act(async () => {
+      state!.setDraft("question after restore");
+    });
+    let restoredSend!: Promise<void>;
+    await act(async () => {
+      restoredSend = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 2 && state?.sendState === "sending");
+    expect(requests.sends[1]!.signal?.aborted).toBe(false);
+
+    await act(async () => {
+      requests.sends[0]!.close();
+      await send;
+    });
+    expect(state!.sendState).toBe("sending");
+    expect(requests.sends[1]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)?.pending).toBe(true);
 
     await act(async () => {
       renderer!.unmount();
     });
     renderer = null;
-    expect(requests.stops).toHaveLength(1);
+    expect(requests.stops).toEqual([
+      { runId: requests.sends[0]!.body.runId },
+      { runId: requests.sends[1]!.body.runId },
+    ]);
+    expect(requests.stopKeepalives).toEqual([true, true]);
+    expect(requests.sends[1]!.signal?.aborted).toBe(true);
 
-    requests.sends[0]!.close();
-    await send;
+    requests.sends[1]!.close();
+    await restoredSend;
   });
 });

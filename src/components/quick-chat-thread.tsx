@@ -60,8 +60,8 @@ function QuickChatResponseMetadata({ lines }: { lines: string[] }) {
   return (
     <div
       className="mt-2 flex flex-wrap gap-1.5"
-      role="status"
-      aria-label={`Response model and controls. ${lines.join(". ")}`}
+      role="group"
+      aria-label={`Response model and controls: ${lines.join(". ")}`}
     >
       {lines.map((line) => (
         <span
@@ -149,8 +149,7 @@ function QuickChatBubble({
     emptySuccessful: streamingModel.emptySuccessful,
     visibleProse: visible,
     hasRichBlocks:
-      pieces.some((piece) => piece.kind !== "text")
-      || responseMetadataLines.length > 0,
+      pieces.some((piece) => piece.kind !== "text"),
     resultCount: streamingModel.results.length,
     skillUpdateCount: skillUpdates.length,
     followUpCount: suggestions.length,

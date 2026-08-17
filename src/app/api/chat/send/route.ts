@@ -1023,7 +1023,11 @@ function openClawChatResponse(args: {
         };
         const stopGateway = () => abortGateway("[tool cancelled by user]");
         const stopDetachedGateway = () => abortGateway("[tool did not settle before the Gateway turn ended]");
-        const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
+        const runHandle = registerChatRun(
+          [args.body.runId, conversationId],
+          stopGateway,
+          { runId: args.body.runId },
+        );
         let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
         let detachTimeoutFired = false;
         const armDetachKill = () => {
@@ -1219,17 +1223,27 @@ function openClawChatResponse(args: {
       let stderr = "";
       let terminal = false;
       let localRecoveryAttempted = false;
+      let stopChildOnLaunch = false;
       const spawnChild = (mode: "gateway" | "local") => {
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
-        return spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
+        const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
           cwd,
           stdio: ["ignore", "pipe", "pipe"],
           env: openclawEnv,
           shell: false,
         });
+        if (stopChildOnLaunch) {
+          try {
+            launched.kill("SIGTERM");
+          } catch {
+            /* ignore */
+          }
+        }
+        return launched;
       };
       const killChild = () => {
+        stopChildOnLaunch = true;
         try {
           child?.kill("SIGTERM");
         } catch {
@@ -1240,7 +1254,11 @@ function openClawChatResponse(args: {
       // registration); a bare transport abort means the client vanished — let
       // the turn finish server-side so resync recovers the full reply, bounded
       // by the detach cap in case nothing ever comes back for it.
-      const runHandle = registerChatRun([args.body.runId, conversationId], killChild);
+      const runHandle = registerChatRun(
+        [args.body.runId, conversationId],
+        killChild,
+        { runId: args.body.runId },
+      );
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
       const armDetachKill = () => {
         if (runHandle.stopRequested || detachKillTimer != null) return;
@@ -4365,6 +4383,7 @@ export async function POST(req: Request) {
       runHandle = registerChatRun(
         [body.runId, body.sessionId, sessionId],
         killCurrentChild,
+        { runId: body.runId },
       );
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
       const armDetachKill = () => {
@@ -4627,6 +4646,7 @@ export async function POST(req: Request) {
       };
 
       const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
+        if (runHandle.stopRequested) return Promise.resolve();
         if (hermesApi) return runHermesApiAttempt(apiPrompt);
         return new Promise((resolve) => {
           const attemptStartedAt = Date.now();

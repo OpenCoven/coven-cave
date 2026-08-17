@@ -13,6 +13,13 @@ type ChatRunEntry = {
   kill: () => void;
 };
 
+export type ChatStopRequestOutcome = "stopped" | "queued" | "settled";
+
+type RegisterChatRunOptions = {
+  /** The per-send client token. Session/liveness-only registrations omit it. */
+  runId?: string | null;
+};
+
 export type ChatRunHandle = {
   /** Set when a deliberate stop arrived via /api/chat/stop. The send route
    *  reads this — not `req.signal.aborted` — to decide cancel semantics. */
@@ -26,13 +33,35 @@ export type ChatRunHandle = {
 };
 
 const active = new Map<string, ChatRunEntry>();
+const pendingStops = new Map<string, number>();
+export const PENDING_CHAT_STOP_TTL_MS = 5_000;
+export const MAX_PENDING_CHAT_STOPS = 256;
+let registryNow = () => Date.now();
+
+function prunePendingStops(now = registryNow()): void {
+  for (const [runId, expiresAt] of pendingStops) {
+    if (expiresAt <= now) pendingStops.delete(runId);
+  }
+}
+
+function queuePendingStop(runId: string, now: number): void {
+  prunePendingStops(now);
+  if (!pendingStops.has(runId) && pendingStops.size >= MAX_PENDING_CHAT_STOPS) {
+    const oldestRunId = pendingStops.keys().next().value;
+    if (oldestRunId !== undefined) pendingStops.delete(oldestRunId);
+  }
+  pendingStops.set(runId, now + PENDING_CHAT_STOP_TTL_MS);
+}
 
 /** Register a streaming run under every non-empty key. `kill` must be safe to
  *  call more than once and after child exit. */
 export function registerChatRun(
   keys: Array<string | null | undefined>,
   kill: () => void,
+  options: RegisterChatRunOptions = {},
 ): ChatRunHandle {
+  const now = registryNow();
+  prunePendingStops(now);
   const handle: ChatRunHandle = {
     stopRequested: false,
     acceptingStop: true,
@@ -46,6 +75,14 @@ export function registerChatRun(
     handle.keys.push(key);
   }
   if (handle.keys.length > 0) invalidateSessionsListCache();
+  if (options.runId && pendingStops.delete(options.runId)) {
+    handle.stopRequested = true;
+    try {
+      kill();
+    } catch {
+      /* child already gone */
+    }
+  }
   return handle;
 }
 
@@ -117,6 +154,22 @@ export function requestChatStop(key: string): boolean {
   return true;
 }
 
+/**
+ * Deliberate run-scoped Stop used by /api/chat/stop. If async send setup has
+ * not registered the run yet, retain one bounded intent for that runId only.
+ * A registered, transport-settled run remains a late-stop no-op.
+ */
+export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
+  const entry = active.get(runId);
+  if (entry) {
+    return requestChatStop(runId) ? "stopped" : "settled";
+  }
+
+  const now = registryNow();
+  queuePendingStop(runId, now);
+  return "queued";
+}
+
 /** Freeze cancellation semantics as soon as the transport reaches a
  * definitive outcome. Projection stays live until persistence/final cleanup. */
 export function markChatRunTransportSettled(handle: ChatRunHandle): void {
@@ -129,4 +182,18 @@ export function markChatRunProjectionSettled(handle: ChatRunHandle): void {
   if (!handle.projectionActive) return;
   handle.projectionActive = false;
   if (handle.keys.length > 0) invalidateSessionsListCache();
+}
+
+/** Deterministic isolation for registry and route tests. */
+export function resetChatStopRegistryForTests(options: { now?: () => number } = {}): void {
+  const hadActiveRuns = active.size > 0;
+  active.clear();
+  pendingStops.clear();
+  registryNow = options.now ?? (() => Date.now());
+  if (hadActiveRuns) invalidateSessionsListCache();
+}
+
+export function pendingChatStopCountForTests(): number {
+  prunePendingStops();
+  return pendingStops.size;
 }

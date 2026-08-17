@@ -985,6 +985,88 @@ describe("StreamingTurnResponse", () => {
     );
   });
 
+  it("gives a Quick Chat thread exactly one live region while prior metadata stays non-live", async () => {
+    const renderer = await render(
+      <QuickChatThread
+        familiar={null}
+        messages={[
+          {
+            id: "quick-prior",
+            role: "assistant",
+            lifecycle: "complete",
+            text: "Earlier response",
+            responseMetadata: routineResponseMetadata(),
+          },
+          {
+            id: "quick-current",
+            role: "assistant",
+            lifecycle: "streaming",
+            pending: true,
+            text: "",
+            responseMetadata: routineResponseMetadata({
+              requestedControls: { reasoning: "high" },
+              forwardedControls: { reasoning: "high" },
+              appliedControls: {},
+            }),
+          },
+        ]}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const liveRegions = renderer.root.findAll(
+      (node) => node.props.role === "status" || node.props["aria-live"] !== undefined,
+    );
+    expect(liveRegions).toHaveLength(1);
+    expect(liveRegions[0].props.className).toBe("streaming-turn-current");
+    expect(
+      renderer.root.findAll(
+        (node) =>
+          node.props.role === "group" &&
+          String(node.props["aria-label"]).startsWith("Response model and controls:"),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("shows No response and Retry when routine metadata accompanies an otherwise empty Quick reply", async () => {
+    const renderer = await render(
+      <QuickChatThread
+        familiar={null}
+        messages={[
+          {
+            id: "quick-empty-with-metadata",
+            role: "assistant",
+            lifecycle: "complete",
+            text: "",
+            responseMetadata: routineResponseMetadata({
+              requestedModel: "anthropic/claude-sonnet-4-6",
+              desiredModel: "anthropic/claude-sonnet-4-6",
+              confirmedModel: undefined,
+              modelApplicationState: "pending",
+              modelApplicationReason: "The runtime did not confirm the selected model.",
+              requestedControls: { reasoning: "medium" },
+              forwardedControls: { reasoning: "medium" },
+              appliedControls: {},
+            }),
+          },
+        ]}
+        onRegenerate={vi.fn()}
+      />,
+    );
+
+    expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(0);
+    expect(textContent(renderer.root)).toContain("No response.");
+    expect(textContent(renderer.root)).toContain("Retry");
+    expect(textContent(renderer.root)).toContain("The runtime did not confirm the selected model.");
+    expect(
+      renderer.root.findAll(
+        (node) =>
+          node.props.role === "group" &&
+          String(node.props["aria-label"]).startsWith("Response model and controls:"),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("renders a settled bare GitHub URL only as a card without duplicate URL prose", async () => {
     const url = "https://github.com/OpenCoven/coven-cave/issues/42";
     const renderer = await render(
