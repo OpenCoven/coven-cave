@@ -1,38 +1,59 @@
 // @ts-nocheck — react-test-renderer ships no types; matches the repository convention.
+import { Children, isValidElement } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
+import { OverflowMenu } from "./ui/overflow-menu";
+import { MessageBubble, ProgressiveMarkdownBlock } from "./message-bubble";
 import { StreamingTurnResponse } from "./streaming-turn-response";
 
-vi.mock("./message-bubble", () => ({
-  ProgressiveMarkdownBlock: ({
-    text,
-    pending,
-    showCaret,
-  }: {
-    text: string;
-    pending?: boolean;
-    showCaret?: boolean;
-  }) => (
-    <span
-      data-progressive-markdown={true}
-      data-pending={pending || undefined}
-      data-show-caret={showCaret}
-    >
-      {text}
-      {pending && showCaret !== false ? (
-        <span aria-hidden={true} data-stream-caret={true} />
-      ) : null}
-    </span>
-  ),
+const markdownRenderer = vi.hoisted(() => ({
+  blocked: false,
+  renderAsync: vi.fn((blocks: unknown[]) => {
+    if (markdownRenderer.blocked) return new Promise<string>(() => {});
+    const text = JSON.stringify(blocks)
+      .match(/"text":"([^"]*)"/g)
+      ?.map((entry) => JSON.parse(`{${entry}}`).text)
+      .join("") ?? "";
+    return Promise.resolve(`<div class="cm-preview"><p>${text}</p></div>`);
+  }),
 }));
 
-vi.mock("@/lib/icon", () => ({
-  Icon: ({ name }: { name: string }) => <span aria-hidden={true} data-icon={name} />,
+const clipboard = vi.hoisted(() => ({
+  copyText: vi.fn(async () => true),
+}));
+
+vi.mock("@/lib/markdown-preview", () => ({
+  loadMarkdownPreview: async () => ({ renderAsync: markdownRenderer.renderAsync }),
+}));
+
+vi.mock("@/lib/html-sanitize", () => ({
+  sanitizeHtml: (html: string) => html,
+}));
+
+vi.mock("@/lib/response-status-tokens", () => ({
+  decorateResponseHtml: (html: string) => html,
+}));
+
+vi.mock("@/lib/clipboard", () => ({
+  copyText: clipboard.copyText,
+}));
+
+vi.mock("next/dynamic", () => ({
+  default: () =>
+    function MockDynamicMessageReader({ text }: { text: string }) {
+      return <div data-message-reader={true} data-reader-text={text} />;
+    },
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+beforeEach(() => {
+  markdownRenderer.blocked = false;
+  markdownRenderer.renderAsync.mockClear();
+  clipboard.copyText.mockClear();
+});
 
 const firstActivity = {
   id: "tool:1",
@@ -99,6 +120,26 @@ function buttons(renderer: ReactTestRenderer, ariaLabel?: string): ReactTestInst
   );
 }
 
+function textContent(node: ReactTestInstance): string {
+  return node.children
+    .map((child) => (typeof child === "string" ? child : textContent(child)))
+    .join("");
+}
+
+function renderedMarkdown(node: ReactTestInstance): string {
+  return node
+    .findAll((child) => child.props.dangerouslySetInnerHTML !== undefined)
+    .map((child) => child.props.dangerouslySetInnerHTML.__html)
+    .join("");
+}
+
+async function flushMarkdown(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+}
+
 describe("StreamingTurnResponse", () => {
   it("keeps committed block identity when the active block changes and renders one live caret", async () => {
     const renderer = await render(response());
@@ -121,6 +162,134 @@ describe("StreamingTurnResponse", () => {
 
     expect(renderer.root.findByProps({ "data-stream-block-id": "t:0-5" })).toBe(before);
     expect(renderer.root.findAllByProps({ "data-stream-caret": true })).toHaveLength(1);
+  });
+
+  it("keeps an active list and item host mounted when the item settles", async () => {
+    markdownRenderer.blocked = true;
+    const activeList = {
+      id: "t:0-list",
+      kind: "list" as const,
+      ordered: false,
+      committedItems: [{ id: "t:0-item-0", source: "- one\n" }],
+      activeItem: { id: "t:0-item-1", source: "- two" },
+      source: "- one\n- two",
+    };
+    const renderer = await render(
+      response({
+        model: model({
+          committedBlocks: [],
+          activeBlock: activeList,
+          committedText: "- one\n",
+        }),
+      }),
+    );
+    const listBefore = renderer.root.findByProps({ "data-stream-block-id": activeList.id });
+    const itemBefore = renderer.root.findByProps({
+      "data-stream-list-item-id": activeList.activeItem.id,
+    });
+
+    await act(async () => {
+      renderer.update(
+        response({
+          model: model({
+            status: "complete",
+            committedBlocks: [
+              {
+                ...activeList,
+                committedItems: [
+                  ...activeList.committedItems,
+                  { id: activeList.activeItem.id, source: "- two\n" },
+                ],
+                activeItem: undefined,
+                source: "- one\n- two\n",
+              },
+            ],
+            activeBlock: null,
+            committedText: "- one\n- two\n",
+          }),
+        }),
+      );
+    });
+
+    const listAfter = renderer.root.findByProps({ "data-stream-block-id": activeList.id });
+    const itemAfter = renderer.root.findByProps({
+      "data-stream-list-item-id": activeList.activeItem.id,
+    });
+    expect(listAfter).toBe(listBefore);
+    expect(itemAfter).toBe(itemBefore);
+    expect(textContent(itemAfter)).toBe("two");
+  });
+
+  it("removes the marker and trailing separator from committed list-item text", async () => {
+    markdownRenderer.blocked = true;
+    const renderer = await render(
+      response({
+        model: model({
+          status: "complete",
+          committedBlocks: [
+            {
+              id: "t:0-list",
+              kind: "list",
+              ordered: false,
+              committedItems: [{ id: "t:0-item-0", source: "- committed item\n" }],
+              source: "- committed item\n",
+            },
+          ],
+          activeBlock: null,
+          committedText: "- committed item\n",
+        }),
+      }),
+    );
+
+    expect(
+      textContent(
+        renderer.root.findByProps({ "data-stream-list-item-id": "t:0-item-0" }),
+      ),
+    ).toBe("committed item");
+  });
+
+  it("uses the real progressive Markdown path to gate fallback and rendered cursors", async () => {
+    markdownRenderer.blocked = true;
+    const fallback = await render(
+      <div>
+        <div data-caret-case="fallback-default">
+          <ProgressiveMarkdownBlock text="Fallback default" pending />
+        </div>
+        <div data-caret-case="fallback-suppressed">
+          <ProgressiveMarkdownBlock text="Fallback suppressed" pending showCaret={false} />
+        </div>
+      </div>,
+    );
+    expect(
+      textContent(fallback.root.findByProps({ "data-caret-case": "fallback-default" })),
+    ).toBe("Fallback default▌");
+    expect(
+      textContent(fallback.root.findByProps({ "data-caret-case": "fallback-suppressed" })),
+    ).toBe("Fallback suppressed");
+
+    markdownRenderer.blocked = false;
+    const rendered = await render(
+      <div>
+        <div data-caret-case="rendered-default">
+          <ProgressiveMarkdownBlock text="Rendered default" pending />
+        </div>
+        <div data-caret-case="rendered-suppressed">
+          <ProgressiveMarkdownBlock text="Rendered suppressed" pending showCaret={false} />
+        </div>
+      </div>,
+    );
+    await flushMarkdown();
+
+    expect(
+      rendered.root
+        .findByProps({ "data-caret-case": "rendered-default" })
+        .findAllByProps({ "aria-label": "Familiar is writing" }),
+    ).toHaveLength(1);
+    expect(
+      rendered.root
+        .findByProps({ "data-caret-case": "rendered-suppressed" })
+        .findAllByProps({ "aria-label": "Familiar is writing" }),
+    ).toHaveLength(0);
   });
 
   it("keeps unsafe live markdown as plain React text outside the Markdown parser", async () => {
@@ -170,21 +339,22 @@ describe("StreamingTurnResponse", () => {
     }
   });
 
-  it("starts settled activity collapsed and preserves the user's disclosure choice", async () => {
+  it("preserves an explicit user disclosure choice across working to complete", async () => {
     const renderer = await render(
       response({
-        model: model({ status: "complete", activeBlock: null }),
+        model: model({ status: "working" }),
         activityDetails: <div>Activity detail</div>,
       }),
     );
     let disclosure = renderer.root.findByProps({ "data-turn-activity": true });
-    expect(disclosure.props.open).toBeUndefined();
+    expect(disclosure.props.open).toBe(true);
     expect(disclosure.findByType("summary").children.join("")).toBe("View activity · 1 update");
 
     await act(async () => {
-      disclosure.props.onToggle({ currentTarget: { open: true } });
+      disclosure.findByType("summary").props.onClick();
+      disclosure.props.onToggle({ currentTarget: { open: false } });
     });
-    expect(renderer.root.findByProps({ "data-turn-activity": true }).props.open).toBe(true);
+    expect(renderer.root.findByProps({ "data-turn-activity": true }).props.open).toBeUndefined();
 
     const secondActivity = {
       id: "progress:2",
@@ -207,7 +377,7 @@ describe("StreamingTurnResponse", () => {
     });
 
     disclosure = renderer.root.findByProps({ "data-turn-activity": true });
-    expect(disclosure.props.open).toBe(true);
+    expect(disclosure.props.open).toBeUndefined();
     expect(disclosure.findByType("summary").children.join("")).toBe("View activity · 2 updates");
   });
 
@@ -382,5 +552,86 @@ describe("StreamingTurnResponse", () => {
       "supplementary",
       "streaming-turn-activity",
     ]);
+  });
+
+  it("lets assistantBody replace only prose while preserving MessageBubble sources and actions", async () => {
+    const content = "Original **answer** for copy and reader";
+    const onRegenerate = vi.fn();
+    const renderer = await render(
+      <MessageBubble
+        role="assistant"
+        content={content}
+        assistantBody={<section data-assistant-body={true}>Projected assistant body</section>}
+        onRegenerate={onRegenerate}
+      />,
+    );
+    const body = renderer.root.find(
+      (node) => node.props.className === "cave-response-body",
+    );
+    expect(body.findAllByProps({ "data-assistant-body": true })).toHaveLength(1);
+    expect(textContent(body)).toBe("Projected assistant body");
+
+    const actions = renderer.root.findByProps({
+      role: "group",
+      "aria-label": "Response actions",
+    });
+    expect(actions.findAllByProps({ "aria-label": "Retry response" })).toHaveLength(1);
+    expect(actions.findAll((node) => node.type === "button" && node.props["aria-expanded"] === true)).toHaveLength(1);
+    expect(
+      actions.findAll(
+        (node) =>
+          node.type === "button" && node.props["aria-label"] === "More response actions",
+      ),
+    ).toHaveLength(1);
+    const copyButton = actions
+      .findAllByType("button")
+      .find((button) => textContent(button) === "Copy");
+    expect(copyButton).toBeTruthy();
+    await act(async () => {
+      await copyButton!.props.onClick();
+    });
+    expect(clipboard.copyText).toHaveBeenCalledWith(content);
+
+    const overflow = renderer.root.findByType(OverflowMenu);
+    const openReader = Children.toArray(overflow.props.children).find(
+      (child) => isValidElement(child) && child.props.children === "Open reader",
+    );
+    expect(openReader).toBeTruthy();
+    await act(async () => {
+      openReader!.props.onSelect();
+    });
+    expect(renderer.root.findByProps({ "data-message-reader": true }).props).toMatchObject({
+      "data-reader-text": content,
+    });
+
+    const segmented = await render(
+      <MessageBubble
+        role="assistant"
+        content="Segment prose"
+        segments={[
+          { kind: "text", text: "Segment prose" },
+          {
+            kind: "block",
+            key: "settled-action",
+            node: <aside data-segment-block={true}>Settled action</aside>,
+          },
+        ]}
+      />,
+    );
+    await flushMarkdown();
+    const segmentedBody = segmented.root.find(
+      (node) => node.props.className === "cave-response-body",
+    );
+    expect(renderedMarkdown(segmentedBody)).toContain("Segment prose");
+    expect(segmentedBody.findAllByProps({ "data-segment-block": true })).toHaveLength(1);
+
+    const legacy = await render(
+      <MessageBubble role="assistant" content="Legacy Markdown body" />,
+    );
+    await flushMarkdown();
+    const legacyBody = legacy.root.find(
+      (node) => node.props.className === "cave-response-body",
+    );
+    expect(renderedMarkdown(legacyBody)).toContain("Legacy Markdown body");
   });
 });

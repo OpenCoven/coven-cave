@@ -18,33 +18,34 @@ const StreamingBlock = memo(function StreamingBlock({
 }) {
   if (block.kind === "list") {
     const List = block.ordered ? "ol" : "ul";
+    const items = block.activeItem
+      ? [...block.committedItems, block.activeItem]
+      : block.committedItems;
     return (
       <List data-stream-block-id={block.id}>
-        {block.committedItems.map((item) => (
-          <li key={item.id} data-stream-list-item-id={item.id}>
-            <ProgressiveMarkdownBlock
-              text={stripListMarker(item.source)}
-              pending={false}
-              showCaret={false}
-            />
-          </li>
-        ))}
-        {block.activeItem ? (
-          <li key={block.activeItem.id} data-stream-list-item-id={block.activeItem.id}>
-            <ProgressiveMarkdownBlock
-              text={stripListMarker(block.activeItem.source)}
-              pending={live}
-              showCaret={false}
-            />
-            {live ? (
-              <span
-                aria-hidden={true}
-                data-stream-caret={true}
-                className="streaming-turn-caret"
+        {items.map((item) => {
+          const active = item.id === block.activeItem?.id;
+          return (
+            <li key={item.id} data-stream-list-item-id={item.id}>
+              <ProgressiveMarkdownBlock
+                text={
+                  active
+                    ? stripListMarker(item.source)
+                    : stripListMarker(item.source).trimEnd()
+                }
+                pending={active && live}
+                showCaret={false}
               />
-            ) : null}
-          </li>
-        ) : null}
+              {active && live ? (
+                <span
+                  aria-hidden={true}
+                  data-stream-caret={true}
+                  className="streaming-turn-caret"
+                />
+              ) : null}
+            </li>
+          );
+        })}
       </List>
     );
   }
