@@ -63,7 +63,17 @@ function schemaFileNameFor(schemaId: string): string {
 // fixture test that follows. `node:test` registers callbacks and runs them
 // only after this module's synchronous top level finishes, so the load test
 // (added first) always completes before any fixture test body runs.
-const schemaContext: Record<string, TSchema> = {};
+//
+// A `Map` is used (rather than a plain object plus `in`/property lookups) so
+// that an attacker-controlled or coincidental schema id equal to an inherited
+// `Object.prototype` name (e.g. `toString`, `constructor`, `hasOwnProperty`)
+// can never be mistaken for a registered schema.
+const schemaContext = new Map<string, TSchema>();
+
+// `Check` (from typebox/value) expects a schema-id -> schema lookup object,
+// not a `Map`, for resolving `$ref`s across schemas. Build that object with a
+// null prototype so it carries no inherited properties either.
+const schemaCheckContext: Record<string, TSchema> = Object.create(null);
 
 test("loads and validates all eight authoritative Research Protocol v1 schema files", () => {
   assert.equal(RESEARCH_PROTOCOL_SCHEMAS.length, 8);
@@ -74,7 +84,23 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
     assert.ok(isRecord(loaded), `${filePath}: schema file root must be an object`);
     assert.ok(IsSchema(loaded), `${filePath}: schema file must be a valid JSON Schema object`);
     assert.equal(loaded.$id, schemaId, `${filePath}: $id must equal ${schemaId}`);
-    schemaContext[schemaId] = loaded;
+    schemaContext.set(schemaId, loaded);
+    schemaCheckContext[schemaId] = loaded;
+  }
+});
+
+test("schema lookup does not resolve inherited Object.prototype names as registered schemas", () => {
+  for (const name of ["toString", "constructor", "hasOwnProperty", "__proto__", "valueOf"]) {
+    assert.equal(
+      schemaContext.has(name),
+      false,
+      `${name} must not resolve as a registered schema id`,
+    );
+    assert.equal(
+      schemaContext.get(name),
+      undefined,
+      `${name} must not resolve to a schema value`,
+    );
   }
 });
 
@@ -94,13 +120,13 @@ for (const fileName of listFixtureFiles("valid")) {
     assert.ok(isRecord(loaded), `${filePath}: fixture root must be an object`);
 
     const schemaId = requireString(loaded.schema, filePath, "$.schema");
-    const schema = schemaId in schemaContext ? schemaContext[schemaId] : undefined;
+    const schema = schemaContext.get(schemaId);
     assert.ok(
       schema !== undefined,
       `${filePath}: schema ${schemaId} is not one of the eight approved schemas`,
     );
     assert.equal(
-      Check(schemaContext, schema, loaded),
+      Check(schemaCheckContext, schema, loaded),
       true,
       `${filePath}: expected schema validation to pass`,
     );
@@ -109,6 +135,16 @@ for (const fileName of listFixtureFiles("valid")) {
     if (!parsed.ok) {
       assert.fail(`${filePath}: expected parser to accept fixture (${parsed.error.path}: ${parsed.error.message})`);
     }
+
+    // Every valid fixture is expected to be lossless: the parser must return
+    // exactly what was on disk, including any additive fields it does not
+    // itself inspect, so this compares against the original loaded JSON
+    // rather than just the parser's own serialization of itself.
+    assert.deepEqual(
+      parsed.value,
+      loaded,
+      `${filePath}: parser result must be deeply equal to the original fixture (lossless)`,
+    );
 
     const roundTripped: unknown = JSON.parse(JSON.stringify(parsed.value));
     assert.deepEqual(roundTripped, parsed.value, `${filePath}: parser result must round-trip through JSON`);
@@ -142,7 +178,7 @@ for (const fileName of listFixtureFiles("invalid")) {
     }
 
     const schemaId = requireString(fixture.schema, filePath, "$.schema");
-    const schema = schemaId in schemaContext ? schemaContext[schemaId] : undefined;
+    const schema = schemaContext.get(schemaId);
 
     if (schema === undefined) {
       // No registered schema for this family/major (e.g. the unknown-major
@@ -154,7 +190,7 @@ for (const fileName of listFixtureFiles("invalid")) {
         `${filePath}: an unregistered schema id must not claim expectedSchemaValid`,
       );
     } else {
-      const schemaValid = Check(schemaContext, schema, fixture);
+      const schemaValid = Check(schemaCheckContext, schema, fixture);
       assert.equal(
         schemaValid,
         expectedSchemaValid,
