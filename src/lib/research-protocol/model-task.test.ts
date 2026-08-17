@@ -89,6 +89,64 @@ test("permissionMode write rejects in schema and parser", () => {
   expectError(parseModelTaskV1(invalidModelTaskPolicy), "$.policy.permissionMode", "invalid_value");
 });
 
+test("model task identifier and context pack constraints reject in schema and parser", () => {
+  const cases = [
+    {
+      label: "model task id prefix",
+      schema: modelTaskSchema,
+      value: { ...validModelTask, id: "task_01" },
+      path: "$.id",
+    },
+    {
+      label: "model task run id prefix",
+      schema: modelTaskSchema,
+      value: { ...validModelTask, runId: "job_01" },
+      path: "$.runId",
+    },
+    {
+      label: "context pack id prefix",
+      schema: modelTaskSchema,
+      value: {
+        ...validModelTask,
+        input: {
+          ...validModelTask.input,
+          contextPack: { ...validModelTask.input.contextPack, id: "context_01" },
+        },
+      },
+      path: "$.input.contextPack.id",
+    },
+    {
+      label: "topic proposal id prefix",
+      schema: modelTaskSchema,
+      value: {
+        ...validModelTask,
+        input: {
+          ...validModelTask.input,
+          topicProposalId: "topic_01",
+        },
+      },
+      path: "$.input.topicProposalId",
+    },
+    {
+      label: "context pack availability",
+      schema: modelTaskSchema,
+      value: {
+        ...validModelTask,
+        input: {
+          ...validModelTask.input,
+          contextPack: { ...validModelTask.input.contextPack, availability: "browser-cache" },
+        },
+      },
+      path: "$.input.contextPack.availability",
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    assert.equal(Value.Check(testCase.schema, testCase.value), false, `${testCase.label}: schema should reject`);
+    expectError(parseModelTaskV1(testCase.value), testCase.path, "invalid_value");
+  }
+});
+
 test("invalid usage fixture rejects in schema and parser", () => {
   assert.equal(Value.Check(modelTaskResultSchema, invalidModelTaskResultUsage), false);
   expectError(parseModelTaskResultV1(invalidModelTaskResultUsage), "$.modelReceipt.usage", "semantic_conflict");
@@ -232,6 +290,26 @@ test("signature must be non-empty and output must be an object", () => {
   const arrayOutput = { ...validModelTaskResult, output: [] };
   assert.equal(Value.Check(modelTaskResultSchema, arrayOutput), false);
   expectError(parseModelTaskResultV1(arrayOutput), "$.output", "invalid_type");
+});
+
+test("model task result identifier prefixes reject in schema and parser", () => {
+  const cases = [
+    {
+      label: "model task result task id prefix",
+      value: { ...validModelTaskResult, taskId: "task_01" },
+      path: "$.taskId",
+    },
+    {
+      label: "model task result run id prefix",
+      value: { ...validModelTaskResult, runId: "job_01" },
+      path: "$.runId",
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    assert.equal(Value.Check(modelTaskResultSchema, testCase.value), false, `${testCase.label}: schema should reject`);
+    expectError(parseModelTaskResultV1(testCase.value), testCase.path, "invalid_value");
+  }
 });
 
 test("parser clones own output fields so inherited output properties do not survive", () => {
