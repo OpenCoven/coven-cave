@@ -148,7 +148,7 @@ struct CaveNavigationDrawer: View {
     private var header: some View {
         HStack {
             Text("Coven Cave")
-                .font(.system(size: 26, weight: .semibold, design: .serif))
+                .font(.system(.title2, design: .serif).weight(.semibold))
                 .foregroundStyle(chrome.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
@@ -232,11 +232,11 @@ private struct DrawerNavRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 17))
+                    .font(.body)
                     .foregroundStyle(active ? AnyShapeStyle(chrome.textPrimary) : AnyShapeStyle(.secondary))
                     .frame(width: 26)
                 Text(label)
-                    .font(.system(size: 17))
+                    .font(.body)
                     .foregroundStyle(chrome.textPrimary)
                 Spacer()
             }

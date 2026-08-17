@@ -21,4 +21,10 @@ assert.match(
   "familiar presence colour should be resolved from the active chrome palette",
 );
 
+const drawer = await read(`${root}/Views/NavigationDrawer.swift`);
+assert.doesNotMatch(drawer, /font\(\.system\(size: 17\)\)/,
+  "drawer rows should use Dynamic Type styles rather than fixed 17-point type");
+assert.doesNotMatch(drawer, /font\(\.system\(size: 26, weight: \.semibold, design: \.serif\)\)/,
+  "drawer title should scale with Dynamic Type");
+
 console.log("ios-native-modernization: ok");
