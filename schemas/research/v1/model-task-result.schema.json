@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencoven.model-task-result/v1",
+  "title": "OpenCoven Model Task Result v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "taskId",
+    "runId",
+    "attempt",
+    "inputDigest",
+    "output",
+    "outputDigest",
+    "executorDeviceId",
+    "modelReceipt",
+    "completedAt",
+    "signature"
+  ],
+  "properties": {
+    "schema": { "const": "opencoven.model-task-result/v1" },
+    "taskId": { "$ref": "#/$defs/modelTaskId" },
+    "runId": { "$ref": "#/$defs/runId" },
+    "attempt": { "$ref": "#/$defs/positiveSafeInteger" },
+    "inputDigest": { "$ref": "#/$defs/sha256" },
+    "output": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "outputDigest": { "$ref": "#/$defs/sha256" },
+    "executorDeviceId": { "type": "string" },
+    "modelReceipt": { "$ref": "#/$defs/modelReceipt" },
+    "completedAt": { "$ref": "#/$defs/utcTimestamp" },
+    "signature": { "$ref": "#/$defs/nonEmptyString" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "modelTaskId": {
+      "type": "string",
+      "pattern": "^modeltask_[A-Za-z0-9_-]+$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[A-Za-z0-9_-]+$"
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullableSafeInteger": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nullableNonNegativeNumber": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "modelUsage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["inputTokens", "outputTokens", "costUsd", "reportedByRuntime"],
+      "properties": {
+        "inputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "outputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "costUsd": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "reportedByRuntime": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "reportedByRuntime": { "const": false } },
+            "required": ["reportedByRuntime"]
+          },
+          "then": {
+            "properties": {
+              "inputTokens": { "const": null },
+              "outputTokens": { "const": null },
+              "costUsd": { "const": null }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reportedByRuntime": { "const": true } },
+            "required": ["reportedByRuntime"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": { "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } },
+                "required": ["inputTokens"]
+              },
+              {
+                "properties": { "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } },
+                "required": ["outputTokens"]
+              },
+              {
+                "properties": { "costUsd": { "type": "number", "minimum": 0 } },
+                "required": ["costUsd"]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "modelReceipt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "familiarId",
+        "runtime",
+        "effectiveModel",
+        "modelSource",
+        "providerBilling",
+        "usage"
+      ],
+      "properties": {
+        "familiarId": { "type": "string" },
+        "runtime": { "type": "string" },
+        "effectiveModel": { "type": ["string", "null"] },
+        "modelSource": {
+          "enum": [
+            "next-message",
+            "session",
+            "familiar-default",
+            "runtime-default",
+            "global-default"
+          ]
+        },
+        "providerBilling": { "const": "user-connected" },
+        "usage": { "$ref": "#/$defs/modelUsage" }
+      }
+    }
+  }
+}
