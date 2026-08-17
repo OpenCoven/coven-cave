@@ -79,7 +79,7 @@ try {
   );
   assert.match(
     nextConfig,
-    /"\.\/apps\/ios\/\*\*\/build-\*\/\*\*\/\*"/,
+    /"\.\/apps\/ios\/\*\*\/build\*\/\*\*\/\*"/,
     "Next tracing excludes suffixed local iOS build roots",
   );
 
