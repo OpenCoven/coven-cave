@@ -1388,6 +1388,233 @@ describe("useQuickChat send cancellation", () => {
     });
   });
 
+  test("done waits for a cleanup Stop attached during normal Stop await before cancelling", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    requests.stopOutcome = { stopped: false, queued: false };
+    await act(async () => {
+      state!.cancel();
+      await state!.sendText("queued follow-up");
+      await Promise.resolve();
+    });
+    expect(state!.queued).toHaveLength(1);
+
+    await act(async () => {
+      requests.sends[0]!.complete("Definitive answer");
+      await Promise.resolve();
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Definitive answer",
+      pending: true,
+      lifecycle: "streaming",
+      error: null,
+    });
+
+    requests.stopOutcome = { stopped: false, queued: true };
+    await act(async () => {
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+    expect(requests.stops).toEqual([
+      { runId: requests.sends[0]!.body.runId },
+      { runId: requests.sends[0]!.body.runId },
+    ]);
+    expect(requests.stopKeepalives).toEqual([false, true]);
+
+    requests.releaseStop(0);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Definitive answer",
+      pending: true,
+      lifecycle: "streaming",
+      error: null,
+    });
+    expect(state!.queued).toHaveLength(1);
+
+    requests.releaseStop(1);
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    await act(async () => {
+      await send;
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Definitive answer",
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+    expect(state!.sendState).toBe("idle");
+    expect(state!.queued).toHaveLength(1);
+  });
+
+  test("a cleanup Stop that resolves before the normal Stop still keeps completion cancelled", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    requests.stopOutcome = { stopped: false, queued: false };
+    await act(async () => {
+      state!.cancel();
+      await state!.sendText("queued follow-up");
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      requests.sends[0]!.complete("Definitive answer");
+      await Promise.resolve();
+    });
+    requests.stopOutcome = { stopped: true, queued: false };
+    await act(async () => {
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+
+    requests.releaseStop(1);
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Definitive answer",
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+    expect(state!.sendState).toBe("idle");
+    expect(state!.queued).toHaveLength(1);
+
+    requests.releaseStop(0);
+    await act(async () => {
+      await send;
+    });
+    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+    expect(state!.queued).toHaveLength(1);
+  });
+
+  test("done completes only after newly attached normal and cleanup Stops both settle no-op", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    vi.stubGlobal("window", Object.assign(new EventTarget(), {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {},
+      },
+    }));
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    requests.stopOutcome = { stopped: false, queued: false };
+    await act(async () => {
+      state!.cancel();
+      await state!.sendText("queued follow-up");
+      await Promise.resolve();
+    });
+    expect(state!.queued).toHaveLength(1);
+
+    await act(async () => {
+      requests.sends[0]!.complete("Definitive answer");
+      await Promise.resolve();
+    });
+    await act(async () => {
+      window.dispatchEvent(pageTransitionEvent("pagehide", true));
+      await Promise.resolve();
+    });
+
+    requests.releaseStop(0);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(requests.sends).toHaveLength(1);
+    expect(state!.queued).toHaveLength(1);
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Definitive answer",
+      pending: true,
+      lifecycle: "streaming",
+      error: null,
+    });
+
+    requests.releaseStop(1);
+    await waitFor(() => requests.sends.length === 2 && state?.sendState === "sending");
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.queued).toHaveLength(0);
+
+    await act(async () => {
+      requests.sends[1]!.complete("Queued answer");
+      await send;
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Queued answer",
+      pending: false,
+      lifecycle: "complete",
+      error: null,
+    });
+    expect(state!.sendState).toBe("done");
+  });
+
   test("repeated cleanup paths never start a third Stop while keepalive is pending", async () => {
     const requests = new QuickChatFetch();
     requests.delayStops = true;

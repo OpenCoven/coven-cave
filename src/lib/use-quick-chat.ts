@@ -795,13 +795,19 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         return "stopped";
       }
 
-      const stopOutcomePromises = [
-        activeSend.normalStopOutcomePromise,
-        activeSend.cleanupStopOutcomePromise,
-      ].filter(
-        (promise): promise is Promise<QuickChatStopOutcome> => promise !== undefined,
-      );
-      if (activeSendRef.current === activeSend && stopOutcomePromises.length > 0) {
+      const awaitedStopOutcomePromises = new Set<Promise<QuickChatStopOutcome>>();
+      while (activeSendRef.current === activeSend) {
+        const stopOutcomePromises = [
+          activeSend.normalStopOutcomePromise,
+          activeSend.cleanupStopOutcomePromise,
+        ].filter(
+          (promise): promise is Promise<QuickChatStopOutcome> =>
+            promise !== undefined && !awaitedStopOutcomePromises.has(promise),
+        );
+        if (stopOutcomePromises.length === 0) break;
+        stopOutcomePromises.forEach((promise) => {
+          awaitedStopOutcomePromises.add(promise);
+        });
         const stopOutcomes = await Promise.all(stopOutcomePromises);
         if (
           stopOutcomes.some(

@@ -152,8 +152,8 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /const stopOutcomePromises = \[[\s\S]*activeSend\.normalStopOutcomePromise,[\s\S]*activeSend\.cleanupStopOutcomePromise,[\s\S]*await Promise\.all\(stopOutcomePromises\)[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*const ownsActiveSend = activeSendRef\.current === activeSend;/,
-  "definitive done awaits both independently owned Stop outcomes before normal settlement",
+  /const awaitedStopOutcomePromises = new Set<Promise<QuickChatStopOutcome>>\(\);[\s\S]*while \(activeSendRef\.current === activeSend\)[\s\S]*activeSend\.normalStopOutcomePromise,[\s\S]*activeSend\.cleanupStopOutcomePromise,[\s\S]*!awaitedStopOutcomePromises\.has\(promise\)[\s\S]*if \(stopOutcomePromises\.length === 0\) break;[\s\S]*await Promise\.all\(stopOutcomePromises\)[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*const ownsActiveSend = activeSendRef\.current === activeSend;/,
+  "definitive done loops across independently owned Stop outcomes before normal settlement",
 );
 assert.match(
   quickHook,
