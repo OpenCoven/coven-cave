@@ -721,5 +721,15 @@ assert.match(
   /data-tauri-drag-region=\{embedded \? undefined : "deep"\}/,
   "embedded Settings never claims the native titlebar drag region",
 );
+assert.match(
+  shellSource,
+  /className=\{`settings-shell\$\{embedded \? " settings-shell--embedded h-full" : " h-\[100dvh\]"\} w-full flex flex-col overflow-hidden bg-\[var\(--bg-base\)\] text-\[var\(--text-primary\)\]`\}/,
+  "Settings root establishes the viewport-bounded flex column that contains the scroll owner",
+);
+assert.match(
+  shellSource,
+  /<div className="flex min-h-0 flex-1 flex-col md:flex-row">[\s\S]{0,7000}<main[\s\S]{0,240}className="settings-shell__content min-h-0 flex-1 overflow-y-auto/,
+  "Settings bounds its body and gives vertical scrolling only to the content main",
+);
 
 console.log("settings-shell-polish.test.ts OK");
