@@ -403,6 +403,160 @@ test("artifact titles reject paths, URI schemes, controls, and known secret pref
   assert.equal(expectOk(parseRunManifestV1(genericTitle)).artifacts[0].title, "Decision: summary");
 });
 
+test("sensitive manifest objects reject forbidden extension keys case-insensitively", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const key of [
+    "excerpt",
+    "text",
+    "content",
+    "blob",
+    "filename",
+    "localPath",
+    "filePath",
+    "path",
+    "credential",
+    "credentials",
+    "secret",
+    "objectKey",
+    "storageKey",
+    "bucketKey",
+    "deletedContent",
+    "CoNtEnT",
+  ]) {
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], [key]: "private material" }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, key);
+    expectError(parseRunManifestV1(invalid), `$.artifacts[0].${key}`, "semantic_conflict");
+  }
+
+  const contextSource = recalculate({
+    ...local,
+    sources: [{ ...local.sources[0], TeXt: "private material" }],
+  });
+  assert.equal(Value.Check(runManifestSchema, contextSource), false);
+  expectError(parseRunManifestV1(contextSource), "$.sources[0].TeXt", "semantic_conflict");
+
+  const deletion = recalculate({
+    ...local,
+    deletion: { ...local.deletion, DeLeTeDcOnTeNt: "private material" },
+  });
+  assert.equal(Value.Check(runManifestSchema, deletion), false);
+  expectError(
+    parseRunManifestV1(deletion),
+    "$.deletion.DeLeTeDcOnTeNt",
+    "semantic_conflict",
+  );
+
+  const cloudMetadata = recalculate({
+    ...local,
+    artifacts: [
+      {
+        ...local.artifacts[0],
+        placement: "cloud-metadata",
+        filename: "private-report.md",
+      },
+    ],
+  });
+  assert.equal(Value.Check(runManifestSchema, cloudMetadata), false);
+  expectError(
+    parseRunManifestV1(cloudMetadata),
+    "$.artifacts[0].filename",
+    "semantic_conflict",
+  );
+});
+
+test("sensitive manifest objects reject forbidden keys nested in extension objects and arrays", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const [candidate, path] of [
+    [
+      recalculate({
+        ...local,
+        sources: [
+          {
+            ...local.sources[0],
+            metadata: { items: [{ ExCeRpT: "private material" }] },
+          },
+        ],
+      }),
+      "$.sources[0].metadata.items[0].ExCeRpT",
+    ],
+    [
+      recalculate({
+        ...local,
+        artifacts: [
+          {
+            ...local.artifacts[0],
+            metadata: { nested: { LoCaLpAtH: "/private/report.md" } },
+          },
+        ],
+      }),
+      "$.artifacts[0].metadata.nested.LoCaLpAtH",
+    ],
+    [
+      recalculate({
+        ...local,
+        deletion: {
+          ...local.deletion,
+          metadata: [{ ObJeCtKeY: "tenant/private/object" }],
+        },
+      }),
+      "$.deletion.metadata[0].ObJeCtKeY",
+    ],
+  ] as const) {
+    assert.equal(Value.Check(runManifestSchema, candidate), true);
+    expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
+  }
+});
+
+test("privacy key checks do not scan values or public-evidence metadata", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const benign = recalculate({
+    ...local,
+    artifacts: [
+      {
+        ...local.artifacts[0],
+        displayMetadata: {
+          label: "secret",
+          contentType: "text/markdown",
+          examples: ["/Users/example/private.md", "deletedContent"],
+        },
+      },
+    ],
+    deletion: {
+      ...local.deletion,
+      auditMetadata: { note: "objectKey" },
+    },
+  });
+  const parsedBenign = expectOk(parseRunManifestV1(benign));
+  assert.deepEqual(
+    (parsedBenign.artifacts[0].displayMetadata as { examples: string[] }).examples,
+    ["/Users/example/private.md", "deletedContent"],
+  );
+
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  const publicEvidence = recalculate({
+    ...cloud,
+    sources: cloud.sources.map((source) =>
+      source.kind === "public-evidence"
+        ? {
+            ...source,
+            excerpt: "approved public passage",
+            metadata: {
+              text: "approved public passage",
+              path: ["section", 2],
+              canonicalUrl: source.canonicalUrl,
+            },
+          }
+        : source,
+    ),
+  });
+  const parsedPublicEvidence = expectOk(parseRunManifestV1(publicEvidence));
+  const evidence = parsedPublicEvidence.sources.find((source) => source.kind === "public-evidence");
+  assert.equal(evidence?.excerpt, "approved public passage");
+});
+
 test("retention and deletion status pairs and receipt requirements are enforced", () => {
   assert.equal(Value.Check(runManifestSchema, invalidDeletionPairJson), false);
   expectError(parseRunManifestV1(invalidDeletionPairJson), "$.retention.status", "semantic_conflict");
