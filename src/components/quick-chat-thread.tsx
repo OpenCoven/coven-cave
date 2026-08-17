@@ -307,7 +307,9 @@ export function QuickChatThread({
 
   const lastAssistantId = lastRegenerableQuickChatMessageId(messages);
   const latestAssistantId =
-    messages.findLast((message) => message.role === "assistant")?.id ?? null;
+    messages.findLast(
+      (message) => message.role === "assistant" && message.local !== true,
+    )?.id ?? null;
 
   return (
     <div ref={scrollRef} className="quick-chat-thread">

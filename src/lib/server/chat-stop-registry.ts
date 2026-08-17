@@ -21,6 +21,9 @@ type RegisterChatRunOptions = {
 };
 
 export type ChatRunHandle = {
+  /** Explicit per-send token supplied at registration. Never inferred from
+   *  session aliases in `keys`. */
+  runId: string | null;
   /** Set when a deliberate stop arrived via /api/chat/stop. The send route
    *  reads this — not `req.signal.aborted` — to decide cancel semantics. */
   stopRequested: boolean;
@@ -28,20 +31,27 @@ export type ChatRunHandle = {
   acceptingStop: boolean;
   /** True while sessions/list should still treat the run as live. */
   projectionActive: boolean;
-  /** Registry keys this run is reachable under (runId, conversation id). */
+  /** Registry aliases this run is reachable under (runId, conversation id). */
   keys: string[];
 };
 
 const active = new Map<string, ChatRunEntry>();
-// Early runId Stops cannot safely expire: setup can outlive any wall-clock
-// guess. Bound them by capacity and reject new intent rather than invalidating
-// a Stop the route already acknowledged as queued.
-const pendingStops = new Map<string, true>();
+// The send route can remain detached for ten minutes. Keep early runId Stops
+// beyond that maximum setup/detach budget, then recover abandoned capacity.
+// Never evict an unexpired Stop the route already acknowledged as queued.
+const pendingStops = new Map<string, number>();
 const settledKeys = new Map<string, number>();
 export const MAX_PENDING_CHAT_STOPS = 256;
+export const PENDING_CHAT_STOP_TTL_MS = 15 * 60_000;
 export const SETTLED_CHAT_RUN_TTL_MS = 30_000;
 export const MAX_SETTLED_CHAT_RUNS = 512;
 let registryNow = () => Date.now();
+
+function prunePendingStops(now = registryNow()): void {
+  for (const [runId, expiresAt] of pendingStops) {
+    if (expiresAt <= now) pendingStops.delete(runId);
+  }
+}
 
 function pruneSettledKeys(now = registryNow()): void {
   for (const [key, expiresAt] of settledKeys) {
@@ -49,17 +59,23 @@ function pruneSettledKeys(now = registryNow()): void {
   }
 }
 
-function queuePendingStop(runId: string): boolean {
+function queuePendingStop(runId: string, now: number): boolean {
   if (pendingStops.has(runId)) return true;
   if (pendingStops.size >= MAX_PENDING_CHAT_STOPS) return false;
-  pendingStops.set(runId, true);
+  pendingStops.set(runId, now + PENDING_CHAT_STOP_TTL_MS);
   return true;
 }
 
-function rememberSettledKeys(keys: readonly string[], now: number): void {
+function rememberSettledKeys(handle: ChatRunHandle, now: number): void {
+  prunePendingStops(now);
   pruneSettledKeys(now);
+  // Registration normally consumes this intent. Settlement may only clean up
+  // the handle's explicit runId; a session alias can equal another run's runId.
+  if (handle.runId) pendingStops.delete(handle.runId);
+  const keys = handle.runId
+    ? new Set([...handle.keys, handle.runId])
+    : new Set(handle.keys);
   for (const key of keys) {
-    pendingStops.delete(key);
     if (!settledKeys.has(key) && settledKeys.size >= MAX_SETTLED_CHAT_RUNS) {
       const oldestKey = settledKeys.keys().next().value;
       if (oldestKey !== undefined) settledKeys.delete(oldestKey);
@@ -76,8 +92,10 @@ export function registerChatRun(
   options: RegisterChatRunOptions = {},
 ): ChatRunHandle {
   const now = registryNow();
+  prunePendingStops(now);
   pruneSettledKeys(now);
   const handle: ChatRunHandle = {
+    runId: options.runId ?? null,
     stopRequested: false,
     acceptingStop: true,
     projectionActive: true,
@@ -90,7 +108,7 @@ export function registerChatRun(
     handle.keys.push(key);
   }
   if (handle.keys.length > 0) invalidateSessionsListCache();
-  if (options.runId && pendingStops.delete(options.runId)) {
+  if (handle.runId && pendingStops.delete(handle.runId)) {
     handle.stopRequested = true;
     try {
       kill();
@@ -172,19 +190,22 @@ export function requestChatStop(key: string): boolean {
 /**
  * Deliberate run-scoped Stop used by /api/chat/stop. If async send setup has
  * not registered the run yet, retain one capacity-bounded intent for that
- * runId only until registration consumes it. A registered, transport-settled
- * run remains a late-stop no-op via an independently expiring tombstone.
+ * runId for fifteen minutes or until registration consumes it. A registered,
+ * transport-settled run remains a late-stop no-op via a separate 30-second
+ * tombstone.
  */
 export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
+  const now = registryNow();
+  prunePendingStops(now);
+  pruneSettledKeys(now);
+
   const entry = active.get(runId);
   if (entry) {
     return requestChatStop(runId) ? "stopped" : "settled";
   }
 
-  const now = registryNow();
-  pruneSettledKeys(now);
   if (settledKeys.has(runId)) return "settled";
-  return queuePendingStop(runId) ? "queued" : "full";
+  return queuePendingStop(runId, now) ? "queued" : "full";
 }
 
 /** Freeze cancellation semantics as soon as the transport reaches a
@@ -192,7 +213,7 @@ export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
 export function markChatRunTransportSettled(handle: ChatRunHandle): void {
   if (!handle.acceptingStop) return;
   handle.acceptingStop = false;
-  rememberSettledKeys(handle.keys, registryNow());
+  rememberSettledKeys(handle, registryNow());
 }
 
 /** Sessions/list should stop presenting the run as live once persistence/final
@@ -213,10 +234,13 @@ export function resetChatStopRegistryForTests(options: { now?: () => number } = 
   if (hadActiveRuns) invalidateSessionsListCache();
 }
 
+/** Count currently valid pending intents after applying their TTL. */
 export function pendingChatStopCountForTests(): number {
+  prunePendingStops();
   return pendingStops.size;
 }
 
+/** Count currently valid settled tombstones after applying their TTL. */
 export function settledChatRunCountForTests(): number {
   pruneSettledKeys();
   return settledKeys.size;

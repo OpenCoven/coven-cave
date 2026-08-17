@@ -63,7 +63,7 @@ export type QuickChatMessage = {
   error?: string | null;
   /** Local note (slash-command output like /help) — rendered as an assistant
    *  turn but never sent to the daemon, never a regenerate anchor, and never
-   *  a reply-recommendation trigger. */
+   *  a reply-recommendation trigger or lifecycle announcement owner. */
   local?: boolean;
   /** Honest model/control outcome returned with the completed assistant turn. */
   responseMetadata?: ChatResponseMetadata;

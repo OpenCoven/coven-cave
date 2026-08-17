@@ -1049,6 +1049,51 @@ describe("StreamingTurnResponse", () => {
     ).toHaveLength(4);
   });
 
+  it("keeps lifecycle announcements on a streaming familiar reply when a local help note follows", async () => {
+    const renderer = await render(
+      <QuickChatThread
+        familiar={{ id: "nova", display_name: "Nova", role: "generalist" }}
+        messages={[
+          {
+            id: "quick-streaming-familiar",
+            role: "assistant",
+            lifecycle: "streaming",
+            pending: true,
+            text: "Working on the answer",
+          },
+          {
+            id: "quick-local-help",
+            role: "assistant",
+            local: true,
+            text: "/help\nUse /clear to clear this quick chat.",
+          },
+        ]}
+        onStop={vi.fn()}
+      />,
+    );
+    await flushMarkdown();
+
+    const responses = renderer.root.findAllByType(StreamingTurnResponse);
+    expect(
+      responses.map((response) => ({
+        turnId: response.props.turnId,
+        announceLifecycle: response.props.announceLifecycle,
+      })),
+    ).toEqual([
+      { turnId: "quick-streaming-familiar", announceLifecycle: true },
+      { turnId: "quick-local-help", announceLifecycle: false },
+    ]);
+    const liveRegions = renderer.root.findAll(
+      (node) =>
+        node.props.role === "status" ||
+        node.props.role === "alert" ||
+        node.props["aria-live"] !== undefined,
+    );
+    expect(liveRegions).toHaveLength(1);
+    expect(liveRegions[0].props.className).toBe("streaming-turn-current");
+    expect(textContent(renderer.root)).not.toContain("Nova completed response");
+  });
+
   it("announces only the latest completed Quick reply without making prose live", async () => {
     const renderer = await render(
       <QuickChatThread

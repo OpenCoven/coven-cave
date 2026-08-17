@@ -70,8 +70,8 @@ assert.doesNotMatch(
 assert.doesNotMatch(thread, /aria-live=/, "the thread does not nest a second live region");
 assert.match(
   thread,
-  /messages\.findLast\(\(message\) => message\.role === "assistant"\)[\s\S]*announceLifecycle=\{message\.id === latestAssistantId\}/,
-  "only Quick Chat's latest assistant turn can announce lifecycle changes",
+  /messages\.findLast\([\s\S]*message\.role === "assistant" && message\.local !== true[\s\S]*announceLifecycle=\{message\.id === latestAssistantId\}/,
+  "only Quick Chat's latest non-local assistant turn can announce lifecycle changes",
 );
 const responseMetadataComponent =
   /function QuickChatResponseMetadata[\s\S]*?\n\}/.exec(thread)?.[0] ?? "";

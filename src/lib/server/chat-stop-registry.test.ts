@@ -17,6 +17,7 @@ const {
   resetChatStopRegistryForTests,
   MAX_PENDING_CHAT_STOPS,
   MAX_SETTLED_CHAT_RUNS,
+  PENDING_CHAT_STOP_TTL_MS,
   SETTLED_CHAT_RUN_TTL_MS,
 } =
   await import("./chat-stop-registry.ts");
@@ -30,6 +31,7 @@ resetChatStopRegistryForTests();
     kills += 1;
   });
   assert.equal(handle.stopRequested, false, "fresh runs are not stop-flagged");
+  assert.equal(handle.runId, null, "aliases do not become an implicit runId");
   assert.equal(handle.acceptingStop, true, "fresh runs accept Stop");
   assert.equal(handle.projectionActive, true, "fresh runs project as live");
   assert.equal(requestChatStop("run-1"), true, "stop resolves by runId");
@@ -155,6 +157,7 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   const handle = registerChatRun(["early-run", "shared-session"], () => {
     kills += 1;
   }, { runId: "early-run" });
+  assert.equal(handle.runId, "early-run", "the explicit runId is retained separately");
   assert.equal(handle.stopRequested, true, "registration consumes the pending intent");
   assert.equal(kills, 1, "one pending intent invokes the safe kill exactly once");
   assert.equal(pendingChatStopCountForTests(), 0, "consumed intents do not leak");
@@ -162,27 +165,42 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
 }
 
 // Pending runId intents survive setup delays longer than the route's ten-minute
-// detach window. Registration, not a guessed wall-clock deadline, consumes it.
+// detach window, then expire at the explicit fifteen-minute maximum.
 {
   let now = 20_000;
   let kills = 0;
   resetChatStopRegistryForTests({ now: () => now });
   assert.equal(requestOrQueueChatStop("slow-setup-run"), "queued");
-  now += 24 * 60 * 60_000;
+  now += 10 * 60_000 + 1;
+  assert.equal(pendingChatStopCountForTests(), 1, "intent survives beyond ten minutes");
   const slowSetup = registerChatRun(["slow-setup-run"], () => {
     kills += 1;
   }, { runId: "slow-setup-run" });
-  assert.equal(slowSetup.stopRequested, true, "a day-old pending intent still cancels on registration");
+  assert.equal(slowSetup.stopRequested, true, "the retained pending intent cancels on registration");
   assert.equal(kills, 1, "the delayed registration consumes the intent exactly once");
   assert.equal(pendingChatStopCountForTests(), 0, "consumed intent state does not leak");
   unregisterChatRun(slowSetup);
+
+  assert.equal(requestOrQueueChatStop("count-expiry-run"), "queued");
+  now += PENDING_CHAT_STOP_TTL_MS;
+  assert.equal(pendingChatStopCountForTests(), 0, "test counts prune intents at the TTL");
+
+  assert.equal(requestOrQueueChatStop("register-expiry-run"), "queued");
+  now += PENDING_CHAT_STOP_TTL_MS;
+  const expiredSetup = registerChatRun(["register-expiry-run"], () => {
+    kills += 1;
+  }, { runId: "register-expiry-run" });
+  assert.equal(expiredSetup.stopRequested, false, "registration prunes rather than consuming an expired intent");
+  assert.equal(kills, 1, "expired intent never invokes the kill");
+  unregisterChatRun(expiredSetup);
 }
 
 // Capacity remains strict without revoking any intent already acknowledged as
-// queued. A duplicate remains idempotently accepted, while a new runId can be
-// retried after registration consumes a slot.
+// queued. A duplicate remains idempotently accepted, the unexpired 257th intent
+// is rejected, and abandoned capacity recovers after expiry.
 {
-  resetChatStopRegistryForTests();
+  let now = 25_000;
+  resetChatStopRegistryForTests({ now: () => now });
   for (let index = 0; index < MAX_PENDING_CHAT_STOPS; index += 1) {
     assert.equal(
       requestOrQueueChatStop(`bounded-${index}`),
@@ -198,33 +216,60 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
     "rejecting overflow neither inserts nor evicts",
   );
 
-  const consumed = new Set<string>();
-  const consume = (runId: string) => {
-    const handle = registerChatRun([runId], () => {
-      consumed.add(runId);
-    }, { runId });
-    assert.equal(handle.stopRequested, true, `${runId} retains its accepted Stop`);
-    unregisterChatRun(handle);
-  };
-  consume("bounded-0");
+  let oldestKills = 0;
+  const oldest = registerChatRun(["bounded-0"], () => {
+    oldestKills += 1;
+  }, { runId: "bounded-0" });
+  assert.equal(oldest.stopRequested, true, "the oldest acknowledged intent was not evicted");
+  assert.equal(oldestKills, 1);
+  unregisterChatRun(oldest);
+
+  now += PENDING_CHAT_STOP_TTL_MS;
   assert.equal(
     requestOrQueueChatStop("bounded-overflow"),
     "queued",
-    "the rejected intent can retry after a slot is consumed",
+    "a request prunes expired entries and recovers capacity",
   );
-  for (let index = 1; index < MAX_PENDING_CHAT_STOPS; index += 1) {
-    consume(`bounded-${index}`);
-  }
-  assert.equal(
-    [...consumed].filter((runId) => runId.startsWith("bounded-")).length,
-    MAX_PENDING_CHAT_STOPS,
-    "all first 256 acknowledged intents remain consumable",
-  );
-  consume("bounded-overflow");
-  assert.equal(pendingChatStopCountForTests(), 0, "every accepted intent was consumed");
+  assert.equal(pendingChatStopCountForTests(), 1);
 
   resetChatStopRegistryForTests();
   assert.equal(pendingChatStopCountForTests(), 0, "test reset clears bounded pending intents");
+}
+
+// A pending runId may equal another run's session alias. Settling and
+// unregistering the alias owner must not consume that unrelated intent.
+{
+  let intendedKills = 0;
+  resetChatStopRegistryForTests();
+  assert.equal(requestOrQueueChatStop("shared-adversarial-session"), "queued");
+  const aliasRun = registerChatRun(
+    ["alias-owner-run", "shared-adversarial-session"],
+    () => {
+      throw new Error("the alias owner must not receive another run's early Stop");
+    },
+    { runId: "alias-owner-run" },
+  );
+  assert.equal(aliasRun.runId, "alias-owner-run");
+  markChatRunTransportSettled(aliasRun);
+  unregisterChatRun(aliasRun);
+  assert.equal(
+    pendingChatStopCountForTests(),
+    1,
+    "alias settlement and unregister preserve the intended runId intent",
+  );
+
+  const intendedRun = registerChatRun(
+    ["shared-adversarial-session"],
+    () => {
+      intendedKills += 1;
+    },
+    { runId: "shared-adversarial-session" },
+  );
+  assert.equal(intendedRun.runId, "shared-adversarial-session");
+  assert.equal(intendedRun.stopRequested, true, "the intended run consumes its exact runId intent");
+  assert.equal(intendedKills, 1, "only the intended run is killed");
+  assert.equal(pendingChatStopCountForTests(), 0);
+  unregisterChatRun(intendedRun);
 }
 
 // A live but transport-settled run keeps the existing late-stop behavior: it
