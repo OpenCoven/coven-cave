@@ -96,6 +96,26 @@ test("unknown tools fall back to Working…", () => {
   assert.equal(model.currentActivity?.label, "Working…");
 });
 
+test("unknown tools stay neutral even when inputs and outputs contain activity keywords", () => {
+  const model = createStreamingTurnViewModel(
+    input({
+      tools: [
+        {
+          id: "mystery-1",
+          name: "Read",
+          input: '{"path":"docs/review.md","command":"pnpm build && pnpm test"}',
+          output: "search test build review",
+          status: "running",
+        },
+      ],
+    }),
+  );
+
+  assert.equal(model.currentActivity?.label, "Working…");
+  assert.equal(model.currentActivity?.detail, undefined);
+  assert.doesNotMatch(model.currentActivity?.label ?? "", /search|test|build|review|docs\/review\.md/i);
+});
+
 test("latest running progress wins over a later settled event", () => {
   const model = createStreamingTurnViewModel(
     input({

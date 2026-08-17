@@ -76,26 +76,8 @@ function normalizeProgressEvent(progress: ProgressEvent): ActivityEvent {
   };
 }
 
-function readToolClassifier(tool: ToolEvent): string {
-  const parts = [tool.name];
-  if (typeof tool.input === "string" && tool.input.trim().length > 0) {
-    parts.push(tool.input);
-    try {
-      const parsed = JSON.parse(tool.input) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        const command = (parsed as { command?: unknown }).command;
-        if (typeof command === "string" && command.trim().length > 0) parts.push(command);
-      }
-    } catch {
-      // Raw tool input may still help allowlisted classification.
-    }
-  }
-  return parts.join(" ");
-}
-
 function toolActivityLabel(tool: ToolEvent): string {
-  const classifier = readToolClassifier(tool);
-  return TOOL_ACTIVITY.find(([pattern]) => pattern.test(classifier))?.[1] ?? "Working…";
+  return TOOL_ACTIVITY.find(([pattern]) => pattern.test(tool.name))?.[1] ?? "Working…";
 }
 
 function normalizeToolEvent(tool: ToolEvent): ActivityEvent {
