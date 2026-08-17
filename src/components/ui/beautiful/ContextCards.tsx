@@ -14,7 +14,7 @@ const CHUNKS = [
     body: "Cold-chain certification must be verified before a new dairy can be added to the reorder workflow.",
     source: "Dairy Onboarding SOP.pdf",
     badge: "PDF",
-    tone: "bg-bui-red",
+    tone: "bg-bui-red text-bui-red-ink",
   },
   {
     title: "Seasonal demand row",
@@ -22,7 +22,7 @@ const CHUNKS = [
     body: "Q4 velocity table: pistachio +18%, vanilla +6%, rocky road -11%; retire flavors below 40 scoops weekly.",
     source: "Sales Velocity Export.csv",
     badge: "CSV",
-    tone: "bg-bui-green",
+    tone: "bg-bui-green text-bui-green-ink",
   },
 ];
 
@@ -75,7 +75,7 @@ export function ContextCards() {
                 transitionDelay: `${i * 80}ms`,
               }}
             >
-              <span className={`flex size-3.5 items-center justify-center rounded-[4px] ${chunk.tone} text-[length:var(--text-2xs)] font-bold text-white`}>
+              <span className={`flex size-3.5 items-center justify-center rounded-[4px] ${chunk.tone} text-[length:var(--text-2xs)] font-bold`}>
                 {chunk.badge}
               </span>
               {chunk.source}

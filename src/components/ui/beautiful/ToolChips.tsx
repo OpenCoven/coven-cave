@@ -144,7 +144,7 @@ export function ToolChips() {
                     {row.detail.map((line) => (
                       <span
                         key={line.text}
-                        className={`truncate text-[length:var(--text-sm)] leading-[1.6] ${row.detailMono ? "font-mono" : ""} ${line.tone === "add" ? "text-bui-green" : "text-bui-ink-2"}`}
+                        className={`truncate text-[length:var(--text-sm)] leading-[1.6] ${row.detailMono ? "font-mono" : ""} ${line.tone === "add" ? "text-bui-green-text" : "text-bui-ink-2"}`}
                       >
                         {line.text}
                       </span>
@@ -169,8 +169,8 @@ export function ToolChips() {
               style={{ animation: `bui-pop-in 250ms cubic-bezier(0.23,1,0.32,1) ${i * 80}ms both` }}
             >
               <span className="min-w-0 truncate">{d.file}</span>
-              <span className="shrink-0 text-bui-green tabular-nums">+{d.add}</span>
-              {d.del > 0 && <span className="shrink-0 text-bui-red tabular-nums">−{d.del}</span>}
+              <span className="shrink-0 text-bui-green-text tabular-nums">+{d.add}</span>
+              {d.del > 0 && <span className="shrink-0 text-bui-red-text tabular-nums">−{d.del}</span>}
             </span>
           ))}
           <button

@@ -120,7 +120,7 @@ export function FineTuneCard() {
         <span className="text-[length:var(--text-base)] font-medium text-bui-ink">Flavor card</span>
         {done ? (
           <span
-            className="flex items-center gap-1.5 text-[length:var(--text-sm)] font-medium text-bui-green [animation:bui-pop-in_250ms_cubic-bezier(0.23,1,0.32,1)_both]!"
+            className="flex items-center gap-1.5 text-[length:var(--text-sm)] font-medium text-bui-green-text [animation:bui-pop-in_250ms_cubic-bezier(0.23,1,0.32,1)_both]!"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6L9 17l-5-5" />

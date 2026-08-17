@@ -98,10 +98,10 @@ export function SidebarNav() {
           setActive("tasks");
         }}
         className="mb-2 flex w-full items-center gap-2 rounded-bui-control px-2 py-1.5 text-[length:var(--text-base)]
-          font-medium text-bui-accent transition-[background-color,transform] duration-100 hover:bg-bui-accent-tint active:scale-[0.96]"
+          font-medium text-bui-accent-ink transition-[background-color,transform] duration-100 hover:bg-bui-accent-tint active:scale-[0.96]"
       >
         <span className="min-w-0 flex-1 truncate text-left">New task</span>
-        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-bui-accent text-white">
+        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-bui-accent text-bui-accent-on">
           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
