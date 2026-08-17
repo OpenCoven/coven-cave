@@ -15,6 +15,7 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { ChatTurnLifecycle } from "@/lib/chat-turn-state";
 import type {
   ModelControlCapability,
   ModelControlFamily,
@@ -57,6 +58,7 @@ export type QuickChatMessage = {
   attachments?: ChatAttachment[];
   /** Assistant turn still streaming in. */
   pending?: boolean;
+  lifecycle?: ChatTurnLifecycle;
   /** Per-turn error (the familiar failed / reported an error). */
   error?: string | null;
   /** Local note (slash-command output like /help) — rendered as an assistant
@@ -488,7 +490,14 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       abortRef.current = controller;
       setMessages((prev) => [
         ...prev,
-        { id: assistantId, role: "assistant", text: "", pending: true, error: null },
+        {
+          id: assistantId,
+          role: "assistant",
+          text: "",
+          pending: true,
+          lifecycle: "streaming",
+          error: null,
+        },
       ]);
       setSendState("sending");
 
@@ -538,29 +547,53 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       } catch (err) {
         // A mid-stream abort (Stop / unmount) rejects the reader; keep whatever
         // streamed so far and only surface non-abort failures.
-        if (abortRef.current === controller) abortRef.current = null;
+        const ownsActiveSend = abortRef.current === controller;
+        if (ownsActiveSend) abortRef.current = null;
         const aborted = controller.signal.aborted;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? { ...m, pending: false, error: aborted ? null : (err as Error)?.message ?? "Generation failed." }
+              ? {
+                  ...m,
+                  pending: false,
+                  lifecycle: aborted ? "cancelled" : "failed",
+                  error: aborted ? null : (err as Error)?.message ?? "Generation failed.",
+                }
               : m,
           ),
         );
-        setSendState("idle");
+        if (ownsActiveSend) setSendState("idle");
         return "stopped";
       }
 
-      if (abortRef.current === controller) abortRef.current = null;
+      const ownsActiveSend = abortRef.current === controller;
+      if (ownsActiveSend) abortRef.current = null;
+      if (controller.signal.aborted) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, pending: false, lifecycle: "cancelled", error: null }
+              : m,
+          ),
+        );
+        if (ownsActiveSend) setSendState("idle");
+        return "stopped";
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
-            ? { ...m, text: result.text, error: result.error, pending: false }
+            ? {
+                ...m,
+                text: result.text,
+                error: result.error,
+                pending: false,
+                lifecycle: result.error ? "failed" : "complete",
+              }
             : m,
         ),
       );
-      setSendState("done");
-      return "done";
+      if (ownsActiveSend) setSendState(result.error ? "idle" : "done");
+      return result.error ? "stopped" : "done";
     },
     [
       nextId,
@@ -745,7 +778,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     abortRef.current?.abort();
     abortRef.current = null;
     // Keep whatever streamed so far, but stop the spinner on the open turn.
-    setMessages((prev) => prev.map((m) => (m.pending ? { ...m, pending: false } : m)));
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.pending ? { ...m, pending: false, lifecycle: "cancelled" } : m,
+      ),
+    );
     setSendState("idle");
   }, []);
 

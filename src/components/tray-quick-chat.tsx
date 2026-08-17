@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "@/styles/quick-chat-glass.css";
 import { IconButton } from "@/components/ui/icon-button";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import type { ModelControlCapability, ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
 import type { Familiar } from "@/lib/types";
@@ -280,13 +281,18 @@ export function QuickChatTabPane({
     modelControls,
     modelControlsLoading,
     setModelControl,
-    cancel,
+    cancel: cancelQuickChat,
     newThread,
     regenerate,
   } = useQuickChat({ preferredFamiliarId: initialFamiliarId });
 
   const sending = sendState === "sending";
   const { composerRef, pickSuggestion } = useSuggestionPicker(setDraft);
+  const { announce } = useAnnouncer();
+  const cancel = useCallback(() => {
+    cancelQuickChat();
+    announce("Response stopped.", "polite");
+  }, [announce, cancelQuickChat]);
 
   // The agent picker exists to choose a familiar — once the user picks one,
   // the choice is made, so the picker dismisses instead of lingering until
@@ -349,6 +355,7 @@ export function QuickChatTabPane({
         familiar={selectedFamiliar}
         onSuggestion={pickSuggestion}
         onRegenerate={sending ? undefined : regenerate}
+        onStop={cancel}
       />
 
       <QuickChatComposer
@@ -356,7 +363,6 @@ export function QuickChatTabPane({
         draft={draft}
         onDraftChange={setDraft}
         onSend={(attachments) => void send(attachments)}
-        onCancel={cancel}
         sending={sending}
         disabled={loading}
         launchReady={projectLaunchReady}

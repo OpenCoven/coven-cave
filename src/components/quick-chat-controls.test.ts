@@ -5,9 +5,9 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./quick-chat-primitives.tsx", import.meta.url), "utf8");
 const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
-const messageBubble = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const messageFormat = readFileSync(new URL("../lib/quick-chat-message-format.ts", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
+const quickHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
 
 assert.match(primitives, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
 assert.doesNotMatch(primitives, /PopoverBody|PopoverItem|anchorRef/, "quick-chat select helper should not maintain its own popover implementation");
@@ -17,18 +17,13 @@ assert.match(primitives, /renderValue=/, "quick-chat select helper should keep i
 assert.match(source, /export \{ QuickChatThread \} from "\.\/quick-chat-thread"/, "controls preserve the shared thread export");
 assert.match(
   thread,
-  /import \{ ProgressiveMarkdownBlock \} from "@\/components\/message-bubble"/,
-  "familiar replies render through the normal chat's progressive Markdown path",
+  /formatQuickChatAssistantMessage[\s\S]*createStreamingTurnViewModel[\s\S]*<StreamingTurnResponse/,
+  "Quick Chat feeds its marker-safe projection into the shared model and renderer",
 );
 assert.match(
   thread,
-  /pendingTextIndex[\s\S]*<ProgressiveMarkdownBlock key=\{`text-\$\{index\}`\} text=\{piece\.text\} pending=\{streaming && index === pendingTextIndex\}/,
-  "streaming replies use progressive Markdown and show a cursor only on the final visible piece",
-);
-assert.match(
-  messageBubble,
-  /export function ProgressiveMarkdownBlock[\s\S]*<MarkdownContent text=\{text\} pending=\{pending\}/,
-  "the public progressive wrapper preserves one MarkdownContent instance across stream settlement",
+  /<StreamingTurnResponse[\s\S]*density="compact"/,
+  "Quick Chat renders the shared compact response composition",
 );
 assert.doesNotMatch(
   thread,
@@ -50,7 +45,51 @@ assert.match(
 );
 assert.match(thread, /copyText\(visible\)/, "each familiar reply can be copied to the clipboard — the visible text, not the raw next-paths trailer");
 assert.match(thread, /aria-live="polite"/, "the thread is a polite live region so streamed replies are announced");
-assert.match(thread, /quick-chat-caret|quick-chat-typing/, "streaming turns show a caret / thinking affordance");
+assert.match(
+  quickHook,
+  /lifecycle\?: ChatTurnLifecycle/,
+  "Quick Chat records the same explicit lifecycle vocabulary",
+);
+assert.match(
+  quickHook,
+  /role: "assistant",[\s\S]*pending: true,[\s\S]*lifecycle: "streaming",[\s\S]*error: null/,
+  "a new assistant turn starts in the explicit streaming lifecycle",
+);
+assert.match(
+  quickHook,
+  /pending: false,[\s\S]*lifecycle: aborted \? "cancelled" : "failed",[\s\S]*error: aborted \? null : \(err as Error\)\?\.message \?\? "Generation failed\."/,
+  "catch settlement distinguishes abort from a specific failure",
+);
+assert.match(
+  quickHook,
+  /text: result\.text,[\s\S]*error: result\.error,[\s\S]*pending: false,[\s\S]*lifecycle: result\.error \? "failed" : "complete"/,
+  "natural settlement records success or failure explicitly",
+);
+assert.match(
+  quickHook,
+  /return result\.error \? "stopped" : "done";/,
+  "a normally returned transport error parks the queue instead of looking complete",
+);
+assert.match(
+  quickHook,
+  /m\.pending \? \{ \.\.\.m, pending: false, lifecycle: "cancelled" \} : m/,
+  "Stop marks every pending Quick Chat turn cancelled",
+);
+assert.match(
+  quickHook,
+  /const ownsActiveSend = abortRef\.current === controller;[\s\S]*if \(ownsActiveSend\) abortRef\.current = null;[\s\S]*if \(ownsActiveSend\) setSendState\("idle"\);/,
+  "a cancelled turn settling late cannot reset a newer send to idle",
+);
+assert.match(
+  tray,
+  /<QuickChatThread[\s\S]*onStop=\{cancel\}/,
+  "Quick Chat places Stop beside live response activity",
+);
+assert.doesNotMatch(
+  source,
+  /sending \? \(\s*<Button variant="secondary" size="sm" onClick=\{onCancel\}>/,
+  "the composer no longer duplicates the live response Stop control",
+);
 
 // ── Shared building blocks: one source of truth for both surfaces ────────────
 // The overlay and the tray render the same header identity, controls row, and
@@ -241,8 +280,8 @@ assert.match(
 );
 assert.match(
   messageFormat,
-  /extractNextPaths\(skillSplit\.visible\)/,
-  "the formatter strips the trailer from familiar turns after protocol markers (never shown raw)",
+  /extractChatResultMarkers\(skillSplit\.visible,[\s\S]*extractNextPaths\(resultSplit\.visible\)/,
+  "the formatter strips result and next-path trailers from familiar turns after protocol markers",
 );
 assert.match(
   thread,
@@ -351,7 +390,7 @@ assert.match(
 
 // ── The hook side of queueing + attachments (use-quick-chat) ─────────────────
 {
-  const hook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+  const hook = quickHook;
   assert.match(
     hook,
     /if \(abortRef\.current\) \{[\s\S]*?queuedRef\.current = \[\.\.\.queuedRef\.current, item\]/,
@@ -447,7 +486,7 @@ assert.match(
   );
   assert.match(
     thread,
-    /QuickChatResponseMetadata[\s\S]*?Forwarded — not confirmed/,
+    /quickChatResponseMetadataLines[\s\S]*?Forwarded — not confirmed[\s\S]*?<QuickChatResponseMetadata lines=\{responseMetadataLines\}/,
     "quick chat renders requested, forwarded, and applied model/control outcomes",
   );
 }

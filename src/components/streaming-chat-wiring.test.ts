@@ -6,7 +6,7 @@ const quick = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), 
 
 for (const [name, source, requiredNow] of [
   ["Main Chat", main, true],
-  ["Quick Chat", quick, false],
+  ["Quick Chat", quick, true],
 ] as const) {
   const derivesSharedModel = /createStreamingTurnViewModel/.test(source);
   const rendersSharedResponse = /<StreamingTurnResponse/.test(source);
@@ -141,6 +141,37 @@ assert.match(
   main,
   /handlersRef=\{handlersRef\}/,
   "rows receive the stable latest-handler ref rather than a fresh cancel callback",
+);
+
+assert.match(
+  quick,
+  /useStreamingPresentationSource\(\s*message\.role === "assistant" \? message\.text : "",\s*streaming,\s*\{ sourceMode: "replaceable" \},?\s*\)/,
+  "Quick Chat buffers raw assistant source in replacement-safe mode",
+);
+assert.match(
+  quick,
+  /const presentedProjection = formatQuickChatAssistantMessage\(\s*presentedRawText,\s*streaming,\s*\)/,
+  "Quick Chat projects protocol markers only after buffering raw source",
+);
+assert.doesNotMatch(
+  quick,
+  /useStreamingPresentationSource\([\s\S]{0,120}(?:copyText|visible)[\s\S]{0,120}sourceMode: "append-only"/,
+  "Quick Chat never labels marker-projected visible text append-only",
+);
+assert.match(
+  quick,
+  /createStreamingTurnViewModel\(\{[\s\S]*turnId: message\.id,[\s\S]*visibleText: presentedVisible,[\s\S]*pending: streaming,[\s\S]*lifecycle: message\.lifecycle,[\s\S]*failed: Boolean\(message\.error\),[\s\S]*authoredResults,[\s\S]*\}\)/,
+  "Quick Chat supplies lifecycle, marker-safe prose, and authored results without inferred tool evidence",
+);
+assert.doesNotMatch(
+  quick,
+  /verifiedResults:/,
+  "Quick Chat does not fabricate trusted results without structured tool evidence",
+);
+assert.match(
+  quick,
+  /shouldUseEmptySuccessfulFallback\(\{[\s\S]*emptySuccessful: streamingModel\.emptySuccessful,[\s\S]*visibleProse: visible,[\s\S]*hasRichBlocks:[\s\S]*resultCount: streamingModel\.results\.length,[\s\S]*skillUpdateCount: skillUpdates\.length,[\s\S]*followUpCount: suggestions\.length/,
+  "Quick Chat distinguishes a truly empty success from structured-only output through the shared helper",
 );
 
 console.log("streaming-chat-wiring.test.ts: ok");

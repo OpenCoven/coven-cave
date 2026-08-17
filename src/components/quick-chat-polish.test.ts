@@ -9,6 +9,8 @@ const overlayStyles = readFileSync(new URL("../styles/globals/surface-chat-overl
 const foundations = readFileSync(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 const quickHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
+const controls = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 
 // ── Readable measure ─────────────────────────────────────────────────────────
 assert.match(
@@ -42,6 +44,28 @@ assert.doesNotMatch(
   quickHook,
   /reasoningEffort:|responseSpeed:/,
   "Quick Chat does not send global Thinking or Speed defaults without selected-model metadata",
+);
+
+// ── Shared calm response composition ─────────────────────────────────────────
+assert.match(
+  thread,
+  /familiarName=\{familiar\?\.display_name \?\? "Unknown familiar"\}/,
+  "Live status names the selected familiar and only falls back when the roster is unavailable",
+);
+assert.match(
+  thread,
+  /onStop=\{streaming \? onStop : undefined\}[\s\S]*onRetry=\{message\.error && isLastAssistant \? onRegenerate : undefined\}[\s\S]*canContinue=\{false\}/,
+  "Quick Chat exposes shared Stop and Retry without claiming unsupported continuation",
+);
+assert.match(
+  tray,
+  /useAnnouncer\(\)[\s\S]*cancelQuickChat\(\);[\s\S]*announce\("Response stopped\.", "polite"\)/,
+  "Stopping a Quick Chat response uses the existing cancel path and announces once",
+);
+assert.doesNotMatch(
+  controls,
+  /onCancel: \(\) => void/,
+  "The composer no longer owns the response cancellation control",
 );
 
 // ── Disabled Send stays visible ──────────────────────────────────────────────
