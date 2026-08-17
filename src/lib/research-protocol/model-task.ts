@@ -12,12 +12,14 @@ import {
   parseResearchModelReceiptV1,
   type ResearchModelReceiptV1,
 } from "./topic-discovery.ts";
+import { canonicalJson } from "./digest.ts";
 
 const MODEL_TASK_SCHEMA = "opencoven.model-task/v1";
 const MODEL_TASK_SCHEMA_RE = /^opencoven\.model-task\/v(\d+)$/;
 const MODEL_TASK_RESULT_SCHEMA = "opencoven.model-task-result/v1";
 const MODEL_TASK_RESULT_SCHEMA_RE = /^opencoven\.model-task-result\/v(\d+)$/;
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
+const CANONICAL_JSON_ERROR_RE = /^Value at (.+) is not canonical JSON: (.+)$/;
 
 const TASK_PHASES = ["scope", "challenge", "synthesize", "control"] as const;
 const MODEL_SELECTIONS = ["resolve-at-run-start", "pinned"] as const;
@@ -441,7 +443,21 @@ function parsePolicy(value: unknown, path: string): ProtocolParseResult<ModelTas
 function parseOutputObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
-  return pass({ ...object.value });
+
+  try {
+    const wrapped = JSON.parse(canonicalJson({ output: object.value })) as {
+      output: Record<string, unknown>;
+    };
+    return pass(wrapped.output);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      const match = CANONICAL_JSON_ERROR_RE.exec(error.message);
+      if (match) {
+        return fail("invalid_value", match[1], `output must be canonical JSON: ${match[2]}`);
+      }
+    }
+    return fail("invalid_value", path, "output must be canonical JSON");
+  }
 }
 
 export function parseModelTaskV1(value: unknown): ProtocolParseResult<ModelTaskV1> {
@@ -566,7 +582,7 @@ export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<Mode
 
   const executorDeviceIdField = parseRequiredField(object.value, "executorDeviceId", "$");
   if (!executorDeviceIdField.ok) return executorDeviceIdField;
-  const executorDeviceId = parseString(
+  const executorDeviceId = parseSha256(
     executorDeviceIdField.value,
     "$.executorDeviceId",
     "executorDeviceId",

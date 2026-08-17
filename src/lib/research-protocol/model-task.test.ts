@@ -9,6 +9,7 @@ import validModelTaskResult from "../../../schemas/research/v1/fixtures/valid/mo
 import modelTaskResultSchema from "../../../schemas/research/v1/model-task-result.schema.json" with { type: "json" };
 import modelTaskSchema from "../../../schemas/research/v1/model-task.schema.json" with { type: "json" };
 
+import { canonicalJson, sha256Digest } from "./digest.ts";
 import {
   modelTaskResultSignaturePayload,
   parseModelTaskResultV1,
@@ -16,6 +17,10 @@ import {
 } from "./model-task.ts";
 
 const SAFE_INTEGER_OVERFLOW = 9007199254740992;
+const FIXTURE_EXECUTOR_PUBLIC_KEY_HEX = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+const FIXTURE_EXECUTOR_DEVICE_ID = sha256Digest(Buffer.from(FIXTURE_EXECUTOR_PUBLIC_KEY_HEX, "hex"));
+const VALID_SHA256_MISMATCH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const VALID_SHA256_MISMATCH_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
@@ -65,9 +70,9 @@ test("modelTaskResultSignaturePayload returns exactly the signed fields", () => 
     taskId: "modeltask_01",
     runId: "run_01",
     attempt: 1,
-    inputDigest: "89f8f6710042193f16a5cd49f3ae469f299f00a9efbee7f0bfa037dcae0efb97",
-    outputDigest: "91e75aca0a4f002ecb264c4d13e1e52ce4a584b709821b58f6c20db38127d8f6",
-    executorDeviceId: "device_01",
+    inputDigest: "a7a21a3895e180dfcce5b4aa1c7827bb7985a406b378399f6655d4f1a01229d5",
+    outputDigest: "0919f42fd41098c197abbe957594805f531ff4f7b9bccc68316c5f9db3adee17",
+    executorDeviceId: "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
     completedAt: "2026-08-15T20:10:00.000Z",
   });
   assert.deepEqual(Object.keys(payload).sort(), [
@@ -152,6 +157,14 @@ test("invalid usage fixture rejects in schema and parser", () => {
   expectError(parseModelTaskResultV1(invalidModelTaskResultUsage), "$.modelReceipt.usage", "semantic_conflict");
 });
 
+test("fixture digests and device fingerprint match helper computations", () => {
+  assert.equal(validModelTask.inputDigest, sha256Digest(canonicalJson(validModelTask.input)));
+  assert.equal(validModelTaskResult.inputDigest, validModelTask.inputDigest);
+  assert.equal(validModelTaskResult.inputDigest, sha256Digest(canonicalJson(validModelTask.input)));
+  assert.equal(validModelTaskResult.outputDigest, sha256Digest(canonicalJson(validModelTaskResult.output)));
+  assert.equal(validModelTaskResult.executorDeviceId, FIXTURE_EXECUTOR_DEVICE_ID);
+});
+
 test("pinned model requires own model and resolve-at-run-start forbids model", () => {
   expectError(
     parseModelTaskV1({
@@ -206,7 +219,7 @@ test("attempt and maxOutputTokens enforce positive safe integers", () => {
 
 test("digests require lowercase sha256 and timestamps require canonical UTC milliseconds", () => {
   expectError(
-    parseModelTaskV1({ ...validModelTask, inputDigest: "A9f8f6710042193f16a5cd49f3ae469f299f00a9efbee7f0bfa037dcae0efb97" }),
+    parseModelTaskV1({ ...validModelTask, inputDigest: "A7a21a3895e180dfcce5b4aa1c7827bb7985a406b378399f6655d4f1a01229d5" }),
     "$.inputDigest",
     "invalid_value",
   );
@@ -228,7 +241,7 @@ test("digests require lowercase sha256 and timestamps require canonical UTC mill
   );
 
   expectError(
-    parseModelTaskResultV1({ ...validModelTaskResult, outputDigest: "91E75ACA0A4F002ECB264C4D13E1E52CE4A584B709821B58F6C20DB38127D8F6" }),
+    parseModelTaskResultV1({ ...validModelTaskResult, outputDigest: "0919F42FD41098C197ABBE957594805F531FF4F7B9BCCC68316C5F9DB3ADEE17" }),
     "$.outputDigest",
     "invalid_value",
   );
@@ -237,6 +250,12 @@ test("digests require lowercase sha256 and timestamps require canonical UTC mill
     "$.completedAt",
     "invalid_value",
   );
+});
+
+test("executorDeviceId must be a lowercase sha256 fingerprint in schema and parser", () => {
+  const invalidDeviceId = { ...validModelTaskResult, executorDeviceId: "not-a-sha-device-id" };
+  assert.equal(Value.Check(modelTaskResultSchema, invalidDeviceId), false);
+  expectError(parseModelTaskResultV1(invalidDeviceId), "$.executorDeviceId", "invalid_value");
 });
 
 test("allowedOutputs must be non-empty unique non-empty strings", () => {
@@ -312,19 +331,48 @@ test("model task result identifier prefixes reject in schema and parser", () => 
   }
 });
 
-test("parser clones own output fields so inherited output properties do not survive", () => {
-  const inheritedOutput = Object.create({ inherited: "drop-me" });
-  Object.assign(inheritedOutput, {
+test("parser preserves nested canonical JSON output as deep own-property data", () => {
+  const output = {
     decision: "continue",
-    futureExtension: { preserve: true },
-  });
+    findings: [
+      {
+        id: "finding_01",
+        score: 1,
+        tags: ["public"],
+      },
+    ],
+    metadata: {
+      ok: true,
+      notes: null,
+      futureExtension: { preserve: true },
+    },
+  };
 
-  const parsed = expectOk(parseModelTaskResultV1({ ...validModelTaskResult, output: inheritedOutput }));
-  assert.equal("inherited" in parsed.output, false);
-  assert.deepEqual(parsed.output, {
-    decision: "continue",
-    futureExtension: { preserve: true },
-  });
+  const parsed = expectOk(parseModelTaskResultV1({ ...validModelTaskResult, output }));
+  assert.deepEqual(parsed.output, output);
+  assert.notStrictEqual(parsed.output, output);
+  assert.notStrictEqual(parsed.output.findings, output.findings);
+  assert.notStrictEqual(parsed.output.metadata, output.metadata);
+});
+
+test("parser rejects nested output custom-prototype objects and non-json values", () => {
+  const nestedCustomPrototype = {
+    ...validModelTaskResult,
+    output: {
+      nested: Object.assign(Object.create({ inherited: true }), { ok: true }),
+    },
+  };
+  expectError(parseModelTaskResultV1(nestedCustomPrototype), "$.output.nested", "invalid_value");
+
+  const nestedNaN = {
+    ...validModelTaskResult,
+    output: {
+      metrics: {
+        score: Number.NaN,
+      },
+    },
+  };
+  expectError(parseModelTaskResultV1(nestedNaN), "$.output.metrics.score", "invalid_value");
 });
 
 test("inherited required fields do not satisfy parser", () => {
@@ -359,17 +407,27 @@ test("inherited required fields do not satisfy parser", () => {
   expectError(parseModelTaskResultV1(inheritedResult), "$.taskId", "missing_field");
 });
 
-test("parser validates structure only and does not verify signature or recompute outputDigest", () => {
+test("parser validates digest syntax only and does not verify signature or recompute digests", () => {
+  const changedDigestTask = {
+    ...validModelTask,
+    inputDigest: VALID_SHA256_MISMATCH_B,
+  };
+  assert.ok(Value.Check(modelTaskSchema, changedDigestTask));
+  const parsedTask = expectOk(parseModelTaskV1(changedDigestTask));
+  assert.equal(parsedTask.inputDigest, VALID_SHA256_MISMATCH_B);
+
   const changedDigestResult = {
     ...validModelTaskResult,
+    inputDigest: VALID_SHA256_MISMATCH_B,
     output: { decision: "stop" },
-    outputDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    outputDigest: VALID_SHA256_MISMATCH,
     signature: "still-not-verified",
   };
 
   assert.ok(Value.Check(modelTaskResultSchema, changedDigestResult));
   const parsed = expectOk(parseModelTaskResultV1(changedDigestResult));
-  assert.equal(parsed.outputDigest, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(parsed.inputDigest, VALID_SHA256_MISMATCH_B);
+  assert.equal(parsed.outputDigest, VALID_SHA256_MISMATCH);
   assert.equal(parsed.signature, "still-not-verified");
   assert.equal(parsed.output.decision, "stop");
 });
