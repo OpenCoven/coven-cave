@@ -50,6 +50,7 @@ export function verificationEvidenceFromTool(tool: ToolEvent): VerifiedResultEvi
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const command = (parsed as { command?: unknown }).command;
   if (typeof command !== "string") return null;
+  if (/\r|\n/.test(command)) return null;
   const normalized = command.trim().replace(/\s+/g, " ");
   if (!normalized || UNSAFE_SHELL_SYNTAX.test(normalized)) return null;
   const registration = COMMANDS.find((entry) => entry.pattern.test(normalized));

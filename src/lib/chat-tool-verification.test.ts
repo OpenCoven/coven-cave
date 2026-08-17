@@ -37,6 +37,14 @@ test("known project verification commands become structured evidence", () => {
 test("generic success, output claims, compound shell, and unknown kinds are rejected", () => {
   assert.equal(verificationEvidenceFromTool(tool({ name: "Read", input: "package.json" })), null);
   assert.equal(verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "echo tests passed" }) })), null);
+  assert.equal(
+    verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm test:app\npwd" }) })),
+    null,
+  );
+  assert.equal(
+    verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm test:app\rcmd" }) })),
+    null,
+  );
   assert.equal(verificationEvidenceFromTool(tool({
     input: JSON.stringify({ command: "pnpm test:app && rm -rf build" }),
   })), null);
