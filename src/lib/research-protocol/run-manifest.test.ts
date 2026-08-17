@@ -575,6 +575,26 @@ test("custom-prototype artifacts and extensions are rejected rather than strippe
   expectError(parseRunManifestV1(candidate), "$.digest", "invalid_value");
 });
 
+test("custom-prototype arrays in additive fields are rejected while normal arrays are accepted", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+
+  class CustomArray extends Array {}
+  const customPrototypeArray = CustomArray.from([1, 2, 3]);
+  assert.notEqual(Object.getPrototypeOf(customPrototypeArray), Array.prototype);
+  const withCustomArray = recalculate({
+    ...local,
+    futureExtension: { values: customPrototypeArray },
+  });
+  expectError(parseRunManifestV1(withCustomArray), "$.digest", "invalid_value");
+
+  const withNormalArray = recalculate({
+    ...local,
+    futureExtension: { values: [1, 2, 3] },
+  });
+  const parsed = expectOk(parseRunManifestV1(withNormalArray));
+  assert.deepEqual(parsed.futureExtension, { values: [1, 2, 3] });
+});
+
 test("canonical copying preserves own __proto__ fields and rejects non-JSON objects", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const extension = JSON.parse('{"__proto__":{"preserve":true}}') as Record<string, unknown>;
