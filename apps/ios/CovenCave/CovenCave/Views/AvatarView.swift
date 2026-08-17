@@ -41,7 +41,7 @@ struct AvatarView: View {
     }
 
     @ViewBuilder private var statusDot: some View {
-        if showStatus, let dot = Presence.color(for: familiar?.status) {
+        if showStatus, let dot = Presence.color(for: familiar?.status, chrome: chrome) {
             Circle()
                 .fill(dot)
                 // Ring in the surrounding background colour so the dot reads as

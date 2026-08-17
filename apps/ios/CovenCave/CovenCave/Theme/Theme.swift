@@ -19,6 +19,12 @@ struct ChromePalette: Equatable {
     /// `accent` mirrors the asset-catalog accent, so `.tint(accent)` is a no-op
     /// until the desktop publishes `--accent-presence`.
     var accent: Color = .accentColor
+    /// Semantic state colours remain palette-owned so task and connection
+    /// affordances do not each choose their own unrelated hue.
+    var stateSuccess: Color = .green
+    var stateWarning: Color = .orange
+    var stateDanger: Color = .red
+    var stateInfo: Color = .blue
     /// The raw `--accent-presence` hex, kept alongside `accent` so it can be
     /// handed to the markdown WebView (which colours inline code / links off a
     /// CSS `--accent`). `nil` until the desktop publishes a theme, so the chat
@@ -27,6 +33,10 @@ struct ChromePalette: Equatable {
     /// Drives `preferredColorScheme` so the whole app flips light/dark with the
     /// desktop. Defaults to dark — the app's original fixed scheme.
     var colorScheme: ColorScheme = .dark
+
+    var presenceActive: Color { stateSuccess }
+    var presenceIdle: Color { stateInfo }
+    var presenceOffline: Color { textMuted }
 
     /// The built-in look used before (and as a backstop after) a theme loads.
     static let fallback = ChromePalette()
@@ -142,15 +152,8 @@ extension View {
 enum Presence {
     /// Dot colour for a daemon status string, or nil when there's nothing
     /// meaningful to show (no status reported).
-    static func color(for status: String?) -> Color? {
-        switch status?.lowercased() {
-        case "active", "online": return Color(hex: "#4ade80")   // green
-        case "idle": return Color(hex: "#60a5fa")               // blue
-        case "busy", "running": return Color(hex: "#fbbf24")    // amber
-        case "offline": return Color(hex: "#8a8a8e")            // gray
-        case .some(let s) where !s.isEmpty: return Color(hex: "#8a8a8e")
-        default: return nil
-        }
+    static func color(for status: String?, chrome: ChromePalette) -> Color? {
+        Theme.presence(status, chrome: chrome)
     }
 
     /// Whether the status reads as "actively doing something" (drives a subtle
@@ -188,6 +191,27 @@ extension Color {
 }
 
 enum Theme {
+    static func status(_ status: CardStatus, chrome: ChromePalette) -> Color {
+        switch status {
+        case .running: return chrome.stateInfo
+        case .review: return chrome.accent
+        case .blocked: return chrome.stateDanger
+        case .inbox: return chrome.stateInfo
+        case .backlog: return chrome.textMuted
+        case .done: return chrome.stateSuccess
+        }
+    }
+
+    static func presence(_ status: String?, chrome: ChromePalette) -> Color? {
+        switch status?.lowercased() {
+        case "active", "online": return chrome.presenceActive
+        case "idle": return chrome.presenceIdle
+        case "busy", "running": return chrome.stateWarning
+        case "offline", .some(_): return chrome.presenceOffline
+        case nil: return nil
+        }
+    }
+
     /// Stable per-familiar colour: honour the configured colour, else derive one.
     static func color(for familiar: Familiar?) -> Color {
         if let c = Color(hex: familiar?.color) { return c }
