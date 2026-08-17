@@ -48,7 +48,7 @@ function expectError(
 function recalculate<T extends Record<string, unknown>>(value: T): T {
   const ownJson = (input: unknown): unknown => {
     if (input === null || typeof input !== "object") return input;
-    if (Array.isArray(input)) return input.map(ownJson);
+    if (Array.isArray(input)) return Array.from(input, ownJson);
     const result: Record<string, unknown> = {};
     for (const key of Object.keys(input)) {
       Object.defineProperty(result, key, {

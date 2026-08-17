@@ -38,17 +38,27 @@ function assertPairedUtf16Surrogates(value: string, path: string): void {
   }
 }
 
-function assertCanonicalJson(value: unknown, path = "$", stack = new WeakSet<object>()): void {
+function isCanonicalArrayIndex(key: string): boolean {
+  if (!/^(?:0|[1-9]\d*)$/.test(key)) return false;
+  const index = Number(key);
+  return Number.isInteger(index) && index >= 0 && index < 0xffffffff;
+}
+
+function copyCanonicalJsonValue(
+  value: unknown,
+  path: string,
+  stack: WeakSet<object>,
+): unknown {
   if (typeof value === "string") {
     assertPairedUtf16Surrogates(value, path);
-    return;
+    return value;
   }
-  if (value === null || typeof value === "boolean") return;
+  if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw createCanonicalJsonError(path, "non-finite numbers are not allowed");
     }
-    return;
+    return value;
   }
   if (typeof value === "undefined") {
     throw createCanonicalJsonError(path, "undefined is not allowed");
@@ -63,15 +73,92 @@ function assertCanonicalJson(value: unknown, path = "$", stack = new WeakSet<obj
     throw createCanonicalJsonError(path, "symbols are not allowed");
   }
   if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      throw createCanonicalJsonError(path, "arrays must use exact Array.prototype");
+    }
     if (stack.has(value)) {
       throw createCanonicalJsonError(path, "cyclic structures are not allowed");
     }
-    stack.add(value);
-    for (const [index, entry] of value.entries()) {
-      assertCanonicalJson(entry, jsonPathForIndex(path, index), stack);
+
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (
+      !lengthDescriptor
+      || !("value" in lengthDescriptor)
+      || lengthDescriptor.enumerable
+    ) {
+      throw createCanonicalJsonError(path, "arrays must have the standard non-enumerable length property");
     }
-    stack.delete(value);
-    return;
+    const length = lengthDescriptor.value;
+    if (
+      typeof length !== "number"
+      || !Number.isInteger(length)
+      || length < 0
+      || length >= 0x100000000
+    ) {
+      throw createCanonicalJsonError(path, "arrays must have a valid length");
+    }
+
+    const entries: Array<{
+      descriptor: PropertyDescriptor;
+      index: number;
+      key: string;
+    }> = [];
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key === "symbol") {
+        throw createCanonicalJsonError(path, "symbol-keyed own properties are not allowed");
+      }
+      if (key === "length") continue;
+      const propertyPath = jsonPathForProperty(path, key);
+      if (!isCanonicalArrayIndex(key)) {
+        throw createCanonicalJsonError(propertyPath, "arrays may not have extra string properties");
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor) {
+        throw createCanonicalJsonError(propertyPath, "array index descriptor is missing");
+      }
+      if (!descriptor.enumerable) {
+        throw createCanonicalJsonError(propertyPath, "array indices must be enumerable");
+      }
+      if (!("value" in descriptor)) {
+        throw createCanonicalJsonError(propertyPath, "array indices must be data properties");
+      }
+      entries.push({ descriptor, index: Number(key), key });
+    }
+    entries.sort((left, right) => left.index - right.index);
+    for (let expectedIndex = 0; expectedIndex < entries.length; expectedIndex += 1) {
+      if (entries[expectedIndex].index !== expectedIndex) {
+        throw createCanonicalJsonError(
+          jsonPathForIndex(path, expectedIndex),
+          "sparse array holes are not allowed",
+        );
+      }
+    }
+    if (entries.length !== length) {
+      throw createCanonicalJsonError(
+        jsonPathForIndex(path, entries.length),
+        "sparse array holes are not allowed",
+      );
+    }
+
+    const copy = new Array<unknown>(length);
+    stack.add(value);
+    try {
+      for (const entry of entries) {
+        Object.defineProperty(copy, entry.key, {
+          value: copyCanonicalJsonValue(
+            entry.descriptor.value,
+            jsonPathForIndex(path, entry.index),
+            stack,
+          ),
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      }
+    } finally {
+      stack.delete(value);
+    }
+    return copy;
   }
   if (!isPlainJsonObject(value)) {
     throw createCanonicalJsonError(path, "only JSON objects and arrays are allowed");
@@ -79,22 +166,54 @@ function assertCanonicalJson(value: unknown, path = "$", stack = new WeakSet<obj
   if (stack.has(value)) {
     throw createCanonicalJsonError(path, "cyclic structures are not allowed");
   }
+
+  const prototype = Object.getPrototypeOf(value);
+  const copy = Object.create(prototype) as Record<string, unknown>;
   stack.add(value);
-  for (const key of Object.keys(value)) {
-    const propertyPath = jsonPathForProperty(path, key);
-    assertPairedUtf16Surrogates(key, propertyPath);
-    assertCanonicalJson(value[key], propertyPath, stack);
+  try {
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key === "symbol") {
+        throw createCanonicalJsonError(path, "symbol-keyed own properties are not allowed");
+      }
+      const propertyPath = jsonPathForProperty(path, key);
+      assertPairedUtf16Surrogates(key, propertyPath);
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor) {
+        throw createCanonicalJsonError(propertyPath, "property descriptor is missing");
+      }
+      if (!descriptor.enumerable) {
+        throw createCanonicalJsonError(propertyPath, "non-enumerable own properties are not allowed");
+      }
+      if (!("value" in descriptor)) {
+        throw createCanonicalJsonError(propertyPath, "accessor properties are not allowed");
+      }
+      Object.defineProperty(copy, key, {
+        value: copyCanonicalJsonValue(descriptor.value, propertyPath, stack),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+  } finally {
+    stack.delete(value);
   }
-  stack.delete(value);
+  return copy;
 }
 
-export function canonicalJson(value: unknown): string {
-  assertCanonicalJson(value);
+export function copyCanonicalJson(value: unknown): unknown {
+  return copyCanonicalJsonValue(value, "$", new WeakSet<object>());
+}
+
+function canonicalizeCopy(value: unknown): string {
   const serialized = canonicalize(value);
   if (typeof serialized !== "string") {
     throw new TypeError("Value at $ is not canonical JSON: canonicalization failed");
   }
   return serialized;
+}
+
+export function canonicalJson(value: unknown): string {
+  return canonicalizeCopy(copyCanonicalJson(value));
 }
 
 export function sha256Digest(value: string | Uint8Array): string {
@@ -105,7 +224,7 @@ export function digestProtocolObject(value: unknown): string {
   if (!isRecord(value) || !isPlainJsonObject(value)) {
     throw new TypeError("digestProtocolObject expects a JSON record");
   }
-  const copy: Record<string, unknown> = { ...value };
-  delete copy.digest;
-  return sha256Digest(canonicalJson(copy));
+  const copy = copyCanonicalJson(value) as Record<string, unknown>;
+  Reflect.deleteProperty(copy, "digest");
+  return sha256Digest(canonicalizeCopy(copy));
 }
