@@ -295,6 +295,30 @@ test("podcast model and voice settings are ElevenLabs-only, podcast-only, and no
     }).ok,
     false,
   );
+  for (const speed of [0.25, 4]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        voiceSettings: { speed },
+      }).ok,
+      true,
+      `REST speed ${speed} is accepted`,
+    );
+  }
+  for (const speed of [0.249, 4.001]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        voiceSettings: { speed },
+      }).ok,
+      false,
+      `out-of-range REST speed ${speed} is rejected`,
+    );
+  }
 });
 
 test("chapter progress accepts bounded real units and rejects invented ranges", () => {

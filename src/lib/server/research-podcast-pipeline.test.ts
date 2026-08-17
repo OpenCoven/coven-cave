@@ -522,3 +522,119 @@ test("podcast segments synthesize with cross-segment context and the offline mod
     "the offline render defaults to the quality-tier model, not the live-voice turbo default",
   );
 });
+
+test("ElevenLabs podcast config reaches the outbound request and stored WAV", async () => {
+  const previousApiKey = process.env.ELEVENLABS_API_KEY;
+  const previousFetch = globalThis.fetch;
+  const requests: Array<{ url: string; init: RequestInit; body: unknown }> = [];
+  process.env.ELEVENLABS_API_KEY = "test-elevenlabs-key";
+  globalThis.fetch = async (input, init = {}) => {
+    requests.push({
+      url: String(input),
+      init,
+      body: JSON.parse(String(init.body)),
+    });
+    return new Response(new Uint8Array([1, 0]), { status: 200 });
+  };
+
+  try {
+    const definition = createPodcastMediaJobDefinition({
+      familiarId: "nova",
+      generationId: "podcast-elevenlabs-request",
+      script: [
+        { id: "segment-1", text: "Opening." },
+        { id: "segment-2", text: "Findings.", speaker: "guest" },
+        { id: "segment-3", text: "Closing." },
+      ],
+      renderConfig: renderConfig({
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        voices: {
+          host: "21m00Tcm4TlvDq8ikWAM",
+          guest: "AZnzlk1XvdvUeBnXmlld",
+        },
+        model: "eleven_v3",
+        voiceSettings: {
+          stability: 0.3,
+          similarityBoost: 0.9,
+          style: 0.2,
+          useSpeakerBoost: false,
+          speed: 1.25,
+        },
+      }),
+    });
+
+    const result = await definition.run(jobContext());
+    assert.deepEqual(
+      requests.map(({ url }) => url),
+      [
+        "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM?output_format=pcm_16000",
+        "https://api.elevenlabs.io/v1/text-to-speech/AZnzlk1XvdvUeBnXmlld?output_format=pcm_16000",
+        "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM?output_format=pcm_16000",
+      ],
+    );
+    assert.ok(
+      requests.every(
+        ({ init }) =>
+          init.method === "POST" &&
+          new Headers(init.headers).get("xi-api-key") === "test-elevenlabs-key",
+      ),
+    );
+    assert.deepEqual(requests.map(({ body }) => body), [
+      {
+        text: "Opening.",
+        model_id: "eleven_v3",
+        voice_settings: {
+          stability: 0.3,
+          similarity_boost: 0.9,
+          style: 0.2,
+          use_speaker_boost: false,
+          speed: 1.25,
+        },
+        next_text: "Findings.",
+      },
+      {
+        text: "Findings.",
+        model_id: "eleven_v3",
+        voice_settings: {
+          stability: 0.3,
+          similarity_boost: 0.9,
+          style: 0.2,
+          use_speaker_boost: false,
+          speed: 1.25,
+        },
+        previous_text: "Opening.",
+        next_text: "Closing.",
+      },
+      {
+        text: "Closing.",
+        model_id: "eleven_v3",
+        voice_settings: {
+          stability: 0.3,
+          similarity_boost: 0.9,
+          style: 0.2,
+          use_speaker_boost: false,
+          speed: 1.25,
+        },
+        previous_text: "Findings.",
+      },
+    ]);
+    assert.equal(result.content.kind, "podcast");
+    if (result.content.kind === "podcast") {
+      assert.equal(result.content.audio?.provider, "elevenlabs");
+      assert.equal(result.content.audio?.voice, "21m00Tcm4TlvDq8ikWAM");
+      assert.equal(result.content.audio?.durationMs, 0);
+    }
+    const stored = await readResearchGenerationMediaBytes(
+      "nova",
+      "podcast-elevenlabs-request",
+      "podcast.wav",
+    );
+    assert.equal(new TextDecoder().decode(stored.slice(0, 4)), "RIFF");
+    assert.equal(new DataView(stored.buffer, stored.byteOffset, stored.byteLength).getUint32(40, true), 6);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousApiKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = previousApiKey;
+  }
+});

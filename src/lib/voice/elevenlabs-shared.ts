@@ -12,7 +12,7 @@ export const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5";
 export const DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
 /**
- * Quality-tier default for offline renders (podcast / short-video voiceover).
+ * Quality-tier default for offline podcast renders.
  * The live voice-call path keeps `DEFAULT_ELEVENLABS_MODEL_ID` (turbo) because
  * latency is the binding constraint there; an offline render is a queued,
  * character-capped job, so it can afford a higher-fidelity model and is
@@ -26,11 +26,11 @@ export type ElevenLabsVoiceSettings = {
   stability: number;
   /** 0..1 — how closely the model matches the reference voice. */
   similarityBoost: number;
-  /** 0..1 — style exaggeration (an eleven_v3 control; ignored elsewhere). */
+  /** 0..1 — style exaggeration supported by v2+, v3, and multilingual models. */
   style: number;
   /** Whether to apply the speaker-boost filter. */
   useSpeakerBoost: boolean;
-  /** 0.7..1.2 — speaking rate. */
+  /** 0.25..4 — REST API speaking-rate multiplier. */
   speed: number;
 };
 
@@ -50,7 +50,7 @@ const ELEVENLABS_VOICE_SETTINGS_RANGES: Record<
   stability: [0, 1],
   similarityBoost: [0, 1],
   style: [0, 1],
-  speed: [0.7, 1.2],
+  speed: [0.25, 4],
 };
 
 /**
