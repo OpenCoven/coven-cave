@@ -72,17 +72,17 @@ assert.match(
 );
 assert.match(
   quickHook,
-  /m\.pending \? \{ \.\.\.m, pending: false, lifecycle: "cancelled" \} : m/,
-  "Stop marks every pending Quick Chat turn cancelled",
+  /m\.id === activeSend\.assistantId && m\.pending[\s\S]*lifecycle: "cancelled"/,
+  "Stop marks only the active Quick Chat turn cancelled",
 );
 assert.match(
   quickHook,
-  /const ownsActiveSend = abortRef\.current === controller;[\s\S]*if \(ownsActiveSend\) abortRef\.current = null;[\s\S]*if \(ownsActiveSend\) setSendState\("idle"\);/,
+  /const ownsActiveSend = activeSendRef\.current === activeSend;[\s\S]*if \(ownsActiveSend\) activeSendRef\.current = null;[\s\S]*if \(ownsActiveSend\) setSendState\("idle"\);/,
   "a cancelled turn settling late cannot reset a newer send to idle",
 );
 assert.match(
   tray,
-  /<QuickChatThread[\s\S]*onStop=\{cancel\}/,
+  /<QuickChatThread[\s\S]*onStop=\{cancelQuickChat\}/,
   "Quick Chat places Stop beside live response activity",
 );
 assert.doesNotMatch(
@@ -393,7 +393,7 @@ assert.match(
   const hook = quickHook;
   assert.match(
     hook,
-    /if \(abortRef\.current\) \{[\s\S]*?queuedRef\.current = \[\.\.\.queuedRef\.current, item\]/,
+    /if \(activeSendRef\.current\) \{[\s\S]*?queuedRef\.current = \[\.\.\.queuedRef\.current, item\]/,
     "a send during an in-flight turn queues instead of silently dropping",
   );
   assert.match(
@@ -427,11 +427,11 @@ assert.match(
     sendTextIndex,
   );
   const familiarSwitchIndex = hook.indexOf(
-    "if (target.familiarId !== selectedFamiliarId && !abortRef.current)",
+    "if (target.familiarId !== selectedFamiliarId && !activeSendRef.current)",
     sendTextIndex,
   );
   const launchGateIndex = hook.indexOf("if (!projectLaunchReady)", sendTextIndex);
-  const queueIndex = hook.indexOf("if (abortRef.current)", sendTextIndex);
+  const queueIndex = hook.indexOf("if (activeSendRef.current)", sendTextIndex);
   assert.ok(launchGateIndex > sendTextIndex, "quick-chat send has a client launch guard");
   assert.ok(
     targetResolutionIndex < launchGateIndex && familiarSwitchIndex < launchGateIndex,
@@ -440,7 +440,7 @@ assert.match(
   assert.ok(launchGateIndex < queueIndex, "an invalid quick-chat send is rejected before queue or draft mutation");
   assert.match(
     hook,
-    /target\.familiarId !== selectedFamiliarId && !abortRef\.current[\s\S]*setSelectedProjectRoot\(null\)[\s\S]*setDraft\(raw\)[\s\S]*Choose a project/,
+    /target\.familiarId !== selectedFamiliarId && !activeSendRef\.current[\s\S]*setSelectedProjectRoot\(null\)[\s\S]*setDraft\(raw\)[\s\S]*Choose a project/,
     "an @mention familiar switch clears the old project and preserves the draft before any launch",
   );
   assert.match(

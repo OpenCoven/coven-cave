@@ -10,6 +10,7 @@ const foundations = readFileSync(new URL("../styles/globals/foundations.css", im
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 const quickHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
 const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
+const response = readFileSync(new URL("./streaming-turn-response.tsx", import.meta.url), "utf8");
 const controls = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 
 // ── Readable measure ─────────────────────────────────────────────────────────
@@ -57,10 +58,15 @@ assert.match(
   /onStop=\{streaming \? onStop : undefined\}[\s\S]*onRetry=\{message\.error && isLastAssistant \? onRegenerate : undefined\}[\s\S]*canContinue=\{false\}/,
   "Quick Chat exposes shared Stop and Retry without claiming unsupported continuation",
 );
-assert.match(
+assert.doesNotMatch(
   tray,
-  /useAnnouncer\(\)[\s\S]*cancelQuickChat\(\);[\s\S]*announce\("Response stopped\.", "polite"\)/,
-  "Stopping a Quick Chat response uses the existing cancel path and announces once",
+  /useAnnouncer|announce\("Response stopped\."/,
+  "Quick Chat does not duplicate the rendered interrupted-state announcement",
+);
+assert.match(
+  response,
+  /role="status"[\s\S]{0,300}<span>Response stopped<\/span>/,
+  "The rendered interrupted state is the single explicit accessible Stop announcement",
 );
 assert.doesNotMatch(
   controls,

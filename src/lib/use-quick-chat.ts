@@ -85,6 +85,34 @@ type QuickChatSendIntent = {
   modelControls: ModelControlValues;
 };
 
+type ActiveQuickChatSend = {
+  assistantId: string;
+  controller: AbortController;
+  runId: string;
+  sessionId: string | null;
+};
+
+async function requestQuickChatStop(active: ActiveQuickChatSend): Promise<void> {
+  const response = await fetch("/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      runId: active.runId,
+      ...(active.sessionId ? { sessionId: active.sessionId } : {}),
+    }),
+  });
+  const payload = await response.json().catch(() => null) as {
+    ok?: unknown;
+    error?: unknown;
+  } | null;
+  if (response.ok && payload?.ok === true) return;
+
+  const detail = typeof payload?.error === "string"
+    ? payload.error
+    : `Stop request failed (${response.status}).`;
+  throw new Error(`Could not stop the server-side response. ${detail}`);
+}
+
 export type UseQuickChat = {
   familiars: Familiar[];
   selectedFamiliarId: string | null;
@@ -162,7 +190,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const [sendState, setSendState] = useState<QuickChatSendState>("idle");
   const [loading, setLoading] = useState(true);
 
-  const abortRef = useRef<AbortController | null>(null);
+  const activeSendRef = useRef<ActiveQuickChatSend | null>(null);
+  // Retained after settlement so a delayed stop-request failure can tell
+  // whether another send or thread reset has superseded it.
+  const latestSendRunIdRef = useRef<string | null>(null);
   // The daemon session backing the visible thread (for context resume + the
   // Open-in-full-chat hand-off) and the familiar it belongs to.
   const sessionIdRef = useRef<string | null>(null);
@@ -287,7 +318,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     if (!next) return;
     const rest = queuedRef.current.filter((item) => item.id !== id);
     // While a turn is in flight, steering reprioritizes the queue only.
-    if (abortRef.current) {
+    if (activeSendRef.current) {
       queuedRef.current = [next, ...rest];
       setQueued(queuedRef.current);
       return;
@@ -305,8 +336,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    activeSendRef.current?.controller.abort();
+    activeSendRef.current = null;
+    latestSendRunIdRef.current = null;
     sessionIdRef.current = null;
     threadFamiliarRef.current = null;
     lastUserPromptRef.current = "";
@@ -396,7 +428,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // aborts through its own effect cleanup above.)
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      activeSendRef.current?.controller.abort();
     };
   }, []);
 
@@ -487,7 +519,15 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       }
       const assistantId = nextId("a");
       const controller = new AbortController();
-      abortRef.current = controller;
+      const runId = crypto.randomUUID();
+      const activeSend: ActiveQuickChatSend = {
+        assistantId,
+        controller,
+        runId,
+        sessionId: resume ? sessionIdRef.current : null,
+      };
+      activeSendRef.current = activeSend;
+      latestSendRunIdRef.current = runId;
       setMessages((prev) => [
         ...prev,
         {
@@ -525,31 +565,38 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           ...(Object.keys(intent.modelControls).length
             ? { modelControls: intent.modelControls }
             : {}),
+          runId,
           signal: controller.signal,
           // Capture the backing session the moment the bridge announces it —
           // if the user stops the stream mid-turn, the thread stays resumable
           // and Open-in-full-chat still works. The aborted guard keeps a late
           // frame from resurrecting a session newThread() just cleared.
           onSession: (sid) => {
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted || activeSendRef.current !== activeSend) return;
+            activeSend.sessionId = sid;
             sessionIdRef.current = sid;
             setSessionId(sid);
           },
-          onText: (t) =>
+          onText: (t) => {
+            if (controller.signal.aborted || activeSendRef.current !== activeSend) return;
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, text: t } : m)),
-            ),
-          onResponseMetadata: (metadata) =>
+            );
+          },
+          onResponseMetadata: (metadata) => {
+            if (controller.signal.aborted || activeSendRef.current !== activeSend) return;
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, responseMetadata: metadata } : m)),
-            ),
+            );
+          },
         });
       } catch (err) {
         // A mid-stream abort (Stop / unmount) rejects the reader; keep whatever
         // streamed so far and only surface non-abort failures.
-        const ownsActiveSend = abortRef.current === controller;
-        if (ownsActiveSend) abortRef.current = null;
+        const ownsActiveSend = activeSendRef.current === activeSend;
+        if (ownsActiveSend) activeSendRef.current = null;
         const aborted = controller.signal.aborted;
+        if (!ownsActiveSend && !aborted) return "stopped";
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -566,9 +613,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         return "stopped";
       }
 
-      const ownsActiveSend = abortRef.current === controller;
-      if (ownsActiveSend) abortRef.current = null;
-      if (controller.signal.aborted) {
+      const ownsActiveSend = activeSendRef.current === activeSend;
+      if (ownsActiveSend) activeSendRef.current = null;
+      if (!ownsActiveSend || controller.signal.aborted) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -626,7 +673,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       // authorized for the previous one. Change scope and preserve the draft;
       // the user must choose from the new familiar's freshly filtered list
       // before any optimistic turn or server request exists.
-      if (target.familiarId !== selectedFamiliarId && !abortRef.current) {
+      if (target.familiarId !== selectedFamiliarId && !activeSendRef.current) {
         userPickedRef.current = true;
         newThread();
         selectedIdRef.current = target.familiarId;
@@ -652,7 +699,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       // naturally. Stop parks the queue, so a cancel never fires a surprise
       // follow-up; the next manual send resumes draining. A queued @mention
       // switches scope only when it reaches this pipeline again while idle.
-      if (abortRef.current) {
+      if (activeSendRef.current) {
         if (!raw.trim() && attachments.length === 0) return;
         const item: QueuedQuickChatMessage = {
           id: nextId("q"),
@@ -742,7 +789,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   const regenerate = useCallback(() => {
     const prompt = lastUserPromptRef.current;
-    if (!prompt || sendState === "sending" || abortRef.current) return;
+    if (!prompt || sendState === "sending" || activeSendRef.current) return;
     if (!projectLaunchReady) {
       setError(projectLaunchMessage);
       return;
@@ -775,12 +822,26 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   ]);
 
   const cancel = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    const activeSend = activeSendRef.current;
+    if (!activeSend) return;
+
+    void requestQuickChatStop(activeSend).catch((cause) => {
+      console.error("[Quick Chat] Failed to stop server-side response:", cause);
+      if (latestSendRunIdRef.current !== activeSend.runId) return;
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not stop the server-side response.",
+      );
+    });
+    activeSend.controller.abort();
+    if (activeSendRef.current === activeSend) activeSendRef.current = null;
     // Keep whatever streamed so far, but stop the spinner on the open turn.
     setMessages((prev) =>
       prev.map((m) =>
-        m.pending ? { ...m, pending: false, lifecycle: "cancelled" } : m,
+        m.id === activeSend.assistantId && m.pending
+          ? { ...m, pending: false, lifecycle: "cancelled" }
+          : m,
       ),
     );
     setSendState("idle");
