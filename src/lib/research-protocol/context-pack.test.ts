@@ -88,6 +88,41 @@ test("Context Pack JSON Schema validates the valid fixture and purpose contract"
   );
 });
 
+test("UTC timestamps accept canonical millisecond precision and reject missing milliseconds", () => {
+  const canonical = {
+    ...validContextPack,
+    createdAt: "2026-08-15T20:00:00.000Z",
+    resources: [
+      {
+        ...validContextPack.resources[0],
+        capturedAt: "2026-08-15T20:00:00.000Z",
+      },
+    ],
+  };
+  assert.ok(Value.Check(contextPackSchema, canonical));
+  assert.equal(expectOk(parseContextPackV1(canonical)).createdAt, "2026-08-15T20:00:00.000Z");
+  assert.equal(expectOk(parseContextPackV1(canonical)).resources[0].capturedAt, "2026-08-15T20:00:00.000Z");
+
+  const withoutMilliseconds = {
+    ...validContextPack,
+    createdAt: "2026-08-15T20:00:00Z",
+  };
+  assert.equal(Value.Check(contextPackSchema, withoutMilliseconds), false);
+  expectError(parseContextPackV1(withoutMilliseconds), "$.createdAt", "invalid_value");
+
+  const resourceWithoutMilliseconds = {
+    ...validContextPack,
+    resources: [
+      {
+        ...validContextPack.resources[0],
+        capturedAt: "2026-08-15T20:00:00Z",
+      },
+    ],
+  };
+  assert.equal(Value.Check(contextPackSchema, resourceWithoutMilliseconds), false);
+  expectError(parseContextPackV1(resourceWithoutMilliseconds), "$.resources[0].capturedAt", "invalid_value");
+});
+
 test("empty plain-string fields are accepted", () => {
   const parsed = expectOk(
     parseContextPackV1({
@@ -181,10 +216,28 @@ test("turn-range accepts 2..3 and rejects empty or reversed spans", () => {
   expectError(parseContextSelectorV1({ type: "turn-range", start: 3, end: 2 }), "$.selector", "semantic_conflict");
 });
 
-test("json-pointer accepts RFC 6901 pointers and empty string", () => {
-  assert.equal(expectOk(parseContextSelectorV1({ type: "json-pointer", pointer: "/items/0" })).pointer, "/items/0");
-  assert.equal(expectOk(parseContextSelectorV1({ type: "json-pointer", pointer: "" })).pointer, "");
-  expectError(parseContextSelectorV1({ type: "json-pointer", pointer: "items/0" }), "$.selector.pointer", "invalid_value");
+test("json-pointer accepts RFC 6901 pointers and rejects malformed escapes", () => {
+  for (const pointer of ["", "/items/0", "/foo/~0bar/~1baz"]) {
+    assert.equal(expectOk(parseContextSelectorV1({ type: "json-pointer", pointer })).pointer, pointer);
+    assert.equal(
+      Value.Check(contextPackSchema, {
+        ...validContextPack,
+        resources: [{ ...validContextPack.resources[0], selector: { type: "json-pointer", pointer } }],
+      }),
+      true,
+    );
+  }
+
+  for (const pointer of ["items/0", "/foo/~2bar", "/foo/~"]) {
+    expectError(parseContextSelectorV1({ type: "json-pointer", pointer }), "$.selector.pointer", "invalid_value");
+    assert.equal(
+      Value.Check(contextPackSchema, {
+        ...validContextPack,
+        resources: [{ ...validContextPack.resources[0], selector: { type: "json-pointer", pointer } }],
+      }),
+      false,
+    );
+  }
 });
 
 test("markdown-section rejects an empty heading path", () => {
