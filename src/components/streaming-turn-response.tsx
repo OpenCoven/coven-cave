@@ -24,6 +24,7 @@ export type StreamingTurnResponseProps = {
   proseContent?: ReactNode;
   activityDetails?: ReactNode;
   supplementaryContent?: ReactNode;
+  announceLifecycle?: boolean;
   onStop?: () => void;
   canContinue?: boolean;
   onContinue?: () => void;
@@ -70,17 +71,19 @@ function TurnState({
   onContinue,
   canContinue,
   onRetry,
+  announceLifecycle,
 }: {
   model: StreamingTurnViewModel;
   onContinue?: () => void;
   canContinue?: boolean;
   onRetry?: () => void;
+  announceLifecycle: boolean;
 }) {
   if (model.status === "interrupted") {
     return (
       <section
         className="streaming-turn-state streaming-turn-state--interrupted"
-        role="status"
+        role={announceLifecycle ? "status" : undefined}
         data-turn-state={true}
       >
         <Icon name="ph:warning-circle" width={14} aria-hidden={true} />
@@ -104,7 +107,7 @@ function TurnState({
     return (
       <section
         className="streaming-turn-state streaming-turn-state--failed"
-        role="alert"
+        role={announceLifecycle ? "alert" : undefined}
         data-turn-state={true}
       >
         <Icon name="ph:x-circle" width={14} aria-hidden={true} />
@@ -163,6 +166,7 @@ export function StreamingTurnResponse({
   proseContent,
   activityDetails,
   supplementaryContent,
+  announceLifecycle = true,
   onStop,
   canContinue,
   onContinue,
@@ -193,7 +197,10 @@ export function StreamingTurnResponse({
       data-turn-id={turnId}
     >
       {live ? (
-        <div className="streaming-turn-current" role="status">
+        <div
+          className="streaming-turn-current"
+          role={announceLifecycle ? "status" : undefined}
+        >
           <div className="streaming-turn-current__phase">
             {`${familiarName} is ${model.status === "working" ? "working" : "responding"}`}
           </div>
@@ -249,6 +256,7 @@ export function StreamingTurnResponse({
         canContinue={canContinue}
         onContinue={onContinue}
         onRetry={onRetry}
+        announceLifecycle={announceLifecycle}
       />
 
       {supplementaryContent}

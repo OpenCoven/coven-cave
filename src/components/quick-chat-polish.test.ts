@@ -65,8 +65,8 @@ assert.doesNotMatch(
 );
 assert.match(
   response,
-  /role="status"[\s\S]{0,300}<span>Response stopped<\/span>/,
-  "The rendered interrupted state is the single explicit accessible Stop announcement",
+  /role=\{announceLifecycle \? "status" : undefined\}[\s\S]{0,300}<span>Response stopped<\/span>/,
+  "The latest rendered interrupted state can own the explicit accessible Stop announcement",
 );
 assert.doesNotMatch(
   controls,

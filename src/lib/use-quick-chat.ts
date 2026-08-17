@@ -90,13 +90,19 @@ type ActiveQuickChatSend = {
   controller: AbortController;
   runId: string;
   sessionId: string | null;
+  stopRequested: boolean;
   suppressSettlementUi?: boolean;
+};
+
+type QuickChatStopOutcome = {
+  stopped: boolean;
+  queued: boolean;
 };
 
 async function requestQuickChatStop(
   active: ActiveQuickChatSend,
   options: { keepalive?: boolean } = {},
-): Promise<void> {
+): Promise<QuickChatStopOutcome> {
   const response = await fetch("/api/chat/stop", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -105,9 +111,16 @@ async function requestQuickChatStop(
   });
   const payload = await response.json().catch(() => null) as {
     ok?: unknown;
+    stopped?: unknown;
+    queued?: unknown;
     error?: unknown;
   } | null;
-  if (response.ok && payload?.ok === true) return;
+  if (response.ok && payload?.ok === true) {
+    return {
+      stopped: payload.stopped === true,
+      queued: payload.queued === true,
+    };
+  }
 
   const detail = typeof payload?.error === "string"
     ? payload.error
@@ -193,8 +206,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const [loading, setLoading] = useState(true);
 
   const activeSendRef = useRef<ActiveQuickChatSend | null>(null);
-  // Retained after settlement so a delayed stop-request failure can tell
-  // whether another send or thread reset has superseded it.
+  // Retained after the active record is taken so synchronous cleanup settlement
+  // cannot reset a replacement send to idle.
   const latestSendRunIdRef = useRef<string | null>(null);
   // The daemon session backing the visible thread (for context resume + the
   // Open-in-full-chat hand-off) and the familiar it belongs to.
@@ -339,7 +352,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const terminateActiveSend = useCallback(
     (
       options: {
-        surfaceFailure: boolean;
         keepalive?: boolean;
         settleUi?: boolean;
         suppressSettlementUi?: boolean;
@@ -354,17 +366,14 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       activeSendRef.current = null;
       activeSend.suppressSettlementUi =
         options.settleUi === true || options.suppressSettlementUi === true;
-      void requestQuickChatStop(activeSend, {
-        keepalive: options.keepalive,
-      }).catch((cause) => {
-        console.error("[Quick Chat] Failed to stop server-side response:", cause);
-        if (!options.surfaceFailure || latestSendRunIdRef.current !== activeSend.runId) return;
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Could not stop the server-side response.",
-        );
-      });
+      if (!activeSend.stopRequested) {
+        activeSend.stopRequested = true;
+        void requestQuickChatStop(activeSend, {
+          keepalive: options.keepalive,
+        }).catch((cause) => {
+          console.error("[Quick Chat] Failed to stop server-side response:", cause);
+        });
+      }
       activeSend.controller.abort();
       if (options.settleUi) {
         setMessages((prev) =>
@@ -391,7 +400,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
     terminateActiveSend({
-      surfaceFailure: false,
       keepalive: true,
       suppressSettlementUi: true,
     });
@@ -487,7 +495,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   useEffect(() => {
     const stopForPageHide = () => {
       terminateActiveSend({
-        surfaceFailure: false,
         keepalive: true,
         settleUi: true,
       });
@@ -500,7 +507,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         window.removeEventListener("pagehide", stopForPageHide);
       }
       terminateActiveSend({
-        surfaceFailure: false,
         keepalive: true,
         suppressSettlementUi: true,
       });
@@ -600,6 +606,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         controller,
         runId,
         sessionId: resume ? sessionIdRef.current : null,
+        stopRequested: false,
       };
       activeSendRef.current = activeSend;
       latestSendRunIdRef.current = runId;
@@ -899,11 +906,47 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   ]);
 
   const cancel = useCallback(() => {
-    terminateActiveSend({
-      surfaceFailure: true,
-      settleUi: true,
-    });
-  }, [terminateActiveSend]);
+    const activeSend = activeSendRef.current;
+    if (!activeSend || activeSend.stopRequested) return;
+    activeSend.stopRequested = true;
+    setError(null);
+
+    void requestQuickChatStop(activeSend)
+      .then((outcome) => {
+        if (activeSendRef.current !== activeSend) return;
+        if (!outcome.stopped && !outcome.queued) {
+          activeSend.stopRequested = false;
+          return;
+        }
+
+        activeSendRef.current = null;
+        activeSend.suppressSettlementUi = true;
+        activeSend.controller.abort();
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === activeSend.assistantId && message.pending
+              ? {
+                  ...message,
+                  pending: false,
+                  lifecycle: "cancelled",
+                  error: null,
+                }
+              : message,
+          ),
+        );
+        setSendState("idle");
+      })
+      .catch((cause) => {
+        console.error("[Quick Chat] Failed to stop server-side response:", cause);
+        if (activeSendRef.current !== activeSend) return;
+        activeSend.stopRequested = false;
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not stop the server-side response.",
+        );
+      });
+  }, []);
 
   // Manual picks flow through here: they override the workspace-active default
   // from then on, and switching to a different familiar starts a fresh thread.

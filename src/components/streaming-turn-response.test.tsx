@@ -985,16 +985,31 @@ describe("StreamingTurnResponse", () => {
     );
   });
 
-  it("gives a Quick Chat thread exactly one live region while prior metadata stays non-live", async () => {
+  it("gives Quick Chat exactly one live region across failed history and a new stream", async () => {
     const renderer = await render(
       <QuickChatThread
         familiar={null}
         messages={[
           {
-            id: "quick-prior",
+            id: "quick-cancelled",
+            role: "assistant",
+            lifecycle: "cancelled",
+            text: "Earlier stopped response",
+            responseMetadata: routineResponseMetadata(),
+          },
+          {
+            id: "quick-failed",
+            role: "assistant",
+            lifecycle: "failed",
+            text: "Earlier failed response",
+            error: "Generation failed.",
+            responseMetadata: routineResponseMetadata(),
+          },
+          {
+            id: "quick-empty",
             role: "assistant",
             lifecycle: "complete",
-            text: "Earlier response",
+            text: "",
             responseMetadata: routineResponseMetadata(),
           },
           {
@@ -1015,17 +1030,23 @@ describe("StreamingTurnResponse", () => {
     );
 
     const liveRegions = renderer.root.findAll(
-      (node) => node.props.role === "status" || node.props["aria-live"] !== undefined,
+      (node) =>
+        node.props.role === "status" ||
+        node.props.role === "alert" ||
+        node.props["aria-live"] !== undefined,
     );
     expect(liveRegions).toHaveLength(1);
     expect(liveRegions[0].props.className).toBe("streaming-turn-current");
+    expect(textContent(renderer.root)).toContain("Response stopped");
+    expect(textContent(renderer.root)).toContain("Response failed");
+    expect(textContent(renderer.root)).toContain("No response.");
     expect(
       renderer.root.findAll(
         (node) =>
           node.props.role === "group" &&
           String(node.props["aria-label"]).startsWith("Response model and controls:"),
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
   });
 
   it("shows No response and Retry when routine metadata accompanies an otherwise empty Quick reply", async () => {

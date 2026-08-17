@@ -79,6 +79,7 @@ function QuickChatBubble({
   message,
   familiar,
   isLastAssistant,
+  announceLifecycle,
   onRegenerate,
   onSuggestion,
   onStop,
@@ -86,6 +87,7 @@ function QuickChatBubble({
   message: QuickChatMessage;
   familiar: Familiar | null;
   isLastAssistant: boolean;
+  announceLifecycle: boolean;
   onRegenerate?: () => void;
   onSuggestion?: (value: string) => void;
   onStop?: () => void;
@@ -238,7 +240,10 @@ function QuickChatBubble({
       <div className="quick-chat-bubble quick-chat-bubble--familiar">
         {showEmptySuccessfulFallback ? (
           <>
-            <div className="quick-chat-turn__error" role="alert">
+            <div
+              className="quick-chat-turn__error"
+              role={announceLifecycle ? "alert" : undefined}
+            >
               <span>No response.</span>
               {isLastAssistant && onRegenerate ? (
                 <Button size="xs" variant="ghost" className="focus-ring" onClick={onRegenerate}>
@@ -254,6 +259,7 @@ function QuickChatBubble({
             familiarName={familiar?.display_name ?? "Unknown familiar"}
             model={streamingModel}
             density="compact"
+            announceLifecycle={announceLifecycle}
             proseContent={orderedProseContent}
             onStop={streaming ? onStop : undefined}
             onRetry={message.error && isLastAssistant ? onRegenerate : undefined}
@@ -300,6 +306,8 @@ export function QuickChatThread({
   useEffect(() => { schedulePin(); }, [messages.length, lastText, schedulePin]);
 
   const lastAssistantId = lastRegenerableQuickChatMessageId(messages);
+  const latestAssistantId =
+    messages.findLast((message) => message.role === "assistant")?.id ?? null;
 
   return (
     <div ref={scrollRef} className="quick-chat-thread">
@@ -318,6 +326,7 @@ export function QuickChatThread({
           message={message}
           familiar={familiar}
           isLastAssistant={message.id === lastAssistantId}
+          announceLifecycle={message.id === latestAssistantId}
           onRegenerate={onRegenerate}
           onSuggestion={onSuggestion}
           onStop={onStop}

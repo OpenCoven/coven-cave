@@ -25,20 +25,23 @@ type ControlledSend = {
   body: Record<string, unknown>;
   signal: AbortSignal | null;
   close: () => void;
+  complete: (text: string) => void;
 };
 
 function controlledSse(sessionId: string): {
   response: Response;
   close: () => void;
+  complete: (text: string) => void;
 } {
   const encoder = new TextEncoder();
   let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const enqueue = (event: Record<string, unknown>) => {
+    streamController?.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  };
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       streamController = controller;
-      controller.enqueue(encoder.encode(
-        `data: ${JSON.stringify({ kind: "session", sessionId })}\n\n`,
-      ));
+      enqueue({ kind: "session", sessionId });
     },
   });
   return {
@@ -47,6 +50,11 @@ function controlledSse(sessionId: string): {
       headers: { "content-type": "text/event-stream" },
     }),
     close: () => streamController?.close(),
+    complete: (text) => {
+      enqueue({ kind: "assistant_chunk", text });
+      enqueue({ kind: "done", sessionId });
+      streamController?.close();
+    },
   };
 }
 
@@ -56,6 +64,7 @@ class QuickChatFetch {
   readonly stopKeepalives: boolean[] = [];
   failStop = false;
   delayStops = false;
+  stopOutcome = { stopped: true, queued: false };
   private readonly stopReleases: Array<() => void> = [];
 
   releaseNextStop(): void {
@@ -90,20 +99,23 @@ class QuickChatFetch {
         body,
         signal: init.signal ?? null,
         close: stream.close,
+        complete: stream.complete,
       });
       return stream.response;
     }
     if (url === "/api/chat/stop") {
       this.stops.push(JSON.parse(String(init.body)) as Record<string, unknown>);
       this.stopKeepalives.push(init.keepalive === true);
+      const failStop = this.failStop;
+      const stopOutcome = { ...this.stopOutcome };
       if (this.delayStops) {
         await new Promise<void>((resolve) => {
           this.stopReleases.push(resolve);
         });
       }
-      return this.failStop
+      return failStop
         ? Response.json({ ok: false, error: "stop registry unavailable" }, { status: 503 })
-        : Response.json({ ok: true, stopped: true });
+        : Response.json({ ok: true, ...stopOutcome });
     }
 
     throw new Error(`Unexpected fetch: ${url}`);
@@ -144,7 +156,7 @@ describe("useQuickChat send cancellation", () => {
     vi.restoreAllMocks();
   });
 
-  test("a delayed old Stop stays run-scoped after a newer send resumes the same session", async () => {
+  test("accepted Stop waits for server acknowledgement before aborting and cancelling", async () => {
     const requests = new QuickChatFetch();
     globalThis.fetch = requests.fetch as typeof fetch;
     let state: UseQuickChat | null = null;
@@ -173,65 +185,130 @@ describe("useQuickChat send cancellation", () => {
     expect(first.body.runId).not.toBe("");
     expect(first.body).not.toHaveProperty("sessionId");
 
+    await act(async () => {
+      state!.setDraft("queued follow-up");
+    });
+    await act(async () => {
+      await state!.send();
+    });
+    expect(state!.queued).toHaveLength(1);
+
     requests.delayStops = true;
     await act(async () => {
       state!.cancel();
       await Promise.resolve();
     });
-    expect(first.signal?.aborted).toBe(true);
+    expect(first.signal?.aborted).toBe(false);
     expect(requests.stops[0]).toEqual({
       runId: first.body.runId,
     });
-    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+    expect(state!.messages.at(-1)?.lifecycle).toBe("streaming");
 
-    await act(async () => {
-      state!.setDraft("second question");
-    });
-    let secondSend!: Promise<void>;
-    await act(async () => {
-      secondSend = state!.send();
-      await Promise.resolve();
-    });
-    await waitFor(() => requests.sends.length === 2);
-
-    const second = requests.sends[1]!;
-    expect(second.body.runId).toEqual(expect.any(String));
-    expect(second.body.runId).not.toBe(first.body.runId);
-    expect(second.body.sessionId).toBe("session-1");
-    expect(requests.stops[0]).not.toHaveProperty("sessionId");
-    expect(second.signal?.aborted).toBe(false);
-
-    requests.delayStops = false;
     requests.releaseNextStop();
-    await act(async () => {
-      await Promise.resolve();
+    await waitFor(() => first.signal?.aborted === true);
+    expect(state!.messages.at(-1)).toMatchObject({
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
     });
-    expect(second.signal?.aborted).toBe(false);
+    expect(state!.sendState).toBe("idle");
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
 
     await act(async () => {
       first.close();
       await firstSend;
     });
-    expect(state!.sendState).toBe("sending");
-    expect(second.signal?.aborted).toBe(false);
-    expect(state!.messages.at(-1)?.pending).toBe(true);
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
+  });
 
+  test("a queued early Stop is accepted and cancels the owned local stream", async () => {
+    const requests = new QuickChatFetch();
+    requests.stopOutcome = { stopped: false, queued: true };
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
     await act(async () => {
       state!.cancel();
       await Promise.resolve();
     });
-    expect(second.signal?.aborted).toBe(true);
-    expect(requests.stops[1]).toEqual({
-      runId: second.body.runId,
-    });
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    expect(requests.stops).toEqual([{ runId: requests.sends[0]!.body.runId }]);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
 
     await act(async () => {
-      second.close();
-      await secondSend;
+      requests.sends[0]!.close();
+      await send;
     });
   });
 
-  test("a stop API failure remains visible without delaying local cancellation", async () => {
+  test("a late no-op Stop leaves the stream attached for definitive completion", async () => {
+    const requests = new QuickChatFetch();
+    requests.stopOutcome = { stopped: false, queued: false };
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+
+    requests.releaseNextStop();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("streaming");
+
+    await act(async () => {
+      requests.sends[0]!.complete("Final answer");
+      await send;
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Final answer",
+      pending: false,
+      lifecycle: "complete",
+      error: null,
+    });
+    expect(state!.sendState).toBe("done");
+  });
+
+  test("a stop API failure stays visible, keeps the stream attached, and permits retry", async () => {
     const requests = new QuickChatFetch();
     requests.failStop = true;
     globalThis.fetch = requests.fetch as typeof fetch;
@@ -259,18 +336,112 @@ describe("useQuickChat send cancellation", () => {
       state!.cancel();
       await Promise.resolve();
     });
-    expect(requests.sends[0]!.signal?.aborted).toBe(true);
-    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("streaming");
     await waitFor(() => state?.error?.includes("stop registry unavailable") === true);
     expect(consoleError).toHaveBeenCalledWith(
       "[Quick Chat] Failed to stop server-side response:",
       expect.any(Error),
     );
 
+    requests.failStop = false;
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    expect(requests.stops).toEqual([
+      { runId: requests.sends[0]!.body.runId },
+      { runId: requests.sends[0]!.body.runId },
+    ]);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+
     await act(async () => {
       requests.sends[0]!.close();
       await send;
     });
+  });
+
+  test("double Stop clicks share one in-flight request", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      state!.cancel();
+      await Promise.resolve();
+    });
+    expect(requests.stops).toHaveLength(1);
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+
+    requests.releaseNextStop();
+    await waitFor(() => requests.sends[0]!.signal?.aborted === true);
+    await act(async () => {
+      requests.sends[0]!.close();
+      await send;
+    });
+  });
+
+  test("settlement during an accepted Stop request keeps the definitive completion", async () => {
+    const requests = new QuickChatFetch();
+    requests.delayStops = true;
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.cancel();
+      await Promise.resolve();
+      requests.sends[0]!.complete("Already finished");
+      await send;
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Already finished",
+      pending: false,
+      lifecycle: "complete",
+    });
+
+    requests.releaseNextStop();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
+    expect(state!.messages.at(-1)?.lifecycle).toBe("complete");
+    expect(state!.sendState).toBe("done");
   });
 
   test("newThread stops one captured run before clearing the local thread", async () => {

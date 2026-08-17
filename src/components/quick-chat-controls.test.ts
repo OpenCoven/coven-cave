@@ -68,6 +68,11 @@ assert.doesNotMatch(
   "Quick Chat keeps the safe replaceable presentation-buffer mode",
 );
 assert.doesNotMatch(thread, /aria-live=/, "the thread does not nest a second live region");
+assert.match(
+  thread,
+  /messages\.findLast\(\(message\) => message\.role === "assistant"\)[\s\S]*announceLifecycle=\{message\.id === latestAssistantId\}/,
+  "only Quick Chat's latest assistant turn can announce lifecycle changes",
+);
 const responseMetadataComponent =
   /function QuickChatResponseMetadata[\s\S]*?\n\}/.exec(thread)?.[0] ?? "";
 assert.match(
@@ -82,8 +87,18 @@ assert.doesNotMatch(
 );
 assert.match(
   streamingResponse,
-  /className="streaming-turn-current" role="status"/,
-  "the shared live response owns the one explicit current-state announcement",
+  /announceLifecycle\?: boolean[\s\S]*announceLifecycle = true/,
+  "the focused shared response announcement prop preserves existing callers by default",
+);
+assert.match(
+  streamingResponse,
+  /role=\{announceLifecycle \? "status" : undefined\}/,
+  "status announcements can be removed without hiding visible lifecycle copy",
+);
+assert.match(
+  streamingResponse,
+  /role=\{announceLifecycle \? "alert" : undefined\}/,
+  "alert announcements can be removed from historical failed turns",
 );
 assert.match(
   quickHook,
@@ -127,12 +142,27 @@ assert.doesNotMatch(
 );
 assert.match(
   quickHook,
-  /const terminateActiveSend = useCallback[\s\S]*activeSendRef\.current = null;[\s\S]*requestQuickChatStop\(activeSend[\s\S]*activeSend\.controller\.abort\(\)/,
-  "all deliberate termination paths atomically take ownership before Stop and local abort",
+  /return \{\s*stopped: payload\.stopped === true,\s*queued: payload\.queued === true,\s*\}/,
+  "Quick Chat parses the server's stopped and queued acceptance outcome",
 );
 assert.match(
   quickHook,
-  /const newThread = useCallback[\s\S]*terminateActiveSend\(\{[\s\S]*surfaceFailure: false,[\s\S]*keepalive: true,[\s\S]*suppressSettlementUi: true/,
+  /const cancel = useCallback[\s\S]*activeSend\.stopRequested = true;[\s\S]*requestQuickChatStop\(activeSend\)[\s\S]*if \(activeSendRef\.current !== activeSend\) return;[\s\S]*!outcome\.stopped && !outcome\.queued[\s\S]*activeSendRef\.current = null;[\s\S]*activeSend\.controller\.abort\(\)/,
+  "user Stop waits for accepted run-scoped acknowledgement before taking and aborting the active stream",
+);
+assert.match(
+  quickHook,
+  /if \(!activeSend \|\| activeSend\.stopRequested\) return;[\s\S]*activeSend\.stopRequested = false;[\s\S]*catch\(\(cause\)[\s\S]*activeSend\.stopRequested = false;[\s\S]*setError\(/,
+  "duplicate Stop is guarded while no-op and failed requests permit retry",
+);
+assert.match(
+  quickHook,
+  /const terminateActiveSend = useCallback[\s\S]*activeSendRef\.current = null;[\s\S]*if \(!activeSend\.stopRequested\)[\s\S]*requestQuickChatStop\(activeSend[\s\S]*activeSend\.controller\.abort\(\)/,
+  "cleanup atomically takes and immediately aborts while keeping Stop best-effort and once-only",
+);
+assert.match(
+  quickHook,
+  /const newThread = useCallback[\s\S]*terminateActiveSend\(\{[\s\S]*keepalive: true,[\s\S]*suppressSettlementUi: true/,
   "thread resets explicitly stop their captured server run",
 );
 assert.match(
