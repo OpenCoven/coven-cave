@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencoven.context-pack/v1",
+  "title": "OpenCoven Context Pack v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "id",
+    "digest",
+    "createdAt",
+    "createdBy",
+    "purpose",
+    "subject",
+    "consent",
+    "resources",
+    "policy",
+    "transforms"
+  ],
+  "properties": {
+    "schema": { "const": "opencoven.context-pack/v1" },
+    "id": { "$ref": "#/$defs/contextPackId" },
+    "digest": { "$ref": "#/$defs/sha256" },
+    "createdAt": { "$ref": "#/$defs/utcTimestamp" },
+    "createdBy": { "$ref": "#/$defs/createdBy" },
+    "purpose": { "$ref": "#/$defs/purpose" },
+    "subject": { "$ref": "#/$defs/subject" },
+    "consent": { "$ref": "#/$defs/consent" },
+    "resources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/resource" }
+    },
+    "policy": { "$ref": "#/$defs/policy" },
+    "transforms": { "$ref": "#/$defs/transforms" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "contextPackId": {
+      "type": "string",
+      "pattern": "^ctx_[A-Za-z0-9_-]+$"
+    },
+    "resourceId": {
+      "type": "string",
+      "pattern": "^resource_[A-Za-z0-9_-]+$"
+    },
+    "purpose": {
+      "enum": ["topic-discovery", "research-run"]
+    },
+    "selectionMode": {
+      "enum": ["explicit", "saved-view"]
+    },
+    "retention": {
+      "enum": ["run-only", "7-days", "project"]
+    },
+    "resourceKind": {
+      "enum": [
+        "session",
+        "thread-self-report",
+        "mission",
+        "artifact",
+        "attachment",
+        "saved-resource",
+        "metric-snapshot"
+      ]
+    },
+    "resourceTrust": {
+      "enum": [
+        "user-authored",
+        "agent-output",
+        "mixed-conversation",
+        "model-derived",
+        "imported-source"
+      ]
+    },
+    "resourceSensitivity": {
+      "enum": ["public", "private", "restricted"]
+    },
+    "createdBy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["client"],
+      "properties": {
+        "client": { "const": "coven-cave" },
+        "userId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["familiarId"],
+      "properties": {
+        "familiarId": { "type": "string", "minLength": 1 },
+        "projectId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "selectionMode",
+        "allowRemoteQueries",
+        "allowRemoteContent",
+        "artifactContentSync",
+        "retention"
+      ],
+      "properties": {
+        "selectionMode": { "$ref": "#/$defs/selectionMode" },
+        "allowRemoteQueries": { "type": "boolean" },
+        "allowRemoteContent": { "type": "boolean" },
+        "artifactContentSync": { "type": "boolean" },
+        "retention": { "$ref": "#/$defs/retention" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["treatResourceTextAsData", "toolAuthority", "allowedPurposes"],
+      "properties": {
+        "treatResourceTextAsData": { "const": true },
+        "toolAuthority": { "const": "none" },
+        "allowedPurposes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/purpose" },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "transforms": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["secretScanVersion"],
+      "properties": {
+        "secretScanVersion": { "type": "string", "minLength": 1 },
+        "redactionMapDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "selector": {
+      "oneOf": [
+        { "$ref": "#/$defs/turnRangeSelector" },
+        { "$ref": "#/$defs/jsonPointerSelector" },
+        { "$ref": "#/$defs/textSpanSelector" },
+        { "$ref": "#/$defs/markdownSectionSelector" },
+        { "$ref": "#/$defs/pdfPageSpanSelector" },
+        { "$ref": "#/$defs/wholeResourceSelector" }
+      ]
+    },
+    "turnRangeSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "start", "end"],
+      "properties": {
+        "type": { "const": "turn-range" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "jsonPointerSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "pointer"],
+      "properties": {
+        "type": { "const": "json-pointer" },
+        "pointer": { "type": "string" }
+      }
+    },
+    "textSpanSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "start", "end"],
+      "properties": {
+        "type": { "const": "text-span" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "markdownSectionSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "headingPath"],
+      "properties": {
+        "type": { "const": "markdown-section" },
+        "headingPath": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "pdfPageSpanSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "page", "start", "end"],
+      "properties": {
+        "type": { "const": "pdf-page-span" },
+        "page": { "type": "integer", "minimum": 1 },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "wholeResourceSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "whole-resource" }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "kind",
+        "uri",
+        "digest",
+        "localBlobDigest",
+        "selector",
+        "trust",
+        "sensitivity",
+        "capturedAt",
+        "mediaType"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/resourceId" },
+        "kind": { "$ref": "#/$defs/resourceKind" },
+        "uri": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "localBlobDigest": { "$ref": "#/$defs/sha256" },
+        "selector": { "$ref": "#/$defs/selector" },
+        "trust": { "$ref": "#/$defs/resourceTrust" },
+        "sensitivity": { "$ref": "#/$defs/resourceSensitivity" },
+        "capturedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "title": { "type": "string", "minLength": 1 },
+        "mediaType": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
