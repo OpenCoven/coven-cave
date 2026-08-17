@@ -1,0 +1,175 @@
+// Fixture-level conformance suite for Research Protocol v1 (Unit 0, #8).
+//
+// This suite is deliberately generic: it reads every `.json` fixture out of
+// `schemas/research/v1/fixtures/{valid,invalid}` from disk (sorted for
+// filesystem-order independence) and checks each one against BOTH layers of
+// the protocol at once:
+//   - the authoritative TypeBox/JSON Schema file for its `schema` string
+//   - the hand-written parser reached through `parseResearchProtocolObject`
+//
+// New fixtures are picked up automatically; nothing needs to be listed here
+// by hand. JSON Schema cannot express every cross-object revision rule the
+// protocol enforces (see the per-module `*.test.ts` files for those); this
+// suite only asserts that every fixture on disk agrees with both layers,
+// leaving focused parser tests as the authority on semantic sequences.
+
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { test } from "node:test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { IsSchema, type TSchema } from "typebox";
+import { Check } from "typebox/value";
+
+import { isRecord } from "../src/lib/research-protocol/common.ts";
+import { digestProtocolObject } from "../src/lib/research-protocol/digest.ts";
+import {
+  RESEARCH_PROTOCOL_SCHEMAS,
+  parseResearchProtocolObject,
+} from "../src/lib/research-protocol/index.ts";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, "..");
+const schemasDir = path.join(repoRoot, "schemas/research/v1");
+const fixturesDir = path.join(schemasDir, "fixtures");
+
+function readJsonFile(filePath: string): unknown {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function requireString(value: unknown, filePath: string, label: string): string {
+  if (typeof value !== "string") {
+    assert.fail(`${filePath}: ${label} must be a string`);
+  }
+  return value;
+}
+
+// Every approved schema id follows `opencoven.<name>/v1`, and its
+// authoritative file lives right beside this suite as `<name>.schema.json`.
+// The mapping is derived from `RESEARCH_PROTOCOL_SCHEMAS` (the dispatcher's
+// own source of truth) rather than hand-listed, so a renamed file or a 9th
+// schema fails loudly here instead of silently going unchecked.
+const SCHEMA_ID_PATTERN = /^opencoven\.([a-z-]+)\/v1$/;
+
+function schemaFileNameFor(schemaId: string): string {
+  const match = SCHEMA_ID_PATTERN.exec(schemaId);
+  assert.ok(match, `schema id ${schemaId} does not match the opencoven.<name>/v1 pattern`);
+  const [, name] = match;
+  return `${name}.schema.json`;
+}
+
+// Populated by the "loads and validates" test below, then read by every
+// fixture test that follows. `node:test` registers callbacks and runs them
+// only after this module's synchronous top level finishes, so the load test
+// (added first) always completes before any fixture test body runs.
+const schemaContext: Record<string, TSchema> = {};
+
+test("loads and validates all eight authoritative Research Protocol v1 schema files", () => {
+  assert.equal(RESEARCH_PROTOCOL_SCHEMAS.length, 8);
+  for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
+    const fileName = schemaFileNameFor(schemaId);
+    const filePath = path.join(schemasDir, fileName);
+    const loaded: unknown = readJsonFile(filePath);
+    assert.ok(isRecord(loaded), `${filePath}: schema file root must be an object`);
+    assert.ok(IsSchema(loaded), `${filePath}: schema file must be a valid JSON Schema object`);
+    assert.equal(loaded.$id, schemaId, `${filePath}: $id must equal ${schemaId}`);
+    schemaContext[schemaId] = loaded;
+  }
+});
+
+function listFixtureFiles(kind: "valid" | "invalid"): string[] {
+  const dir = path.join(fixturesDir, kind);
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+for (const fileName of listFixtureFiles("valid")) {
+  const filePath = path.join(fixturesDir, "valid", fileName);
+
+  test(`valid fixture ${filePath} passes schema and parser`, () => {
+    const loaded: unknown = readJsonFile(filePath);
+    assert.ok(isRecord(loaded), `${filePath}: fixture root must be an object`);
+
+    const schemaId = requireString(loaded.schema, filePath, "$.schema");
+    const schema = schemaId in schemaContext ? schemaContext[schemaId] : undefined;
+    assert.ok(
+      schema !== undefined,
+      `${filePath}: schema ${schemaId} is not one of the eight approved schemas`,
+    );
+    assert.equal(
+      Check(schemaContext, schema, loaded),
+      true,
+      `${filePath}: expected schema validation to pass`,
+    );
+
+    const parsed = parseResearchProtocolObject(loaded);
+    if (!parsed.ok) {
+      assert.fail(`${filePath}: expected parser to accept fixture (${parsed.error.path}: ${parsed.error.message})`);
+    }
+
+    const roundTripped: unknown = JSON.parse(JSON.stringify(parsed.value));
+    assert.deepEqual(roundTripped, parsed.value, `${filePath}: parser result must round-trip through JSON`);
+
+    if (typeof loaded.digest === "string") {
+      const recomputed = digestProtocolObject(parsed.value);
+      assert.equal(recomputed, loaded.digest, `${filePath}: recomputed digest must equal fixture digest`);
+    }
+  });
+}
+
+for (const fileName of listFixtureFiles("invalid")) {
+  const filePath = path.join(fixturesDir, "invalid", fileName);
+
+  test(`invalid fixture ${filePath} is rejected by the parser`, () => {
+    const loaded: unknown = readJsonFile(filePath);
+    assert.ok(isRecord(loaded), `${filePath}: fixture root must be an object`);
+
+    // Strip the root `expectedSchemaValid` marker before validating: it is a
+    // conformance-suite instruction, not part of the protocol object, and
+    // must not reach the schema check or the parser.
+    const { expectedSchemaValid: marker, ...fixture } = loaded;
+    let expectedSchemaValid = false;
+    if (marker !== undefined) {
+      assert.equal(
+        typeof marker,
+        "boolean",
+        `${filePath}: expectedSchemaValid marker must be a boolean when present`,
+      );
+      expectedSchemaValid = marker === true;
+    }
+
+    const schemaId = requireString(fixture.schema, filePath, "$.schema");
+    const schema = schemaId in schemaContext ? schemaContext[schemaId] : undefined;
+
+    if (schema === undefined) {
+      // No registered schema for this family/major (e.g. the unknown-major
+      // fixture's `opencoven.run-event/v2`): the dispatcher must reject it
+      // outright, without this suite ever attempting schema validation.
+      assert.equal(
+        expectedSchemaValid,
+        false,
+        `${filePath}: an unregistered schema id must not claim expectedSchemaValid`,
+      );
+    } else {
+      const schemaValid = Check(schemaContext, schema, fixture);
+      assert.equal(
+        schemaValid,
+        expectedSchemaValid,
+        `${filePath}: expected schema validity ${expectedSchemaValid}, got ${schemaValid}`,
+      );
+    }
+
+    const parsed = parseResearchProtocolObject(fixture);
+    assert.equal(parsed.ok, false, `${filePath}: expected parser to reject fixture`);
+    if (schema === undefined && !parsed.ok) {
+      assert.equal(
+        parsed.error.code,
+        "unknown_major",
+        `${filePath}: dispatcher must reject an unregistered schema as unknown_major without trying schema validation`,
+      );
+    }
+  });
+}
