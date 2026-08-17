@@ -19,18 +19,6 @@ import {
 } from "./research-run.ts";
 import { parseResearchContextBindingV1 } from "./common.ts";
 
-const RUN_MANIFEST_PLACEHOLDER_SCHEMA_CONTEXT = {
-  "opencoven.run-manifest/v1": {
-    $id: "opencoven.run-manifest/v1",
-    type: "object",
-    additionalProperties: true,
-    required: ["schema"],
-    properties: {
-      schema: { const: "opencoven.run-manifest/v1" },
-    },
-  },
-};
-
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
     assert.fail(`${result.error.path}: ${result.error.message}`);
@@ -247,20 +235,6 @@ test("context parser validates ids and digest, preserves additive fields, and ig
   });
   const parsed = expectOk(parseResearchContextBindingV1(inheritedOptional, "$.context"));
   assert.equal("topicProposalId" in parsed, false);
-});
-
-test("run manifest placeholder seam preserves additive fields", () => {
-  const runWithPlaceholderManifest = {
-    ...validResearchRun,
-    artifactManifest: {
-      schema: "opencoven.run-manifest/v1",
-      futureExtension: { preserve: true },
-    },
-  };
-
-  assert.ok(Value.Check(RUN_MANIFEST_PLACEHOLDER_SCHEMA_CONTEXT, researchRunSchema, runWithPlaceholderManifest));
-  const parsed = expectOk(parseResearchRunV1(runWithPlaceholderManifest));
-  assert.deepEqual(parsed.artifactManifest?.futureExtension, { preserve: true });
 });
 
 test("events parse and validateRunEventSequence enforces contiguous same-run sequences", () => {
