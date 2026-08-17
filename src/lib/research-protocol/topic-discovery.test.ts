@@ -79,12 +79,82 @@ test("proposal visibleTotal mismatches reject with semantic_conflict", () => {
   );
 });
 
+test("completed job with empty proposalIds rejects", () => {
+  const emptyCompletedJob = {
+    ...validTopicDiscoveryJob,
+    proposalIds: [],
+  };
+
+  assert.equal(Value.Check(topicDiscoveryJobSchema, emptyCompletedJob), false);
+  expectError(parseTopicDiscoveryJobV1(emptyCompletedJob), "$.proposalIds", "semantic_conflict");
+});
+
 test("running job without startedAt rejects", () => {
   const { startedAt: _startedAt, finishedAt: _finishedAt, ...baseJob } = validTopicDiscoveryJob;
   const runningJob = { ...baseJob, status: "running" as const };
 
   assert.equal(Value.Check(topicDiscoveryJobSchema, runningJob), false);
   expectError(parseTopicDiscoveryJobV1(runningJob), "$.startedAt", "missing_field");
+});
+
+test("running job forbids finishedAt and failure", () => {
+  const runningWithFinishedAt = {
+    ...validTopicDiscoveryJob,
+    status: "running" as const,
+  };
+  assert.equal(Value.Check(topicDiscoveryJobSchema, runningWithFinishedAt), false);
+  expectError(parseTopicDiscoveryJobV1(runningWithFinishedAt), "$.finishedAt", "semantic_conflict");
+
+  const { finishedAt: _finishedAt, ...runningBase } = validTopicDiscoveryJob;
+  const runningWithFailure = {
+    ...runningBase,
+    status: "running" as const,
+    failure: { code: "runtime_error", message: "Retry later", retryable: true },
+  };
+  assert.equal(Value.Check(topicDiscoveryJobSchema, runningWithFailure), false);
+  expectError(parseTopicDiscoveryJobV1(runningWithFailure), "$.failure", "semantic_conflict");
+});
+
+test("queued job forbids startedAt, finishedAt, and failure", () => {
+  const runtimeFailure = { code: "runtime_error", message: "Retry later", retryable: true };
+  const { startedAt: _startedAt, finishedAt: _finishedAt, ...queuedBase } = validTopicDiscoveryJob;
+
+  const queuedWithStartedAt = {
+    ...queuedBase,
+    status: "queued" as const,
+    startedAt: validTopicDiscoveryJob.startedAt,
+  };
+  assert.equal(Value.Check(topicDiscoveryJobSchema, queuedWithStartedAt), false);
+  expectError(parseTopicDiscoveryJobV1(queuedWithStartedAt), "$.startedAt", "semantic_conflict");
+
+  const queuedWithFinishedAt = {
+    ...queuedBase,
+    status: "queued" as const,
+    finishedAt: validTopicDiscoveryJob.finishedAt,
+  };
+  assert.equal(Value.Check(topicDiscoveryJobSchema, queuedWithFinishedAt), false);
+  expectError(parseTopicDiscoveryJobV1(queuedWithFinishedAt), "$.finishedAt", "semantic_conflict");
+
+  const queuedWithFailure = {
+    ...queuedBase,
+    status: "queued" as const,
+    failure: runtimeFailure,
+  };
+  assert.equal(Value.Check(topicDiscoveryJobSchema, queuedWithFailure), false);
+  expectError(parseTopicDiscoveryJobV1(queuedWithFailure), "$.failure", "semantic_conflict");
+});
+
+test("completed and failed jobs remain valid", () => {
+  assert.equal(Value.Check(topicDiscoveryJobSchema, validTopicDiscoveryJob), true);
+  expectOk(parseTopicDiscoveryJobV1(validTopicDiscoveryJob));
+
+  const validFailedJob = {
+    ...validTopicDiscoveryJob,
+    status: "failed" as const,
+    failure: { code: "runtime_error", message: "Retry later", retryable: true },
+  };
+  assert.equal(Value.Check(topicDiscoveryJobSchema, validFailedJob), true);
+  expectOk(parseTopicDiscoveryJobV1(validFailedJob));
 });
 
 test("completed, failed, and cancelled jobs without finishedAt reject", () => {
@@ -106,13 +176,21 @@ test("completed, failed, and cancelled jobs without finishedAt reject", () => {
   }
 });
 
-test("completed job with failure rejects and failed job without failure rejects", () => {
+test("completed job with failure rejects and cancelled job with failure rejects", () => {
   const completedWithFailure = {
     ...validTopicDiscoveryJob,
     failure: { code: "runtime_error", message: "Retry later", retryable: true },
   };
   assert.equal(Value.Check(topicDiscoveryJobSchema, completedWithFailure), false);
   expectError(parseTopicDiscoveryJobV1(completedWithFailure), "$.failure", "semantic_conflict");
+
+  const cancelledWithFailure = {
+    ...validTopicDiscoveryJob,
+    status: "cancelled" as const,
+    failure: { code: "runtime_error", message: "Retry later", retryable: true },
+  };
+  assert.equal(Value.Check(topicDiscoveryJobSchema, cancelledWithFailure), false);
+  expectError(parseTopicDiscoveryJobV1(cancelledWithFailure), "$.failure", "semantic_conflict");
 
   const failedWithoutFailure = {
     ...validTopicDiscoveryJob,
