@@ -157,9 +157,11 @@ export async function streamFamiliarText(opts: {
       error = error ?? "the connection closed before the familiar finished responding";
     }
   } catch (err) {
-    error = opts.signal?.aborted
-      ? "cancelled"
-      : error ?? (err as Error)?.message ?? "the connection dropped mid-generation";
+    if (!receivedDone) {
+      error = opts.signal?.aborted
+        ? "cancelled"
+        : error ?? (err as Error)?.message ?? "the connection dropped mid-generation";
+    }
   }
   return {
     text: cancelled

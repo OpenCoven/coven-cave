@@ -27,6 +27,8 @@ type ControlledSend = {
   close: () => void;
   complete: (text: string) => void;
   cancel: (text: string) => void;
+  completeThenError: (text: string) => void;
+  cancelThenError: (text: string) => void;
   truncate: (text: string) => void;
 };
 
@@ -35,12 +37,22 @@ function controlledSse(sessionId: string): {
   close: () => void;
   complete: (text: string) => void;
   cancel: (text: string) => void;
+  completeThenError: (text: string) => void;
+  cancelThenError: (text: string) => void;
   truncate: (text: string) => void;
 } {
   const encoder = new TextEncoder();
   let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
   const enqueue = (event: Record<string, unknown>) => {
     streamController?.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  };
+  const terminalThenError = (text: string, cancelled: boolean) => {
+    const frames = [
+      `data: ${JSON.stringify({ kind: "assistant_chunk", text })}\n\n`,
+      `data: ${JSON.stringify({ kind: "done", sessionId, cancelled })}\n\n`,
+    ].join("");
+    streamController?.enqueue(encoder.encode(frames));
+    streamController?.error(new Error("reader failed after done"));
   };
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -64,6 +76,8 @@ function controlledSse(sessionId: string): {
       enqueue({ kind: "done", durationMs: 25, isError: false, sessionId, cancelled: true });
       streamController?.close();
     },
+    completeThenError: (text) => terminalThenError(text, false),
+    cancelThenError: (text) => terminalThenError(text, true),
     truncate: (text) => {
       enqueue({ kind: "assistant_chunk", text });
       streamController?.close();
@@ -115,6 +129,8 @@ class QuickChatFetch {
         close: stream.close,
         complete: stream.complete,
         cancel: stream.cancel,
+        completeThenError: stream.completeThenError,
+        cancelThenError: stream.cancelThenError,
         truncate: stream.truncate,
       });
       return stream.response;
@@ -524,6 +540,97 @@ describe("useQuickChat send cancellation", () => {
       await Promise.resolve();
     });
     expect(state!.messages.at(-1)?.lifecycle).toBe("cancelled");
+    expect(state!.queued).toHaveLength(1);
+    expect(requests.sends).toHaveLength(1);
+  });
+
+  test("done before a reader error completes the turn and drains the queued prompt", async () => {
+    const requests = new QuickChatFetch();
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.setDraft("queued follow-up");
+    });
+    await act(async () => {
+      await state!.send();
+      requests.sends[0]!.completeThenError("Definitive answer");
+      await Promise.resolve();
+    });
+
+    await waitFor(() => requests.sends.length === 2);
+    expect(state!.messages.find((message) => message.text === "Definitive answer")).toMatchObject({
+      pending: false,
+      lifecycle: "complete",
+      error: null,
+    });
+    expect(state!.queued).toHaveLength(0);
+
+    await act(async () => {
+      requests.sends[1]!.complete("Follow-up answer");
+      await send;
+    });
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Follow-up answer",
+      pending: false,
+      lifecycle: "complete",
+      error: null,
+    });
+  });
+
+  test("cancelled done before a reader error parks the queued prompt", async () => {
+    const requests = new QuickChatFetch();
+    globalThis.fetch = requests.fetch as typeof fetch;
+    let state: UseQuickChat | null = null;
+
+    await act(async () => {
+      renderer = create(<Probe onState={(next) => { state = next; }} />);
+    });
+    await waitFor(() => state?.projects.length === 1);
+    await act(async () => {
+      state!.setSelectedProjectRoot(PROJECT.root);
+      state!.setDraft("question");
+    });
+    await waitFor(() => state?.projectLaunchReady === true);
+
+    let send!: Promise<void>;
+    await act(async () => {
+      send = state!.send();
+      await Promise.resolve();
+    });
+    await waitFor(() => requests.sends.length === 1);
+    await act(async () => {
+      state!.setDraft("queued follow-up");
+    });
+    await act(async () => {
+      await state!.send();
+      requests.sends[0]!.cancelThenError("Partial answer");
+      await send;
+    });
+
+    expect(state!.messages.at(-1)).toMatchObject({
+      text: "Partial answer",
+      pending: false,
+      lifecycle: "cancelled",
+      error: null,
+    });
+    expect(state!.sendState).toBe("idle");
     expect(state!.queued).toHaveLength(1);
     expect(requests.sends).toHaveLength(1);
   });

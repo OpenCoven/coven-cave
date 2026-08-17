@@ -158,6 +158,61 @@ test("a delayed old runId cannot stop a newer run that reused its session", asyn
   }
 });
 
+test("runId Stop ignores a colliding session alias and stops only its explicit owner", async () => {
+  let aliasOwnerKills = 0;
+  let runOwnerKills = 0;
+  const runOwner = registerChatRun(["route-collision-b", "route-session-b"], () => {
+    runOwnerKills += 1;
+  }, { runId: "route-collision-b" });
+  const aliasOwner = registerChatRun(["route-collision-a", "route-collision-b"], () => {
+    aliasOwnerKills += 1;
+  }, { runId: "route-collision-a" });
+
+  try {
+    const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: "route-collision-b" }),
+    }));
+    assert.deepEqual(await readJson(response), { ok: true, stopped: true, queued: false });
+    assert.equal(runOwner.stopRequested, true);
+    assert.equal(runOwnerKills, 1);
+    assert.equal(aliasOwner.stopRequested, false);
+    assert.equal(aliasOwnerKills, 0);
+  } finally {
+    unregisterChatRun(aliasOwner);
+    unregisterChatRun(runOwner);
+  }
+});
+
+test("runId Stop queues through a colliding settled alias for the future owner", async () => {
+  let aliasOwnerKills = 0;
+  let intendedKills = 0;
+  const aliasOwner = registerChatRun(["route-alias-a", "route-future-b"], () => {
+    aliasOwnerKills += 1;
+  }, { runId: "route-alias-a" });
+  markChatRunTransportSettled(aliasOwner);
+  unregisterChatRun(aliasOwner);
+
+  const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId: "route-future-b" }),
+  }));
+  assert.deepEqual(await readJson(response), { ok: true, stopped: false, queued: true });
+  assert.equal(aliasOwnerKills, 0);
+
+  const intended = registerChatRun(["route-future-b"], () => {
+    intendedKills += 1;
+  }, { runId: "route-future-b" });
+  try {
+    assert.equal(intended.stopRequested, true);
+    assert.equal(intendedKills, 1);
+  } finally {
+    unregisterChatRun(intended);
+  }
+});
+
 test("queues a runId Stop that arrives before registration", async () => {
   const response = await POST(new Request("http://127.0.0.1/api/chat/stop", {
     method: "POST",

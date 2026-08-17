@@ -236,20 +236,51 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   assert.equal(pendingChatStopCountForTests(), 0, "test reset clears bounded pending intents");
 }
 
-// A pending runId may equal another run's session alias. Settling and
-// unregistering the alias owner must not consume that unrelated intent.
+// Run-scoped Stop ignores the alias namespace even when a later alias
+// registration shadows the same string. Only the explicit runId owner dies.
 {
+  let aliasOwnerKills = 0;
+  let runOwnerKills = 0;
+  resetChatStopRegistryForTests();
+  const runOwner = registerChatRun(
+    ["collision-run-b", "collision-session-b"],
+    () => {
+      runOwnerKills += 1;
+    },
+    { runId: "collision-run-b" },
+  );
+  const aliasRun = registerChatRun(
+    ["collision-run-a", "collision-run-b"],
+    () => {
+      aliasOwnerKills += 1;
+    },
+    { runId: "collision-run-a" },
+  );
+  assert.equal(requestOrQueueChatStop("collision-run-b"), "stopped");
+  assert.equal(runOwner.stopRequested, true, "the explicit runId owner receives Stop");
+  assert.equal(runOwnerKills, 1);
+  assert.equal(aliasRun.stopRequested, false, "the colliding session alias owner is untouched");
+  assert.equal(aliasOwnerKills, 0);
+  unregisterChatRun(aliasRun);
+  unregisterChatRun(runOwner);
+}
+
+// If B has not registered yet, A.sessionAlias === B.runId still queues only B.
+// A's later settlement records only A.runId and cannot consume or tombstone B.
+{
+  let aliasOwnerKills = 0;
   let intendedKills = 0;
   resetChatStopRegistryForTests();
-  assert.equal(requestOrQueueChatStop("shared-adversarial-session"), "queued");
   const aliasRun = registerChatRun(
-    ["alias-owner-run", "shared-adversarial-session"],
+    ["unregistered-run-a", "future-run-b"],
     () => {
-      throw new Error("the alias owner must not receive another run's early Stop");
+      aliasOwnerKills += 1;
     },
-    { runId: "alias-owner-run" },
+    { runId: "unregistered-run-a" },
   );
-  assert.equal(aliasRun.runId, "alias-owner-run");
+  assert.equal(requestOrQueueChatStop("future-run-b"), "queued");
+  assert.equal(aliasRun.stopRequested, false, "the alias owner does not receive B's early Stop");
+  assert.equal(aliasOwnerKills, 0);
   markChatRunTransportSettled(aliasRun);
   unregisterChatRun(aliasRun);
   assert.equal(
@@ -257,19 +288,47 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
     1,
     "alias settlement and unregister preserve the intended runId intent",
   );
+  assert.equal(settledChatRunCountForTests(), 1, "only A's explicit runId is tombstoned");
+  assert.equal(
+    requestOrQueueChatStop("future-run-b"),
+    "queued",
+    "A's tombstone cannot make B appear settled",
+  );
 
   const intendedRun = registerChatRun(
-    ["shared-adversarial-session"],
+    ["future-run-b"],
     () => {
       intendedKills += 1;
     },
-    { runId: "shared-adversarial-session" },
+    { runId: "future-run-b" },
   );
-  assert.equal(intendedRun.runId, "shared-adversarial-session");
+  assert.equal(intendedRun.runId, "future-run-b");
   assert.equal(intendedRun.stopRequested, true, "the intended run consumes its exact runId intent");
   assert.equal(intendedKills, 1, "only the intended run is killed");
   assert.equal(pendingChatStopCountForTests(), 0);
   unregisterChatRun(intendedRun);
+}
+
+// Cleanup and settlement from a replaced runId owner are identity-guarded, just
+// like the alias map: an older handle cannot evict or tombstone the newer run.
+{
+  let newerKills = 0;
+  resetChatStopRegistryForTests();
+  const older = registerChatRun(["older-run-session"], () => {}, {
+    runId: "reused-explicit-run",
+  });
+  const newer = registerChatRun(["newer-run-session"], () => {
+    newerKills += 1;
+  }, {
+    runId: "reused-explicit-run",
+  });
+  markChatRunTransportSettled(older);
+  unregisterChatRun(older);
+  assert.equal(settledChatRunCountForTests(), 0, "the replaced owner cannot write a tombstone");
+  assert.equal(requestOrQueueChatStop("reused-explicit-run"), "stopped");
+  assert.equal(newer.stopRequested, true);
+  assert.equal(newerKills, 1, "the newer explicit runId owner survives old cleanup");
+  unregisterChatRun(newer);
 }
 
 // A live but transport-settled run keeps the existing late-stop behavior: it
