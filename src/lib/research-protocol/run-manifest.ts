@@ -39,6 +39,23 @@ const ARTIFACT_TITLE_URI_SCHEME_RE =
   /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:about|blob|chrome|data|did|file|ftp|git|http|https|ipfs|irc|ircs|mailto|magnet|npm|s3|sftp|sms|ssh|tel|urn|vscode|ws|wss):)/i;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
+const FORBIDDEN_SENSITIVE_KEYS = new Set([
+  "excerpt",
+  "text",
+  "content",
+  "blob",
+  "filename",
+  "localpath",
+  "filepath",
+  "path",
+  "credential",
+  "credentials",
+  "secret",
+  "objectkey",
+  "storagekey",
+  "bucketkey",
+  "deletedcontent",
+]);
 
 export type ArtifactRegistrationV1 = {
   id: string;
@@ -137,6 +154,34 @@ function indexPath(path: string, index: number): string {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function validateSensitiveObjectKeys(
+  value: unknown,
+  path: string,
+): ProtocolParseResult<void> {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const nested = validateSensitiveObjectKeys(entry, indexPath(path, index));
+      if (!nested.ok) return nested;
+    }
+    return pass(undefined);
+  }
+  if (!isRecord(value)) return pass(undefined);
+
+  for (const key of Object.keys(value)) {
+    const keyPath = childPath(path, key);
+    if (FORBIDDEN_SENSITIVE_KEYS.has(key.toLowerCase())) {
+      return fail(
+        "semantic_conflict",
+        keyPath,
+        `Sensitive manifest objects must not contain ${key}`,
+      );
+    }
+    const nested = validateSensitiveObjectKeys(value[key], keyPath);
+    if (!nested.ok) return nested;
+  }
+  return pass(undefined);
 }
 
 function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
@@ -327,6 +372,9 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
   if (!id.ok) return id;
 
   if (kind.value === "context-pack") {
+    const safeKeys = validateSensitiveObjectKeys(object.value, path);
+    if (!safeKeys.ok) return safeKeys;
+
     const digestField = parseRequiredField(object.value, "digest", path);
     if (!digestField.ok) return digestField;
     const digest = parseSha256(digestField.value, childPath(path, "digest"), "digest");
@@ -397,6 +445,8 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
 function parseArtifact(value: unknown, path: string): ProtocolParseResult<ArtifactRegistrationV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
+  const safeKeys = validateSensitiveObjectKeys(object.value, path);
+  if (!safeKeys.ok) return safeKeys;
 
   const idField = parseRequiredField(object.value, "id", path);
   if (!idField.ok) return idField;
@@ -645,6 +695,8 @@ function parseDeletion(
 ): ProtocolParseResult<RunManifestDeletionReceiptV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
+  const safeKeys = validateSensitiveObjectKeys(object.value, path);
+  if (!safeKeys.ok) return safeKeys;
 
   const statusField = parseRequiredField(object.value, "status", path);
   if (!statusField.ok) return statusField;
