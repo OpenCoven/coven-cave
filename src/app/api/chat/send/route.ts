@@ -173,6 +173,7 @@ import {
   type LocalRuntimeCapabilityPlan,
 } from "@/lib/server/local-runtime-capability-gate";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
+import { resolveInferenceLaunchPlan } from "@/lib/server/inference-launch-plan";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
 import {
@@ -659,6 +660,9 @@ async function maybeQueueOfflineChat(args: {
     sessionId,
     familiarId: args.body.familiarId,
     harness: args.responseMetadata.harness ?? bindingFor(args.config, args.body.familiarId).harness,
+    ...(args.responseMetadata.inferenceRouteId
+      ? { inferenceRouteId: args.responseMetadata.inferenceRouteId }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "model")
       ? { model: args.responseMetadata.model ?? undefined }
       : {}),
@@ -1004,6 +1008,9 @@ function openClawChatResponse(args: {
           sessionId: conversationId,
           familiarId: args.body.familiarId,
           harness: "openclaw",
+          ...(responseMetadata.inferenceRouteId
+            ? { inferenceRouteId: responseMetadata.inferenceRouteId }
+            : {}),
           ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: stubTitle,
@@ -1110,6 +1117,12 @@ function openClawChatResponse(args: {
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
+          if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
+            conv.inferenceRouteId = responseMetadata.inferenceRouteId;
+            if (responseMetadata.inferenceRouteFingerprint) {
+              conv.inferenceRouteFingerprint = responseMetadata.inferenceRouteFingerprint;
+            }
+          }
           persistSendModelIntent(
             conv,
             args.body,
@@ -1282,6 +1295,9 @@ function openClawChatResponse(args: {
         sessionId: conversationId,
         familiarId: args.body.familiarId,
         harness: "openclaw",
+        ...(responseMetadata.inferenceRouteId
+          ? { inferenceRouteId: responseMetadata.inferenceRouteId }
+          : {}),
         ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
         ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
         title: stubTitle,
@@ -1480,6 +1496,12 @@ function openClawChatResponse(args: {
               };
               conv.model = responseMetadata.model;
               conv.runtime = responseMetadata.runtime;
+              if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
+                conv.inferenceRouteId = responseMetadata.inferenceRouteId;
+                if (responseMetadata.inferenceRouteFingerprint) {
+                  conv.inferenceRouteFingerprint = responseMetadata.inferenceRouteFingerprint;
+                }
+              }
               persistSendModelIntent(
                 conv,
                 args.body,
@@ -1704,6 +1726,14 @@ export async function POST(req: Request) {
   // rejects any malformed legacy value.
   if (existingConversation) {
     binding.harness = canonicalHarnessId(existingConversation.harness);
+    if (
+      binding.inferenceRouteId?.startsWith("native:") &&
+      binding.inferenceRouteId !== `native:${binding.harness}`
+    ) {
+      binding.inferenceRouteId =
+        existingConversation.inferenceRouteId ?? `native:${binding.harness}`;
+      delete binding.hasInvalidInferenceRouteBinding;
+    }
   }
   // Native Board handoffs reserve Cave's conversation id before the harness
   // writes its transcript. Bind that pre-transcript id to the server-owned
@@ -2408,6 +2438,27 @@ export async function POST(req: Request) {
     existingConversation,
     modelForwardingEnabled,
   });
+  const inferenceLaunch = resolveInferenceLaunchPlan({
+    routes: config.inferenceRoutes,
+    binding,
+    requestedModel: cleanModelId(desiredModel),
+    existingConversation,
+  });
+  if (!inferenceLaunch.ok) {
+    return NextResponse.json({
+      ok: false,
+      code: "inference_route_unavailable",
+      error: inferenceLaunch.message,
+    }, { status: 400 });
+  }
+  const inferencePlan = inferenceLaunch.plan;
+  if (!inferencePlan.route.id.startsWith("native:")) {
+    return NextResponse.json({
+      ok: false,
+      code: "inference_route_not_implemented",
+      error: "This inference route is configured but its harness adapter is not available yet.",
+    }, { status: 501 });
+  }
   const savedModelRejection = savedModelSelectionRejection({
     desiredModel,
     modelState,
@@ -2580,6 +2631,11 @@ export async function POST(req: Request) {
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
     harness: binding.harness,
+    inferenceRouteId: inferencePlan.route.id,
+    inferenceRouteFingerprint: inferencePlan.fingerprint,
+    inferenceProvider: inferencePlan.route.provider,
+    inferenceProtocol: inferencePlan.route.protocol,
+    inferenceSupportTier: inferencePlan.route.supportTier,
     model: desiredModel,
     runtime: sshRuntime
       ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
@@ -2988,6 +3044,14 @@ export async function POST(req: Request) {
   const runtimeAccessRetry = runtimeAccessRefreshNeeded
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
+  const inferenceRouteRefreshNeeded = Boolean(
+    existingConversation &&
+    resumeTarget &&
+    !inferencePlan.resumeSafe
+  );
+  const inferenceRouteRetry = inferenceRouteRefreshNeeded
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
   // fresh one (with recent context replayed) when the access chip changed. An
@@ -3028,10 +3092,13 @@ export async function POST(req: Request) {
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
   const args = buildArgs(
-    runtimeAccessRefreshNeeded || grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility
+    runtimeAccessRefreshNeeded || inferenceRouteRefreshNeeded || grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility
       ? null
       : resumeTarget,
-    runtimeAccessRetry?.prompt ?? grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
+    runtimeAccessRetry?.prompt ??
+      inferenceRouteRetry?.prompt ??
+      grokSandboxRetry?.prompt ??
+      openCodeCompatibilityRetry?.prompt,
   );
 
   // Resume failures from common harnesses. Codex emits
@@ -3181,6 +3248,16 @@ export async function POST(req: Request) {
             : "Started a fresh harness session with the current grants.",
         );
       }
+      if (inferenceRouteRefreshNeeded) {
+        pushProgress(
+          "inference-route-refresh",
+          "Model connection refreshed",
+          "done",
+          inferenceRouteRetry?.replayedHistory
+            ? "Started a fresh harness session with the selected connection and recent context."
+            : "Started a fresh harness session with the selected connection.",
+        );
+      }
 
       let sessionId: string | null = body.sessionId ?? null;
       // Cave keeps `sessionId` as the stable conversation id for resumed
@@ -3209,7 +3286,9 @@ export async function POST(req: Request) {
       // A conversation created by Hermes CLI has a CLI-native session id here,
       // not a Responses id. If the API rejects it, the shared resume fallback
       // replays saved context into one fresh Responses turn instead.
-      let hermesPreviousResponseId = existingConversation?.harnessSessionId ?? null;
+      let hermesPreviousResponseId = inferenceRouteRefreshNeeded
+        ? null
+        : existingConversation?.harnessSessionId ?? null;
       // Legacy/failed conversations may not have a usable Responses id. A
       // fresh API request must receive saved context rather than silently
       // answering only the newest prompt.
@@ -3518,6 +3597,7 @@ export async function POST(req: Request) {
           sessionId: announcedId,
           familiarId: body.familiarId,
           harness: binding.harness,
+          inferenceRouteId: inferencePlan.route.id,
           ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: ownsFirstExchangeTitle
@@ -5234,6 +5314,7 @@ export async function POST(req: Request) {
         copilotStream &&
         resumeTarget &&
         !runtimeAccessRefreshNeeded &&
+        !inferenceRouteRefreshNeeded &&
         !runHandle.stopRequested &&
         !launchFailure &&
         !assistantText.trim() &&
@@ -5817,6 +5898,8 @@ export async function POST(req: Request) {
           }
           if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
           if (!result.is_error && !cancelledByUser) {
+            conv.inferenceRouteId = inferencePlan.route.id;
+            conv.inferenceRouteFingerprint = inferencePlan.fingerprint;
             conv.runtimeAccessFingerprint = runtimeAccessFingerprint;
           }
           conv.turns.push(userTurn, assistantTurn);
