@@ -9,13 +9,15 @@ import {
   type ResearchContextBindingV1,
   type UnknownFields,
 } from "./common.ts";
+import {
+  parseRunManifestV1,
+  type RunManifestV1,
+} from "./run-manifest.ts";
 
 const RESEARCH_RUN_SCHEMA = "opencoven.research-run/v1";
 const RESEARCH_RUN_SCHEMA_RE = /^opencoven\.research-run\/v(\d+)$/;
 const RUN_EVENT_SCHEMA = "opencoven.run-event/v1";
 const RUN_EVENT_SCHEMA_RE = /^opencoven\.run-event\/v(\d+)$/;
-const RUN_MANIFEST_SCHEMA = "opencoven.run-manifest/v1";
-const RUN_MANIFEST_SCHEMA_RE = /^opencoven\.run-manifest\/v(\d+)$/;
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 const EXECUTION_LOCATIONS = ["local", "hosted"] as const;
@@ -69,10 +71,6 @@ type ResearchAcceptedTopicV1 = {
   editedByUser: boolean;
 } & UnknownFields;
 
-type RunManifestPlaceholderV1 = {
-  schema: "opencoven.run-manifest/v1";
-} & UnknownFields;
-
 type ResearchRunFailureV1 = {
   code: string;
   message: string;
@@ -123,7 +121,7 @@ export type ResearchRunV1 = {
   createdAt: string;
   updatedAt: string;
   nextEventSequence: number;
-  artifactManifest?: RunManifestPlaceholderV1;
+  artifactManifest?: RunManifestV1;
   failure?: ResearchRunFailureV1;
 } & UnknownFields;
 
@@ -582,30 +580,6 @@ function parseResearchRunFailureV1(
   });
 }
 
-function parseRunManifestPlaceholderV1(
-  value: unknown,
-  path: string,
-): ProtocolParseResult<RunManifestPlaceholderV1> {
-  const object = parseObject(value, path);
-  if (!object.ok) return object;
-
-  const schemaField = parseRequiredField(object.value, "schema", path);
-  if (!schemaField.ok) return schemaField;
-  const schema = parseSchema(
-    schemaField.value,
-    RUN_MANIFEST_SCHEMA,
-    RUN_MANIFEST_SCHEMA_RE,
-    childPath(path, "schema"),
-    "schema",
-  );
-  if (!schema.ok) return schema;
-
-  return pass({
-    ...object.value,
-    schema: schema.value,
-  });
-}
-
 export function parseResearchRunV1(value: unknown): ProtocolParseResult<ResearchRunV1> {
   const object = parseObject(value, "$");
   if (!object.ok) return object;
@@ -735,13 +709,21 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   );
   if (!nextEventSequence.ok) return nextEventSequence;
 
-  let artifactManifest: RunManifestPlaceholderV1 | undefined;
+  let artifactManifest: RunManifestV1 | undefined;
   if (hasOwn(object.value, "artifactManifest")) {
-    const parsedArtifactManifest = parseRunManifestPlaceholderV1(
-      object.value.artifactManifest,
-      "$.artifactManifest",
-    );
-    if (!parsedArtifactManifest.ok) return parsedArtifactManifest;
+    const parsedArtifactManifest = parseRunManifestV1(object.value.artifactManifest);
+    if (!parsedArtifactManifest.ok) {
+      return {
+        ok: false,
+        error: {
+          ...parsedArtifactManifest.error,
+          path:
+            parsedArtifactManifest.error.path === "$"
+              ? "$.artifactManifest"
+              : `$.artifactManifest${parsedArtifactManifest.error.path.slice(1)}`,
+        },
+      };
+    }
     artifactManifest = parsedArtifactManifest.value;
   }
 

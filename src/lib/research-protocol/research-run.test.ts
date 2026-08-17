@@ -8,7 +8,9 @@ import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixture
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
+import validRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-local.json" with { type: "json" };
 
+import { digestProtocolObject } from "./digest.ts";
 import {
   parseResearchExecutionProfileV1,
   parseResearchPrivacyPolicyV1,
@@ -310,4 +312,33 @@ test("run event data drops inherited fields while preserving own fields", () => 
     customField: "kept",
     futureExtension: { preserve: true },
   });
+});
+
+test("research runs parse full run manifests and reject invalid embedded manifests", () => {
+  const valid = expectOk(
+    parseResearchRunV1({
+      ...validResearchRun,
+      artifactManifest: validRunManifest,
+    }),
+  );
+  assert.equal(valid.artifactManifest?.id, validRunManifest.id);
+  assert.deepEqual(valid.artifactManifest?.futureExtension, { preserve: true });
+
+  const invalidManifest = {
+    ...validRunManifest,
+    retention: {
+      ...validRunManifest.retention,
+      status: "deleted",
+    },
+    deletion: {
+      ...validRunManifest.deletion,
+      status: "not_scheduled",
+    },
+  };
+  invalidManifest.digest = digestProtocolObject(invalidManifest);
+  const invalid = parseResearchRunV1({
+    ...validResearchRun,
+    artifactManifest: invalidManifest,
+  });
+  expectError(invalid, "$.artifactManifest.retention.status", "semantic_conflict");
 });

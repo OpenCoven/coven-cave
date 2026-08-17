@@ -1766,6 +1766,7 @@ export const SUITES = {
     "src/lib/research-protocol/topic-discovery.test.ts",
     "src/lib/research-protocol/research-run.test.ts",
     "src/lib/research-protocol/model-task.test.ts",
+    "src/lib/research-protocol/run-manifest.test.ts",
     "scripts/daemon-connectivity-faults.test.ts",
     "scripts/windows-native-browser-regression.test.mjs",
     "scripts/cave-home-migration-windows.test.ts",
