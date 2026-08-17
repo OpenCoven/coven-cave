@@ -32,6 +32,19 @@ test("known project verification commands become structured evidence", () => {
     verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm build" }) }))?.kind,
     "build",
   );
+  assert.equal(verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm test" }) }))?.kind, "test");
+  assert.equal(
+    verificationEvidenceFromTool(
+      tool({ input: JSON.stringify({ command: "pnpm test:e2e src/app/chat.spec.ts" }) }),
+    )?.label,
+    "App tests passed",
+  );
+  assert.equal(
+    verificationEvidenceFromTool(
+      tool({ input: JSON.stringify({ command: "pnpm test:app src/lib/chat-tool-verification.test.ts" }) }),
+    )?.kind,
+    "test",
+  );
 });
 
 test("generic success, output claims, compound shell, and unknown kinds are rejected", () => {
@@ -45,12 +58,21 @@ test("generic success, output claims, compound shell, and unknown kinds are reje
     verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm test:app\rcmd" }) })),
     null,
   );
-  assert.equal(verificationEvidenceFromTool(tool({
-    input: JSON.stringify({ command: "pnpm test:app && rm -rf build" }),
-  })), null);
-  assert.equal(verificationEvidenceFromTool(tool({
-    input: JSON.stringify({ command: "custom-verifier" }),
-    output: "All tests passed",
-  })), null);
+  assert.equal(
+    verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm test:app && rm -rf build" }) })),
+    null,
+  );
+  assert.equal(
+    verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm test:e2e --list" }) })),
+    null,
+  );
+  assert.equal(
+    verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "pnpm test:e2e --help" }) })),
+    null,
+  );
+  assert.equal(
+    verificationEvidenceFromTool(tool({ input: JSON.stringify({ command: "custom-verifier" }), output: "All tests passed" })),
+    null,
+  );
   assert.equal(verificationEvidenceFromTool(tool({ input: "{not json" })), null);
 });
