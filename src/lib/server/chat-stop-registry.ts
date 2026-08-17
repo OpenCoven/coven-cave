@@ -33,19 +33,14 @@ export type ChatRunHandle = {
 };
 
 const active = new Map<string, ChatRunEntry>();
-const pendingStops = new Map<string, number>();
+// Early runId Stops cannot safely expire: setup can outlive any wall-clock
+// guess. Bound them by capacity instead, with Map order as the LRU queue.
+const pendingStops = new Map<string, true>();
 const settledKeys = new Map<string, number>();
-export const PENDING_CHAT_STOP_TTL_MS = 5_000;
 export const MAX_PENDING_CHAT_STOPS = 256;
 export const SETTLED_CHAT_RUN_TTL_MS = 30_000;
 export const MAX_SETTLED_CHAT_RUNS = 512;
 let registryNow = () => Date.now();
-
-function prunePendingStops(now = registryNow()): void {
-  for (const [runId, expiresAt] of pendingStops) {
-    if (expiresAt <= now) pendingStops.delete(runId);
-  }
-}
 
 function pruneSettledKeys(now = registryNow()): void {
   for (const [key, expiresAt] of settledKeys) {
@@ -53,13 +48,17 @@ function pruneSettledKeys(now = registryNow()): void {
   }
 }
 
-function queuePendingStop(runId: string, now: number): void {
-  prunePendingStops(now);
-  if (!pendingStops.has(runId) && pendingStops.size >= MAX_PENDING_CHAT_STOPS) {
+function queuePendingStop(runId: string): void {
+  // Repeated cleanup requests coalesce while refreshing this intent's recency.
+  if (pendingStops.delete(runId)) {
+    pendingStops.set(runId, true);
+    return;
+  }
+  if (pendingStops.size >= MAX_PENDING_CHAT_STOPS) {
     const oldestRunId = pendingStops.keys().next().value;
     if (oldestRunId !== undefined) pendingStops.delete(oldestRunId);
   }
-  pendingStops.set(runId, now + PENDING_CHAT_STOP_TTL_MS);
+  pendingStops.set(runId, true);
 }
 
 function rememberSettledKeys(keys: readonly string[], now: number): void {
@@ -82,7 +81,6 @@ export function registerChatRun(
   options: RegisterChatRunOptions = {},
 ): ChatRunHandle {
   const now = registryNow();
-  prunePendingStops(now);
   pruneSettledKeys(now);
   const handle: ChatRunHandle = {
     stopRequested: false,
@@ -178,8 +176,9 @@ export function requestChatStop(key: string): boolean {
 
 /**
  * Deliberate run-scoped Stop used by /api/chat/stop. If async send setup has
- * not registered the run yet, retain one bounded intent for that runId only.
- * A registered, transport-settled run remains a late-stop no-op.
+ * not registered the run yet, retain one capacity-bounded LRU intent for that
+ * runId only until registration consumes it. A registered, transport-settled
+ * run remains a late-stop no-op via an independently expiring tombstone.
  */
 export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
   const entry = active.get(runId);
@@ -190,7 +189,7 @@ export function requestOrQueueChatStop(runId: string): ChatStopRequestOutcome {
   const now = registryNow();
   pruneSettledKeys(now);
   if (settledKeys.has(runId)) return "settled";
-  queuePendingStop(runId, now);
+  queuePendingStop(runId);
   return "queued";
 }
 
@@ -221,7 +220,6 @@ export function resetChatStopRegistryForTests(options: { now?: () => number } = 
 }
 
 export function pendingChatStopCountForTests(): number {
-  prunePendingStops();
   return pendingStops.size;
 }
 

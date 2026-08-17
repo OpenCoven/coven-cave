@@ -59,7 +59,7 @@ function controlledSse(sessionId: string): {
     },
     cancel: (text) => {
       enqueue({ kind: "assistant_chunk", text });
-      enqueue({ kind: "done", sessionId, cancelled: true });
+      enqueue({ kind: "done", durationMs: 25, isError: false, sessionId, cancelled: true });
       streamController?.close();
     },
   };
@@ -452,7 +452,7 @@ describe("useQuickChat send cancellation", () => {
     expect(state!.sendState).toBe("done");
   });
 
-  test("server cancellation wins while Stop is pending and parks the queued prompt", async () => {
+  test("server done.cancelled beats the Stop POST response and parks the queued prompt", async () => {
     const requests = new QuickChatFetch();
     requests.delayStops = true;
     globalThis.fetch = requests.fetch as typeof fetch;
@@ -502,6 +502,7 @@ describe("useQuickChat send cancellation", () => {
     expect(state!.sendState).toBe("idle");
     expect(state!.queued).toHaveLength(1);
     expect(requests.sends).toHaveLength(1);
+    expect(requests.sends[0]!.signal?.aborted).toBe(false);
 
     requests.releaseNextStop();
     await act(async () => {

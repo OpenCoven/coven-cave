@@ -507,8 +507,8 @@ for (const contract of contracts) {
 // "(cancelled)" marker), never the fabricated empty-response error
 // diagnostic. A bare `req.signal` abort is a TRANSPORT DROP, not a cancel:
 // the harness keeps running (bounded by the detach cap) and the finished
-// turn persists for resync. Both adapter paths (coven stream-json and the
-// OpenClaw bridge) carry the guard.
+// turn persists for resync. All three runtime paths (OpenClaw Gateway,
+// OpenClaw CLI bridge, and the shared direct-runtime route) carry the guard.
 {
   const sendSource = readFileSync(
     path.join(apiRoot, "chat", "send", "route.ts"),
@@ -621,7 +621,7 @@ for (const contract of contracts) {
   ];
   assert.equal(
     cancelledFlags.length,
-    4,
+    6,
     "/chat/send: every adapter path must mark both its assistant turn and terminal event as cancelled",
   );
   assert.match(

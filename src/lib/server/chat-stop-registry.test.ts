@@ -17,7 +17,6 @@ const {
   resetChatStopRegistryForTests,
   MAX_PENDING_CHAT_STOPS,
   MAX_SETTLED_CHAT_RUNS,
-  PENDING_CHAT_STOP_TTL_MS,
   SETTLED_CHAT_RUN_TTL_MS,
 } =
   await import("./chat-stop-registry.ts");
@@ -162,30 +161,56 @@ assert.equal(requestChatStop("session-1"), false, "unregister drops every key");
   unregisterChatRun(handle);
 }
 
-// Pending runId intents expire deterministically and pruning keeps the bounded
-// map from retaining stale or attacker-controlled identifiers.
+// Pending runId intents survive setup delays longer than the route's ten-minute
+// detach window. Registration, not a guessed wall-clock deadline, consumes it.
 {
   let now = 20_000;
   let kills = 0;
   resetChatStopRegistryForTests({ now: () => now });
-  assert.equal(requestOrQueueChatStop("expiring-run"), "queued");
-  now += PENDING_CHAT_STOP_TTL_MS;
-  const expired = registerChatRun(["expiring-run"], () => {
+  assert.equal(requestOrQueueChatStop("slow-setup-run"), "queued");
+  now += 24 * 60 * 60_000;
+  const slowSetup = registerChatRun(["slow-setup-run"], () => {
     kills += 1;
-  }, { runId: "expiring-run" });
-  assert.equal(expired.stopRequested, false, "an intent at its TTL boundary is expired");
-  assert.equal(kills, 0, "expired intents never kill a later run");
-  assert.equal(pendingChatStopCountForTests(), 0, "registration prunes expired intent state");
-  unregisterChatRun(expired);
+  }, { runId: "slow-setup-run" });
+  assert.equal(slowSetup.stopRequested, true, "a day-old pending intent still cancels on registration");
+  assert.equal(kills, 1, "the delayed registration consumes the intent exactly once");
+  assert.equal(pendingChatStopCountForTests(), 0, "consumed intent state does not leak");
+  unregisterChatRun(slowSetup);
+}
 
-  for (let index = 0; index < MAX_PENDING_CHAT_STOPS + 20; index += 1) {
+// Capacity remains strict, duplicate requests refresh LRU recency, and overflow
+// evicts the deterministic oldest intent rather than expiring by time.
+{
+  resetChatStopRegistryForTests();
+  for (let index = 0; index < MAX_PENDING_CHAT_STOPS; index += 1) {
     requestOrQueueChatStop(`bounded-${index}`);
   }
+  assert.equal(requestOrQueueChatStop("bounded-0"), "queued", "a duplicate refreshes the oldest intent");
+  assert.equal(requestOrQueueChatStop("bounded-overflow"), "queued");
   assert.equal(
     pendingChatStopCountForTests(),
     MAX_PENDING_CHAT_STOPS,
-    "pending intent storage remains bounded before TTL expiry",
+    "pending intent storage remains strictly capacity-bounded",
   );
+
+  let evictedKills = 0;
+  const evicted = registerChatRun(["bounded-1"], () => {
+    evictedKills += 1;
+  }, { runId: "bounded-1" });
+  assert.equal(evicted.stopRequested, false, "overflow evicts the deterministic least-recent intent");
+  assert.equal(evictedKills, 0);
+  unregisterChatRun(evicted);
+
+  let refreshedKills = 0;
+  const refreshed = registerChatRun(["bounded-0"], () => {
+    refreshedKills += 1;
+  }, { runId: "bounded-0" });
+  assert.equal(refreshed.stopRequested, true, "the refreshed intent survives the same overflow");
+  assert.equal(refreshedKills, 1);
+  unregisterChatRun(refreshed);
+
+  resetChatStopRegistryForTests();
+  assert.equal(pendingChatStopCountForTests(), 0, "test reset clears bounded pending intents");
 }
 
 // A live but transport-settled run keeps the existing late-stop behavior: it
