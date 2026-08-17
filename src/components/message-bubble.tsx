@@ -935,6 +935,10 @@ function MarkdownContent({
     return () => { cancelled = true; };
   }, [cacheKey, decorateResponse, pending, renderGate, text]);
 
+  if (decorateResponse && !pending && text.trim().length === 0) {
+    return null;
+  }
+
   if (!html) {
     if (!decorateResponse) {
       return (

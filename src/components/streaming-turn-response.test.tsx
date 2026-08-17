@@ -3,9 +3,11 @@ import { Children, isValidElement } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { partitionStreamingMarkdown } from "@/lib/streaming-markdown-blocks";
 import type { StreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { OverflowMenu } from "./ui/overflow-menu";
 import { MessageBubble, ProgressiveMarkdownBlock } from "./message-bubble";
+import { StreamingMarkdownBlocks } from "./streaming-markdown-blocks";
 import { StreamingTurnResponse } from "./streaming-turn-response";
 
 const markdownRenderer = vi.hoisted(() => ({
@@ -887,6 +889,50 @@ describe("StreamingTurnResponse", () => {
     expect(inheritedOpenUrl).toBe(onOpenUrl);
     inheritedOpenUrl!("https://example.com/guide");
     expect(onOpenUrl).toHaveBeenCalledWith("https://example.com/guide");
+  });
+
+  it("omits settled citation-only blocks while keeping citation previews on the prose block", async () => {
+    const content = [
+      "Read [the guide](https://example.com/guide), then [DONE][^source].",
+      "",
+      '[^source]: https://example.com/source "Source title" — Preview excerpt',
+    ].join("\n");
+    const partition = partitionStreamingMarkdown(content, { turnId: "t", settled: true });
+    const citationOnlyBlockId = partition.committedBlocks.at(-1)?.id;
+
+    expect(partition.committedBlocks).toHaveLength(2);
+    expect(citationOnlyBlockId).toBeTruthy();
+
+    const renderer = await render(
+      <MessageBubble
+        role="assistant"
+        content={content}
+        assistantBody={
+          <StreamingMarkdownBlocks
+            committedBlocks={partition.committedBlocks}
+            activeBlock={partition.activeBlock}
+            live={false}
+          />
+        }
+      />,
+    );
+    await flushMarkdown();
+
+    expect(textContent(renderer.root)).not.toContain("Rendering response");
+    expect(renderedMarkdown(renderer.root)).toContain('aria-label="Status: done"');
+    expect(renderedMarkdown(renderer.root)).not.toContain("[^source]");
+    expect(renderedMarkdown(renderer.root)).not.toContain("https://example.com/source");
+    expect(renderer.root.findAllByProps({ "data-inline-citations": 1 })).toHaveLength(1);
+    expect(renderer.root.findByProps({ "data-inline-citations": 1 }).props).toMatchObject({
+      "data-citation-title": "Source title",
+      "data-citation-url": "https://example.com/source",
+    });
+
+    const citationOnlyBlock = renderer.root.findByProps({
+      "data-stream-block-id": citationOnlyBlockId,
+    });
+    expect(renderedMarkdown(citationOnlyBlock)).toBe("");
+    expect(textContent(citationOnlyBlock)).toBe("");
   });
 
   it("lets explicit ProgressiveMarkdownBlock props override assistant context", async () => {
