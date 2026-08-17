@@ -8832,6 +8832,7 @@ function TurnRowImpl({
     attentionRequest,
     nextPaths,
   } = currentProjection;
+  const durableAttentionRequest = attentionRequest ?? turn.responseMetadata?.attentionRequest ?? null;
   const presentedProjection = extractChatRenderedText(
     presentedRawText,
     { pending },
@@ -8977,8 +8978,6 @@ function TurnRowImpl({
           ),
         )
       : undefined;
-  const responseModelLines = responseModelStatusLines(turn.responseMetadata);
-  const responseControlLines = responseControlStatusLines(turn.responseMetadata);
   const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
     emptySuccessful: streamingModel.emptySuccessful,
     visibleProse: visible,
@@ -8988,10 +8987,8 @@ function TurnRowImpl({
     skillUpdateCount: skillUpdates.length,
     hasAutoStatusUpdate: autoStatusUpdate != null,
     editCardCount: editCards.length,
-    responseModelStatusCount: responseModelLines.length,
-    responseControlStatusCount: responseControlLines.length,
     followUpCount: nextPaths.length,
-    hasAttentionRequest: attentionRequest != null,
+    hasAttentionRequest: durableAttentionRequest != null,
   });
 
   const supplementaryContent = (

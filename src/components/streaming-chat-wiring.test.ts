@@ -97,7 +97,7 @@ assert.match(
 );
 assert.match(
   main,
-  /const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback\(\{[\s\S]*visibleProse: visible,[\s\S]*hasRichBlocks: renderSegments\?\.some\(\(segment\) => segment\.kind === "block"\) \?\? false,[\s\S]*resultCount: streamingModel\.results\.length,[\s\S]*attachmentCount: turn\.attachments\?\.length \?\? 0,[\s\S]*skillUpdateCount: skillUpdates\.length,[\s\S]*hasAutoStatusUpdate: autoStatusUpdate != null,[\s\S]*editCardCount: editCards\.length,[\s\S]*responseModelStatusCount: responseModelLines\.length,[\s\S]*responseControlStatusCount: responseControlLines\.length,[\s\S]*followUpCount: nextPaths\.length,[\s\S]*hasAttentionRequest: attentionRequest != null,[\s\S]*\}\);/,
+  /const durableAttentionRequest = attentionRequest \?\? turn\.responseMetadata\?\.attentionRequest \?\? null;[\s\S]*const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback\(\{[\s\S]*visibleProse: visible,[\s\S]*hasRichBlocks: renderSegments\?\.some\(\(segment\) => segment\.kind === "block"\) \?\? false,[\s\S]*resultCount: streamingModel\.results\.length,[\s\S]*attachmentCount: turn\.attachments\?\.length \?\? 0,[\s\S]*skillUpdateCount: skillUpdates\.length,[\s\S]*hasAutoStatusUpdate: autoStatusUpdate != null,[\s\S]*editCardCount: editCards\.length,[\s\S]*followUpCount: nextPaths\.length,[\s\S]*hasAttentionRequest: durableAttentionRequest != null,[\s\S]*\}\);/,
   "Main Chat derives the empty-success fallback from prose plus meaningful structured output owned by the turn",
 );
 assert.match(

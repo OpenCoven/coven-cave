@@ -18,8 +18,6 @@ for (const [label, input] of [
   ["skill status", { visibleProse: "", skillUpdateCount: 1 }],
   ["auto status", { visibleProse: "", hasAutoStatusUpdate: true }],
   ["edit cards", { visibleProse: "", editCardCount: 1 }],
-  ["response model status", { visibleProse: "", responseModelStatusCount: 1 }],
-  ["response control status", { visibleProse: "", responseControlStatusCount: 1 }],
   ["follow-up cards", { visibleProse: "", followUpCount: 1 }],
   ["attention request", { visibleProse: "", hasAttentionRequest: true }],
 ] as const) {

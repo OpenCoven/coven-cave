@@ -4,6 +4,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { shouldUseEmptySuccessfulFallback, type MeaningfulAssistantOutputInput } from "@/lib/chat-assistant-output";
+import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import { partitionStreamingMarkdown } from "@/lib/streaming-markdown-blocks";
 import type { StreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
 import { OverflowMenu } from "./ui/overflow-menu";
@@ -168,6 +169,7 @@ function chatSurfaceResponse(
     proseContent?: ReactNode;
     supplementaryContent?: ReactNode;
     activityDetails?: ReactNode;
+    responseMetadata?: ChatResponseMetadata;
     guard?: Partial<MeaningfulAssistantOutputInput>;
   } = {},
 ) {
@@ -181,10 +183,8 @@ function chatSurfaceResponse(
     skillUpdateCount: options.guard?.skillUpdateCount ?? 0,
     hasAutoStatusUpdate: options.guard?.hasAutoStatusUpdate ?? false,
     editCardCount: options.guard?.editCardCount ?? 0,
-    responseModelStatusCount: options.guard?.responseModelStatusCount ?? 0,
-    responseControlStatusCount: options.guard?.responseControlStatusCount ?? 0,
     followUpCount: options.guard?.followUpCount ?? 0,
-    hasAttentionRequest: options.guard?.hasAttentionRequest ?? false,
+    hasAttentionRequest: options.guard?.hasAttentionRequest ?? Boolean(options.responseMetadata?.attentionRequest),
   });
 
   return (
@@ -226,6 +226,25 @@ function textContent(node: ReactTestInstance): string {
   return node.children
     .map((child) => (typeof child === "string" ? child : textContent(child)))
     .join("");
+}
+
+function routineResponseMetadata(
+  overrides: Partial<ChatResponseMetadata> = {},
+): ChatResponseMetadata {
+  return {
+    familiarId: "nova",
+    harness: "openclaw",
+    model: "anthropic/claude-sonnet-4-6",
+    runtime: "local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+    requestedModel: "anthropic/claude-sonnet-4-6",
+    desiredModel: "anthropic/claude-sonnet-4-6",
+    confirmedModel: "anthropic/claude-sonnet-4-6",
+    modelSource: "runtime-default",
+    requestedControls: { reasoning: "medium" },
+    forwardedControls: { reasoning: "medium" },
+    appliedControls: { reasoning: "medium" },
+    ...overrides,
+  };
 }
 
 function renderedMarkdown(node: ReactTestInstance): string {
@@ -1027,6 +1046,35 @@ describe("StreamingTurnResponse", () => {
     expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(1);
     expect(renderer.root.findAllByProps({ "data-attachment-output": true })).toHaveLength(1);
     expect(JSON.stringify(renderer.toJSON())).not.toContain("Response interrupted");
+  });
+
+  it("keeps the shared response for restored durable attention-only turns instead of showing Response interrupted", async () => {
+    const renderer = await render(chatSurfaceResponse({
+      responseMetadata: routineResponseMetadata({
+        attentionRequest: {
+          sessionId: "session-1",
+          turnId: "turn-1",
+          requestedAt: "2026-08-17T13:00:00.000Z",
+          reason: "approval",
+        },
+      }),
+      supplementaryContent: <div data-durable-attention={true}>Awaiting approval</div>,
+    }));
+
+    expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ "data-durable-attention": true })).toHaveLength(1);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("Response interrupted");
+  });
+
+  it("preserves the explicit empty-success fallback for truly empty completed turns with routine response metadata", async () => {
+    const renderer = await render(chatSurfaceResponse({
+      responseMetadata: routineResponseMetadata(),
+      supplementaryContent: <div data-routine-metadata={true}>Effective model: sonnet-4-6</div>,
+    }));
+
+    expect(renderer.root.findAllByType(StreamingTurnResponse)).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ "data-routine-metadata": true })).toHaveLength(1);
+    expect(textContent(renderer.root)).toContain("Response interrupted");
   });
 
   it("preserves the explicit empty-success fallback for truly empty settled turns", async () => {

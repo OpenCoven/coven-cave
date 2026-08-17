@@ -113,6 +113,11 @@ assert.match(
   /case "done":[\s\S]*responseMetadata: ev\.responseMetadata,/,
   "Done handling should store response metadata on the settled assistant turn",
 );
+assert.match(
+  chatView,
+  /const durableAttentionRequest = attentionRequest \?\? turn\.responseMetadata\?\.attentionRequest \?\? null;/,
+  "Persisted attention-only turns should recover durable attention metadata after inline marker stripping",
+);
 
 assert.match(
   chatTurnState,
@@ -135,6 +140,11 @@ assert.match(
   chatView,
   /<ResponseControlStatus metadata=\{turn\.responseMetadata\} \/>/,
   "Assistant turn rows render labeled requested/applied/rejected control state",
+);
+assert.doesNotMatch(
+  chatView,
+  /showEmptySuccessfulFallback[\s\S]*responseModelStatusCount|showEmptySuccessfulFallback[\s\S]*responseControlStatusCount/,
+  "Routine model/control provenance metadata must not suppress empty-response treatment",
 );
 assert.match(
   chatView,

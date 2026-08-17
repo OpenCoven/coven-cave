@@ -6,8 +6,6 @@ export type MeaningfulAssistantOutputInput = {
   skillUpdateCount?: number;
   hasAutoStatusUpdate?: boolean;
   editCardCount?: number;
-  responseModelStatusCount?: number;
-  responseControlStatusCount?: number;
   followUpCount?: number;
   hasAttentionRequest?: boolean;
 };
@@ -21,8 +19,6 @@ export function hasMeaningfulAssistantOutput(input: MeaningfulAssistantOutputInp
       || (input.skillUpdateCount ?? 0) > 0
       || input.hasAutoStatusUpdate
       || (input.editCardCount ?? 0) > 0
-      || (input.responseModelStatusCount ?? 0) > 0
-      || (input.responseControlStatusCount ?? 0) > 0
       || (input.followUpCount ?? 0) > 0
       || input.hasAttentionRequest,
   );
