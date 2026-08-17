@@ -103,7 +103,9 @@
     "utcTimestamp": {
       "type": "string",
       "format": "date-time",
-      "pattern": "Z$"
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
     },
     "contextPackId": {
       "type": "string",
@@ -233,7 +235,7 @@
         "type": { "const": "json-pointer" },
         "pointer": {
           "type": "string",
-          "pattern": "^(?:$|/.*)$"
+          "pattern": "^(?:$|/(?:[^~/]|~0|~1)*(?:/(?:[^~/]|~0|~1)*)*)$"
         }
       }
     },

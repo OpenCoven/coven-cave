@@ -28,15 +28,21 @@ export type RetentionPolicyV1 = keyof typeof RETENTION_ORDER;
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const OPAQUE_ID_BODY_RE = /^[A-Za-z0-9_-]+$/;
+const UTC_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function isUtcTimestamp(value: unknown): value is string {
-  if (typeof value !== "string" || !value.endsWith("Z")) return false;
+  if (typeof value !== "string" || !UTC_TIMESTAMP_RE.test(value)) return false;
   const parsed = new Date(value);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+export function isJsonPointer(value: unknown): value is string {
+  return typeof value === "string" && JSON_POINTER_RE.test(value);
 }
 
 export function isOpaqueId(value: unknown, prefix: string): value is string {

@@ -1,5 +1,6 @@
 import {
   fail,
+  isJsonPointer,
   isOpaqueId,
   isRecord,
   isSha256,
@@ -241,7 +242,7 @@ function parseUtc(value: unknown, path: string, label: string): ProtocolParseRes
     return fail("invalid_type", path, `${label} must be a string`);
   }
   if (!isUtcTimestamp(value)) {
-    return fail("invalid_value", path, `${label} must be a UTC timestamp ending in Z`);
+    return fail("invalid_value", path, `${label} must be a canonical UTC timestamp with milliseconds`);
   }
   return pass(value);
 }
@@ -310,8 +311,8 @@ function parseHeadingPath(value: unknown, path: string): ProtocolParseResult<str
 function parseJsonPointer(value: unknown, path: string): ProtocolParseResult<string> {
   const pointer = parseString(value, path, "pointer", { allowEmpty: true });
   if (!pointer.ok) return pointer;
-  if (pointer.value !== "" && !pointer.value.startsWith("/")) {
-    return fail("invalid_value", path, "pointer must be empty or start with /");
+  if (!isJsonPointer(pointer.value)) {
+    return fail("invalid_value", path, "pointer must be empty or a valid RFC 6901 JSON Pointer");
   }
   return pointer;
 }
