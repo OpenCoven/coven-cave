@@ -56,7 +56,7 @@ function makeQueues() {
   };
 }
 
-test("burst snapshots H→He→Hello schedule one frame and flush newest Hello", () => {
+test("replaceable burst snapshots H→He→Hello coalesce onto one frame", () => {
   const queues = makeQueues();
   const flushed: string[] = [];
   const buffer = createStreamingPresentationBuffer({
@@ -66,6 +66,7 @@ test("burst snapshots H→He→Hello schedule one frame and flush newest Hello",
     cancelFrame: queues.cancelFrame,
     scheduleTimer: queues.scheduleTimer,
     cancelTimer: queues.cancelTimer,
+    sourceMode: "replaceable",
   });
 
   buffer.update("H", false);
@@ -78,7 +79,7 @@ test("burst snapshots H→He→Hello schedule one frame and flush newest Hello",
   assert.deepEqual(flushed, ["Hello"]);
 });
 
-test("presented quiet tails wait for idle while internal punctuation stays quiet", () => {
+test("append-only mode lets presented quiet tails wait for idle", () => {
   const queues = makeQueues();
   const flushed: string[] = [];
   const buffer = createStreamingPresentationBuffer({
@@ -88,6 +89,7 @@ test("presented quiet tails wait for idle while internal punctuation stays quiet
     cancelFrame: queues.cancelFrame,
     scheduleTimer: queues.scheduleTimer,
     cancelTimer: queues.cancelTimer,
+    sourceMode: "append-only",
   });
 
   buffer.update("Version 1.2", false);
@@ -104,7 +106,7 @@ test("presented quiet tails wait for idle while internal punctuation stays quiet
   assert.deepEqual(flushed, ["Version 1.2", "Version 1.2 tail"]);
 });
 
-test("a newly introduced newline queues one frame for the newest snapshot", () => {
+test("replaceable mode queues a frame even for quiet growth", () => {
   const queues = makeQueues();
   const flushed: string[] = [];
   const buffer = createStreamingPresentationBuffer({
@@ -114,6 +116,27 @@ test("a newly introduced newline queues one frame for the newest snapshot", () =
     cancelFrame: queues.cancelFrame,
     scheduleTimer: queues.scheduleTimer,
     cancelTimer: queues.cancelTimer,
+    sourceMode: "replaceable",
+  });
+
+  buffer.update("Alpha quiet tail", false);
+
+  assert.equal(queues.counts().frames, 1);
+  queues.fireFrame();
+  assert.deepEqual(flushed, ["Alpha quiet tail"]);
+});
+
+test("append-only mode queues a newly introduced newline", () => {
+  const queues = makeQueues();
+  const flushed: string[] = [];
+  const buffer = createStreamingPresentationBuffer({
+    initialSource: "Alpha",
+    onFlush: (source) => flushed.push(source),
+    scheduleFrame: queues.scheduleFrame,
+    cancelFrame: queues.cancelFrame,
+    scheduleTimer: queues.scheduleTimer,
+    cancelTimer: queues.cancelTimer,
+    sourceMode: "append-only",
   });
 
   buffer.update("Alpha\nBeta", false);
@@ -124,7 +147,7 @@ test("a newly introduced newline queues one frame for the newest snapshot", () =
   assert.deepEqual(flushed, ["Alpha\nBeta grows"]);
 });
 
-test("sentence boundaries require newly completed punctuation or following whitespace", () => {
+test("append-only sentence boundaries require newly completed punctuation or whitespace", () => {
   const scenarios = [
     { label: "new end punctuation", initial: "Alpha", source: "Alpha.", frameCount: 1 },
     { label: "new separator", initial: "Alpha.", source: "Alpha. ", frameCount: 1 },
@@ -140,6 +163,7 @@ test("sentence boundaries require newly completed punctuation or following white
       cancelFrame: queues.cancelFrame,
       scheduleTimer: queues.scheduleTimer,
       cancelTimer: queues.cancelTimer,
+      sourceMode: "append-only",
     });
 
     buffer.update(scenario.source, false);
@@ -147,7 +171,7 @@ test("sentence boundaries require newly completed punctuation or following white
   }
 });
 
-test("list markers queue only when their following whitespace becomes complete", () => {
+test("append-only list markers queue only when their following whitespace becomes complete", () => {
   const scenarios = [
     { label: "unordered", partial: "Alpha\n-", complete: "Alpha\n- ", appended: "Alpha\n- item" },
     { label: "ordered", partial: "Alpha\n1.", complete: "Alpha\n1. ", appended: "Alpha\n1. item" },
@@ -163,6 +187,7 @@ test("list markers queue only when their following whitespace becomes complete",
       cancelFrame: queues.cancelFrame,
       scheduleTimer: queues.scheduleTimer,
       cancelTimer: queues.cancelTimer,
+      sourceMode: "append-only",
     });
 
     buffer.update(scenario.partial, false);
@@ -177,7 +202,7 @@ test("list markers queue only when their following whitespace becomes complete",
   }
 });
 
-test("fences queue when the run first reaches three markers and do not retrigger", () => {
+test("append-only fences queue when the run reaches three markers and do not retrigger", () => {
   const scenarios = [
     { label: "backtick", partial: "Alpha\n``", complete: "Alpha\n```", appended: "Alpha\n```ts" },
     { label: "tilde", partial: "Alpha\n~~", complete: "Alpha\n~~~", appended: "Alpha\n~~~text" },
@@ -193,6 +218,7 @@ test("fences queue when the run first reaches three markers and do not retrigger
       cancelFrame: queues.cancelFrame,
       scheduleTimer: queues.scheduleTimer,
       cancelTimer: queues.cancelTimer,
+      sourceMode: "append-only",
     });
 
     buffer.update(scenario.partial, false);
@@ -207,7 +233,7 @@ test("fences queue when the run first reaches three markers and do not retrigger
   }
 });
 
-test("a boundary earlier in newly appended multiline content queues a frame", () => {
+test("append-only mode finds a boundary earlier in newly appended multiline content", () => {
   const queues = makeQueues();
   const flushed: string[] = [];
   const buffer = createStreamingPresentationBuffer({
@@ -217,6 +243,7 @@ test("a boundary earlier in newly appended multiline content queues a frame", ()
     cancelFrame: queues.cancelFrame,
     scheduleTimer: queues.scheduleTimer,
     cancelTimer: queues.cancelTimer,
+    sourceMode: "append-only",
   });
   const source = "Alpha\nFirst sentence. continuation\nquiet tail";
 
@@ -227,7 +254,7 @@ test("a boundary earlier in newly appended multiline content queues a frame", ()
   assert.deepEqual(flushed, [source]);
 });
 
-test("replacement and shrinking snapshots queue a conservative frame with the newest source", () => {
+test("replaceable mode queues every changed snapshot shape", () => {
   const scenarios = [
     { label: "same-length replacement", initial: "Alpha tail", source: "Omega tail" },
     { label: "shrinking replacement", initial: "Alpha tail", source: "short" },
@@ -244,6 +271,7 @@ test("replacement and shrinking snapshots queue a conservative frame with the ne
       cancelFrame: queues.cancelFrame,
       scheduleTimer: queues.scheduleTimer,
       cancelTimer: queues.cancelTimer,
+      sourceMode: "replaceable",
     });
 
     buffer.update(scenario.source, false);
@@ -354,6 +382,56 @@ test("long accumulated streams process append deltas within a stable budget", ()
     elapsedMs < 10_000,
     `500k characters across 50k snapshots took ${elapsedMs.toFixed(1)}ms`,
   );
+});
+
+test("large replaceable snapshots classify in constant time without prefix or boundary scans", () => {
+  const queues = makeQueues();
+  const buffer = createStreamingPresentationBuffer({
+    initialSource: "seed",
+    onFlush: () => {},
+    scheduleFrame: queues.scheduleFrame,
+    cancelFrame: queues.cancelFrame,
+    scheduleTimer: queues.scheduleTimer,
+    cancelTimer: queues.cancelTimer,
+    sourceMode: "replaceable",
+  });
+  const largeSource = "x".repeat(2_000_000);
+  const largerSource = `${largeSource}y`;
+  const updateCount = 50_000;
+  const originalStartsWith = String.prototype.startsWith;
+  const originalRegExpExec = RegExp.prototype.exec;
+
+  let startsWithCalls = 0;
+  let boundaryScanCalls = 0;
+  String.prototype.startsWith = function (...args) {
+    startsWithCalls += 1;
+    return originalStartsWith.apply(this, args);
+  };
+  RegExp.prototype.exec = function (...args) {
+    boundaryScanCalls += 1;
+    return originalRegExpExec.apply(this, args);
+  };
+
+  const startedAt = performance.now();
+  try {
+    for (let index = 0; index < updateCount; index += 1) {
+      buffer.update(index % 2 === 0 ? largeSource : largerSource, false);
+    }
+  } finally {
+    String.prototype.startsWith = originalStartsWith;
+    RegExp.prototype.exec = originalRegExpExec;
+  }
+  const elapsedMs = performance.now() - startedAt;
+
+  assert.equal(largeSource.length, 2_000_000);
+  assert.equal(startsWithCalls, 0, "replaceable classification must not compare accumulated prefixes");
+  assert.equal(boundaryScanCalls, 0, "replaceable classification must not scan for quiet boundaries");
+  assert.deepEqual(queues.counts(), { frames: 1, timers: 2 });
+  assert.ok(
+    elapsedMs < 10_000,
+    `50k preconstructed 2MB replaceable snapshots took ${elapsedMs.toFixed(1)}ms`,
+  );
+  buffer.dispose();
 });
 
 test("settled=true cancels pending callbacks and synchronously flushes complete source", () => {

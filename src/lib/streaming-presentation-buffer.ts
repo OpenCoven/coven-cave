@@ -6,6 +6,7 @@ export type StreamingPresentationBuffer = {
 };
 
 export type StreamingPresentationSourceMode =
+  /** Arbitrary projected snapshots; every pending change coalesces onto the next frame. */
   | "replaceable"
   /** Longer pending snapshots preserve the complete prior source prefix; equal or shrinking snapshots may replace it. */
   | "append-only";
@@ -75,16 +76,8 @@ function hasAppendBoundary(source: string, previousLength: number): boolean {
   return false;
 }
 
-function hasNaturalBoundary(
-  previousSource: string,
-  source: string,
-  sourceMode: StreamingPresentationSourceMode,
-): boolean {
-  if (sourceMode === "append-only") {
-    if (source.length <= previousSource.length) return true;
-  } else if (!source.startsWith(previousSource)) {
-    return true;
-  }
+function hasAppendOnlyNaturalBoundary(previousSource: string, source: string): boolean {
+  if (source.length <= previousSource.length) return true;
   return hasAppendBoundary(source, previousSource.length);
 }
 
@@ -205,7 +198,9 @@ export function createStreamingPresentationBuffer(options: {
       }
 
       const queueFrame =
-        !hasPresentedContent || hasNaturalBoundary(previousSource, source, sourceMode);
+        sourceMode === "replaceable" ||
+        !hasPresentedContent ||
+        hasAppendOnlyNaturalBoundary(previousSource, source);
       if (!windowOpen) {
         openWindow(queueFrame);
         return;

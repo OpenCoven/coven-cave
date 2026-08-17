@@ -13,8 +13,16 @@ export type StreamingPresentationSourceOptions = {
 
 type BufferEntry = {
   buffer: ReturnType<typeof createStreamingPresentationBuffer>;
-  sourceMode: StreamingPresentationSourceMode;
+  pending: boolean;
+  source: string;
 };
+
+function forwardToBuffer(entry: BufferEntry, source: string, pending: boolean): void {
+  if (entry.source === source && entry.pending === pending) return;
+  entry.source = source;
+  entry.pending = pending;
+  entry.buffer.update(source, !pending);
+}
 
 export function useStreamingPresentationSource(
   source: string,
@@ -22,40 +30,40 @@ export function useStreamingPresentationSource(
   options: StreamingPresentationSourceOptions = {},
 ): string {
   const [presented, setPresented] = useState(source);
-  const setPresentedRef = useRef(setPresented);
-  setPresentedRef.current = setPresented;
   const presentedRef = useRef(presented);
   presentedRef.current = presented;
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
 
   const sourceMode = options.sourceMode ?? "replaceable";
   const bufferRef = useRef<BufferEntry | null>(null);
-  const ensureBuffer = () => {
-    const current = bufferRef.current;
-    if (current?.sourceMode === sourceMode) return current.buffer;
-    current?.buffer.dispose();
-
-    const buffer = createStreamingPresentationBuffer({
-      initialSource: presentedRef.current,
-      onFlush: (next) => setPresentedRef.current(next),
-      sourceMode,
-    });
-    bufferRef.current = { buffer, sourceMode };
-    return buffer;
-  };
-  ensureBuffer();
 
   useEffect(() => {
-    ensureBuffer().update(source, !pending);
-  }, [pending, source, sourceMode]);
+    const buffer = createStreamingPresentationBuffer({
+      initialSource: presentedRef.current,
+      onFlush: setPresented,
+      sourceMode,
+    });
+    const entry: BufferEntry = {
+      buffer,
+      pending: true,
+      source: presentedRef.current,
+    };
+    bufferRef.current = entry;
+    forwardToBuffer(entry, sourceRef.current, pendingRef.current);
 
-  useEffect(
-    () => () => {
-      const entry = bufferRef.current;
-      bufferRef.current = null;
-      entry?.buffer.dispose();
-    },
-    [],
-  );
+    return () => {
+      buffer.dispose();
+      if (bufferRef.current === entry) bufferRef.current = null;
+    };
+  }, [sourceMode]);
+
+  useEffect(() => {
+    const entry = bufferRef.current;
+    if (entry) forwardToBuffer(entry, source, pending);
+  }, [pending, source]);
 
   return pending ? presented : source;
 }

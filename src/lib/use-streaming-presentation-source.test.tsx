@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { StrictMode } from "react";
+import { StrictMode, Suspense } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -8,6 +8,8 @@ import type { StreamingPresentationSourceMode } from "./streaming-presentation-b
 import { useStreamingPresentationSource } from "./use-streaming-presentation-source.ts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const NEVER = new Promise<never>(() => {});
 
 function Probe({
   pending,
@@ -37,6 +39,25 @@ function ModeProbe({
   return null;
 }
 
+function SuspendingModeProbe({
+  pending,
+  snapshots,
+  source,
+  sourceMode,
+  suspend,
+}: {
+  pending: boolean;
+  snapshots: string[];
+  source: string;
+  sourceMode: StreamingPresentationSourceMode;
+  suspend: boolean;
+}) {
+  const presented = useStreamingPresentationSource(source, pending, { sourceMode });
+  snapshots.push(presented);
+  if (suspend) throw NEVER;
+  return null;
+}
+
 describe("useStreamingPresentationSource", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -49,7 +70,12 @@ describe("useStreamingPresentationSource", () => {
     let renderer: ReactTestRenderer | null = null;
     const render = (source: string, pending: boolean) => (
       <StrictMode>
-        <Probe pending={pending} snapshots={snapshots} source={source} />
+        <ModeProbe
+          pending={pending}
+          snapshots={snapshots}
+          source={source}
+          sourceMode="append-only"
+        />
       </StrictMode>
     );
 
@@ -190,6 +216,56 @@ ${"Here is the finished explanation with stable visible prose ".repeat(4)}ready`
         vi.advanceTimersByTime(16);
       });
       expect(snapshots.at(-1)).toBe("Omega tail grows");
+    } finally {
+      await act(async () => {
+        renderer?.unmount();
+      });
+    }
+  });
+
+  test("an abandoned Suspense mode change cannot cancel the committed buffer idle flush", async () => {
+    vi.useFakeTimers();
+
+    const snapshots: string[] = [];
+    let renderer: ReactTestRenderer | null = null;
+    const render = (
+      source: string,
+      sourceMode: StreamingPresentationSourceMode,
+      suspend = false,
+    ) => (
+      <Suspense fallback={null}>
+        <SuspendingModeProbe
+          pending
+          snapshots={snapshots}
+          source={source}
+          sourceMode={sourceMode}
+          suspend={suspend}
+        />
+      </Suspense>
+    );
+
+    try {
+      await act(async () => {
+        renderer = create(render("Alpha", "append-only"), {
+          unstable_isConcurrent: true,
+        });
+      });
+      await act(async () => {
+        renderer?.update(render("Alpha quiet tail", "append-only"));
+      });
+      expect(snapshots.at(-1)).toBe("Alpha");
+
+      await act(async () => {
+        renderer?.update(render("Alpha quiet tail", "replaceable", true));
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(90);
+      });
+      await act(async () => {
+        renderer?.update(render("Alpha quiet tail", "append-only"));
+      });
+
+      expect(snapshots.at(-1)).toBe("Alpha quiet tail");
     } finally {
       await act(async () => {
         renderer?.unmount();
