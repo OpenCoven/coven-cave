@@ -672,6 +672,23 @@ export function validateModelTaskResultV1(
   if (result.inputDigest !== task.inputDigest) {
     return fail("semantic_conflict", "$.inputDigest", "inputDigest must equal the Model Task inputDigest");
   }
+  if (result.modelReceipt.familiarId !== task.modelBinding.familiarId) {
+    return fail(
+      "semantic_conflict",
+      "$.modelReceipt.familiarId",
+      "modelReceipt familiarId must equal the Model Task familiarId",
+    );
+  }
+  if (
+    task.modelBinding.selection === "pinned"
+    && result.modelReceipt.effectiveModel !== task.modelBinding.model
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.modelReceipt.effectiveModel",
+      "modelReceipt effectiveModel must equal the pinned Model Task model",
+    );
+  }
 
   const expectedOutputDigest = sha256Digest(canonicalJson(result.output));
   if (result.outputDigest !== expectedOutputDigest) {

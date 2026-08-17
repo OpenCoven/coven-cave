@@ -9,7 +9,7 @@ import {
   type ProtocolParseResult,
   type UnknownFields,
 } from "./common.ts";
-import { digestProtocolObject } from "./digest.ts";
+import { copyCanonicalJson, digestProtocolObject } from "./digest.ts";
 
 const CONTEXT_PACK_SCHEMA = "opencoven.context-pack/v1";
 const CONTEXT_PACK_SCHEMA_RE = /^opencoven\.context-pack\/v(\d+)$/;
@@ -728,7 +728,21 @@ function parseTransforms(value: unknown, path: string): ProtocolParseResult<Cont
 }
 
 export function parseContextPackV1(value: unknown): ProtocolParseResult<ContextPackV1> {
-  const object = parseObject(value, "$");
+  const inputObject = parseObject(value, "$");
+  if (!inputObject.ok) return inputObject;
+
+  let canonicalValue: unknown;
+  try {
+    canonicalValue = copyCanonicalJson(inputObject.value);
+  } catch (error) {
+    return fail(
+      "invalid_value",
+      "$",
+      error instanceof Error ? error.message : "Context Pack must be canonical JSON",
+    );
+  }
+
+  const object = parseObject(canonicalValue, "$");
   if (!object.ok) return object;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");

@@ -82,6 +82,85 @@ test("Context Pack parsing rejects a structurally valid object with a stale root
   expectError(parseContextPackV1(tampered), "$.digest", "digest_mismatch");
 });
 
+test("Context Pack rejects symbol keys, hidden data, and hidden or accessor toJSON", () => {
+  const symbolKeyed = { ...validContextPack };
+  Object.defineProperty(symbolKeyed, Symbol("hidden"), {
+    value: "not-json",
+    enumerable: true,
+  });
+  expectError(parseContextPackV1(symbolKeyed), "$", "invalid_value");
+
+  const hidden = { ...validContextPack };
+  Object.defineProperty(hidden, "hidden", {
+    value: "not-json",
+    enumerable: false,
+  });
+  expectError(parseContextPackV1(hidden), "$", "invalid_value");
+
+  let calls = 0;
+  const hiddenToJson = { ...validContextPack };
+  Object.defineProperty(hiddenToJson, "toJSON", {
+    value() {
+      calls += 1;
+      return validContextPack;
+    },
+    enumerable: false,
+  });
+  expectError(parseContextPackV1(hiddenToJson), "$", "invalid_value");
+
+  const accessorToJson = { ...validContextPack };
+  Object.defineProperty(accessorToJson, "toJSON", {
+    get() {
+      calls += 1;
+      return () => validContextPack;
+    },
+    enumerable: true,
+  });
+  expectError(parseContextPackV1(accessorToJson), "$", "invalid_value");
+  assert.equal(calls, 0);
+});
+
+test("Context Pack rejects sparse and custom arrays in additive data", () => {
+  class CustomArray<T> extends Array<T> {}
+
+  for (const values of [[1, , 3], CustomArray.from([1, 2, 3])]) {
+    expectError(
+      parseContextPackV1({
+        ...validContextPack,
+        futureExtension: { values },
+      }),
+      "$",
+      "invalid_value",
+    );
+  }
+});
+
+test("Context Pack accepts safe canonical extensions", () => {
+  const extension = Object.create(null) as Record<string, unknown>;
+  Object.defineProperty(extension, "__proto__", {
+    value: { preserve: true },
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+  extension.values = [1, 2, 3];
+  extension.label = "research-🔬";
+
+  const pack = {
+    ...validContextPack,
+    futureExtension: extension,
+  };
+  pack.digest = digestProtocolObject(pack);
+  const parsed = expectOk(parseContextPackV1(pack));
+  const parsedExtension = parsed.futureExtension as Record<string, unknown>;
+
+  assert.equal(Object.getPrototypeOf(parsedExtension), null);
+  assert.equal(Object.hasOwn(parsedExtension, "__proto__"), true);
+  assert.deepEqual(parsedExtension.__proto__, { preserve: true });
+  assert.deepEqual(parsedExtension.values, [1, 2, 3]);
+  assert.equal(parsedExtension.label, "research-🔬");
+});
+
 test("Context Pack JSON Schema validates the valid fixture and purpose contract", () => {
   assert.ok(Value.Check(contextPackSchema, validContextPack));
   assert.equal(
@@ -186,7 +265,7 @@ test("unknown retention fails at $.consent.retention", () => {
   expectError(parseContextPackV1(invalidRetentionPack), "$.consent.retention", "invalid_value");
 });
 
-test("prototype-only required fields are rejected", () => {
+test("custom-prototype Context Packs are rejected", () => {
   const prototypePack = Object.create({ schema: validContextPack.schema });
   Object.assign(prototypePack, {
     id: validContextPack.id,
@@ -201,7 +280,7 @@ test("prototype-only required fields are rejected", () => {
     transforms: validContextPack.transforms,
   });
 
-  expectError(parseContextPackV1(prototypePack), "$.schema", "missing_field");
+  expectError(parseContextPackV1(prototypePack), "$", "invalid_value");
 });
 
 test("policy.allowedPurposes must include the pack purpose", () => {
@@ -353,7 +432,7 @@ test("resource parser preserves unknown fields", () => {
   assert.equal(resource.selector.nestedMarker, true);
 });
 
-test("prototype optional fields are ignored", () => {
+test("custom-prototype nested objects are rejected", () => {
   const subject = Object.create({ projectId: "proto-project" });
   subject.familiarId = validContextPack.subject.familiarId;
 
@@ -362,22 +441,13 @@ test("prototype optional fields are ignored", () => {
   });
   transforms.secretScanVersion = validContextPack.transforms.secretScanVersion;
 
-  const digest = digestProtocolObject({
-    ...validContextPack,
-    subject: { familiarId: validContextPack.subject.familiarId },
-    transforms: { secretScanVersion: validContextPack.transforms.secretScanVersion },
-  });
-  const parsed = expectOk(
+  expectError(
     parseContextPackV1({
       ...validContextPack,
-      digest,
       subject,
       transforms,
     }),
+    "$",
+    "invalid_value",
   );
-
-  assert.equal(Object.hasOwn(parsed.subject, "projectId"), false);
-  assert.equal(parsed.subject.projectId, undefined);
-  assert.equal(Object.hasOwn(parsed.transforms, "redactionMapDigest"), false);
-  assert.equal(parsed.transforms.redactionMapDigest, undefined);
 });
