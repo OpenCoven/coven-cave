@@ -1,0 +1,10 @@
+{
+  "schema": "opencoven.run-event/v1",
+  "runId": "run_future_month_end_leap_second_01",
+  "sequence": 1,
+  "type": "run.created",
+  "at": "2030-12-31T23:59:60Z",
+  "data": {
+    "status": "queued"
+  }
+}

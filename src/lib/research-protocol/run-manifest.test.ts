@@ -12,6 +12,8 @@ import invalidFinalMutationJson from "../../../schemas/research/v1/fixtures/scen
 import invalidDeletionPairJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-pair.json" with { type: "json" };
 import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-private-title.json" with { type: "json" };
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
+import invalidNestedPrivateExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-private-extension.json" with { type: "json" };
+import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
 import {
@@ -20,6 +22,7 @@ import {
   validateManifestRetentionConsent,
   validateRunManifestRevision,
   type RunManifestModelExecutionV1,
+  type RunManifestV1,
 } from "./run-manifest.ts";
 import type { ResearchModelReceiptV1 } from "./topic-discovery.ts";
 
@@ -504,6 +507,42 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
     "$.artifacts[0].filename",
     "semantic_conflict",
   );
+
+  for (const key of [
+    "privateexcerpt",
+    "privateExcerpt",
+    "private_excerpt",
+    "PRIVATE-EXCERPT",
+    "rawexcerpt",
+    "rawExcerpt",
+    "raw_excerpt",
+    "RAW-EXCERPT",
+    "fileName",
+    "file_name",
+    "file-name",
+    "local_path",
+    "local-path",
+    "file_path",
+    "file-path",
+    "object_key",
+    "object-key",
+    "storage_key",
+    "storage-key",
+    "bucket_key",
+    "bucket-key",
+    "deleted_content",
+    "deleted-content",
+  ]) {
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], [key]: "private material" }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, key);
+    const path = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+      ? `$.artifacts[0].${key}`
+      : `$.artifacts[0][${JSON.stringify(key)}]`;
+    expectError(parseRunManifestV1(invalid), path, "semantic_conflict");
+  }
 });
 
 test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
@@ -515,11 +554,11 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
         sources: [
           {
             ...local.sources[0],
-            metadata: { items: [{ ExCeRpT: "private material" }] },
+            metadata: { items: [{ private_excerpt: "private material" }] },
           },
         ],
       }),
-      "$.sources[0].metadata.items[0].ExCeRpT",
+      "$.sources[0].metadata.items[0].private_excerpt",
     ],
     [
       recalculate({
@@ -527,26 +566,33 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
         artifacts: [
           {
             ...local.artifacts[0],
-            metadata: { nested: { LoCaLpAtH: "/private/report.md" } },
+            metadata: { nested: { local_path: "/private/report.md" } },
           },
         ],
       }),
-      "$.artifacts[0].metadata.nested.LoCaLpAtH",
+      "$.artifacts[0].metadata.nested.local_path",
     ],
     [
       recalculate({
         ...local,
         deletion: {
           ...local.deletion,
-          metadata: [{ ObJeCtKeY: "tenant/private/object" }],
+          metadata: [{ raw_excerpt: "private material" }],
         },
       }),
-      "$.deletion.metadata[0].ObJeCtKeY",
+      "$.deletion.metadata[0].raw_excerpt",
     ],
   ] as const) {
     assert.equal(Value.Check(runManifestSchema, candidate), false);
     expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
   }
+
+  assert.equal(Value.Check(runManifestSchema, invalidNestedPrivateExtensionJson), false);
+  expectError(
+    parseRunManifestV1(invalidNestedPrivateExtensionJson),
+    "$.sources[0].metadata.items[0].private_excerpt",
+    "semantic_conflict",
+  );
 });
 
 test("privacy key checks do not scan values or public-evidence metadata", () => {
@@ -557,7 +603,13 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
       {
         ...local.sources[0],
         displayMetadata: {
-          nested: [{ label: "safe", values: [null, true, 1] }],
+          nested: [{
+            context: "safe",
+            contentSync: "not-requested",
+            credentialHint: "safe",
+            textLabel: "safe",
+            values: [null, true, 1],
+          }],
         },
       },
     ],
@@ -566,7 +618,7 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
         ...local.artifacts[0],
         displayMetadata: {
           label: "secret",
-          contentType: "text/markdown",
+          mediaHint: "text/markdown",
           examples: ["/Users/example/private.md", "deletedContent"],
         },
       },
@@ -607,6 +659,45 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
   const parsedPublicEvidence = expectOk(parseRunManifestV1(publicEvidence));
   const evidence = parsedPublicEvidence.sources.find((source) => source.kind === "public-evidence");
   assert.equal(evidence?.excerpt, "approved public passage");
+
+  assert.equal(Value.Check(runManifestSchema, validNestedBenignExtensionJson), true);
+  assert.deepEqual(
+    expectOk(parseRunManifestV1(validNestedBenignExtensionJson)),
+    validNestedBenignExtensionJson,
+  );
+});
+
+test("declared protocol fields remain authoritative inside sensitive objects", () => {
+  for (const fixture of [finalLocalManifestJson, retentionUpdateJson]) {
+    assert.equal(Value.Check(runManifestSchema, fixture), true);
+    expectOk(parseRunManifestV1(fixture));
+  }
+
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const completed = recalculate({
+    ...local,
+    revision: 2,
+    previousDigest: local.digest,
+    retention: {
+      ...local.retention,
+      status: "deleted" as const,
+      contentExpiresAt: "2026-08-17T20:00:00.000Z",
+      updatedAt: "2026-08-17T20:00:00.000Z",
+    },
+    deletion: {
+      ...local.deletion,
+      status: "completed" as const,
+      requestedAt: "2026-08-17T19:00:00.000Z",
+      completedAt: "2026-08-17T20:00:00.000Z",
+      deletedObjectCount: 3,
+      eventSequence: 2,
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, completed), true);
+  const parsed = expectOk(parseRunManifestV1(completed));
+  assert.equal(parsed.artifacts[0].contentSync, "not-requested");
+  assert.equal(parsed.retention.contentExpiresAt, "2026-08-17T20:00:00.000Z");
+  assert.equal(parsed.deletion.deletedObjectCount, 3);
 });
 
 test("retention and deletion status pairs and receipt requirements are enforced", () => {
@@ -636,6 +727,7 @@ test("retention and deletion status pairs and receipt requirements are enforced"
   });
   assert.equal(Value.Check(runManifestSchema, activeWithExpiry), false);
   expectError(parseRunManifestV1(activeWithExpiry), "$.retention.contentExpiresAt", "semantic_conflict");
+
 });
 
 test("retention consent uses context consent or the original policy ceiling", () => {
@@ -681,6 +773,117 @@ test("revision chains accept assembling-to-final and allowed retention updates",
     expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
     update,
   );
+});
+
+test("final retention shortening starts a coherent deletion clock", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const activeShortening = recalculate({
+    ...previous,
+    revision: 2,
+    previousDigest: previous.digest,
+    retention: {
+      ...previous.retention,
+      effectivePolicy: "run-only" as const,
+      status: "active" as const,
+      contentExpiresAt: null,
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      status: "not_scheduled" as const,
+      futureExtension: { preserve: true },
+    },
+  });
+
+  assert.equal(Value.Check(runManifestSchema, activeShortening), true);
+  const parsedActiveShortening = expectOk(parseRunManifestV1(activeShortening));
+  expectError(
+    validateRunManifestRevision(
+      previous,
+      parsedActiveShortening,
+      { contextConsent: "7-days" },
+    ),
+    "$.retention.status",
+    "semantic_conflict",
+  );
+
+  const scheduledShortening = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retentionUpdateJson,
+        retention: {
+          ...retentionUpdateJson.retention,
+          effectivePolicy: "run-only" as const,
+        },
+      }),
+    ),
+  );
+  assert.deepEqual(
+    expectOk(validateRunManifestRevision(previous, scheduledShortening, {
+      contextConsent: "7-days",
+    })),
+    scheduledShortening,
+  );
+
+  const { requestedAt: _requestedAt, ...withoutRequestedAt } = scheduledShortening.deletion;
+  for (const [candidate, path] of [
+    [
+      recalculate({
+        ...scheduledShortening,
+        deletion: {
+          ...scheduledShortening.deletion,
+          status: "not_scheduled" as const,
+        },
+      }),
+      "$.deletion.status",
+    ],
+    [
+      recalculate({
+        ...scheduledShortening,
+        retention: {
+          ...scheduledShortening.retention,
+          contentExpiresAt: null,
+        },
+      }),
+      "$.retention.contentExpiresAt",
+    ],
+    [
+      recalculate({
+        ...scheduledShortening,
+        retention: {
+          ...scheduledShortening.retention,
+          updatedAt: "not-a-timestamp",
+        },
+      }),
+      "$.retention.updatedAt",
+    ],
+    [
+      recalculate({
+        ...scheduledShortening,
+        deletion: withoutRequestedAt,
+      }),
+      "$.deletion.requestedAt",
+    ],
+    [
+      recalculate({
+        ...scheduledShortening,
+        deletion: {
+          ...scheduledShortening.deletion,
+          requestedAt: "not-a-timestamp",
+        },
+      }),
+      "$.deletion.requestedAt",
+    ],
+  ] as const) {
+    expectError(
+      validateRunManifestRevision(
+        previous,
+        candidate as unknown as RunManifestV1,
+        { contextConsent: "7-days" },
+      ),
+      path,
+      "semantic_conflict",
+    );
+  }
 });
 
 test("revision chains reject bad links, immutable final mutations, and retention changes", () => {

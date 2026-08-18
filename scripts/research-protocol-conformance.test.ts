@@ -159,8 +159,23 @@ for (const fileName of listFixtureFiles("valid")) {
       `${filePath}: parser result must be deeply equal to the original fixture (lossless)`,
     );
 
+    if (fileName === "model-task-result-negative-zero.json") {
+      const output = (
+        parsed.value as unknown as {
+          output: { value: number; nested: { values: number[] } };
+        }
+      ).output;
+      assert.equal(Object.is(output.value, -0), true, `${filePath}: top-level -0 must be preserved`);
+      assert.equal(Object.is(output.nested.values[1], -0), true, `${filePath}: nested -0 must be preserved`);
+    }
+
     const roundTripped: unknown = JSON.parse(JSON.stringify(parsed.value));
-    assert.deepEqual(roundTripped, parsed.value, `${filePath}: parser result must round-trip through JSON`);
+    const sourceRoundTripped: unknown = JSON.parse(JSON.stringify(loaded));
+    assert.deepEqual(
+      roundTripped,
+      sourceRoundTripped,
+      `${filePath}: parser serialization must match source serialization`,
+    );
 
     if (typeof loaded.digest === "string") {
       const recomputed = digestProtocolObject(parsed.value);

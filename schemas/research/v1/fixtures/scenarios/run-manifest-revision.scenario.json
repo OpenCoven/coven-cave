@@ -5,6 +5,18 @@
     "assembling": {
       "fixture": "valid/run-manifest-assembling.json"
     },
+    "unscheduled-shortening": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "4c7161996cbbcb51d3e13f7a27f0cac88a389e5765c9f6706898ef5329080579",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "broken-previous-digest": {
       "fixture": "scenarios/objects/run-manifest-previous-digest.json"
     },
@@ -269,7 +281,7 @@
     },
     {
       "id": "manifest.policy-shortening",
-      "description": "Effective retention may be shortened within the Context Pack ceiling.",
+      "description": "Effective retention may be shortened when the transition schedules deletion.",
       "validator": "run-manifest-revision",
       "inputs": {
         "previous": "final",
@@ -280,6 +292,24 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.unscheduled-shortening",
+      "description": "A digest-valid final revision cannot shorten effective retention without scheduling deletion.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "unscheduled-shortening"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.status"
       }
     },
     {

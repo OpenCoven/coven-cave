@@ -766,8 +766,15 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
   if (["completed", "failed", "cancelled"].includes(status.value) && !hasFinishedAt) {
     return fail("missing_field", "$.finishedAt", `${status.value} jobs require finishedAt`);
   }
-  if (status.value === "completed" && proposalIds.value.length === 0) {
-    return fail("semantic_conflict", "$.proposalIds", "completed jobs require at least one proposalId");
+  if (
+    status.value === "completed"
+    && (proposalIds.value.length < 1 || proposalIds.value.length > 7)
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.proposalIds",
+      "completed jobs require one through seven proposalIds",
+    );
   }
   if (status.value === "completed" && hasFailure) {
     return fail("semantic_conflict", "$.failure", "completed jobs must not include failure");
