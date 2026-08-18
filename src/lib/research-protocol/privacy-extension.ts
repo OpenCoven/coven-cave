@@ -199,21 +199,18 @@ function validateSafeExtensionKeysAtPath(
   for (const key of Object.keys(value)) {
     if (declaredFields.has(key)) continue;
     const keyPath = childPath(path, key);
+    if (asciiOnly && !ASCII_EXTENSION_KEY_RE.test(key)) {
+      return fail(
+        "semantic_conflict",
+        keyPath,
+        "Deletion-event extension keys must use raw ASCII spelling",
+      );
+    }
     const normalizedKey = normalizeUnicodeSecurityText(key);
     const nestedExtensionPath = [
       ...extensionPath,
       ...extensionPathComponents(normalizedKey),
     ];
-    if (
-      asciiOnly &&
-      !ASCII_EXTENSION_KEY_RE.test(removeDefaultIgnorableCodePoints(key))
-    ) {
-      return fail(
-        "semantic_conflict",
-        keyPath,
-        "Deletion-event extension keys must use ASCII spelling after default-ignorable removal",
-      );
-    }
     if (
       isSensitiveExtensionKey(normalizedKey) ||
       hasDangerousPathSuffix(nestedExtensionPath)

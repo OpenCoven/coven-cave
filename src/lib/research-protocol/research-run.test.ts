@@ -15,8 +15,10 @@ import validContextPack from "../../../schemas/research/v1/fixtures/valid/contex
 import validHostedResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run-hosted.json" with { type: "json" };
 import validHostedResearchRunWithoutTenant from "../../../schemas/research/v1/fixtures/valid/research-run-hosted-without-tenant.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
+import validDeletionBenignRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event-deletion-benign-extension.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
 import validUnicodeRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event-unicode-extension.json" with { type: "json" };
+import invalidDefaultIgnorableDeletionExtension from "../../../schemas/research/v1/fixtures/invalid/run-event-default-ignorable-deletion-extension.json" with { type: "json" };
 import invalidNonAsciiDeletionExtension from "../../../schemas/research/v1/fixtures/invalid/run-event-non-ascii-deletion-extension.json" with { type: "json" };
 import invalidUnicodeSensitiveRunEvent from "../../../schemas/research/v1/fixtures/invalid/run-event-unicode-sensitive-extension.json" with { type: "json" };
 import assemblingRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
@@ -1901,7 +1903,25 @@ test("non-deletion events preserve benign Unicode extension keys", () => {
   );
 });
 
-test("content.deleted extensions require ASCII keys after default-ignorable removal", () => {
+test("content.deleted checks raw extension-key ASCII before Unicode normalization", () => {
+  const { expectedSchemaValid, ...invalidEvent } =
+    invalidDefaultIgnorableDeletionExtension;
+  assert.equal(expectedSchemaValid, false);
+  assert.equal(Value.Check(runEventSchema, invalidEvent), false);
+  expectError(
+    parseRunEventV1(invalidEvent),
+    '$.data["audit\u2060Trail"]',
+    "semantic_conflict",
+  );
+
+  assert.equal(Value.Check(runEventSchema, validDeletionBenignRunEvent), true);
+  assert.deepEqual(
+    expectOk(parseRunEventV1(validDeletionBenignRunEvent)),
+    validDeletionBenignRunEvent,
+  );
+});
+
+test("content.deleted extensions require raw ASCII keys", () => {
   const { expectedSchemaValid: nonAsciiSchemaValid, ...nonAsciiEvent } =
     invalidNonAsciiDeletionExtension;
   assert.equal(nonAsciiSchemaValid, false);
