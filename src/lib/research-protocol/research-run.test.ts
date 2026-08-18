@@ -213,6 +213,47 @@ function rootedExtendedRetentionComposition(): {
   return { run, contextPack, root, tip, freshConsentAt };
 }
 
+function rootedContextlessManifestComposition(): {
+  rootRun: ResearchRunV1;
+  tipRun: ResearchRunV1;
+  root: RunManifestV1;
+  tip: RunManifestV1;
+} {
+  const { run: boundRun, root: boundRoot } = rootedExtendedRetentionComposition();
+  const rootValue = {
+    ...boundRoot,
+    sources: boundRoot.sources.filter((source) => source.kind !== "context-pack"),
+  } as Record<string, unknown>;
+  delete rootValue.context;
+  const root = expectOk(parseRunManifestV1(recalculatedManifest(rootValue)));
+  const tip = expectOk(
+    parseRunManifestV1(
+      recalculatedManifest({
+        ...root,
+        revision: 2,
+        previousDigest: root.digest,
+      }),
+    ),
+  );
+  const contextlessRun = (manifest: RunManifestV1): ResearchRunV1 => {
+    const value: Record<string, unknown> = {
+      ...runForStatus("completed", manifest),
+      acceptedTopic: { ...boundRun.acceptedTopic },
+      privacy: { ...boundRun.privacy, retention: "run-only" },
+    };
+    delete value.context;
+    delete (value.acceptedTopic as Record<string, unknown>).proposalId;
+    return expectOk(parseResearchRunV1(value));
+  };
+
+  return {
+    rootRun: contextlessRun(root),
+    tipRun: contextlessRun(tip),
+    root,
+    tip,
+  };
+}
+
 function runForStatus(
   status: ResearchRunStatusV1,
   artifactManifest?: Record<string, unknown>,
@@ -1546,6 +1587,45 @@ test("revision-one embedded manifests need no history but supplied history must 
       manifestHistory: [],
     }),
     "$.manifestHistory",
+    "semantic_conflict",
+  );
+});
+
+test("contextless revision-one manifest history accepts absent run and manifest bindings", () => {
+  const { rootRun, root } = rootedContextlessManifestComposition();
+
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(rootRun, undefined, {
+        manifestHistory: [root],
+      }),
+    ),
+    rootRun,
+  );
+});
+
+test("contextless multi-revision manifest history accepts absent bindings", () => {
+  const { tipRun, root, tip } = rootedContextlessManifestComposition();
+
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(tipRun, undefined, {
+        manifestHistory: [root, tip],
+      }),
+    ),
+    tipRun,
+  );
+});
+
+test("manifest history rejects mixed context binding presence", () => {
+  const { tipRun, tip } = rootedContextlessManifestComposition();
+  const { root: contextBoundRoot } = rootedExtendedRetentionComposition();
+
+  expectError(
+    validateResearchRunContextPackV1(tipRun, undefined, {
+      manifestHistory: [contextBoundRoot, tip],
+    }),
+    "$.manifestHistory[0].context",
     "semantic_conflict",
   );
 });

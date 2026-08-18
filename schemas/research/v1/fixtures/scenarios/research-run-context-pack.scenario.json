@@ -11,6 +11,65 @@
     "manifest-tip": {
       "fixture": "scenarios/objects/context-bound-manifest-tip.json"
     },
+    "contextless-manifest-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "context": null,
+        "sources": []
+      },
+      "digestTargets": [""]
+    },
+    "contextless-manifest-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "da4bec6e4c3651981ae5060d52f9e33b854e83458af40a64c4fcb3ba8a323d88",
+        "context": null,
+        "sources": []
+      },
+      "digestTargets": [""]
+    },
+    "contextless-root-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        },
+        "artifactManifest": {
+          "revision": 1,
+          "previousDigest": null,
+          "context": null,
+          "sources": [],
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "contextless-tip-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        },
+        "artifactManifest": {
+          "previousDigest": "da4bec6e4c3651981ae5060d52f9e33b854e83458af40a64c4fcb3ba8a323d88",
+          "context": null,
+          "sources": [],
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "manifest-tip-bad-link": {
       "fixture": "scenarios/objects/context-bound-manifest-tip.json",
       "mergePatch": {
@@ -1018,6 +1077,48 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "research-run.valid-contextless-root-manifest-with-exact-history",
+      "description": "A contextless revision-one history matches its contextless embedded root.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-root-run",
+        "manifestHistory": ["contextless-manifest-root"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.valid-contextless-rooted-manifest-history",
+      "description": "A complete contextless manifest history composes through its embedded tip.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-tip-run",
+        "manifestHistory": [
+          "contextless-manifest-root",
+          "contextless-manifest-tip"
+        ]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.manifest-history-mixed-context-presence",
+      "description": "A context-bound history item cannot compose with a contextless run and tip.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-tip-run",
+        "manifestHistory": ["manifest-root", "contextless-manifest-tip"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].context"
       }
     },
     {

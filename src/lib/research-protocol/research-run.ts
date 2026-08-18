@@ -536,7 +536,7 @@ function validateEmbeddedManifestHistory(
       index === history.length - 1 ? "tip" : "history",
     );
     if (!itemComposition.ok) return itemComposition;
-    if (!canonicalValuesMatch(item.context, manifest.context)) {
+    if (!contextBindingsMatch(item.context, manifest.context)) {
       return fail(
         "semantic_conflict",
         `${itemPath}.context`,
