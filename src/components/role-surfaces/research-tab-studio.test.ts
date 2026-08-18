@@ -27,6 +27,54 @@ test("media cards use one source of truth and gate on live readiness", () => {
   }
 });
 
+test("ready media cards keep the same interactive affordance as other generation cards", () => {
+  assert.doesNotMatch(
+    css,
+    /\.research-studio-card--media\s*\{[^}]*cursor:\s*default/,
+  );
+  assert.doesNotMatch(
+    css,
+    /\.research-studio-card--media\s+\.research-studio-card__tile/,
+  );
+  assert.doesNotMatch(
+    css,
+    /\.research-studio-card--media\s+\.research-studio-card__head strong/,
+  );
+  assert.match(
+    css,
+    /\.research-studio-card:disabled\s*\{[^}]*cursor:\s*default/,
+  );
+  assert.match(
+    css,
+    /\.research-studio-card:disabled\s+\.research-studio-card__tile\s*\{[^}]*opacity:\s*0\.55/,
+  );
+});
+
+test("the video generation path keeps keyboard focus visible", () => {
+  assert.match(
+    tab,
+    /className=\{`research-studio-card\$\{mediaEntry \? " research-studio-card--media" : ""\} focus-ring`\}/,
+  );
+  assert.match(tab, /className="research-studio__select focus-ring"/);
+  assert.match(
+    modals,
+    /className="research-studio-config__textarea focus-ring"/,
+  );
+  assert.match(modals, /className="research-studio__select focus-ring"/);
+  assert.match(
+    modals,
+    /className="research-studio-act research-studio-act--primary focus-ring"/,
+  );
+  assert.match(
+    modals,
+    /className="research-studio-modal__close focus-ring"/,
+  );
+  assert.doesNotMatch(
+    css,
+    /\.research-studio-config__(?:textarea|input):focus[\s\S]{0,120}outline:\s*none/,
+  );
+});
+
 test("media configuration is controlled, readiness-backed, and kind-specific", () => {
   assert.match(tab, /useState<ResearchMediaProvider>\("local"\)/);
   assert.match(tab, /useState<ResearchMediaLength>\("standard"\)/);
@@ -219,7 +267,7 @@ test("source runs pick from a labelled dropdown — tab and config modal", () =>
   // id, listing only qualifying sources.
   assert.match(tab, /htmlFor="research-studio-source"/);
   assert.match(tab, /id="research-studio-source"/);
-  assert.match(tab, /className="research-studio__select"/);
+  assert.match(tab, /className="research-studio__select focus-ring"/);
   assert.match(tab, /\{sources\.map\(\(source\) => \(\s*<option/);
   // Config modal mirrors it (same class, own id + label).
   assert.match(modals, /htmlFor="research-studio-config-source"/);

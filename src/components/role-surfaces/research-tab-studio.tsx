@@ -506,7 +506,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
             </label>
             <select
               id="research-studio-source"
-              className="research-studio__select"
+              className="research-studio__select focus-ring"
               value={effectiveSourceId ?? ""}
               onChange={(event) => setSourceId(event.target.value)}
             >
@@ -542,7 +542,7 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
             <button
               key={kind}
               type="button"
-              className={`research-studio-card${mediaEntry ? " research-studio-card--media" : ""}`}
+              className={`research-studio-card${mediaEntry ? " research-studio-card--media" : ""} focus-ring`}
               data-kind={kind}
               disabled={sources.length === 0 || !mediaReady}
               aria-haspopup="dialog"
