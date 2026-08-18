@@ -360,8 +360,9 @@
         "snapshotDigest": { "$ref": "#/$defs/sha256" },
         "canonicalUrl": {
           "type": "string",
+          "format": "uri",
           "minLength": 1,
-          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://(?:\\[[^\\]/@?#\\s]+\\]|[^\\[\\]/@?#:\\s]+)(?::[0-9]*)?(?:[/?#][^\\s]*)?$"
+          "pattern": "^https?://(?:\\[[^\\]/@?#\\s]+\\]|[^\\[\\]/@?#:\\s]+)(?::[0-9]*)?(?:[/?#][^\\s]*)?$"
         },
         "fetchedAt": { "$ref": "#/$defs/utcTimestamp" }
       }

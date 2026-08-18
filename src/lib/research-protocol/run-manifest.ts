@@ -45,7 +45,6 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-const CANONICAL_EVIDENCE_URL_PREFIX_RE = /^https?:\/\//i;
 const CANONICAL_EVIDENCE_URL_WHITESPACE_RE = /\s/;
 
 export type ArtifactRegistrationV1 = {
@@ -325,46 +324,49 @@ function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<s
   return title;
 }
 
+export function isCanonicalPublicHttpUrl(value: string): boolean {
+  const authorityStart = value.startsWith("https://")
+    ? "https://".length
+    : value.startsWith("http://")
+      ? "http://".length
+      : -1;
+  if (authorityStart < 0 || CANONICAL_EVIDENCE_URL_WHITESPACE_RE.test(value)) {
+    return false;
+  }
+
+  const authorityRemainder = value.slice(authorityStart);
+  const delimiterIndex = authorityRemainder.search(/[/?#]/);
+  const authority = delimiterIndex < 0
+    ? authorityRemainder
+    : authorityRemainder.slice(0, delimiterIndex);
+  if (authority.length === 0 || authority.includes("@")) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:")
+      && parsed.hostname.length > 0
+      && parsed.username.length === 0
+      && parsed.password.length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseCanonicalEvidenceUrl(
   value: unknown,
   path: string,
 ): ProtocolParseResult<string> {
   const canonicalUrl = parseString(value, path, "canonicalUrl");
   if (!canonicalUrl.ok) return canonicalUrl;
-  if (canonicalUrl.value.length === 0) {
-    return fail("invalid_value", path, "canonicalUrl must not be empty");
-  }
-  if (
-    !CANONICAL_EVIDENCE_URL_PREFIX_RE.test(canonicalUrl.value)
-    || CANONICAL_EVIDENCE_URL_WHITESPACE_RE.test(canonicalUrl.value)
-  ) {
+  if (!isCanonicalPublicHttpUrl(canonicalUrl.value)) {
     return fail(
       "invalid_value",
       path,
-      "canonicalUrl must lexically begin with http:// or https:// and contain no whitespace",
-    );
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(canonicalUrl.value);
-  } catch {
-    return fail(
-      "invalid_value",
-      path,
-      "canonicalUrl must be an absolute HTTP(S) URL",
-    );
-  }
-  if (
-    (parsed.protocol !== "http:" && parsed.protocol !== "https:")
-    || parsed.hostname.length === 0
-    || parsed.username.length > 0
-    || parsed.password.length > 0
-  ) {
-    return fail(
-      "invalid_value",
-      path,
-      "canonicalUrl must be an absolute credential-free HTTP(S) URL with a hostname",
+      "canonicalUrl must be a lowercase, absolute, credential-free HTTP(S) URL with a hostname and no whitespace",
     );
   }
   return canonicalUrl;

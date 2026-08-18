@@ -26,11 +26,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { IsSchema, type TSchema } from "typebox";
+import { Format } from "typebox/format";
 import { Check } from "typebox/value";
 
 import {
   RESEARCH_PROTOCOL_SCHEMAS,
   digestProtocolObject,
+  isCanonicalPublicHttpUrl,
   isRecord,
   isSha256,
   isUtcTimestamp,
@@ -55,6 +57,14 @@ import {
   type TopicDiscoveryJobV1,
   type TopicProposalV1,
 } from "../src/lib/research-protocol/index.ts";
+
+const previousUriFormat = Format.Get("uri");
+if (previousUriFormat === undefined) {
+  throw new Error("TypeBox must provide its default uri format");
+}
+Format.Set("uri", isCanonicalPublicHttpUrl);
+assert.equal(Format.Get("uri"), isCanonicalPublicHttpUrl);
+test.after(() => Format.Set("uri", previousUriFormat));
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");

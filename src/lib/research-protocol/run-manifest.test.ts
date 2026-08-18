@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Format } from "typebox/format";
 import { Value } from "typebox/value";
 
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
@@ -29,6 +30,7 @@ import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixture
 import { digestProtocolObject } from "./digest.ts";
 import {
   aggregateManifestUsage,
+  isCanonicalPublicHttpUrl,
   parseRunManifestV1,
   validateManifestRetentionConsent,
   validateRunManifestRevision,
@@ -36,6 +38,14 @@ import {
   type RunManifestV1,
 } from "./run-manifest.ts";
 import type { ResearchModelReceiptV1 } from "./topic-discovery.ts";
+
+const previousUriFormat = Format.Get("uri");
+if (previousUriFormat === undefined) {
+  throw new Error("TypeBox must provide its default uri format");
+}
+Format.Set("uri", isCanonicalPublicHttpUrl);
+assert.equal(Format.Get("uri"), isCanonicalPublicHttpUrl);
+test.after(() => Format.Set("uri", previousUriFormat));
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
@@ -1019,14 +1029,48 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
   );
 });
 
+test("canonical public HTTP URL predicate follows the parser contract", () => {
+  for (const canonicalUrl of [
+    "https://example.test/research?q=public#finding",
+    "http://example.test:8080/research?source=1",
+    "https://example.test:/research",
+    "https://[2001:db8::1]/",
+    "http://[2001:db8::1]:8080/evidence",
+    "https://例え.テスト/検索?q=猫",
+  ]) {
+    assert.equal(isCanonicalPublicHttpUrl(canonicalUrl), true, canonicalUrl);
+  }
+
+  for (const canonicalUrl of [
+    "",
+    "/relative/research",
+    "//example.test/research",
+    "ftp://example.test/research",
+    "HTTPS://example.test/research",
+    "https:example.test/evidence",
+    " https://example.test/evidence",
+    "https://example.test/evidence ",
+    "https://exa\tmple.test/evidence",
+    "https://",
+    "https:///evidence",
+    "https://[abc]/",
+    "https://[2001:db8::1/",
+    "https://2001:db8::1/",
+    "https://alice:redacted@example.test/evidence",
+    "https://@example.test/evidence",
+  ]) {
+    assert.equal(isCanonicalPublicHttpUrl(canonicalUrl), false, canonicalUrl || "<empty>");
+  }
+});
+
 test("public evidence canonical URLs preserve absolute credential-free HTTP(S) URLs", () => {
   const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
   for (const canonicalUrl of [
     "https://example.test/research?q=public#finding",
     "http://example.test:8080/research?source=1",
     "https://example.test:/research",
+    "https://[2001:db8::1]/",
     "http://[2001:db8::1]:8080/evidence",
-    "HTTPS://example.test/research",
     "https://例え.テスト/検索?q=猫",
   ]) {
     const candidate = recalculate({
@@ -1051,11 +1095,17 @@ test("public evidence canonical URLs reject non-HTTP, non-lexical, malformed, wh
     ["/relative/research", false],
     ["//example.test/research", false],
     ["ftp://example.test/research", false],
+    ["HTTPS://example.test/research", false],
     ["https:example.test/evidence", false],
     [" https://example.test/evidence", false],
     ["https://example.test/evidence ", false],
     ["https://exa\tmple.test/evidence", false],
     ["https://", true],
+    ["https:///evidence", false],
+    ["https://[abc]/", false],
+    ["https://[2001:db8::1/", false],
+    ["https://2001:db8::1/", false],
+    ["https://@example.test/evidence", false],
     ["https://researcher:secret@example.test/report", true],
   ] as const) {
     const candidate = recalculate({
