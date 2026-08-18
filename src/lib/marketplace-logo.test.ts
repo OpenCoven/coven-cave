@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import {
   marketplaceLogoCoverage,
   marketplaceMonogram,
@@ -66,13 +67,27 @@ for (const asset of actualAssets) {
   const bytes = await readFile(path.join(root, "public/marketplace-logos", asset));
   assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${asset} is a PNG`);
 }
+const gmailPixels = await sharp(path.join(root, "public/marketplace-logos/gmail.png"))
+  .ensureAlpha()
+  .raw()
+  .toBuffer();
+let hasGmailRed = false;
+for (let offset = 0; offset < gmailPixels.length; offset += 4) {
+  const [red, green, blue, alpha] = gmailPixels.subarray(offset, offset + 4);
+  if (alpha === 255 && red === 234 && green === 67 && blue === 53) {
+    hasGmailRed = true;
+    break;
+  }
+}
+assert.equal(hasGmailRed, true, "generated brand assets retain their Simple Icons color");
 
 const componentSource = await readFile(
   path.join(root, "src/components/marketplace/marketplace-logo.tsx"),
   "utf8",
 );
-assert.match(componentSource, /data-marketplace-logo-kind=\{resolved\.kind\}/);
-assert.match(componentSource, /resolved\.kind === "brand" && resolved\.svgPath/);
+assert.match(componentSource, /data-marketplace-logo-kind=\{renderedKind\}/);
+assert.match(componentSource, /src=\{brandAssetPath\}/);
+assert.match(componentSource, /onError=\{\(\) => setFailedAssetPath\(brandAssetPath\)\}/);
 assert.match(componentSource, /marketplace-logo__monogram/);
 assert.match(componentSource, /resolveMarketplaceLogo\(id, displayName\),\s+\.\.\.logo/s);
 
