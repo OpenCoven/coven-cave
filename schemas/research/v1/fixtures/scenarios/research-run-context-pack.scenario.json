@@ -22,6 +22,14 @@
       },
       "digestTargets": ["/artifactManifest"]
     },
+    "conflicting-topic-lineage-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "acceptedTopic": {
+          "proposalId": "proposal_conflicting_lineage"
+        }
+      }
+    },
     "embedded-retention-above-consent-run": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
@@ -145,6 +153,22 @@
         "input": "run",
         "code": "semantic_conflict",
         "path": "$.artifactManifest.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "research-run.topic-lineage-conflict",
+      "description": "A context-bound run rejects an accepted topic from another proposal.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "conflicting-topic-lineage-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.acceptedTopic.proposalId"
       }
     }
   ]

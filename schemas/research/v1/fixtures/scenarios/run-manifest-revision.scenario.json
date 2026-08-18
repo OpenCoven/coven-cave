@@ -40,6 +40,104 @@
       },
       "digestTargets": [""]
     },
+    "completed-deletion-identical-next": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "digestTargets": [""]
+    },
+    "completed-deletion-requested-at-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "deletion": {
+          "requestedAt": "2026-08-17T18:59:59.999999999Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "completed-deletion-completed-at-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "deletion": {
+          "completedAt": "2026-08-17T19:59:59.999999999Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "completed-deletion-object-count-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "deletion": {
+          "deletedObjectCount": 4
+        }
+      },
+      "digestTargets": [""]
+    },
+    "completed-deletion-audit-until-added": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "deletion": {
+          "retainedAuditUntil": "2026-09-17T20:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "completed-deletion-event-sequence-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "deletion": {
+          "eventSequence": 3
+        }
+      },
+      "digestTargets": [""]
+    },
+    "completed-deletion-extension-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "deletion": {
+          "futureExtension": {
+            "preserve": false
+          }
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deleted-retention-effective-policy-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "run-only"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deleted-retention-content-expiry-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "retention": {
+          "contentExpiresAt": "2026-08-17T20:00:00.000000001Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deleted-retention-updated-at-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "retention": {
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deleted-retention-extension-mutated": {
+      "fixture": "scenarios/objects/run-manifest-completed-deletion-next.json",
+      "mergePatch": {
+        "retention": {
+          "futureExtension": {
+            "preserve": false
+          }
+        }
+      },
+      "digestTargets": [""]
+    },
     "final": {
       "fixture": "valid/run-manifest-final-local.json"
     },
@@ -506,6 +604,201 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-identical-revision",
+      "description": "A later revision may preserve an identical completed deletion and deleted retention state.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "completed-deletion-identical-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-requested-at-immutable",
+      "description": "A completed deletion request timestamp cannot be rewritten.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "completed-deletion-requested-at-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.requestedAt"
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-completed-at-immutable",
+      "description": "A completed deletion completion timestamp cannot be rewritten.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "completed-deletion-completed-at-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.completedAt"
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-object-count-immutable",
+      "description": "A completed deletion object count cannot be rewritten.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "completed-deletion-object-count-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.deletedObjectCount"
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-audit-until-immutable",
+      "description": "A later revision cannot add retained audit evidence to a completed deletion receipt.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "completed-deletion-audit-until-added"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.retainedAuditUntil"
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-event-sequence-immutable",
+      "description": "A completed deletion event sequence cannot be rewritten.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "completed-deletion-event-sequence-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.eventSequence"
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-extension-immutable",
+      "description": "Additive completed deletion receipt evidence cannot be rewritten.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "completed-deletion-extension-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.futureExtension"
+      }
+    },
+    {
+      "id": "manifest.deleted-retention-effective-policy-immutable",
+      "description": "Deleted retention cannot rewrite its terminal effective policy.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "deleted-retention-effective-policy-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.deleted-retention-content-expiry-immutable",
+      "description": "Deleted retention cannot rewrite its terminal content expiry.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "deleted-retention-content-expiry-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deleted-retention-updated-at-immutable",
+      "description": "Deleted retention cannot rewrite its terminal update timestamp.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "deleted-retention-updated-at-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.updatedAt"
+      }
+    },
+    {
+      "id": "manifest.deleted-retention-extension-immutable",
+      "description": "Additive deleted retention evidence cannot be rewritten.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "deleted-retention-extension-mutated"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.futureExtension"
       }
     }
   ]

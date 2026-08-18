@@ -13,6 +13,8 @@ import invalidDeletionPairJson from "../../../schemas/research/v1/fixtures/inval
 import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-private-title.json" with { type: "json" };
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
 import invalidCompletionBeforeCreationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-completion-before-creation-no-request.json" with { type: "json" };
+import invalidFinalizationChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-finalized-before-created.json" with { type: "json" };
+import invalidRetentionChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-created.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
 import {
@@ -789,6 +791,24 @@ test("completed deletion chronology cannot finish before its request", () => {
   );
 });
 
+test("manifest finalization cannot precede manifest creation", () => {
+  const invalid = withoutExpectedSchemaValid(invalidFinalizationChronologyJson);
+
+  assert.equal(Value.Check(runManifestSchema, invalid), true);
+  expectError(parseRunManifestV1(invalid), "$.finalizedAt", "semantic_conflict");
+});
+
+test("manifest retention updates cannot precede manifest creation", () => {
+  const invalid = withoutExpectedSchemaValid(invalidRetentionChronologyJson);
+
+  assert.equal(Value.Check(runManifestSchema, invalid), true);
+  expectError(
+    parseRunManifestV1(invalid),
+    "$.retention.updatedAt",
+    "semantic_conflict",
+  );
+});
+
 test("deletion completion cannot precede manifest creation without a request timestamp", () => {
   const invalid = withoutExpectedSchemaValid(invalidCompletionBeforeCreationJson);
 
@@ -1208,6 +1228,164 @@ test("completed deletion cannot be resurrected by a later revision", () => {
     "$.deletion.status",
     "semantic_conflict",
   );
+});
+
+test("completed deletion receipts and deleted retention evidence are immutable", () => {
+  const assembling = expectOk(parseRunManifestV1(assemblingManifestJson));
+  const completed = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...assembling,
+        retention: {
+          ...assembling.retention,
+          status: "deleted" as const,
+          contentExpiresAt: "2026-08-16T20:06:00.000Z",
+          updatedAt: "2026-08-16T20:06:00.000Z",
+        },
+        deletion: {
+          ...assembling.deletion,
+          status: "completed" as const,
+          requestedAt: "2026-08-16T20:05:00.000Z",
+          completedAt: "2026-08-16T20:06:00.000Z",
+          deletedObjectCount: 1,
+          retainedAuditUntil: "2026-09-16T20:06:00.000Z",
+          eventSequence: 2,
+        },
+      }),
+    ),
+  );
+  const identical = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...completed,
+        revision: completed.revision + 1,
+        previousDigest: completed.digest,
+      }),
+    ),
+  );
+
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevision(completed, identical, {
+        contextConsent: "7-days",
+      }),
+    ),
+    identical,
+  );
+
+  const mutations = [
+    {
+      path: "$.deletion.requestedAt",
+      value: {
+        ...identical,
+        deletion: {
+          ...identical.deletion,
+          requestedAt: "2026-08-16T20:04:59.999999999Z",
+        },
+      },
+    },
+    {
+      path: "$.deletion.completedAt",
+      value: {
+        ...identical,
+        deletion: {
+          ...identical.deletion,
+          completedAt: "2026-08-16T20:05:59.999999999Z",
+        },
+      },
+    },
+    {
+      path: "$.deletion.deletedObjectCount",
+      value: {
+        ...identical,
+        deletion: {
+          ...identical.deletion,
+          deletedObjectCount: 2,
+        },
+      },
+    },
+    {
+      path: "$.deletion.retainedAuditUntil",
+      value: {
+        ...identical,
+        deletion: {
+          ...identical.deletion,
+          retainedAuditUntil: "2026-09-16T20:06:00.000000001Z",
+        },
+      },
+    },
+    {
+      path: "$.deletion.eventSequence",
+      value: {
+        ...identical,
+        deletion: {
+          ...identical.deletion,
+          eventSequence: 3,
+        },
+      },
+    },
+    {
+      path: "$.deletion.futureExtension",
+      value: {
+        ...identical,
+        deletion: {
+          ...identical.deletion,
+          futureExtension: { preserve: false },
+        },
+      },
+    },
+    {
+      path: "$.retention.effectivePolicy",
+      value: {
+        ...identical,
+        retention: {
+          ...identical.retention,
+          effectivePolicy: "run-only" as const,
+        },
+      },
+    },
+    {
+      path: "$.retention.contentExpiresAt",
+      value: {
+        ...identical,
+        retention: {
+          ...identical.retention,
+          contentExpiresAt: "2026-08-16T20:05:59.999999999Z",
+        },
+      },
+    },
+    {
+      path: "$.retention.updatedAt",
+      value: {
+        ...identical,
+        retention: {
+          ...identical.retention,
+          updatedAt: "2026-08-16T20:07:00.000Z",
+        },
+      },
+    },
+    {
+      path: "$.retention.futureExtension",
+      value: {
+        ...identical,
+        retention: {
+          ...identical.retention,
+          futureExtension: { preserve: false },
+        },
+      },
+    },
+  ];
+
+  for (const mutation of mutations) {
+    const candidate = expectOk(parseRunManifestV1(recalculate(mutation.value)));
+    expectError(
+      validateRunManifestRevision(completed, candidate, {
+        contextConsent: "7-days",
+      }),
+      mutation.path,
+      "semantic_conflict",
+    );
+  }
 });
 
 test("assembling revisions cannot change the original retention policy", () => {

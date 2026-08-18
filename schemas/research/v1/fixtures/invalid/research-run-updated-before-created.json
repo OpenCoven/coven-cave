@@ -1,0 +1,37 @@
+{
+  "schema": "opencoven.research-run/v1",
+  "id": "run_reversed_chronology",
+  "acceptedTopic": {
+    "question": "Can this run be updated before it exists?",
+    "editedByUser": false
+  },
+  "execution": {
+    "location": "local",
+    "modelExecution": "cave-device",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "pinned",
+      "model": "gpt-5.6-sol"
+    },
+    "strategy": "single-agent"
+  },
+  "privacy": {
+    "remoteQueries": false,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false
+  },
+  "bounds": {
+    "wallClockMinutes": 45,
+    "maxIterations": 4,
+    "sourceTarget": 8,
+    "checkpointEvery": 2,
+    "stopWhenCostUnavailable": true
+  },
+  "status": "queued",
+  "createdAt": "2026-08-15T20:00:00.000Z",
+  "updatedAt": "2026-08-15T19:59:59.999999999Z",
+  "nextEventSequence": 1,
+  "expectedSchemaValid": true
+}

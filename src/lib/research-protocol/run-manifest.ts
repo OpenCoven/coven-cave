@@ -843,9 +843,17 @@ function validateRetentionClock(
 
 function validateManifestChronology(
   createdAt: string,
+  finalizedAt: string | undefined,
   retention: RunManifestRetentionV1,
   deletion: RunManifestDeletionReceiptV1,
 ): ProtocolParseResult<void> {
+  if (finalizedAt !== undefined && compareUtcTimestamps(finalizedAt, createdAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.finalizedAt",
+      "finalizedAt must not precede manifest createdAt",
+    );
+  }
   if (compareUtcTimestamps(retention.updatedAt, createdAt) < 0) {
     return fail(
       "semantic_conflict",
@@ -1000,6 +1008,24 @@ function compareImmutableField(
 ): ProtocolParseResult<void> {
   if (!sameCanonicalField(previous, next, key)) {
     return fail("semantic_conflict", path, `${key} cannot change after finalization`);
+  }
+  return pass(undefined);
+}
+
+function compareTerminalObjectFields(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+  path: string,
+): ProtocolParseResult<void> {
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (!sameCanonicalField(previous, next, key)) {
+      return fail(
+        "semantic_conflict",
+        childPath(path, key),
+        `${key} cannot change after deletion completion`,
+      );
+    }
   }
   return pass(undefined);
 }
@@ -1332,6 +1358,7 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!clock.ok) return clock;
   const chronology = validateManifestChronology(
     createdAt.value,
+    finalizedAt,
     retention.value,
     deletion.value,
   );
@@ -1486,8 +1513,25 @@ export function validateRunManifestRevision(
 
   const previousRetention = previous.retention as unknown as Record<string, unknown>;
   const nextRetention = next.retention as unknown as Record<string, unknown>;
+  const previousDeletion = previous.deletion as unknown as Record<string, unknown>;
+  const nextDeletion = next.deletion as unknown as Record<string, unknown>;
   const policy = compareImmutableField(previousRetention, nextRetention, "policy", "$.retention.policy");
   if (!policy.ok) return policy;
+
+  if (previous.deletion.status === "completed") {
+    const receipt = compareTerminalObjectFields(
+      previousDeletion,
+      nextDeletion,
+      "$.deletion",
+    );
+    if (!receipt.ok) return receipt;
+    const deletedRetention = compareTerminalObjectFields(
+      previousRetention,
+      nextRetention,
+      "$.retention",
+    );
+    if (!deletedRetention.ok) return deletedRetention;
+  }
 
   if (previous.deletion.status === "completed" && next.deletion.status !== "completed") {
     return fail(
@@ -1532,8 +1576,6 @@ export function validateRunManifestRevision(
     );
     if (!retentionUnknowns.ok) return retentionUnknowns;
 
-    const previousDeletion = previous.deletion as unknown as Record<string, unknown>;
-    const nextDeletion = next.deletion as unknown as Record<string, unknown>;
     const deletionUnknowns = compareUnknownFields(
       previousDeletion,
       nextDeletion,

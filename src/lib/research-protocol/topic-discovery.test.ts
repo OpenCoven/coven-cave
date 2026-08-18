@@ -3,6 +3,9 @@ import { test } from "node:test";
 import { Value } from "typebox/value";
 
 import invalidTopicDiscoveryEight from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-eight.json" with { type: "json" };
+import invalidTopicDiscoveryFinishedBeforeRequested from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-finished-before-requested.json" with { type: "json" };
+import invalidTopicDiscoveryFinishedBeforeStarted from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-finished-before-started.json" with { type: "json" };
+import invalidTopicDiscoveryStartedBeforeRequested from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-started-before-requested.json" with { type: "json" };
 import invalidTopicDiscoveryTwo from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-two.json" with { type: "json" };
 import invalidTopicProposalScore from "../../../schemas/research/v1/fixtures/invalid/topic-proposal-score.json" with { type: "json" };
 import topicDiscoveryJobSchema from "../../../schemas/research/v1/topic-discovery-job.schema.json" with { type: "json" };
@@ -41,6 +44,12 @@ function expectError(
   return result.error;
 }
 
+function withoutExpectedSchemaValid(value: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...value };
+  delete copy.expectedSchemaValid;
+  return copy;
+}
+
 test("valid fixtures satisfy schemas and parse", () => {
   assert.ok(Value.Check(topicDiscoveryJobSchema, validTopicDiscoveryJob));
   assert.ok(Value.Check(topicProposalSchema, validTopicProposal));
@@ -51,6 +60,27 @@ test("valid fixtures satisfy schemas and parse", () => {
   assert.equal((job.futureExtension as { preserve: boolean }).preserve, true);
   assert.equal((job.modelReceipt?.futureExtension as { preserve: boolean }).preserve, true);
   assert.equal((proposal.futureExtension as { preserve: boolean }).preserve, true);
+});
+
+test("topic discovery startedAt cannot precede requestedAt", () => {
+  const invalid = withoutExpectedSchemaValid(invalidTopicDiscoveryStartedBeforeRequested);
+
+  assert.equal(Value.Check(topicDiscoveryJobSchema, invalid), true);
+  expectError(parseTopicDiscoveryJobV1(invalid), "$.startedAt", "semantic_conflict");
+});
+
+test("topic discovery finishedAt cannot precede startedAt", () => {
+  const invalid = withoutExpectedSchemaValid(invalidTopicDiscoveryFinishedBeforeStarted);
+
+  assert.equal(Value.Check(topicDiscoveryJobSchema, invalid), true);
+  expectError(parseTopicDiscoveryJobV1(invalid), "$.finishedAt", "semantic_conflict");
+});
+
+test("topic discovery finishedAt cannot precede requestedAt when startedAt is absent", () => {
+  const invalid = withoutExpectedSchemaValid(invalidTopicDiscoveryFinishedBeforeRequested);
+
+  assert.equal(Value.Check(topicDiscoveryJobSchema, invalid), true);
+  expectError(parseTopicDiscoveryJobV1(invalid), "$.finishedAt", "semantic_conflict");
 });
 
 test("topicProposalVisibleTotal applies the Section 10.3 weights in integer hundredths", () => {

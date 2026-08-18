@@ -741,6 +741,17 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!acceptedTopicField.ok) return acceptedTopicField;
   const acceptedTopic = parseAcceptedTopic(acceptedTopicField.value, "$.acceptedTopic");
   if (!acceptedTopic.ok) return acceptedTopic;
+  if (
+    context?.topicProposalId !== undefined &&
+    acceptedTopic.value.proposalId !== undefined &&
+    context.topicProposalId !== acceptedTopic.value.proposalId
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.acceptedTopic.proposalId",
+      "acceptedTopic.proposalId must match context.topicProposalId",
+    );
+  }
 
   const executionField = parseRequiredField(object.value, "execution", "$");
   if (!executionField.ok) return executionField;
@@ -851,6 +862,13 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!updatedAtField.ok) return updatedAtField;
   const updatedAt = parseUtc(updatedAtField.value, "$.updatedAt", "updatedAt");
   if (!updatedAt.ok) return updatedAt;
+  if (compareUtcTimestamps(updatedAt.value, createdAt.value) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.updatedAt",
+      "updatedAt must not precede createdAt",
+    );
+  }
 
   const nextEventSequenceField = parseRequiredField(object.value, "nextEventSequence", "$");
   if (!nextEventSequenceField.ok) return nextEventSequenceField;

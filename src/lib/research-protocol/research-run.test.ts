@@ -8,6 +8,8 @@ import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" 
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
 import invalidHostedResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-hosted-missing-tenant.json" with { type: "json" };
 import invalidLocalResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
+import invalidResearchRunChronology from "../../../schemas/research/v1/fixtures/invalid/research-run-updated-before-created.json" with { type: "json" };
+import invalidResearchRunTopicLineage from "../../../schemas/research/v1/fixtures/invalid/research-run-topic-proposal-conflict.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
@@ -62,6 +64,12 @@ const researchSchemaContext: Record<string, TSchema> = {
 
 function checkResearchRunSchema(value: unknown): boolean {
   return Check(researchSchemaContext, researchRunSchema as TSchema, value);
+}
+
+function withoutExpectedSchemaValid(value: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...value };
+  delete copy.expectedSchemaValid;
+  return copy;
 }
 
 function linkedManifest(
@@ -205,6 +213,24 @@ test("valid waiting_for_executor run with resumable phase accepts", () => {
   const parsed = expectOk(parseResearchRunV1(validResearchRun));
   assert.equal(parsed.status, "waiting_for_executor");
   assert.equal(parsed.waitingForPhase, "challenge");
+});
+
+test("research run updatedAt cannot precede createdAt", () => {
+  const invalid = withoutExpectedSchemaValid(invalidResearchRunChronology);
+
+  assert.equal(checkResearchRunSchema(invalid), true);
+  expectError(parseResearchRunV1(invalid), "$.updatedAt", "semantic_conflict");
+});
+
+test("research run context proposal must match the accepted topic proposal", () => {
+  const invalid = withoutExpectedSchemaValid(invalidResearchRunTopicLineage);
+
+  assert.equal(checkResearchRunSchema(invalid), true);
+  expectError(
+    parseResearchRunV1(invalid),
+    "$.acceptedTopic.proposalId",
+    "semantic_conflict",
+  );
 });
 
 test("local runs forbid tenantOpaqueId while preserving unrelated additive fields", () => {

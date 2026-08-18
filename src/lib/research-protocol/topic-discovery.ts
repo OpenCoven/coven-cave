@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -795,6 +796,31 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
   }
   if (status.value === "cancelled" && hasFailure) {
     return fail("semantic_conflict", "$.failure", "cancelled jobs must not include failure");
+  }
+  if (startedAt !== undefined && compareUtcTimestamps(startedAt, requestedAt.value) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.startedAt",
+      "startedAt must not precede requestedAt",
+    );
+  }
+  if (finishedAt !== undefined && compareUtcTimestamps(finishedAt, requestedAt.value) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.finishedAt",
+      "finishedAt must not precede requestedAt",
+    );
+  }
+  if (
+    startedAt !== undefined &&
+    finishedAt !== undefined &&
+    compareUtcTimestamps(finishedAt, startedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finishedAt",
+      "finishedAt must not precede startedAt",
+    );
   }
 
   return pass({
