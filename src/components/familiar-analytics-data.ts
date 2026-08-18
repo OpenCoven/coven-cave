@@ -22,6 +22,7 @@ import {
   EMPTY_FEEDBACK_ROLLUP,
   type MessageFeedbackRollup,
 } from "@/lib/message-feedback-rollup";
+import type { FamiliarExecutionAnalytics } from "@/lib/familiar-execution-analytics";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -52,6 +53,10 @@ type MessageFeedbackResponse =
   | { ok: true; rollup: MessageFeedbackRollup }
   | { ok: false; rollup?: MessageFeedbackRollup; error?: string };
 
+type ExecutionAnalyticsResponse =
+  | { ok: true; analytics: FamiliarExecutionAnalytics }
+  | { ok: false; analytics?: FamiliarExecutionAnalytics; error?: string };
+
 export type FamiliarAnalyticsData = {
   familiarId: string;
   familiars: Familiar[];
@@ -65,6 +70,8 @@ export type FamiliarAnalyticsData = {
   metricSnapshots: ThreadMetricSnapshot[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
+  /** Metadata-only model/harness execution analytics across Cave run surfaces. */
+  executionAnalytics: FamiliarExecutionAnalytics | null;
   errors: string[];
 };
 
@@ -83,6 +90,8 @@ export type FamiliarAnalyticsModel = {
   metricSnapshots: ThreadMetricSnapshot[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
+  /** Metadata-only model/harness execution analytics across Cave run surfaces. */
+  executionAnalytics: FamiliarExecutionAnalytics | null;
   /**
    * Renown + ritual streak — the progression system's read of this familiar
    * (same derivation as the roster cards, so the surfaces always agree).
@@ -174,6 +183,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     selfReportsJson,
     metricSnapshotsJson,
     feedbackJson,
+    executionAnalyticsJson,
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
@@ -189,6 +199,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=all`, { ok: false, reports: [], total: 0 }),
     fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
     fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
+    fetchResource<ExecutionAnalyticsResponse>(`/api/familiars/${encodedId}/execution-analytics`, { ok: false }),
   ]);
 
   const errors = [
@@ -201,6 +212,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(retroJson, "retro runs unavailable"),
     responseError(metricSnapshotsJson, "metric snapshots unavailable"),
     responseError(feedbackJson, "message feedback unavailable"),
+    responseError(executionAnalyticsJson, "execution analytics unavailable"),
   ].filter((error): error is string => Boolean(error));
 
   return {
@@ -218,6 +230,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     threadReports: Array.isArray(selfReportsJson.reports) ? selfReportsJson.reports : [],
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
+    executionAnalytics: executionAnalyticsJson.ok ? executionAnalyticsJson.analytics : null,
     errors,
   };
 }
@@ -266,6 +279,7 @@ export function buildFamiliarAnalyticsModel(
     threadReports: data.threadReports,
     metricSnapshots: data.metricSnapshots,
     modelFeedback: data.modelFeedback,
+    executionAnalytics: data.executionAnalytics,
     progression: familiar
       ? {
           renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),
