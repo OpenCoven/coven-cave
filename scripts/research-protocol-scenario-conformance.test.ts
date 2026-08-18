@@ -130,6 +130,12 @@ type ScenarioDefinition = {
   expected: ExpectedResult;
 };
 
+type ScenarioInputEntry = {
+  name: string;
+  reference: string;
+  schema: ResearchProtocolObjectV1["schema"];
+};
+
 type ScenarioCorpus = {
   filePath: string;
   family: ValidatorKind;
@@ -427,8 +433,8 @@ function scenarioInputEntries(
   scenario: Pick<ScenarioDefinition, "validator" | "inputs">,
   objects: Record<string, ObjectSpec>,
   location: string,
-): Array<{ name: string; reference: string }> {
-  const entries: Array<{ name: string; reference: string }> = [];
+): ScenarioInputEntry[] {
+  const entries: ScenarioInputEntry[] = [];
 
   switch (scenario.validator) {
     case "run-manifest-revision":
@@ -437,10 +443,12 @@ function scenarioInputEntries(
         {
           name: "previous",
           reference: requireObjectReference(scenario.inputs.previous, objects, `${location}.previous`),
+          schema: "opencoven.run-manifest/v1",
         },
         {
           name: "next",
           reference: requireObjectReference(scenario.inputs.next, objects, `${location}.next`),
+          schema: "opencoven.run-manifest/v1",
         },
       );
       break;
@@ -450,6 +458,7 @@ function scenarioInputEntries(
       entries.push({
         name: "run",
         reference: requireObjectReference(scenario.inputs.run, objects, `${location}.run`),
+        schema: "opencoven.research-run/v1",
       });
       if (Object.hasOwn(scenario.inputs, "contextPack")) {
         entries.push({
@@ -459,6 +468,7 @@ function scenarioInputEntries(
             objects,
             `${location}.contextPack`,
           ),
+          schema: "opencoven.context-pack/v1",
         });
       }
       break;
@@ -471,6 +481,7 @@ function scenarioInputEntries(
           objects,
           `${location}.manifest`,
         ),
+        schema: "opencoven.run-manifest/v1",
       });
       break;
     case "model-task-result":
@@ -479,10 +490,12 @@ function scenarioInputEntries(
         {
           name: "task",
           reference: requireObjectReference(scenario.inputs.task, objects, `${location}.task`),
+          schema: "opencoven.model-task/v1",
         },
         {
           name: "result",
           reference: requireObjectReference(scenario.inputs.result, objects, `${location}.result`),
+          schema: "opencoven.model-task-result/v1",
         },
       );
       break;
@@ -491,12 +504,14 @@ function scenarioInputEntries(
       entries.push({
         name: "run",
         reference: requireObjectReference(scenario.inputs.run, objects, `${location}.run`),
+        schema: "opencoven.research-run/v1",
       });
       assert.ok(Array.isArray(scenario.inputs.events), `${location}.events: must be an array`);
       for (const [index, event] of scenario.inputs.events.entries()) {
         entries.push({
           name: `events[${index}]`,
           reference: requireObjectReference(event, objects, `${location}.events[${index}]`),
+          schema: "opencoven.run-event/v1",
         });
       }
       break;
@@ -508,6 +523,7 @@ function scenarioInputEntries(
         entries.push({
           name: `events[${index}]`,
           reference: requireObjectReference(event, objects, `${location}.events[${index}]`),
+          schema: "opencoven.run-event/v1",
         });
       }
       break;
@@ -663,11 +679,17 @@ function applyMergePatch(target: unknown, patch: unknown): unknown {
   }
   const merged: Record<string, unknown> = isRecord(target) ? structuredClone(target) : {};
   for (const key of Object.keys(patch)) {
-    const patchValue = patch[key];
+    const patchValue = Object.hasOwn(patch, key) ? patch[key] : undefined;
     if (patchValue === null) {
       delete merged[key];
     } else {
-      merged[key] = applyMergePatch(merged[key], patchValue);
+      const targetValue = Object.hasOwn(merged, key) ? merged[key] : undefined;
+      Object.defineProperty(merged, key, {
+        configurable: true,
+        enumerable: true,
+        value: applyMergePatch(targetValue, patchValue),
+        writable: true,
+      });
     }
   }
   return merged;
@@ -855,17 +877,50 @@ for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
 function validateProtocolObjectSchema(
   value: unknown,
   location: string,
+  expectedSchema?: ResearchProtocolObjectV1["schema"],
 ): Record<string, unknown> {
   const protocolObject = requireRecord(value, location);
-  const schemaId = requireString(protocolObject.schema, `${location}.schema`);
+  const declaredSchema = requireString(protocolObject.schema, `${location}.schema`);
+  if (expectedSchema !== undefined) {
+    assert.equal(
+      declaredSchema,
+      expectedSchema,
+      `${location}: input must declare expected protocol role schema ${expectedSchema}`,
+    );
+  }
+  const schemaId = expectedSchema ?? declaredSchema;
   const schema = schemaContext.get(schemaId);
   assert.ok(schema !== undefined, `${location}: schema ${schemaId} is not an approved v1 schema`);
   assert.equal(
     Check(schemaCheckContext, schema, protocolObject),
     true,
-    `${location}: object must pass its authoritative schema before parsing or composition`,
+    expectedSchema === undefined
+      ? `${location}: object must pass its authoritative schema before parsing or composition`
+      : `${location}: input must pass expected protocol role schema ${expectedSchema} before parsing or composition`,
   );
   return protocolObject;
+}
+
+function invokeParserWithSnapshot<T>(
+  protocolObject: Record<string, unknown>,
+  parser: (value: unknown) => ProtocolParseResult<T>,
+  location: string,
+): ProtocolParseResult<T> {
+  const snapshot = structuredClone(protocolObject);
+  const parsed = parser(protocolObject);
+  assert.deepEqual(
+    protocolObject,
+    snapshot,
+    `${location}: public parser must not mutate its input`,
+  );
+  if (parsed.ok) {
+    assert.deepEqual(
+      parsed.value,
+      snapshot,
+      `${location}: public parser must preserve protocol data losslessly`,
+    );
+  }
+  return parsed;
 }
 
 function validateAuthoritativeProtocolObject(
@@ -873,37 +928,29 @@ function validateAuthoritativeProtocolObject(
   location: string,
 ): ResearchProtocolObjectV1 {
   const protocolObject = validateProtocolObjectSchema(value, location);
-  const parsed = parseResearchProtocolObject(protocolObject);
+  const parsed = invokeParserWithSnapshot(
+    protocolObject,
+    parseResearchProtocolObject,
+    location,
+  );
   if (!parsed.ok) {
     assert.fail(
       `${location}: support object must pass the public parser (${parsed.error.code} at ${parsed.error.path}: ${parsed.error.message})`,
     );
   }
-  assert.deepEqual(
-    parsed.value,
-    protocolObject,
-    `${location}: public parser must preserve authoritative support object data losslessly`,
-  );
   return parsed.value;
 }
 
-function parseScenarioInput(
+function materializeScenarioInput(
   corpus: ScenarioCorpus,
-  objectName: string,
-  inputName: string,
-): {
-  materialized: Record<string, unknown>;
-  parsed: ProtocolParseResult<ResearchProtocolObjectV1>;
-} {
-  const location = `${corpus.filePath}.objects.${objectName} (input ${inputName})`;
-  const materialized = validateProtocolObjectSchema(
-    materializeObject(corpus.objects[objectName], location),
+  entry: ScenarioInputEntry,
+): Record<string, unknown> {
+  const location = `${corpus.filePath}.objects.${entry.reference} (input ${entry.name})`;
+  return validateProtocolObjectSchema(
+    materializeObject(corpus.objects[entry.reference], location),
     location,
+    entry.schema,
   );
-  return {
-    materialized,
-    parsed: parseResearchProtocolObject(materialized),
-  };
 }
 
 function requireParsedSchema<T extends ResearchProtocolObjectV1>(
@@ -1042,9 +1089,18 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
   );
   const parsedInputs = new Map<string, ResearchProtocolObjectV1>();
   let expectedParseFailureSeen = false;
+  const materializedInputs = entries.map((entry) => ({
+    entry,
+    location: `${corpus.filePath}.objects.${entry.reference} (input ${entry.name})`,
+    materialized: materializeScenarioInput(corpus, entry),
+  }));
 
-  for (const entry of entries) {
-    const { materialized, parsed } = parseScenarioInput(corpus, entry.reference, entry.name);
+  for (const { entry, location, materialized } of materializedInputs) {
+    const parsed = invokeParserWithSnapshot(
+      materialized,
+      parseResearchProtocolObject,
+      location,
+    );
     if (!parsed.ok) {
       assert.equal(
         scenario.expected.ok,
@@ -1060,11 +1116,6 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
       continue;
     }
 
-    assert.deepEqual(
-      parsed.value,
-      materialized,
-      `${entry.name}: parser must preserve all scenario protocol data losslessly`,
-    );
     parsedInputs.set(entry.name, parsed.value);
   }
 
@@ -1227,6 +1278,92 @@ test("rejects malformed scenario definitions before protocol execution", () => {
   assert.throws(
     () => resolveFixturePath("valid/missing-scenario-fixture.json", "missing.fixture"),
     /missing\.fixture: fixture does not exist/,
+  );
+});
+
+test("preserves own __proto__ keys through nested RFC 7396 merge patches", () => {
+  const target = requireRecord(
+    JSON.parse(
+      '{"nested":{"retained":true,"__proto__":{"retainedOwnProto":true}}}',
+    ),
+    "merge target",
+  );
+  const patch = requireRecord(
+    JSON.parse(
+      '{"__proto__":{"topLevelPolluted":true},"nested":{"__proto__":{"nestedPolluted":true},"added":true}}',
+    ),
+    "merge patch",
+  );
+
+  const merged = requireRecord(applyMergePatch(target, patch), "merged result");
+  const nested = requireRecord(merged.nested, "merged result.nested");
+  const topLevelProtoValue = requireRecord(merged["__proto__"], "merged result.__proto__");
+  const nestedProtoValue = requireRecord(nested["__proto__"], "merged result.nested.__proto__");
+
+  assert.deepEqual(
+    merged,
+    JSON.parse(
+      '{"nested":{"retained":true,"__proto__":{"retainedOwnProto":true,"nestedPolluted":true},"added":true},"__proto__":{"topLevelPolluted":true}}',
+    ),
+  );
+  assert.ok(Object.hasOwn(merged, "__proto__"));
+  assert.ok(Object.hasOwn(nested, "__proto__"));
+  assert.equal(Object.getPrototypeOf(merged), Object.prototype);
+  assert.equal(Object.getPrototypeOf(nested), Object.prototype);
+  assert.equal(Object.getPrototypeOf(topLevelProtoValue), Object.prototype);
+  assert.equal(Object.getPrototypeOf(nestedProtoValue), Object.prototype);
+  assert.equal(({} as Record<string, unknown>).topLevelPolluted, undefined);
+  assert.equal(({} as Record<string, unknown>).nestedPolluted, undefined);
+});
+
+test("detects public parser mutation on every result and data loss on success", () => {
+  for (const outcome of ["success", "failure"] as const) {
+    const input = {
+      schema: "opencoven.injected/v1",
+      nested: { retained: true },
+    };
+
+    assert.throws(
+      () =>
+        invokeParserWithSnapshot(
+          input,
+          (value) => {
+            const record = requireRecord(value, `${outcome} parser input`);
+            const nested = requireRecord(record.nested, `${outcome} parser input.nested`);
+            nested.mutated = true;
+            if (outcome === "success") {
+              return { ok: true, value: structuredClone(record) } as const;
+            }
+            return {
+              ok: false,
+              error: {
+                code: "invalid_value",
+                path: "$",
+                message: "Injected parser failure",
+              },
+            } as const;
+          },
+          `${outcome} parser`,
+        ),
+      /public parser must not mutate its input/,
+    );
+  }
+
+  const losslessInput = {
+    schema: "opencoven.injected/v1",
+    retained: true,
+  };
+  assert.throws(
+    () =>
+      invokeParserWithSnapshot(
+        losslessInput,
+        () => ({
+          ok: true,
+          value: { schema: "opencoven.injected/v1" },
+        }),
+        "lossy success parser",
+      ),
+    /public parser must preserve protocol data losslessly/,
   );
 });
 
@@ -1664,6 +1801,57 @@ test("fails when declared success, error code, or error path differs from the ac
         },
       }),
     /wrong protocol error path/i,
+  );
+});
+
+test("validates optional and event-array input roles before honoring a parse failure", () => {
+  const corpus = corpora.find(
+    (candidate) => candidate.family === "research-run-context-pack",
+  );
+  assert.ok(corpus);
+  const scenario = corpus.scenarios.find(
+    (candidate) => candidate.id === "research-run.contextless-manifest-lengthening",
+  );
+  assert.ok(scenario && !scenario.expected.ok && scenario.expected.stage === "parse");
+
+  assert.throws(
+    () =>
+      executeScenario(corpus, {
+        ...scenario,
+        inputs: {
+          ...scenario.inputs,
+          contextPack: "matching-run",
+        },
+      }),
+    /input contextPack.*opencoven\.context-pack\/v1/i,
+  );
+
+  const eventCorpus = corpora.find(
+    (candidate) => candidate.family === "run-event-deletion",
+  );
+  const parseFailingRun = corpus.objects["contextless-lengthened-run"];
+  assert.ok(eventCorpus);
+  assert.ok(parseFailingRun);
+  const malformedEventCorpus: ScenarioCorpus = {
+    ...eventCorpus,
+    objects: {
+      ...eventCorpus.objects,
+      "parse-failing-run": parseFailingRun,
+    },
+  };
+  assert.throws(
+    () =>
+      executeScenario(malformedEventCorpus, {
+        id: "run-deletion.malformed-event-role",
+        description: "An expected run parse failure must not hide a malformed event role.",
+        validator: "run-event-deletion",
+        inputs: {
+          run: "parse-failing-run",
+          events: ["completed-deletion-run"],
+        },
+        expected: scenario.expected,
+      }),
+    /input events\[0\].*opencoven\.run-event\/v1/i,
   );
 });
 
