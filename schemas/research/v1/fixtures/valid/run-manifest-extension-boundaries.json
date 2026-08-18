@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_extension_boundaries_01",
   "runId": "run_extension_boundaries_01",
-  "digest": "83f812119035feb9c30fbbaeb47fd81fde47808dd8e0a3037be2895f52ddc3e2",
+  "digest": "a3e2072dd05a74aecb6df4bffe3583e9f3e59208e6de333f068e4fb7072107fb",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -29,7 +29,7 @@
       "id": "evidence_extension_boundaries_01",
       "contentDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "snapshotDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "canonicalUrl": "http://example.com/evidence",
+      "canonicalUrl": "http://www.iana.org/evidence",
       "fetchedAt": "2026-08-16T20:07:00.000Z",
       "extensionMetadata": {
         "items": [{ "label": "public source" }]

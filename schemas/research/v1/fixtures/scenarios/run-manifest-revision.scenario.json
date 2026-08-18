@@ -74,8 +74,7 @@
         "retention": {
           "contentExpiresAt": "2099-01-01T00:00:00.000Z"
         }
-      },
-      "digestTargets": [""]
+      }
     },
     "deadline-cleared": {
       "fixture": "valid/run-manifest-final-local.json",
@@ -259,6 +258,72 @@
         "retention": {
           "effectivePolicy": "run-only",
           "contentExpiresAt": "2026-08-17T20:04:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "contextless-fresh-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "context": null,
+        "sources": [],
+        "retention": {
+          "policy": "run-only",
+          "effectivePolicy": "run-only"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "contextless-fresh-next": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "context": null,
+        "sources": [],
+        "revision": 2,
+        "previousDigest": "ceef28631f05735c1ab9b866d04bbad3d250e7805cf1d7b85864ab8acda4ad13",
+        "retention": {
+          "policy": "run-only",
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "scheduled-project-restoration": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "241353b8539bcc106ea86bb65be873f6a6645676747156f8ec62ac4a2fd674c2",
+        "retention": {
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-restoration-previous": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "run-only",
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        },
+        "deletion": {
+          "status": "pending"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-project-restoration": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "9993686b025724181e4ef629dd7e380dca439ce5b767e852c3de2e6ffeccccef",
+        "retention": {
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:09:00.000Z"
         }
       },
       "digestTargets": [""]
@@ -459,6 +524,118 @@
       }
     },
     {
+      "id": "manifest.contextless-lengthening-with-fresh-context-consent",
+      "description": "A contextless validator invocation accepts explicit fresh Context Pack consent as the new retention ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "contextless-fresh-previous",
+        "next": "contextless-fresh-next"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:05:30.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.scheduled-project-restoration-with-fresh-consent",
+      "description": "Fresh consent may restore scheduled content to project retention before deletion starts.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "shortened-retention",
+        "next": "scheduled-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:07:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.scheduled-project-restoration-without-fresh-consent",
+      "description": "A scheduled deletion cannot be restored to project retention without explicit fresh consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "shortened-retention",
+        "next": "scheduled-project-restoration"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.scheduled-project-restoration-with-stale-consent",
+      "description": "Consent at the scheduled revision timestamp is stale and cannot restore project retention.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "shortened-retention",
+        "next": "scheduled-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:06:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.scheduled-project-restoration-above-consent",
+      "description": "Fresh consent cannot restore project retention above the new Context Pack ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "shortened-retention",
+        "next": "scheduled-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:07:00.000Z",
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.pending-project-restoration-with-fresh-consent",
+      "description": "Fresh consent cannot resurrect content after deletion has entered pending work.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "pending-restoration-previous",
+        "next": "pending-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:08:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
       "id": "manifest.partial-failure-continues",
       "description": "A partial deletion failure may return to pending work in a linked revision.",
       "validator": "run-manifest-revision",
@@ -486,7 +663,8 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
+        "stage": "parse",
+        "input": "next",
         "code": "semantic_conflict",
         "path": "$.retention.contentExpiresAt"
       }
