@@ -43,21 +43,233 @@ const objectPrototypeIntrinsic = Object.prototype;
 const getPrototypeOfIntrinsic = Object.getPrototypeOf;
 const getOwnPropertyDescriptorIntrinsic = Object.getOwnPropertyDescriptor;
 const defineOwnPropertyIntrinsic = Object.defineProperty;
+const setPrototypeOfIntrinsic = Object.setPrototypeOf;
+const objectIsExtensibleIntrinsic = Object.isExtensible;
 const reflectOwnKeysIntrinsic = Reflect.ownKeys;
 const reflectApplyIntrinsic = Reflect.apply;
 const objectHasOwnIntrinsic = Object.hasOwn;
 const isProxyIntrinsic = nodeUtilTypes.isProxy;
 const objectToStringIntrinsic = Object.prototype.toString;
 const symbolToStringTagIntrinsic = Symbol.toStringTag;
-const urlHrefGetterIntrinsic = getOwnPropertyDescriptorIntrinsic(
-  URL.prototype,
-  "href",
-)!.get!;
+const functionHasInstanceIntrinsic = Function.prototype[Symbol.hasInstance];
+const typeErrorIntrinsic = TypeError;
+const emptyArgumentsIntrinsic = Object.freeze([]) as readonly unknown[];
 type IntrinsicObjectBrandCheck = (value: unknown) => boolean;
 const intrinsicObjectBrandChecks = Object.values(nodeUtilTypes).filter(
   (check): check is IntrinsicObjectBrandCheck =>
     typeof check === "function" && check !== isProxyIntrinsic,
 );
+
+type WebIntrinsicObjectBrandProbe = {
+  prototype: object;
+  invoke: (value: object) => void;
+};
+
+function dataPropertyValue(
+  object: object,
+  key: PropertyKey,
+): unknown {
+  const descriptor = getOwnPropertyDescriptorIntrinsic(object, key);
+  return descriptor && objectHasOwnIntrinsic(descriptor, "value")
+    ? descriptor.value
+    : undefined;
+}
+
+function captureReceiverBrandProbe(
+  probes: WebIntrinsicObjectBrandProbe[],
+  container: object,
+  constructorName: string,
+  memberName: PropertyKey,
+  memberKind: "get" | "value",
+  argumentsList: readonly unknown[] = emptyArgumentsIntrinsic,
+): void {
+  const Constructor = dataPropertyValue(container, constructorName);
+  if (typeof Constructor !== "function") return;
+  const prototype = dataPropertyValue(Constructor, "prototype");
+  if (typeof prototype !== "object" || prototype === null) return;
+  const descriptor = getOwnPropertyDescriptorIntrinsic(prototype, memberName);
+  const member = descriptor?.[memberKind];
+  if (typeof member !== "function") return;
+  probes.push({
+    prototype,
+    invoke(value) {
+      reflectApplyIntrinsic(member, value, argumentsList);
+    },
+  });
+}
+
+function captureArgumentBrandProbe(
+  probes: WebIntrinsicObjectBrandProbe[],
+  container: object,
+  constructorName: string,
+  memberName: PropertyKey,
+): void {
+  const Constructor = dataPropertyValue(container, constructorName);
+  if (typeof Constructor !== "function") return;
+  const prototype = dataPropertyValue(Constructor, "prototype");
+  const member = dataPropertyValue(Constructor, memberName);
+  if (
+    typeof prototype !== "object"
+    || prototype === null
+    || typeof member !== "function"
+  ) {
+    return;
+  }
+  probes.push({
+    prototype,
+    invoke(value) {
+      reflectApplyIntrinsic(member, Constructor, [value]);
+    },
+  });
+}
+
+function captureWebIntrinsicObjectBrandProbes(): readonly WebIntrinsicObjectBrandProbe[] {
+  const probes: WebIntrinsicObjectBrandProbe[] = [];
+  const globalObject = globalThis;
+  const receiverProbes = [
+    ["URL", "href", "get"],
+    ["URLSearchParams", "entries", "value"],
+    ["Request", "method", "get"],
+    ["Response", "status", "get"],
+    ["Blob", "size", "get"],
+    ["File", "name", "get"],
+    ["AbortController", "signal", "get"],
+    ["AbortSignal", "aborted", "get"],
+    ["ReadableStream", "locked", "get"],
+    ["WritableStream", "locked", "get"],
+    ["TransformStream", "readable", "get"],
+    ["TextEncoder", "encoding", "get"],
+    ["TextDecoder", "encoding", "get"],
+    ["DOMException", "name", "get"],
+  ] as const;
+  for (const [constructorName, memberName, memberKind] of receiverProbes) {
+    captureReceiverBrandProbe(
+      probes,
+      globalObject,
+      constructorName,
+      memberName,
+      memberKind,
+    );
+  }
+  captureReceiverBrandProbe(
+    probes,
+    globalObject,
+    "Headers",
+    "get",
+    "value",
+    ["x-coven-intrinsic-brand-probe"],
+  );
+  captureReceiverBrandProbe(
+    probes,
+    globalObject,
+    "FormData",
+    "has",
+    "value",
+    ["x-coven-intrinsic-brand-probe"],
+  );
+
+  const intl = dataPropertyValue(globalObject, "Intl");
+  if (typeof intl === "object" && intl !== null) {
+    for (
+      const constructorName of [
+        "Collator",
+        "DateTimeFormat",
+        "DisplayNames",
+        "DurationFormat",
+        "ListFormat",
+        "NumberFormat",
+        "PluralRules",
+        "RelativeTimeFormat",
+        "Segmenter",
+      ]
+    ) {
+      captureReceiverBrandProbe(
+        probes,
+        intl,
+        constructorName,
+        "resolvedOptions",
+        "value",
+      );
+    }
+  }
+
+  const webAssembly = dataPropertyValue(globalObject, "WebAssembly");
+  if (typeof webAssembly === "object" && webAssembly !== null) {
+    captureArgumentBrandProbe(probes, webAssembly, "Module", "exports");
+    for (
+      const [constructorName, memberName] of [
+        ["Instance", "exports"],
+        ["Memory", "buffer"],
+        ["Table", "length"],
+        ["Global", "value"],
+      ] as const
+    ) {
+      captureReceiverBrandProbe(
+        probes,
+        webAssembly,
+        constructorName,
+        memberName,
+        "get",
+      );
+    }
+  }
+
+  return Object.freeze(probes);
+}
+
+const webIntrinsicObjectBrandProbes =
+  captureWebIntrinsicObjectBrandProbes();
+
+function isExactIntrinsicTypeError(error: unknown): boolean {
+  return reflectApplyIntrinsic(
+    functionHasInstanceIntrinsic,
+    typeErrorIntrinsic,
+    [error],
+  );
+}
+
+function directlyHasWebIntrinsicObjectBrand(
+  value: object,
+  probe: WebIntrinsicObjectBrandProbe,
+): boolean {
+  try {
+    probe.invoke(value);
+    return true;
+  } catch (error) {
+    if (!isExactIntrinsicTypeError(error)) throw error;
+    return false;
+  }
+}
+
+function hasWebIntrinsicObjectBrand(
+  value: object,
+  originalPrototype: object | null,
+  probe: WebIntrinsicObjectBrandProbe,
+): boolean {
+  if (directlyHasWebIntrinsicObjectBrand(value, probe)) return true;
+
+  if (
+    originalPrototype === probe.prototype
+    || !objectIsExtensibleIntrinsic(value)
+  ) {
+    return false;
+  }
+
+  // Some Web IDL implementations check the prototype chain before internal
+  // slots, so expose the captured prototype only for the synchronous probe.
+  setPrototypeOfIntrinsic(value, probe.prototype);
+  try {
+    try {
+      probe.invoke(value);
+      return true;
+    } catch (error) {
+      if (!isExactIntrinsicTypeError(error)) throw error;
+      return false;
+    }
+  } finally {
+    setPrototypeOfIntrinsic(value, originalPrototype);
+  }
+}
 const EXISTING_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
   "excerpt",
   "privateexcerpt",
@@ -439,12 +651,6 @@ export function snapshotProtocolObjectProperties(
       return fail("invalid_value", path, `${label} must be an ordinary object`);
     }
   }
-  try {
-    reflectApplyIntrinsic(urlHrefGetterIntrinsic, value, []);
-    return fail("invalid_value", path, `${label} must be an ordinary object`);
-  } catch {
-    // The captured URL getter throws for every non-URL receiver.
-  }
 
   const properties: Array<readonly [string, PropertyDescriptor]> = [];
   for (const key of reflectOwnKeysIntrinsic(value)) {
@@ -479,6 +685,21 @@ export function snapshotProtocolObjectProperties(
       !== "[object Object]"
   ) {
     return fail("invalid_value", path, `${label} must be an ordinary object`);
+  }
+  for (
+    let index = 0;
+    index < webIntrinsicObjectBrandProbes.length;
+    index += 1
+  ) {
+    if (
+      hasWebIntrinsicObjectBrand(
+        value,
+        prototype,
+        webIntrinsicObjectBrandProbes[index]!,
+      )
+    ) {
+      return fail("invalid_value", path, `${label} must be an ordinary object`);
+    }
   }
 
   const snapshot = Object.create(null) as Record<string, unknown>;

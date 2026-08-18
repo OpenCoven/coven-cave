@@ -41,6 +41,7 @@ import {
   isUtcTimestamp,
   parseResearchContextBindingV1,
 } from "./common.ts";
+import { spoofedWebOptionShells } from "./option-shell-test-fixtures.ts";
 import {
   parseRunManifestV1,
   type RunManifestV1,
@@ -1507,6 +1508,27 @@ test("research-run option roots reject prototype-spoofed non-object brands", () 
     if (code === "invalid_value") {
       assert.match(error.message, /ordinary object/i, label);
     }
+  }
+});
+
+test("research-run option roots reject prototype-spoofed Web exotics with enumerable option fields", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const optionFields = {
+    manifestHistory: [root, tip],
+    authorizedFreshConsentAt: [freshConsentAt],
+  };
+
+  for (const [label, options] of spoofedWebOptionShells(optionFields)) {
+    const result = validateResearchRunContextPackV1(
+      run,
+      contextPack,
+      options as ResearchRunCompositionOptionsV1,
+    );
+    assert.equal(result.ok, false, label);
+    if (result.ok) continue;
+    assert.equal(result.error.path, "$.options", label);
+    assert.equal(result.error.code, "invalid_value", label);
   }
 });
 

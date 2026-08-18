@@ -53,6 +53,7 @@ import {
   type RunManifestModelExecutionV1,
   type RunManifestV1,
 } from "./run-manifest.ts";
+import { spoofedWebOptionShells } from "./option-shell-test-fixtures.ts";
 import type { ResearchModelReceiptV1 } from "./topic-discovery.ts";
 
 const CANONICAL_PUBLIC_HTTP_URL_FORMAT = "opencoven-canonical-http-url";
@@ -2546,6 +2547,25 @@ test("manifest revision option roots require ordinary object brands without invo
     expectOk(validateRunManifestRevision(previous, next, nullPrototypeOptions)),
     next,
   );
+});
+
+test("manifest revision option roots reject prototype-spoofed Web exotics with enumerable option fields", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+
+  for (const [label, options] of spoofedWebOptionShells({
+    contextConsent: "7-days",
+  })) {
+    const result = validateRunManifestRevision(
+      previous,
+      next,
+      options as ManifestRevisionOptions,
+    );
+    assert.equal(result.ok, false, label);
+    if (result.ok) continue;
+    assert.equal(result.error.path, "$.options", label);
+    assert.equal(result.error.code, "invalid_value", label);
+  }
 });
 
 test("manifest revision lifecycle clocks cannot roll back at nanosecond precision", () => {

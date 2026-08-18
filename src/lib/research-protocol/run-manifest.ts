@@ -131,6 +131,10 @@ export type RunManifestV1 = {
   deletion: RunManifestDeletionReceiptV1;
 } & UnknownFields;
 
+/**
+ * Revision composition options accept canonical property records only:
+ * ordinary or null-prototype objects with enumerable own data properties.
+ */
 export type ManifestRevisionOptions = {
   freshConsent?: boolean;
   freshConsentAt?: string;

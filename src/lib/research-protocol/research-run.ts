@@ -167,6 +167,10 @@ export type RunEventV1 =
       data: Record<string, unknown>;
     } & UnknownFields);
 
+/**
+ * Composition options accept canonical property records only: ordinary or
+ * null-prototype objects with enumerable own data properties.
+ */
 export type ResearchRunCompositionOptionsV1 = {
   /** Complete ordered revisions 1..tip when an artifactManifest is embedded. */
   manifestHistory?: readonly RunManifestV1[];
