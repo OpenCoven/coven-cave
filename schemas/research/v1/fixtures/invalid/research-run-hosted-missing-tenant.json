@@ -1,22 +1,22 @@
 {
   "schema": "opencoven.research-run/v1",
-  "id": "run_01",
-  "tenantOpaqueId": "tenant_alpha",
+  "id": "run_hosted_missing_tenant_01",
   "acceptedTopic": {
-    "question": "How should the research executor resume this run?",
-    "editedByUser": false
+    "question": "Can a hosted run omit its opaque support correlator?",
+    "editedByUser": true
   },
   "execution": {
     "location": "hosted",
-    "modelExecution": "cave-device",
+    "modelExecution": "user-hosted-executor",
     "modelBinding": {
       "familiarId": "sage",
-      "selection": "resolve-at-run-start"
+      "selection": "pinned",
+      "model": "gpt-5.6-sol"
     },
     "strategy": "orchestrator-workers"
   },
   "privacy": {
-    "remoteQueries": false,
+    "remoteQueries": true,
     "remoteContent": false,
     "artifactContentSync": false,
     "retention": "run-only",
@@ -24,14 +24,13 @@
   },
   "bounds": {
     "wallClockMinutes": 30,
-    "maxIterations": 3,
-    "sourceTarget": 6,
+    "maxIterations": 2,
+    "sourceTarget": 4,
     "checkpointEvery": 1,
     "stopWhenCostUnavailable": true
   },
-  "status": "waiting_for_executor",
-  "waitingReason": "executor",
+  "status": "queued",
   "createdAt": "2026-08-15T20:00:00.000Z",
-  "updatedAt": "2026-08-15T20:01:00.000Z",
+  "updatedAt": "2026-08-15T20:00:00.000Z",
   "nextEventSequence": 1
 }

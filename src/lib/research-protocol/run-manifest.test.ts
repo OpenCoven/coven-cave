@@ -7,8 +7,8 @@ import assemblingManifestJson from "../../../schemas/research/v1/fixtures/valid/
 import finalLocalManifestJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-local.json" with { type: "json" };
 import finalCloudManifestJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-cloud.json" with { type: "json" };
 import retentionUpdateJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-retention-update.json" with { type: "json" };
-import invalidPreviousDigestJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-previous-digest.json" with { type: "json" };
-import invalidFinalMutationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-final-mutation.json" with { type: "json" };
+import invalidPreviousDigestJson from "../../../schemas/research/v1/fixtures/scenarios/objects/run-manifest-previous-digest.json" with { type: "json" };
+import invalidFinalMutationJson from "../../../schemas/research/v1/fixtures/scenarios/objects/run-manifest-final-mutation.json" with { type: "json" };
 import invalidDeletionPairJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-pair.json" with { type: "json" };
 import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-private-title.json" with { type: "json" };
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
@@ -314,15 +314,29 @@ test("rejects unknown schema majors and wrong root digests", () => {
   );
 });
 
-test("invalid digest fixtures are schema-valid but parser-invalid after marker stripping", () => {
-  for (const fixture of [invalidPreviousDigestJson, invalidFinalMutationJson]) {
+test("revision-only fixtures are digest-valid and fail their labeled pairwise invariants", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const invalidPreviousDigest = invalidPreviousDigestJson;
+  const invalidFinalMutation = invalidFinalMutationJson;
+
+  for (const fixture of [invalidPreviousDigest, invalidFinalMutation]) {
     assert.equal(Value.Check(runManifestSchema, fixture), true);
-    expectError(
-      parseRunManifestV1(withoutExpectedSchemaValid(fixture)),
-      "$.digest",
-      "digest_mismatch",
-    );
+    assert.equal(fixture.digest, digestProtocolObject(fixture));
   }
+
+  const badLink = expectOk(parseRunManifestV1(invalidPreviousDigest));
+  expectError(
+    validateRunManifestRevision(previous, badLink),
+    "$.previousDigest",
+    "semantic_conflict",
+  );
+
+  const finalMutation = expectOk(parseRunManifestV1(invalidFinalMutation));
+  expectError(
+    validateRunManifestRevision(previous, finalMutation),
+    "$.artifacts",
+    "semantic_conflict",
+  );
 });
 
 test("context and source correspondence plus source and execution uniqueness are enforced", () => {
@@ -373,9 +387,9 @@ test("cloud content requires requested or completed synchronization", () => {
   expectError(parseRunManifestV1(invalid), "$.artifacts[0].contentSync", "semantic_conflict");
 });
 
-test("artifact titles reject paths, URI schemes, controls, and known secret prefixes", () => {
+test("artifact titles reject paths, controls, and known secret prefixes", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
-  for (const title of ["notes/private.txt", "C:\\private\\notes", "https://example.test", "bad\u0001title", "sk-secret"]) {
+  for (const title of ["notes/private.txt", "C:\\private\\notes", "bad\u0001title", "sk-secret"]) {
     const invalid = recalculate({
       ...local,
       artifacts: [{ ...local.artifacts[0], title }],
@@ -389,18 +403,49 @@ test("artifact titles reject paths, URI schemes, controls, and known secret pref
     "$.artifacts[0].title",
     "invalid_value",
   );
+});
 
-  const mailto = recalculate({
-    ...local,
-    artifacts: [{ ...local.artifacts[0], title: "mailto:notes@example.test" }],
-  });
-  expectError(parseRunManifestV1(mailto), "$.artifacts[0].title", "invalid_value");
+test("artifact titles reject RFC 3986 URI scheme prefixes", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const title of [
+    "https://example.test",
+    "mailto:notes@example.test",
+    "geo:37.7,-122.4",
+    "geo: 37.7,-122.4",
+    "GEO:37.7,-122.4",
+    "foo+bar:value",
+    "foo+bar: private",
+    "custom+scheme:value",
+    "CuStOm.ScHeMe-2:value",
+    "a:value",
+    "a:",
+    "Decision: summary",
+  ]) {
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], title }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, title);
+    expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
+  }
+});
 
-  const genericTitle = recalculate({
-    ...local,
-    artifacts: [{ ...local.artifacts[0], title: "Decision: summary" }],
-  });
-  assert.equal(expectOk(parseRunManifestV1(genericTitle)).artifacts[0].title, "Decision: summary");
+test("artifact title URI detection preserves ordinary colon text and RFC 3986 boundaries", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const title of [
+    "Research decision: summary",
+    "Version 2: summary",
+    "12:30 summary",
+    "1custom:value",
+    "custom_scheme:value",
+    "custom scheme:value",
+  ]) {
+    const candidate = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], title }],
+    });
+    assert.equal(expectOk(parseRunManifestV1(candidate)).artifacts[0].title, title);
+  }
 });
 
 test("sensitive manifest objects reject forbidden extension keys case-insensitively", () => {
@@ -599,6 +644,30 @@ test("retention and deletion status pairs and receipt requirements are enforced"
   expectError(parseRunManifestV1(activeWithExpiry), "$.retention.contentExpiresAt", "semantic_conflict");
 });
 
+test("scheduled retention requires a non-null content expiry", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduledWithoutExpiry = recalculate({
+    ...local,
+    retention: {
+      ...local.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: null,
+    },
+    deletion: {
+      ...local.deletion,
+      status: "scheduled" as const,
+      requestedAt: "2026-08-16T20:06:00.000Z",
+    },
+  });
+
+  assert.equal(Value.Check(runManifestSchema, scheduledWithoutExpiry), false);
+  expectError(
+    parseRunManifestV1(scheduledWithoutExpiry),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
 test("retention consent uses context consent or the original policy ceiling", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   assert.equal(validateManifestRetentionConsent(local, undefined).ok, false);
@@ -641,6 +710,46 @@ test("revision chains accept assembling-to-final and allowed retention updates",
   assert.deepEqual(
     expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
     update,
+  );
+});
+
+test("post-final retention shortening requires a coherent deletion schedule", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduled = recalculate({
+    ...retentionUpdateJson,
+    retention: {
+      ...retentionUpdateJson.retention,
+      effectivePolicy: "run-only" as const,
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, scheduled), true);
+  const parsedScheduled = expectOk(parseRunManifestV1(scheduled));
+  assert.equal(
+    validateRunManifestRevision(previous, parsedScheduled, {
+      contextConsent: "7-days",
+    }).ok,
+    true,
+  );
+
+  const unscheduled = recalculate({
+    ...previous,
+    revision: previous.revision + 1,
+    previousDigest: previous.digest,
+    retention: {
+      ...previous.retention,
+      effectivePolicy: "run-only" as const,
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, unscheduled), true);
+  assert.equal(unscheduled.digest, digestProtocolObject(unscheduled));
+  const parsedUnscheduled = expectOk(parseRunManifestV1(unscheduled));
+  expectError(
+    validateRunManifestRevision(previous, parsedUnscheduled, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.status",
+    "semantic_conflict",
   );
 });
 

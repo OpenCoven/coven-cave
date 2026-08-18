@@ -35,8 +35,7 @@ const DELETION_STATUSES = ["not_scheduled", "scheduled", "pending", "completed",
 const MANIFEST_STATES = ["assembling", "final"] as const;
 const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 
-const ARTIFACT_TITLE_URI_SCHEME_RE =
-  /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:about|blob|chrome|data|did|file|ftp|git|http|https|ipfs|irc|ircs|mailto|magnet|npm|s3|sftp|sms|ssh|tel|urn|vscode|ws|wss):)/i;
+const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Z][A-Z0-9+.-]*:/i;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 const FORBIDDEN_SENSITIVE_KEYS = new Set([
@@ -339,7 +338,7 @@ function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<s
   if (
     title.value.includes("/") ||
     title.value.includes("\\") ||
-    ARTIFACT_TITLE_URI_SCHEME_RE.test(title.value) ||
+    ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE.test(title.value) ||
     ARTIFACT_TITLE_CONTROL_RE.test(title.value) ||
     ARTIFACT_TITLE_SECRET_RE.test(title.value)
   ) {
@@ -819,11 +818,11 @@ function validateRetentionClock(
       "active retention must not have contentExpiresAt",
     );
   }
-  if (retention.status === "active" && retention.effectivePolicy === "project" && retention.contentExpiresAt !== null) {
+  if (retention.status !== "active" && retention.contentExpiresAt === null) {
     return fail(
       "semantic_conflict",
       "$.retention.contentExpiresAt",
-      "active project retention must not have contentExpiresAt",
+      "scheduled or completed deletion requires contentExpiresAt",
     );
   }
   return pass(undefined);
@@ -1398,6 +1397,48 @@ export function validateRunManifestRevision(
       "$",
     );
     if (!rootUnknowns.ok) return rootUnknowns;
+  }
+
+  if (
+    previous.state === "final" &&
+    RETENTION_ORDER[next.retention.effectivePolicy] <
+      RETENTION_ORDER[previous.retention.effectivePolicy]
+  ) {
+    if (next.retention.status !== "deletion_scheduled") {
+      return fail(
+        "semantic_conflict",
+        "$.retention.status",
+        "post-final retention shortening requires deletion_scheduled",
+      );
+    }
+    if (next.deletion.status !== "scheduled") {
+      return fail(
+        "semantic_conflict",
+        "$.deletion.status",
+        "post-final retention shortening requires scheduled deletion",
+      );
+    }
+    if (!isUtcTimestamp(next.retention.contentExpiresAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        "post-final retention shortening requires a content expiry timestamp",
+      );
+    }
+    if (!isUtcTimestamp(next.retention.updatedAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.updatedAt",
+        "post-final retention shortening requires a scheduling update timestamp",
+      );
+    }
+    if (!isUtcTimestamp(next.deletion.requestedAt)) {
+      return fail(
+        "missing_field",
+        "$.deletion.requestedAt",
+        "post-final retention shortening requires a deletion request timestamp",
+      );
+    }
   }
 
   const consent = validateManifestRetentionConsent(next, options?.contextConsent);

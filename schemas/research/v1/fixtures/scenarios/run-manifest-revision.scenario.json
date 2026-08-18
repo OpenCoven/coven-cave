@@ -6,11 +6,7 @@
       "fixture": "valid/run-manifest-assembling.json"
     },
     "broken-previous-digest": {
-      "fixture": "valid/run-manifest-retention-update.json",
-      "mergePatch": {
-        "previousDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-      },
-      "digestTargets": [""]
+      "fixture": "scenarios/objects/run-manifest-previous-digest.json"
     },
     "changed-manifest-id": {
       "fixture": "valid/run-manifest-retention-update.json",
@@ -137,26 +133,7 @@
       "digestTargets": [""]
     },
     "post-final-mutation": {
-      "fixture": "valid/run-manifest-retention-update.json",
-      "mergePatch": {
-        "artifacts": [
-          {
-            "id": "artifact_local_01",
-            "kind": "research-notes",
-            "title": "Changed research notes",
-            "mediaType": "text/markdown",
-            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            "bytes": 128,
-            "placement": "device-local",
-            "contentSync": "not-requested",
-            "createdAt": "2026-08-16T20:03:00.000Z",
-            "futureExtension": {
-              "preserve": true
-            }
-          }
-        ]
-      },
-      "digestTargets": [""]
+      "fixture": "scenarios/objects/run-manifest-final-mutation.json"
     },
     "post-completed-pending": {
       "fixture": "valid/run-manifest-retention-update.json",
@@ -179,6 +156,18 @@
       "mergePatch": {
         "retention": {
           "effectivePolicy": "run-only"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "shortened-retention-unscheduled": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "4c7161996cbbcb51d3e13f7a27f0cac88a389e5765c9f6706898ef5329080579",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
         }
       },
       "digestTargets": [""]
@@ -292,7 +281,7 @@
     },
     {
       "id": "manifest.policy-shortening",
-      "description": "Effective retention may be shortened within the Context Pack ceiling.",
+      "description": "Effective retention may be shortened with a coherent deletion schedule.",
       "validator": "run-manifest-revision",
       "inputs": {
         "previous": "final",
@@ -303,6 +292,24 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.policy-shortening-unscheduled",
+      "description": "Effective retention shortening cannot leave deletion unscheduled.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "shortened-retention-unscheduled"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.status"
       }
     },
     {

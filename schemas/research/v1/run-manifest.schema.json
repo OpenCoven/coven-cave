@@ -109,6 +109,12 @@
           "deletion": {
             "properties": { "status": { "const": "scheduled" } },
             "required": ["status"]
+          },
+          "retention": {
+            "properties": {
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["contentExpiresAt"]
           }
         }
       }
@@ -130,6 +136,12 @@
               "status": { "enum": ["pending", "partial_failure"] }
             },
             "required": ["status"]
+          },
+          "retention": {
+            "properties": {
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["contentExpiresAt"]
           }
         }
       }
@@ -149,6 +161,12 @@
           "deletion": {
             "properties": { "status": { "const": "completed" } },
             "required": ["status"]
+          },
+          "retention": {
+            "properties": {
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["contentExpiresAt"]
           }
         }
       }
@@ -227,7 +245,7 @@
       "format": "date-time",
       "minLength": 20,
       "maxLength": 30,
-      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|23:59:60)(?:\\.\\d{1,9})?Z$"
     },
     "manifestId": {
       "type": "string",
@@ -335,7 +353,10 @@
       }
     },
     "artifactTitle": {
-      "type": "string"
+      "type": "string",
+      "not": {
+        "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+      }
     },
     "artifact": {
       "type": "object",

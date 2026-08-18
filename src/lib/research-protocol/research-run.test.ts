@@ -6,9 +6,12 @@ import { Check, Value } from "typebox/value";
 import researchRunSchema from "../../../schemas/research/v1/research-run.schema.json" with { type: "json" };
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
+import invalidHostedResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-hosted-missing-tenant.json" with { type: "json" };
+import invalidLocalResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
+import validHostedResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run-hosted.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
 import assemblingRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
@@ -201,6 +204,35 @@ test("valid waiting_for_executor run with resumable phase accepts", () => {
   const parsed = expectOk(parseResearchRunV1(validResearchRun));
   assert.equal(parsed.status, "waiting_for_executor");
   assert.equal(parsed.waitingForPhase, "challenge");
+});
+
+test("local runs forbid tenantOpaqueId while preserving unrelated additive fields", () => {
+  assert.equal(Object.hasOwn(validResearchRun, "tenantOpaqueId"), false);
+  assert.equal(checkResearchRunSchema(validResearchRun), true);
+  const local = expectOk(parseResearchRunV1(validResearchRun));
+  assert.equal(Object.hasOwn(local, "tenantOpaqueId"), false);
+  assert.deepEqual(local.futureExtension, { preserve: true });
+
+  assert.equal(checkResearchRunSchema(invalidLocalResearchRun), false);
+  expectError(
+    parseResearchRunV1(invalidLocalResearchRun),
+    "$.tenantOpaqueId",
+    "semantic_conflict",
+  );
+});
+
+test("hosted runs require tenantOpaqueId while preserving unrelated additive fields", () => {
+  assert.equal(checkResearchRunSchema(validHostedResearchRun), true);
+  const hosted = expectOk(parseResearchRunV1(validHostedResearchRun));
+  assert.equal(hosted.tenantOpaqueId, "tenant_alpha");
+  assert.deepEqual(hosted.futureExtension, { preserve: true });
+
+  assert.equal(checkResearchRunSchema(invalidHostedResearchRun), false);
+  expectError(
+    parseResearchRunV1(invalidHostedResearchRun),
+    "$.tenantOpaqueId",
+    "missing_field",
+  );
 });
 
 test("Research Run and Run Event reject schema accessors without invoking them", () => {

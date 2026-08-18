@@ -1,37 +1,41 @@
 {
   "schema": "opencoven.research-run/v1",
-  "id": "run_01",
+  "id": "run_hosted_01",
   "tenantOpaqueId": "tenant_alpha",
   "acceptedTopic": {
-    "question": "How should the research executor resume this run?",
-    "editedByUser": false
+    "question": "How should the hosted research executor resume this run?",
+    "editedByUser": true
   },
   "execution": {
     "location": "hosted",
-    "modelExecution": "cave-device",
+    "modelExecution": "user-hosted-executor",
     "modelBinding": {
       "familiarId": "sage",
-      "selection": "resolve-at-run-start"
+      "selection": "pinned",
+      "model": "gpt-5.6-sol"
     },
     "strategy": "orchestrator-workers"
   },
   "privacy": {
-    "remoteQueries": false,
+    "remoteQueries": true,
     "remoteContent": false,
     "artifactContentSync": false,
     "retention": "run-only",
     "allowMemoryPromotion": false
   },
   "bounds": {
-    "wallClockMinutes": 30,
-    "maxIterations": 3,
-    "sourceTarget": 6,
-    "checkpointEvery": 1,
+    "wallClockMinutes": 45,
+    "maxIterations": 4,
+    "sourceTarget": 8,
+    "maxSpendUsd": 1,
+    "checkpointEvery": 2,
     "stopWhenCostUnavailable": true
   },
   "status": "waiting_for_executor",
   "waitingReason": "executor",
+  "waitingForPhase": "challenge",
   "createdAt": "2026-08-15T20:00:00.000Z",
   "updatedAt": "2026-08-15T20:01:00.000Z",
-  "nextEventSequence": 1
+  "nextEventSequence": 2,
+  "futureExtension": { "preserve": true }
 }
