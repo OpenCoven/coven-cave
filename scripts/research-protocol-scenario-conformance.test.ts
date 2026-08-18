@@ -1013,8 +1013,13 @@ for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
   const schemaPath = path.join(schemasDir, schemaFileNameFor(schemaId));
   const schema = readJsonFile(schemaPath);
   assert.ok(IsSchema(schema), `${schemaPath}: must be a valid JSON Schema`);
+  const schemaDocumentId = (schema as TSchema & { $id?: unknown }).$id;
+  assert.ok(
+    typeof schemaDocumentId === "string",
+    `${schemaPath}: must declare a schema document id`,
+  );
   schemaContext.set(schemaId, schema);
-  schemaCheckContext[schemaId] = schema;
+  schemaCheckContext[schemaDocumentId] = schema;
 }
 
 function validateProtocolObjectSchema(
@@ -2182,6 +2187,16 @@ const REQUIRED_UNIT_0_SCENARIO_IDS = [
     "research-run.replay-stale-transition-consent",
     "research-run.replay-future-transition-consent",
     "research-run.replay-misbound-transition-consent",
+    "research-run.device-local-pending-without-consent",
+    "research-run.device-local-pending-with-consent",
+    "research-run.device-local-synced-without-consent",
+    "research-run.device-local-synced-with-consent",
+    "research-run.device-local-failed-without-consent",
+    "research-run.device-local-failed-with-consent",
+    "research-run.receipt-valid-binding",
+    "research-run.receipt-wrong-familiar",
+    "research-run.receipt-wrong-provider",
+    "research-run.receipt-wrong-model",
     "model-task.valid-pair",
     "model-task.wrong-task-id",
     "model-task.wrong-run-id",
@@ -2214,7 +2229,7 @@ const REQUIRED_UNIT_0_SCENARIO_IDS = [
   ] as const;
 
 test("required Unit 0 scenario inventory exactly matches the corpus", () => {
-  assert.equal(REQUIRED_UNIT_0_SCENARIO_IDS.length, 83);
+  assert.equal(REQUIRED_UNIT_0_SCENARIO_IDS.length, 93);
   assert.equal(
     new Set(REQUIRED_UNIT_0_SCENARIO_IDS).size,
     REQUIRED_UNIT_0_SCENARIO_IDS.length,

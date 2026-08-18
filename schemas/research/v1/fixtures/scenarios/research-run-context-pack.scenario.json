@@ -8,13 +8,85 @@
     "contextless-run": {
       "fixture": "valid/research-run.json",
       "mergePatch": {
-        "context": null
+        "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        }
+      }
+    },
+    "device-local-failed-consent-false": {
+      "fixture": "scenarios/objects/research-run-device-local-failed-consent-true.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": false
+        }
+      }
+    },
+    "device-local-failed-consent-true": {
+      "fixture": "scenarios/objects/research-run-device-local-failed-consent-true.json"
+    },
+    "device-local-pending-consent-false": {
+      "fixture": "scenarios/objects/research-run-device-local-pending-consent-true.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": false
+        }
+      }
+    },
+    "device-local-pending-consent-true": {
+      "fixture": "scenarios/objects/research-run-device-local-pending-consent-true.json"
+    },
+    "device-local-synced-consent-false": {
+      "fixture": "scenarios/objects/research-run-device-local-synced-consent-true.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": false
+        }
+      }
+    },
+    "device-local-synced-consent-true": {
+      "fixture": "scenarios/objects/research-run-device-local-synced-consent-true.json"
+    },
+    "receipt-valid": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json"
+    },
+    "receipt-wrong-familiar": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json",
+      "mergePatch": {
+        "execution": {
+          "modelBinding": {
+            "familiarId": "other-familiar"
+          }
+        }
+      }
+    },
+    "receipt-wrong-model": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json",
+      "mergePatch": {
+        "execution": {
+          "modelBinding": {
+            "model": "openai/gpt-5-mini"
+          }
+        }
+      }
+    },
+    "receipt-wrong-provider": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json",
+      "mergePatch": {
+        "execution": {
+          "modelBinding": {
+            "model": "anthropic/gpt-5.6-sol"
+          }
+        }
       }
     },
     "contextless-lengthened-run": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
         "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        },
         "privacy": {
           "retention": "run-only"
         },
@@ -622,6 +694,140 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.manifestRevisionOptions[0].contextConsent"
+      }
+    },
+    {
+      "id": "research-run.device-local-pending-without-consent",
+      "description": "Device-local pending content sync requires run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-pending-consent-false"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.device-local-pending-with-consent",
+      "description": "Device-local pending content sync accepts explicit run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-pending-consent-true"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.device-local-synced-without-consent",
+      "description": "Device-local completed content sync requires run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-synced-consent-false"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.device-local-synced-with-consent",
+      "description": "Device-local completed content sync accepts explicit run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-synced-consent-true"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.device-local-failed-without-consent",
+      "description": "Device-local failed content sync still requires run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-failed-consent-false"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.device-local-failed-with-consent",
+      "description": "Device-local failed content sync accepts explicit run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-failed-consent-true"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.receipt-valid-binding",
+      "description": "A single-agent pinned receipt matches its selected familiar and provider/model.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-valid"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.receipt-wrong-familiar",
+      "description": "A single-agent receipt cannot attribute execution to another familiar.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-wrong-familiar"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.familiarId"
+      }
+    },
+    {
+      "id": "research-run.receipt-wrong-provider",
+      "description": "A pinned receipt cannot report a model from another provider.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-wrong-provider"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.effectiveModel"
+      }
+    },
+    {
+      "id": "research-run.receipt-wrong-model",
+      "description": "A pinned receipt cannot report another model from the selected provider.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-wrong-model"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.effectiveModel"
       }
     }
   ]

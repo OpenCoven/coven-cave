@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "opencoven.run-manifest/v1",
+  "$id": "urn:opencoven:schema:research:run-manifest:v1",
   "title": "OpenCoven Run Manifest v1",
   "type": "object",
   "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
@@ -324,6 +324,33 @@
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
           "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" }
+        }
+      ]
+    },
+    "deletionExtensionPropertyName": {
+      "type": "string",
+      "pattern": "^[\\x00-\\x7f]+$",
+      "allOf": [
+        { "$ref": "#/$defs/sensitivePropertyName" }
+      ]
+    },
+    "deletionSafeExtensionValue": {
+      "anyOf": [
+        {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deletionSafeExtensionValue" }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/deletionExtensionPropertyName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/deletionSafeExtensionValue"
+          }
         }
       ]
     },
@@ -758,7 +785,7 @@
     },
     "deletion": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "additionalProperties": { "$ref": "#/$defs/deletionSafeExtensionValue" },
       "propertyNames": {
         "anyOf": [
           {
@@ -771,7 +798,7 @@
               "eventSequence"
             ]
           },
-          { "$ref": "#/$defs/sensitivePropertyName" }
+          { "$ref": "#/$defs/deletionExtensionPropertyName" }
         ]
       },
       "required": ["status"],

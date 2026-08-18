@@ -32,8 +32,12 @@ import invalidRetentionBeforeCreatedJson from "../../../schemas/research/v1/fixt
 import invalidRetentionBeforeFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-finalized.json" with { type: "json" };
 import invalidContentExpiresBeforeCreatedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-content-expires-before-created.json" with { type: "json" };
 import invalidContentExpiresBeforeFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-content-expires-before-finalized.json" with { type: "json" };
+import invalidDeletionHomoglyphArrayJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-homoglyph-array.json" with { type: "json" };
+import invalidDeletionHomoglyphNestedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-homoglyph-nested.json" with { type: "json" };
+import invalidDeletionHomoglyphRootJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-homoglyph-root.json" with { type: "json" };
 import invalidUnicodeSensitiveExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-unicode-sensitive-extension.json" with { type: "json" };
 import validExtensionBoundariesJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-extension-boundaries.json" with { type: "json" };
+import validDeletionAsciiExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-deletion-ascii-extension.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 import validUnicodeExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-unicode-extension.json" with { type: "json" };
 import validChronologyBoundariesJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-chronology-boundaries.json" with { type: "json" };
@@ -170,6 +174,57 @@ test("aggregates complete usage with exact sums", () => {
       costUsd: 1,
       completeness: "complete",
     },
+  );
+});
+
+test("aggregates costs from canonical decimal spellings without binary drift", () => {
+  for (const [costs, expected] of [
+    [[0.1, 0.2], 0.3],
+    [[1, 2, 3], 6],
+    [[1.25, 2.5, 0.125], 3.875],
+    [[1e-7, 2e-7], 3e-7],
+    [[1e21, 2e21], 3e21],
+    [[5e-324, 5e-324], 1e-323],
+    [[1e20, 1], 1e20],
+    [[Number.MAX_VALUE, 5e-324], Number.MAX_VALUE],
+  ] as const) {
+    const aggregate = aggregateManifestUsage(
+      costs.map((cost, index) =>
+        execution(`modeltask_decimal_${index}`, 1, 0, 0, cost),
+      ),
+    );
+    assert.equal(aggregate.costUsd, expected, costs.join(" + "));
+  }
+});
+
+test("manifest aggregate cost requires the exact decimal sum", () => {
+  const modelExecutions = [
+    execution("modeltask_decimal_1", 1, 1, 1, 0.1),
+    execution("modeltask_decimal_2", 1, 1, 1, 0.2),
+  ];
+  const exact = recalculate({
+    ...finalCloudManifestJson,
+    modelExecutions,
+    usage: {
+      inputTokens: 2,
+      outputTokens: 2,
+      costUsd: 0.3,
+      completeness: "complete" as const,
+    },
+  });
+  assert.equal(expectOk(parseRunManifestV1(exact)).usage.costUsd, 0.3);
+
+  const drifted = recalculate({
+    ...exact,
+    usage: {
+      ...exact.usage,
+      costUsd: 0.30000000000000004,
+    },
+  });
+  expectError(
+    parseRunManifestV1(drifted),
+    "$.usage.costUsd",
+    "semantic_conflict",
   );
 });
 
@@ -1464,6 +1519,28 @@ test("privacy keys are NFKC-normalized while benign Unicode extensions remain lo
     parseRunManifestV1(invalidUnicodeSensitiveExtension),
     '$["ｒａｗＰｒｏｍｐｔ"]',
     "semantic_conflict",
+  );
+});
+
+test("deletion receipt extensions require raw ASCII keys recursively", () => {
+  for (const [fixture, path] of [
+    [invalidDeletionHomoglyphRootJson, '$.deletion["objectKеy"]'],
+    [invalidDeletionHomoglyphNestedJson, '$.deletion.auditEnvelope["objectKеy"]'],
+    [invalidDeletionHomoglyphArrayJson, '$.deletion.auditEnvelope[0]["objectKеy"]'],
+  ] as const) {
+    assert.equal(fixture.digest, digestProtocolObject(fixture));
+    assert.equal(Value.Check(runManifestSchema, fixture), false, path);
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+
+  assert.equal(
+    validDeletionAsciiExtensionJson.digest,
+    digestProtocolObject(validDeletionAsciiExtensionJson),
+  );
+  assert.equal(Value.Check(runManifestSchema, validDeletionAsciiExtensionJson), true);
+  assert.deepEqual(
+    expectOk(parseRunManifestV1(validDeletionAsciiExtensionJson)),
+    validDeletionAsciiExtensionJson,
   );
 });
 
