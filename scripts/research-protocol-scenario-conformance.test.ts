@@ -873,7 +873,7 @@ for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
   schemaContext.set(schemaId, schema);
   schemaCheckContext[schemaId] = schema;
   if (schemaId === "opencoven.run-manifest/v1") {
-    schemaCheckContext["run-manifest.schema.json"] = schema;
+    schemaCheckContext["../opencoven.run-manifest/v1"] = schema;
   }
 }
 

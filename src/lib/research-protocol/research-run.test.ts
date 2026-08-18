@@ -58,7 +58,7 @@ function expectError(
 
 const researchSchemaContext: Record<string, TSchema> = {
   [runManifestSchema.$id]: runManifestSchema as TSchema,
-  "run-manifest.schema.json": runManifestSchema as TSchema,
+  "../opencoven.run-manifest/v1": runManifestSchema as TSchema,
 };
 
 function checkResearchRunSchema(value: unknown): boolean {
@@ -1117,7 +1117,7 @@ test("terminal runs require final manifests and nonterminal runs permit only ass
 
   assert.deepEqual(
     researchRunSchema.properties.artifactManifest,
-    { $ref: "run-manifest.schema.json" },
+    { $ref: "../opencoven.run-manifest/v1" },
   );
 });
 
@@ -1143,6 +1143,19 @@ test("research runs parse full run manifests and reject invalid embedded manifes
   invalidManifest.digest = digestProtocolObject(invalidManifest);
   const invalid = parseResearchRunV1(runForStatus("completed", invalidManifest));
   expectError(invalid, "$.artifactManifest.retention.status", "semantic_conflict");
+});
+
+test("embedded manifests cannot predate their enclosing run", () => {
+  const manifest = linkedManifest({
+    ...validRunManifest,
+    createdAt: "2026-08-14T20:00:00.000Z",
+  });
+
+  expectError(
+    parseResearchRunV1(runForStatus("completed", manifest)),
+    "$.artifactManifest.createdAt",
+    "semantic_conflict",
+  );
 });
 
 test("research runs reject embedded manifests for another run or context", () => {

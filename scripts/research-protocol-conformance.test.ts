@@ -101,18 +101,20 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
     schemaContext.set(schemaId, loaded);
     schemaCheckContext[schemaId] = loaded;
     if (schemaId === "opencoven.run-manifest/v1") {
-      schemaCheckContext["run-manifest.schema.json"] = loaded;
+      schemaCheckContext["../opencoven.run-manifest/v1"] = loaded;
     }
   }
 });
 
-test("research-run artifactManifest ref resolves to the sibling run-manifest schema retrieval URI", () => {
+test("research-run artifactManifest ref resolves to the run-manifest canonical URI", () => {
   const researchRunSchema = schemaContext.get("opencoven.research-run/v1");
   const runManifestSchema = schemaContext.get("opencoven.run-manifest/v1");
   assert.ok(researchRunSchema);
   assert.ok(runManifestSchema);
   const researchRunSchemaValue: unknown = researchRunSchema;
+  const runManifestSchemaValue: unknown = runManifestSchema;
   assert.ok(isRecord(researchRunSchemaValue));
+  assert.ok(isRecord(runManifestSchemaValue));
   assert.ok(isRecord(researchRunSchemaValue.properties));
   assert.ok(isRecord(researchRunSchemaValue.properties.artifactManifest));
 
@@ -121,15 +123,28 @@ test("research-run artifactManifest ref resolves to the sibling run-manifest sch
     path.join(schemasDir, "research-run.schema.json"),
     "$.properties.artifactManifest.$ref",
   );
-  assert.equal(ref, "run-manifest.schema.json");
+  assert.equal(ref, "../opencoven.run-manifest/v1");
 
   const researchRunRetrievalUri = pathToFileURL(
     path.join(schemasDir, "research-run.schema.json"),
   );
-  const runManifestRetrievalUri = pathToFileURL(
-    path.join(schemasDir, "run-manifest.schema.json"),
+  const researchRunCanonicalUri = new URL(
+    requireString(
+      researchRunSchemaValue.$id,
+      path.join(schemasDir, "research-run.schema.json"),
+      "$.$id",
+    ),
+    researchRunRetrievalUri,
   );
-  assert.equal(new URL(ref, researchRunRetrievalUri).href, runManifestRetrievalUri.href);
+  const runManifestCanonicalUri = new URL(
+    requireString(
+      runManifestSchemaValue.$id,
+      path.join(schemasDir, "run-manifest.schema.json"),
+      "$.$id",
+    ),
+    pathToFileURL(path.join(schemasDir, "run-manifest.schema.json")),
+  );
+  assert.equal(new URL(ref, researchRunCanonicalUri).href, runManifestCanonicalUri.href);
   assert.equal(schemaCheckContext[ref], runManifestSchema);
 });
 
@@ -145,8 +160,13 @@ test("all schema timestamp definitions align with Gregorian leap-second month en
     "1972-06-30T23:59:60Z",
     "2016-12-31T23:59:60.123456789Z",
     "2030-12-31T23:59:60Z",
+    "2024-02-29T00:00:00Z",
+    "2026-04-30T23:59:59Z",
   ];
   const invalid = [
+    "2023-02-29T00:00:00Z",
+    "2023-02-31T00:00:00Z",
+    "2024-04-31T00:00:00Z",
     "2024-02-28T23:59:60Z",
     "2023-02-29T23:59:60Z",
     "1900-02-29T23:59:60Z",

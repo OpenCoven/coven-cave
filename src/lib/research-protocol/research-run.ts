@@ -883,6 +883,13 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "artifactManifest.runId must match the enclosing run id",
       );
     }
+    if (compareUtcTimestamps(artifactManifest.createdAt, createdAt.value) < 0) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.createdAt",
+        "artifactManifest createdAt must not precede the enclosing run createdAt",
+      );
+    }
     if (!contextBindingsMatch(context, artifactManifest.context)) {
       return fail(
         "semantic_conflict",
