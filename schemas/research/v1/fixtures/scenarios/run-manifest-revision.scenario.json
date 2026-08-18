@@ -5,6 +5,34 @@
     "assembling": {
       "fixture": "valid/run-manifest-assembling.json"
     },
+    "active-shortening-next": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "7ec5672568b774f99670bc12436fbb5f6c611afaa28a84731cc54f7430bd8690",
+        "retention": {
+          "policy": "run-only",
+          "effectivePolicy": "run-only",
+          "status": "active",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "active-shortening-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "retention": {
+          "policy": "run-only",
+          "effectivePolicy": "7-days",
+          "status": "active",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "broken-previous-digest": {
       "fixture": "scenarios/objects/run-manifest-previous-digest.json"
     },
@@ -280,6 +308,24 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.active-shortening",
+      "description": "A final revision that shortens effective retention must start a deletion clock.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "active-shortening-previous",
+        "next": "active-shortening-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.status"
       }
     },
     {

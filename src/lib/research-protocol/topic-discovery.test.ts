@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Value } from "typebox/value";
 
+import invalidTopicDiscoveryEight from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-eight.json" with { type: "json" };
+import invalidTopicDiscoveryOne from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-one.json" with { type: "json" };
+import invalidTopicDiscoveryTwo from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-two.json" with { type: "json" };
 import invalidTopicProposalScore from "../../../schemas/research/v1/fixtures/invalid/topic-proposal-score.json" with { type: "json" };
 import topicDiscoveryJobSchema from "../../../schemas/research/v1/topic-discovery-job.schema.json" with { type: "json" };
 import topicProposalSchema from "../../../schemas/research/v1/topic-proposal.schema.json" with { type: "json" };
+import sevenProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-seven.json" with { type: "json" };
 import validTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job.json" with { type: "json" };
 import validTopicProposal from "../../../schemas/research/v1/fixtures/valid/topic-proposal.json" with { type: "json" };
 
@@ -137,14 +141,40 @@ test("proposal visibleTotal mismatches reject with semantic_conflict", () => {
   );
 });
 
-test("completed job with empty proposalIds rejects", () => {
-  const emptyCompletedJob = {
-    ...validTopicDiscoveryJob,
-    proposalIds: [],
-  };
+test("completed jobs require three through seven proposalIds", () => {
+  for (const job of [validTopicDiscoveryJob, sevenProposalTopicDiscoveryJob]) {
+    assert.equal(Value.Check(topicDiscoveryJobSchema, job), true);
+    expectOk(parseTopicDiscoveryJobV1(job));
+  }
 
-  assert.equal(Value.Check(topicDiscoveryJobSchema, emptyCompletedJob), false);
-  expectError(parseTopicDiscoveryJobV1(emptyCompletedJob), "$.proposalIds", "semantic_conflict");
+  for (const job of [
+    { ...validTopicDiscoveryJob, proposalIds: [] },
+    invalidTopicDiscoveryOne,
+    invalidTopicDiscoveryTwo,
+    invalidTopicDiscoveryEight,
+  ]) {
+    assert.equal(Value.Check(topicDiscoveryJobSchema, job), false);
+    expectError(parseTopicDiscoveryJobV1(job), "$.proposalIds", "semantic_conflict");
+  }
+});
+
+test("proposal cardinality bounds apply only to completed jobs", () => {
+  const { finishedAt: _finishedAt, ...inProgress } = validTopicDiscoveryJob;
+  for (const job of [
+    {
+      ...inProgress,
+      status: "queued" as const,
+      proposalIds: ["proposal_01"],
+    },
+    {
+      ...inProgress,
+      status: "running" as const,
+      proposalIds: Array.from({ length: 8 }, (_, index) => `proposal_${index + 1}`),
+    },
+  ]) {
+    assert.equal(Value.Check(topicDiscoveryJobSchema, job), true);
+    expectOk(parseTopicDiscoveryJobV1(job));
+  }
 });
 
 test("running job without startedAt rejects", () => {

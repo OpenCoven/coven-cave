@@ -1,7 +1,6 @@
 {
   "schema": "opencoven.research-run/v1",
   "id": "run_01",
-  "tenantOpaqueId": "tenant_alpha",
   "acceptedTopic": {
     "proposalId": "proposal_01",
     "question": "How should the research executor resume this run?",
