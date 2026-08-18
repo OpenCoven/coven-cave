@@ -1082,6 +1082,53 @@ test("retention and deletion status pairs and receipt requirements are enforced"
 
 });
 
+test("scheduled and completed deletion states require a concrete content expiration", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const [retentionStatus, deletion] of [
+    [
+      "deletion_scheduled",
+      {
+        status: "scheduled",
+        requestedAt: "2026-08-17T19:00:00.000Z",
+      },
+    ],
+    [
+      "deletion_pending",
+      {
+        status: "pending",
+        requestedAt: "2026-08-17T19:00:00.000Z",
+      },
+    ],
+    [
+      "deleted",
+      {
+        status: "completed",
+        requestedAt: "2026-08-17T19:00:00.000Z",
+        completedAt: "2026-08-17T20:00:00.000Z",
+        deletedObjectCount: 1,
+        eventSequence: 2,
+      },
+    ],
+  ] as const) {
+    const withoutDeadline = recalculate({
+      ...local,
+      retention: {
+        ...local.retention,
+        status: retentionStatus,
+        contentExpiresAt: null,
+        updatedAt: "2026-08-17T20:00:00.000Z",
+      },
+      deletion,
+    });
+    assert.equal(Value.Check(runManifestSchema, withoutDeadline), false);
+    expectError(
+      parseRunManifestV1(withoutDeadline),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
 test("standalone shortened retention cannot remain active and unscheduled", () => {
   const fixture = withoutExpectedSchemaValid(invalidActiveShorteningJson);
   assert.equal(Value.Check(runManifestSchema, fixture), true);
@@ -1762,6 +1809,112 @@ test("revision chains reject bad links, immutable final mutations, and retention
     }).ok,
     true,
   );
+});
+
+test("retention deadlines may stay equal or move earlier but need fresh consent to move later", () => {
+  const previous = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const linkedRevision = (contentExpiresAt: string): RunManifestV1 =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...previous,
+          revision: previous.revision + 1,
+          previousDigest: previous.digest,
+          retention: {
+            ...previous.retention,
+            contentExpiresAt,
+            updatedAt: "2026-08-16T20:07:00.000Z",
+          },
+        }),
+      ),
+    );
+
+  for (const deadline of [
+    "2026-08-23T20:05:00Z",
+    "2026-08-23T20:04:59.999999999Z",
+  ]) {
+    assert.deepEqual(
+      expectOk(
+        validateRunManifestRevision(previous, linkedRevision(deadline), {
+          contextConsent: "7-days",
+        }),
+      ).retention.contentExpiresAt,
+      deadline,
+    );
+  }
+
+  const extended = linkedRevision("2099-01-01T00:00:00.000Z");
+  expectError(
+    validateRunManifestRevision(previous, extended, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevision(previous, extended, {
+        freshConsent: true,
+        contextConsent: "7-days",
+      }),
+    ),
+    extended,
+  );
+});
+
+test("revision validation requires scheduled deadlines and forbids clearing an existing deadline", () => {
+  const active = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduledWithoutDeadline = recalculate({
+    ...active,
+    revision: active.revision + 1,
+    previousDigest: active.digest,
+    retention: {
+      ...active.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: null,
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...active.deletion,
+      status: "scheduled" as const,
+      requestedAt: "2026-08-16T20:06:00.000Z",
+    },
+  });
+  expectError(
+    validateRunManifestRevision(
+      active,
+      scheduledWithoutDeadline as unknown as RunManifestV1,
+      { contextConsent: "7-days" },
+    ),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const scheduled = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const clearedDeadline = recalculate({
+    ...scheduled,
+    revision: scheduled.revision + 1,
+    previousDigest: scheduled.digest,
+    retention: {
+      ...scheduled.retention,
+      contentExpiresAt: null,
+      updatedAt: "2026-08-16T20:07:00.000Z",
+    },
+  });
+  for (const options of [
+    { contextConsent: "7-days" as const },
+    { freshConsent: true, contextConsent: "7-days" as const },
+  ]) {
+    expectError(
+      validateRunManifestRevision(
+        scheduled,
+        clearedDeadline as unknown as RunManifestV1,
+        options,
+      ),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
 });
 
 test("completed deletion cannot be resurrected by a later revision", () => {

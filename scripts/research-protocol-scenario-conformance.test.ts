@@ -913,12 +913,54 @@ function schemaFileNameFor(schemaId: string): string {
 
 const schemaContext = new Map<string, TSchema>();
 const schemaCheckContext: Record<string, TSchema> = Object.create(null);
+const schemaResolutionOrigin = new URL("https://research-protocol.invalid/");
+
+function registerTypeBoxReferenceAliases(sourceId: string, value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) registerTypeBoxReferenceAliases(sourceId, entry);
+    return;
+  }
+  if (!isRecord(value)) return;
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === "$ref" && typeof entry === "string" && !entry.startsWith("#")) {
+      const resolvedUrl = new URL(entry, new URL(sourceId, schemaResolutionOrigin));
+      resolvedUrl.hash = "";
+      assert.equal(
+        resolvedUrl.origin,
+        schemaResolutionOrigin.origin,
+        `${sourceId}: external $ref ${entry} must remain under the schema resolution origin`,
+      );
+      const resolvedId = resolvedUrl.href.slice(schemaResolutionOrigin.href.length);
+      const target = schemaContext.get(resolvedId);
+      assert.ok(
+        target !== undefined,
+        `${sourceId}: external $ref ${entry} resolves to unregistered schema id ${resolvedId}`,
+      );
+      if (Object.hasOwn(schemaCheckContext, entry)) {
+        assert.equal(
+          schemaCheckContext[entry],
+          target,
+          `${entry}: TypeBox alias cannot resolve to multiple schema resources`,
+        );
+      } else {
+        schemaCheckContext[entry] = target;
+      }
+      continue;
+    }
+    registerTypeBoxReferenceAliases(sourceId, entry);
+  }
+}
+
 for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
   const schemaPath = path.join(schemasDir, schemaFileNameFor(schemaId));
   const schema = readJsonFile(schemaPath);
   assert.ok(IsSchema(schema), `${schemaPath}: must be a valid JSON Schema`);
   schemaContext.set(schemaId, schema);
   schemaCheckContext[schemaId] = schema;
+}
+for (const [schemaId, schema] of schemaContext) {
+  registerTypeBoxReferenceAliases(schemaId, schema);
 }
 
 function validateProtocolObjectSchema(

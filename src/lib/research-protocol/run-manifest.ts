@@ -876,11 +876,68 @@ function validateRetentionClock(
       "active retention must not have contentExpiresAt",
     );
   }
+  if (retention.status !== "active" && retention.contentExpiresAt === null) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      `${retention.status} retention requires contentExpiresAt`,
+    );
+  }
   if (retention.status === "active" && retention.effectivePolicy === "project" && retention.contentExpiresAt !== null) {
     return fail(
       "semantic_conflict",
       "$.retention.contentExpiresAt",
       "active project retention must not have contentExpiresAt",
+    );
+  }
+  return pass(undefined);
+}
+
+function validateRetentionDeadlineRevision(
+  previous: RunManifestV1,
+  next: RunManifestV1,
+  allowFreshConsentCancellation: boolean,
+  freshConsent: boolean,
+): ProtocolParseResult<void> {
+  const nextClock = validateRetentionClock(next.retention);
+  if (!nextClock.ok) return nextClock;
+
+  const previousDeadline = previous.retention.contentExpiresAt;
+  const nextDeadline = next.retention.contentExpiresAt;
+  if (previousDeadline !== null && !isUtcTimestamp(previousDeadline)) {
+    return fail(
+      "semantic_conflict",
+      "$.previous.retention.contentExpiresAt",
+      "previous content expiration must be a valid UTC timestamp",
+    );
+  }
+  if (nextDeadline !== null && !isUtcTimestamp(nextDeadline)) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "next content expiration must be a valid UTC timestamp",
+    );
+  }
+  if (previousDeadline === null) return pass(undefined);
+  if (nextDeadline === null) {
+    if (
+      allowFreshConsentCancellation
+      && next.retention.status === "active"
+      && next.deletion.status === "not_scheduled"
+    ) {
+      return pass(undefined);
+    }
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "content expiration cannot be cleared without fresh-consent effective-policy lengthening and coherent deletion cancellation",
+    );
+  }
+  if (compareUtcTimestamps(nextDeadline, previousDeadline) > 0 && !freshConsent) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "moving content expiration later requires freshConsent",
     );
   }
   return pass(undefined);
@@ -1758,6 +1815,14 @@ export function validateRunManifestRevision(
     lengthensEffectivePolicy && options.freshConsent === true,
   );
   if (!lifecycle.ok) return lifecycle;
+
+  const deadline = validateRetentionDeadlineRevision(
+    previous,
+    next,
+    lengthensEffectivePolicy && options.freshConsent === true,
+    options.freshConsent === true,
+  );
+  if (!deadline.ok) return deadline;
 
   return pass(next);
 }

@@ -31,7 +31,7 @@
     "createdAt": { "$ref": "#/$defs/utcTimestamp" },
     "updatedAt": { "$ref": "#/$defs/utcTimestamp" },
     "nextEventSequence": { "$ref": "#/$defs/positiveSafeInteger" },
-    "artifactManifest": { "$ref": "opencoven.run-manifest/v1" },
+    "artifactManifest": { "$ref": "../opencoven.run-manifest/v1" },
     "failure": { "$ref": "#/$defs/failure" }
   },
   "allOf": [

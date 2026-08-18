@@ -308,6 +308,58 @@
     "scheduled-previous": {
       "fixture": "valid/run-manifest-retention-update.json"
     },
+    "scheduled-without-deadline": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "digest": "8515b955dc9deaa4662f738c794001fccda9e20374065ecda8e71c63887f8d98",
+        "revision": 2,
+        "previousDigest": "4c7161996cbbcb51d3e13f7a27f0cac88a389e5765c9f6706898ef5329080579",
+        "retention": {
+          "status": "deletion_scheduled",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      }
+    },
+    "deadline-equal": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
+        "retention": {
+          "contentExpiresAt": "2026-08-23T20:05:00Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-earlier": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
+        "retention": {
+          "contentExpiresAt": "2026-08-23T20:04:59.999999999Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-extended-to-2099": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
+        "retention": {
+          "contentExpiresAt": "2099-01-01T00:00:00.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "scheduled-to-active-rollback": {
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
@@ -694,6 +746,89 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.scheduled-without-deadline",
+      "description": "Entering scheduled deletion requires a concrete content expiration timestamp.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "scheduled-without-deadline"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deadline-equal",
+      "description": "A linked revision may preserve the exact content expiration instant with different fractional precision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "deadline-equal"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.deadline-earlier",
+      "description": "A linked revision may move the content expiration instant earlier.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "deadline-earlier"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.deadline-extension-without-fresh-consent",
+      "description": "A linked revision cannot extend its content expiration to 2099 without fresh consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "deadline-extended-to-2099"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deadline-extension-with-fresh-consent",
+      "description": "Fresh consent permits an otherwise coherent content expiration extension.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "deadline-extended-to-2099"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
       }
     },
     {

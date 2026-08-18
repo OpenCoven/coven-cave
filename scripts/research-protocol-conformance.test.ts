@@ -84,10 +84,58 @@ function schemaFileNameFor(schemaId: string): string {
 // can never be mistaken for a registered schema.
 const schemaContext = new Map<string, TSchema>();
 
-// `Check` (from typebox/value) expects a schema-id -> schema lookup object,
+// `Check` (from typebox/value) expects a string-keyed schema lookup object,
 // not a `Map`, for resolving `$ref`s across schemas. Build that object with a
-// null prototype so it carries no inherited properties either.
+// null prototype so it carries no inherited properties either. Standard URI
+// resolution is checked below; raw-reference aliases adapt that result to
+// TypeBox's context lookup without registering any additional schema ids.
 const schemaCheckContext: Record<string, TSchema> = Object.create(null);
+const schemaResolutionOrigin = new URL("https://research-protocol.invalid/");
+
+type ExternalSchemaReference = {
+  sourceId: string;
+  path: string;
+  reference: string;
+  resolvedId: string;
+};
+
+function collectExternalSchemaReferences(
+  sourceId: string,
+  value: unknown,
+  currentPath = "$",
+  references: ExternalSchemaReference[] = [],
+): ExternalSchemaReference[] {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      collectExternalSchemaReferences(sourceId, entry, `${currentPath}[${index}]`, references);
+    });
+    return references;
+  }
+  if (!isRecord(value)) return references;
+
+  for (const [key, entry] of Object.entries(value)) {
+    const entryPath = `${currentPath}.${key}`;
+    if (key === "$ref" && typeof entry === "string" && !entry.startsWith("#")) {
+      const baseUrl = new URL(sourceId, schemaResolutionOrigin);
+      const resolvedUrl = new URL(entry, baseUrl);
+      resolvedUrl.hash = "";
+      assert.equal(
+        resolvedUrl.origin,
+        schemaResolutionOrigin.origin,
+        `${sourceId} ${entryPath}: external $ref must remain under the schema resolution origin`,
+      );
+      references.push({
+        sourceId,
+        path: entryPath,
+        reference: entry,
+        resolvedId: resolvedUrl.href.slice(schemaResolutionOrigin.href.length),
+      });
+      continue;
+    }
+    collectExternalSchemaReferences(sourceId, entry, entryPath, references);
+  }
+  return references;
+}
 
 test("loads and validates all eight authoritative Research Protocol v1 schema files", () => {
   assert.equal(RESEARCH_PROTOCOL_SCHEMAS.length, 8);
@@ -110,6 +158,49 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
     );
     schemaContext.set(schemaId, loaded);
     schemaCheckContext[schemaId] = loaded;
+  }
+  const references = [...schemaContext.entries()].flatMap(([schemaId, schema]) =>
+    collectExternalSchemaReferences(schemaId, schema)
+  );
+  for (const { sourceId, path: referencePath, reference, resolvedId } of references) {
+    const target = schemaContext.get(resolvedId);
+    assert.ok(
+      target !== undefined,
+      `${sourceId} ${referencePath}: ${reference} resolves to unregistered schema id ${resolvedId}`,
+    );
+    if (Object.hasOwn(schemaCheckContext, reference)) {
+      assert.equal(
+        schemaCheckContext[reference],
+        target,
+        `${reference}: TypeBox alias cannot resolve to multiple schema resources`,
+      );
+    } else {
+      schemaCheckContext[reference] = target;
+    }
+  }
+});
+
+test("external schema references resolve by RFC3986 semantics to registered schema ids", () => {
+  const registeredIds = new Set<string>(RESEARCH_PROTOCOL_SCHEMAS);
+  const references = [...schemaContext.entries()]
+    .flatMap(([schemaId, schema]) => collectExternalSchemaReferences(schemaId, schema))
+    .sort((left, right) =>
+      `${left.sourceId}\u0000${left.path}`.localeCompare(`${right.sourceId}\u0000${right.path}`)
+    );
+
+  assert.deepEqual(references, [
+    {
+      sourceId: "opencoven.research-run/v1",
+      path: "$.properties.artifactManifest.$ref",
+      reference: "../opencoven.run-manifest/v1",
+      resolvedId: "opencoven.run-manifest/v1",
+    },
+  ]);
+  for (const { sourceId, path: referencePath, reference, resolvedId } of references) {
+    assert.ok(
+      registeredIds.has(resolvedId),
+      `${sourceId} ${referencePath}: ${reference} resolves to unregistered schema id ${resolvedId}`,
+    );
   }
 });
 

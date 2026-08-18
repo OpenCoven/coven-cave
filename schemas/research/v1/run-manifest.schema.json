@@ -109,6 +109,12 @@
           "deletion": {
             "properties": { "status": { "const": "scheduled" } },
             "required": ["status"]
+          },
+          "retention": {
+            "properties": {
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["contentExpiresAt"]
           }
         }
       }
@@ -130,6 +136,12 @@
               "status": { "enum": ["pending", "partial_failure"] }
             },
             "required": ["status"]
+          },
+          "retention": {
+            "properties": {
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["contentExpiresAt"]
           }
         }
       }
@@ -149,6 +161,12 @@
           "deletion": {
             "properties": { "status": { "const": "completed" } },
             "required": ["status"]
+          },
+          "retention": {
+            "properties": {
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["contentExpiresAt"]
           }
         }
       }

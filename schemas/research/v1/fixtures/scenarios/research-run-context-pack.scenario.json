@@ -415,7 +415,8 @@
             }
           ],
           "retention": {
-            "status": "deleted"
+            "status": "deleted",
+            "contentExpiresAt": "2026-08-15T20:09:00.000Z"
           },
           "deletion": {
             "status": "completed",
