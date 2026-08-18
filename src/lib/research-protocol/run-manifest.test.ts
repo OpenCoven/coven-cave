@@ -382,6 +382,60 @@ test("context absent forbids context-pack sources", () => {
   expectError(parseRunManifestV1(invalid), "$.sources[0]", "semantic_conflict");
 });
 
+test("public evidence canonicalUrl accepts only absolute public HTTP(S) URLs", () => {
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  const withUrl = (canonicalUrl: string) =>
+    recalculate({
+      ...cloud,
+      sources: cloud.sources.map((source) =>
+        source.kind === "public-evidence"
+          ? { ...source, canonicalUrl }
+          : source,
+      ),
+    });
+
+  for (const canonicalUrl of [
+    "https://example.com/research",
+    "http://public.example.org:8080/path?query=1",
+  ]) {
+    const candidate = withUrl(canonicalUrl);
+    assert.equal(Value.Check(runManifestSchema, candidate), true, canonicalUrl);
+    const parsed = expectOk(parseRunManifestV1(candidate));
+    assert.equal(
+      parsed.sources.find((source) => source.kind === "public-evidence")?.canonicalUrl,
+      canonicalUrl,
+    );
+  }
+
+  for (const [canonicalUrl, expectedSchemaValid] of [
+    ["", false],
+    ["file:///Users/example/report.html", false],
+    ["https://user:password@example.com/research", false],
+    ["https://example.com/research#private", false],
+    ["http://localhost/research", true],
+    ["http://127.0.0.1/research", true],
+    ["http://[::1]/research", true],
+    ["http://[fec0::1]/research", true],
+    ["https://10.0.0.1/research", true],
+    ["https://metadata.service.internal/research", true],
+    ["https://example.test/research", true],
+    ["https://-invalid.example.com/research", true],
+    ["/Users/example/report.html", false],
+  ] as const) {
+    const candidate = withUrl(canonicalUrl);
+    assert.equal(
+      Value.Check(runManifestSchema, candidate),
+      expectedSchemaValid,
+      canonicalUrl,
+    );
+    expectError(
+      parseRunManifestV1(candidate),
+      "$.sources[1].canonicalUrl",
+      "invalid_value",
+    );
+  }
+});
+
 test("cloud content requires requested or completed synchronization", () => {
   const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
   const invalid = recalculate({
@@ -495,6 +549,11 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
     "rawPrompt",
     "rawPrompts",
     "CoNtEnT",
+    "private_contentValue",
+    "privateCONTENTvalue",
+    "rawTEXTvalue",
+    "private_storageKeyValue",
+    "objectStoreKey",
   ]) {
     const invalid = recalculate({
       ...local,
@@ -557,6 +616,34 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
   }
 });
 
+test("privacy extension tokenization preserves benign whole-word near misses", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const key of [
+    "context",
+    "contentment",
+    "textile",
+    "pathology",
+    "secretary",
+    "credentialed",
+    "blobfish",
+    "promptly",
+    "privateContextValue",
+    "rawTextureValue",
+    "objectKeyboardLayout",
+  ]) {
+    const candidate = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], [key]: "benign audit metadata" }],
+    });
+    assert.equal(Value.Check(runManifestSchema, candidate), true, key);
+    assert.equal(
+      expectOk(parseRunManifestV1(candidate)).artifacts[0][key],
+      "benign audit metadata",
+      key,
+    );
+  }
+});
+
 test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [candidate, path] of [
@@ -599,6 +686,10 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
     expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
   }
 
+  assert.equal(
+    invalidNestedPrivateExtensionJson.digest,
+    digestProtocolObject(invalidNestedPrivateExtensionJson),
+  );
   assert.equal(Value.Check(runManifestSchema, invalidNestedPrivateExtensionJson), false);
   expectError(
     parseRunManifestV1(invalidNestedPrivateExtensionJson),
@@ -608,6 +699,17 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
 });
 
 test("digest-correct fixtures enforce root, model, plural, and nested privacy boundaries", () => {
+  const reviewerBoundaryFixture = invalidNestedPrivateExtensionJson.sources[0]
+    .metadata.items[0] as Record<string, unknown>;
+  for (const key of [
+    "private_contentValue",
+    "privateCONTENTvalue",
+    "rawTEXTvalue",
+    "private_storageKeyValue",
+  ]) {
+    assert.equal(key in reviewerBoundaryFixture, true, `${key} must have a parity fixture`);
+  }
+
   for (const [fixture, path] of [
     [invalidRootPrivateExcerptsJson, "$.privateExcerpts"],
     [invalidModelRawPromptJson, "$.modelExecutions[0].rawPrompt"],
@@ -626,6 +728,20 @@ test("digest-correct fixtures enforce root, model, plural, and nested privacy bo
     digestProtocolObject(validExtensionBoundariesJson),
   );
   assert.equal(Value.Check(runManifestSchema, validExtensionBoundariesJson), true);
+  const benignBoundaryFixture = validExtensionBoundariesJson.extensionMetadata as Record<
+    string,
+    unknown
+  >;
+  for (const key of [
+    "context",
+    "contentment",
+    "textile",
+    "pathology",
+    "secretary",
+    "credentialed",
+  ]) {
+    assert.equal(key in benignBoundaryFixture, true, `${key} must have a parity fixture`);
+  }
   assert.deepEqual(
     expectOk(parseRunManifestV1(validExtensionBoundariesJson)),
     validExtensionBoundariesJson,
@@ -847,6 +963,50 @@ test("declared protocol fields remain authoritative inside sensitive objects", (
   assert.equal(parsed.deletion.deletedObjectCount, 3);
 });
 
+test("invalid deletion fixtures isolate their named pair and event invariants", () => {
+  assert.notEqual(invalidDeletionPairJson.retention.contentExpiresAt, null);
+  assert.equal(
+    invalidDeletionPairJson.digest,
+    digestProtocolObject(invalidDeletionPairJson),
+  );
+  assert.equal(Value.Check(runManifestSchema, invalidDeletionPairJson), false);
+  expectError(
+    parseRunManifestV1(invalidDeletionPairJson),
+    "$.retention.status",
+    "semantic_conflict",
+  );
+  const repairedPair = recalculate({
+    ...invalidDeletionPairJson,
+    deletion: {
+      ...invalidDeletionPairJson.deletion,
+      status: "scheduled" as const,
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, repairedPair), true);
+  expectOk(parseRunManifestV1(repairedPair));
+
+  assert.notEqual(invalidDeletionEventJson.retention.contentExpiresAt, null);
+  assert.equal(
+    invalidDeletionEventJson.digest,
+    digestProtocolObject(invalidDeletionEventJson),
+  );
+  assert.equal(Value.Check(runManifestSchema, invalidDeletionEventJson), false);
+  expectError(
+    parseRunManifestV1(invalidDeletionEventJson),
+    "$.deletion.eventSequence",
+    "missing_field",
+  );
+  const repairedEvent = recalculate({
+    ...invalidDeletionEventJson,
+    deletion: {
+      ...invalidDeletionEventJson.deletion,
+      eventSequence: 2,
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, repairedEvent), true);
+  expectOk(parseRunManifestV1(repairedEvent));
+});
+
 test("retention and deletion status pairs and receipt requirements are enforced", () => {
   assert.equal(Value.Check(runManifestSchema, invalidDeletionPairJson), false);
   expectError(parseRunManifestV1(invalidDeletionPairJson), "$.retention.status", "semantic_conflict");
@@ -924,6 +1084,46 @@ test("retention and deletion status pairs and receipt requirements are enforced"
       "semantic_conflict",
     );
   }
+});
+
+test("completed deletion receipts reject reversed chronology and allow equality", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const completed = (requestedAt: string, completedAt: string) =>
+    recalculate({
+      ...local,
+      revision: 2,
+      previousDigest: local.digest,
+      retention: {
+        ...local.retention,
+        status: "deleted" as const,
+        contentExpiresAt: completedAt,
+        updatedAt: completedAt,
+      },
+      deletion: {
+        status: "completed" as const,
+        requestedAt,
+        completedAt,
+        deletedObjectCount: 1,
+        eventSequence: 2,
+      },
+    });
+
+  const reversed = completed(
+    "2026-08-17T20:00:00.000Z",
+    "2026-08-17T19:59:59.999999999Z",
+  );
+  assert.equal(Value.Check(runManifestSchema, reversed), true);
+  expectError(
+    parseRunManifestV1(reversed),
+    "$.deletion.completedAt",
+    "semantic_conflict",
+  );
+
+  expectOk(
+    parseRunManifestV1(
+      completed("2016-12-31T23:59:60Z", "2016-12-31T23:59:60.000000000Z"),
+    ),
+  );
 });
 
 test("retention consent uses context consent or the original policy ceiling", () => {
@@ -1013,6 +1213,7 @@ test("final retention shortening starts a coherent deletion clock", () => {
         retention: {
           ...retentionUpdateJson.retention,
           effectivePolicy: "run-only" as const,
+          contentExpiresAt: "2026-08-17T20:04:00.000Z",
         },
       }),
     ),
@@ -1022,6 +1223,280 @@ test("final retention shortening starts a coherent deletion clock", () => {
       contextConsent: "7-days",
     }).ok,
     true,
+  );
+});
+
+test("revision retention deadlines are policy-bounded and monotonic", () => {
+  const final = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduled = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retentionUpdateJson,
+        retention: {
+          ...retentionUpdateJson.retention,
+          contentExpiresAt: "2026-08-23T20:04:00.000Z",
+        },
+      }),
+    ),
+  );
+  assert.equal(
+    validateRunManifestRevision(final, scheduled, { contextConsent: "7-days" }).ok,
+    true,
+  );
+
+  const scheduleWithDeadline = (
+    effectivePolicy: "run-only" | "7-days",
+    contentExpiresAt: string,
+  ) =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...scheduled,
+          retention: {
+            ...scheduled.retention,
+            effectivePolicy,
+            contentExpiresAt,
+          },
+        }),
+      ),
+    );
+
+  expectError(
+    validateRunManifestRevision(
+      final,
+      scheduleWithDeadline("7-days", "2099-01-01T00:00:00.000Z"),
+      { contextConsent: "7-days" },
+    ),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  assert.equal(
+    validateRunManifestRevision(
+      final,
+      scheduleWithDeadline("run-only", "2026-08-17T20:04:00.000Z"),
+      { contextConsent: "7-days" },
+    ).ok,
+    true,
+  );
+  expectError(
+    validateRunManifestRevision(
+      final,
+      scheduleWithDeadline("run-only", "2026-08-17T20:04:00.000000001Z"),
+      { contextConsent: "7-days" },
+    ),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const nextScheduled = (
+    contentExpiresAt: string | null,
+    updatedAt = "2026-08-17T20:01:00.000Z",
+  ) =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...scheduled,
+          revision: 3,
+          previousDigest: scheduled.digest,
+          retention: {
+            ...scheduled.retention,
+            contentExpiresAt,
+            updatedAt,
+          },
+        }),
+      ),
+    );
+
+  assert.equal(
+    validateRunManifestRevision(
+      scheduled,
+      nextScheduled("2026-08-22T20:04:00.000Z"),
+      { contextConsent: "7-days" },
+    ).ok,
+    true,
+  );
+  expectError(
+    validateRunManifestRevision(
+      scheduled,
+      nextScheduled("2026-08-23T20:04:00.000000001Z"),
+      { contextConsent: "7-days" },
+    ),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestRevision(
+      scheduled,
+      nextScheduled("2026-08-24T20:00:00.000Z"),
+      {
+        contextConsent: "7-days",
+        freshConsent: true,
+        freshConsentAt: "2026-08-16T20:06:00.000Z",
+      },
+    ),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  assert.equal(
+    validateRunManifestRevision(
+      scheduled,
+      nextScheduled("2026-08-24T20:00:00.000Z"),
+      {
+        contextConsent: "7-days",
+        freshConsent: true,
+        freshConsentAt: "2026-08-17T20:00:00.000Z",
+      },
+    ).ok,
+    true,
+  );
+  expectError(
+    validateRunManifestRevision(
+      scheduled,
+      nextScheduled("2026-08-24T20:00:00.000000001Z"),
+      {
+        contextConsent: "7-days",
+        freshConsent: true,
+        freshConsentAt: "2026-08-17T20:00:00.000Z",
+      },
+    ),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const cleared = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...scheduled,
+        revision: 3,
+        previousDigest: scheduled.digest,
+        retention: {
+          ...scheduled.retention,
+          status: "active" as const,
+          contentExpiresAt: null,
+          updatedAt: "2026-08-17T20:01:00.000Z",
+        },
+        deletion: {
+          status: "not_scheduled" as const,
+          futureExtension: { preserve: true },
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(scheduled, cleared, { contextConsent: "7-days" }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
+test("revision deletion progress is monotonic while partial failures remain retryable", () => {
+  const final = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const partialFailure = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retentionUpdateJson,
+        retention: {
+          ...retentionUpdateJson.retention,
+          status: "deletion_pending" as const,
+          contentExpiresAt: "2026-08-23T20:04:00.000Z",
+        },
+        deletion: {
+          ...retentionUpdateJson.deletion,
+          status: "partial_failure" as const,
+        },
+      }),
+    ),
+  );
+  assert.equal(
+    validateRunManifestRevision(final, partialFailure, {
+      contextConsent: "7-days",
+    }).ok,
+    true,
+  );
+
+  const retry = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...partialFailure,
+        revision: 3,
+        previousDigest: partialFailure.digest,
+        retention: {
+          ...partialFailure.retention,
+          updatedAt: "2026-08-16T20:07:00.000Z",
+        },
+        deletion: {
+          ...partialFailure.deletion,
+          status: "pending" as const,
+        },
+      }),
+    ),
+  );
+  assert.equal(
+    validateRunManifestRevision(partialFailure, retry, {
+      contextConsent: "7-days",
+    }).ok,
+    true,
+  );
+
+  const movedBackward = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retry,
+        retention: {
+          ...retry.retention,
+          status: "deletion_scheduled" as const,
+        },
+        deletion: {
+          ...retry.deletion,
+          status: "scheduled" as const,
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(partialFailure, movedBackward, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.status",
+    "semantic_conflict",
+  );
+
+  const changedRequest = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retry,
+        deletion: {
+          ...retry.deletion,
+          requestedAt: "2026-08-16T20:07:00.000Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(partialFailure, changedRequest, {
+      contextConsent: "7-days",
+    }),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
+
+  const staleUpdate = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retry,
+        retention: {
+          ...retry.retention,
+          updatedAt: "2026-08-16T20:05:00.000Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(partialFailure, staleUpdate, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.updatedAt",
+    "semantic_conflict",
   );
 });
 
@@ -1050,7 +1525,11 @@ test("revision chains reject bad links, immutable final mutations, and retention
 
   const shortened = recalculate({
     ...next,
-    retention: { ...next.retention, effectivePolicy: "run-only" as const },
+    retention: {
+      ...next.retention,
+      effectivePolicy: "run-only" as const,
+      contentExpiresAt: "2026-08-17T20:04:00.000Z",
+    },
   });
   expectError(
     validateRunManifestRevision(previous, shortened),
@@ -1087,6 +1566,7 @@ test("revision chains reject bad links, immutable final mutations, and retention
   assert.equal(
     validateRunManifestRevision(previous, lengthened, {
       freshConsent: true,
+      freshConsentAt: "2026-08-16T20:05:30.000Z",
       contextConsent: "project",
     }).ok,
     true,

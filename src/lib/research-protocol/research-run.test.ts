@@ -153,6 +153,9 @@ function parsedEvent(
   type: RunEventV1["type"],
   data: Record<string, unknown>,
   runId = validResearchRun.id,
+  at = type === "content.deleted"
+    ? "2026-08-17T19:30:00.000Z"
+    : validRunEvent.at,
 ): RunEventV1 {
   return expectOk(
     parseRunEventV1({
@@ -160,6 +163,7 @@ function parsedEvent(
       runId,
       sequence,
       type,
+      at,
       data,
     }),
   );
@@ -168,6 +172,8 @@ function parsedEvent(
 function runWithCompletedDeletion(
   nextEventSequence = 4,
   eventSequence = 2,
+  requestedAt = "2026-08-17T19:00:00.000Z",
+  completedAt = "2026-08-17T20:00:00.000Z",
 ): ResearchRunV1 {
   const finalManifest = linkedManifest(validRunManifest);
   const deletedManifest: Record<string, unknown> = {
@@ -175,12 +181,12 @@ function runWithCompletedDeletion(
     retention: {
       ...(finalManifest.retention as Record<string, unknown>),
       status: "deleted",
-      contentExpiresAt: "2026-08-17T20:00:00.000Z",
+      contentExpiresAt: completedAt,
     },
     deletion: {
       status: "completed",
-      requestedAt: "2026-08-17T19:00:00.000Z",
-      completedAt: "2026-08-17T20:00:00.000Z",
+      requestedAt,
+      completedAt,
       deletedObjectCount: 3,
       eventSequence,
     },
@@ -742,6 +748,74 @@ test("schema and parser agree on expressible constraints and additive fields sur
   expectError(parseRunEventV1({ ...validRunEvent, schema: "opencoven.run-event/v2" }), "$.schema", "unknown_major");
 });
 
+test("content.deleted data permits only declared audit fields and safe recursive extensions", () => {
+  const event = {
+    ...validRunEvent,
+    type: "content.deleted",
+    at: "2026-08-17T19:30:00.000Z",
+    data: {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+      audit: {
+        retry: 1,
+        flags: [true, null, { disposition: "complete" }],
+      },
+    },
+  };
+  assert.equal(Value.Check(runEventSchema, event), true);
+  assert.deepEqual(expectOk(parseRunEventV1(event)).data, event.data);
+
+  for (const [data, path] of [
+    [
+      {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+        deletedContent: "private material",
+      },
+      "$.data.deletedContent",
+    ],
+    [
+      {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+        objectStoreKey: "tenant/private/object",
+      },
+      "$.data.objectStoreKey",
+    ],
+    [
+      {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+        audit: { rawTEXTvalue: "private material" },
+      },
+      "$.data.audit.rawTEXTvalue",
+    ],
+    [
+      {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+        audit: [{ private_contentValue: "private material" }],
+      },
+      "$.data.audit[0].private_contentValue",
+    ],
+  ] as const) {
+    const invalid = { ...event, data };
+    assert.equal(Value.Check(runEventSchema, invalid), false, path);
+    expectError(parseRunEventV1(invalid), path, "semantic_conflict");
+  }
+
+  const missingCount = {
+    ...event,
+    data: { manifestStatus: "deleted" },
+  };
+  assert.equal(Value.Check(runEventSchema, missingCount), false);
+  expectError(
+    parseRunEventV1(missingCount),
+    "$.data.deletedObjectCount",
+    "missing_field",
+  );
+});
+
 test("run event rejects custom-prototype nested data", () => {
   const inheritedData = Object.create({ inheritedField: "drop-me" });
   Object.assign(inheritedData, {
@@ -1001,7 +1075,7 @@ test("completed deletion requires a final manifest and its exact event in the co
   const deletion = parsedEvent(2, "content.deleted", {
     deletedObjectCount: 3,
     manifestStatus: "deleted",
-  });
+  }, validResearchRun.id, "2026-08-17T19:30:00.000Z");
   const completed = parsedEvent(3, "run.status", { status: "completed" });
 
   assert.equal(
@@ -1062,13 +1136,13 @@ test("completed deletion requires a final manifest and its exact event in the co
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedRun, [
-      first,
-      parsedEvent(2, "content.deleted", { manifestStatus: "deleted" }),
-      completed,
-    ]),
-    "$[1].data.deletedObjectCount",
-    "semantic_conflict",
+    parseRunEventV1({
+      ...validRunEvent,
+      type: "content.deleted",
+      data: { manifestStatus: "deleted" },
+    }),
+    "$.data.deletedObjectCount",
+    "missing_field",
   );
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
@@ -1083,25 +1157,81 @@ test("completed deletion requires a final manifest and its exact event in the co
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedRun, [
-      first,
-      parsedEvent(2, "content.deleted", { deletedObjectCount: 3 }),
-      completed,
-    ]),
-    "$[1].data.manifestStatus",
-    "semantic_conflict",
+    parseRunEventV1({
+      ...validRunEvent,
+      type: "content.deleted",
+      data: { deletedObjectCount: 3 },
+    }),
+    "$.data.manifestStatus",
+    "missing_field",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedRun, [
-      first,
-      parsedEvent(2, "content.deleted", {
+    parseRunEventV1({
+      ...validRunEvent,
+      type: "content.deleted",
+      data: {
         deletedObjectCount: 3,
         manifestStatus: "active",
-      }),
-      completed,
-    ]),
-    "$[1].data.manifestStatus",
-    "semantic_conflict",
+      },
+    }),
+    "$.data.manifestStatus",
+    "invalid_value",
+  );
+});
+
+test("completed deletion event chronology is inclusive and leap-second aware", () => {
+  const first = parsedEvent(1, "run.created", { status: "queued" });
+  const completed = parsedEvent(3, "run.status", { status: "completed" });
+
+  const reversedRun = runWithCompletedDeletion();
+  for (const at of [
+    "2026-08-17T18:59:59.999999999Z",
+    "2026-08-17T20:00:00.000000001Z",
+  ]) {
+    const deletion = parsedEvent(
+      2,
+      "content.deleted",
+      { deletedObjectCount: 3, manifestStatus: "deleted" },
+      validResearchRun.id,
+      at,
+    );
+    expectError(
+      validateRunManifestDeletionEventV1(reversedRun, [first, deletion, completed]),
+      "$[1].at",
+      "semantic_conflict",
+    );
+  }
+
+  const equalAt = "2026-08-17T19:00:00.000Z";
+  const equalRun = runWithCompletedDeletion(4, 2, equalAt, equalAt);
+  const equalDeletion = parsedEvent(
+    2,
+    "content.deleted",
+    { deletedObjectCount: 3, manifestStatus: "deleted" },
+    validResearchRun.id,
+    equalAt,
+  );
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(equalRun, [first, equalDeletion, completed])),
+    equalRun,
+  );
+
+  const leapRun = runWithCompletedDeletion(
+    4,
+    2,
+    "2016-12-31T23:59:59.999999999Z",
+    "2017-01-01T00:00:00Z",
+  );
+  const leapDeletion = parsedEvent(
+    2,
+    "content.deleted",
+    { deletedObjectCount: 3, manifestStatus: "deleted" },
+    validResearchRun.id,
+    "2016-12-31T23:59:60.5Z",
+  );
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(leapRun, [first, leapDeletion, completed])),
+    leapRun,
   );
 });
 

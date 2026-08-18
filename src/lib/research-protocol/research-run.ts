@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -16,6 +17,7 @@ import {
   parseRunManifestV1,
   type RunManifestV1,
 } from "./run-manifest.ts";
+import { validateSafeExtensionKeys } from "./privacy-extension.ts";
 
 const RESEARCH_RUN_SCHEMA = "opencoven.research-run/v1";
 const RESEARCH_RUN_SCHEMA_RE = /^opencoven\.research-run\/v(\d+)$/;
@@ -71,6 +73,10 @@ const RUN_EVENT_TYPES = [
   "retention.changed",
   "content.deleted",
 ] as const;
+const CONTENT_DELETED_DATA_FIELDS = new Set([
+  "deletedObjectCount",
+  "manifestStatus",
+]);
 
 type ResearchModelBindingV1 = {
   familiarId: string;
@@ -1014,6 +1020,44 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   const data = parseObject(dataField.value, "$.data");
   if (!data.ok) return data;
 
+  if (type.value === "content.deleted") {
+    const safeKeys = validateSafeExtensionKeys(
+      data.value,
+      "$.data",
+      CONTENT_DELETED_DATA_FIELDS,
+    );
+    if (!safeKeys.ok) return safeKeys;
+
+    const deletedObjectCountField = parseRequiredField(
+      data.value,
+      "deletedObjectCount",
+      "$.data",
+    );
+    if (!deletedObjectCountField.ok) return deletedObjectCountField;
+    const deletedObjectCount = parseSafeIntegerInRange(
+      deletedObjectCountField.value,
+      "$.data.deletedObjectCount",
+      "deletedObjectCount",
+      0,
+      MAX_SAFE_INTEGER,
+    );
+    if (!deletedObjectCount.ok) return deletedObjectCount;
+
+    const manifestStatusField = parseRequiredField(
+      data.value,
+      "manifestStatus",
+      "$.data",
+    );
+    if (!manifestStatusField.ok) return manifestStatusField;
+    if (manifestStatusField.value !== "deleted") {
+      return fail(
+        "invalid_value",
+        "$.data.manifestStatus",
+        "manifestStatus must equal deleted",
+      );
+    }
+  }
+
   return pass({
     ...object.value,
     schema: schema.value,
@@ -1137,6 +1181,20 @@ export function validateRunManifestDeletionEventV1(
       "semantic_conflict",
       `$[${eventIndex}].type`,
       "Deletion eventSequence must identify content.deleted",
+    );
+  }
+  const requestedAt = manifest.deletion.requestedAt;
+  const completedAt = manifest.deletion.completedAt;
+  if (
+    requestedAt === undefined ||
+    completedAt === undefined ||
+    compareUtcTimestamps(event.at, requestedAt) < 0 ||
+    compareUtcTimestamps(event.at, completedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].at`,
+      "content.deleted must occur between requestedAt and completedAt",
     );
   }
   if (event.data.deletedObjectCount !== manifest.deletion.deletedObjectCount) {
