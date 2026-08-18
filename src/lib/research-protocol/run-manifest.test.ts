@@ -1024,6 +1024,9 @@ test("public evidence canonical URLs preserve absolute credential-free HTTP(S) U
   for (const canonicalUrl of [
     "https://example.test/research?q=public#finding",
     "http://example.test:8080/research?source=1",
+    "https://example.test:/research",
+    "http://[2001:db8::1]:8080/evidence",
+    "HTTPS://example.test/research",
     "https://例え.テスト/検索?q=猫",
   ]) {
     const candidate = recalculate({
@@ -1041,12 +1044,17 @@ test("public evidence canonical URLs preserve absolute credential-free HTTP(S) U
   }
 });
 
-test("public evidence canonical URLs reject non-HTTP, relative, malformed, empty, and credential-bearing values", () => {
+test("public evidence canonical URLs reject non-HTTP, non-lexical, malformed, whitespace, and credential-bearing values", () => {
   const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
-  for (const [canonicalUrl, expectedSchemaValid] of [
+  for (const [canonicalUrl] of [
     ["", false],
     ["/relative/research", false],
+    ["//example.test/research", false],
     ["ftp://example.test/research", false],
+    ["https:example.test/evidence", false],
+    [" https://example.test/evidence", false],
+    ["https://example.test/evidence ", false],
+    ["https://exa\tmple.test/evidence", false],
     ["https://", true],
     ["https://researcher:secret@example.test/report", true],
   ] as const) {
@@ -1060,7 +1068,7 @@ test("public evidence canonical URLs reject non-HTTP, relative, malformed, empty
     });
     assert.equal(
       Value.Check(runManifestSchema, candidate),
-      expectedSchemaValid,
+      false,
       canonicalUrl || "<empty>",
     );
     expectError(

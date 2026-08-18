@@ -1,9 +1,8 @@
 {
-  "expectedSchemaValid": false,
   "schema": "opencoven.run-manifest/v1",
-  "id": "manifest_url_malformed",
+  "id": "manifest_url_shorthand",
   "runId": "run_url_01",
-  "digest": "b6aa42395d8be8ca331f306c45e024914e8c212f52a02afe28739dba5a22e393",
+  "digest": "76f0f25461275344a844e54ca00ad09a890c3520bbd2221adeb938f7e7576c7a",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-18T12:00:00.000Z",
@@ -13,7 +12,7 @@
     "id": "evidence_url_01",
     "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "snapshotDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "canonicalUrl": "https://",
+    "canonicalUrl": "https:example.test/evidence",
     "fetchedAt": "2026-08-18T12:01:00.000Z"
   }],
   "artifacts": [],

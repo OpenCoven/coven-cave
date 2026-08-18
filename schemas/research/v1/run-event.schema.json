@@ -20,6 +20,8 @@
         "required": ["type"]
       },
       "then": {
+        "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
+        "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
         "properties": {
           "data": { "$ref": "#/$defs/contentDeletedData" }
         }

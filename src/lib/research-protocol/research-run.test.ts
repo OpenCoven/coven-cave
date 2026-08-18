@@ -1799,10 +1799,14 @@ test("content.deleted events require metadata-only deletion receipts and preserv
         retries: [0, 1],
       },
     },
+    auditMetadata: {
+      requestId: "delete_01",
+      records: [{ label: "deletedContents", status: "complete" }],
+    },
   };
 
   assert.equal(checkRunEventSchema(event), true);
-  assert.deepEqual(expectOk(parseRunEventV1(event)).data, event.data);
+  assert.deepEqual(expectOk(parseRunEventV1(event)), event);
 
   for (const [data, path, code] of [
     [
@@ -1894,6 +1898,44 @@ test("content.deleted events recursively reject sensitive metadata aliases befor
   };
   assert.equal(checkRunEventSchema(unrelatedEvent), true);
   assert.equal(parseRunEventV1(unrelatedEvent).ok, true);
+});
+
+test("content.deleted events reject sensitive keys across the complete event object", () => {
+  const event = {
+    ...validRunEvent,
+    type: "content.deleted",
+    data: {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+    },
+  };
+  const cases: ReadonlyArray<{
+    extension: Record<string, unknown>;
+    path: string;
+  }> = [
+    {
+      extension: { deletedContents: ["private research"] },
+      path: "$.deletedContents",
+    },
+    {
+      extension: {
+        auditMetadata: {
+          records: [{ localPath: "/private/research.md" }],
+        },
+      },
+      path: "$.auditMetadata.records[0].localPath",
+    },
+    {
+      extension: { "ｄｅｌｅｔｅｄＣｏｎｔｅｎｔｓ": ["private research"] },
+      path: "$[\"ｄｅｌｅｔｅｄＣｏｎｔｅｎｔｓ\"]",
+    },
+  ];
+
+  for (const { extension, path } of cases) {
+    const candidate = { ...event, ...extension };
+    assert.equal(checkRunEventSchema(candidate), false, path);
+    expectError(parseRunEventV1(candidate), path, "semantic_conflict");
+  }
 });
 
 test("completed deletion requires a final manifest and its exact event in the complete run stream", () => {

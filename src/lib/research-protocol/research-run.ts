@@ -1013,13 +1013,6 @@ function parseContentDeletedEventData(
   value: Record<string, unknown>,
   path: string,
 ): ProtocolParseResult<ContentDeletedEventDataV1> {
-  const safeKeys = validateSensitiveExtensionKeys(
-    value,
-    path,
-    "content.deleted data",
-  );
-  if (!safeKeys.ok) return safeKeys;
-
   const deletedObjectCountField = parseRequiredField(
     value,
     "deletedObjectCount",
@@ -1405,6 +1398,15 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   if (!typeField.ok) return typeField;
   const type = parseEnumValue(typeField.value, RUN_EVENT_TYPES, "$.type", "type");
   if (!type.ok) return type;
+
+  if (type.value === "content.deleted") {
+    const safeEvent = validateSensitiveExtensionKeys(
+      object.value,
+      "$",
+      "content.deleted event",
+    );
+    if (!safeEvent.ok) return safeEvent;
+  }
 
   const atField = parseRequiredField(object.value, "at", "$");
   if (!atField.ok) return atField;

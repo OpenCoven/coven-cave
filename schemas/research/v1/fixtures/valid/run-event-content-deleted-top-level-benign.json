@@ -1,0 +1,20 @@
+{
+  "schema": "opencoven.run-event/v1",
+  "runId": "run_01",
+  "sequence": 2,
+  "type": "content.deleted",
+  "at": "2026-08-17T19:30:00.000Z",
+  "data": {
+    "deletedObjectCount": 3,
+    "manifestStatus": "deleted"
+  },
+  "auditMetadata": {
+    "requestId": "delete_01",
+    "records": [
+      {
+        "label": "deletedContents",
+        "status": "complete"
+      }
+    ]
+  }
+}

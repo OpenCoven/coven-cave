@@ -45,6 +45,8 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
+const CANONICAL_EVIDENCE_URL_PREFIX_RE = /^https?:\/\//i;
+const CANONICAL_EVIDENCE_URL_WHITESPACE_RE = /\s/;
 
 export type ArtifactRegistrationV1 = {
   id: string;
@@ -331,6 +333,16 @@ function parseCanonicalEvidenceUrl(
   if (!canonicalUrl.ok) return canonicalUrl;
   if (canonicalUrl.value.length === 0) {
     return fail("invalid_value", path, "canonicalUrl must not be empty");
+  }
+  if (
+    !CANONICAL_EVIDENCE_URL_PREFIX_RE.test(canonicalUrl.value)
+    || CANONICAL_EVIDENCE_URL_WHITESPACE_RE.test(canonicalUrl.value)
+  ) {
+    return fail(
+      "invalid_value",
+      path,
+      "canonicalUrl must lexically begin with http:// or https:// and contain no whitespace",
+    );
   }
 
   let parsed: URL;
