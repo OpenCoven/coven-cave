@@ -94,6 +94,7 @@ type Props = {
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   /** Forwarded to ChatRouter: reports the session its chat view is showing so
    *  the Workspace can keep the sidebar highlight in sync as state. */
   onActiveSessionChange?: (sessionId: string | null) => void;
@@ -133,6 +134,7 @@ export function ChatSurface({
   onSessionsDeleted,
   onOpenTask,
   onOpenUrl,
+  onOpenPreview,
   onActiveSessionChange,
   hideThreadRail = false,
   initialScope = "conversation",
@@ -517,6 +519,7 @@ export function ChatSurface({
                   pendingProjectRoot={pendingProjectRoot}
                   onOpenTask={onOpenTask}
                   onOpenUrl={onOpenUrl}
+                  onOpenPreview={onOpenPreview}
                   onActiveSessionChange={onActiveSessionChange}
                   onOpenProjectsTab={() => setScope("projects")}
                   syncUrlHash

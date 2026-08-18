@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buildCovenMarkersDirective } from "./coven-marker-directive.ts";
 import { sliceGitHubBlocks } from "./github-blocks.ts";
 import { isRenderableImageSrc, sliceImageBlocks } from "./image-blocks.ts";
+import { isRenderablePreviewUrl, slicePreviewBlocks } from "./preview-blocks.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
 import { sliceSpecBlocks } from "./spec-blocks.ts";
 
@@ -100,6 +101,17 @@ assert.match(
   /Do not claim an image or file was shown unless the reply contains a renderable image marker or a workspace-local attachment marker/,
   "completion language is gated on visible delivery evidence",
 );
+
+const examplePreview = directive.match(/<coven:preview\s[^>]*\/>/)?.[0];
+assert.ok(examplePreview, "directive carries a preview-marker example");
+const preview = slicePreviewBlocks(examplePreview)
+  .find((piece) => piece.kind === "preview")?.preview;
+assert.equal(preview?.title, "Preview title");
+assert.ok(
+  isRenderablePreviewUrl(preview?.url),
+  "the taught preview URL must be loopback-safe",
+);
+assert.match(directive, /temporary preview is not a durable deliverable/i);
 
 const exampleSpec = directive.match(/`{3,}spec title="[^"]+"\n[\s\S]*?\n`{3,}/)?.[0];
 assert.ok(exampleSpec, "directive carries a spec-fence example");
