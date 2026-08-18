@@ -1042,6 +1042,9 @@ test("artifact titles reject RFC 3986 URI scheme prefixes", () => {
     "geo:37.7,-122.4",
     "custom+scheme:value",
     "CuStOm.ScHeMe-2:value",
+    "data: private",
+    "javascript: alert(1)",
+    "CuStOm+ScHeMe.2-foo: not a URL",
     "a:value",
     "a:",
   ]) {
@@ -1052,12 +1055,25 @@ test("artifact titles reject RFC 3986 URI scheme prefixes", () => {
     assert.equal(Value.Check(runManifestSchema, invalid), false, title);
     expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
   }
+
+  for (const title of [
+    "ｄａｔａ： private",
+    "ｊａｖａｓｃｒｉｐｔ： alert(1)",
+    "CuStOm\u2060+Scheme： invalid payload",
+  ]) {
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], title }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), true, title);
+    expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
+  }
 });
 
 test("artifact title URI detection preserves ordinary colon text and RFC 3986 boundaries", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const title of [
-    "Decision: summary",
+    "Decision 1: summary",
     "Version 2: summary",
     "12:30 summary",
     "1custom:value",

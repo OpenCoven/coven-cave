@@ -25,11 +25,14 @@
             {
               "enum": ["schema", "runId", "sequence", "type", "at", "data"]
             },
-            { "$ref": "#/$defs/sensitivePropertyName" }
+            { "$ref": "#/$defs/deletionExtensionPropertyName" }
           ]
         },
         "properties": {
           "data": { "$ref": "#/$defs/contentDeletedData" }
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/deletionSafeExtensionValue"
         }
       }
     }
@@ -108,13 +111,42 @@
         }
       ]
     },
+    "deletionExtensionPropertyName": {
+      "type": "string",
+      "pattern": "^[\\x00-\\x7f]+$",
+      "allOf": [
+        { "$ref": "#/$defs/sensitivePropertyName" }
+      ]
+    },
+    "deletionSafeExtensionValue": {
+      "anyOf": [
+        {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deletionSafeExtensionValue" }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/deletionExtensionPropertyName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/deletionSafeExtensionValue"
+          }
+        }
+      ]
+    },
     "contentDeletedData": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "additionalProperties": {
+        "$ref": "#/$defs/deletionSafeExtensionValue"
+      },
       "propertyNames": {
         "anyOf": [
           { "enum": ["deletedObjectCount", "manifestStatus"] },
-          { "$ref": "#/$defs/sensitivePropertyName" }
+          { "$ref": "#/$defs/deletionExtensionPropertyName" }
         ]
       },
       "required": ["deletedObjectCount", "manifestStatus"],
