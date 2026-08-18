@@ -1,15 +1,16 @@
 // Structured cross-object conformance for Research Protocol v1.
 //
 // Scenario behavior lives in JSON under
-// `schemas/research/v1/fixtures/scenarios/*.scenario.json`. Each corpus names a
-// format/family, declares reusable objects (fixture or inline value, optional
-// RFC 7396 mergePatch, optional digestTargets), then lists stable scenario ids,
+// `schemas/research/v1/fixtures/scenarios/*.scenario.json`, with authoritative
+// support objects beneath `scenarios/objects/`. Each corpus names a format/family,
+// declares reusable objects (fixture or inline value, optional RFC 7396
+// mergePatch, optional digestTargets), then lists stable scenario ids,
 // descriptions, input references, validator options, and exact expected
 // code/path outcomes. This runner owns assembly and strict format validation;
 // protocol behavior stays in the public parsers and composition validators.
 
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,8 +97,97 @@ type ScenarioCorpus = {
   scenarios: ScenarioDefinition[];
 };
 
+type ScenarioTreeEntryKind = "file" | "directory" | "symlink" | "other";
+type ScenarioTreeClassification = "corpus" | "support" | "directory";
+type ScenarioInventoryFile = {
+  relativePath: string;
+  filePath: string;
+};
+type ScenarioInventory = {
+  corpusFiles: ScenarioInventoryFile[];
+  supportObjectFiles: ScenarioInventoryFile[];
+};
+
 function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function classifyScenarioTreeEntry(
+  relativePath: string,
+  kind: ScenarioTreeEntryKind,
+): ScenarioTreeClassification {
+  if (kind === "symlink") {
+    assert.fail(`${relativePath}: symlinks are not allowed under the scenario fixture tree`);
+  }
+  if (kind === "other") {
+    assert.fail(`${relativePath}: must be a regular file or directory`);
+  }
+
+  const isInObjectsDirectory = relativePath.startsWith("objects/");
+  if (kind === "directory") {
+    if (relativePath === "objects" || isInObjectsDirectory) return "directory";
+    assert.fail(`${relativePath}: unexpected directory outside the designated objects directory`);
+  }
+
+  if (!relativePath.includes("/") && relativePath.endsWith(".scenario.json")) {
+    return "corpus";
+  }
+  if (isInObjectsDirectory && relativePath.endsWith(".json")) {
+    return "support";
+  }
+  if (relativePath.endsWith(".json")) {
+    assert.fail(`${relativePath}: JSON file is outside the objects directory and is not a top-level corpus`);
+  }
+  assert.fail(
+    `${relativePath}: unexpected file extension; expected a top-level .scenario.json corpus or an objects/**/*.json support object`,
+  );
+}
+
+function inventoryScenarioTree(rootDirectory: string): ScenarioInventory {
+  const rootStats = lstatSync(rootDirectory, { throwIfNoEntry: false });
+  assert.ok(rootStats, `${rootDirectory}: scenario fixture root does not exist`);
+  assert.ok(
+    !rootStats.isSymbolicLink(),
+    `${rootDirectory}: scenario fixture root must not be a symlink`,
+  );
+  assert.ok(rootStats.isDirectory(), `${rootDirectory}: scenario fixture root must be a directory`);
+
+  const corpusFiles: ScenarioInventoryFile[] = [];
+  const supportObjectFiles: ScenarioInventoryFile[] = [];
+
+  function visit(directoryPath: string, relativeDirectory: string): void {
+    const entryNames = readdirSync(directoryPath).sort(compareCodeUnits);
+    for (const entryName of entryNames) {
+      const relativePath =
+        relativeDirectory === "" ? entryName : `${relativeDirectory}/${entryName}`;
+      const filePath = path.join(directoryPath, entryName);
+      const stats = lstatSync(filePath, { throwIfNoEntry: false });
+      assert.ok(stats, `${filePath}: scenario inventory entry disappeared`);
+
+      const kind: ScenarioTreeEntryKind = stats.isSymbolicLink()
+        ? "symlink"
+        : stats.isFile()
+          ? "file"
+          : stats.isDirectory()
+            ? "directory"
+            : "other";
+      const classification = classifyScenarioTreeEntry(relativePath, kind);
+      if (classification === "directory") {
+        visit(filePath, relativePath);
+      } else if (classification === "corpus") {
+        corpusFiles.push({ relativePath, filePath });
+      } else {
+        supportObjectFiles.push({ relativePath, filePath });
+      }
+    }
+  }
+
+  visit(rootDirectory, "");
+  corpusFiles.sort((left, right) => compareCodeUnits(left.relativePath, right.relativePath));
+  supportObjectFiles.sort((left, right) =>
+    compareCodeUnits(left.relativePath, right.relativePath),
+  );
+  return { corpusFiles, supportObjectFiles };
 }
 
 function readJsonFile(filePath: string): unknown {
@@ -478,15 +568,61 @@ function resolveJsonPointer(
 }
 
 function resolveFixturePath(relativePath: string, location: string): string {
-  const resolved = path.resolve(fixturesDir, relativePath);
+  assert.ok(relativePath !== "", `${location}: fixture path must not be empty`);
+  assert.ok(
+    !path.posix.isAbsolute(relativePath) && !path.win32.isAbsolute(relativePath),
+    `${location}: fixture path must be a repository-relative POSIX path beneath the fixture root`,
+  );
+  assert.ok(
+    !relativePath.includes("\\"),
+    `${location}: fixture path must use POSIX separators, not backslashes`,
+  );
+  assert.ok(!relativePath.includes("\0"), `${location}: fixture path must not contain NUL bytes`);
+
+  const segments = relativePath.split("/");
+  assert.ok(
+    !segments.includes(""),
+    `${location}: fixture path must not contain empty segments`,
+  );
+  assert.ok(
+    !segments.some((segment) => segment === "." || segment === ".."),
+    `${location}: fixture path must not contain dot or traversal segments`,
+  );
+  assert.ok(
+    relativePath.endsWith(".json"),
+    `${location}: fixture path must end in .json`,
+  );
+
+  const rootStats = lstatSync(fixturesDir, { throwIfNoEntry: false });
+  assert.ok(rootStats, `${fixturesDir}: fixture root does not exist`);
+  assert.ok(!rootStats.isSymbolicLink(), `${fixturesDir}: fixture root must not be a symlink`);
+  assert.ok(rootStats.isDirectory(), `${fixturesDir}: fixture root must be a directory`);
+
+  let resolved = fixturesDir;
+  for (const [index, segment] of segments.entries()) {
+    resolved = path.join(resolved, segment);
+    const stats = lstatSync(resolved, { throwIfNoEntry: false });
+    const traversedPath = segments.slice(0, index + 1).join("/");
+    assert.ok(stats, `${location}: fixture does not exist (${traversedPath})`);
+    assert.ok(
+      !stats.isSymbolicLink(),
+      `${location}: fixture path component ${traversedPath} is a symlink; symlinks are not allowed`,
+    );
+    if (index === segments.length - 1) {
+      assert.ok(stats.isFile(), `${location}: fixture path must identify a regular file`);
+    } else {
+      assert.ok(
+        stats.isDirectory(),
+        `${location}: fixture path component ${traversedPath} must be a directory`,
+      );
+    }
+  }
+
   const relative = path.relative(fixturesDir, resolved);
   assert.ok(
     relative !== "" && !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative),
     `${location}: fixture path must stay beneath ${fixturesDir}`,
   );
-  assert.ok(resolved.endsWith(".json"), `${location}: fixture path must end in .json`);
-  assert.ok(existsSync(resolved), `${location}: fixture does not exist`);
-  assert.ok(lstatSync(resolved).isFile(), `${location}: fixture path must identify a regular file`);
   return resolved;
 }
 
@@ -526,6 +662,41 @@ for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
   schemaCheckContext[schemaId] = schema;
 }
 
+function validateProtocolObjectSchema(
+  value: unknown,
+  location: string,
+): Record<string, unknown> {
+  const protocolObject = requireRecord(value, location);
+  const schemaId = requireString(protocolObject.schema, `${location}.schema`);
+  const schema = schemaContext.get(schemaId);
+  assert.ok(schema !== undefined, `${location}: schema ${schemaId} is not an approved v1 schema`);
+  assert.equal(
+    Check(schemaCheckContext, schema, protocolObject),
+    true,
+    `${location}: object must pass its authoritative schema before parsing or composition`,
+  );
+  return protocolObject;
+}
+
+function validateAuthoritativeProtocolObject(
+  value: unknown,
+  location: string,
+): ResearchProtocolObjectV1 {
+  const protocolObject = validateProtocolObjectSchema(value, location);
+  const parsed = parseResearchProtocolObject(protocolObject);
+  if (!parsed.ok) {
+    assert.fail(
+      `${location}: support object must pass the public parser (${parsed.error.code} at ${parsed.error.path}: ${parsed.error.message})`,
+    );
+  }
+  assert.deepEqual(
+    parsed.value,
+    protocolObject,
+    `${location}: public parser must preserve authoritative support object data losslessly`,
+  );
+  return parsed.value;
+}
+
 function parseScenarioInput(
   corpus: ScenarioCorpus,
   objectName: string,
@@ -535,14 +706,9 @@ function parseScenarioInput(
   parsed: ProtocolParseResult<ResearchProtocolObjectV1>;
 } {
   const location = `${corpus.filePath}.objects.${objectName} (input ${inputName})`;
-  const materialized = materializeObject(corpus.objects[objectName], location);
-  const schemaId = requireString(materialized.schema, `${location}.schema`);
-  const schema = schemaContext.get(schemaId);
-  assert.ok(schema !== undefined, `${location}: schema ${schemaId} is not an approved v1 schema`);
-  assert.equal(
-    Check(schemaCheckContext, schema, materialized),
-    true,
-    `${location}: object must pass its authoritative schema before parsing or composition`,
+  const materialized = validateProtocolObjectSchema(
+    materializeObject(corpus.objects[objectName], location),
+    location,
   );
   return {
     materialized,
@@ -708,26 +874,69 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
   assert.equal(result.error.path, scenario.expected.path, "wrong protocol error path");
 }
 
-const scenarioEntries = readdirSync(scenariosDir, { withFileTypes: true });
-const scenarioFileNames = scenarioEntries
-  .filter((entry) => entry.isFile() && entry.name.endsWith(".scenario.json"))
-  .map((entry) => entry.name)
-  .sort(compareCodeUnits);
-const rootJsonFileNames = scenarioEntries
-  .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-  .map((entry) => entry.name)
-  .sort(compareCodeUnits);
-const corpora = scenarioFileNames.map((fileName) => {
-  const filePath = path.join(scenariosDir, fileName);
-  return validateCorpus(readJsonFile(filePath), filePath);
-});
+function collectFixtureReferences(
+  scenarioCorpora: readonly ScenarioCorpus[],
+): Map<string, string[]> {
+  const references = new Map<string, string[]>();
+  for (const corpus of scenarioCorpora) {
+    for (const objectName of Object.keys(corpus.objects).sort(compareCodeUnits)) {
+      const fixture = corpus.objects[objectName].fixture;
+      if (fixture === undefined) continue;
+
+      const location = `${corpus.filePath}.objects.${objectName}.fixture`;
+      resolveFixturePath(fixture, location);
+      const locations = references.get(fixture) ?? [];
+      locations.push(location);
+      references.set(fixture, locations);
+    }
+  }
+  return references;
+}
+
+function assertSupportObjectsReferenced(
+  supportRelativePaths: readonly string[],
+  fixtureReferences: ReadonlyMap<string, readonly string[]>,
+  scenarioRootLocation: string,
+): void {
+  for (const relativePath of [...supportRelativePaths].sort(compareCodeUnits)) {
+    const fixtureReference = `scenarios/${relativePath}`;
+    const locations = fixtureReferences.get(fixtureReference);
+    assert.ok(
+      locations !== undefined && locations.length > 0,
+      `${scenarioRootLocation}/${relativePath}: support object is not referenced by any corpus`,
+    );
+  }
+}
+
+const scenarioInventory = inventoryScenarioTree(scenariosDir);
+for (const supportObject of scenarioInventory.supportObjectFiles) {
+  validateAuthoritativeProtocolObject(readJsonFile(supportObject.filePath), supportObject.filePath);
+}
+
+const corpora = scenarioInventory.corpusFiles.map(({ filePath }) =>
+  validateCorpus(readJsonFile(filePath), filePath),
+);
+const fixtureReferenceLocations = collectFixtureReferences(corpora);
+assertSupportObjectsReferenced(
+  scenarioInventory.supportObjectFiles.map((file) => file.relativePath),
+  fixtureReferenceLocations,
+  scenariosDir,
+);
 
 test("discovers every structured Research Protocol scenario fixture deterministically", () => {
-  assert.ok(scenarioFileNames.length > 0, `${scenariosDir}: no .scenario.json fixtures found`);
+  const corpusRelativePaths = scenarioInventory.corpusFiles.map((file) => file.relativePath);
+  const supportRelativePaths = scenarioInventory.supportObjectFiles.map((file) => file.relativePath);
+  assert.ok(corpusRelativePaths.length > 0, `${scenariosDir}: no .scenario.json fixtures found`);
+  assert.ok(supportRelativePaths.length > 0, `${scenariosDir}: no support object fixtures found`);
   assert.deepEqual(
-    rootJsonFileNames,
-    scenarioFileNames,
-    `${scenariosDir}: every root JSON fixture must use the .scenario.json suffix`,
+    corpusRelativePaths,
+    [...corpusRelativePaths].sort(compareCodeUnits),
+    `${scenariosDir}: corpus inventory must use code-unit ordering`,
+  );
+  assert.deepEqual(
+    supportRelativePaths,
+    [...supportRelativePaths].sort(compareCodeUnits),
+    `${scenariosDir}: support object inventory must use code-unit ordering`,
   );
   assert.deepEqual(
     [...new Set(corpora.map((corpus) => corpus.family))].sort(compareCodeUnits),
@@ -784,6 +993,88 @@ test("rejects malformed scenario definitions before protocol execution", () => {
   assert.throws(
     () => resolveFixturePath("valid/missing-scenario-fixture.json", "missing.fixture"),
     /missing\.fixture: fixture does not exist/,
+  );
+});
+
+test("validates raw support objects through the authoritative schema and public parser", () => {
+  const filePath = path.join(scenariosDir, "objects/context-bound-extended-run.json");
+  const supportObject = requireRecord(readJsonFile(filePath), filePath);
+  assert.deepEqual(validateAuthoritativeProtocolObject(supportObject, filePath), supportObject);
+
+  const parserInvalid = structuredClone(supportObject);
+  const manifest = requireRecord(parserInvalid.artifactManifest, `${filePath}.artifactManifest`);
+  manifest.digest = "0".repeat(64);
+  assert.throws(
+    () => validateAuthoritativeProtocolObject(parserInvalid, "parser-invalid-support.json"),
+    /public parser.*digest_mismatch.*\$\.artifactManifest\.digest/,
+  );
+});
+
+test("classifies only top-level corpora and JSON support objects under objects", () => {
+  assert.equal(classifyScenarioTreeEntry("model-task-result.scenario.json", "file"), "corpus");
+  assert.equal(classifyScenarioTreeEntry("objects", "directory"), "directory");
+  assert.equal(classifyScenarioTreeEntry("objects/base.json", "file"), "support");
+  assert.equal(classifyScenarioTreeEntry("objects/nested", "directory"), "directory");
+
+  assert.throws(
+    () => classifyScenarioTreeEntry("nested/base.json", "file"),
+    /JSON file is outside the objects directory/,
+  );
+  assert.throws(
+    () => classifyScenarioTreeEntry("notes.txt", "file"),
+    /unexpected file extension/,
+  );
+  assert.throws(
+    () => classifyScenarioTreeEntry("extra", "directory"),
+    /unexpected directory/,
+  );
+  assert.throws(
+    () => classifyScenarioTreeEntry("objects/link.json", "symlink"),
+    /symlinks are not allowed/,
+  );
+  assert.throws(
+    () => classifyScenarioTreeEntry("objects/socket.json", "other"),
+    /must be a regular file or directory/,
+  );
+});
+
+test("rejects non-portable fixture references before filesystem lookup", () => {
+  for (const [fixture, expected] of [
+    [path.join(fixturesDir, "valid/model-task.json"), /relative POSIX path/],
+    ["C:/checkout/model-task.json", /relative POSIX path/],
+    ["valid\\model-task.json", /POSIX separators/],
+    ["./valid/model-task.json", /dot or traversal segments/],
+    ["valid/../valid/model-task.json", /dot or traversal segments/],
+    ["valid//model-task.json", /empty segments/],
+    ["valid/model-task.json/", /empty segments/],
+  ] as const) {
+    assert.throws(
+      () => resolveFixturePath(fixture, `fixture ${JSON.stringify(fixture)}`),
+      expected,
+    );
+  }
+
+  assert.equal(
+    resolveFixturePath("valid/model-task.json", "portable.fixture"),
+    path.join(fixturesDir, "valid/model-task.json"),
+  );
+});
+
+test("requires every inventoried support object to have a corpus fixture reference", () => {
+  const repeatedReference = new Map<string, readonly string[]>([
+    ["scenarios/objects/base.json", ["first.objects.base", "second.objects.base"]],
+  ]);
+  assert.doesNotThrow(() =>
+    assertSupportObjectsReferenced(["objects/base.json"], repeatedReference, "scenario-root"),
+  );
+  assert.throws(
+    () =>
+      assertSupportObjectsReferenced(
+        ["objects/base.json", "objects/orphan.json"],
+        repeatedReference,
+        "scenario-root",
+      ),
+    /objects\/orphan\.json: support object is not referenced by any corpus/,
   );
 });
 
