@@ -50,10 +50,12 @@ export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]):
  * persistence route. `transcript` (from {@link buildReflectTranscript}) grounds an
  * ephemeral run that does not resume/pollute the original thread.
  */
-export function buildThreadReflectPrompt(opts: { sessionId: string; transcript?: string }): string {
-  const context = opts.transcript?.trim()
-    ? `Here is the thread you just completed (session: ${opts.sessionId}), oldest to newest:\n\n${opts.transcript}\n\n`
-    : `No transcript was captured for the thread just completed (session: ${opts.sessionId}). Judge only what you can actually establish; do not treat the missing transcript as a finding about the thread.\n\n`;
+export function buildThreadReflectPrompt(opts: { sessionId: string; transcript: string }): string {
+  const transcript = opts.transcript.trim();
+  if (!transcript) {
+    throw new Error("Thread reflection requires transcript evidence.");
+  }
+  const context = `Here is the thread you just completed (session: ${opts.sessionId}), oldest to newest:\n\n${transcript}\n\n`;
   return `${context}Reflect honestly on how that thread went for you as the familiar.
 Return ONLY a valid JSON object matching this exact shape - no prose, no markdown fences:
 
@@ -82,11 +84,11 @@ Return ONLY a valid JSON object matching this exact shape - no prose, no markdow
 
 Scope rule for "contextPressure": rate the THREAD ABOVE, not this reflection run.
 This is a separate, deliberately minimal run whose transcript is condensed and
-may be clipped or missing entirely. That is normal and expected — it is a
-property of how reflection works, never evidence about the thread. So:
+may be clipped. That is normal and expected — it is a property of how reflection
+works, never evidence about the thread. So:
 - Do NOT rate pressure on how much of the transcript you can see here.
 - Do NOT cite this prompt's own size, injected reference material, or a
-  truncated/absent transcript as a cause of pressure.
+  truncated transcript as a cause of pressure.
 - Rate "critical" or "excess" only for pressure the thread itself actually hit:
   the thread compacted, state had to be re-derived, work was dropped, or the
   thread was given far more material than its task required.

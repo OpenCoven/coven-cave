@@ -1947,6 +1947,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
   const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
+  const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
   const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
     sessionId: null,
@@ -1980,14 +1981,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, []);
 
   const reflectOnThread = useCallback(async () => {
-    if (!sessionId || reflecting) return;
+    if (!sessionId || reflecting || !reflectTranscript) return;
     setReflecting(true);
     setReflectError(null);
     try {
       // Generate the reflection client-side via the chat bridge — the daemon has
       // no LLM endpoint. Run it ephemerally (embed the transcript instead of
       // resuming the session) so it never appends a turn to the user's thread.
-      const prompt = buildThreadReflectPrompt({ sessionId, transcript: buildReflectTranscript(turns) });
+      const prompt = buildThreadReflectPrompt({ sessionId, transcript: reflectTranscript });
       const { text, error } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
@@ -2017,12 +2018,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setReflecting(false);
     }
-  }, [familiar.display_name, familiar.id, onSessionsChanged, reflecting, session?.title, sessionId, turns]);
+  }, [familiar.display_name, familiar.id, onSessionsChanged, reflectTranscript, reflecting, session?.title, sessionId]);
 
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
-    if (!familiar.autoSelfReport) return;
+    if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
-      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: buildReflectTranscript(turns) });
+      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
       const { text, error } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
@@ -2050,7 +2051,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
-  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, session?.title, turns]);
+  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, reflectTranscript, session?.title]);
 
   useEffect(() => {
     const status = session?.status?.toLowerCase();
@@ -7702,7 +7703,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 promotableFamiliars={promotableFamiliars}
                 onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
-                onReflect={familiar.id ? () => void reflectOnThread() : undefined}
+                onReflect={familiar.id && reflectTranscript ? () => void reflectOnThread() : undefined}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
                 onRegisterCurrentRoot={
                   setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
