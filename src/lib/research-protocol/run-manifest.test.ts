@@ -42,9 +42,6 @@ import invalidFullwidthSkSecretTitleJson from "../../../schemas/research/v1/fixt
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 import validBenignUnicodeTitleJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-title-benign-unicode.json" with { type: "json" };
 
-import {
-  ADDITIONAL_SENSITIVE_PROPERTY_NAME_PATTERN,
-} from "./common.ts";
 import { digestProtocolObject } from "./digest.ts";
 import {
   aggregateManifestUsage,
@@ -88,6 +85,26 @@ function expectError(
     assert.equal(result.error.code, code);
   }
   return result.error;
+}
+
+function spoofedExoticObjects(): Array<readonly [string, object]> {
+  const factories: Array<readonly [string, () => object]> = [
+    ["Map", () => new Map([["key", "value"]])],
+    ["Set", () => new Set(["value"])],
+    ["Date", () => new Date("2026-08-18T20:00:00.000Z")],
+    ["RegExp", () => /research/giu],
+    ["typed array", () => new Uint8Array([1, 2, 3])],
+    ["ArrayBuffer", () => new ArrayBuffer(8)],
+  ];
+  const values: Array<readonly [string, object]> = [];
+  for (const [label, create] of factories) {
+    for (const prototype of [Object.prototype, null]) {
+      const value = create();
+      Object.setPrototypeOf(value, prototype);
+      values.push([`${label} with ${prototype === null ? "null" : "Object"} prototype`, value]);
+    }
+  }
+  return values;
 }
 
 function recalculate<T extends Record<string, unknown>>(value: T): T {
@@ -880,11 +897,26 @@ test("schema and runtime reject normalized private-content and credential key fa
   }
 });
 
-test("schema sensitive-key pattern stays synchronized with runtime normalization", () => {
-  assert.equal(
-    runManifestSchema.$defs.sensitivePropertyName.allOf.at(-1)?.not.pattern,
-    ADDITIONAL_SENSITIVE_PROPERTY_NAME_PATTERN,
-  );
+test("schema and runtime reject separators before plural sensitive-key suffixes", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const family of ["access_token", "secret", "private_content", "deleted_content"]) {
+    for (const separator of ["_", "-", ".", " "]) {
+      const key = `${family}${separator}s`;
+      const invalid = recalculate({
+        ...local,
+        artifacts: [{ ...local.artifacts[0], metadata: { [key]: "private material" } }],
+      });
+      assert.equal(Value.Check(runManifestSchema, invalid), false, key);
+      const path = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+        ? `$.artifacts[0].metadata.${key}`
+        : `$.artifacts[0].metadata[${JSON.stringify(key)}]`;
+      expectError(
+        parseRunManifestV1(invalid),
+        path,
+        "semantic_conflict",
+      );
+    }
+  }
 });
 
 test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
@@ -2392,6 +2424,68 @@ test("revision options are snapshotted before either manifest and validated expl
   }
 });
 
+test("manifest revision option roots reject spoofed exotics and proxies without invoking traps", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+
+  for (const [label, options] of spoofedExoticObjects()) {
+    const error = expectError(
+      validateRunManifestRevision(
+        previous,
+        next,
+        options as ManifestRevisionOptions,
+      ),
+      "$.options",
+      "invalid_value",
+    );
+    assert.match(error.message, /ordinary object/i, label);
+  }
+
+  let proxyTrapCalls = 0;
+  const proxyOptions = new Proxy(
+    { contextConsent: "7-days" as const },
+    {
+      ownKeys(target) {
+        proxyTrapCalls += 1;
+        return Reflect.ownKeys(target);
+      },
+    },
+  );
+  expectError(
+    validateRunManifestRevision(previous, next, proxyOptions),
+    "$.options",
+    "invalid_value",
+  );
+  assert.equal(proxyTrapCalls, 0);
+
+  let symbolAccessorCalls = 0;
+  const symbolOptions = { contextConsent: "7-days" as const };
+  Object.defineProperty(symbolOptions, Symbol.iterator, {
+    get() {
+      symbolAccessorCalls += 1;
+      return function* () {
+        yield "project";
+      };
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  expectError(
+    validateRunManifestRevision(previous, next, symbolOptions),
+    "$.options",
+    "invalid_value",
+  );
+  assert.equal(symbolAccessorCalls, 0);
+
+  const nullPrototypeOptions = Object.assign(Object.create(null), {
+    contextConsent: "7-days" as const,
+  }) as ManifestRevisionOptions;
+  assert.strictEqual(
+    expectOk(validateRunManifestRevision(previous, next, nullPrototypeOptions)),
+    next,
+  );
+});
+
 test("manifest revision lifecycle clocks cannot roll back at nanosecond precision", () => {
   const previousCreatedAt = expectOk(
     parseRunManifestV1(
@@ -3639,7 +3733,7 @@ test("revision validation requires scheduled deadlines and forbids clearing an e
   }
 });
 
-test("completed deletion cannot be resurrected by a later revision", () => {
+test("completed deletion rejects every later revision without allowing receipt rewrites", () => {
   const final = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const deleted = expectOk(
     parseRunManifestV1(
@@ -3689,6 +3783,44 @@ test("completed deletion cannot be resurrected by a later revision", () => {
     "$.deletion.status",
     "semantic_conflict",
   );
+
+  for (const successorValue of [
+    {
+      ...deleted,
+    },
+    {
+      ...deleted,
+      artifacts: [
+        ...deleted.artifacts,
+        {
+          ...structuredClone(deleted.artifacts[0]!),
+          id: "artifact_late_01",
+        },
+      ],
+    },
+    {
+      ...deleted,
+      deletion: {
+        ...deleted.deletion,
+        retainedAuditUntil: "2027-08-16T20:06:00.000Z",
+      },
+    },
+  ]) {
+    const successor = expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...successorValue,
+          revision: 3,
+          previousDigest: deleted.digest,
+        }),
+      ),
+    );
+    expectError(
+      validateRunManifestRevision(deleted, successor, { contextConsent: "7-days" }),
+      "$.deletion.status",
+      "semantic_conflict",
+    );
+  }
 });
 
 test("post-final deletion revisions progress forward unless fresh consent lengthens retention", () => {

@@ -11,6 +11,7 @@ import {
   pass,
   retentionDoesNotExceed,
   RETENTION_ORDER,
+  snapshotProtocolObjectProperties,
   validateSensitiveExtensionKeys as validateSensitiveObjectKeys,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
@@ -202,14 +203,23 @@ function parseContextConsentOption(
 function parseManifestRevisionOptions(
   value: unknown,
 ): ProtocolParseResult<ManifestRevisionOptions> {
-  const wireOptions = copyProtocolJsonValue(value, "$.options");
+  const wireOptions = snapshotProtocolObjectProperties(
+    value,
+    "$.options",
+    "Manifest revision options",
+  );
   if (!wireOptions.ok) return wireOptions;
-  if (!isRecord(wireOptions.value)) {
-    return fail("invalid_type", "$.options", "Manifest revision options must be an object");
-  }
 
   const keys = validateManifestRevisionOptionKeys(wireOptions.value);
   if (!keys.ok) return keys;
+  for (const key of Object.keys(wireOptions.value)) {
+    if (MANIFEST_REVISION_OPTION_KEYS.has(key)) continue;
+    const optionSnapshot = copyProtocolJsonValue(
+      wireOptions.value[key],
+      childPath("$.options", key),
+    );
+    if (!optionSnapshot.ok) return optionSnapshot;
+  }
 
   const options: ManifestRevisionOptions = {};
   if (hasOwn(wireOptions.value, "freshConsent")) {
@@ -2118,6 +2128,20 @@ function validateRunManifestRevisionParsed(
   next: RunManifestV1,
   options: ManifestRevisionOptions,
 ): ProtocolParseResult<RunManifestV1> {
+  if (previous.deletion.status === "completed") {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.status",
+      "completed deletion is terminal",
+    );
+  }
+  if (previous.retention.status === "deleted") {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "deleted retention is terminal",
+    );
+  }
   if (next.revision !== previous.revision + 1) {
     return fail(
       "semantic_conflict",
@@ -2217,21 +2241,6 @@ function validateRunManifestRevisionParsed(
   const nextRetention = next.retention as unknown as Record<string, unknown>;
   const policy = compareImmutableField(previousRetention, nextRetention, "policy", "$.retention.policy");
   if (!policy.ok) return policy;
-
-  if (previous.deletion.status === "completed" && next.deletion.status !== "completed") {
-    return fail(
-      "semantic_conflict",
-      "$.deletion.status",
-      "completed deletion is terminal",
-    );
-  }
-  if (previous.retention.status === "deleted" && next.retention.status !== "deleted") {
-    return fail(
-      "semantic_conflict",
-      "$.retention.status",
-      "deleted retention is terminal",
-    );
-  }
 
   if (previous.state === "final") {
     if (next.state !== "final") {

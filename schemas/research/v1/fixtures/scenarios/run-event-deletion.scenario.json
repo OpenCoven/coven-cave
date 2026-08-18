@@ -5,6 +5,12 @@
     "completed-deletion-run": {
       "fixture": "scenarios/objects/completed-deletion-run.json"
     },
+    "completed-deletion-four-event-run": {
+      "fixture": "scenarios/objects/completed-deletion-run.json",
+      "mergePatch": {
+        "nextEventSequence": 5
+      }
+    },
     "content-before-deletion-run": {
       "fixture": "scenarios/objects/completed-deletion-run.json",
       "mergePatch": {
@@ -37,6 +43,17 @@
       "fixture": "valid/run-event.json",
       "mergePatch": {
         "sequence": 3,
+        "type": "run.status",
+        "at": "2026-08-17T20:00:00.000Z",
+        "data": {
+          "status": "completed"
+        }
+      }
+    },
+    "completed-fourth-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 4,
         "type": "run.status",
         "at": "2026-08-17T20:00:00.000Z",
         "data": {
@@ -336,6 +353,56 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.extra-content-deleted",
+      "description": "A completed receipt authorizes exactly one content.deleted event at its referenced sequence.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-four-event-run",
+        "events": [
+          "created-event",
+          "deleted-event",
+          "deleted-gap-event",
+          "completed-fourth-event"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[2].type"
+      }
+    },
+    {
+      "id": "run-deletion.event-before-completed-receipt",
+      "description": "A run without a completed deletion receipt cannot authorize content.deleted.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "no-manifest-run",
+        "events": ["created-event", "deleted-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].type"
+      }
+    },
+    {
+      "id": "run-deletion.event-at-wrong-sequence",
+      "description": "A content.deleted event outside the receipt's eventSequence cannot satisfy the receipt.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "midstream-status-event", "deleted-gap-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].type"
       }
     },
     {

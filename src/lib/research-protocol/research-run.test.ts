@@ -137,6 +137,26 @@ function hostileArrayContainers<T>(
   ];
 }
 
+function spoofedExoticObjects(): Array<readonly [string, object]> {
+  const factories: Array<readonly [string, () => object]> = [
+    ["Map", () => new Map([["key", "value"]])],
+    ["Set", () => new Set(["value"])],
+    ["Date", () => new Date("2026-08-18T20:00:00.000Z")],
+    ["RegExp", () => /research/giu],
+    ["typed array", () => new Uint8Array([1, 2, 3])],
+    ["ArrayBuffer", () => new ArrayBuffer(8)],
+  ];
+  const values: Array<readonly [string, object]> = [];
+  for (const [label, create] of factories) {
+    for (const prototype of [Object.prototype, null]) {
+      const value = create();
+      Object.setPrototypeOf(value, prototype);
+      values.push([`${label} with ${prototype === null ? "null" : "Object"} prototype`, value]);
+    }
+  }
+  return values;
+}
+
 const researchSchemaContext: Record<string, TSchema> = {
   [runManifestSchema.$id]: runManifestSchema as TSchema,
   [researchRunSchema.properties.artifactManifest.$ref]: runManifestSchema as TSchema,
@@ -1369,6 +1389,59 @@ test("research-run options are snapshotted as one boundary before protocol parsi
     "invalid_value",
   );
   assert.equal(proxyTrapCalls, 0);
+
+  let symbolAccessorCalls = 0;
+  const symbolOptions = {
+    manifestHistory: [root, tip],
+    authorizedFreshConsentAt: [freshConsentAt],
+  };
+  Object.defineProperty(symbolOptions, Symbol.iterator, {
+    get() {
+      symbolAccessorCalls += 1;
+      return function* () {
+        yield root;
+      };
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, symbolOptions),
+    "$.options",
+    "invalid_value",
+  );
+  assert.equal(symbolAccessorCalls, 0);
+});
+
+test("research-run option roots reject prototype-spoofed exotic objects", () => {
+  const contextPack = expectOk(parseContextPackV1(validContextPack));
+  const run = expectOk(
+    parseResearchRunV1({
+      ...validResearchRun,
+      context: {
+        ...validResearchRun.context,
+        contextPackId: contextPack.id,
+        contextPackDigest: contextPack.digest,
+      },
+    }),
+  );
+  assert.strictEqual(
+    expectOk(validateResearchRunContextPackV1(run, contextPack, {})),
+    run,
+  );
+
+  for (const [label, options] of spoofedExoticObjects()) {
+    const error = expectError(
+      validateResearchRunContextPackV1(
+        run,
+        contextPack,
+        options as ResearchRunCompositionOptionsV1,
+      ),
+      "$.options",
+      "invalid_value",
+    );
+    assert.match(error.message, /ordinary object/i, label);
+  }
 });
 
 test("research-run option collection containers reject exotic arrays before iteration", () => {
@@ -1405,6 +1478,17 @@ test("ordinary frozen research-run options and collection arrays preserve run id
 
   assert.strictEqual(
     expectOk(validateResearchRunContextPackV1(run, contextPack, options)),
+    run,
+  );
+
+  const nullPrototypeOptions = Object.assign(Object.create(null), {
+    manifestHistory: [root, tip],
+    authorizedFreshConsentAt: [freshConsentAt],
+  }) as ResearchRunCompositionOptionsV1;
+  assert.strictEqual(
+    expectOk(
+      validateResearchRunContextPackV1(run, contextPack, nullPrototypeOptions),
+    ),
     run,
   );
 });
@@ -2831,6 +2915,77 @@ test("completed deletion requires a final manifest and its exact event in the co
     }),
   );
   assert.equal(expectOk(validateRunManifestDeletionEventV1(newRun, [])), newRun);
+
+  const extraBeforeRun = runWithCompletedDeletion(5, 3);
+  expectError(
+    validateRunManifestDeletionEventV1(extraBeforeRun, [
+      first,
+      parsedDeletionEvent(
+        2,
+        { deletedObjectCount: 3, manifestStatus: "deleted" },
+        "2026-08-15T19:59:59.999999999Z",
+      ),
+      parsedDeletionEvent(3, {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+      }),
+      parsedEvent(4, "run.status", { status: "completed" }),
+    ]),
+    "$[1].type",
+    "semantic_conflict",
+  );
+
+  const extraAfterRun = runWithCompletedDeletion(5, 2);
+  expectError(
+    validateRunManifestDeletionEventV1(extraAfterRun, [
+      first,
+      deletion,
+      parsedDeletionEvent(3, {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+      }),
+      parsedEvent(4, "run.status", { status: "completed" }),
+    ]),
+    "$[2].type",
+    "semantic_conflict",
+  );
+
+  const activeRunWithDeletion = expectOk(
+    parseResearchRunV1({
+      ...activeRun,
+      nextEventSequence: 3,
+    }),
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(activeRunWithDeletion, [first, deletion]),
+    "$[1].type",
+    "semantic_conflict",
+  );
+
+  const manifestlessRunWithDeletion = expectOk(
+    parseResearchRunV1({
+      ...runWithoutManifest,
+      nextEventSequence: 3,
+    }),
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(manifestlessRunWithDeletion, [first, deletion]),
+    "$[1].type",
+    "semantic_conflict",
+  );
+
+  expectError(
+    validateRunManifestDeletionEventV1(deletedRun, [
+      first,
+      parsedEvent(2, "run.status", { status: "completed" }),
+      parsedDeletionEvent(3, {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+      }),
+    ]),
+    "$[1].type",
+    "semantic_conflict",
+  );
 
   const nonFinalRun: ResearchRunV1 = {
     ...deletedRun,

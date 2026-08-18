@@ -46,6 +46,12 @@ const defineOwnPropertyIntrinsic = Object.defineProperty;
 const reflectOwnKeysIntrinsic = Reflect.ownKeys;
 const objectHasOwnIntrinsic = Object.hasOwn;
 const isProxyIntrinsic = nodeUtilTypes.isProxy;
+const isMapIntrinsic = nodeUtilTypes.isMap;
+const isSetIntrinsic = nodeUtilTypes.isSet;
+const isDateIntrinsic = nodeUtilTypes.isDate;
+const isRegExpIntrinsic = nodeUtilTypes.isRegExp;
+const isAnyArrayBufferIntrinsic = nodeUtilTypes.isAnyArrayBuffer;
+const arrayBufferIsViewIntrinsic = ArrayBuffer.isView;
 const EXISTING_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
   "excerpt",
   "privateexcerpt",
@@ -91,7 +97,7 @@ function portableCaseInsensitiveSensitiveFamilyPattern(family: string): string {
     family,
     (letter) => `[${letter.toUpperCase()}${letter}]`,
   );
-  return `${letters.join(SENSITIVE_KEY_SCHEMA_SEPARATOR)}(?:[Ss])?`;
+  return `${letters.join(SENSITIVE_KEY_SCHEMA_SEPARATOR)}(?:${SENSITIVE_KEY_SCHEMA_SEPARATOR}[Ss])?`;
 }
 
 export const ADDITIONAL_SENSITIVE_PROPERTY_NAME_PATTERN =
@@ -412,6 +418,16 @@ export function snapshotProtocolObjectProperties(
     return fail("invalid_type", path, `${label} must be an object`);
   }
   if (isProxyIntrinsic(value)) {
+    return fail("invalid_value", path, `${label} must be an ordinary object`);
+  }
+  if (
+    isMapIntrinsic(value)
+    || isSetIntrinsic(value)
+    || isDateIntrinsic(value)
+    || isRegExpIntrinsic(value)
+    || isAnyArrayBufferIntrinsic(value)
+    || arrayBufferIsViewIntrinsic(value)
+  ) {
     return fail("invalid_value", path, `${label} must be an ordinary object`);
   }
   if (arrayIsArrayIntrinsic(value)) {

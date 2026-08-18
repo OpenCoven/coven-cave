@@ -1813,8 +1813,23 @@ function validateRunManifestDeletionEventParsedV1(
     );
   }
 
+  const deletionEventIndexes: number[] = [];
+  for (let index = 0; index < events.length; index += 1) {
+    if (events[index]!.type === "content.deleted") {
+      deletionEventIndexes.push(index);
+    }
+  }
+
   const manifest = run.artifactManifest;
   if (!manifest || manifest.deletion.status !== "completed") {
+    const unauthorizedEventIndex = deletionEventIndexes[0];
+    if (unauthorizedEventIndex !== undefined) {
+      return fail(
+        "semantic_conflict",
+        `$[${unauthorizedEventIndex}].type`,
+        "content.deleted requires a completed deletion receipt",
+      );
+    }
     return pass(run);
   }
   if (manifest.runId !== run.id) {
@@ -1854,6 +1869,14 @@ function validateRunManifestDeletionEventParsedV1(
       "semantic_conflict",
       `$[${eventIndex}].type`,
       "Deletion eventSequence must identify content.deleted",
+    );
+  }
+  const extraEventIndex = deletionEventIndexes.find((index) => index !== eventIndex);
+  if (extraEventIndex !== undefined) {
+    return fail(
+      "semantic_conflict",
+      `$[${extraEventIndex}].type`,
+      "Completed deletion requires exactly one content.deleted event",
     );
   }
   const requestedAt = manifest.deletion.requestedAt;
