@@ -770,7 +770,7 @@ test("composition revalidates mutable parsed Context Packs at its trust boundary
 test("context-bound manifest accepts retention within the Context Pack ceiling", () => {
   const { run, contextPack } = boundRetentionComposition();
 
-  assert.equal(
+  assert.deepEqual(
     expectOk(validateResearchRunContextPackV1(run, contextPack)),
     run,
   );
@@ -816,7 +816,7 @@ test("every embedded later manifest requires a complete revision-1-rooted replay
     "$.artifactManifest.revision",
     "semantic_conflict",
   );
-  assert.equal(
+  assert.deepEqual(
     expectOk(
       validateResearchRunContextPackV1(run, contextPack, {
         manifestHistory: [root, next],
@@ -901,7 +901,7 @@ test("every embedded later manifest requires a complete revision-1-rooted replay
     "$.artifactManifest.revision",
     "semantic_conflict",
   );
-  assert.equal(
+  assert.deepEqual(
     expectOk(
       validateResearchRunContextPackV1(contextlessRun, undefined, {
         manifestHistory: [contextlessRoot, contextlessNext],
@@ -916,10 +916,244 @@ test("every embedded later manifest requires a complete revision-1-rooted replay
       context,
     }),
   );
-  assert.equal(
+  assert.deepEqual(
     expectOk(validateResearchRunContextPackV1(revisionOneRun, contextPack)),
     revisionOneRun,
   );
+});
+
+test("embedded replay rejects stale mutations and returns the detached trusted history tip", () => {
+  const contextPack = expectOk(
+    parseContextPackV1(
+      recalculateContextPack({
+        ...validContextPack,
+        consent: {
+          ...validContextPack.consent,
+          artifactContentSync: true,
+        },
+      }),
+    ),
+  );
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: contextPack.id,
+    contextPackDigest: contextPack.digest,
+  };
+  const root = linkedManifest(
+    {
+      ...validRunManifest,
+      sources: validRunManifest.sources,
+    },
+    context,
+  );
+  const tip = linkedManifest(
+    {
+      ...root,
+      sources: root.sources as Array<Record<string, unknown>>,
+      revision: 2,
+      previousDigest: root.digest,
+      retention: {
+        ...(root.retention as Record<string, unknown>),
+        updatedAt: "2026-08-16T20:06:00.000Z",
+      },
+    },
+    context,
+  );
+  const history = structuredClone([root, tip]);
+  const makeRun = () =>
+    expectOk(
+      parseResearchRunV1({
+        ...runForStatus("completed", tip),
+        context,
+        privacy: {
+          ...validResearchRun.privacy,
+          artifactContentSync: true,
+        },
+      }),
+    );
+
+  const run = makeRun();
+  const composed = expectOk(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: history,
+    }),
+  );
+  assert.notStrictEqual(composed, run);
+  assert.notStrictEqual(composed.artifactManifest, run.artifactManifest);
+  assert.deepEqual(composed.artifactManifest, tip);
+  run.artifactManifest!.futureExtension = { preserve: false };
+  assert.deepEqual(composed.artifactManifest, tip);
+
+  const mutations: Array<
+    [string, (manifest: NonNullable<ResearchRunV1["artifactManifest"]>) => void]
+  > = [
+    [
+      "artifacts",
+      (manifest) => {
+        manifest.artifacts = manifest.artifacts.map((artifact, index) =>
+          index === 0
+            ? {
+                ...artifact,
+                placement: "cloud-content" as const,
+                contentSync: "synced" as const,
+              }
+            : artifact,
+        );
+      },
+    ],
+    [
+      "retention",
+      (manifest) => {
+        manifest.retention.updatedAt = "2026-08-16T20:07:00.000Z";
+      },
+    ],
+    [
+      "extensions",
+      (manifest) => {
+        manifest.futureExtension = { preserve: false };
+      },
+    ],
+    [
+      "digest",
+      (manifest) => {
+        manifest.digest =
+          "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+      },
+    ],
+  ];
+
+  for (const [label, mutate] of mutations) {
+    const mutatedRun = makeRun();
+    assert.ok(mutatedRun.artifactManifest);
+    mutate(mutatedRun.artifactManifest);
+    const error = expectError(
+      validateResearchRunContextPackV1(mutatedRun, contextPack, {
+        manifestHistory: history,
+      }),
+      "$.artifactManifest.digest",
+      "digest_mismatch",
+    );
+    assert.match(error.message, /digest/i, label);
+  }
+  (history[1] as Record<string, unknown>).futureExtension = {
+    preserve: false,
+  };
+  assert.deepEqual(composed.artifactManifest, tip);
+});
+
+test("embedded replay binds every historical revision to its enclosing run authority", () => {
+  type ManifestRecord = Record<string, unknown> & {
+    digest: string;
+    sources: Array<Record<string, unknown>>;
+    retention: Record<string, unknown>;
+  };
+  const contextPack = expectOk(parseContextPackV1(validContextPack));
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: contextPack.id,
+    contextPackDigest: contextPack.digest,
+  };
+  const validRoot = linkedManifest(
+    {
+      ...assemblingRunManifest,
+      sources: assemblingRunManifest.sources,
+    },
+    context,
+  ) as ManifestRecord;
+  const finalFromRoot = (
+    root: ManifestRecord,
+  ) =>
+    linkedManifest(
+      {
+        ...root,
+        revision: 2,
+        previousDigest: root.digest,
+        state: "final",
+        finalizedAt: "2026-08-16T20:06:00.000Z",
+        sources: root.sources,
+        artifacts: [{ ...validRunManifest.artifacts[0] }],
+        retention: {
+          ...root.retention,
+          policy: "7-days",
+          effectivePolicy: "7-days",
+          updatedAt: "2026-08-16T20:06:00.000Z",
+        },
+      },
+      context,
+    );
+  const validateHistory = (
+    root: ManifestRecord,
+  ) => {
+    const tip = finalFromRoot(root);
+    const run = expectOk(
+      parseResearchRunV1({
+        ...runForStatus("completed", tip),
+        context,
+      }),
+    );
+    return validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [root, tip],
+    });
+  };
+
+  assert.equal(expectOk(validateHistory(validRoot)).artifactManifest?.state, "final");
+
+  const foreignRunRoot: ManifestRecord = {
+    ...validRoot,
+    runId: "run_foreign",
+  };
+  foreignRunRoot.digest = digestProtocolObject(foreignRunRoot);
+
+  const foreignContext = {
+    ...context,
+    contextPackId: "ctx_foreign",
+    contextPackDigest:
+      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  };
+  const foreignContextRoot = linkedManifest(
+    {
+      ...assemblingRunManifest,
+      sources: assemblingRunManifest.sources,
+    },
+    foreignContext,
+  ) as ManifestRecord;
+
+  const foreignRetentionRoot = linkedManifest(
+    {
+      ...assemblingRunManifest,
+      sources: assemblingRunManifest.sources,
+      retention: {
+        ...assemblingRunManifest.retention,
+        policy: "project",
+        effectivePolicy: "project",
+      },
+    },
+    context,
+  ) as ManifestRecord;
+
+  const cloudContentRoot = linkedManifest(
+    {
+      ...assemblingRunManifest,
+      sources: assemblingRunManifest.sources,
+      artifacts: [
+        {
+          ...validRunManifest.artifacts[0],
+          placement: "cloud-content",
+          contentSync: "synced",
+        },
+      ],
+    },
+    context,
+  ) as ManifestRecord;
+
+  for (const [root, path] of [
+    [foreignRunRoot, "$.manifestHistory[0].runId"],
+    [foreignContextRoot, "$.manifestHistory[0].context"],
+    [foreignRetentionRoot, "$.manifestHistory[0].retention.policy"],
+    [cloudContentRoot, "$.manifestHistory[0].artifacts[0].placement"],
+  ] as const) {
+    expectError(validateHistory(root), path, "semantic_conflict");
+  }
 });
 
 test("context-bound manifest effective retention cannot exceed the Context Pack ceiling", () => {
@@ -1086,7 +1320,7 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
     validateResearchRunContextPackV1(staleRun, stalePack, {
       manifestHistory: [staleRoot, staleManifest],
     }),
-    "$.artifactManifest.retention.effectivePolicy",
+    "$.manifestHistory[1].retention.effectivePolicy",
     "semantic_conflict",
   );
 
@@ -1233,6 +1467,10 @@ test("content.deleted data permits only declared audit fields and safe recursive
     ...validRunEvent,
     type: "content.deleted",
     at: "2026-08-17T19:30:00.000Z",
+    auditDisposition: {
+      outcome: "complete",
+      retryCount: 0,
+    },
     data: {
       deletedObjectCount: 3,
       manifestStatus: "deleted",
@@ -1250,6 +1488,36 @@ test("content.deleted data permits only declared audit fields and safe recursive
   };
   assert.equal(Value.Check(runEventSchema, event), true);
   assert.deepEqual(expectOk(parseRunEventV1(event)).data, event.data);
+  assert.deepEqual(
+    expectOk(parseRunEventV1(event)).auditDisposition,
+    event.auditDisposition,
+  );
+
+  for (const [key, value] of [
+    ["deletedContent", "private material"],
+    ["objectStoreKey", "tenant/private/object"],
+  ] as const) {
+    const invalid = { ...event, [key]: value };
+    assert.equal(Value.Check(runEventSchema, invalid), false, key);
+    expectError(parseRunEventV1(invalid), `$.${key}`, "semantic_conflict");
+  }
+
+  const splitTopLevelPath = {
+    ...event,
+    auditEnvelope: {
+      object: {
+        store: {
+          key: "tenant/private/object",
+        },
+      },
+    },
+  };
+  assert.equal(Value.Check(runEventSchema, splitTopLevelPath), true);
+  expectError(
+    parseRunEventV1(splitTopLevelPath),
+    "$.auditEnvelope.object.store.key",
+    "semantic_conflict",
+  );
 
   for (const [data, path, expectedSchemaValid] of [
     [
@@ -1368,7 +1636,7 @@ test("content.deleted events preserve benign Unicode keys and reject normalized 
   assert.equal(Value.Check(runEventSchema, invalidEvent), true);
   expectError(
     parseRunEventV1(invalidEvent),
-    '$.data["ｏｂｊｅｃｔＫｅｙ"]',
+    '$.data["deletedCon\u2060tentPayload"]',
     "semantic_conflict",
   );
 });

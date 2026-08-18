@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_unicode_extension_01",
   "runId": "run_unicode_extension_01",
-  "digest": "3a4af32b8542d9931c21c17aedea9639d976b835a6f6fe2c94137c9ce46e10ef",
+  "digest": "bf1e40ae620a8c98d521875ae23d11221c7324161c70256989ab6ab42d06db4f",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -30,7 +30,7 @@
     {
       "id": "artifact_local_01",
       "kind": "research-notes",
-      "title": "Research notes",
+      "title": "Résumé — 研究ノート",
       "mediaType": "text/markdown",
       "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "bytes": 128,

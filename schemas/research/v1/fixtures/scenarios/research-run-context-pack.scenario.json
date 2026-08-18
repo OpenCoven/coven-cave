@@ -131,7 +131,7 @@
     },
     {
       "id": "research-run.embedded-manifest-retention-ceiling",
-      "description": "Embedded manifest effective retention cannot exceed Context Pack consent.",
+      "description": "A later embedded manifest above Context Pack consent must first supply its authenticated revision-1-rooted history.",
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "embedded-retention-above-consent-run",
@@ -141,7 +141,7 @@
         "ok": false,
         "stage": "composition",
         "code": "semantic_conflict",
-        "path": "$.artifactManifest.retention.effectivePolicy"
+        "path": "$.artifactManifest.revision"
       }
     },
     {

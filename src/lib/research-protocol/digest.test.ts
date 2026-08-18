@@ -148,6 +148,42 @@ test("canonicalization enforces exact dense JSON arrays", () => {
   assert.equal(accessorCalls, 0);
 });
 
+test("canonicalization accepts deeply frozen ordinary arrays without invoking getters", () => {
+  const frozen = Object.freeze([
+    Object.freeze({
+      label: "frozen",
+      values: Object.freeze([1, 2, 3]),
+    }),
+  ]);
+
+  assert.equal(
+    canonicalJson(frozen),
+    '[{"label":"frozen","values":[1,2,3]}]',
+  );
+  assert.equal(
+    canonicalJson(copyCanonicalJsonValue(frozen)),
+    '[{"label":"frozen","values":[1,2,3]}]',
+  );
+
+  let getterCalls = 0;
+  const frozenAccessor = new Array<unknown>(1);
+  Object.defineProperty(frozenAccessor, "0", {
+    get() {
+      getterCalls += 1;
+      return "not-json";
+    },
+    enumerable: true,
+    configurable: false,
+  });
+  Object.freeze(frozenAccessor);
+
+  assert.throws(
+    () => canonicalJson(frozenAccessor),
+    /array indices must be data properties/i,
+  );
+  assert.equal(getterCalls, 0);
+});
+
 test("canonicalization safely accepts own __proto__, null-prototype objects, and normal arrays", () => {
   const value = Object.create(null) as Record<string, unknown>;
   Object.defineProperty(value, "__proto__", {

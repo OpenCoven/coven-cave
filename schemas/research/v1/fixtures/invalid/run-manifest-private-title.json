@@ -1,8 +1,9 @@
 {
+  "expectedSchemaValid": true,
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_final_local_01",
   "runId": "run_final_local_01",
-  "digest": "130a911958bd5298c47db0e5931502177b706d903a29a0186798040ae856d1f8",
+  "digest": "b9f6aa8b513515c3abb96aae8e6a50d126f0c4cb640e1535620ed39f65ccee3a",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -30,7 +31,7 @@
     {
       "id": "artifact_local_01",
       "kind": "research-notes",
-      "title": "private/notes.txt",
+      "title": "file：／／Users／alice／secret.txt",
       "mediaType": "text/markdown",
       "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "bytes": 128,
