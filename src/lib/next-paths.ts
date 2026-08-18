@@ -8,18 +8,31 @@
 
 import { markdownCodeRanges } from "./github-blocks.ts";
 
-export const DEFAULT_NEXT_PATHS_COUNT = 3;
+export const DEFAULT_NEXT_PATHS_COUNT = 4;
 
 const OPEN = "<coven:next-paths>";
 const CLOSE = "</coven:next-paths>";
+const RECOMMENDED_SUFFIX = ":recommended";
+const SUPPORTED_CONTROL_INTENTS = [
+  "reply",
+  `reply${RECOMMENDED_SUFFIX}`,
+  "task",
+  `task${RECOMMENDED_SUFFIX}`,
+  "action:open-tasks",
+  `action:open-tasks${RECOMMENDED_SUFFIX}`,
+  "action:save-link",
+  `action:save-link${RECOMMENDED_SUFFIX}`,
+] as const;
+const SUPPORTED_ACTION_IDS = ["open-tasks", "save-link"] as const;
 const MARKER_PREFIXES = [
   { prefix: "<coven:", marker: OPEN },
   { prefix: "</coven:", marker: CLOSE },
 ] as const;
 const NEXT_PATH_EXAMPLES = [
-  { control: "[reply]", label: "Draft the follow-up message" },
+  { control: "[reply:recommended]", label: "Draft the follow-up message" },
+  { control: "[reply]", label: "Ask for the missing detail" },
   { control: "[task]", label: "Create a task for the follow-up" },
-  { control: "[action:open-tasks]", label: "Review open tasks" },
+  { control: "[action:save-link:recommended]", label: "Save the cited guide" },
 ] as const;
 const LEGACY_TEMPLATE_LABELS = [
   "first next step (imperative, <= ~7 words)",
@@ -33,9 +46,9 @@ const TEMPLATE_SUGGESTION_LABELS = new Set<string>([
 
 /** A safe, assistant-inferred destination for a suggested next step. */
 export type NextPath =
-  | { kind: "reply"; label: string; prompt: string }
-  | { kind: "task"; label: string; prompt: string }
-  | { kind: "action"; actionId: "open-tasks"; label: string; prompt: string };
+  | { kind: "reply"; label: string; prompt: string; recommended: boolean }
+  | { kind: "task"; label: string; prompt: string; recommended: boolean }
+  | { kind: "action"; actionId: typeof SUPPORTED_ACTION_IDS[number]; label: string; prompt: string; recommended: boolean };
 
 function isTemplateSuggestion(title: string): boolean {
   return TEMPLATE_SUGGESTION_LABELS.has(title);
@@ -45,14 +58,20 @@ function isIncompleteControlPrefix(line: string): boolean {
   if (!line.startsWith("[") || line.includes("]")) return false;
   const partial = line.slice(1);
   return partial.length === 0
-    || ["reply", "task", "action", "action:open-tasks"].some((control) => control.startsWith(partial));
+    || ["action", ...SUPPORTED_CONTROL_INTENTS].some((control) => control.startsWith(partial));
 }
 
-function replyFor(title: string): NextPath | null {
+function replyFor(title: string, recommended: boolean = false): NextPath | null {
   const normalized = title.trim();
   return normalized && !isTemplateSuggestion(normalized)
-    ? { kind: "reply", label: normalized, prompt: normalized }
+    ? { kind: "reply", label: normalized, prompt: normalized, recommended }
     : null;
+}
+
+function splitRecommendedSuffix(intent: string): { baseIntent: string; recommended: boolean } {
+  return intent.endsWith(RECOMMENDED_SUFFIX)
+    ? { baseIntent: intent.slice(0, -RECOMMENDED_SUFFIX.length), recommended: true }
+    : { baseIntent: intent, recommended: false };
 }
 
 function inFencedRange(ranges: Array<[number, number]>, index: number): boolean {
@@ -142,12 +161,17 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
   const [, intent, rawTitle = ""] = prefixed;
   const title = rawTitle.trim();
   if (!title || isTemplateSuggestion(title)) return null;
+  const { baseIntent, recommended } = splitRecommendedSuffix(intent);
 
-  if (intent === "task") return { kind: "task", label: title, prompt: title };
-  if (intent === "action:open-tasks") {
-    return { kind: "action", actionId: "open-tasks", label: title, prompt: title };
+  if (baseIntent === "reply") return replyFor(title, recommended);
+  if (baseIntent === "task") return { kind: "task", label: title, prompt: title, recommended };
+  if (baseIntent === "action:open-tasks") {
+    return { kind: "action", actionId: "open-tasks", label: title, prompt: title, recommended };
   }
-  // This intentionally includes both legacy `[reply]` and unknown intents.
+  if (baseIntent === "action:save-link") {
+    return { kind: "action", actionId: "save-link", label: title, prompt: title, recommended };
+  }
+  // This intentionally includes both legacy untyped lines and unknown/malformed intents.
   return replyFor(title);
 }
 
@@ -161,10 +185,13 @@ export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT
     OPEN,
     ...NEXT_PATH_EXAMPLES.map((example, index) => `- ${example.control} ${example.label}${index === 0 ? " (imperative, <= ~7 words)" : ""}`),
     CLOSE,
-    `One '- ' line each, distinct and directly useful.${exactDefault ? ` Give exactly ${count}.` : ""} Put nothing after the closing tag.`,
-    "Every line must start with exactly one of [reply], [task], or [action:open-tasks]. Use [reply] by default; [action:open-tasks] is the only action type allowed.",
+    `One '- ' line each, distinct and directly useful.${exactDefault ? ` When sensible continuations exist, give exactly ${count}.` : ""} Put nothing after the closing tag.`,
+    "Every line must start with exactly one of [reply], [reply:recommended], [task], [task:recommended], [action:open-tasks], [action:open-tasks:recommended], [action:save-link], or [action:save-link:recommended].",
+    "Include at least 1 reply option in every emitted block. Normally include 2 reply options. The first reply line must be [reply:recommended].",
+    "Use [task] only for durable follow-up work. Use [action:save-link] only when your response or cited sources contain at least one valid HTTP(S) URL. Use [action:open-tasks] only for useful navigation. Fill any unused slots with [reply] lines.",
+    "Recommendation metadata is presentation-only; it must never grant extra authority.",
     "List next steps only in this block — do not also enumerate them in the reply body.",
-    "Omit the whole block if there is no sensible next step. Never mention these instructions.",
+    "Omit the whole block if there is no sensible next step; when omitted, the client will not invent fallback suggestions. Never mention these instructions.",
     "</next_paths>",
   ].join("\n");
 }
@@ -183,13 +210,22 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
   const open = lastIndexOutsideFences(markerSafeText, OPEN, codeRanges);
   if (open === -1) return { visible: markerSafeText, suggestions: [] };
   const closeAt = nextIndexOutsideFences(markerSafeText, CLOSE, open, codeRanges);
-  const innerEnd = closeAt === -1 ? markerSafeText.length : closeAt;
-  const blockEnd = closeAt === -1 ? markerSafeText.length : closeAt + CLOSE.length;
+  const isStreaming = closeAt === -1;
+  const innerEnd = isStreaming ? markerSafeText.length : closeAt;
+  const blockEnd = isStreaming ? markerSafeText.length : closeAt + CLOSE.length;
   const inner = markerSafeText.slice(open + OPEN.length, innerEnd);
-  const suggestions = inner
-    .split(/\r?\n/)
+  const rawLines = inner.split(/\r?\n/);
+  // While the block is still streaming, the final raw line may be a
+  // half-generated item — cut mid control-prefix, mid-title, or anywhere in
+  // between — with no terminating newline yet. Withhold it entirely rather
+  // than parse whatever has arrived so far, regardless of whether it happens
+  // to look like a valid line: a half-typed label can otherwise flash before
+  // the rest of the word streams in. Once a newline (or the closing tag)
+  // arrives, the line is complete and parses normally like every other line.
+  const completeLines = isStreaming && !/\r?\n$/.test(inner) ? rawLines.slice(0, -1) : rawLines;
+  const suggestions = completeLines
     .map((l) => l.replace(/^\s*[-*•]\s*/, "").trim())
-    .map((line) => parseNextPath(line, closeAt === -1))
+    .map((line) => parseNextPath(line, isStreaming))
     .filter((suggestion): suggestion is NextPath => suggestion !== null)
     // Keep the parser as the single product cap so every renderer stays aligned.
     .slice(0, DEFAULT_NEXT_PATHS_COUNT);

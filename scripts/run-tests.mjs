@@ -1220,9 +1220,12 @@ export const SUITES = {
     "src/lib/familiar-contract.test.ts",
     "src/lib/familiar-rehabilitation.test.ts",
     "src/lib/next-paths.test.ts",
+    "src/lib/chat-follow-up-links.test.ts",
     "src/components/chat-follow-up-cards.test.ts",
+    "src/components/chat-follow-up-cards-availability.test.ts",
     "src/components/chat-follow-up-layout.test.ts",
     "src/components/chat-follow-up-task-review.test.ts",
+    "src/components/chat-follow-up-link-review.test.ts",
     "src/components/chat-follow-up-intents-wiring.test.ts",
     "src/components/coven-run-pill-wiring.test.ts",
     "src/components/board-clear-done.test.ts",
@@ -1402,6 +1405,7 @@ export const SUITES = {
     "src/app/api/board/enrich-steps/route.test.ts",
     "src/app/api/board/route.test.ts",
     "src/app/api/board/orchestration-route.test.ts",
+    "src/app/api/board/[id]/route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/sessions/list/route.test.ts",
@@ -1796,6 +1800,9 @@ const ALIAS_LOADER = new Set([
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
   "src/app/api/board/orchestration-route.test.ts",
+  // imports the [id] route directly to exercise the PATCH opsOutcome
+  // response-shape wiring at runtime; that route resolves "@/lib/..." too.
+  "src/app/api/board/[id]/route.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
   "src/lib/use-auto-expand-new-groups.test.ts",
@@ -2048,6 +2055,8 @@ const VITEST_TESTS = new Set([
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
   "src/components/mobile-drawer-nav-list-focus.test.tsx",
+  "src/components/chat-follow-up-cards-availability.test.ts",
+  "src/components/chat-follow-up-link-review.test.ts",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer

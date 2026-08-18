@@ -210,7 +210,10 @@ import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
 import type { NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
+import { FollowUpLinkReview } from "@/components/chat-follow-up-link-review";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
+import { linksFromFollowUpSource } from "@/lib/chat-follow-up-links";
+import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { slicePreviewBlocks } from "@/lib/preview-blocks";
@@ -368,6 +371,19 @@ function isLiveGenerationPending(live: Pick<LiveChatGenerationSnapshot, "turns" 
 // owner never comes back to consume it.
 const externallySettledChatAttentionControllers = createExternallySettledGenerationRegistry();
 const adoptedPendingAttentionSettlementOwners = createAdoptedAttentionSettlementRegistry();
+
+type FollowUpActivation = { path: NextPath; sourceText: string };
+type TaskReviewState = {
+  suggestion: Extract<NextPath, { kind: "task" }>;
+  originSessionId: string;
+  originViewKey: string;
+  context: ChatHandoffContext;
+};
+type LinkReviewState = {
+  links: string[];
+  originSessionId: string | null;
+  task: { id: string; title: string } | null;
+};
 
 type Props = {
   familiar: Familiar;
@@ -2207,7 +2223,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
-  const [taskSuggestion, setTaskSuggestion] = useState<Extract<NextPath, { kind: "task" }> | null>(null);
+  const followUpViewKey = `${sessionId ?? ""}|${projectRoot ?? ""}`;
+  const followUpViewKeyRef = useRef(followUpViewKey);
+  followUpViewKeyRef.current = followUpViewKey;
+  const [taskReview, setTaskReview] = useState<TaskReviewState | null>(null);
+  const taskReviewRef = useRef<TaskReviewState | null>(taskReview);
+  taskReviewRef.current = taskReview;
+  const [linkReview, setLinkReview] = useState<LinkReviewState | null>(null);
   const { announce } = useAnnouncer();
   // "Start a task" (card-follows-chat): the starting page arms this, and the
   // stream's "session" event — where the session id is born — creates the
@@ -3851,46 +3873,89 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
 
-  // The last settled assistant turn's first reply next-path. Typed task/action
-  // suggestions are deliberately excluded: keyboard fill may only prepare
-  // editable chat text, never start a task or navigate as a side effect.
+  // The last settled assistant turn's explicitly recommended reply next-path.
+  // Typed task/action suggestions are deliberately excluded: keyboard fill may
+  // only prepare editable chat text, never start a task or navigate.
   const recommendedNextPath = useMemo(() => {
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return null;
-    return extractChatRenderedText(last.text).nextPaths.find((path) => path.kind === "reply") ?? null;
+    return extractChatRenderedText(last.text).nextPaths.find(
+      (path) => path.kind === "reply" && path.recommended,
+    ) ?? null;
   }, [activePath]);
 
   // The latest settled turn's follow-up suggestions render directly above the
-  // composer. Suggestions are ephemeral actions, not transcript history, so
-  // assistant rows only strip their control blocks and never render old cards.
+  // composer. Older rows retain their own cards and source turns.
   const followUp = useMemo(() => {
-    const empty = { suggestions: [] as NextPath[] };
+    const empty = { turnId: null, sourceText: "", suggestions: [] as NextPath[], saveLinkAvailable: true };
     const last = [...activePath]
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
     const suggestions = extractChatRenderedText(last.text).nextPaths;
-    return suggestions.length ? { suggestions } : empty;
+    if (!suggestions.length) return empty;
+    // Truthful availability for the composer's "Save link" card, computed
+    // from THIS turn's exact source text — never inferred inside
+    // FollowUpCards, which stays presentation-only.
+    return {
+      turnId: last.id,
+      sourceText: last.text,
+      suggestions,
+      saveLinkAvailable: linksFromFollowUpSource(last.text).length > 0,
+    };
   }, [activePath]);
 
-  const handleFollowUp = useCallback((path: NextPath) => {
+  const handleFollowUp = useCallback(({ path, sourceText }: FollowUpActivation) => {
     if (path.kind === "reply") {
       setInput(path.prompt);
       requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
     if (path.kind === "task") {
-      setTaskSuggestion(path);
+      if (!sessionId) return;
+      setTaskReview({
+        suggestion: path,
+        originSessionId: sessionId,
+        originViewKey: followUpViewKey,
+        context: {
+          turns: [...activePath],
+          familiarId: familiar.id,
+          projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
+        },
+      });
+      return;
+    }
+    if (path.actionId === "save-link") {
+      const links = linksFromFollowUpSource(sourceText);
+      if (links.length === 0) {
+        announce("No links available to save", "assertive");
+        return;
+      }
+      const task = linkedContext?.task;
+      setLinkReview({
+        links,
+        originSessionId: sessionId,
+        task: task ? { id: task.id, title: task.title } : null,
+      });
       return;
     }
     if (path.actionId === "open-tasks") {
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
     }
-  }, []);
+  }, [
+    activePath,
+    announce,
+    familiar.id,
+    followUpViewKey,
+    linkedContext?.task,
+    resolvedProjectId,
+    sessionId,
+  ]);
 
-  const handleTaskCreated = useCallback((card: Card) => {
+  const handleTaskCreated = useCallback((review: TaskReviewState, card: Card) => {
+    if (taskReviewRef.current !== review || followUpViewKeyRef.current !== review.originViewKey) return;
     const linked = {
       id: card.id,
       title: card.title,
@@ -6016,6 +6081,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     askAboutFor,
     readerPromptFor,
     rerunWithFor,
+    handleFollowUp,
     send,
   };
 
@@ -6738,6 +6804,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     clearAttachments();
     setPendingBranchParent(undefined);
     promptEnhance.reset();
+    if (viewChanged) {
+      setTaskReview(null);
+      setLinkReview(null);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
@@ -7577,7 +7647,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {linkedContextRow}
                 {followUp.suggestions.length > 0 && !busy ? (
                   <div className="cave-chat-followups">
-                    <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
+                    <FollowUpCards
+                      paths={followUp.suggestions}
+                      onActivate={(path) => handleFollowUp({ path, sourceText: followUp.sourceText })}
+                      saveLinkAvailable={followUp.saveLinkAvailable}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -7928,6 +8002,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             feedbackContext={feedbackContext}
             expandedAvatarTurnId={expandedAvatarTurnId}
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
+            latestFollowUpTurnId={followUp.turnId}
             onOpenUrl={onOpenUrl}
             onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
@@ -8105,18 +8180,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
 
       {inlineComposer ? null : composerNode}
-      {taskSuggestion && sessionId ? (
+      {taskReview && taskReview.originSessionId === sessionId && taskReview.originViewKey === followUpViewKey ? (
         <FollowUpTaskReview
           open
-          sessionId={sessionId}
-          suggestion={taskSuggestion}
-          context={{
-            turns: activePath,
-            familiarId: familiar.id,
-            projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
-          }}
-          onCreated={handleTaskCreated}
-          onClose={() => setTaskSuggestion(null)}
+          sessionId={taskReview.originSessionId}
+          suggestion={taskReview.suggestion}
+          context={taskReview.context}
+          onCreated={(card) => handleTaskCreated(taskReview, card)}
+          onClose={() => setTaskReview((current) => current === taskReview ? null : current)}
+        />
+      ) : null}
+      {linkReview && linkReview.originSessionId === sessionId ? (
+        <FollowUpLinkReview
+          open
+          reviewIdentity={linkReview}
+          links={linkReview.links}
+          task={linkReview.task}
+          onClose={() => setLinkReview((current) => current === linkReview ? null : current)}
         />
       ) : null}
       {voiceCallOpen && sessionId && (
@@ -8416,6 +8496,7 @@ type TranscriptHandlers = {
   askAboutFor: (turn: Turn) => ((quote: string) => void) | undefined;
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
+  handleFollowUp: (activation: FollowUpActivation) => void;
   send: (override?: string) => Promise<void>;
 };
 
@@ -8449,6 +8530,7 @@ const TranscriptRows = memo(function TranscriptRows({
   feedbackContext,
   expandedAvatarTurnId,
   setExpandedAvatarTurnId,
+  latestFollowUpTurnId,
   onOpenUrl,
   onOpenPreview,
   handlersRef,
@@ -8467,6 +8549,7 @@ const TranscriptRows = memo(function TranscriptRows({
   feedbackContext: FeedbackContext;
   expandedAvatarTurnId: string | null;
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
+  latestFollowUpTurnId: string | null;
   onOpenUrl?: (url: string) => void;
   onOpenPreview?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
@@ -8535,6 +8618,8 @@ const TranscriptRows = memo(function TranscriptRows({
           onAskAbout={handlers().askAboutFor(t)}
           readerPrompt={handlers().readerPromptFor(t)}
           onRerunWith={handlers().rerunWithFor(t)}
+          showFollowUps={t.id !== latestFollowUpTurnId}
+          onFollowUp={(path) => handlers().handleFollowUp({ path, sourceText: t.text })}
           onOpenUrl={onOpenUrl}
           onOpenPreview={onOpenPreview}
           onRequest={(prompt) => void handlers().send(prompt)}
@@ -8601,6 +8686,8 @@ const TranscriptRows = memo(function TranscriptRows({
               onAskAbout={handlers().askAboutFor(t)}
               readerPrompt={handlers().readerPromptFor(t)}
               onRerunWith={handlers().rerunWithFor(t)}
+              showFollowUps={t.id !== latestFollowUpTurnId}
+              onFollowUp={(path) => handlers().handleFollowUp({ path, sourceText: t.text })}
               onOpenUrl={onOpenUrl}
               onOpenPreview={onOpenPreview}
               onRequest={(prompt) => void handlers().send(prompt)}
@@ -8655,6 +8742,8 @@ function TurnRowImpl({
   onAskAbout,
   readerPrompt,
   onRerunWith,
+  showFollowUps = false,
+  onFollowUp,
   onOpenUrl,
   onOpenPreview,
   expanded = false,
@@ -8686,6 +8775,8 @@ function TurnRowImpl({
   /** Rerun the turn from an edited prompt. Absent while busy or off the tip,
    *  which is what hides the reader's Edit affordance. */
   onRerunWith?: (prompt: string) => void;
+  showFollowUps?: boolean;
+  onFollowUp?: (path: NextPath) => void;
   onOpenUrl?: (url: string) => void;
   onOpenPreview?: (url: string) => void;
   expanded?: boolean;
@@ -8830,7 +8921,11 @@ function TurnRowImpl({
     inlineReasoning,
     skillUpdates,
     autoStatusUpdate,
+    nextPaths,
   } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
+  // Truthful availability for the historical "Save link" card, computed from
+  // THIS row's exact source turn — never inferred inside FollowUpCards.
+  const saveLinkAvailable = linksFromFollowUpSource(turn.text).length > 0;
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -9013,6 +9108,9 @@ function TurnRowImpl({
                 />
                 <ResponseModelStatus metadata={turn.responseMetadata} />
                 <ResponseControlStatus metadata={turn.responseMetadata} />
+                {showFollowUps && !turn.pending && !turn.error && nextPaths.length > 0 && onFollowUp ? (
+                  <FollowUpCards paths={nextPaths} onActivate={onFollowUp} saveLinkAvailable={saveLinkAvailable} />
+                ) : null}
               </div>
                   )}
                   {/* Agent-produced inline attachments: images render full-bleed
@@ -9732,6 +9830,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
+    prev.showFollowUps === next.showFollowUps &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

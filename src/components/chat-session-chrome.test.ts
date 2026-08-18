@@ -27,6 +27,13 @@ const styles = ["cave-chat", "chat-list"]
   .join("\n");
 const shellNav = readFileSync(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
+function cssBlock(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = styles.match(new RegExp(`${escaped} \\{([\\s\\S]*?)\\n\\}`, "m"));
+  assert.ok(match, `missing CSS block for ${selector}`);
+  return match[1];
+}
+
 test("2a ③ — the context row renders under the header, from the same facts as the header", () => {
   // The find band (cave-7gr08) slides in between when open, so the window is
   // sized for it — the invariant is ordering: header, then band, then context
@@ -140,23 +147,47 @@ test("2a — the title row and turn names wear the display serif", () => {
   );
 });
 
-test("2a ⑤ — composer follow-ups are equal-width recommendation pills", () => {
-  // The typed follow-ups keep their equal-width one-row geometry, but their
-  // composer placement reads as quiet single-line recommendation pills.
+test("2a ⑤ — composer follow-ups use the approved compact typed footer contract", () => {
+  const compactGridBlock = cssBlock(".cave-chat-followups .cave-followup-cards__grid");
+  const compactCardBlock = cssBlock(".cave-chat-followups .cave-followup-card");
+  const compactTypeBlock = cssBlock(".cave-chat-followups .cave-followup-card__type");
+  const compactSeparatorBlock = cssBlock(".cave-chat-followups .cave-followup-card__separator");
+  const compactRecommendedIndicatorBlock = cssBlock(".cave-chat-followups .cave-followup-card__recommended-indicator");
+
+  // Historical/in-turn typed cards still share one equal-width row by default.
   assert.match(
     styles,
     /\.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);/,
     "follow-up cards take equal shares of one row",
   );
   assert.match(
+    compactGridBlock,
+    /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/,
+    "composer follow-ups render four equal footer columns",
+  );
+  assert.match(
+    compactCardBlock,
+    /border-radius: var\(--radius-control\);/,
+    "composer follow-ups use the control radius token",
+  );
+  assert.doesNotMatch(compactCardBlock, /radius-pill/, "composer follow-ups do not fall back to the pill radius");
+  assert.match(compactTypeBlock, /display: inline-flex;/, "composer follow-ups keep the type label visible");
+  assert.match(compactSeparatorBlock, /display: inline;/, "composer follow-ups keep the type/title separator visible");
+  assert.match(compactRecommendedIndicatorBlock, /display: inline-flex;/, "composer follow-ups keep a visible non-color recommendation cue");
+  assert.match(
     styles,
-    /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?text-align: center;/,
-    "composer follow-ups use the shared pill radius and centered label",
+    /\.cave-chat-followups \.cave-followup-card__outcome,\s*\n\.cave-chat-followups \.cave-followup-card__recommended \{[\s\S]*?position: absolute;[\s\S]*?width: 1px;[\s\S]*?height: 1px;/,
+    "composer follow-ups hide only the full recommendation text and outcome while keeping them accessible",
   );
   assert.match(
     styles,
-    /\.cave-chat-followups \.cave-followup-card__type,\s*\.cave-chat-followups \.cave-followup-card__outcome \{[\s\S]*?display: none;/,
-    "composer pills suppress visual metadata while preserving their accessible name",
+    /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+    "narrow composer follow-ups switch to two equal columns",
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-chat-followups \.cave-followup-card \{[\s\S]*?min-height: var\(--touch-target\);/,
+    "narrow composer follow-ups keep the minimum touch target",
   );
   // The pill-era override is gone: nothing renders .cave-next-path inside the
   // follow-up strip, so the orphaned selector must not linger in the cascade.

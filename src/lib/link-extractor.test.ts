@@ -38,7 +38,13 @@ const CASES = [
 
   // localhost / file / non-http rejected
   ["see http://localhost:3000", []],
+  ["see http://LOCALHOST./private", []],
+  ["see http://foo.localhost/private", []],
   ["see http://127.0.0.1:8080", []],
+  ["see http://127.0.0.2/private and http://127.255.255.254/private", []],
+  ["see http://[::1]/private and http://[::]/private", []],
+  ["see http://[::ffff:127.0.0.1]/private and http://[::ffff:127.2.3.4]/private", []],
+  ["see https://[2001:4860:4860::8888]/public", ["https://[2001:4860:4860::8888]/public"]],
   ["file:///etc/passwd", []],
   ["ftp://files.example.com/x", []],
 

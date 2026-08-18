@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Pins for the recommended-next-path composer ghost fill (cave-h62k): the
-// empty composer mirrors the last settled turn's top suggestion as its
+// empty composer mirrors the last settled turn's recommended reply as its
 // placeholder, and ⇥ accepts it as an editable draft — fill, never send.
 // ← was removed as an accept key in cave-i66c; see the regression pin below.
 import assert from "node:assert/strict";
@@ -13,8 +13,8 @@ const transcriptCss = readFileSync(new URL("../styles/cave-chat/transcript.css",
 // assistant turn — but only a reply can be keyboard-filled.
 assert.match(
   source,
-  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\(path\) => path\.kind === "reply"\) \?\? null;[\s\S]*?\}, \[activePath\]\);/,
-  "recommendedNextPath only reads reply suggestions from the active path's last settled assistant turn",
+  /const recommendedNextPath = useMemo\(\(\) => \{[\s\S]*?extractChatRenderedText\(last\.text\)\.nextPaths\.find\(\s*\(path\) => path\.kind === "reply" && path\.recommended,\s*\) \?\? null;[\s\S]*?\}, \[activePath\]\);/,
+  "recommendedNextPath only reads an explicitly recommended reply from the active path's last settled assistant turn",
 );
 assert.match(
   source,
@@ -47,6 +47,11 @@ assert.match(
   source,
   /setInput\(recommendedNextPath\.prompt\);\n\s*return;/,
   "accepting fills the draft (never sends)",
+);
+assert.equal(
+  [...source.matchAll(/setInput\(recommendedNextPath\.prompt\)/g)].length,
+  1,
+  "only the reply-narrowed recommended path reaches composer autofill",
 );
 
 // Placeholder: the recommendation replaces the idle hint; the input does not

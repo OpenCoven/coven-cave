@@ -34,7 +34,13 @@ import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import {
+  applyCardOps,
+  hasCardOps,
+  resolveLinkOpOutcomes,
+  type CardOpsOutcome,
+  type CardPatch,
+} from "@/lib/board-card-ops";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   assertValidOrchestration,
@@ -649,7 +655,19 @@ function sameNextStepValue(
 export async function updateCard(
   id: string,
   patchWithOps: CardPatch,
-  options: { automated?: boolean; actor?: string } = {},
+  options: {
+    automated?: boolean;
+    actor?: string;
+    /**
+     * Output parameter: when provided, populated (under the same board lock
+     * and card snapshot the write itself resolves against) with a truthful
+     * per-request outcome for any `linkOps` in this patch. Kept out of the
+     * return type on purpose — `updateCard` has many callers that expect a
+     * plain `Card | null`, and this avoids re-typing every one of them for a
+     * detail only the follow-up link save flow currently needs.
+     */
+    opsOutcome?: CardOpsOutcome;
+  } = {},
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
@@ -661,6 +679,25 @@ export async function updateCard(
   // another (the full-array clobber the board audit flagged). The resolved
   // arrays then flow through the exact same normalization as plain patches.
   const { ops, ...plain } = patchWithOps;
+  // `ops` comes straight from untrusted PATCH JSON — `Array.isArray` guards
+  // against a malformed `linkOps` (a string, or an object with a truthy
+  // `.length`) reaching `resolveLinkOpOutcomes`'s `for...of`, which throws on
+  // anything non-iterable. `hasCardOps` below already ignores non-array op
+  // collections the same way; this keeps outcome resolution consistent with
+  // that rather than adding separate validation for this one field.
+  if (options.opsOutcome && Array.isArray(ops?.linkOps) && ops.linkOps.length > 0) {
+    // `resolveLinkOpOutcomes` only ever reports on `addNormalizedUrl`
+    // requests (see its own doc comment) — a batch of ordinary add/remove
+    // linkOps resolves to an empty array here. Leave `opsOutcome.linkOps`
+    // undefined in that case rather than a truthy-but-empty array, so
+    // route.ts's response-shape decision (include `opsOutcome` only when
+    // there is something to report) stays correct without route.ts having
+    // to know this distinction itself.
+    const linkOpOutcomes = resolveLinkOpOutcomes(current.links ?? [], ops.linkOps);
+    if (linkOpOutcomes.length > 0) {
+      options.opsOutcome.linkOps = linkOpOutcomes;
+    }
+  }
   const patch: Partial<Omit<Card, "id" | "createdAt">> = hasCardOps(ops)
     ? { ...plain, ...applyCardOps(current, ops, new Date().toISOString()) }
     : plain;

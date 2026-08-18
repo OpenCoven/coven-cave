@@ -361,9 +361,9 @@
 }
 
 .cave-chat-followups .cave-followup-cards__grid {
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-template-columns: none;
+  grid-auto-flow: row;
+  grid-auto-columns: unset;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 /* The footer is the one place next steps read as a compact prompt palette: the
@@ -377,19 +377,15 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   border-color: var(--border-strong);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-2);
   color: var(--text-secondary);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
 }
 
 .cave-chat-followups .cave-followup-card:hover {
@@ -398,17 +394,53 @@
   color: var(--text-primary);
 }
 
-.cave-chat-followups .cave-followup-card__type,
-.cave-chat-followups .cave-followup-card__outcome {
-  display: none;
+.cave-chat-followups .cave-followup-card--recommended,
+.cave-chat-followups .cave-followup-card--recommended:hover {
+  border-color: color-mix(in oklch, var(--color-success) 42%, var(--border-hairline));
+}
+
+/* Truthful, presentation-only unavailability (cave-onpeg): only the
+   save-link card can ever carry aria-disabled, set by ChatView from the
+   card's exact source turn. The control stays focusable/clickable (see the
+   component's own comment) so a screen-reader user can still reach it and
+   hear the reason — only the visual affordance changes here. */
+.cave-chat-followups .cave-followup-card[aria-disabled="true"] {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.cave-chat-followups .cave-followup-card[aria-disabled="true"]:hover {
+  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  color: var(--text-secondary);
 }
 
 .cave-chat-followups .cave-followup-card__type {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-width: 0;
   white-space: nowrap;
+}
+
+.cave-chat-followups .cave-followup-card__recommended-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--color-success);
+}
+
+.cave-chat-followups .cave-followup-card__outcome,
+.cave-chat-followups .cave-followup-card__recommended {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .cave-chat-followups .cave-followup-card__separator {
@@ -451,6 +483,15 @@
   text-align: left;
 }
 
+.cave-followup-card--recommended {
+  border-color: color-mix(in oklch, var(--color-success) 42%, var(--border-hairline));
+}
+
+.cave-followup-card[aria-disabled="true"] {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
 .cave-followup-card__type {
   display: flex;
   align-items: center;
@@ -461,10 +502,13 @@
   display: none;
 }
 
+.cave-followup-card__recommended-indicator {
+  display: none;
+}
+
 .cave-followup-card__recommended {
   color: var(--color-success);
   font-weight: 650;
-  margin-left: auto;
 }
 
 .cave-followup-card__outcome {
@@ -479,9 +523,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .cave-chat-followups .cave-followup-cards__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cave-chat-followups .cave-followup-card {
     min-height: var(--touch-target);
-    padding-inline: var(--space-2);
   }
 }
 

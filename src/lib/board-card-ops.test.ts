@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { applyCardOps, hasCardOps } from "./board-card-ops.ts";
+import { applyCardOps, hasCardOps, resolveLinkOpOutcomes } from "./board-card-ops.ts";
 
 const NOW = "2026-07-03T12:00:00.000Z";
 const base = {
@@ -87,6 +87,79 @@ assert.deepEqual(out.labels, []);
 out = applyCardOps(base, { linkOps: [{ op: "add", value: "https://b.example" }, { op: "remove", value: "https://a.example" }] }, NOW);
 assert.deepEqual(out.links, ["https://b.example"], "link ops apply in order");
 out = applyCardOps(
+  { ...base, links: ["https://example.com/docs/", "https://example.com/human-note?keep=1#raw"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: " https://example.com/docs#intro " }] },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/docs/", "https://example.com/human-note?keep=1#raw"],
+  "normalized duplicate links are ignored against latest existing links",
+);
+assert.equal(
+  out.links[1],
+  "https://example.com/human-note?keep=1#raw",
+  "unrelated existing human links stay byte-for-byte unchanged",
+);
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs/", "https://example.com/human-note?keep=1#raw"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: " https://example.com/new#frag " }] },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  [
+    "https://example.com/docs/",
+    "https://example.com/human-note?keep=1#raw",
+    "https://example.com/new",
+  ],
+  "new normalized links append in canonical normalized form",
+);
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs/"] },
+  {
+    linkOps: [
+      { op: "addNormalizedUrl", value: "not a url" },
+      { op: "addNormalizedUrl", value: "mailto:team@example.com" },
+      { op: "addNormalizedUrl", value: "ftp://example.com/file" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://example.com/docs/"], "invalid and non-http inputs are ignored");
+out = applyCardOps(
+  { ...base, links: [] },
+  {
+    linkOps: [
+      { op: "addNormalizedUrl", value: " https://example.com/docs#one " },
+      { op: "addNormalizedUrl", value: "https://example.com/docs#two" },
+      { op: "addNormalizedUrl", value: "https://example.com/docs" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/docs"],
+  "normalized duplicates within one op batch are ignored after the canonical first append",
+);
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs/"] },
+  {
+    linkOps: [
+      { op: "remove", value: "https://example.com/docs/" },
+      { op: "addNormalizedUrl", value: "https://example.com/docs#intro" },
+      { op: "add", value: " https://example.com/docs#intro " },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/docs", "https://example.com/docs#intro"],
+  "ordinary add/remove semantics stay raw and exact around canonical normalized storage",
+);
+out = applyCardOps(
   { ...base, links: ["https://example.com/docs", "https://example.com/human-note"] },
   {
     linkOps: [
@@ -143,6 +216,340 @@ assert.deepEqual(
   out.links,
   ["https://a.example", "https://b.example"],
   "valid collections still apply when sibling collections are malformed",
+);
+
+// ── resolveLinkOpOutcomes — truthful per-request added/duplicate/invalid ────
+// This is the same dedup pass applyLinkOps uses internally for
+// "addNormalizedUrl", exposed so a caller (updateCard) can report exactly
+// what happened to each requested URL instead of inferring it from whether
+// the URL merely appears in the resulting card.
+let outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs/", "https://example.com/human-note?keep=1#raw"],
+  [{ op: "addNormalizedUrl", value: " https://example.com/docs#intro " }],
+);
+assert.deepEqual(
+  outcomes,
+  [{
+    requestedUrl: " https://example.com/docs#intro ",
+    normalizedUrl: "https://example.com/docs",
+    outcome: "duplicate",
+  }],
+  "a normalized-equivalent request against an existing human-authored link reports duplicate",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs/"],
+  [{ op: "addNormalizedUrl", value: "https://example.com/new#frag" }],
+);
+assert.deepEqual(
+  outcomes,
+  [{
+    requestedUrl: "https://example.com/new#frag",
+    normalizedUrl: "https://example.com/new",
+    outcome: "added",
+  }],
+  "a genuinely new normalized URL reports added",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  [],
+  [
+    { op: "addNormalizedUrl", value: "https://example.com/docs#one" },
+    { op: "addNormalizedUrl", value: "https://example.com/docs#two" },
+    { op: "addNormalizedUrl", value: "https://example.com/docs" },
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [
+    { requestedUrl: "https://example.com/docs#one", normalizedUrl: "https://example.com/docs", outcome: "added" },
+    { requestedUrl: "https://example.com/docs#two", normalizedUrl: "https://example.com/docs", outcome: "duplicate" },
+    { requestedUrl: "https://example.com/docs", normalizedUrl: "https://example.com/docs", outcome: "duplicate" },
+  ],
+  "normalized duplicates within one request batch are distinguished from the first add, in request order",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs/"],
+  [
+    { op: "addNormalizedUrl", value: "not a url" },
+    { op: "addNormalizedUrl", value: "mailto:team@example.com" },
+    { op: "addNormalizedUrl", value: "ftp://example.com/file" },
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [
+    { requestedUrl: "not a url", normalizedUrl: null, outcome: "invalid" },
+    { requestedUrl: "mailto:team@example.com", normalizedUrl: null, outcome: "invalid" },
+    { requestedUrl: "ftp://example.com/file", normalizedUrl: null, outcome: "invalid" },
+  ],
+  "non-HTTP(S) or unparseable requests are reported invalid, distinct from duplicate",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs"],
+  [
+    { op: "addNormalizedUrl", value: "https://example.com/new" },
+    { op: "addNormalizedUrl", value: "https://example.com/docs" },
+    { op: "addNormalizedUrl", value: "not a url" },
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [
+    { requestedUrl: "https://example.com/new", normalizedUrl: "https://example.com/new", outcome: "added" },
+    { requestedUrl: "https://example.com/docs", normalizedUrl: "https://example.com/docs", outcome: "duplicate" },
+    { requestedUrl: "not a url", normalizedUrl: null, outcome: "invalid" },
+  ],
+  "a mixed batch reports each request's true outcome independently",
+);
+
+assert.deepEqual(
+  resolveLinkOpOutcomes(["https://example.com/docs"], [{ op: "add", value: "https://example.com/new" }]),
+  [],
+  "plain add/remove ops are outside this report — only addNormalizedUrl requests carry a client-facing outcome",
+);
+assert.deepEqual(
+  resolveLinkOpOutcomes(["https://example.com/docs"], []),
+  [],
+  "an empty op list resolves no outcomes",
+);
+
+// ── resolveLinkOpOutcomes — mixed ordinary + normalized-add sequencing ──────
+// Regression coverage: outcome resolution must observe every ordinary
+// add/remove in exact sequence (with the same canonical-set recomputation
+// applyLinkOps performs), not skip straight to the addNormalizedUrl requests.
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs"],
+  [
+    { op: "remove", value: "https://example.com/docs" },
+    { op: "addNormalizedUrl", value: "https://example.com/docs#intro" },
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [{ requestedUrl: "https://example.com/docs#intro", normalizedUrl: "https://example.com/docs", outcome: "added" }],
+  "removing the exact stored URL first frees its normalized key for a later normalized-add",
+);
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs"] },
+  {
+    linkOps: [
+      { op: "remove", value: "https://example.com/docs" },
+      { op: "addNormalizedUrl", value: "https://example.com/docs#intro" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/docs"],
+  "applyCardOps stores the canonical URL after the remove clears the exact match",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/human-note"],
+  [
+    { op: "add", value: "https://example.com/docs" },
+    { op: "addNormalizedUrl", value: "https://example.com/docs#intro" },
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [{ requestedUrl: "https://example.com/docs#intro", normalizedUrl: "https://example.com/docs", outcome: "duplicate" }],
+  "an ordinary add earlier in the same batch is observed and blocks the later normalized-add equivalent",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  [],
+  [
+    { op: "addNormalizedUrl", value: "https://example.com/docs#one" },
+    { op: "remove", value: "https://example.com/docs#one" },
+    { op: "addNormalizedUrl", value: "https://example.com/docs#two" },
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [
+    { requestedUrl: "https://example.com/docs#one", normalizedUrl: "https://example.com/docs", outcome: "added" },
+    { requestedUrl: "https://example.com/docs#two", normalizedUrl: "https://example.com/docs", outcome: "duplicate" },
+  ],
+  "ordinary remove of the raw request does not remove its canonically stored value",
+);
+out = applyCardOps(
+  { ...base, links: [] },
+  {
+    linkOps: [
+      { op: "addNormalizedUrl", value: "https://example.com/docs#one" },
+      { op: "remove", value: "https://example.com/docs#one" },
+      { op: "addNormalizedUrl", value: "https://example.com/docs#two" },
+      { op: "remove", value: "https://example.com/docs" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  [],
+  "a later ordinary remove only removes the exact canonical value that was stored",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs"],
+  [
+    { op: "add", value: "https://example.com/unrelated" },
+    { op: "remove", value: "https://example.com/other" },
+  ],
+);
+assert.deepEqual(outcomes, [], "unrelated ordinary ops emit no outcome");
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs"] },
+  {
+    linkOps: [
+      { op: "add", value: "https://example.com/unrelated" },
+      { op: "remove", value: "https://example.com/other" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/docs", "https://example.com/unrelated"],
+  "unrelated ordinary ops preserve output order/content exactly as applyLinkOps would",
+);
+
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs"],
+  [
+    { op: "add", value: "https://example.com/unrelated" },
+    { op: "addNormalizedUrl", value: "not a url" },
+    { op: "remove", value: 42 },
+    { op: "addNormalizedUrl", value: "mailto:team@example.com" },
+    null,
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [
+    { requestedUrl: "not a url", normalizedUrl: null, outcome: "invalid" },
+    { requestedUrl: "mailto:team@example.com", normalizedUrl: null, outcome: "invalid" },
+  ],
+  "invalid/malformed operations remain safely ignored/reported consistently alongside ordinary ops",
+);
+
+// ── blank addNormalizedUrl requests — every one still gets a positional
+// outcome, unlike ordinary add/remove which silently ignores a blank value.
+// A caller (chat-follow-up-links.ts) maps requested URLs to outcomes by
+// array position, so a blank request that emitted no entry would desync
+// that accounting instead of reporting the truthful "invalid" it is.
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs"],
+  [{ op: "addNormalizedUrl", value: "" }],
+);
+assert.deepEqual(
+  outcomes,
+  [{ requestedUrl: "", normalizedUrl: null, outcome: "invalid" }],
+  "an empty-string addNormalizedUrl request reports invalid rather than being silently dropped",
+);
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: "" }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://example.com/docs"], "an empty-string addNormalizedUrl request never mutates stored links");
+
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs"],
+  [{ op: "addNormalizedUrl", value: "   " }],
+);
+assert.deepEqual(
+  outcomes,
+  [{ requestedUrl: "   ", normalizedUrl: null, outcome: "invalid" }],
+  "a whitespace-only addNormalizedUrl request reports invalid with the raw (untrimmed) requestedUrl preserved",
+);
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs"] },
+  { linkOps: [{ op: "addNormalizedUrl", value: "   " }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://example.com/docs"], "a whitespace-only addNormalizedUrl request never mutates stored links");
+
+// A surrounding-whitespace but otherwise valid URL still reports its raw
+// request and canonical normalized outcome, and stores that canonical URL.
+outcomes = resolveLinkOpOutcomes(
+  [],
+  [{ op: "addNormalizedUrl", value: "  https://example.com/fresh  " }],
+);
+assert.deepEqual(
+  outcomes,
+  [{ requestedUrl: "  https://example.com/fresh  ", normalizedUrl: "https://example.com/fresh", outcome: "added" }],
+  "a surrounding-whitespace valid URL reports its canonical normalizedUrl while requestedUrl keeps the raw request",
+);
+out = applyCardOps(
+  { ...base, links: [] },
+  { linkOps: [{ op: "addNormalizedUrl", value: "  https://example.com/fresh  " }] },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/fresh"],
+  "the stored value is the canonical normalized URL",
+);
+
+// Ordinary add/remove blank values remain silently ignored — no outcome, no
+// mutation — distinct from the addNormalizedUrl behavior above.
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/docs"],
+  [{ op: "add", value: "" }, { op: "add", value: "   " }, { op: "remove", value: "" }],
+);
+assert.deepEqual(outcomes, [], "ordinary add/remove with blank values emit no outcome");
+out = applyCardOps(
+  { ...base, links: ["https://example.com/docs"] },
+  { linkOps: [{ op: "add", value: "" }, { op: "add", value: "   " }, { op: "remove", value: "" }] },
+  NOW,
+);
+assert.deepEqual(out.links, ["https://example.com/docs"], "ordinary add/remove with blank values never mutate stored links");
+
+// A mixed positional batch: every addNormalizedUrl request (blank or not)
+// reports exactly one outcome, in request order, while interleaved ordinary
+// add/remove ops (including blank ones) contribute no outcome of their own.
+outcomes = resolveLinkOpOutcomes(
+  ["https://example.com/existing"],
+  [
+    { op: "add", value: "  " },
+    { op: "addNormalizedUrl", value: "" },
+    { op: "remove", value: "https://unrelated.example" },
+    { op: "addNormalizedUrl", value: " https://example.com/new " },
+    { op: "addNormalizedUrl", value: "https://example.com/existing" },
+  ],
+);
+assert.deepEqual(
+  outcomes,
+  [
+    { requestedUrl: "", normalizedUrl: null, outcome: "invalid" },
+    { requestedUrl: " https://example.com/new ", normalizedUrl: "https://example.com/new", outcome: "added" },
+    { requestedUrl: "https://example.com/existing", normalizedUrl: "https://example.com/existing", outcome: "duplicate" },
+  ],
+  "a mixed batch reports one outcome per addNormalizedUrl request, in order, unaffected by interleaved blank ordinary ops",
+);
+out = applyCardOps(
+  { ...base, links: ["https://example.com/existing"] },
+  {
+    linkOps: [
+      { op: "add", value: "  " },
+      { op: "addNormalizedUrl", value: "" },
+      { op: "remove", value: "https://unrelated.example" },
+      { op: "addNormalizedUrl", value: " https://example.com/new " },
+      { op: "addNormalizedUrl", value: "https://example.com/existing" },
+    ],
+  },
+  NOW,
+);
+assert.deepEqual(
+  out.links,
+  ["https://example.com/existing", "https://example.com/new"],
+  "the mixed batch mutates links exactly as its non-blank/non-duplicate members dictate",
 );
 
 console.log("board-card-ops: ok");

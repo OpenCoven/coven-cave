@@ -327,6 +327,6 @@ assert.match(
 // shared typed-card component, so the most useful next step stands out.
 assert.match(
   source,
-  /<FollowUpCards paths=\{followUp\.suggestions\} onActivate=\{handleFollowUp\} \/>/,
+  /<FollowUpCards[\s\S]{0,160}paths=\{followUp\.suggestions\}[\s\S]{0,160}onActivate=\{\(path\) => handleFollowUp\(\{ path, sourceText: followUp\.sourceText \}\)\}/,
   "the latest follow-up row uses the shared recommended-card treatment",
 );

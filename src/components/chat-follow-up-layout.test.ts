@@ -9,55 +9,50 @@ const styles = readFileSync(
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const nextPaths = readFileSync(new URL("../lib/next-paths.ts", import.meta.url), "utf8");
 
+function cssBlock(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = styles.match(new RegExp(`${escaped} \\{([\\s\\S]*?)\\n\\}`, "m"));
+  assert.ok(match, `missing CSS block for ${selector}`);
+  return match[1];
+}
+
+const compactGridBlock = cssBlock(".cave-chat-followups .cave-followup-cards__grid");
+const compactCardBlock = cssBlock(".cave-chat-followups .cave-followup-card");
+const compactRecommendedIndicatorBlock = cssBlock(".cave-chat-followups .cave-followup-card__recommended-indicator");
+const compactRecommendedBlock = styles.match(
+  /\.cave-chat-followups \.cave-followup-card--recommended,\s*\n\.cave-chat-followups \.cave-followup-card--recommended:hover \{([\s\S]*?)\n\}/m,
+)?.[1];
+
+assert.ok(compactRecommendedBlock, "missing recommended footer card override");
+
 assert.match(
   styles,
   /\.cave-chat-followups \{[\s\S]*?flex: 0 0 100%;[\s\S]*?width: 100%;[\s\S]*?border-top: 1px solid var\(--border-hairline\);/,
   "composer follow-ups span the attached footer below its context row",
 );
+assert.match(compactGridBlock, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/, "composer follow-ups render four equal footer columns");
+assert.match(compactCardBlock, /display: flex;/, "footer cards stay inline controls");
+assert.match(compactCardBlock, /align-items: center;/, "footer cards keep their summary row aligned");
+assert.match(compactCardBlock, /gap: var\(--space-1\);/, "footer cards use the compact token gap");
+assert.match(compactCardBlock, /padding: var\(--space-1\) var\(--space-2\);/, "footer cards use compact token padding");
+assert.match(compactCardBlock, /border-radius: var\(--radius-control\);/, "footer cards use the control radius token");
 assert.match(
-  styles,
-  /\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-auto-flow: column;[\s\S]*?grid-auto-columns: minmax\(0, 1fr\);[\s\S]*?grid-template-columns: none;/,
-  "composer follow-ups stretch one to three equal options across the prompt width",
+  compactRecommendedBlock,
+  /border-color: color-mix\(in oklch, var\(--color-success\) 42%, var\(--border-hairline\)\);/,
+  "recommended footer cards derive their border from the semantic success token",
 );
-assert.doesNotMatch(
-  styles,
-  /\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(3,/,
-  "composer follow-ups do not reserve empty columns for malformed output",
-);
-assert.match(
-  styles,
-  /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?padding: var\(--space-1\) var\(--space-3\);/,
-  "desktop composer follow-ups use compact token spacing",
-);
-assert.match(
-  styles,
-  /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?display: flex;[\s\S]*?align-items: center;[\s\S]*?gap: var\(--space-2\);/,
-  "composer follow-up cards keep the type/separator/title summary on one line",
-);
-assert.match(
-  styles,
-  /\.cave-chat-followups \.cave-followup-card__type \{[\s\S]*?white-space: nowrap;/,
-  "the type label itself never wraps away from the title",
-);
-assert.match(
-  styles,
-  /\.cave-chat-followups \.cave-followup-card__title \{[\s\S]*?min-width: 0;[\s\S]*?overflow: hidden;[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/,
-  "footer titles ellipsize instead of wrapping",
-);
-assert.match(
-  styles,
-  /\.cave-chat-followups \.cave-followup-card__separator \{[\s\S]*?display: inline;/,
-  "the footer keeps the type/title separator visible",
-);
-assert.match(
-  styles,
-  /\.cave-followup-card__separator \{[\s\S]*?display: none;/,
-  "historical cards keep the separator hidden and retain their full detail layout",
-);
+assert.doesNotMatch(compactRecommendedBlock, /animation:|transition:/, "recommended footer cards keep a static border treatment");
+assert.match(compactRecommendedIndicatorBlock, /display: inline-flex;/, "recommended footer cards keep a visible non-color cue");
+assert.match(compactRecommendedIndicatorBlock, /color: var\(--color-success\);/, "the recommendation cue uses the semantic success token");
 assert.match(
   styles,
   /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-chat-followups \.cave-followup-card \{[\s\S]*?min-height: var\(--touch-target\);/,
   "narrow composer follow-ups preserve touch-safe targets",
+);
+assert.match(
+  styles,
+  /@media \(max-width: 40rem\) \{[\s\S]*?\.cave-chat-followups \.cave-followup-cards__grid \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+  "narrow composer follow-ups switch to two equal columns",
 );
 assert.doesNotMatch(
   chatView,

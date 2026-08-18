@@ -11,7 +11,7 @@ import {
 import type { CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
 import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
-import type { CardOps, CardPatch } from "@/lib/board-card-ops";
+import type { CardOps, CardOpsOutcome, CardPatch } from "@/lib/board-card-ops";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
@@ -101,8 +101,9 @@ export async function PATCH(
       .map((field) => [field, body[field]]),
   ) as CardPatch;
   let card;
+  const opsOutcome: CardOpsOutcome = {};
   try {
-    card = await updateCard(id, patch);
+    card = await updateCard(id, patch, { opsOutcome });
   } catch (error) {
     if (error instanceof OrchestrationValidationError) {
       return NextResponse.json(
@@ -115,7 +116,16 @@ export async function PATCH(
   if (!card) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true, card });
+  // opsOutcome is only ever populated when the request carried at least one
+  // addNormalizedUrl linkOp that actually resolved an outcome under the board
+  // lock (cave-board.ts leaves it undefined otherwise, never a truthy-but-empty
+  // array) — so unrelated PATCH callers (plain field patches, ordinary
+  // add/remove linkOps, other op kinds) see the exact same `{ ok: true, card }`
+  // response shape as before this field existed. The length check here is
+  // belt-and-suspenders against that same drift, not the primary guard.
+  return NextResponse.json(
+    opsOutcome.linkOps?.length ? { ok: true, card, opsOutcome } : { ok: true, card },
+  );
 }
 
 export async function DELETE(

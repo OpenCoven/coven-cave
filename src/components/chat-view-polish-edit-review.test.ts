@@ -11,9 +11,8 @@ import {
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
 
-// Follow-ups are ephemeral intent cards beside the composer, never transcript
-// history. Their visual grammar belongs to the shared component rather than
-// the legacy send-on-click chip row.
+// Follow-ups use one shared presentation in the latest-turn footer and in
+// source-aware historical rows rather than the legacy send-on-click chip row.
 assert.match(
   source,
   /import \{ FollowUpCards \} from "@\/components\/chat-follow-up-cards"/,
@@ -21,8 +20,13 @@ assert.match(
 );
 assert.equal(
   [...source.matchAll(/<FollowUpCards/g)].length,
-  1,
-  "historical transcript turns never render follow-up cards",
+  2,
+  "the footer and historical transcript rows share follow-up cards",
+);
+assert.match(
+  source,
+  /showFollowUps[\s\S]*?<FollowUpCards paths=\{nextPaths\} onActivate=\{onFollowUp\}/,
+  "historical cards route through their row-scoped callback",
 );
 assert.match(
   styles,
@@ -36,7 +40,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.cave-followup-card__recommended/,
+  /\.cave-chat-followups \.cave-followup-card__recommended-indicator \{[\s\S]*?display: inline-flex;/,
   "recommended cards retain a visible non-color marker",
 );
 
