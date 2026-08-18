@@ -97,6 +97,71 @@ export function compareUtcTimestamps(left: string, right: string): number {
   return leftFraction < rightFraction ? -1 : leftFraction > rightFraction ? 1 : 0;
 }
 
+const SECONDS_PER_HOUR = 3_600;
+const DAYS_BEFORE_MONTH = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+
+function daysBeforeUtcYear(year: number): number {
+  return 365 * year
+    + Math.floor((year + 3) / 4)
+    - Math.floor((year + 99) / 100)
+    + Math.floor((year + 399) / 400);
+}
+
+function utcTimestampParts(
+  value: string,
+  leapSecondBound: "anchor" | "deadline",
+): { wholeSeconds: number; nanoseconds: number } {
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const hour = Number(value.slice(11, 13));
+  const minute = Number(value.slice(14, 16));
+  const parsedSecond = Number(value.slice(17, 19));
+  const leapDay = month > 2 && year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const dayIndex = daysBeforeUtcYear(year)
+    + DAYS_BEFORE_MONTH[month - 1]!
+    + (leapDay ? 1 : 0)
+    + day
+    - 1;
+  const second = parsedSecond === 60 && leapSecondBound === "anchor"
+    ? 59
+    : parsedSecond;
+  const wholeSeconds = dayIndex * 86_400 + hour * SECONDS_PER_HOUR + minute * 60 + second;
+  const fraction = value[19] === "." ? value.slice(20, -1) : "";
+  return {
+    wholeSeconds,
+    nanoseconds: Number(fraction.padEnd(9, "0") || "0"),
+  };
+}
+
+/**
+ * Uses proleptic-Gregorian UTC days of exactly 86,400 seconds. For accepted
+ * `23:59:60` syntax, the anchor is floored to `23:59:59` and a deadline is
+ * rounded up to the following civil second, preserving its fractional digits.
+ * This asymmetric rule may shorten a leap-second window but cannot lengthen it.
+ */
+export function isUtcTimestampAtMostHoursAfter(
+  timestamp: string,
+  anchor: string,
+  hours: number,
+): boolean {
+  if (!isUtcTimestamp(timestamp) || !isUtcTimestamp(anchor)) {
+    throw new TypeError("UTC duration comparison requires valid UTC RFC 3339 timestamps");
+  }
+  if (!Number.isSafeInteger(hours) || hours < 0) {
+    throw new RangeError("UTC duration comparison requires non-negative whole safe-integer hours");
+  }
+
+  const deadline = utcTimestampParts(timestamp, "deadline");
+  const start = utcTimestampParts(anchor, "anchor");
+  const boundarySeconds = start.wholeSeconds + hours * SECONDS_PER_HOUR;
+  return deadline.wholeSeconds < boundarySeconds
+    || (
+      deadline.wholeSeconds === boundarySeconds
+      && deadline.nanoseconds <= start.nanoseconds
+    );
+}
+
 export function isJsonPointer(value: unknown): value is string {
   return typeof value === "string" && JSON_POINTER_RE.test(value);
 }

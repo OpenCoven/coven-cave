@@ -1129,6 +1129,134 @@ test("scheduled and completed deletion states require a concrete content expirat
   }
 });
 
+test("parsed finite retention deadlines cannot exceed their policy duration", () => {
+  const scheduled = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const withRetention = (
+    effectivePolicy: RunManifestV1["retention"]["effectivePolicy"],
+    updatedAt: string,
+    contentExpiresAt: string,
+  ) =>
+    recalculate({
+      ...scheduled,
+      retention: {
+        ...scheduled.retention,
+        effectivePolicy,
+        updatedAt,
+        contentExpiresAt,
+      },
+    });
+
+  for (const candidate of [
+    withRetention(
+      "7-days",
+      "2026-12-28T20:06:00.123456789Z",
+      "2027-01-04T20:06:00.123456789Z",
+    ),
+    withRetention(
+      "7-days",
+      "2028-02-25T20:06:00.123456789Z",
+      "2028-03-03T20:06:00.123456788Z",
+    ),
+    withRetention(
+      "run-only",
+      "2028-02-28T20:06:00.123456789Z",
+      "2028-02-29T20:06:00.123456789Z",
+    ),
+  ]) {
+    expectOk(parseRunManifestV1(candidate));
+  }
+
+  for (const candidate of [
+    withRetention(
+      "7-days",
+      "2026-12-28T20:06:00.123456789Z",
+      "2027-01-04T20:06:00.123456790Z",
+    ),
+    withRetention(
+      "run-only",
+      "2028-02-28T20:06:00.123456789Z",
+      "2028-02-29T20:06:00.123456790Z",
+    ),
+  ]) {
+    expectError(
+      parseRunManifestV1(candidate),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
+test("parsed retention deadlines cannot precede their anchor and project has no duration ceiling", () => {
+  const scheduled = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const deadlineBeforeAnchor = recalculate({
+    ...scheduled,
+    retention: {
+      ...scheduled.retention,
+      updatedAt: "2026-08-17T20:00:00.000000001Z",
+      contentExpiresAt: "2026-08-17T20:00:00Z",
+    },
+  });
+  expectError(
+    parseRunManifestV1(deadlineBeforeAnchor),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const projectDeadline = recalculate({
+    ...scheduled,
+    retention: {
+      ...scheduled.retention,
+      effectivePolicy: "project" as const,
+      contentExpiresAt: "2099-01-01T00:00:00.000Z",
+    },
+  });
+  assert.equal(
+    expectOk(parseRunManifestV1(projectDeadline)).retention.contentExpiresAt,
+    "2099-01-01T00:00:00.000Z",
+  );
+});
+
+test("parsed initial and unchanged 7-days schedules cannot set a 2099 deadline", () => {
+  const initiallyScheduledFor2099 = recalculate({
+    ...assemblingManifestJson,
+    retention: {
+      ...assemblingManifestJson.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: "2099-01-01T00:00:00.000Z",
+    },
+    deletion: {
+      ...assemblingManifestJson.deletion,
+      status: "scheduled" as const,
+      requestedAt: assemblingManifestJson.retention.updatedAt,
+    },
+  });
+  const active = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduledFor2099 = recalculate({
+    ...active,
+    revision: active.revision + 1,
+    previousDigest: active.digest,
+    retention: {
+      ...active.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: "2099-01-01T00:00:00.000Z",
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...active.deletion,
+      status: "scheduled" as const,
+      requestedAt: "2026-08-16T20:06:00.000Z",
+    },
+  });
+
+  for (const candidate of [initiallyScheduledFor2099, scheduledFor2099]) {
+    expectError(
+      parseRunManifestV1(candidate),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
 test("standalone shortened retention cannot remain active and unscheduled", () => {
   const fixture = withoutExpectedSchemaValid(invalidActiveShorteningJson);
   assert.equal(Value.Check(runManifestSchema, fixture), true);
@@ -1670,6 +1798,7 @@ test("final retention shortening starts a coherent deletion clock", () => {
         retention: {
           ...retentionUpdateJson.retention,
           effectivePolicy: "run-only" as const,
+          contentExpiresAt: "2026-08-17T20:06:00.000Z",
         },
       }),
     ),
@@ -1768,7 +1897,11 @@ test("revision chains reject bad links, immutable final mutations, and retention
 
   const shortened = recalculate({
     ...next,
-    retention: { ...next.retention, effectivePolicy: "run-only" as const },
+    retention: {
+      ...next.retention,
+      effectivePolicy: "run-only" as const,
+      contentExpiresAt: "2026-08-17T20:06:00.000Z",
+    },
   });
   expectError(
     validateRunManifestRevision(previous, shortened),
@@ -1811,9 +1944,12 @@ test("revision chains reject bad links, immutable final mutations, and retention
   );
 });
 
-test("retention deadlines may stay equal or move earlier but need fresh consent to move later", () => {
+test("retention deadlines may stay equal or move earlier but renewal needs fresh consent and a later anchor", () => {
   const previous = expectOk(parseRunManifestV1(retentionUpdateJson));
-  const linkedRevision = (contentExpiresAt: string): RunManifestV1 =>
+  const linkedRevision = (
+    contentExpiresAt: string,
+    updatedAt = "2026-08-16T20:07:00.000Z",
+  ): RunManifestV1 =>
     expectOk(
       parseRunManifestV1(
         recalculate({
@@ -1823,7 +1959,7 @@ test("retention deadlines may stay equal or move earlier but need fresh consent 
           retention: {
             ...previous.retention,
             contentExpiresAt,
-            updatedAt: "2026-08-16T20:07:00.000Z",
+            updatedAt,
           },
         }),
       ),
@@ -1843,9 +1979,22 @@ test("retention deadlines may stay equal or move earlier but need fresh consent 
     );
   }
 
-  const extended = linkedRevision("2099-01-01T00:00:00.000Z");
+  const unchangedAnchorExtension = linkedRevision(
+    "2026-08-23T20:05:00.000000001Z",
+    previous.retention.updatedAt,
+  );
   expectError(
-    validateRunManifestRevision(previous, extended, {
+    validateRunManifestRevision(previous, unchangedAnchorExtension, {
+      freshConsent: true,
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const renewed = linkedRevision("2026-08-23T20:07:00.000Z");
+  expectError(
+    validateRunManifestRevision(previous, renewed, {
       contextConsent: "7-days",
     }),
     "$.retention.contentExpiresAt",
@@ -1853,12 +2002,25 @@ test("retention deadlines may stay equal or move earlier but need fresh consent 
   );
   assert.deepEqual(
     expectOk(
-      validateRunManifestRevision(previous, extended, {
+      validateRunManifestRevision(previous, renewed, {
         freshConsent: true,
         contextConsent: "7-days",
       }),
     ),
-    extended,
+    renewed,
+  );
+
+  const beyondRenewedCeiling = recalculate({
+    ...renewed,
+    retention: {
+      ...renewed.retention,
+      contentExpiresAt: "2026-08-23T20:07:00.000000001Z",
+    },
+  });
+  expectError(
+    parseRunManifestV1(beyondRenewedCeiling),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
   );
 });
 
@@ -2040,7 +2202,7 @@ test("post-final deletion revisions progress forward unless fresh consent length
       {
         ...pending.retention,
         status: "deletion_scheduled" as const,
-        updatedAt: "2026-08-17T20:01:00.000Z",
+        updatedAt: pending.retention.updatedAt,
       },
       {
         ...pending.deletion,
@@ -2085,7 +2247,7 @@ test("post-final deletion revisions progress forward unless fresh consent length
         previousDigest: partialFailure.digest,
         retention: {
           ...partialFailure.retention,
-          updatedAt: "2026-08-17T20:02:00.000Z",
+          updatedAt: partialFailure.retention.updatedAt,
         },
         deletion: {
           ...partialFailure.deletion,

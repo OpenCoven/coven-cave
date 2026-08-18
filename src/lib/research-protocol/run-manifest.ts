@@ -6,6 +6,7 @@ import {
   isRecord,
   isSha256,
   isUtcTimestamp,
+  isUtcTimestampAtMostHoursAfter,
   parseResearchContextBindingV1,
   pass,
   retentionDoesNotExceed,
@@ -31,6 +32,10 @@ const ARTIFACT_PLACEMENTS = ["device-local", "cloud-metadata", "cloud-content"] 
 const CONTENT_SYNCS = ["not-requested", "pending", "synced", "failed"] as const;
 const TASK_PHASES = ["scope", "challenge", "synthesize", "control"] as const;
 const RETENTION_POLICIES = ["run-only", "7-days", "project"] as const;
+const RETENTION_DURATION_HOURS = {
+  "run-only": 24,
+  "7-days": 7 * 24,
+} as const;
 const RETENTION_STATUSES = ["active", "deletion_scheduled", "deletion_pending", "deleted"] as const;
 const DELETION_STATUSES = ["not_scheduled", "scheduled", "pending", "completed", "partial_failure"] as const;
 const MANIFEST_STATES = ["assembling", "final"] as const;
@@ -890,6 +895,43 @@ function validateRetentionClock(
       "active project retention must not have contentExpiresAt",
     );
   }
+  if (retention.contentExpiresAt !== null) {
+    if (!isUtcTimestamp(retention.updatedAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.updatedAt",
+        "retention.updatedAt must be a valid UTC timestamp",
+      );
+    }
+    if (!isUtcTimestamp(retention.contentExpiresAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        "content expiration must be a valid UTC timestamp",
+      );
+    }
+    if (compareUtcTimestamps(retention.contentExpiresAt, retention.updatedAt) < 0) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        "content expiration must not precede retention.updatedAt",
+      );
+    }
+    if (
+      retention.effectivePolicy !== "project"
+      && !isUtcTimestampAtMostHoursAfter(
+        retention.contentExpiresAt,
+        retention.updatedAt,
+        RETENTION_DURATION_HOURS[retention.effectivePolicy],
+      )
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        `content expiration exceeds the ${retention.effectivePolicy} retention duration`,
+      );
+    }
+  }
   return pass(undefined);
 }
 
@@ -933,12 +975,21 @@ function validateRetentionDeadlineRevision(
       "content expiration cannot be cleared without fresh-consent effective-policy lengthening and coherent deletion cancellation",
     );
   }
-  if (compareUtcTimestamps(nextDeadline, previousDeadline) > 0 && !freshConsent) {
-    return fail(
-      "semantic_conflict",
-      "$.retention.contentExpiresAt",
-      "moving content expiration later requires freshConsent",
-    );
+  if (compareUtcTimestamps(nextDeadline, previousDeadline) > 0) {
+    if (!freshConsent) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        "moving content expiration later requires freshConsent",
+      );
+    }
+    if (compareUtcTimestamps(next.retention.updatedAt, previous.retention.updatedAt) <= 0) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        "fresh-consent content expiration renewal requires advancing retention.updatedAt",
+      );
+    }
   }
   return pass(undefined);
 }

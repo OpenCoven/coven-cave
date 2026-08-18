@@ -253,7 +253,7 @@
         "retention": {
           "status": "deletion_pending",
           "contentExpiresAt": "2026-08-17T20:00:00.000Z",
-          "updatedAt": "2026-08-17T20:01:00.000Z"
+          "updatedAt": "2026-08-17T20:00:00.000Z"
         },
         "deletion": {
           "status": "pending",
@@ -287,7 +287,7 @@
         "retention": {
           "status": "deletion_pending",
           "contentExpiresAt": "2026-08-17T20:00:00.000Z",
-          "updatedAt": "2026-08-17T20:01:00.000Z"
+          "updatedAt": "2026-08-17T20:00:00.000Z"
         },
         "deletion": {
           "status": "pending",
@@ -300,7 +300,8 @@
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
         "retention": {
-          "effectivePolicy": "run-only"
+          "effectivePolicy": "run-only",
+          "contentExpiresAt": "2026-08-17T20:06:00.000Z"
         }
       },
       "digestTargets": [""]
@@ -351,10 +352,42 @@
     "deadline-extended-to-2099": {
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
+        "digest": "0e75d949ea1d6a7e61c9eb7ea0a586baf5a254c12d45a7e993eba7790825e7bd",
         "revision": 3,
         "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
         "retention": {
           "contentExpiresAt": "2099-01-01T00:00:00.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      }
+    },
+    "deadline-null-to-2099": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "digest": "8d047cf83c8e697d0307de800f5dd0b1653f0036059387b0664e0e4cd4ee2d32",
+        "retention": {
+          "contentExpiresAt": "2099-01-01T00:00:00.000Z"
+        }
+      }
+    },
+    "deadline-extended-within-policy": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
+        "retention": {
+          "contentExpiresAt": "2026-08-23T20:05:00.000000001Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-renewed-boundary": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
+        "retention": {
+          "contentExpiresAt": "2026-08-23T20:07:00.000Z",
           "updatedAt": "2026-08-16T20:07:00.000Z"
         }
       },
@@ -404,7 +437,7 @@
         "retention": {
           "status": "deletion_scheduled",
           "contentExpiresAt": "2026-08-17T20:00:00.000Z",
-          "updatedAt": "2026-08-17T20:01:00.000Z"
+          "updatedAt": "2026-08-17T20:00:00.000Z"
         },
         "deletion": {
           "status": "scheduled",
@@ -445,6 +478,7 @@
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
         "retention": {
+          "contentExpiresAt": "2026-08-23T20:04:59.999999999Z",
           "updatedAt": "2026-08-16T20:04:59.999999999Z"
         }
       },
@@ -799,11 +833,11 @@
     },
     {
       "id": "manifest.deadline-extension-without-fresh-consent",
-      "description": "A linked revision cannot extend its content expiration to 2099 without fresh consent.",
+      "description": "A linked revision cannot extend its content expiration within the policy bound without fresh consent.",
       "validator": "run-manifest-revision",
       "inputs": {
         "previous": "scheduled-previous",
-        "next": "deadline-extended-to-2099"
+        "next": "deadline-extended-within-policy"
       },
       "options": {
         "contextConsent": "7-days"
@@ -817,7 +851,42 @@
     },
     {
       "id": "manifest.deadline-extension-with-fresh-consent",
-      "description": "Fresh consent permits an otherwise coherent content expiration extension.",
+      "description": "Fresh consent and an advanced retention anchor permit renewal at the exact seven-day boundary.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "deadline-renewed-boundary"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.deadline-renewal-without-anchor-advance",
+      "description": "Fresh consent cannot extend a deadline while retention.updatedAt remains unchanged.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "deadline-extended-within-policy"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deadline-renewal-beyond-policy",
+      "description": "Fresh consent cannot renew a seven-day deadline beyond seven days from the new anchor.",
       "validator": "run-manifest-revision",
       "inputs": {
         "previous": "scheduled-previous",
@@ -828,7 +897,30 @@
         "contextConsent": "7-days"
       },
       "expected": {
-        "ok": true
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.null-deadline-to-2099",
+      "description": "Scheduling unchanged seven-day retention cannot replace a null deadline with 2099.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "deadline-null-to-2099"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
       }
     },
     {

@@ -1353,6 +1353,14 @@ Retention behavior:
 These are product defaults. Legal or operational policy may shorten them but
 must not silently lengthen them.
 
+For a scheduled finite Run Manifest policy, `retention.updatedAt` is the
+deletion-clock anchor. Duration checks use exact nanoseconds and
+proleptic-Gregorian UTC days of 86,400 seconds. For the protocol's accepted
+`23:59:60` syntax, arithmetic floors an anchor to `23:59:59` and rounds a
+deadline up to the following civil second while preserving its fractional
+digits. This deterministic bound may shorten a leap-second window but never
+lengthens the named retention duration.
+
 ## 15. Cave API and UI
 
 ### 15.1 Local API routes
