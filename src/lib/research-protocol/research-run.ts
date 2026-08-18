@@ -197,13 +197,12 @@ function prefixProtocolErrorPath(path: string, prefix: string): string {
 
 function validateEmbeddedManifestAuthority(
   manifest: RunManifestV1,
-  contextPack: ContextPackV1,
+  contextPack: ContextPackV1 | undefined,
   history: readonly unknown[] | undefined,
 ): ProtocolParseResult<RunManifestV1> {
   const standalone = parseRunManifestV1(manifest);
-  if (standalone.ok) return pass(manifest);
-
   if (manifest.revision === 1) {
+    if (standalone.ok) return pass(manifest);
     return {
       ok: false,
       error: {
@@ -219,7 +218,7 @@ function validateEmbeddedManifestAuthority(
     return fail(
       "semantic_conflict",
       "$.artifactManifest.revision",
-      "Retention beyond standalone authority requires revision-1-rooted manifest history",
+      "Embedded manifest revisions after 1 require revision-1-rooted manifest history",
     );
   }
 
@@ -256,11 +255,17 @@ function validateEmbeddedManifestAuthority(
 
   let replayed = root.value;
   for (let index = 1; index < history.length; index += 1) {
-    const next = validateRunManifestRevisionV1(replayed, history[index], {
-      contextConsent: contextPack.consent.retention,
-      freshConsent: true,
-      freshConsentAt: contextPack.createdAt,
-    });
+    const next = validateRunManifestRevisionV1(
+      replayed,
+      history[index],
+      contextPack === undefined
+        ? {}
+        : {
+            contextConsent: contextPack.consent.retention,
+            freshConsent: true,
+            freshConsentAt: contextPack.createdAt,
+          },
+    );
     if (!next.ok) {
       return {
         ok: false,
@@ -307,19 +312,12 @@ export function validateResearchRunContextPackV1(
       );
     }
     if (run.artifactManifest) {
-      const trustedManifest = parseRunManifestV1(run.artifactManifest);
-      if (!trustedManifest.ok) {
-        return {
-          ok: false,
-          error: {
-            ...trustedManifest.error,
-            path: prefixProtocolErrorPath(
-              trustedManifest.error.path,
-              "$.artifactManifest",
-            ),
-          },
-        };
-      }
+      const authority = validateEmbeddedManifestAuthority(
+        run.artifactManifest,
+        undefined,
+        options.manifestHistory,
+      );
+      if (!authority.ok) return authority;
     }
     return pass(run);
   }

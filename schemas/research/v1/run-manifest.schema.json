@@ -295,7 +295,6 @@
   "$defs": {
     "sensitivePropertyName": {
       "type": "string",
-      "pattern": "^[\\u0000-\\u007f]*$",
       "allOf": [
         {
           "not": {

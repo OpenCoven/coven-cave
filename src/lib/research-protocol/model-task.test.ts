@@ -18,8 +18,7 @@ import {
 } from "./model-task.ts";
 
 const SAFE_INTEGER_OVERFLOW = 9007199254740992;
-const FIXTURE_EXECUTOR_PUBLIC_KEY_HEX = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-const FIXTURE_EXECUTOR_DEVICE_ID = sha256Digest(Buffer.from(FIXTURE_EXECUTOR_PUBLIC_KEY_HEX, "hex"));
+const FIXTURE_EXECUTOR_DEVICE_ID = "device_01";
 const VALID_SHA256_MISMATCH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const VALID_SHA256_MISMATCH_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
@@ -173,7 +172,7 @@ test("modelTaskResultSignaturePayload returns exactly the signed fields", () => 
     attempt: 1,
     inputDigest: "6a28b9d62b79b42a133d52fe51636c161c67722929efa5f6178e2940c9136597",
     outputDigest: validModelTaskResult.outputDigest,
-    executorDeviceId: "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+    executorDeviceId: "device_01",
     completedAt: "2026-08-15T20:10:00.000Z",
   });
   assert.deepEqual(Object.keys(payload).sort(), [
@@ -258,7 +257,7 @@ test("invalid usage fixture rejects in schema and parser", () => {
   expectError(parseModelTaskResultV1(invalidModelTaskResultUsage), "$.modelReceipt.usage", "semantic_conflict");
 });
 
-test("result outputDigest remains opaque while task input and device digests are verifiable", () => {
+test("result outputDigest remains opaque while task input digest is verifiable", () => {
   assert.equal(validModelTask.inputDigest, sha256Digest(canonicalJson(validModelTask.input)));
   assert.equal(validModelTaskResult.inputDigest, validModelTask.inputDigest);
   assert.equal(validModelTaskResult.inputDigest, sha256Digest(canonicalJson(validModelTask.input)));
@@ -296,6 +295,7 @@ test("validateModelTaskResultV1 accepts matching replays and rejects conflicting
   const task = expectOk(parseModelTaskV1(validModelTask));
   const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
 
+  assert.equal(result.executorDeviceId, "device_01");
   assert.strictEqual(expectOk(validateModelTaskResultV1(task, result)), result);
   assert.strictEqual(expectOk(validateModelTaskResultV1(task, result)), result);
 
@@ -471,10 +471,37 @@ test("digests require lowercase sha256 and timestamps require UTC RFC 3339", () 
   );
 });
 
-test("executorDeviceId must be a lowercase sha256 fingerprint in schema and parser", () => {
-  const invalidDeviceId = { ...validModelTaskResult, executorDeviceId: "not-a-sha-device-id" };
-  assert.equal(Value.Check(modelTaskResultSchema, invalidDeviceId), false);
-  expectError(parseModelTaskResultV1(invalidDeviceId), "$.executorDeviceId", "invalid_value");
+test("executorDeviceId uses the shared opaque device identifier grammar", () => {
+  for (const executorDeviceId of ["device_01", "device_A-b_9"]) {
+    const candidate = { ...validModelTaskResult, executorDeviceId };
+    assert.equal(Value.Check(modelTaskResultSchema, candidate), true);
+    assert.equal(
+      expectOk(parseModelTaskResultV1(candidate)).executorDeviceId,
+      executorDeviceId,
+    );
+  }
+
+  for (const executorDeviceId of [
+    "",
+    "device_",
+    "executor_01",
+    "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+    "device_unsafe/value",
+    "device_unsafe value",
+    "device_é",
+  ]) {
+    const candidate = { ...validModelTaskResult, executorDeviceId };
+    assert.equal(
+      Value.Check(modelTaskResultSchema, candidate),
+      false,
+      executorDeviceId,
+    );
+    expectError(
+      parseModelTaskResultV1(candidate),
+      "$.executorDeviceId",
+      "invalid_value",
+    );
+  }
 });
 
 test("allowedOutputs must be non-empty unique non-empty strings", () => {

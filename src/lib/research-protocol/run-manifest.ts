@@ -1260,6 +1260,20 @@ function validateManifestChronology(
       "Final manifest retention updatedAt must not be earlier than finalizedAt",
     );
   }
+  const retentionClockLowerBound = finalizedAt ?? createdAt;
+  if (
+    retention.contentExpiresAt !== null &&
+    compareUtcTimestamps(
+      retention.contentExpiresAt,
+      retentionClockLowerBound,
+    ) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      `contentExpiresAt must not be earlier than manifest ${finalizedAt === undefined ? "createdAt" : "finalizedAt"}`,
+    );
+  }
   return pass(undefined);
 }
 

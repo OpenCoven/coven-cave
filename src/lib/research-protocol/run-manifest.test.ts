@@ -30,8 +30,12 @@ import invalidArtifactBeforeCreatedJson from "../../../schemas/research/v1/fixtu
 import invalidArtifactAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-after-finalized.json" with { type: "json" };
 import invalidRetentionBeforeCreatedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-created.json" with { type: "json" };
 import invalidRetentionBeforeFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-finalized.json" with { type: "json" };
+import invalidContentExpiresBeforeCreatedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-content-expires-before-created.json" with { type: "json" };
+import invalidContentExpiresBeforeFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-content-expires-before-finalized.json" with { type: "json" };
+import invalidUnicodeSensitiveExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-unicode-sensitive-extension.json" with { type: "json" };
 import validExtensionBoundariesJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-extension-boundaries.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
+import validUnicodeExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-unicode-extension.json" with { type: "json" };
 import validChronologyBoundariesJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-chronology-boundaries.json" with { type: "json" };
 import validSevenDayBoundaryJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-retention-7-days-boundary.json" with { type: "json" };
 import validRunOnlyBoundaryJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-retention-run-only-boundary.json" with { type: "json" };
@@ -296,6 +300,93 @@ test("standalone revision-1 finite retention deadlines cannot exceed their polic
     assert.equal(manifest.digest, digestProtocolObject(manifest));
     expectError(
       parseRunManifestV1(manifest),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
+test("finite retention deadlines inclusively honor the trusted clock lower bound", () => {
+  for (const fixture of [
+    invalidContentExpiresBeforeCreatedJson,
+    invalidContentExpiresBeforeFinalizedJson,
+  ]) {
+    const { expectedSchemaValid, ...manifest } = fixture;
+    assert.equal(expectedSchemaValid, true);
+    assert.equal(Value.Check(runManifestSchema, manifest), true);
+    assert.equal(manifest.digest, digestProtocolObject(manifest));
+    expectError(
+      parseRunManifestV1(manifest),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+
+  for (const [base, before, equal, after] of [
+    [
+      assemblingManifestJson,
+      "2026-08-16T19:59:59.999999999Z",
+      "2026-08-16T20:00:00.000Z",
+      "2026-08-16T20:00:00.000000001Z",
+    ],
+    [
+      finalLocalManifestJson,
+      "2026-08-16T20:03:59.999999999Z",
+      "2026-08-16T20:04:00.000Z",
+      "2026-08-16T20:04:00.000000001Z",
+    ],
+  ] as const) {
+    const lowerBound =
+      "finalizedAt" in base ? base.finalizedAt : base.createdAt;
+    for (const [contentExpiresAt, accepted] of [
+      [before, false],
+      [equal, true],
+      [after, true],
+    ] as const) {
+      const candidate = recalculate({
+        ...base,
+        retention: {
+          ...base.retention,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt,
+        },
+        deletion: {
+          status: "scheduled" as const,
+          requestedAt: lowerBound,
+        },
+      });
+      assert.equal(Value.Check(runManifestSchema, candidate), true);
+      if (accepted) {
+        assert.equal(
+          expectOk(parseRunManifestV1(candidate)).retention.contentExpiresAt,
+          contentExpiresAt,
+        );
+      } else {
+        expectError(
+          parseRunManifestV1(candidate),
+          "$.retention.contentExpiresAt",
+          "semantic_conflict",
+        );
+      }
+    }
+
+    const projectCandidate = recalculate({
+      ...base,
+      retention: {
+        ...base.retention,
+        policy: "project" as const,
+        effectivePolicy: "project" as const,
+        status: "deletion_scheduled" as const,
+        contentExpiresAt: before,
+      },
+      deletion: {
+        status: "scheduled" as const,
+        requestedAt: lowerBound,
+      },
+    });
+    assert.equal(Value.Check(runManifestSchema, projectCandidate), true);
+    expectError(
+      parseRunManifestV1(projectCandidate),
       "$.retention.contentExpiresAt",
       "semantic_conflict",
     );
@@ -1215,21 +1306,60 @@ test("privacy key paths reject dangerous split components but preserve near miss
   );
 });
 
-test("privacy keys are NFKC-normalized and unsafe non-ASCII names cannot bypass checks", () => {
+test("privacy keys are NFKC-normalized while benign Unicode extensions remain lossless", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [key, path] of [
     ["ｒａｗＰｒｏｍｐｔ", '$.extension["ｒａｗＰｒｏｍｐｔ"]'],
     ["ｏｂｊｅｃｔＫｅｙ", '$.extension["ｏｂｊｅｃｔＫｅｙ"]'],
     ["deletedＣｏｎｔｅｎｔPayload", '$.extension["deletedＣｏｎｔｅｎｔPayload"]'],
-    ["аudit", '$.extension["аudit"]'],
+    ["caféＰｒｏｍｐｔ", '$.extension["caféＰｒｏｍｐｔ"]'],
+    ["監査prompt", '$.extension["監査prompt"]'],
   ] as const) {
     const candidate = recalculate({
       ...local,
       extension: { [key]: "private material" },
     });
-    assert.equal(Value.Check(runManifestSchema, candidate), false, key);
+    assert.equal(Value.Check(runManifestSchema, candidate), true, key);
     expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
   }
+
+  const unicodeExtension = {
+    "研究メタデータ": {
+      "café": "préservé",
+      "аudit": { "状態": "complete" },
+    },
+  };
+  const candidate = recalculate({ ...local, ...unicodeExtension });
+  assert.equal(Value.Check(runManifestSchema, candidate), true);
+  const parsed = expectOk(parseRunManifestV1(candidate));
+  assert.deepEqual(
+    parsed["研究メタデータ"],
+    unicodeExtension["研究メタデータ"],
+  );
+  assert.equal(
+    Object.keys(parsed).includes("研究メタデータ"),
+    true,
+    "the parser must preserve the original Unicode key rather than its NFKC form",
+  );
+
+  assert.equal(Value.Check(runManifestSchema, validUnicodeExtensionJson), true);
+  assert.deepEqual(
+    expectOk(parseRunManifestV1(validUnicodeExtensionJson)),
+    validUnicodeExtensionJson,
+  );
+
+  const { expectedSchemaValid, ...invalidUnicodeSensitiveExtension } =
+    invalidUnicodeSensitiveExtensionJson;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(
+    Value.Check(runManifestSchema, invalidUnicodeSensitiveExtension),
+    true,
+  );
+  expectError(
+    parseRunManifestV1(invalidUnicodeSensitiveExtension),
+    '$["ｒａｗＰｒｏｍｐｔ"]',
+    "semantic_conflict",
+  );
 });
 
 test("root and nested deleted-content payload extensions reject while near misses remain valid", () => {
