@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_final_local_01",
   "runId": "run_final_local_01",
-  "digest": "2dd3bd4ad5d62153ca37e549650c84d75cec319ef54894c4758403be33c1472e",
+  "digest": "130a911958bd5298c47db0e5931502177b706d903a29a0186798040ae856d1f8",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -70,6 +70,5 @@
   },
   "futureExtension": {
     "preserve": true
-  },
-  "expectedSchemaValid": true
+  }
 }

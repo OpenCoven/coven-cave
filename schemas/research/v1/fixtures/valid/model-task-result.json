@@ -9,7 +9,7 @@
     "digest": "output-field-is-canonical-data",
     "futureExtension": { "preserve": true }
   },
-  "outputDigest": "24c988fffd8b3c3a556595626c557b8c449ac24d063da6504ca350661748bdff",
+  "outputDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "executorDeviceId": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
   "modelReceipt": {
     "familiarId": "sage",
