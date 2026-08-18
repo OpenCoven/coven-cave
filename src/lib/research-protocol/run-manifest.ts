@@ -1449,6 +1449,8 @@ function validateRetentionLifecycleRevision(
   const inheritsFiniteDeadlineAuthority =
     previousDeadline !== null &&
     nextDeadline !== null &&
+    RETENTION_ORDER[next.retention.effectivePolicy] >=
+      RETENTION_ORDER[previous.retention.effectivePolicy] &&
     compareUtcTimestamps(nextDeadline, previousDeadline) <= 0;
   if (!inheritsFiniteDeadlineAuthority) {
     const deadline = validateFiniteRetentionDeadline(
