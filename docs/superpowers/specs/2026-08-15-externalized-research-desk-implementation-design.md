@@ -251,6 +251,10 @@ opencoven.model-task-result/v1
 opencoven.run-manifest/v1
 ```
 
+The Run Manifest JSON Schema document uses the absolute identifier
+`urn:opencoven:schema:research:run-manifest:v1`; cross-schema references use
+that identifier while wire objects retain `opencoven.run-manifest/v1`.
+
 Rules:
 
 - A consumer rejects an unknown major version.

@@ -23,6 +23,7 @@ import {
 } from "./topic-discovery.ts";
 import {
   normalizeUnicodeSecurityText,
+  validateSafeDeletionExtensionKeys,
   validateSafeExtensionKeys as validateSensitiveObjectKeys,
 } from "./privacy-extension.ts";
 
@@ -1056,7 +1057,11 @@ function parseDeletion(
 ): ProtocolParseResult<RunManifestDeletionReceiptV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
-  const safeKeys = validateSensitiveObjectKeys(object.value, path, DELETION_FIELDS);
+  const safeKeys = validateSafeDeletionExtensionKeys(
+    object.value,
+    path,
+    DELETION_FIELDS,
+  );
   if (!safeKeys.ok) return safeKeys;
 
   const statusField = parseRequiredField(object.value, "status", path);
@@ -1660,15 +1665,78 @@ function addTokenTotal(current: number | null, value: unknown, label: string, in
   return total;
 }
 
-function addCostTotal(current: number | null, value: unknown, index: number): number {
+type ExactDecimal = {
+  coefficient: bigint;
+  exponent: number;
+};
+
+const MAX_EXACT_DECIMAL_SCALE_SPAN = 1_000;
+
+function canonicalNumberDecimal(value: number): ExactDecimal {
+  const spelling = value.toString();
+  const [mantissa, exponentSpelling] = spelling.toLowerCase().split("e");
+  if (mantissa === undefined) {
+    throw new TypeError("costUsd has no canonical decimal spelling");
+  }
+  const pointIndex = mantissa.indexOf(".");
+  const fractionalDigits =
+    pointIndex === -1 ? 0 : mantissa.length - pointIndex - 1;
+  const digits = mantissa.replace(".", "");
+  let coefficient = BigInt(digits);
+  let exponent =
+    (exponentSpelling === undefined ? 0 : Number(exponentSpelling)) -
+    fractionalDigits;
+
+  while (
+    coefficient !== BigInt(0) &&
+    coefficient % BigInt(10) === BigInt(0)
+  ) {
+    coefficient /= BigInt(10);
+    exponent += 1;
+  }
+  return { coefficient, exponent };
+}
+
+function addCostTotal(
+  current: ExactDecimal | null,
+  value: unknown,
+  index: number,
+): ExactDecimal {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new TypeError(`execution ${index} costUsd must be a finite number >= 0`);
   }
-  const total = (current ?? 0) + value;
-  if (!Number.isFinite(total) || total < 0) {
+  const next = canonicalNumberDecimal(value);
+  if (current === null) return next;
+
+  const exponent = Math.min(current.exponent, next.exponent);
+  const currentScale = current.exponent - exponent;
+  const nextScale = next.exponent - exponent;
+  if (
+    currentScale > MAX_EXACT_DECIMAL_SCALE_SPAN ||
+    nextScale > MAX_EXACT_DECIMAL_SCALE_SPAN
+  ) {
+    throw new RangeError("costUsd canonical decimal scale span is too large");
+  }
+  let coefficient =
+    current.coefficient * BigInt(10) ** BigInt(currentScale) +
+    next.coefficient * BigInt(10) ** BigInt(nextScale);
+  let normalizedExponent = exponent;
+  while (
+    coefficient !== BigInt(0) &&
+    coefficient % BigInt(10) === BigInt(0)
+  ) {
+    coefficient /= BigInt(10);
+    normalizedExponent += 1;
+  }
+  return { coefficient, exponent: normalizedExponent };
+}
+
+function exactDecimalToNumber(value: ExactDecimal): number {
+  const result = Number(`${value.coefficient}e${value.exponent}`);
+  if (!Number.isFinite(result) || result < 0) {
     throw new RangeError("costUsd aggregate is not a finite non-negative number");
   }
-  return total;
+  return result;
 }
 
 export function aggregateManifestUsage(
@@ -1680,7 +1748,7 @@ export function aggregateManifestUsage(
 
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
-  let costUsd: number | null = null;
+  let costTotal: ExactDecimal | null = null;
   let anyReported = false;
   let anyMissing = false;
 
@@ -1705,14 +1773,14 @@ export function aggregateManifestUsage(
       anyMissing = true;
     } else {
       anyReported = true;
-      costUsd = addCostTotal(costUsd, usage.costUsd, index);
+      costTotal = addCostTotal(costTotal, usage.costUsd, index);
     }
   }
 
   return {
     inputTokens,
     outputTokens,
-    costUsd,
+    costUsd: costTotal === null ? null : exactDecimalToNumber(costTotal),
     completeness:
       executions.length > 0 && !anyMissing
         ? "complete"
