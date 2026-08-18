@@ -37,8 +37,10 @@ export function isRenderablePreviewUrl(value: string | null | undefined): boolea
   if (!value) return false;
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+  const normalized = value.trim();
+  if (!normalized) return false;
   try {
-    const url = new URL(value);
+    const url = new URL(normalized);
     return (
       (url.protocol === "http:" || url.protocol === "https:")
       && !url.username
@@ -72,7 +74,7 @@ function hasUnquotedGt(text: string, from: number): boolean {
   return false;
 }
 
-/** Hide an unterminated marker tail while an assistant turn is streaming. */
+/** Hide an unterminated preview-marker tail outside Markdown code fences. */
 export function stripIncompletePreviewMarker(text: string): string {
   if (!text || !text.includes("<coven:p")) return text;
   const tail = text.lastIndexOf("<coven:p");

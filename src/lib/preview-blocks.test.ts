@@ -14,6 +14,7 @@ test("preview URLs accept only loopback HTTP origins", () => {
     "http://127.0.0.1:4173/path?mode=dark",
     "http://127.23.4.5",
     "http://[::1]:3000",
+    "  http://localhost:3000/demo  ",
   ]) {
     assert.equal(isRenderablePreviewUrl(value), true, value);
   }
@@ -25,6 +26,7 @@ test("preview URLs accept only loopback HTTP origins", () => {
     "javascript:alert(1)",
     "http://user:pass@localhost:3000",
     "http://localhost.evil.test",
+    "\nhttp://localhost:3000",
   ]) {
     assert.equal(isRenderablePreviewUrl(value), false, value);
   }

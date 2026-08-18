@@ -10,6 +10,8 @@ test("preview navigation opens Browser as a right split without replacing Chat",
   const callback = workspace.match(
     /const openPreviewBeside = useCallback\([\s\S]*?\n  }, \[addSplitTarget\]\);/,
   )?.[0] ?? "";
+  assert.match(callback, /const previewUrl = url\.trim\(\)/);
+  assert.match(callback, /if \(!isRenderablePreviewUrl\(previewUrl\)\) return/);
   assert.match(callback, /enqueueBrowserNavigation/);
   assert.match(callback, /activeChatSessionIdRef\.current/);
   assert.match(callback, /setPendingChatAction\(\{ kind: "open"/);

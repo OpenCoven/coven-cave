@@ -238,6 +238,7 @@ import {
   enqueueBrowserNavigation,
   type BrowserNavigationRequest,
 } from "@/lib/browser-navigation-queue";
+import { isRenderablePreviewUrl } from "@/lib/preview-blocks";
 import {
   addSecondaryWorkspaceTile,
   removeSecondaryWorkspaceTile,
@@ -809,9 +810,10 @@ export function Workspace() {
     setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, workspacePaneRequestKey));
   }, []);
   const openPreviewBeside = useCallback((url: string) => {
-    if (!url) return;
+    const previewUrl = url.trim();
+    if (!isRenderablePreviewUrl(previewUrl)) return;
     browserNavigationIdRef.current += 1;
-    const request = { id: browserNavigationIdRef.current, url };
+    const request = { id: browserNavigationIdRef.current, url: previewUrl };
     setBrowserNavigationQueue((queue) => enqueueBrowserNavigation(queue, request));
     if (modeRef.current !== "browser") {
       const sessionId = activeChatSessionIdRef.current;
