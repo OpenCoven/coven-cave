@@ -87,6 +87,7 @@ const EXPECTED_INVALID_STANDALONE_FIXTURES = [
   "research-run-checkpoint-queued.json",
   "research-run-local-tenant.json",
   "research-run-waiting-phase.json",
+  "run-event-default-ignorable-deletion-extension.json",
   "run-event-deleted-content-payload.json",
   "run-event-invalid-future-leap-second.json",
   "run-event-invalid-leap-second-date.json",
@@ -269,7 +270,7 @@ const invalidFixtureFiles = assertStandaloneFixtureInventory(
 
 test("standalone fixture inventories are exact and duplicate-free", () => {
   assert.equal(EXPECTED_VALID_STANDALONE_FIXTURES.length, 29);
-  assert.equal(EXPECTED_INVALID_STANDALONE_FIXTURES.length, 49);
+  assert.equal(EXPECTED_INVALID_STANDALONE_FIXTURES.length, 50);
   assert.deepEqual(validFixtureFiles, [...EXPECTED_VALID_STANDALONE_FIXTURES]);
   assert.deepEqual(invalidFixtureFiles, [...EXPECTED_INVALID_STANDALONE_FIXTURES]);
 });
