@@ -19,7 +19,7 @@
   "properties": {
     "schema": { "const": "opencoven.research-run/v1" },
     "id": { "$ref": "#/$defs/runId" },
-    "tenantOpaqueId": { "type": "string" },
+    "tenantOpaqueId": { "$ref": "#/$defs/tenantOpaqueId" },
     "context": { "$ref": "#/$defs/contextBinding" },
     "acceptedTopic": { "$ref": "#/$defs/acceptedTopic" },
     "execution": { "$ref": "#/$defs/execution" },
@@ -35,6 +35,20 @@
     "failure": { "$ref": "#/$defs/failure" }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "execution": {
+            "properties": { "location": { "const": "local" } },
+            "required": ["location"]
+          }
+        },
+        "required": ["execution"]
+      },
+      "then": {
+        "not": { "required": ["tenantOpaqueId"] }
+      }
+    },
     {
       "if": {
         "properties": { "status": { "const": "waiting_for_executor" } },
@@ -140,6 +154,10 @@
     "runId": {
       "type": "string",
       "pattern": "^run_[A-Za-z0-9_-]+$"
+    },
+    "tenantOpaqueId": {
+      "type": "string",
+      "pattern": "^tenant_[A-Za-z0-9_-]+$"
     },
     "contextPackId": {
       "type": "string",
