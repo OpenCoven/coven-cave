@@ -285,3 +285,63 @@ test("canonical JSON and digests ignore inherited Object and Array toJSON pollut
     }
   }
 });
+
+test("descriptor classification ignores inherited value pollution for objects and arrays", () => {
+  const previousValue = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+  let getterCalls = 0;
+
+  try {
+    Object.defineProperty(Object.prototype, "value", {
+      value: "polluted-descriptor-value",
+      configurable: true,
+      writable: true,
+    });
+
+    const objectAccessor = {};
+    const objectAccessorDescriptor = Object.create(null) as PropertyDescriptor;
+    objectAccessorDescriptor.get = () => {
+      getterCalls += 1;
+      return "getter-result";
+    };
+    objectAccessorDescriptor.enumerable = true;
+    objectAccessorDescriptor.configurable = true;
+    Object.defineProperty(objectAccessor, "field", objectAccessorDescriptor);
+    assert.throws(() => canonicalJson(objectAccessor), /accessor properties/i);
+
+    const arrayAccessor = new Array<unknown>(1);
+    const arrayAccessorDescriptor = Object.create(null) as PropertyDescriptor;
+    arrayAccessorDescriptor.get = () => {
+      getterCalls += 1;
+      return "getter-result";
+    };
+    arrayAccessorDescriptor.enumerable = true;
+    arrayAccessorDescriptor.configurable = true;
+    Object.defineProperty(arrayAccessor, "0", arrayAccessorDescriptor);
+    assert.throws(() => canonicalJson(arrayAccessor), /array indices must be data properties/i);
+
+    const objectData = {};
+    Object.defineProperty(objectData, "field", {
+      value: "actual-object-value",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    const arrayData = new Array<unknown>(1);
+    Object.defineProperty(arrayData, "0", {
+      value: "actual-array-value",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+
+    assert.equal(canonicalJson(objectData), '{"field":"actual-object-value"}');
+    assert.equal(canonicalJson(arrayData), '["actual-array-value"]');
+    assert.equal(getterCalls, 0);
+  } finally {
+    if (previousValue) {
+      Object.defineProperty(Object.prototype, "value", previousValue);
+    } else {
+      Reflect.deleteProperty(Object.prototype, "value");
+    }
+  }
+});

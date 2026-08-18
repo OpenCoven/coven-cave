@@ -159,6 +159,7 @@ test("public manifest dispatch rejects unvalidated policy and deadline extension
 
 test("public protocol exports do not expose a permissive manifest candidate parser", () => {
   assert.equal("parseRunManifestRevisionCandidateV1" in researchProtocol, false);
+  assert.equal("parseEmbeddedRunManifestCandidateV1" in researchProtocol, false);
 });
 
 test("dispatcher rejects non-canonical wire data for discovery, proposal, run, and event families", () => {

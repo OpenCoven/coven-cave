@@ -13,10 +13,12 @@ import invalidDeletionPairJson from "../../../schemas/research/v1/fixtures/inval
 import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-private-title.json" with { type: "json" };
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
 import invalidModelRawPromptJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-model-raw-prompt.json" with { type: "json" };
+import invalidDeletedContentPayloadJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deleted-content-payload.json" with { type: "json" };
 import invalidNestedPrivateExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-private-extension.json" with { type: "json" };
 import invalidNestedPrivacyStorageKeysJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-privacy-storage-keys.json" with { type: "json" };
 import invalidRootPrivateExcerptsJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-root-private-excerpts.json" with { type: "json" };
 import invalidScheduledNullExpiryJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-scheduled-null-expiry.json" with { type: "json" };
+import invalidSplitObjectStoreKeyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-split-object-store-key.json" with { type: "json" };
 import invalidSevenDayOverflowJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-7-days-overflow.json" with { type: "json" };
 import invalidRunOnlyOverflowJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-run-only-overflow.json" with { type: "json" };
 import invalidSevenDayLeapOverflowJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-7-days-leap-overflow.json" with { type: "json" };
@@ -32,6 +34,8 @@ import { digestProtocolObject } from "./digest.ts";
 import {
   aggregateManifestUsage,
   parseRunManifestV1,
+  SENSITIVE_EXTENSION_COMPONENT_KEY_PATTERN,
+  SENSITIVE_EXTENSION_COMPOUND_KEY_PATTERN,
   SENSITIVE_EXTENSION_KEY_PATTERN,
   SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
   validateManifestRetentionConsent,
@@ -850,6 +854,14 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
     runManifestSchema.$defs.sensitivePropertyName.allOf[0].not.pattern,
     SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
   );
+  assert.equal(
+    runManifestSchema.$defs.sensitivePropertyName.allOf[1].not.pattern,
+    SENSITIVE_EXTENSION_COMPONENT_KEY_PATTERN,
+  );
+  assert.equal(
+    runManifestSchema.$defs.sensitivePropertyName.allOf[2].not.pattern,
+    SENSITIVE_EXTENSION_COMPOUND_KEY_PATTERN,
+  );
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const key of [
     "excerpt",
@@ -1083,6 +1095,59 @@ test("digest-correct fixtures enforce root, model, plural, and nested privacy bo
   assert.deepEqual(
     expectOk(parseRunManifestV1(validExtensionBoundariesJson)),
     validExtensionBoundariesJson,
+  );
+});
+
+test("privacy fixtures reject lowercase compounds and split identifier paths", () => {
+  for (const [fixture, path] of [
+    [
+      invalidDeletedContentPayloadJson,
+      "$.extensionMetadata.deletedcontentpayload",
+    ],
+    [
+      invalidSplitObjectStoreKeyJson,
+      "$.extensionMetadata.audit.object",
+    ],
+  ] as const) {
+    assert.equal(fixture.digest, digestProtocolObject(fixture), path);
+    assert.equal(Value.Check(runManifestSchema, fixture), false, path);
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+});
+
+test("privacy key paths reject dangerous split components but preserve near misses", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const [extension, path] of [
+    [{ audit: { object: { key: "private" } } }, "$.extension.audit.object"],
+    [{ audit: { storage: { key: "private" } } }, "$.extension.audit.storage"],
+    [{ audit: { bucket: { key: "private" } } }, "$.extension.audit.bucket"],
+    [{ audit: [{ store: { key: "private" } }] }, "$.extension.audit[0].store"],
+  ] as const) {
+    const invalid = recalculate({ ...local, extension });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, path);
+    expectError(parseRunManifestV1(invalid), path, "semantic_conflict");
+  }
+
+  assert.equal(Value.Check(runManifestSchema, validNestedBenignExtensionJson), true);
+  const benign = expectOk(parseRunManifestV1(validNestedBenignExtensionJson));
+  const metadata = benign.deletion.metadata as Record<string, unknown>;
+  assert.deepEqual(
+    {
+      objectives: metadata.objectives,
+      storefront: metadata.storefront,
+      storagelike: metadata.storagelike,
+      bucketed: metadata.bucketed,
+      keystone: metadata.keystone,
+      deletedcontentmentpayload: metadata.deletedcontentmentpayload,
+    },
+    {
+      objectives: "met",
+      storefront: "closed",
+      storagelike: "audit-only",
+      bucketed: true,
+      keystone: "retention",
+      deletedcontentmentpayload: "benign",
+    },
   );
 });
 
@@ -1459,7 +1524,86 @@ test("completed deletion receipts reject reversed chronology and allow equality"
 
   expectOk(
     parseRunManifestV1(
-      completed("2016-12-31T23:59:60Z", "2016-12-31T23:59:60.000000000Z"),
+      completed("2026-08-17T20:00:00Z", "2026-08-17T20:00:00.000000000Z"),
+    ),
+  );
+});
+
+test("deletion requests cannot predate manifest creation or finalization", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const completed = (
+    base: RunManifestV1,
+    requestedAt: string,
+    completedAt: string,
+  ) =>
+    recalculate({
+      ...base,
+      revision: base.revision + 1,
+      previousDigest: base.digest,
+      retention: {
+        ...base.retention,
+        status: "deleted" as const,
+        contentExpiresAt: completedAt,
+        updatedAt: completedAt,
+      },
+      deletion: {
+        status: "completed" as const,
+        requestedAt,
+        completedAt,
+        deletedObjectCount: 1,
+        eventSequence: 2,
+      },
+    });
+
+  const historicalReceipt = completed(
+    local,
+    "2000-01-01T00:00:00.000Z",
+    "2000-01-01T00:00:00.000Z",
+  );
+  assert.equal(historicalReceipt.digest, digestProtocolObject(historicalReceipt));
+  expectError(
+    parseRunManifestV1(historicalReceipt),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
+
+  expectOk(
+    parseRunManifestV1(
+      completed(local, local.finalizedAt!, local.finalizedAt!),
+    ),
+  );
+
+  const leapBase = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...local,
+        createdAt: "2016-12-31T23:59:59.000000000Z",
+        finalizedAt: "2016-12-31T23:59:60.500000000Z",
+        retention: {
+          ...local.retention,
+          updatedAt: "2016-12-31T23:59:60.500000000Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    parseRunManifestV1(
+      completed(
+        leapBase,
+        "2016-12-31T23:59:60.499999999Z",
+        "2016-12-31T23:59:60.500000000Z",
+      ),
+    ),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
+  expectOk(
+    parseRunManifestV1(
+      completed(
+        leapBase,
+        "2016-12-31T23:59:60.500000000Z",
+        "2016-12-31T23:59:60.500000000Z",
+      ),
     ),
   );
 });
@@ -1534,6 +1678,120 @@ test("revision chains accept assembling-to-final and allowed retention updates",
   assert.deepEqual(
     expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
     update,
+  );
+});
+
+test("revision validation rejects unproven predecessors and replays serialized chains", () => {
+  const root = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const consentAuthorizedCandidate = recalculate({
+    ...root,
+    revision: 2,
+    previousDigest: root.digest,
+    retention: {
+      ...root.retention,
+      effectivePolicy: "project" as const,
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+  });
+  expectError(
+    parseRunManifestV1(consentAuthorizedCandidate),
+    "$.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+
+  const successor = recalculate({
+    ...consentAuthorizedCandidate,
+    revision: 3,
+    previousDigest: consentAuthorizedCandidate.digest,
+    retention: {
+      ...consentAuthorizedCandidate.retention,
+      updatedAt: "2026-08-16T20:07:00.000Z",
+    },
+  });
+  expectError(
+    validateRunManifestRevisionV1(
+      consentAuthorizedCandidate as unknown as RunManifestV1,
+      successor,
+      { contextConsent: "project" },
+    ),
+    "$.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+
+  const authorized = expectOk(
+    validateRunManifestRevisionV1(root, consentAuthorizedCandidate, {
+      freshConsent: true,
+      freshConsentAt: "2026-08-16T20:05:30.000Z",
+      contextConsent: "project",
+    }),
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevisionV1(authorized, successor, {
+        contextConsent: "project",
+      }),
+    ),
+    successor,
+  );
+
+  const [serializedRoot, serializedSecond, serializedThird] = JSON.parse(
+    JSON.stringify([root, consentAuthorizedCandidate, successor]),
+  ) as [unknown, unknown, unknown];
+  const replayedRoot = expectOk(parseRunManifestV1(serializedRoot));
+  const replayedSecond = expectOk(
+    validateRunManifestRevisionV1(replayedRoot, serializedSecond, {
+      freshConsent: true,
+      freshConsentAt: "2026-08-16T20:05:30.000Z",
+      contextConsent: "project",
+    }),
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevisionV1(replayedSecond, serializedThird, {
+        contextConsent: "project",
+      }),
+    ),
+    successor,
+  );
+});
+
+test("new deletion requests cannot predate trusted retention authority", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduled = (requestedAt: string) =>
+    recalculate({
+      ...previous,
+      revision: 2,
+      previousDigest: previous.digest,
+      retention: {
+        ...previous.retention,
+        effectivePolicy: "run-only" as const,
+        status: "deletion_scheduled" as const,
+        contentExpiresAt: "2026-08-16T20:10:00.000Z",
+        updatedAt: "2026-08-16T20:06:00.000Z",
+      },
+      deletion: {
+        ...previous.deletion,
+        status: "scheduled" as const,
+        requestedAt,
+      },
+    });
+
+  expectError(
+    validateRunManifestRevisionV1(
+      previous,
+      scheduled("2026-08-16T20:04:59.999999999Z"),
+      { contextConsent: "7-days" },
+    ),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
+  assert.equal(
+    validateRunManifestRevisionV1(
+      previous,
+      scheduled(previous.retention.updatedAt),
+      { contextConsent: "7-days" },
+    ).ok,
+    true,
   );
 });
 
@@ -2108,6 +2366,128 @@ test("fresh consent restores scheduled project retention and removes its deadlin
     validateRunManifestRevision(scheduled, restored, {
       freshConsent: true,
       freshConsentAt: "2026-08-16T20:07:00.000Z",
+      contextConsent: "project",
+    }).ok,
+    true,
+  );
+});
+
+test("scheduled deletion cancellation consent must postdate the latest request", () => {
+  const restoration = (
+    createdAt: string,
+    finalizedAt: string,
+    retentionUpdatedAt: string,
+    requestedAt: string,
+    restoredUpdatedAt: string,
+  ) => {
+    const original = expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...finalLocalManifestJson,
+          createdAt,
+          finalizedAt,
+          retention: {
+            ...finalLocalManifestJson.retention,
+            policy: "project" as const,
+            effectivePolicy: "project" as const,
+            updatedAt: retentionUpdatedAt,
+          },
+        }),
+      ),
+    );
+    const scheduledCandidate = recalculate({
+      ...original,
+      revision: 2,
+      previousDigest: original.digest,
+      retention: {
+        ...original.retention,
+        status: "deletion_scheduled" as const,
+        contentExpiresAt: restoredUpdatedAt,
+      },
+      deletion: {
+        ...original.deletion,
+        status: "scheduled" as const,
+        requestedAt,
+      },
+    });
+    const scheduled = expectOk(
+      validateRunManifestRevisionV1(original, scheduledCandidate, {
+        contextConsent: "project",
+      }),
+    );
+    const restored = recalculate({
+      ...scheduled,
+      revision: 3,
+      previousDigest: scheduled.digest,
+      retention: {
+        ...scheduled.retention,
+        status: "active" as const,
+        contentExpiresAt: null,
+        updatedAt: restoredUpdatedAt,
+      },
+      deletion: {
+        status: "not_scheduled" as const,
+        futureExtension: scheduled.deletion.futureExtension,
+      },
+    });
+    return { restored, scheduled };
+  };
+
+  const ordinary = restoration(
+    "2026-08-16T20:00:00.000Z",
+    "2026-08-16T20:04:00.000Z",
+    "2026-08-16T20:05:00.000Z",
+    "2026-08-16T20:06:00.000Z",
+    "2026-08-16T20:07:00.000Z",
+  );
+  for (const freshConsentAt of [
+    "2026-08-16T20:05:30.000Z",
+    "2026-08-16T20:06:00.000Z",
+  ]) {
+    expectError(
+      validateRunManifestRevisionV1(ordinary.scheduled, ordinary.restored, {
+        freshConsent: true,
+        freshConsentAt,
+        contextConsent: "project",
+      }),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+  assert.equal(
+    validateRunManifestRevisionV1(ordinary.scheduled, ordinary.restored, {
+      freshConsent: true,
+      freshConsentAt: "2026-08-16T20:06:00.000000001Z",
+      contextConsent: "project",
+    }).ok,
+    true,
+  );
+
+  const leap = restoration(
+    "2016-12-31T23:59:58Z",
+    "2016-12-31T23:59:59Z",
+    "2016-12-31T23:59:59.500000000Z",
+    "2016-12-31T23:59:60Z",
+    "2017-01-01T00:00:00Z",
+  );
+  for (const freshConsentAt of [
+    "2016-12-31T23:59:59.999999999Z",
+    "2016-12-31T23:59:60Z",
+  ]) {
+    expectError(
+      validateRunManifestRevisionV1(leap.scheduled, leap.restored, {
+        freshConsent: true,
+        freshConsentAt,
+        contextConsent: "project",
+      }),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+  assert.equal(
+    validateRunManifestRevisionV1(leap.scheduled, leap.restored, {
+      freshConsent: true,
+      freshConsentAt: "2016-12-31T23:59:60.000000001Z",
       contextConsent: "project",
     }).ok,
     true,

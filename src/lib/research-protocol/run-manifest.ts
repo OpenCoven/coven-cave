@@ -28,6 +28,8 @@ import {
 export {
   SENSITIVE_EXTENSION_KEY_PATTERN,
   SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
+  SENSITIVE_EXTENSION_COMPONENT_KEY_PATTERN,
+  SENSITIVE_EXTENSION_COMPOUND_KEY_PATTERN,
 } from "./privacy-extension.ts";
 
 const RUN_MANIFEST_SCHEMA = "opencoven.run-manifest/v1";
@@ -1168,6 +1170,32 @@ function validateDeletionRequirements(
   return pass(undefined);
 }
 
+function validateDeletionChronology(
+  createdAt: string,
+  finalizedAt: string | undefined,
+  deletion: RunManifestDeletionReceiptV1,
+): ProtocolParseResult<void> {
+  if (deletion.requestedAt === undefined) return pass(undefined);
+  if (compareUtcTimestamps(deletion.requestedAt, createdAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "requestedAt must not be earlier than manifest createdAt",
+    );
+  }
+  if (
+    finalizedAt !== undefined &&
+    compareUtcTimestamps(deletion.requestedAt, finalizedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "requestedAt must not be earlier than manifest finalizedAt",
+    );
+  }
+  return pass(undefined);
+}
+
 function validateRetentionClock(
   retention: RunManifestRetentionV1,
 ): ProtocolParseResult<void> {
@@ -1322,17 +1350,22 @@ function validateFreshRetentionConsent(
         : "Retention lengthening requires explicit fresh Context Pack consent",
     );
   }
-  if (
+  const latestPriorAuthority =
+    previous.deletion.requestedAt !== undefined &&
     compareUtcTimestamps(
-      options.freshConsentAt,
+      previous.deletion.requestedAt,
       previous.retention.updatedAt,
-    ) <= 0 ||
+    ) > 0
+      ? previous.deletion.requestedAt
+      : previous.retention.updatedAt;
+  if (
+    compareUtcTimestamps(options.freshConsentAt, latestPriorAuthority) <= 0 ||
     compareUtcTimestamps(options.freshConsentAt, next.retention.updatedAt) > 0
   ) {
     return fail(
       "semantic_conflict",
       path,
-      "Fresh consent must be newer than the prior revision and no later than the new revision",
+      "Fresh consent must postdate prior retention and deletion-request authority and be no later than the new revision",
     );
   }
   return pass(options.freshConsentAt);
@@ -1443,6 +1476,20 @@ function validateRetentionLifecycleRevision(
       "semantic_conflict",
       "$.deletion.requestedAt",
       "An established deletion request timestamp cannot change",
+    );
+  }
+  if (
+    previous.deletion.requestedAt === undefined &&
+    next.deletion.requestedAt !== undefined &&
+    compareUtcTimestamps(
+      next.deletion.requestedAt,
+      previous.retention.updatedAt,
+    ) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "A new deletion request must not predate prior retention authority",
     );
   }
 
@@ -1587,13 +1634,17 @@ export function aggregateManifestUsage(
   };
 }
 
-type RunManifestParseMode = "standalone" | "revision-candidate";
+type RunManifestParseMode =
+  | "standalone"
+  | "revision-candidate"
+  | "embedded-candidate";
 
 function parseRunManifestValueV1(
   value: unknown,
   mode: RunManifestParseMode,
 ): ProtocolParseResult<RunManifestV1> {
   const standalone = mode === "standalone";
+  const validateStandaloneDeadline = mode !== "revision-candidate";
   const wireValue = copyProtocolJsonValue(value);
   if (!wireValue.ok) return wireValue;
 
@@ -1834,9 +1885,15 @@ function parseRunManifestValueV1(
   if (!pair.ok) return pair;
   const deletionRequirements = validateDeletionRequirements(deletion.value);
   if (!deletionRequirements.ok) return deletionRequirements;
+  const deletionChronology = validateDeletionChronology(
+    createdAt.value,
+    finalizedAt,
+    deletion.value,
+  );
+  if (!deletionChronology.ok) return deletionChronology;
   const clock = validateRetentionClock(retention.value);
   if (!clock.ok) return clock;
-  if (standalone) {
+  if (validateStandaloneDeadline) {
     const deadline = validateFiniteRetentionDeadline(
       retention.value,
       finalizedAt ?? createdAt.value,
@@ -1905,6 +1962,13 @@ function parseRunManifestRevisionCandidateV1(
   value: unknown,
 ): ProtocolParseResult<RunManifestV1> {
   return parseRunManifestValueV1(value, "revision-candidate");
+}
+
+/** @internal Embedded manifests remain provisional until run + pack composition. */
+export function parseEmbeddedRunManifestCandidateV1(
+  value: unknown,
+): ProtocolParseResult<RunManifestV1> {
+  return parseRunManifestValueV1(value, "embedded-candidate");
 }
 
 export function validateManifestRetentionConsent(
@@ -2125,21 +2189,102 @@ function validateParsedRunManifestRevision(
   return pass(next);
 }
 
+type ValidatedRevisionProvenance = {
+  fingerprint: string;
+  detachedValue: RunManifestV1;
+};
+
+const validatedRevisionProvenance = new WeakMap<
+  object,
+  ValidatedRevisionProvenance
+>();
+
+function rememberValidatedRevisionReference(
+  reference: object,
+  manifest: RunManifestV1,
+): ProtocolParseResult<void> {
+  const detached = copyProtocolJsonValue(manifest);
+  if (!detached.ok) return detached;
+  let fingerprint: string;
+  try {
+    fingerprint = canonicalJson(reference);
+  } catch {
+    return fail(
+      "invalid_value",
+      "$",
+      "Validated manifest must contain only canonical JSON data",
+    );
+  }
+  validatedRevisionProvenance.set(reference, {
+    fingerprint,
+    detachedValue: detached.value,
+  });
+  return pass(undefined);
+}
+
+function resolveTrustedPredecessor(
+  previous: RunManifestV1,
+): ProtocolParseResult<RunManifestV1> {
+  const provenance =
+    previous !== null && typeof previous === "object"
+      ? validatedRevisionProvenance.get(previous)
+      : undefined;
+  if (provenance !== undefined) {
+    try {
+      if (canonicalJson(previous) !== provenance.fingerprint) {
+        return fail(
+          "semantic_conflict",
+          "$.digest",
+          "A validated predecessor cannot be mutated",
+        );
+      }
+    } catch {
+      return fail(
+        "semantic_conflict",
+        "$.digest",
+        "A validated predecessor cannot be mutated",
+      );
+    }
+    return pass(provenance.detachedValue);
+  }
+  return parseRunManifestV1(previous);
+}
+
 /**
  * Parses and validates one candidate revision atomically. Candidate parsing may
  * defer standalone retention ceilings only inside this composition boundary;
  * the linked previous revision and fresh consent checks must then authorize any
- * extension before the parsed candidate is returned. `previous` must be the
- * validated value returned by the standalone parser or an earlier call here.
+ * extension before the parsed candidate is returned. Unproven predecessors are
+ * strictly reparsed; consent-authorized predecessors carry private provenance.
  */
 export function validateRunManifestRevisionV1(
   previous: RunManifestV1,
   candidate: unknown,
   options: ManifestRevisionOptions = {},
 ): ProtocolParseResult<RunManifestV1> {
+  const trustedPrevious = resolveTrustedPredecessor(previous);
+  if (!trustedPrevious.ok) return trustedPrevious;
   const next = parseRunManifestRevisionCandidateV1(candidate);
   if (!next.ok) return next;
-  return validateParsedRunManifestRevision(previous, next.value, options);
+  const validated = validateParsedRunManifestRevision(
+    trustedPrevious.value,
+    next.value,
+    options,
+  );
+  if (!validated.ok) return validated;
+  const rememberedResult = rememberValidatedRevisionReference(
+    validated.value,
+    validated.value,
+  );
+  if (!rememberedResult.ok) return rememberedResult;
+  if (candidate !== null && typeof candidate === "object") {
+    const rememberedCandidate = rememberValidatedRevisionReference(
+      candidate,
+      validated.value,
+    );
+    if (!rememberedCandidate.ok) return rememberedCandidate;
+  }
+  return validated;
 }
 
 /** @deprecated Use validateRunManifestRevisionV1. */

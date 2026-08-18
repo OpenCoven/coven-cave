@@ -1,0 +1,38 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_split_object_store_key_01",
+  "runId": "run_split_object_store_key_01",
+  "digest": "05dbe11c25b4ed1ba588a39a7c13da6349acc66cdfc511c80af1f59e73e5689b",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  },
+  "extensionMetadata": {
+    "audit": {
+      "object": {
+        "store": {
+          "key": "tenant/private/object"
+        }
+      }
+    }
+  }
+}

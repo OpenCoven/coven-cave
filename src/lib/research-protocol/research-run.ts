@@ -12,9 +12,12 @@ import {
   type ResearchContextBindingV1,
   type UnknownFields,
 } from "./common.ts";
-import type { ContextPackV1 } from "./context-pack.ts";
 import {
-  parseRunManifestV1,
+  parseContextPackV1,
+  type ContextPackV1,
+} from "./context-pack.ts";
+import {
+  parseEmbeddedRunManifestCandidateV1,
   type RunManifestV1,
 } from "./run-manifest.ts";
 import { validateSafeExtensionKeys } from "./privacy-extension.ts";
@@ -182,10 +185,11 @@ function contextBindingsMatch(
 }
 
 /**
- * Validates two already-parsed objects. Run-field errors use run JSON paths;
- * pack-only policy errors use the synthetic `$.contextPack` path.
+ * Revalidates and detaches the supplied Context Pack before composition.
+ * Run-field errors use run JSON paths; pack-only errors use the synthetic
+ * `$.contextPack` path.
  * Parsing a context-bound run is provisional; callers must compose it with its
- * parsed Context Pack here before use, including when it embeds a manifest.
+ * Context Pack here before use, including when it embeds a manifest.
  */
 export function validateResearchRunContextPackV1(
   run: ResearchRunV1,
@@ -208,28 +212,42 @@ export function validateResearchRunContextPackV1(
       "A run context binding requires its parsed Context Pack",
     );
   }
-  if (run.context.contextPackId !== contextPack.id) {
+  const parsedContextPack = parseContextPackV1(contextPack);
+  if (!parsedContextPack.ok) {
+    return {
+      ok: false,
+      error: {
+        ...parsedContextPack.error,
+        path:
+          parsedContextPack.error.path === "$"
+            ? "$.contextPack"
+            : `$.contextPack${parsedContextPack.error.path.slice(1)}`,
+      },
+    };
+  }
+  const trustedContextPack = parsedContextPack.value;
+  if (run.context.contextPackId !== trustedContextPack.id) {
     return fail(
       "semantic_conflict",
       "$.context.contextPackId",
       "Run contextPackId must match the Context Pack id",
     );
   }
-  if (run.context.contextPackDigest !== contextPack.digest) {
+  if (run.context.contextPackDigest !== trustedContextPack.digest) {
     return fail(
       "semantic_conflict",
       "$.context.contextPackDigest",
       "Run contextPackDigest must match the Context Pack digest",
     );
   }
-  if (contextPack.purpose !== "research-run") {
+  if (trustedContextPack.purpose !== "research-run") {
     return fail(
       "semantic_conflict",
       "$.contextPack.purpose",
       "Context Pack purpose must be research-run",
     );
   }
-  if (!contextPack.policy.allowedPurposes.includes("research-run")) {
+  if (!trustedContextPack.policy.allowedPurposes.includes("research-run")) {
     return fail(
       "semantic_conflict",
       "$.contextPack.policy.allowedPurposes",
@@ -242,7 +260,7 @@ export function validateResearchRunContextPackV1(
     ["remoteContent", "allowRemoteContent"],
     ["artifactContentSync", "artifactContentSync"],
   ] as const) {
-    if (run.privacy[runKey] && !contextPack.consent[consentKey]) {
+    if (run.privacy[runKey] && !trustedContextPack.consent[consentKey]) {
       return fail(
         "semantic_conflict",
         `$.privacy.${runKey}`,
@@ -250,7 +268,12 @@ export function validateResearchRunContextPackV1(
       );
     }
   }
-  if (!retentionDoesNotExceed(run.privacy.retention, contextPack.consent.retention)) {
+  if (
+    !retentionDoesNotExceed(
+      run.privacy.retention,
+      trustedContextPack.consent.retention,
+    )
+  ) {
     return fail(
       "semantic_conflict",
       "$.privacy.retention",
@@ -261,7 +284,7 @@ export function validateResearchRunContextPackV1(
     run.artifactManifest &&
     !retentionDoesNotExceed(
       run.artifactManifest.retention.effectivePolicy,
-      contextPack.consent.retention,
+      trustedContextPack.consent.retention,
     )
   ) {
     return fail(
@@ -861,7 +884,9 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
 
   let artifactManifest: RunManifestV1 | undefined;
   if (hasOwn(object.value, "artifactManifest")) {
-    const parsedArtifactManifest = parseRunManifestV1(object.value.artifactManifest);
+    const parsedArtifactManifest = parseEmbeddedRunManifestCandidateV1(
+      object.value.artifactManifest,
+    );
     if (!parsedArtifactManifest.ok) {
       return {
         ok: false,
