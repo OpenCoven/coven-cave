@@ -31,7 +31,9 @@
     "createdAt": { "$ref": "#/$defs/utcTimestamp" },
     "updatedAt": { "$ref": "#/$defs/utcTimestamp" },
     "nextEventSequence": { "$ref": "#/$defs/positiveSafeInteger" },
-    "artifactManifest": { "$ref": "opencoven.run-manifest/v1" },
+    "artifactManifest": {
+      "$ref": "urn:opencoven:schema:research:run-manifest:v1"
+    },
     "failure": { "$ref": "#/$defs/failure" }
   },
   "allOf": [
@@ -136,6 +138,75 @@
             "required": ["state"]
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acceptedTopic": {
+            "required": ["proposalId"]
+          }
+        },
+        "required": ["acceptedTopic"]
+      },
+      "then": {
+        "properties": {
+          "context": {
+            "required": ["topicProposalId"]
+          }
+        },
+        "required": ["context"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "context": {
+            "required": ["topicProposalId"]
+          }
+        },
+        "required": ["context"]
+      },
+      "then": {
+        "properties": {
+          "acceptedTopic": {
+            "required": ["proposalId"]
+          }
+        },
+        "required": ["acceptedTopic"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifactManifest": {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "properties": {
+                    "contentSync": {
+                      "enum": ["pending", "synced", "failed"]
+                    }
+                  },
+                  "required": ["contentSync"]
+                }
+              }
+            },
+            "required": ["artifacts"]
+          }
+        },
+        "required": ["artifactManifest"]
+      },
+      "then": {
+        "properties": {
+          "privacy": {
+            "properties": {
+              "artifactContentSync": { "const": true }
+            },
+            "required": ["artifactContentSync"]
+          }
+        },
+        "required": ["privacy"]
       }
     }
   ],

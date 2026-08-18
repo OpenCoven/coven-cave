@@ -10,11 +10,15 @@ import invalidLocalResearchRun from "../../../schemas/research/v1/fixtures/inval
 import provisionalEmbeddedSevenDayRetention from "../../../schemas/research/v1/fixtures/valid/research-run-embedded-retention-7-days-provisional.json" with { type: "json" };
 import provisionalEmbeddedRunOnlyRetention from "../../../schemas/research/v1/fixtures/valid/research-run-embedded-retention-run-only-provisional.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
+import invalidResearchRunTopicAcceptedMissing from "../../../schemas/research/v1/fixtures/invalid/research-run-topic-provenance-accepted-missing.json" with { type: "json" };
+import invalidResearchRunTopicContextMissing from "../../../schemas/research/v1/fixtures/invalid/research-run-topic-provenance-context-missing.json" with { type: "json" };
+import invalidResearchRunTopicMismatch from "../../../schemas/research/v1/fixtures/invalid/research-run-topic-provenance-mismatch.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
 import validHostedResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run-hosted.json" with { type: "json" };
 import validHostedResearchRunWithoutTenant from "../../../schemas/research/v1/fixtures/valid/research-run-hosted-without-tenant.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
+import validResearchRunTopicProvenanceAbsent from "../../../schemas/research/v1/fixtures/valid/research-run-topic-provenance-absent.json" with { type: "json" };
 import validDeletionBenignRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event-deletion-benign-extension.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
 import validUnicodeRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event-unicode-extension.json" with { type: "json" };
@@ -175,7 +179,12 @@ function runForStatus(
   const run: Record<string, unknown> = {
     ...validResearchRun,
     status,
-    ...(artifactManifest ? { artifactManifest } : {}),
+    ...(artifactManifest
+      ? {
+          artifactManifest,
+          updatedAt: "2026-08-18T00:00:00.000Z",
+        }
+      : {}),
   };
   delete run.waitingReason;
   delete run.waitingForPhase;
@@ -188,6 +197,43 @@ function runForStatus(
     run.failure = { code: "runtime_error", message: "failed", retryable: false };
   }
   return run;
+}
+
+function manifestWithReceipt(
+  familiarId: string,
+  effectiveModel: string | null,
+): Record<string, unknown> {
+  return linkedManifest({
+    ...validRunManifest,
+    modelExecutions: [
+      {
+        taskId: "modeltask_receipt_01",
+        phase: "scope",
+        attempt: 1,
+        inputDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        outputDigest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        receipt: {
+          familiarId,
+          runtime: "copilot",
+          effectiveModel,
+          modelSource: "session",
+          providerBilling: "user-connected",
+          usage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            costUsd: 0.1,
+            reportedByRuntime: true,
+          },
+        },
+      },
+    ],
+    usage: {
+      inputTokens: 10,
+      outputTokens: 5,
+      costUsd: 0.1,
+      completeness: "complete",
+    },
+  });
 }
 
 function parsedEvent(
@@ -249,6 +295,8 @@ function runWithCompletedDeletion(
     parseResearchRunV1({
       ...runForStatus("completed", deletedManifest),
       nextEventSequence,
+      createdAt,
+      updatedAt: completedAt,
     }),
   );
 }
@@ -389,6 +437,7 @@ test("failure is required exactly for failed and absent otherwise", () => {
     ...failedWithoutFailure,
     failure: { code: "runtime_error", message: "try again", retryable: true },
     artifactManifest: linkedManifest(validRunManifest),
+    updatedAt: "2026-08-18T00:00:00.000Z",
   };
   assert.ok(checkResearchRunSchema(validFailed));
   assert.equal(expectOk(parseResearchRunV1(validFailed)).failure?.retryable, true);
@@ -563,6 +612,228 @@ test("context parser validates ids and digest, preserves additive fields, and re
   );
 });
 
+test("accepted-topic provenance is co-present and equal to context provenance", () => {
+  for (const [candidate, path, schemaValid] of [
+    [
+      invalidResearchRunTopicContextMissing,
+      "$.context.topicProposalId",
+      false,
+    ],
+    [
+      invalidResearchRunTopicAcceptedMissing,
+      "$.acceptedTopic.proposalId",
+      false,
+    ],
+    [
+      invalidResearchRunTopicMismatch,
+      "$.acceptedTopic.proposalId",
+      true,
+    ],
+  ] as const) {
+    expectError(parseResearchRunV1(candidate), path, "semantic_conflict");
+    assert.equal(checkResearchRunSchema(candidate), schemaValid);
+  }
+
+  for (const candidate of [
+    validResearchRun,
+    validResearchRunTopicProvenanceAbsent,
+  ]) {
+    assert.equal(checkResearchRunSchema(candidate), true);
+    expectOk(parseResearchRunV1(candidate));
+  }
+});
+
+test("run and embedded manifest chronology is inclusive and leap-second aware", () => {
+  expectError(
+    parseResearchRunV1({
+      ...validResearchRun,
+      updatedAt: "2026-08-15T19:59:59.999999999Z",
+    }),
+    "$.updatedAt",
+    "semantic_conflict",
+  );
+
+  const lower = "2016-12-31T23:59:60Z";
+  const upper = "2017-01-01T00:00:00Z";
+  const boundaryManifest = linkedManifest({
+    ...validRunManifest,
+    createdAt: lower,
+    finalizedAt: upper,
+    artifacts: validRunManifest.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: lower,
+    })),
+    retention: {
+      ...validRunManifest.retention,
+      updatedAt: upper,
+    },
+  });
+  const boundaryRun = {
+    ...runForStatus("completed", boundaryManifest),
+    createdAt: lower,
+    updatedAt: upper,
+  };
+  const parsedBoundary = expectOk(parseResearchRunV1(boundaryRun));
+  assert.equal(parsedBoundary.artifactManifest?.createdAt, lower);
+  assert.equal(parsedBoundary.artifactManifest?.retention.updatedAt, upper);
+
+  const assemblingBase = {
+    ...assemblingRunManifest,
+    createdAt: lower,
+    retention: {
+      ...assemblingRunManifest.retention,
+      updatedAt: lower,
+    },
+  };
+  const publicEvidence = {
+    kind: "public-evidence",
+    id: "evidence_chronology_01",
+    contentDigest:
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    snapshotDigest:
+      "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    canonicalUrl: "https://www.iana.org/evidence",
+    fetchedAt: "2017-01-01T00:00:00.000000001Z",
+  };
+  const futureArtifact = {
+    ...validRunManifest.artifacts[0],
+    createdAt: "2017-01-01T00:00:00.000000001Z",
+  };
+  const scheduledDeletion = linkedManifest({
+    ...validRunManifest,
+    createdAt: lower,
+    finalizedAt: upper,
+    artifacts: validRunManifest.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: lower,
+    })),
+    retention: {
+      ...validRunManifest.retention,
+      status: "deletion_scheduled",
+      contentExpiresAt: "2017-01-08T00:00:00Z",
+      updatedAt: upper,
+    },
+    deletion: {
+      status: "scheduled",
+      requestedAt: "2017-01-01T00:00:00.000000001Z",
+    },
+  });
+  const completedDeletion = linkedManifest({
+    ...validRunManifest,
+    createdAt: lower,
+    finalizedAt: upper,
+    artifacts: validRunManifest.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: lower,
+    })),
+    retention: {
+      ...validRunManifest.retention,
+      status: "deleted",
+      contentExpiresAt: "2017-01-08T00:00:00Z",
+      updatedAt: upper,
+    },
+    deletion: {
+      status: "completed",
+      requestedAt: upper,
+      completedAt: "2017-01-01T00:00:00.000000001Z",
+      deletedObjectCount: 1,
+      retainedAuditUntil: "2017-02-01T00:00:00Z",
+      eventSequence: 1,
+    },
+  });
+
+  const cases = [
+    [
+      "manifest createdAt",
+      linkedManifest({
+        ...validRunManifest,
+        createdAt: "2016-12-31T23:59:59.999999999Z",
+        finalizedAt: upper,
+        artifacts: validRunManifest.artifacts.map((artifact) => ({
+          ...artifact,
+          createdAt: lower,
+        })),
+        retention: { ...validRunManifest.retention, updatedAt: upper },
+      }),
+      "completed",
+      "$.artifactManifest.createdAt",
+    ],
+    [
+      "manifest finalizedAt",
+      linkedManifest({
+        ...validRunManifest,
+        createdAt: lower,
+        finalizedAt: "2017-01-01T00:00:00.000000001Z",
+        artifacts: validRunManifest.artifacts.map((artifact) => ({
+          ...artifact,
+          createdAt: lower,
+        })),
+        retention: {
+          ...validRunManifest.retention,
+          updatedAt: "2017-01-01T00:00:00.000000001Z",
+        },
+      }),
+      "completed",
+      "$.artifactManifest.finalizedAt",
+    ],
+    [
+      "public evidence fetchedAt",
+      linkedManifest({
+        ...assemblingBase,
+        sources: [...assemblingRunManifest.sources, publicEvidence],
+      }),
+      "scoping",
+      "$.artifactManifest.sources[1].fetchedAt",
+    ],
+    [
+      "artifact createdAt",
+      linkedManifest({
+        ...assemblingBase,
+        artifacts: [futureArtifact],
+      }),
+      "scoping",
+      "$.artifactManifest.artifacts[0].createdAt",
+    ],
+    [
+      "retention updatedAt",
+      linkedManifest({
+        ...assemblingBase,
+        retention: {
+          ...assemblingRunManifest.retention,
+          updatedAt: "2017-01-01T00:00:00.000000001Z",
+        },
+      }),
+      "scoping",
+      "$.artifactManifest.retention.updatedAt",
+    ],
+    [
+      "deletion requestedAt",
+      scheduledDeletion,
+      "completed",
+      "$.artifactManifest.deletion.requestedAt",
+    ],
+    [
+      "deletion completedAt",
+      completedDeletion,
+      "completed",
+      "$.artifactManifest.deletion.completedAt",
+    ],
+  ] as const;
+
+  for (const [label, manifest, status, path] of cases) {
+    const error = expectError(
+      parseResearchRunV1({
+        ...runForStatus(status, manifest),
+        createdAt: lower,
+        updatedAt: upper,
+      }),
+      path,
+      "semantic_conflict",
+    );
+    assert.match(error.message, /run chronology/i, label);
+  }
+});
+
 test("run and Context Pack composition requires matching presence and binding", () => {
   const pack = expectOk(parseContextPackV1(validContextPack));
   const boundRun = expectOk(
@@ -579,6 +850,8 @@ test("run and Context Pack composition requires matching presence and binding", 
 
   const contextlessValue: Record<string, unknown> = { ...validResearchRun };
   delete contextlessValue.context;
+  contextlessValue.acceptedTopic = { ...validResearchRun.acceptedTopic };
+  delete (contextlessValue.acceptedTopic as Record<string, unknown>).proposalId;
   const contextlessRun = expectOk(parseResearchRunV1(contextlessValue));
   assert.equal(expectOk(validateResearchRunContextPackV1(contextlessRun)), contextlessRun);
   expectError(
@@ -914,6 +1187,8 @@ test("every embedded later manifest requires a complete revision-1-rooted replay
     contextlessNext,
   );
   delete contextlessRunValue.context;
+  contextlessRunValue.acceptedTopic = { ...validResearchRun.acceptedTopic };
+  delete (contextlessRunValue.acceptedTopic as Record<string, unknown>).proposalId;
   const contextlessRun = expectOk(parseResearchRunV1(contextlessRunValue));
 
   expectError(
@@ -1165,15 +1440,70 @@ test("embedded replay binds every historical revision to its enclosing run autho
     },
     context,
   ) as ManifestRecord;
+  const futureArtifactRoot = linkedManifest(
+    {
+      ...assemblingRunManifest,
+      sources: assemblingRunManifest.sources,
+      artifacts: [
+        {
+          ...validRunManifest.artifacts[0],
+          createdAt: "2026-08-18T00:00:00.000000001Z",
+        },
+      ],
+    },
+    context,
+  ) as ManifestRecord;
 
   for (const [root, path] of [
     [foreignRunRoot, "$.manifestHistory[0].runId"],
     [foreignContextRoot, "$.manifestHistory[0].context"],
     [foreignRetentionRoot, "$.manifestHistory[0].retention.policy"],
-    [cloudContentRoot, "$.manifestHistory[0].artifacts[0].placement"],
+    [cloudContentRoot, "$.manifestHistory[0].artifacts[0].contentSync"],
+    [futureArtifactRoot, "$.manifestHistory[0].artifacts[0].createdAt"],
   ] as const) {
     expectError(validateHistory(root), path, "semantic_conflict");
   }
+
+  const wrongReceiptManifest = manifestWithReceipt(
+    "other-familiar",
+    "gpt-5.6-sol",
+  );
+  const wrongReceiptRoot = linkedManifest(
+    {
+      ...assemblingRunManifest,
+      sources: assemblingRunManifest.sources,
+      modelExecutions: wrongReceiptManifest.modelExecutions as unknown[],
+      usage: wrongReceiptManifest.usage as Record<string, unknown>,
+    },
+    context,
+  ) as ManifestRecord;
+  const receiptFreeTip = linkedManifest(
+    {
+      ...finalFromRoot(wrongReceiptRoot),
+      sources: wrongReceiptRoot.sources,
+      modelExecutions: [],
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        completeness: "unreported",
+      },
+    },
+    context,
+  );
+  const receiptFreeRun = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", receiptFreeTip),
+      context,
+    }),
+  );
+  expectError(
+    validateResearchRunContextPackV1(receiptFreeRun, contextPack, {
+      manifestHistory: [wrongReceiptRoot, receiptFreeTip],
+    }),
+    "$.manifestHistory[0].modelExecutions[0].receipt.familiarId",
+    "semantic_conflict",
+  );
 });
 
 test("context-bound manifest effective retention cannot exceed the Context Pack ceiling", () => {
@@ -1302,7 +1632,7 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
         ...validResearchRun.privacy,
         retention: "7-days",
       },
-      createdAt: "2026-08-16T20:05:45.000Z",
+      createdAt: "2026-08-16T20:00:00.000Z",
       updatedAt: "2026-08-16T20:06:00.000Z",
     }),
   );
@@ -1312,7 +1642,7 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
       manifestRevisionOptions: [
         replayConsent(
           extendedManifest,
-          "2026-08-16T20:05:30.000Z",
+          "2026-08-16T19:59:59.999999999Z",
           "project",
         ),
       ],
@@ -1734,6 +2064,25 @@ test("schema and parser agree on expressible constraints and additive fields sur
   expectError(parseRunEventV1({ ...validRunEvent, schema: "opencoven.run-event/v2" }), "$.schema", "unknown_major");
 });
 
+test("artifactManifest uses the run-manifest absolute schema document identifier", () => {
+  const artifactManifestSchema = researchRunSchema.properties
+    .artifactManifest as { $ref: string };
+  const reference = new URL(artifactManifestSchema.$ref);
+  const targetIdentifier = new URL(runManifestSchema.$id);
+
+  assert.equal(reference.href, targetIdentifier.href);
+  const standardsRegistry = new Map([
+    [targetIdentifier.href, runManifestSchema],
+  ]);
+  assert.equal(standardsRegistry.get(reference.href), runManifestSchema);
+
+  const run = runForStatus(
+    "completed",
+    linkedManifest(validRunManifest),
+  );
+  assert.equal(checkResearchRunSchema(run), true);
+});
+
 test("content.deleted data permits only declared audit fields and safe recursive extensions", () => {
   const event = {
     ...validRunEvent,
@@ -2040,7 +2389,7 @@ test("embedded manifests bind original run privacy retention and cloud-content c
         artifactContentSync: false,
       },
     }),
-    "$.artifactManifest.artifacts[0].placement",
+    "$.artifactManifest.artifacts[0].contentSync",
     "semantic_conflict",
   );
   assert.equal(
@@ -2100,6 +2449,103 @@ test("embedded manifests bind original run privacy retention and cloud-content c
   );
 });
 
+test("every requested artifact content sync requires run consent regardless of placement", () => {
+  for (const contentSync of ["pending", "synced", "failed"] as const) {
+    const manifest = linkedManifest({
+      ...validRunManifest,
+      artifacts: validRunManifest.artifacts.map((artifact) => ({
+        ...artifact,
+        placement: "device-local",
+        contentSync,
+      })),
+    });
+    const deniedRun = {
+      ...runForStatus("completed", manifest),
+      privacy: {
+        ...validResearchRun.privacy,
+        artifactContentSync: false,
+      },
+    };
+
+    assert.equal(checkResearchRunSchema(deniedRun), false);
+    expectError(
+      parseResearchRunV1(deniedRun),
+      "$.artifactManifest.artifacts[0].contentSync",
+      "semantic_conflict",
+    );
+
+    const allowed = expectOk(
+      parseResearchRunV1({
+        ...deniedRun,
+        privacy: {
+          ...validResearchRun.privacy,
+          artifactContentSync: true,
+        },
+      }),
+    );
+    assert.equal(checkResearchRunSchema(allowed), true);
+    assert.equal(allowed.artifactManifest?.artifacts[0].contentSync, contentSync);
+  }
+});
+
+test("single-agent manifest receipts bind the selected familiar and pinned provider/model", () => {
+  const execution = {
+    ...validResearchRun.execution,
+    modelBinding: {
+      ...validResearchRun.execution.modelBinding,
+      model: "openai/gpt-5.6-sol",
+    },
+  };
+  const cases = [
+    ["wrong familiar", "other-familiar", "openai/gpt-5.6-sol", "$.artifactManifest.modelExecutions[0].receipt.familiarId"],
+    ["wrong provider", "sage", "anthropic/gpt-5.6-sol", "$.artifactManifest.modelExecutions[0].receipt.effectiveModel"],
+    ["wrong model", "sage", "openai/gpt-5-mini", "$.artifactManifest.modelExecutions[0].receipt.effectiveModel"],
+  ] as const;
+
+  for (const [label, familiarId, effectiveModel, path] of cases) {
+    const result = parseResearchRunV1({
+      ...runForStatus("completed", manifestWithReceipt(familiarId, effectiveModel)),
+      execution,
+    });
+    const error = expectError(result, path, "semantic_conflict");
+    assert.match(error.message, /receipt/i, label);
+  }
+
+  const valid = expectOk(
+    parseResearchRunV1({
+      ...runForStatus(
+        "completed",
+        manifestWithReceipt("sage", "openai/gpt-5.6-sol"),
+      ),
+      execution,
+    }),
+  );
+  assert.equal(
+    valid.artifactManifest?.modelExecutions[0].receipt.effectiveModel,
+    "openai/gpt-5.6-sol",
+  );
+
+  const resolvedAtStart = expectOk(
+    parseResearchRunV1({
+      ...runForStatus(
+        "completed",
+        manifestWithReceipt("sage", "runtime/resolved-model"),
+      ),
+      execution: {
+        ...execution,
+        modelBinding: {
+          familiarId: "sage",
+          selection: "resolve-at-run-start",
+        },
+      },
+    }),
+  );
+  assert.equal(
+    resolvedAtStart.artifactManifest?.modelExecutions[0].receipt.effectiveModel,
+    "runtime/resolved-model",
+  );
+});
+
 test("contextless embedded manifests cannot extend effective retention beyond the run policy", () => {
   const contextlessManifest: Record<string, unknown> = {
     ...validRunManifest,
@@ -2121,6 +2567,8 @@ test("contextless embedded manifests cannot extend effective retention beyond th
     privacy: { ...validResearchRun.privacy, retention: "run-only" },
   };
   delete contextlessRun.context;
+  contextlessRun.acceptedTopic = { ...validResearchRun.acceptedTopic };
+  delete (contextlessRun.acceptedTopic as Record<string, unknown>).proposalId;
 
   expectError(
     parseResearchRunV1(contextlessRun),
@@ -2199,7 +2647,7 @@ test("terminal runs require final manifests and nonterminal runs permit only ass
 
   assert.deepEqual(
     researchRunSchema.properties.artifactManifest,
-    { $ref: "opencoven.run-manifest/v1" },
+    { $ref: "urn:opencoven:schema:research:run-manifest:v1" },
   );
 });
 

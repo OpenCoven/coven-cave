@@ -438,6 +438,57 @@ function validateReplayConsentCreationChronology(
   return pass(undefined);
 }
 
+function validateManifestRunChronology(
+  manifest: RunManifestV1,
+  runCreatedAt: string,
+  runUpdatedAt: string,
+): ProtocolParseResult<void> {
+  const timestamps: Array<readonly [string, string]> = [
+    [manifest.createdAt, "$.createdAt"],
+  ];
+  if (manifest.finalizedAt !== undefined) {
+    timestamps.push([manifest.finalizedAt, "$.finalizedAt"]);
+  }
+  for (const [index, source] of manifest.sources.entries()) {
+    if (source.kind === "public-evidence") {
+      timestamps.push([source.fetchedAt, `$.sources[${index}].fetchedAt`]);
+    }
+  }
+  for (const [index, artifact] of manifest.artifacts.entries()) {
+    timestamps.push([
+      artifact.createdAt,
+      `$.artifacts[${index}].createdAt`,
+    ]);
+  }
+  timestamps.push([manifest.retention.updatedAt, "$.retention.updatedAt"]);
+  if (manifest.deletion.requestedAt !== undefined) {
+    timestamps.push([
+      manifest.deletion.requestedAt,
+      "$.deletion.requestedAt",
+    ]);
+  }
+  if (manifest.deletion.completedAt !== undefined) {
+    timestamps.push([
+      manifest.deletion.completedAt,
+      "$.deletion.completedAt",
+    ]);
+  }
+
+  for (const [timestamp, path] of timestamps) {
+    if (
+      compareUtcTimestamps(timestamp, runCreatedAt) < 0 ||
+      compareUtcTimestamps(timestamp, runUpdatedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        path,
+        "Authoritative timestamp must fall within the enclosing run chronology",
+      );
+    }
+  }
+  return pass(undefined);
+}
+
 function validateManifestRunAuthority(
   manifest: RunManifestV1,
   run: ResearchRunV1,
@@ -449,6 +500,34 @@ function validateManifestRunAuthority(
       "$.runId",
       "Manifest runId must match the enclosing run id",
     );
+  }
+  const chronology = validateManifestRunChronology(
+    manifest,
+    run.createdAt,
+    run.updatedAt,
+  );
+  if (!chronology.ok) return chronology;
+  for (const [index, execution] of manifest.modelExecutions.entries()) {
+    if (
+      run.execution.strategy === "single-agent" &&
+      execution.receipt.familiarId !== run.execution.modelBinding.familiarId
+    ) {
+      return fail(
+        "semantic_conflict",
+        `$.modelExecutions[${index}].receipt.familiarId`,
+        "Single-agent manifest receipt familiarId must equal the selected run familiarId",
+      );
+    }
+    if (
+      run.execution.modelBinding.selection === "pinned" &&
+      execution.receipt.effectiveModel !== run.execution.modelBinding.model
+    ) {
+      return fail(
+        "semantic_conflict",
+        `$.modelExecutions[${index}].receipt.effectiveModel`,
+        "Manifest receipt effectiveModel must equal the pinned run model",
+      );
+    }
   }
   if (!contextBindingsMatch(run.context, manifest.context)) {
     return fail(
@@ -491,11 +570,11 @@ function validateManifestRunAuthority(
       "Manifest effective retention exceeds enclosing consent",
     );
   }
-  const cloudContentIndex = manifest.artifacts.findIndex(
-    (artifact) => artifact.placement === "cloud-content",
+  const contentSyncIndex = manifest.artifacts.findIndex(
+    (artifact) => artifact.contentSync !== "not-requested",
   );
   if (
-    cloudContentIndex >= 0 &&
+    contentSyncIndex >= 0 &&
     (
       !run.privacy.artifactContentSync ||
       contextPack?.consent.artifactContentSync === false
@@ -503,8 +582,8 @@ function validateManifestRunAuthority(
   ) {
     return fail(
       "semantic_conflict",
-      `$.artifacts[${cloudContentIndex}].placement`,
-      "cloud-content artifacts require enclosing artifactContentSync consent",
+      `$.artifacts[${contentSyncIndex}].contentSync`,
+      "Requested artifact content sync requires enclosing artifactContentSync consent",
     );
   }
   return pass(undefined);
@@ -1393,6 +1472,38 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!acceptedTopicField.ok) return acceptedTopicField;
   const acceptedTopic = parseAcceptedTopic(acceptedTopicField.value, "$.acceptedTopic");
   if (!acceptedTopic.ok) return acceptedTopic;
+  const contextTopicProposalId = context?.topicProposalId;
+  const acceptedTopicProposalId = acceptedTopic.value.proposalId;
+  if (
+    contextTopicProposalId === undefined &&
+    acceptedTopicProposalId !== undefined
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.context.topicProposalId",
+      "context.topicProposalId must be present with acceptedTopic.proposalId",
+    );
+  }
+  if (
+    contextTopicProposalId !== undefined &&
+    acceptedTopicProposalId === undefined
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.acceptedTopic.proposalId",
+      "acceptedTopic.proposalId must be present with context.topicProposalId",
+    );
+  }
+  if (
+    contextTopicProposalId !== undefined &&
+    acceptedTopicProposalId !== contextTopicProposalId
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.acceptedTopic.proposalId",
+      "acceptedTopic.proposalId must equal context.topicProposalId",
+    );
+  }
 
   const executionField = parseRequiredField(object.value, "execution", "$");
   if (!executionField.ok) return executionField;
@@ -1496,6 +1607,13 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!updatedAtField.ok) return updatedAtField;
   const updatedAt = parseUtc(updatedAtField.value, "$.updatedAt", "updatedAt");
   if (!updatedAt.ok) return updatedAt;
+  if (compareUtcTimestamps(updatedAt.value, createdAt.value) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.updatedAt",
+      "updatedAt must not be earlier than createdAt",
+    );
+  }
 
   const nextEventSequenceField = parseRequiredField(object.value, "nextEventSequence", "$");
   if (!nextEventSequenceField.ok) return nextEventSequenceField;
@@ -1530,6 +1648,47 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "$.artifactManifest.runId",
         "artifactManifest.runId must match the enclosing run id",
       );
+    }
+    const manifestChronology = validateManifestRunChronology(
+      artifactManifest,
+      createdAt.value,
+      updatedAt.value,
+    );
+    if (!manifestChronology.ok) {
+      return {
+        ok: false,
+        error: {
+          ...manifestChronology.error,
+          path: prefixProtocolErrorPath(
+            manifestChronology.error.path,
+            "$.artifactManifest",
+          ),
+        },
+      };
+    }
+    for (const [index, manifestExecution] of artifactManifest.modelExecutions.entries()) {
+      if (
+        execution.value.strategy === "single-agent" &&
+        manifestExecution.receipt.familiarId !==
+          execution.value.modelBinding.familiarId
+      ) {
+        return fail(
+          "semantic_conflict",
+          `$.artifactManifest.modelExecutions[${index}].receipt.familiarId`,
+          "Single-agent manifest receipt familiarId must equal the selected run familiarId",
+        );
+      }
+      if (
+        execution.value.modelBinding.selection === "pinned" &&
+        manifestExecution.receipt.effectiveModel !==
+          execution.value.modelBinding.model
+      ) {
+        return fail(
+          "semantic_conflict",
+          `$.artifactManifest.modelExecutions[${index}].receipt.effectiveModel`,
+          "Manifest receipt effectiveModel must equal the pinned run model",
+        );
+      }
     }
     if (!contextBindingsMatch(context, artifactManifest.context)) {
       return fail(
@@ -1574,14 +1733,14 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
       }
       artifactManifest = standaloneManifest.value;
     }
-    const cloudContentIndex = artifactManifest.artifacts.findIndex(
-      (artifact) => artifact.placement === "cloud-content",
+    const contentSyncIndex = artifactManifest.artifacts.findIndex(
+      (artifact) => artifact.contentSync !== "not-requested",
     );
-    if (cloudContentIndex >= 0 && !privacy.value.artifactContentSync) {
+    if (contentSyncIndex >= 0 && !privacy.value.artifactContentSync) {
       return fail(
         "semantic_conflict",
-        `$.artifactManifest.artifacts[${cloudContentIndex}].placement`,
-        "cloud-content artifacts require run artifactContentSync consent",
+        `$.artifactManifest.artifacts[${contentSyncIndex}].contentSync`,
+        "Requested artifact content sync requires run artifactContentSync consent",
       );
     }
   }

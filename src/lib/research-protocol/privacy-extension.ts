@@ -203,7 +203,7 @@ function validateSafeExtensionKeysAtPath(
       return fail(
         "semantic_conflict",
         keyPath,
-        "Deletion-event extension keys must use raw ASCII spelling",
+        "Deletion extension keys must use raw ASCII spelling",
       );
     }
     const normalizedKey = normalizeUnicodeSecurityText(key);

@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -721,6 +722,32 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
     if (!parsedFinishedAt.ok) return parsedFinishedAt;
     finishedAt = parsedFinishedAt.value;
   }
+  if (
+    startedAt !== undefined &&
+    compareUtcTimestamps(startedAt, requestedAt.value) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.startedAt",
+      "startedAt must not be earlier than requestedAt",
+    );
+  }
+  if (
+    finishedAt !== undefined &&
+    (
+      compareUtcTimestamps(finishedAt, requestedAt.value) < 0 ||
+      (
+        startedAt !== undefined &&
+        compareUtcTimestamps(finishedAt, startedAt) < 0
+      )
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finishedAt",
+      "finishedAt must not be earlier than requestedAt or startedAt",
+    );
+  }
 
   const proposalIdsField = parseRequiredField(object.value, "proposalIds", "$");
   if (!proposalIdsField.ok) return proposalIdsField;
@@ -732,6 +759,13 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
     const parsedModelReceipt = parseResearchModelReceiptV1(object.value.modelReceipt, "$.modelReceipt");
     if (!parsedModelReceipt.ok) return parsedModelReceipt;
     modelReceipt = parsedModelReceipt.value;
+    if (modelReceipt.familiarId !== familiarId.value) {
+      return fail(
+        "semantic_conflict",
+        "$.modelReceipt.familiarId",
+        "modelReceipt familiarId must equal the Topic Discovery Job familiarId",
+      );
+    }
   }
 
   let failure: TopicDiscoveryFailureV1 | undefined;

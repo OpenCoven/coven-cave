@@ -27,8 +27,8 @@
   "privacy": {
     "remoteQueries": false,
     "remoteContent": false,
-    "artifactContentSync": false,
-    "retention": "7-days",
+    "artifactContentSync": true,
+    "retention": "run-only",
     "allowMemoryPromotion": false,
     "futureExtension": {
       "preserve": true
@@ -47,29 +47,28 @@
   },
   "status": "completed",
   "createdAt": "2026-08-15T20:00:00.000Z",
-  "updatedAt": "2026-08-17T20:00:00.000Z",
-  "nextEventSequence": 4,
+  "updatedAt": "2026-08-15T20:10:00.000Z",
+  "nextEventSequence": 2,
   "artifactManifest": {
     "schema": "opencoven.run-manifest/v1",
-    "id": "manifest_deleted_01",
+    "id": "manifest_context_01",
     "runId": "run_01",
-    "digest": "46465b06099663bdcea155c00fa7e17383b69a5413781aa96507780b3cc491b7",
-    "revision": 2,
-    "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "digest": "9f900b4ed3fd795e528103930b8b49ebe356a5a3da95c457126fc2c16582beed",
+    "revision": 1,
     "state": "final",
     "createdAt": "2026-08-15T20:00:00.000Z",
-    "finalizedAt": "2026-08-15T20:10:00.000Z",
+    "finalizedAt": "2026-08-15T20:09:00.000Z",
     "sources": [],
     "artifacts": [
       {
-        "id": "artifact_deleted_01",
+        "id": "artifact_context_01",
         "kind": "research-notes",
-        "title": "Deleted research notes",
+        "title": "Context-bound research notes",
         "mediaType": "text/markdown",
         "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "bytes": 128,
         "placement": "device-local",
-        "contentSync": "not-requested",
+        "contentSync": "pending",
         "createdAt": "2026-08-15T20:08:00.000Z"
       }
     ],
@@ -81,18 +80,14 @@
       "completeness": "unreported"
     },
     "retention": {
-      "policy": "7-days",
-      "effectivePolicy": "7-days",
-      "status": "deleted",
-      "contentExpiresAt": "2026-08-17T20:00:00.000Z",
-      "updatedAt": "2026-08-17T20:00:00.000Z"
+      "policy": "run-only",
+      "effectivePolicy": "run-only",
+      "status": "active",
+      "contentExpiresAt": null,
+      "updatedAt": "2026-08-15T20:09:00.000Z"
     },
     "deletion": {
-      "status": "completed",
-      "requestedAt": "2026-08-17T19:00:00.000Z",
-      "completedAt": "2026-08-17T20:00:00.000Z",
-      "deletedObjectCount": 3,
-      "eventSequence": 2
+      "status": "not_scheduled"
     }
   },
   "futureExtension": {

@@ -4,6 +4,7 @@ import { Value } from "typebox/value";
 
 import invalidTopicDiscoveryEight from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-eight.json" with { type: "json" };
 import invalidTopicDiscoveryOne from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-one.json" with { type: "json" };
+import invalidTopicDiscoveryReceiptFamiliar from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-receipt-familiar.json" with { type: "json" };
 import invalidTopicDiscoveryTwo from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-two.json" with { type: "json" };
 import invalidTopicProposalScore from "../../../schemas/research/v1/fixtures/invalid/topic-proposal-score.json" with { type: "json" };
 import topicDiscoveryJobSchema from "../../../schemas/research/v1/topic-discovery-job.schema.json" with { type: "json" };
@@ -185,6 +186,74 @@ test("running job without startedAt rejects", () => {
   expectError(parseTopicDiscoveryJobV1(runningJob), "$.startedAt", "missing_field");
 });
 
+test("discovery lifecycle chronology is inclusive and leap-second aware", () => {
+  const boundary = {
+    ...validTopicDiscoveryJob,
+    requestedAt: "2016-12-31T23:59:60Z",
+    startedAt: "2016-12-31T23:59:60Z",
+    finishedAt: "2016-12-31T23:59:60Z",
+  };
+  const parsedBoundary = expectOk(parseTopicDiscoveryJobV1(boundary));
+  assert.equal(parsedBoundary.finishedAt, boundary.finishedAt);
+
+  const leapBoundary = {
+    ...validTopicDiscoveryJob,
+    requestedAt: "2016-12-31T23:59:59.999999999Z",
+    startedAt: "2016-12-31T23:59:60Z",
+    finishedAt: "2017-01-01T00:00:00Z",
+  };
+  expectOk(parseTopicDiscoveryJobV1(leapBoundary));
+
+  for (const [candidate, path] of [
+    [
+      {
+        ...validTopicDiscoveryJob,
+        status: "queued",
+        requestedAt: "2026-08-15T20:00:00Z",
+        startedAt: "2026-08-15T19:59:59.999999999Z",
+        finishedAt: undefined,
+        modelReceipt: undefined,
+      },
+      "$.startedAt",
+    ],
+    [
+      {
+        ...validTopicDiscoveryJob,
+        requestedAt: "2026-08-15T20:00:00Z",
+        startedAt: "2026-08-15T20:01:00Z",
+        finishedAt: "2026-08-15T20:00:59.999999999Z",
+      },
+      "$.finishedAt",
+    ],
+    [
+      {
+        ...validTopicDiscoveryJob,
+        status: "failed",
+        requestedAt: "2026-08-15T20:00:00Z",
+        startedAt: undefined,
+        finishedAt: "2026-08-15T19:59:59.999999999Z",
+        modelReceipt: undefined,
+        failure: {
+          code: "runtime_error",
+          message: "failed",
+          retryable: false,
+        },
+      },
+      "$.finishedAt",
+    ],
+  ] as const) {
+    const normalized = { ...candidate } as Record<string, unknown>;
+    for (const key of ["startedAt", "finishedAt", "modelReceipt"]) {
+      if (normalized[key] === undefined) delete normalized[key];
+    }
+    expectError(
+      parseTopicDiscoveryJobV1(normalized),
+      path,
+      "semantic_conflict",
+    );
+  }
+});
+
 test("running job forbids finishedAt and failure", () => {
   const runningWithFinishedAt = {
     ...validTopicDiscoveryJob,
@@ -244,6 +313,18 @@ test("completed and failed jobs remain valid", () => {
   };
   assert.equal(Value.Check(topicDiscoveryJobSchema, validFailedJob), true);
   expectOk(parseTopicDiscoveryJobV1(validFailedJob));
+});
+
+test("receipt-bearing discovery jobs bind receipt attribution to the job familiar", () => {
+  assert.equal(Value.Check(topicDiscoveryJobSchema, invalidTopicDiscoveryReceiptFamiliar), true);
+  expectError(
+    parseTopicDiscoveryJobV1(invalidTopicDiscoveryReceiptFamiliar),
+    "$.modelReceipt.familiarId",
+    "semantic_conflict",
+  );
+
+  const valid = expectOk(parseTopicDiscoveryJobV1(validTopicDiscoveryJob));
+  assert.equal(valid.modelReceipt?.familiarId, valid.familiarId);
 });
 
 test("completed, failed, and cancelled jobs without finishedAt reject", () => {

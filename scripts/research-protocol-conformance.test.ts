@@ -51,11 +51,13 @@ const EXPECTED_VALID_STANDALONE_FIXTURES = [
   "context-pack.json",
   "model-task-result.json",
   "model-task.json",
+  "research-run-chronology-boundary.json",
   "research-run-embedded-retention-7-days-provisional.json",
   "research-run-embedded-retention-run-only-provisional.json",
   "research-run-hosted-without-tenant.json",
   "research-run-hosted.json",
   "research-run-paused.json",
+  "research-run-topic-provenance-absent.json",
   "research-run.json",
   "run-event-deletion-benign-extension.json",
   "run-event-leap-second-historical.json",
@@ -64,6 +66,8 @@ const EXPECTED_VALID_STANDALONE_FIXTURES = [
   "run-event.json",
   "run-manifest-assembling.json",
   "run-manifest-chronology-boundaries.json",
+  "run-manifest-cost-exact-decimal.json",
+  "run-manifest-deletion-ascii-extension.json",
   "run-manifest-extension-boundaries.json",
   "run-manifest-final-cloud.json",
   "run-manifest-final-local.json",
@@ -74,6 +78,7 @@ const EXPECTED_VALID_STANDALONE_FIXTURES = [
   "run-manifest-retention-run-only-leap-boundary.json",
   "run-manifest-retention-update.json",
   "run-manifest-unicode-extension.json",
+  "topic-discovery-job-chronology-boundary.json",
   "topic-discovery-job-seven.json",
   "topic-discovery-job.json",
   "topic-proposal.json",
@@ -85,7 +90,11 @@ const EXPECTED_INVALID_STANDALONE_FIXTURES = [
   "model-task-policy.json",
   "model-task-result-usage.json",
   "research-run-checkpoint-queued.json",
+  "research-run-chronology-reversed.json",
   "research-run-local-tenant.json",
+  "research-run-topic-provenance-accepted-missing.json",
+  "research-run-topic-provenance-context-missing.json",
+  "research-run-topic-provenance-mismatch.json",
   "research-run-waiting-phase.json",
   "run-event-default-ignorable-deletion-extension.json",
   "run-event-deleted-content-payload.json",
@@ -100,8 +109,12 @@ const EXPECTED_INVALID_STANDALONE_FIXTURES = [
   "run-manifest-artifact-before-created.json",
   "run-manifest-content-expires-before-created.json",
   "run-manifest-content-expires-before-finalized.json",
+  "run-manifest-cost-binary-drift.json",
   "run-manifest-deleted-content-payload.json",
   "run-manifest-deletion-event.json",
+  "run-manifest-deletion-homoglyph-array.json",
+  "run-manifest-deletion-homoglyph-nested.json",
+  "run-manifest-deletion-homoglyph-root.json",
   "run-manifest-deletion-pair.json",
   "run-manifest-finalized-before-created.json",
   "run-manifest-model-raw-prompt.json",
@@ -126,7 +139,10 @@ const EXPECTED_INVALID_STANDALONE_FIXTURES = [
   "run-manifest-split-object-store-key.json",
   "run-manifest-unicode-sensitive-extension.json",
   "topic-discovery-job-eight.json",
+  "topic-discovery-job-finished-before-started.json",
   "topic-discovery-job-one.json",
+  "topic-discovery-job-receipt-familiar.json",
+  "topic-discovery-job-started-before-requested.json",
   "topic-discovery-job-two.json",
   "topic-proposal-score.json",
   "unknown-major.json",
@@ -149,6 +165,10 @@ function requireString(value: unknown, filePath: string, label: string): string 
 // own source of truth) rather than hand-listed, so a renamed file or a 9th
 // schema fails loudly here instead of silently going unchecked.
 const SCHEMA_ID_PATTERN = /^opencoven\.([a-z-]+)\/v1$/;
+const SCHEMA_DOCUMENT_ID_BY_PROTOCOL_ID: Readonly<Record<string, string>> = {
+  "opencoven.run-manifest/v1":
+    "urn:opencoven:schema:research:run-manifest:v1",
+};
 
 function schemaFileNameFor(schemaId: string): string {
   const match = SCHEMA_ID_PATTERN.exec(schemaId);
@@ -181,7 +201,8 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
     const loaded: unknown = readJsonFile(filePath);
     assert.ok(isRecord(loaded), `${filePath}: schema file root must be an object`);
     assert.ok(IsSchema(loaded), `${filePath}: schema file must be a valid JSON Schema object`);
-    assert.equal(loaded.$id, schemaId, `${filePath}: $id must equal ${schemaId}`);
+    const documentId = SCHEMA_DOCUMENT_ID_BY_PROTOCOL_ID[schemaId] ?? schemaId;
+    assert.equal(loaded.$id, documentId, `${filePath}: $id must equal ${documentId}`);
     assert.ok(isRecord(loaded.$defs), `${filePath}: $defs must be an object`);
     assert.ok(
       isRecord(loaded.$defs.utcTimestamp),
@@ -193,7 +214,29 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
       `${filePath}: UTC timestamp pattern must match the shared protocol convention`,
     );
     schemaContext.set(schemaId, loaded);
-    schemaCheckContext[schemaId] = loaded;
+    schemaCheckContext[documentId] = loaded;
+  }
+});
+
+test("cross-schema references are absolute and resolve by schema document id", () => {
+  const visit = (value: unknown, sourceId: string): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, sourceId);
+      return;
+    }
+    if (!isRecord(value)) return;
+    if (typeof value.$ref === "string" && !value.$ref.startsWith("#")) {
+      const reference = new URL(value.$ref);
+      assert.ok(
+        Object.hasOwn(schemaCheckContext, reference.href),
+        `${sourceId}: unresolved cross-schema reference ${reference.href}`,
+      );
+    }
+    for (const child of Object.values(value)) visit(child, sourceId);
+  };
+
+  for (const [protocolId, schema] of schemaContext) {
+    visit(schema, protocolId);
   }
 });
 
@@ -269,8 +312,8 @@ const invalidFixtureFiles = assertStandaloneFixtureInventory(
 );
 
 test("standalone fixture inventories are exact and duplicate-free", () => {
-  assert.equal(EXPECTED_VALID_STANDALONE_FIXTURES.length, 29);
-  assert.equal(EXPECTED_INVALID_STANDALONE_FIXTURES.length, 50);
+  assert.equal(EXPECTED_VALID_STANDALONE_FIXTURES.length, 34);
+  assert.equal(EXPECTED_INVALID_STANDALONE_FIXTURES.length, 61);
   assert.deepEqual(validFixtureFiles, [...EXPECTED_VALID_STANDALONE_FIXTURES]);
   assert.deepEqual(invalidFixtureFiles, [...EXPECTED_INVALID_STANDALONE_FIXTURES]);
 });
