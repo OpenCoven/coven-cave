@@ -43,7 +43,7 @@ const MANIFEST_STATES = ["assembling", "final"] as const;
 const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
-const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
+const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 const CANONICAL_EVIDENCE_URL_FORBIDDEN_RE = /[\u0000-\u001f\u007f\s\\]/u;
 const MALFORMED_PERCENT_ESCAPE_RE = /%(?![0-9A-Fa-f]{2})/;

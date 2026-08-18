@@ -27,7 +27,13 @@ import invalidArtifactAfterFinalizedJson from "../../../schemas/research/v1/fixt
 import invalidPublicSourceAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-public-source-after-finalized.json" with { type: "json" };
 import invalidFullwidthFileUriTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-fullwidth-file-uri.json" with { type: "json" };
 import invalidFullwidthWindowsPathTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-fullwidth-windows-path.json" with { type: "json" };
-import invalidMixedNormalizedSecretPathTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-mixed-normalized-secret-path.json" with { type: "json" };
+import invalidFullwidthGhoSecretTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-secret-gho-fullwidth.json" with { type: "json" };
+import invalidFullwidthGhpSecretTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-secret-ghp-fullwidth.json" with { type: "json" };
+import invalidFullwidthGhrSecretTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-secret-ghr-fullwidth.json" with { type: "json" };
+import invalidFullwidthGhsSecretTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-secret-ghs-fullwidth.json" with { type: "json" };
+import invalidFullwidthGhuSecretTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-secret-ghu-fullwidth.json" with { type: "json" };
+import invalidFullwidthGithubPatSecretTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-secret-github-pat-fullwidth.json" with { type: "json" };
+import invalidFullwidthSkSecretTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-secret-sk-fullwidth.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 import validBenignUnicodeTitleJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-title-benign-unicode.json" with { type: "json" };
 
@@ -588,6 +594,18 @@ test("artifact titles reject paths, controls, and known secret prefixes", () => 
   );
 });
 
+test("artifact titles reject every supported credential prefix", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const prefix of ["sk-", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"]) {
+    const title = `Review ${prefix}credential`;
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], title }],
+    });
+    expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
+  }
+});
+
 test("artifact titles reject RFC 3986 URI scheme prefixes", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const title of [
@@ -611,7 +629,13 @@ test("artifact title privacy checks inspect NFKC-normalized text", () => {
   for (const fixture of [
     invalidFullwidthFileUriTitleJson,
     invalidFullwidthWindowsPathTitleJson,
-    invalidMixedNormalizedSecretPathTitleJson,
+    invalidFullwidthGhpSecretTitleJson,
+    invalidFullwidthGhoSecretTitleJson,
+    invalidFullwidthGhuSecretTitleJson,
+    invalidFullwidthGhsSecretTitleJson,
+    invalidFullwidthGhrSecretTitleJson,
+    invalidFullwidthGithubPatSecretTitleJson,
+    invalidFullwidthSkSecretTitleJson,
   ]) {
     assert.equal(Value.Check(runManifestSchema, fixture), true);
     expectError(
@@ -619,6 +643,17 @@ test("artifact title privacy checks inspect NFKC-normalized text", () => {
       "$.artifacts[0].title",
       "invalid_value",
     );
+  }
+});
+
+test("artifact titles allow benign github_ labels", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const title of ["github_ labels", "Review ｇｉｔｈｕｂ＿ labels"]) {
+    const candidate = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], title }],
+    });
+    assert.equal(expectOk(parseRunManifestV1(candidate)).artifacts[0].title, title);
   }
 });
 
