@@ -5,6 +5,12 @@
     "context-pack": {
       "fixture": "valid/context-pack.json"
     },
+    "contextless-run": {
+      "fixture": "valid/research-run.json",
+      "mergePatch": {
+        "context": null
+      }
+    },
     "contextless-lengthened-run": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
@@ -53,6 +59,46 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "research-run.missing-context-pack",
+      "description": "A context-bound research run rejects validation without its Context Pack.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.context"
+      }
+    },
+    {
+      "id": "research-run.contextless-without-pack",
+      "description": "A contextless research run validates without a Context Pack.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-run"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.contextless-with-pack",
+      "description": "A contextless research run rejects an unrelated Context Pack.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.context"
       }
     },
     {
