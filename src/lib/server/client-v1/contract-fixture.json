@@ -1,0 +1,136 @@
+{
+  "contract": {
+    "apiVersion": "1.0",
+    "capabilities": [
+      "pairing",
+      "credentials",
+      "familiars",
+      "projects",
+      "conversations",
+      "conversation-messages",
+      "streaming",
+      "cursors",
+      "revisions"
+    ],
+    "errorCodes": [
+      "invalid_request",
+      "unauthorized",
+      "scope_denied",
+      "not_found",
+      "conflict",
+      "rate_limited",
+      "pairing_pending",
+      "pairing_denied",
+      "pairing_expired",
+      "incompatible_version",
+      "service_unavailable",
+      "reconcile_required",
+      "internal_error"
+    ],
+    "identityKinds": [
+      "client",
+      "credential",
+      "familiar",
+      "project",
+      "conversation",
+      "message",
+      "event"
+    ],
+    "limits": {
+      "cursorCharacters": 512,
+      "defaultPageSize": 50,
+      "errorDetailEntries": 16,
+      "errorDetailValueCharacters": 256,
+      "errorMessageCharacters": 256,
+      "idempotencyKeyCharacters": 36,
+      "maxPageSize": 100,
+      "requestIdCharacters": 64,
+      "revisionTokenCharacters": 128
+    },
+    "minimumClientVersion": "0.1.0",
+    "pairingScopes": [
+      "chat:read",
+      "chat:write",
+      "conversations:write",
+      "attachments:write",
+      "tasks:write",
+      "github:write"
+    ]
+  },
+  "examples": {
+    "cursor": {
+      "current": "conversation-list:cursor:0",
+      "hasMore": true,
+      "next": "conversation-list:cursor:1"
+    },
+    "errorEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "streaming",
+        "cursors",
+        "revisions"
+      ],
+      "error": {
+        "code": "reconcile_required",
+        "details": {
+          "reason": "resume_from_canonical_state"
+        },
+        "message": "Client state must be reconciled.",
+        "retryable": true
+      },
+      "minimumClientVersion": "0.1.0",
+      "requestId": "request-example-error"
+    },
+    "identity": {
+      "displayName": "Example conversation",
+      "id": "conversation-example",
+      "kind": "conversation"
+    },
+    "revision": {
+      "token": "conversation-example-revision-1",
+      "updatedAt": "2026-08-15T00:00:01.000Z"
+    },
+    "status": {
+      "status": "ok"
+    },
+    "successEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "streaming",
+        "cursors",
+        "revisions"
+      ],
+      "cursor": {
+        "current": "conversation-list:cursor:0",
+        "hasMore": true,
+        "next": "conversation-list:cursor:1"
+      },
+      "data": {
+        "status": "ok"
+      },
+      "identity": {
+        "displayName": "Example conversation",
+        "id": "conversation-example",
+        "kind": "conversation"
+      },
+      "minimumClientVersion": "0.1.0",
+      "requestId": "request-example-success",
+      "revision": {
+        "token": "conversation-example-revision-1",
+        "updatedAt": "2026-08-15T00:00:01.000Z"
+      }
+    }
+  }
+}

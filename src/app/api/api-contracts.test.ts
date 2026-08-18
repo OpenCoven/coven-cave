@@ -396,6 +396,11 @@ const routeFiles = walkRoutes(apiRoot);
 const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
+assert.equal(
+  actualRoutes.some((route) => route.startsWith("/client/v1")),
+  false,
+  "Phase 0 must not expose /api/client/v1 routes before the public contract foundation is wired",
+);
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
 
 for (const contract of contracts) {
@@ -1171,5 +1176,20 @@ for (const contract of contracts) {
 // suite is listed in that runner's manifest so it actually runs in CI.
 const runnerSource = readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8");
 assert.match(runnerSource, /api-contracts\.test\.ts/, "scripts/run-tests.mjs must list this API contract suite");
+assert.match(
+  runnerSource,
+  /src\/lib\/server\/client-v1\/contract\.test\.ts/,
+  "scripts/run-tests.mjs must list the public client v1 contract suite",
+);
+assert.match(
+  runnerSource,
+  /scripts\/export-client-v1-contract\.test\.mjs/,
+  "scripts/run-tests.mjs must list the public client v1 exporter suite",
+);
+assert.match(
+  runnerSource,
+  /SUITE_PREFLIGHTS[\s\S]*api:\s*\[[\s\S]*\["scripts\/export-client-v1-contract\.mjs", "--check"\]/,
+  "scripts/run-tests.mjs must read-only check the public client v1 contract fixture before API tests",
+);
 
 console.log(`api-contracts.test.ts: ${contracts.length} route contracts passed`);

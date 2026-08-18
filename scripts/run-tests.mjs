@@ -7,8 +7,10 @@
 //   suites: app | api | mobile   (pass "all" or nothing to run every suite)
 //
 // Each test runs in its own `node` process, sequentially; the runner exits on
-// the first failure (preserving the old `&&` short-circuit). `.ts` tests get
-// the TS type-stripper; the few `.mjs` tests that need it are listed below.
+// the first failure (preserving the old `&&` short-circuit). Some suites also
+// run read-only preflights first so generated fixtures cannot self-repair
+// later in the same validation pass. `.ts` tests get the TS type-stripper; the
+// few `.mjs` tests that need it are listed below.
 //
 // To add a test: append its repo-relative path to the right suite array. The
 // `check:tests-wired` guard imports SUITES from here and fails CI if any
@@ -1282,6 +1284,7 @@ export const SUITES = {
     "scripts/beads-pr-bridge.test.mjs",
     "scripts/beads-pr-patrol.test.mjs",
     "scripts/ci-paths.test.mjs",
+    "scripts/export-client-v1-contract.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
@@ -1319,6 +1322,7 @@ export const SUITES = {
     "src/app/api/canvas/route.test.ts",
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
+    "src/lib/server/client-v1/contract.test.ts",
     "src/app/api/x/account-routes.test.ts",
     "src/app/api/x/research-routes.test.ts",
     "src/app/api/hermes-profiles/route.test.ts",
@@ -1755,6 +1759,12 @@ const STRIP_TYPES_MJS = new Set([
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
+export const SUITE_PREFLIGHTS = {
+  api: [
+    ["scripts/export-client-v1-contract.mjs", "--check"],
+  ],
+};
+
 const ALIAS_LOADER = new Set([
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
@@ -2073,6 +2083,23 @@ export function nodeArgsFor(file) {
   return args;
 }
 
+function runSuitePreflights(names, root) {
+  const seen = new Set();
+  for (const name of names) {
+    for (const args of SUITE_PREFLIGHTS[name] ?? []) {
+      const key = JSON.stringify(args);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const res = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });
+      if (res.status !== 0) {
+        console.error(`
+✗ FAILED PREFLIGHT: ${args.join(" ")}`);
+        process.exit(res.status ?? 1);
+      }
+    }
+  }
+}
+
 function main(argv) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   let names = argv.length ? argv : ["all"];
@@ -2082,6 +2109,7 @@ function main(argv) {
     console.error(`unknown suite(s): ${unknown.join(", ")}. known: ${[...Object.keys(SUITES), "all"].join(", ")}`);
     process.exit(2);
   }
+  runSuitePreflights(names, root);
   const list = names.flatMap((n) => SUITES[n]);
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
   const secretRoot = mkdtempSync(path.join(tmpdir(), "coven-test-secrets-"));
