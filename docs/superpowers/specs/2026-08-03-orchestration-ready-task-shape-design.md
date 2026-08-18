@@ -1,6 +1,6 @@
 # Orchestration-Ready Task Shape Design
 
-**Date:** 2026-08-03 · **Bead:** `cave-wqzf2` · **Status:** approved design, not yet implemented
+**Date:** 2026-08-03 · **Bead:** `cave-wqzf2` · **Status:** core contract, enforcement, and promotion implemented; surface migration remains
 **Reviewers:** Astra (implementation alignment), Sage (research and best practice)
 
 Cave tasks are the unit of work every familiar, surface, and orchestrator reads.
