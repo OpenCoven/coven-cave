@@ -864,15 +864,15 @@ function validateManifestChronology(
     );
   }
 
-  if (
-    deletion.requestedAt !== undefined &&
-    compareUtcTimestamps(deletion.requestedAt, createdAt) < 0
-  ) {
-    return fail(
-      "semantic_conflict",
-      "$.deletion.requestedAt",
-      "deletion.requestedAt must not precede manifest createdAt",
-    );
+  for (const key of ["requestedAt", "completedAt", "retainedAuditUntil"] as const) {
+    const timestamp = deletion[key];
+    if (timestamp !== undefined && compareUtcTimestamps(timestamp, createdAt) < 0) {
+      return fail(
+        "semantic_conflict",
+        `$.deletion.${key}`,
+        `deletion.${key} must not precede manifest createdAt`,
+      );
+    }
   }
   if (
     deletion.completedAt !== undefined &&

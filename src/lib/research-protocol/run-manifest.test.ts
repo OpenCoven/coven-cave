@@ -12,6 +12,7 @@ import invalidFinalMutationJson from "../../../schemas/research/v1/fixtures/scen
 import invalidDeletionPairJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-pair.json" with { type: "json" };
 import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-private-title.json" with { type: "json" };
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
+import invalidCompletionBeforeCreationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-completion-before-creation-no-request.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
 import {
@@ -779,6 +780,17 @@ test("completed deletion chronology cannot finish before its request", () => {
       eventSequence: 2,
     },
   });
+
+  assert.equal(Value.Check(runManifestSchema, invalid), true);
+  expectError(
+    parseRunManifestV1(invalid),
+    "$.deletion.completedAt",
+    "semantic_conflict",
+  );
+});
+
+test("deletion completion cannot precede manifest creation without a request timestamp", () => {
+  const invalid = withoutExpectedSchemaValid(invalidCompletionBeforeCreationJson);
 
   assert.equal(Value.Check(runManifestSchema, invalid), true);
   expectError(
