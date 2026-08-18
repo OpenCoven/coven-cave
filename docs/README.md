@@ -103,6 +103,7 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`mobile-readiness.md`](mobile-readiness.md) — manual dogfood checklist for the `feat/mobile-readiness` rollout
 - [`windows-sidecar-compression.md`](windows-sidecar-compression.md) — a zstd-level benchmark against a fixed production payload
 - [`salem-chat-api-model.md`](salem-chat-api-model.md) — an outbound brief for the `opencoven-chat-api` repo, not a Cave contract
+- [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
 
 ---
 
