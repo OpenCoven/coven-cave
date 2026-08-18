@@ -35,13 +35,12 @@ import {
   isSha256,
   isUtcTimestamp,
   parseResearchProtocolObject,
-  parseRunManifestRevisionCandidateV1,
   validateManifestRetentionConsent,
   validateModelTaskResultV1,
   validateResearchRunContextPackV1,
   validateRunEventSequence,
   validateRunManifestDeletionEventV1,
-  validateRunManifestRevision,
+  validateRunManifestRevisionV1,
   type ContextPackV1,
   type ManifestRevisionOptions,
   type ModelTaskResultV1,
@@ -79,7 +78,7 @@ const PUBLIC_VALIDATOR_ENTRY_POINTS = [
   "validateResearchRunContextPackV1",
   "validateRunEventSequence",
   "validateRunManifestDeletionEventV1",
-  "validateRunManifestRevision",
+  "validateRunManifestRevisionV1",
 ] as const;
 
 const VALIDATOR_ENTRY_POINT_BY_ACTION = {
@@ -88,7 +87,7 @@ const VALIDATOR_ENTRY_POINT_BY_ACTION = {
   "research-run-context-pack": "validateResearchRunContextPackV1",
   "run-event-deletion": "validateRunManifestDeletionEventV1",
   "run-event-sequence": "validateRunEventSequence",
-  "run-manifest-revision": "validateRunManifestRevision",
+  "run-manifest-revision": "validateRunManifestRevisionV1",
 } as const satisfies Record<string, (typeof PUBLIC_VALIDATOR_ENTRY_POINTS)[number]>;
 
 type ValidatorKind = keyof typeof VALIDATOR_ENTRY_POINT_BY_ACTION;
@@ -734,6 +733,7 @@ function recomputeDigestTarget(
   value: Record<string, unknown>,
   pointer: string,
   location: string,
+  deferManifestRevisionComposition = false,
 ): void {
   const containerSchema = requireString(value.schema, `${location}.container.schema`);
   const targetSchema = DIGEST_TARGET_SCHEMA_BY_CONTAINER[containerSchema]?.[pointer];
@@ -753,7 +753,12 @@ function recomputeDigestTarget(
     `${location}: digest target must already contain a valid digest field`,
   );
   target.digest = digestProtocolObject(target);
-  validateAuthoritativeProtocolObject(target, `${location} synthesized target`);
+  if (
+    !deferManifestRevisionComposition ||
+    targetSchema !== "opencoven.run-manifest/v1"
+  ) {
+    validateAuthoritativeProtocolObject(target, `${location} synthesized target`);
+  }
 }
 
 function resolveFixturePath(
@@ -848,7 +853,11 @@ function resolveFixturePath(
   return resolved;
 }
 
-function materializeObject(spec: ObjectSpec, location: string): Record<string, unknown> {
+function materializeObject(
+  spec: ObjectSpec,
+  location: string,
+  deferManifestRevisionComposition = false,
+): Record<string, unknown> {
   const source =
     spec.fixture === undefined
       ? structuredClone(spec.value)
@@ -865,6 +874,7 @@ function materializeObject(spec: ObjectSpec, location: string): Record<string, u
       materialized,
       targetPointer,
       `${location}.digestTargets[${index}]`,
+      deferManifestRevisionComposition,
     );
   }
   return materialized;
@@ -943,13 +953,9 @@ function validateAuthoritativeProtocolObject(
   location: string,
 ): ResearchProtocolObjectV1 {
   const protocolObject = validateProtocolObjectSchema(value, location);
-  const parser =
-    protocolObject.schema === "opencoven.run-manifest/v1"
-      ? parseRunManifestRevisionCandidateV1
-      : parseResearchProtocolObject;
   const parsed = invokeParserWithSnapshot(
     protocolObject,
-    parser,
+    parseResearchProtocolObject,
     location,
   );
   if (!parsed.ok) {
@@ -967,7 +973,12 @@ function materializeScenarioInput(
 ): Record<string, unknown> {
   const location = `${corpus.filePath}.objects.${entry.reference} (input ${entry.name})`;
   return validateProtocolObjectSchema(
-    materializeObject(corpus.objects[entry.reference], location),
+    materializeObject(
+      corpus.objects[entry.reference],
+      location,
+      (corpus.family === "run-manifest-revision" && entry.name === "next") ||
+        allowSchemaInvalid,
+    ),
     location,
     entry.schema,
     allowSchemaInvalid,
@@ -1014,7 +1025,7 @@ function executeComposition(
         `${scenario.id}.next`,
       );
       return {
-        result: validateRunManifestRevision(previous, next, scenario.options),
+        result: validateRunManifestRevisionV1(previous, next, scenario.options),
         expectedValue: next,
       };
     }
@@ -1123,18 +1134,24 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
   }));
 
   for (const { entry, location, materialized } of materializedInputs) {
+    const expectsThisParseFailure =
+      !scenario.expected.ok &&
+      scenario.expected.stage === "parse" &&
+      scenario.expected.input === entry.name;
+    if (
+      scenario.validator === "run-manifest-revision" &&
+      entry.name === "next" &&
+      !expectsThisParseFailure
+    ) {
+      parsedInputs.set(entry.name, materialized as ResearchProtocolObjectV1);
+      continue;
+    }
     const parsed =
-      scenario.validator === "run-manifest-revision"
-        ? invokeParserWithSnapshot(
-            materialized,
-            parseRunManifestRevisionCandidateV1,
-            location,
-          )
-        : invokeParserWithSnapshot(
-            materialized,
-            parseResearchProtocolObject,
-            location,
-          );
+      invokeParserWithSnapshot(
+        materialized,
+        parseResearchProtocolObject,
+        location,
+      );
     if (!parsed.ok) {
       assert.equal(
         scenario.expected.ok,

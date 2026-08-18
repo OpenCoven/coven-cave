@@ -37,7 +37,7 @@
     "remoteQueries": false,
     "remoteContent": false,
     "artifactContentSync": false,
-    "retention": "run-only",
+    "retention": "7-days",
     "allowMemoryPromotion": false,
     "futureExtension": {
       "preserve": true
@@ -62,7 +62,7 @@
     "schema": "opencoven.run-manifest/v1",
     "id": "manifest_context_01",
     "runId": "run_01",
-    "digest": "4de59635083bc791daf70627cc9fa7a2e9bd20dae34f9bd7698c4d88520e3c54",
+    "digest": "e91b15a1dc1b1dcea2358a6307cf1820574019510e0bbc687465b97bddd2c04d",
     "revision": 2,
     "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "state": "final",
@@ -105,7 +105,7 @@
       "completeness": "unreported"
     },
     "retention": {
-      "policy": "run-only",
+      "policy": "7-days",
       "effectivePolicy": "7-days",
       "status": "active",
       "contentExpiresAt": null,

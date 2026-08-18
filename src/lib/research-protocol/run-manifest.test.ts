@@ -31,12 +31,12 @@ import validRunOnlyLeapBoundaryJson from "../../../schemas/research/v1/fixtures/
 import { digestProtocolObject } from "./digest.ts";
 import {
   aggregateManifestUsage,
-  parseRunManifestRevisionCandidateV1,
   parseRunManifestV1,
   SENSITIVE_EXTENSION_KEY_PATTERN,
   SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
   validateManifestRetentionConsent,
   validateRunManifestRevision,
+  validateRunManifestRevisionV1,
   type RunManifestModelExecutionV1,
   type RunManifestV1,
 } from "./run-manifest.ts";
@@ -281,6 +281,89 @@ test("standalone later revisions anchor finite retention deadlines to finalizedA
   }
 });
 
+test("public standalone parsing rejects later retention authority above the original policy", () => {
+  for (const fixture of [assemblingManifestJson, finalLocalManifestJson]) {
+    for (const contextless of [false, true]) {
+      const policyCandidate: Record<string, unknown> = {
+        ...fixture,
+        revision: 2,
+        previousDigest: fixture.digest,
+        retention: {
+          ...fixture.retention,
+          effectivePolicy: "project",
+        },
+      };
+      if (contextless) {
+        delete policyCandidate.context;
+        policyCandidate.sources = [];
+      }
+
+      expectError(
+        parseRunManifestV1(recalculate(policyCandidate)),
+        "$.retention.effectivePolicy",
+        "semantic_conflict",
+      );
+
+      const deadlineCandidate: Record<string, unknown> = {
+        ...fixture,
+        revision: 2,
+        previousDigest: fixture.digest,
+        retention: {
+          ...fixture.retention,
+          status: "deletion_scheduled",
+          contentExpiresAt: "2026-08-24T20:04:00.000Z",
+          updatedAt: "2026-08-17T20:04:00.000Z",
+        },
+        deletion: {
+          status: "scheduled",
+          requestedAt: "2026-08-17T20:04:00.000Z",
+        },
+      };
+      if (contextless) {
+        delete deadlineCandidate.context;
+        deadlineCandidate.sources = [];
+      }
+      expectError(
+        parseRunManifestV1(recalculate(deadlineCandidate)),
+        "$.retention.contentExpiresAt",
+        "semantic_conflict",
+      );
+    }
+  }
+});
+
+test("the revision validator alone can parse a freshly consented bound extension", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const candidate = recalculate({
+    ...previous,
+    revision: 2,
+    previousDigest: previous.digest,
+    retention: {
+      ...previous.retention,
+      effectivePolicy: "project" as const,
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+  });
+
+  expectError(
+    validateRunManifestRevisionV1(previous, candidate, {
+      contextConsent: "project",
+    }),
+    "$.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevisionV1(previous, candidate, {
+        freshConsent: true,
+        freshConsentAt: "2026-08-16T20:05:30.000Z",
+        contextConsent: "project",
+      }),
+    ),
+    candidate,
+  );
+});
+
 test("finite retention duration counts the 2016 positive leap second", () => {
   for (const manifest of [
     validRunOnlyLeapBoundaryJson,
@@ -414,20 +497,14 @@ test("revision-only fixtures are digest-valid and fail their labeled pairwise in
     assert.equal(fixture.digest, digestProtocolObject(fixture));
   }
 
-  const badLink = expectOk(
-    parseRunManifestRevisionCandidateV1(invalidPreviousDigest),
-  );
   expectError(
-    validateRunManifestRevision(previous, badLink),
+    validateRunManifestRevision(previous, invalidPreviousDigest),
     "$.previousDigest",
     "semantic_conflict",
   );
 
-  const finalMutation = expectOk(
-    parseRunManifestRevisionCandidateV1(invalidFinalMutation),
-  );
   expectError(
-    validateRunManifestRevision(previous, finalMutation),
+    validateRunManifestRevision(previous, invalidFinalMutation),
     "$.artifacts",
     "semantic_conflict",
   );
@@ -1410,28 +1487,27 @@ test("retention consent uses context consent or the original policy ceiling", ()
 
 test("single-manifest consent validation cannot trust a later updatedAt clock", () => {
   const original = expectOk(parseRunManifestV1(finalLocalManifestJson));
-  const unverifiedRevision = expectOk(
-    parseRunManifestRevisionCandidateV1(
-      recalculate({
-        ...original,
-        revision: 2,
-        previousDigest: original.digest,
-        retention: {
-          ...original.retention,
-          status: "deletion_scheduled" as const,
-          contentExpiresAt: "2026-08-24T20:04:00.000Z",
-          updatedAt: "2026-08-17T20:04:00.000Z",
-        },
-        deletion: {
-          status: "scheduled" as const,
-          requestedAt: "2026-08-17T20:04:00.000Z",
-        },
-      }),
-    ),
-  );
+  const unverifiedRevision = recalculate({
+    ...original,
+    revision: 2,
+    previousDigest: original.digest,
+    retention: {
+      ...original.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: "2026-08-24T20:04:00.000Z",
+      updatedAt: "2026-08-17T20:04:00.000Z",
+    },
+    deletion: {
+      status: "scheduled" as const,
+      requestedAt: "2026-08-17T20:04:00.000Z",
+    },
+  });
 
   expectError(
-    validateManifestRetentionConsent(unverifiedRevision, "7-days"),
+    validateManifestRetentionConsent(
+      unverifiedRevision as unknown as RunManifestV1,
+      "7-days",
+    ),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
   );
@@ -1550,26 +1626,22 @@ test("contextless revisions ignore fictitious Context Pack retention authority",
     },
   };
   const previous = expectOk(parseRunManifestV1(recalculate(previousValue)));
-  const beyondOriginal = expectOk(
-    parseRunManifestV1(
-      recalculate({
-        ...previous,
-        revision: 3,
-        previousDigest: previous.digest,
-        retention: {
-          ...previous.retention,
-          effectivePolicy: "project" as const,
-          status: "active" as const,
-          contentExpiresAt: null,
-          updatedAt: "2026-08-16T20:08:00.000Z",
-        },
-        deletion: {
-          status: "not_scheduled" as const,
-          futureExtension: { preserve: true },
-        },
-      }),
-    ),
-  );
+  const beyondOriginal = recalculate({
+    ...previous,
+    revision: 3,
+    previousDigest: previous.digest,
+    retention: {
+      ...previous.retention,
+      effectivePolicy: "project" as const,
+      status: "active" as const,
+      contentExpiresAt: null,
+      updatedAt: "2026-08-16T20:08:00.000Z",
+    },
+    deletion: {
+      status: "not_scheduled" as const,
+      futureExtension: { preserve: true },
+    },
+  });
 
   expectError(
     validateRunManifestRevision(previous, beyondOriginal, {
@@ -1671,11 +1743,7 @@ test("revision retention deadlines are policy-bounded and monotonic", () => {
     effectivePolicy: "run-only" | "7-days",
     contentExpiresAt: string,
   ) =>
-    expectOk(
-      parseRunManifestRevisionCandidateV1(
-        manifestWithDeadline(effectivePolicy, contentExpiresAt),
-      ),
-    );
+    manifestWithDeadline(effectivePolicy, contentExpiresAt);
 
   expectError(
     parseRunManifestV1(
@@ -1706,20 +1774,16 @@ test("revision retention deadlines are policy-bounded and monotonic", () => {
     contentExpiresAt: string | null,
     updatedAt = "2026-08-17T20:01:00.000Z",
   ) =>
-    expectOk(
-      parseRunManifestRevisionCandidateV1(
-        recalculate({
-          ...scheduled,
-          revision: 3,
-          previousDigest: scheduled.digest,
-          retention: {
-            ...scheduled.retention,
-            contentExpiresAt,
-            updatedAt,
-          },
-        }),
-      ),
-    );
+    recalculate({
+      ...scheduled,
+      revision: 3,
+      previousDigest: scheduled.digest,
+      retention: {
+        ...scheduled.retention,
+        contentExpiresAt,
+        updatedAt,
+      },
+    });
 
   assert.equal(
     validateRunManifestRevision(
@@ -1800,6 +1864,134 @@ test("revision retention deadlines are policy-bounded and monotonic", () => {
     validateRunManifestRevision(scheduled, cleared, { contextConsent: "7-days" }),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
+  );
+});
+
+test("validated deadline authority carries through scheduled, partial, and completed successors", () => {
+  const original = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduled = expectOk(
+    validateRunManifestRevisionV1(original, retentionUpdateJson, {
+      contextConsent: "7-days",
+    }),
+  );
+  const extendedCandidate = recalculate({
+    ...scheduled,
+    revision: 3,
+    previousDigest: scheduled.digest,
+    retention: {
+      ...scheduled.retention,
+      contentExpiresAt: "2026-08-24T20:00:00.000Z",
+      updatedAt: "2026-08-17T20:01:00.000Z",
+    },
+  });
+  const extended = expectOk(
+    validateRunManifestRevisionV1(scheduled, extendedCandidate, {
+      freshConsent: true,
+      freshConsentAt: "2026-08-17T20:00:00.000Z",
+      contextConsent: "7-days",
+    }),
+  );
+
+  const unchangedScheduled = recalculate({
+    ...extended,
+    revision: 4,
+    previousDigest: extended.digest,
+    retention: {
+      ...extended.retention,
+      updatedAt: "2026-08-17T20:02:00.000Z",
+    },
+  });
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevisionV1(extended, unchangedScheduled, {
+        contextConsent: "7-days",
+      }),
+    ),
+    unchangedScheduled,
+  );
+
+  const shorterPartial = recalculate({
+    ...extended,
+    revision: 4,
+    previousDigest: extended.digest,
+    retention: {
+      ...extended.retention,
+      status: "deletion_pending" as const,
+      contentExpiresAt: "2026-08-23T23:00:00.000Z",
+      updatedAt: "2026-08-17T20:02:00.000Z",
+    },
+    deletion: {
+      ...extended.deletion,
+      status: "partial_failure" as const,
+    },
+  });
+  const partial = expectOk(
+    validateRunManifestRevisionV1(extended, shorterPartial, {
+      contextConsent: "7-days",
+    }),
+  );
+
+  const completedCandidate = recalculate({
+    ...partial,
+    revision: 5,
+    previousDigest: partial.digest,
+    retention: {
+      ...partial.retention,
+      status: "deleted" as const,
+      updatedAt: "2026-08-18T20:02:00.000Z",
+    },
+    deletion: {
+      ...partial.deletion,
+      status: "completed" as const,
+      completedAt: "2026-08-18T20:02:00.000Z",
+      deletedObjectCount: 1,
+      eventSequence: 2,
+    },
+  });
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevisionV1(partial, completedCandidate, {
+        contextConsent: "7-days",
+      }),
+    ),
+    completedCandidate,
+  );
+
+  const newlyExtended = recalculate({
+    ...unchangedScheduled,
+    revision: 5,
+    previousDigest: unchangedScheduled.digest,
+    retention: {
+      ...unchangedScheduled.retention,
+      contentExpiresAt: "2026-08-25T20:00:00.000Z",
+      updatedAt: "2026-08-18T20:01:00.000Z",
+    },
+  });
+  expectError(
+    validateRunManifestRevisionV1(unchangedScheduled, newlyExtended, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestRevisionV1(unchangedScheduled, newlyExtended, {
+      freshConsent: true,
+      freshConsentAt: "2026-08-17T20:00:00.000Z",
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevisionV1(unchangedScheduled, newlyExtended, {
+        freshConsent: true,
+        freshConsentAt: "2026-08-18T20:00:00.000Z",
+        contextConsent: "7-days",
+      }),
+    ),
+    newlyExtended,
   );
 });
 
@@ -2100,12 +2292,21 @@ test("revision chains reject bad links, immutable final mutations, and retention
   const next = expectOk(parseRunManifestV1(retentionUpdateJson));
 
   expectError(
-    validateRunManifestRevision(previous, { ...next, previousDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }),
+    validateRunManifestRevision(
+      previous,
+      recalculate({
+        ...next,
+        previousDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      }),
+    ),
     "$.previousDigest",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestRevision(previous, { ...next, id: "manifest_other" }),
+    validateRunManifestRevision(
+      previous,
+      recalculate({ ...next, id: "manifest_other" }),
+    ),
     "$.id",
     "semantic_conflict",
   );

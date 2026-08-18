@@ -1446,14 +1446,20 @@ function validateRetentionLifecycleRevision(
     );
   }
 
-  const deadline = validateFiniteRetentionDeadline(
-    next.retention,
-    freshConsentAt ??
-      next.finalizedAt ??
-      previous.finalizedAt ??
-      next.createdAt,
-  );
-  if (!deadline.ok) return deadline;
+  const inheritsFiniteDeadlineAuthority =
+    previousDeadline !== null &&
+    nextDeadline !== null &&
+    compareUtcTimestamps(nextDeadline, previousDeadline) <= 0;
+  if (!inheritsFiniteDeadlineAuthority) {
+    const deadline = validateFiniteRetentionDeadline(
+      next.retention,
+      freshConsentAt ??
+        next.finalizedAt ??
+        previous.finalizedAt ??
+        next.createdAt,
+    );
+    if (!deadline.ok) return deadline;
+  }
 
   if (previous.deletion.status === "completed") {
     for (const key of [
@@ -1579,10 +1585,13 @@ export function aggregateManifestUsage(
   };
 }
 
+type RunManifestParseMode = "standalone" | "revision-candidate";
+
 function parseRunManifestValueV1(
   value: unknown,
-  validateStandaloneDeadline: boolean,
+  mode: RunManifestParseMode,
 ): ProtocolParseResult<RunManifestV1> {
+  const standalone = mode === "standalone";
   const wireValue = copyProtocolJsonValue(value);
   if (!wireValue.ok) return wireValue;
 
@@ -1805,6 +1814,19 @@ function parseRunManifestValueV1(
       "revision 1 effectivePolicy must equal policy",
     );
   }
+  if (
+    standalone &&
+    !retentionDoesNotExceed(
+      retention.value.effectivePolicy,
+      retention.value.policy,
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.effectivePolicy",
+      "effectivePolicy must not exceed policy outside validated revision-chain consent",
+    );
+  }
 
   const pair = validateRetentionDeletionPair(retention.value, deletion.value);
   if (!pair.ok) return pair;
@@ -1812,7 +1834,7 @@ function parseRunManifestValueV1(
   if (!deletionRequirements.ok) return deletionRequirements;
   const clock = validateRetentionClock(retention.value);
   if (!clock.ok) return clock;
-  if (validateStandaloneDeadline) {
+  if (standalone) {
     const deadline = validateFiniteRetentionDeadline(
       retention.value,
       finalizedAt ?? createdAt.value,
@@ -1869,7 +1891,7 @@ function parseRunManifestValueV1(
 }
 
 export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManifestV1> {
-  return parseRunManifestValueV1(value, true);
+  return parseRunManifestValueV1(value, "standalone");
 }
 
 /**
@@ -1877,10 +1899,10 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
  * revision. The candidate's finite deadline is deferred to the chain validator,
  * where verified fresh consent can supply a later clock.
  */
-export function parseRunManifestRevisionCandidateV1(
+function parseRunManifestRevisionCandidateV1(
   value: unknown,
 ): ProtocolParseResult<RunManifestV1> {
-  return parseRunManifestValueV1(value, false);
+  return parseRunManifestValueV1(value, "revision-candidate");
 }
 
 export function validateManifestRetentionConsent(
@@ -1941,7 +1963,7 @@ function validateManifestRetentionCeiling(
   return pass(manifest);
 }
 
-export function validateRunManifestRevision(
+function validateParsedRunManifestRevision(
   previous: RunManifestV1,
   next: RunManifestV1,
   options: ManifestRevisionOptions = {},
@@ -2100,3 +2122,23 @@ export function validateRunManifestRevision(
 
   return pass(next);
 }
+
+/**
+ * Parses and validates one candidate revision atomically. Candidate parsing may
+ * defer standalone retention ceilings only inside this composition boundary;
+ * the linked previous revision and fresh consent checks must then authorize any
+ * extension before the parsed candidate is returned. `previous` must be the
+ * validated value returned by the standalone parser or an earlier call here.
+ */
+export function validateRunManifestRevisionV1(
+  previous: RunManifestV1,
+  candidate: unknown,
+  options: ManifestRevisionOptions = {},
+): ProtocolParseResult<RunManifestV1> {
+  const next = parseRunManifestRevisionCandidateV1(candidate);
+  if (!next.ok) return next;
+  return validateParsedRunManifestRevision(previous, next.value, options);
+}
+
+/** @deprecated Use validateRunManifestRevisionV1. */
+export const validateRunManifestRevision = validateRunManifestRevisionV1;

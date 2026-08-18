@@ -15,9 +15,15 @@
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
         "context": null,
+        "privacy": {
+          "retention": "run-only"
+        },
         "artifactManifest": {
           "context": null,
-          "sources": []
+          "sources": [],
+          "retention": {
+            "policy": "run-only"
+          }
         }
       },
       "digestTargets": ["/artifactManifest"]
@@ -126,7 +132,8 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
+        "stage": "parse",
+        "input": "run",
         "code": "semantic_conflict",
         "path": "$.artifactManifest.retention.effectivePolicy"
       }

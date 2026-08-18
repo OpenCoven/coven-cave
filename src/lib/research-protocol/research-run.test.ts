@@ -93,9 +93,7 @@ function linkedManifest(
   return linked;
 }
 
-function boundRetentionComposition(
-  effectivePolicy: "7-days" | "project",
-): { run: ResearchRunV1; contextPack: ContextPackV1 } {
+function boundRetentionComposition(): { run: ResearchRunV1; contextPack: ContextPackV1 } {
   const contextPack = expectOk(parseContextPackV1(validContextPack));
   const context = {
     ...validResearchRun.context,
@@ -109,8 +107,8 @@ function boundRetentionComposition(
       previousDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       retention: {
         ...validRunManifest.retention,
-        policy: "run-only",
-        effectivePolicy,
+        policy: "7-days",
+        effectivePolicy: "7-days",
       },
     },
     context,
@@ -121,7 +119,7 @@ function boundRetentionComposition(
       context,
       privacy: {
         ...validResearchRun.privacy,
-        retention: "run-only",
+        retention: "7-days",
       },
     }),
   );
@@ -680,7 +678,7 @@ test("run privacy cannot exceed Context Pack consent", () => {
 });
 
 test("context-bound manifest accepts retention within the Context Pack ceiling", () => {
-  const { run, contextPack } = boundRetentionComposition("7-days");
+  const { run, contextPack } = boundRetentionComposition();
 
   assert.equal(
     expectOk(validateResearchRunContextPackV1(run, contextPack)),
@@ -689,10 +687,20 @@ test("context-bound manifest accepts retention within the Context Pack ceiling",
 });
 
 test("context-bound manifest effective retention cannot exceed the Context Pack ceiling", () => {
-  const { run, contextPack } = boundRetentionComposition("project");
+  const { run, contextPack } = boundRetentionComposition();
+  const longerManifestRun = {
+    ...run,
+    artifactManifest: {
+      ...run.artifactManifest!,
+      retention: {
+        ...run.artifactManifest!.retention,
+        effectivePolicy: "project" as const,
+      },
+    },
+  };
 
   expectError(
-    validateResearchRunContextPackV1(run, contextPack),
+    validateResearchRunContextPackV1(longerManifestRun, contextPack),
     "$.artifactManifest.retention.effectivePolicy",
     "semantic_conflict",
   );
@@ -858,14 +866,14 @@ test("embedded manifests bind original run privacy retention and cloud-content c
       effectivePolicy: "7-days",
     },
   });
-  const extendedRetentionRun = expectOk(
+  expectError(
     parseResearchRunV1({
       ...runForStatus("completed", longerEffectivePolicy),
       privacy: { ...validResearchRun.privacy, retention: "run-only" },
     }),
+    "$.artifactManifest.retention.effectivePolicy",
+    "semantic_conflict",
   );
-  assert.equal(extendedRetentionRun.artifactManifest?.retention.policy, "run-only");
-  assert.equal(extendedRetentionRun.artifactManifest?.retention.effectivePolicy, "7-days");
 
   const cloudManifest = linkedManifest(validCloudRunManifest);
   expectError(
