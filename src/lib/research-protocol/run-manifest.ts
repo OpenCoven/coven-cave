@@ -35,8 +35,7 @@ const DELETION_STATUSES = ["not_scheduled", "scheduled", "pending", "completed",
 const MANIFEST_STATES = ["assembling", "final"] as const;
 const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 
-const ARTIFACT_TITLE_URI_SCHEME_RE =
-  /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|(?:about|blob|chrome|data|did|file|ftp|git|http|https|ipfs|irc|ircs|mailto|magnet|npm|s3|sftp|sms|ssh|tel|urn|vscode|ws|wss):)/i;
+const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 const FORBIDDEN_SENSITIVE_KEYS = new Set([
@@ -333,13 +332,20 @@ function parseNullableUtc(value: unknown, path: string, label: string): Protocol
   return parseUtc(value, path, label);
 }
 
+function hasArtifactTitleUriScheme(value: string): boolean {
+  const match = ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE.exec(value);
+  if (!match) return false;
+  const schemeSpecificPart = value.slice(match[0].length);
+  return schemeSpecificPart.length === 0 || !/^\s/.test(schemeSpecificPart);
+}
+
 function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<string> {
   const title = parseString(value, path, "title");
   if (!title.ok) return title;
   if (
     title.value.includes("/") ||
     title.value.includes("\\") ||
-    ARTIFACT_TITLE_URI_SCHEME_RE.test(title.value) ||
+    hasArtifactTitleUriScheme(title.value) ||
     ARTIFACT_TITLE_CONTROL_RE.test(title.value) ||
     ARTIFACT_TITLE_SECRET_RE.test(title.value)
   ) {
