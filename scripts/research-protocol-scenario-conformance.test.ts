@@ -873,6 +873,9 @@ for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
   schemaContext.set(schemaId, schema);
   schemaCheckContext[schemaId] = schema;
 }
+// TypeBox resolves external schemas by the literal reference key.
+schemaCheckContext["../opencoven.run-manifest/v1"] =
+  schemaCheckContext["opencoven.run-manifest/v1"];
 
 function validateProtocolObjectSchema(
   value: unknown,

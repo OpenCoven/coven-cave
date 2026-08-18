@@ -15,6 +15,8 @@ import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/inva
 import invalidCompletionBeforeCreationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-completion-before-creation-no-request.json" with { type: "json" };
 import invalidFinalizationChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-finalized-before-created.json" with { type: "json" };
 import invalidRetentionChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-created.json" with { type: "json" };
+import invalidArtifactAfterFinalizationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-after-finalization.json" with { type: "json" };
+import invalidSourceAfterFinalizationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-source-after-finalization.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
 import {
@@ -798,6 +800,56 @@ test("manifest finalization cannot precede manifest creation", () => {
   expectError(parseRunManifestV1(invalid), "$.finalizedAt", "semantic_conflict");
 });
 
+test("final manifest sources and artifacts cannot postdate finalization", () => {
+  for (const { fixture, path } of [
+    {
+      fixture: invalidSourceAfterFinalizationJson,
+      path: "$.sources[1].fetchedAt",
+    },
+    {
+      fixture: invalidArtifactAfterFinalizationJson,
+      path: "$.artifacts[0].createdAt",
+    },
+  ]) {
+    const invalid = withoutExpectedSchemaValid(fixture);
+    assert.equal(Value.Check(runManifestSchema, invalid), true);
+    assert.equal(invalid.digest, digestProtocolObject(invalid));
+    expectError(parseRunManifestV1(invalid), path, "semantic_conflict");
+  }
+});
+
+test("manifest source and artifact timestamps cannot predate manifest creation", () => {
+  const sourceBeforeCreation = recalculate({
+    ...finalCloudManifestJson,
+    sources: finalCloudManifestJson.sources.map((source) =>
+      source.kind === "public-evidence"
+        ? {
+            ...source,
+            fetchedAt: "2026-08-16T19:59:59.999999999Z",
+          }
+        : source,
+    ),
+  });
+  expectError(
+    parseRunManifestV1(sourceBeforeCreation),
+    "$.sources[1].fetchedAt",
+    "semantic_conflict",
+  );
+
+  const artifactBeforeCreation = recalculate({
+    ...finalCloudManifestJson,
+    artifacts: finalCloudManifestJson.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: "2026-08-16T19:59:59.999999999Z",
+    })),
+  });
+  expectError(
+    parseRunManifestV1(artifactBeforeCreation),
+    "$.artifacts[0].createdAt",
+    "semantic_conflict",
+  );
+});
+
 test("manifest retention updates cannot precede manifest creation", () => {
   const invalid = withoutExpectedSchemaValid(invalidRetentionChronologyJson);
 
@@ -1076,6 +1128,181 @@ test("post-final seven-day shortening uses the effective update timestamp as its
   expectError(
     validateRunManifestRevision(previous, overDeadline, {
       contextConsent: "project",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
+test("newly scheduled bounded deadlines cannot exceed their effective update baseline", () => {
+  const sevenDayPrevious = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const sevenDayOverDeadline = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retentionUpdateJson,
+        retention: {
+          ...retentionUpdateJson.retention,
+          contentExpiresAt: "2026-08-23T20:06:00.000000001Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(sevenDayPrevious, sevenDayOverDeadline, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const runOnlyPrevious = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...finalLocalManifestJson,
+        retention: {
+          ...finalLocalManifestJson.retention,
+          policy: "run-only" as const,
+          effectivePolicy: "run-only" as const,
+        },
+      }),
+    ),
+  );
+  const runOnlyOverDeadline = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...runOnlyPrevious,
+        revision: runOnlyPrevious.revision + 1,
+        previousDigest: runOnlyPrevious.digest,
+        retention: {
+          ...runOnlyPrevious.retention,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt: "2026-08-16T20:06:00.000000001Z",
+          updatedAt: "2026-08-16T20:06:00.000Z",
+        },
+        deletion: {
+          ...runOnlyPrevious.deletion,
+          status: "scheduled" as const,
+          requestedAt: "2026-08-16T20:06:00.000Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(runOnlyPrevious, runOnlyOverDeadline, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
+test("bounded same-policy revisions cannot move an established content deadline later", () => {
+  const previous = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const extended = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...previous,
+        revision: previous.revision + 1,
+        previousDigest: previous.digest,
+        retention: {
+          ...previous.retention,
+          status: "deletion_pending" as const,
+          contentExpiresAt: "2026-08-24T20:05:00.000Z",
+          updatedAt: "2026-08-17T20:06:00.000Z",
+        },
+        deletion: {
+          ...previous.deletion,
+          status: "pending" as const,
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previous, extended, {
+      freshConsent: true,
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const removed = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...extended,
+        retention: {
+          ...extended.retention,
+          status: "active" as const,
+          contentExpiresAt: null,
+        },
+        deletion: {
+          status: "not_scheduled" as const,
+          futureExtension: { preserve: true },
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previous, removed, {
+      freshConsent: true,
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const accelerated = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...extended,
+        retention: {
+          ...extended.retention,
+          contentExpiresAt: "2026-08-22T20:05:00.000Z",
+        },
+      }),
+    ),
+  );
+  assert.equal(
+    validateRunManifestRevision(previous, accelerated, {
+      contextConsent: "7-days",
+    }).ok,
+    true,
+  );
+
+  const runOnlyPrevious = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...previous,
+        retention: {
+          ...previous.retention,
+          effectivePolicy: "run-only" as const,
+          contentExpiresAt: previous.retention.updatedAt,
+        },
+      }),
+    ),
+  );
+  const runOnlyExtended = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...runOnlyPrevious,
+        revision: runOnlyPrevious.revision + 1,
+        previousDigest: runOnlyPrevious.digest,
+        retention: {
+          ...runOnlyPrevious.retention,
+          status: "deletion_pending" as const,
+          contentExpiresAt: "2026-08-16T20:06:00.000000001Z",
+          updatedAt: "2026-08-16T20:07:00.000Z",
+        },
+        deletion: {
+          ...runOnlyPrevious.deletion,
+          status: "pending" as const,
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(runOnlyPrevious, runOnlyExtended, {
+      contextConsent: "7-days",
     }),
     "$.retention.contentExpiresAt",
     "semantic_conflict",

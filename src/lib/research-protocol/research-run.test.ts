@@ -60,6 +60,7 @@ function expectError(
 
 const researchSchemaContext: Record<string, TSchema> = {
   [runManifestSchema.$id]: runManifestSchema as TSchema,
+  [researchRunSchema.properties.artifactManifest.$ref]: runManifestSchema as TSchema,
 };
 
 function checkResearchRunSchema(value: unknown): boolean {
@@ -961,7 +962,7 @@ test("terminal runs require final manifests and nonterminal runs permit only ass
 
   assert.deepEqual(
     researchRunSchema.properties.artifactManifest,
-    { $ref: "opencoven.run-manifest/v1" },
+    { $ref: "../opencoven.run-manifest/v1" },
   );
 });
 

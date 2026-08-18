@@ -36,6 +36,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 const schemasDir = path.join(repoRoot, "schemas/research/v1");
 const fixturesDir = path.join(schemasDir, "fixtures");
+const schemaResolutionBase = new URL("https://schemas.opencoven.test/");
 
 function readJsonFile(filePath: string): unknown {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -115,6 +116,80 @@ test("schema lookup does not resolve inherited Object.prototype names as registe
       `${name} must not resolve to a schema value`,
     );
   }
+});
+
+type ExternalSchemaReference = {
+  path: string;
+  reference: string;
+};
+
+function collectExternalSchemaReferences(
+  value: unknown,
+  currentPath = "$",
+): ExternalSchemaReference[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) =>
+      collectExternalSchemaReferences(entry, `${currentPath}[${index}]`),
+    );
+  }
+  if (!isRecord(value)) return [];
+
+  const references: ExternalSchemaReference[] = [];
+  for (const [key, entry] of Object.entries(value)) {
+    const entryPath = `${currentPath}.${key}`;
+    if (
+      key === "$ref" &&
+      typeof entry === "string" &&
+      !entry.startsWith("#")
+    ) {
+      references.push({ path: entryPath, reference: entry });
+    } else {
+      references.push(...collectExternalSchemaReferences(entry, entryPath));
+    }
+  }
+  return references;
+}
+
+test("cross-schema refs resolve to authoritative ids with standard URI resolution", () => {
+  const schemaByResolvedId = new Map(
+    [...schemaContext].map(([schemaId, schema]) => [
+      new URL(schemaId, schemaResolutionBase).href,
+      { schemaId, schema },
+    ]),
+  );
+  const resolvedReferences: Array<{
+    sourceSchemaId: string;
+    path: string;
+    reference: string;
+    targetSchemaId: string;
+  }> = [];
+
+  for (const [sourceSchemaId, schema] of schemaContext) {
+    const absoluteSourceId = new URL(sourceSchemaId, schemaResolutionBase);
+    for (const reference of collectExternalSchemaReferences(schema)) {
+      const absoluteTargetId = new URL(reference.reference, absoluteSourceId).href;
+      const target = schemaByResolvedId.get(absoluteTargetId);
+      assert.ok(
+        target,
+        `${sourceSchemaId}${reference.path}: ${reference.reference} resolves to unregistered ${absoluteTargetId}`,
+      );
+      schemaCheckContext[reference.reference] = target.schema;
+      resolvedReferences.push({
+        sourceSchemaId,
+        ...reference,
+        targetSchemaId: target.schemaId,
+      });
+    }
+  }
+
+  assert.deepEqual(resolvedReferences, [
+    {
+      sourceSchemaId: "opencoven.research-run/v1",
+      path: "$.properties.artifactManifest.$ref",
+      reference: "../opencoven.run-manifest/v1",
+      targetSchemaId: "opencoven.run-manifest/v1",
+    },
+  ]);
 });
 
 function listFixtureFiles(kind: "valid" | "invalid"): string[] {

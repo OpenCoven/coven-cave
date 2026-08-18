@@ -215,6 +215,22 @@
       },
       "digestTargets": [""]
     },
+    "partial-failure-next-extended": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "f24b9bbae5824bc848ab050c62056f8dcf73bd0c3a9bf8975d35b4cc8b8ab09c",
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2099-12-31T23:59:59.999999999Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "partial-failure-previous": {
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
@@ -288,6 +304,25 @@
           "effectivePolicy": "7-days",
           "status": "deletion_scheduled",
           "contentExpiresAt": "2026-08-23T20:06:00.000000001Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "seven-days-deadline-extension": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "84ebf583fdb3839ca0aceb9221efced4488ee2d477e4f2999626d2f7650abaf0",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2099-12-31T23:59:59.999999999Z",
           "updatedAt": "2026-08-16T20:06:00.000Z"
         },
         "deletion": {
@@ -503,6 +538,25 @@
       }
     },
     {
+      "id": "manifest.same-policy-deadline-extension",
+      "description": "A bounded effective policy cannot move its established deadline later in a linked revision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-to-seven-days",
+        "next": "seven-days-deadline-extension"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
       "id": "manifest.policy-shortening-unscheduled",
       "description": "Effective retention shortening cannot leave deletion unscheduled.",
       "validator": "run-manifest-revision",
@@ -586,6 +640,24 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.partial-failure-deadline-extension",
+      "description": "Retrying a partial deletion failure cannot silently extend its established deadline.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "partial-failure-previous",
+        "next": "partial-failure-next-extended"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
       }
     },
     {

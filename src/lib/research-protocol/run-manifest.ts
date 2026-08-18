@@ -844,6 +844,8 @@ function validateRetentionClock(
 function validateManifestChronology(
   createdAt: string,
   finalizedAt: string | undefined,
+  sources: readonly RunManifestSourceV1[],
+  artifacts: readonly ArtifactRegistrationV1[],
   retention: RunManifestRetentionV1,
   deletion: RunManifestDeletionReceiptV1,
 ): ProtocolParseResult<void> {
@@ -853,6 +855,47 @@ function validateManifestChronology(
       "$.finalizedAt",
       "finalizedAt must not precede manifest createdAt",
     );
+  }
+  for (const [index, source] of sources.entries()) {
+    if (source.kind !== "public-evidence") continue;
+    const path = `$.sources[${index}].fetchedAt`;
+    if (compareUtcTimestamps(source.fetchedAt, createdAt) < 0) {
+      return fail(
+        "semantic_conflict",
+        path,
+        "source fetchedAt must not precede manifest createdAt",
+      );
+    }
+    if (
+      finalizedAt !== undefined &&
+      compareUtcTimestamps(source.fetchedAt, finalizedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        path,
+        "final source fetchedAt must not follow manifest finalizedAt",
+      );
+    }
+  }
+  for (const [index, artifact] of artifacts.entries()) {
+    const path = `$.artifacts[${index}].createdAt`;
+    if (compareUtcTimestamps(artifact.createdAt, createdAt) < 0) {
+      return fail(
+        "semantic_conflict",
+        path,
+        "artifact createdAt must not precede manifest createdAt",
+      );
+    }
+    if (
+      finalizedAt !== undefined &&
+      compareUtcTimestamps(artifact.createdAt, finalizedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        path,
+        "final artifact createdAt must not follow manifest finalizedAt",
+      );
+    }
   }
   if (compareUtcTimestamps(retention.updatedAt, createdAt) < 0) {
     return fail(
@@ -940,21 +983,12 @@ function validateManifestChronology(
   return pass(undefined);
 }
 
-function validateRetentionShorteningDeadline(
+function validateRetentionDeadlineCeiling(
   retention: RunManifestRetentionV1,
-  deletion: RunManifestDeletionReceiptV1,
 ): ProtocolParseResult<void> {
   const contentExpiresAt = retention.contentExpiresAt;
-  const requestedAt = deletion.requestedAt;
-  if (!isUtcTimestamp(contentExpiresAt) || !isUtcTimestamp(requestedAt)) {
+  if (!isUtcTimestamp(contentExpiresAt)) {
     return pass(undefined);
-  }
-  if (compareUtcTimestamps(requestedAt, retention.updatedAt) !== 0) {
-    return fail(
-      "semantic_conflict",
-      "$.deletion.requestedAt",
-      "retention shortening requires requestedAt and retention.updatedAt to identify the same instant",
-    );
   }
 
   let deadline: string | undefined;
@@ -975,6 +1009,24 @@ function validateRetentionShorteningDeadline(
     );
   }
   return pass(undefined);
+}
+
+function validateRetentionShorteningDeadline(
+  retention: RunManifestRetentionV1,
+  deletion: RunManifestDeletionReceiptV1,
+): ProtocolParseResult<void> {
+  const requestedAt = deletion.requestedAt;
+  if (!isUtcTimestamp(retention.contentExpiresAt) || !isUtcTimestamp(requestedAt)) {
+    return pass(undefined);
+  }
+  if (compareUtcTimestamps(requestedAt, retention.updatedAt) !== 0) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "retention shortening requires requestedAt and retention.updatedAt to identify the same instant",
+    );
+  }
+  return validateRetentionDeadlineCeiling(retention);
 }
 
 function manifestDigest(value: unknown): string {
@@ -1359,6 +1411,8 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   const chronology = validateManifestChronology(
     createdAt.value,
     finalizedAt,
+    sources,
+    artifacts,
     retention.value,
     deletion.value,
   );
@@ -1650,6 +1704,29 @@ export function validateRunManifestRevision(
     }
     const deadline = validateRetentionShorteningDeadline(next.retention, next.deletion);
     if (!deadline.ok) return deadline;
+  } else {
+    const deadline = validateRetentionDeadlineCeiling(next.retention);
+    if (!deadline.ok) return deadline;
+  }
+
+  if (
+    next.retention.effectivePolicy === previous.retention.effectivePolicy &&
+    next.retention.effectivePolicy !== "project" &&
+    isUtcTimestamp(previous.retention.contentExpiresAt)
+  ) {
+    if (
+      !isUtcTimestamp(next.retention.contentExpiresAt) ||
+      compareUtcTimestamps(
+        next.retention.contentExpiresAt,
+        previous.retention.contentExpiresAt,
+      ) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        `contentExpiresAt cannot be removed or move later while effectivePolicy remains ${next.retention.effectivePolicy}`,
+      );
+    }
   }
 
   const consent = validateManifestRetentionConsent(next, options?.contextConsent);
