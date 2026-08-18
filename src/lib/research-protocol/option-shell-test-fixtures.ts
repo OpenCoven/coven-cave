@@ -1,4 +1,14 @@
 type ObjectFactory = readonly [label: string, create: () => object];
+type IntegrityOperation = readonly [
+  label: string,
+  apply: (value: object) => object,
+];
+
+const nonExtensibleIntegrityOperations: readonly IntegrityOperation[] = [
+  ["preventExtensions", Object.preventExtensions],
+  ["sealed", Object.seal],
+  ["frozen", Object.freeze],
+];
 
 function availableWebObjectFactories(): ObjectFactory[] {
   const factories: ObjectFactory[] = [];
@@ -138,6 +148,50 @@ export function spoofedWebOptionShells(
       Object.assign(value, properties);
       values.push([
         `${label} with ${prototype === null ? "null" : "Object"} prototype`,
+        value,
+      ]);
+    }
+  }
+  return values;
+}
+
+export function nonExtensibleSpoofedFetchOptionShells(
+  properties: Readonly<Record<string, unknown>>,
+): Array<readonly [label: string, value: object]> {
+  const values: Array<readonly [string, object]> = [];
+  const fetchFamily = new Set(["Headers", "Request", "Response", "FormData"]);
+  for (const [label, create] of availableWebObjectFactories()) {
+    if (!fetchFamily.has(label)) continue;
+    for (const prototype of [Object.prototype, null]) {
+      for (const [integrityLabel, applyIntegrity] of nonExtensibleIntegrityOperations) {
+        const value = create();
+        Object.setPrototypeOf(value, prototype);
+        Object.assign(value, properties);
+        applyIntegrity(value);
+        values.push([
+          `${integrityLabel} ${label} with ${
+            prototype === null ? "null" : "Object"
+          } prototype`,
+          value,
+        ]);
+      }
+    }
+  }
+  return values;
+}
+
+export function nonExtensibleOrdinaryOptionShells(
+  properties: Readonly<Record<string, unknown>>,
+): Array<readonly [label: string, value: object]> {
+  const values: Array<readonly [string, object]> = [];
+  for (const prototype of [Object.prototype, null]) {
+    for (const [integrityLabel, applyIntegrity] of nonExtensibleIntegrityOperations) {
+      const value = Object.assign(Object.create(prototype), properties) as object;
+      applyIntegrity(value);
+      values.push([
+        `${integrityLabel} ordinary ${
+          prototype === null ? "null" : "Object"
+        } prototype`,
         value,
       ]);
     }

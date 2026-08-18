@@ -41,7 +41,11 @@ import {
   isUtcTimestamp,
   parseResearchContextBindingV1,
 } from "./common.ts";
-import { spoofedWebOptionShells } from "./option-shell-test-fixtures.ts";
+import {
+  nonExtensibleOrdinaryOptionShells,
+  nonExtensibleSpoofedFetchOptionShells,
+  spoofedWebOptionShells,
+} from "./option-shell-test-fixtures.ts";
 import {
   parseRunManifestV1,
   type RunManifestV1,
@@ -1532,6 +1536,82 @@ test("research-run option roots reject prototype-spoofed Web exotics with enumer
   }
 });
 
+test("research-run option roots reject non-extensible prototype-spoofed fetch Web exotics", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const optionFields = {
+    manifestHistory: [root, tip],
+    authorizedFreshConsentAt: [freshConsentAt],
+  };
+
+  for (
+    const [label, options] of nonExtensibleSpoofedFetchOptionShells(optionFields)
+  ) {
+    const result = validateResearchRunContextPackV1(
+      run,
+      contextPack,
+      options as ResearchRunCompositionOptionsV1,
+    );
+    assert.equal(result.ok, false, label);
+    if (result.ok) continue;
+    assert.equal(result.error.path, "$.options", label);
+    assert.equal(result.error.code, "invalid_value", label);
+  }
+});
+
+test("fetch Web option probes preserve prototypes and leave bodies unread", async () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const factories: Array<readonly [string, () => Request | Response]> = [];
+  if (typeof Request === "function") {
+    factories.push([
+      "Request",
+      () =>
+        new Request("https://example.com/research", {
+          method: "POST",
+          body: "research",
+        }),
+    ]);
+  }
+  if (typeof Response === "function") {
+    factories.push(["Response", () => new Response("research")]);
+  }
+
+  for (const [label, create] of factories) {
+    for (const prototype of [Object.prototype, null]) {
+      const value = create();
+      const body = value.body;
+      assert.ok(body, label);
+      Object.setPrototypeOf(value, prototype);
+      Object.assign(value, {
+        manifestHistory: [root, tip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      });
+      Object.freeze(value);
+
+      const result = validateResearchRunContextPackV1(
+        run,
+        contextPack,
+        value as ResearchRunCompositionOptionsV1,
+      );
+      assert.equal(result.ok, false, label);
+      assert.strictEqual(Object.getPrototypeOf(value), prototype, label);
+      assert.equal(body.locked, false, label);
+
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += decoder.decode(chunk.value, { stream: true });
+      }
+      text += decoder.decode();
+      assert.equal(text, "research", label);
+    }
+  }
+});
+
 test("research-run option collection containers reject exotic arrays before iteration", () => {
   for (const field of ["manifestHistory", "authorizedFreshConsentAt"] as const) {
     const { run, contextPack, root, tip, freshConsentAt } =
@@ -1569,16 +1649,24 @@ test("ordinary frozen research-run options and collection arrays preserve run id
     run,
   );
 
-  const nullPrototypeOptions = Object.assign(Object.create(null), {
-    manifestHistory: [root, tip],
-    authorizedFreshConsentAt: [freshConsentAt],
-  }) as ResearchRunCompositionOptionsV1;
-  assert.strictEqual(
-    expectOk(
-      validateResearchRunContextPackV1(run, contextPack, nullPrototypeOptions),
-    ),
-    run,
-  );
+  for (
+    const [label, ordinaryOptions] of nonExtensibleOrdinaryOptionShells({
+      manifestHistory: [root, tip],
+      authorizedFreshConsentAt: [freshConsentAt],
+    })
+  ) {
+    assert.strictEqual(
+      expectOk(
+        validateResearchRunContextPackV1(
+          run,
+          contextPack,
+          ordinaryOptions as ResearchRunCompositionOptionsV1,
+        ),
+      ),
+      run,
+      label,
+    );
+  }
 });
 
 test("manifest histories allow nested immutable references shared across revisions", () => {

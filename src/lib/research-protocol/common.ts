@@ -39,12 +39,12 @@ const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 const PRINTABLE_ASCII_PROPERTY_NAME_RE = /^[\u0020-\u007e]*$/;
 const arrayIsArrayIntrinsic = Array.isArray;
 const arrayPrototypeIntrinsic = Array.prototype;
+const arrayPopIntrinsic = Array.prototype.pop;
+const arrayPushIntrinsic = Array.prototype.push;
 const objectPrototypeIntrinsic = Object.prototype;
 const getPrototypeOfIntrinsic = Object.getPrototypeOf;
 const getOwnPropertyDescriptorIntrinsic = Object.getOwnPropertyDescriptor;
 const defineOwnPropertyIntrinsic = Object.defineProperty;
-const setPrototypeOfIntrinsic = Object.setPrototypeOf;
-const objectIsExtensibleIntrinsic = Object.isExtensible;
 const reflectOwnKeysIntrinsic = Reflect.ownKeys;
 const reflectApplyIntrinsic = Reflect.apply;
 const objectHasOwnIntrinsic = Object.hasOwn;
@@ -53,6 +53,9 @@ const objectToStringIntrinsic = Object.prototype.toString;
 const symbolToStringTagIntrinsic = Symbol.toStringTag;
 const functionHasInstanceIntrinsic = Function.prototype[Symbol.hasInstance];
 const typeErrorIntrinsic = TypeError;
+const weakSetIntrinsic = WeakSet;
+const weakSetHasIntrinsic = WeakSet.prototype.has;
+const weakSetAddIntrinsic = WeakSet.prototype.add;
 const emptyArgumentsIntrinsic = Object.freeze([]) as readonly unknown[];
 type IntrinsicObjectBrandCheck = (value: unknown) => boolean;
 const intrinsicObjectBrandChecks = Object.values(nodeUtilTypes).filter(
@@ -61,9 +64,60 @@ const intrinsicObjectBrandChecks = Object.values(nodeUtilTypes).filter(
 );
 
 type WebIntrinsicObjectBrandProbe = {
-  prototype: object;
   invoke: (value: object) => void;
 };
+
+function canStructuredCloneWithoutUserCode(value: object): boolean {
+  const seen = new weakSetIntrinsic<object>();
+  const pending = [value];
+  while (pending.length > 0) {
+    const current = reflectApplyIntrinsic(
+      arrayPopIntrinsic,
+      pending,
+      emptyArgumentsIntrinsic,
+    )!;
+    if (reflectApplyIntrinsic(weakSetHasIntrinsic, seen, [current])) continue;
+    reflectApplyIntrinsic(weakSetAddIntrinsic, seen, [current]);
+    if (isProxyIntrinsic(current)) return false;
+
+    const isArray = arrayIsArrayIntrinsic(current);
+    const prototype = getPrototypeOfIntrinsic(current);
+    if (
+      isArray
+        ? prototype !== arrayPrototypeIntrinsic
+        : prototype !== objectPrototypeIntrinsic && prototype !== null
+    ) {
+      return false;
+    }
+    for (let index = 0; index < intrinsicObjectBrandChecks.length; index += 1) {
+      if (intrinsicObjectBrandChecks[index]!(current)) return false;
+    }
+
+    for (const key of reflectOwnKeysIntrinsic(current)) {
+      if (isArray && key === "length") continue;
+      if (typeof key === "symbol") return false;
+      const descriptor = getOwnPropertyDescriptorIntrinsic(current, key);
+      if (
+        !descriptor
+        || !descriptor.enumerable
+        || !objectHasOwnIntrinsic(descriptor, "value")
+      ) {
+        return false;
+      }
+      const propertyValue = descriptor.value;
+      if (
+        typeof propertyValue === "function"
+        || typeof propertyValue === "symbol"
+      ) {
+        return false;
+      }
+      if (typeof propertyValue === "object" && propertyValue !== null) {
+        reflectApplyIntrinsic(arrayPushIntrinsic, pending, [propertyValue]);
+      }
+    }
+  }
+  return true;
+}
 
 function dataPropertyValue(
   object: object,
@@ -91,7 +145,6 @@ function captureReceiverBrandProbe(
   const member = descriptor?.[memberKind];
   if (typeof member !== "function") return;
   probes.push({
-    prototype,
     invoke(value) {
       reflectApplyIntrinsic(member, value, argumentsList);
     },
@@ -116,9 +169,51 @@ function captureArgumentBrandProbe(
     return;
   }
   probes.push({
-    prototype,
     invoke(value) {
       reflectApplyIntrinsic(member, Constructor, [value]);
+    },
+  });
+}
+
+function captureUncloneableHostSlotProbe(
+  probes: WebIntrinsicObjectBrandProbe[],
+  globalObject: object,
+): void {
+  const structuredCloneIntrinsic = dataPropertyValue(
+    globalObject,
+    "structuredClone",
+  );
+  if (typeof structuredCloneIntrinsic !== "function") return;
+
+  let dataCloneErrorPrototype: object;
+  try {
+    reflectApplyIntrinsic(structuredCloneIntrinsic, undefined, [
+      captureUncloneableHostSlotProbe,
+    ]);
+    return;
+  } catch (error) {
+    if (typeof error !== "object" || error === null) return;
+    dataCloneErrorPrototype = getPrototypeOfIntrinsic(error);
+  }
+
+  probes.push({
+    invoke(value) {
+      if (!canStructuredCloneWithoutUserCode(value)) {
+        throw new typeErrorIntrinsic();
+      }
+      try {
+        reflectApplyIntrinsic(structuredCloneIntrinsic, undefined, [value]);
+      } catch (error) {
+        if (
+          typeof error === "object"
+          && error !== null
+          && getPrototypeOfIntrinsic(error) === dataCloneErrorPrototype
+        ) {
+          return;
+        }
+        throw error;
+      }
+      throw new typeErrorIntrinsic();
     },
   });
 }
@@ -155,17 +250,15 @@ function captureWebIntrinsicObjectBrandProbes(): readonly WebIntrinsicObjectBran
     probes,
     globalObject,
     "Headers",
-    "get",
+    "entries",
     "value",
-    ["x-coven-intrinsic-brand-probe"],
   );
   captureReceiverBrandProbe(
     probes,
     globalObject,
     "FormData",
-    "has",
+    "entries",
     "value",
-    ["x-coven-intrinsic-brand-probe"],
   );
 
   const intl = dataPropertyValue(globalObject, "Intl");
@@ -214,6 +307,11 @@ function captureWebIntrinsicObjectBrandProbes(): readonly WebIntrinsicObjectBran
     }
   }
 
+  // Node's fetch-family wrappers preflight the current prototype chain before
+  // private-slot access. Its clone intrinsic checks their uncloneable host slot
+  // directly without changing prototypes or consuming request/response bodies.
+  captureUncloneableHostSlotProbe(probes, globalObject);
+
   return Object.freeze(probes);
 }
 
@@ -228,7 +326,7 @@ function isExactIntrinsicTypeError(error: unknown): boolean {
   );
 }
 
-function directlyHasWebIntrinsicObjectBrand(
+function hasWebIntrinsicObjectBrand(
   value: object,
   probe: WebIntrinsicObjectBrandProbe,
 ): boolean {
@@ -238,36 +336,6 @@ function directlyHasWebIntrinsicObjectBrand(
   } catch (error) {
     if (!isExactIntrinsicTypeError(error)) throw error;
     return false;
-  }
-}
-
-function hasWebIntrinsicObjectBrand(
-  value: object,
-  originalPrototype: object | null,
-  probe: WebIntrinsicObjectBrandProbe,
-): boolean {
-  if (directlyHasWebIntrinsicObjectBrand(value, probe)) return true;
-
-  if (
-    originalPrototype === probe.prototype
-    || !objectIsExtensibleIntrinsic(value)
-  ) {
-    return false;
-  }
-
-  // Some Web IDL implementations check the prototype chain before internal
-  // slots, so expose the captured prototype only for the synchronous probe.
-  setPrototypeOfIntrinsic(value, probe.prototype);
-  try {
-    try {
-      probe.invoke(value);
-      return true;
-    } catch (error) {
-      if (!isExactIntrinsicTypeError(error)) throw error;
-      return false;
-    }
-  } finally {
-    setPrototypeOfIntrinsic(value, originalPrototype);
   }
 }
 const EXISTING_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
@@ -694,7 +762,6 @@ export function snapshotProtocolObjectProperties(
     if (
       hasWebIntrinsicObjectBrand(
         value,
-        prototype,
         webIntrinsicObjectBrandProbes[index]!,
       )
     ) {
