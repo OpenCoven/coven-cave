@@ -30,8 +30,9 @@ export type RetentionPolicyV1 = keyof typeof RETENTION_ORDER;
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const OPAQUE_ID_BODY_RE = /^[A-Za-z0-9_-]+$/;
-const UTC_TIMESTAMP_RE =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
+export const UTC_TIMESTAMP_PATTERN =
+  String.raw`^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d|23:59:60)(?:\.\d{1,9})?Z$`;
+const UTC_TIMESTAMP_RE = new RegExp(UTC_TIMESTAMP_PATTERN);
 const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,16 +41,22 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function isUtcTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
-  const match = UTC_TIMESTAMP_RE.exec(value);
-  if (!match) return false;
+  if (!UTC_TIMESTAMP_RE.test(value)) return false;
 
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6]);
-  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const hour = Number(value.slice(11, 13));
+  const minute = Number(value.slice(14, 16));
+  const second = Number(value.slice(17, 19));
+  if (
+    month < 1 ||
+    month > 12 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 60 ||
+    (second === 60 && (hour !== 23 || minute !== 59))
+  ) {
     return false;
   }
 

@@ -226,6 +226,8 @@ test("protocol timestamps accept UTC RFC 3339 with zero through nine fractional 
     "2026-08-15T20:00:00Z",
     "2026-08-15T20:00:00.1Z",
     "2026-08-15T20:00:00.123456789Z",
+    "2016-12-31T23:59:60Z",
+    "2016-12-31T23:59:60.123456789Z",
   ]) {
     const pack = {
       ...validContextPack,
@@ -253,6 +255,13 @@ test("protocol timestamps reject offsets, invalid values, noncanonical syntax, a
     "2026-08-15T24:00:00Z",
     "2026-08-15T20:60:00Z",
     "2026-08-15T20:00:60Z",
+    "2016-12-31T22:59:60Z",
+    "2016-12-31T23:58:60Z",
+    "2016-12-31T23:59:61Z",
+    "2016-12-31T23:59:60.1234567890Z",
+    "2016-12-31T23:59:60z",
+    "2016-12-31T23:59:60+00:00",
+    "2016-12-31 23:59:60Z",
   ]) {
     const pack = { ...validContextPack, createdAt: timestamp };
     pack.digest = digestProtocolObject(pack);
