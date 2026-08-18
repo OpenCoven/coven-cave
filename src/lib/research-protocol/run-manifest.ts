@@ -330,7 +330,11 @@ export function isCanonicalPublicHttpUrl(value: string): boolean {
     : value.startsWith("http://")
       ? "http://".length
       : -1;
-  if (authorityStart < 0 || CANONICAL_EVIDENCE_URL_WHITESPACE_RE.test(value)) {
+  if (
+    authorityStart < 0
+    || CANONICAL_EVIDENCE_URL_WHITESPACE_RE.test(value)
+    || value.includes("\\")
+  ) {
     return false;
   }
 
@@ -366,7 +370,7 @@ function parseCanonicalEvidenceUrl(
     return fail(
       "invalid_value",
       path,
-      "canonicalUrl must be a lowercase, absolute, credential-free HTTP(S) URL with a hostname and no whitespace",
+      "canonicalUrl must be a lowercase, absolute, credential-free HTTP(S) URL with a hostname and no whitespace or backslashes",
     );
   }
   return canonicalUrl;

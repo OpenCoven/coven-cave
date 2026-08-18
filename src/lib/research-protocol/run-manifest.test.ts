@@ -1058,6 +1058,8 @@ test("canonical public HTTP URL predicate follows the parser contract", () => {
     "https://2001:db8::1/",
     "https://alice:redacted@example.test/evidence",
     "https://@example.test/evidence",
+    "https://example.test\\path:segment",
+    "https://example.test\\\\path:segment",
   ]) {
     assert.equal(isCanonicalPublicHttpUrl(canonicalUrl), false, canonicalUrl || "<empty>");
   }
@@ -1106,6 +1108,8 @@ test("public evidence canonical URLs reject non-HTTP, non-lexical, malformed, wh
     ["https://[2001:db8::1/", false],
     ["https://2001:db8::1/", false],
     ["https://@example.test/evidence", false],
+    ["https://example.test\\path:segment", false],
+    ["https://example.test\\\\path:segment", false],
     ["https://researcher:secret@example.test/report", true],
   ] as const) {
     const candidate = recalculate({
