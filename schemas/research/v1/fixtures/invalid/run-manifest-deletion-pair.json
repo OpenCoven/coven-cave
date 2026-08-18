@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_final_local_01",
   "runId": "run_final_local_01",
-  "digest": "64f85b90973a5b894c8ce9539cd031f6c93286f40579716d0c3ff315a385be48",
+  "digest": "8c81bb43dc3e950bf10cf0d4fed314ba86b6aea321d1171d04c2ca92327d8650",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -55,8 +55,8 @@
   "retention": {
     "policy": "7-days",
     "effectivePolicy": "7-days",
-    "status": "deleted",
-    "contentExpiresAt": null,
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2026-08-23T20:04:00.000Z",
     "updatedAt": "2026-08-16T20:05:00.000Z",
     "futureExtension": {
       "preserve": true
@@ -64,6 +64,7 @@
   },
   "deletion": {
     "status": "not_scheduled",
+    "requestedAt": "2026-08-16T20:05:00.000Z",
     "futureExtension": {
       "preserve": true
     }

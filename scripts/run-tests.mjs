@@ -1755,10 +1755,9 @@ export const SUITES = {
     "src/components/chat-list-mobile-rail-port.test.ts",
     "src/components/chat-artifact-viewer.test.ts",
   ],
-  // Cross-environment conformance (#1990). Runs on the ubuntu/windows/macos CI
-  // matrix via `pnpm test:conformance` — the SAME assertions on every OS. Kept
-  // out of the app/api/mobile suites (the neutral Linux baseline) on purpose;
-  // the matrix is where per-OS behavior is verified.
+  // Cross-environment conformance (#1990). Release CI runs the SAME assertions
+  // on ubuntu/windows/macos, and normal pull-request CI runs them on Ubuntu.
+  // Keep this separate from the broader app/api/mobile suites.
   conformance: [
     "scripts/cross-environment.test.ts",
     "scripts/research-protocol-conformance.test.ts",

@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_final_cloud_01",
   "runId": "run_final_cloud_01",
-  "digest": "52300cb34e2c82872c616952c7e1424a55bd64e6213a9f8c018c423ac8e95fc3",
+  "digest": "509747792b70e50a9efbc6a02271b8c0b92f5d449d6550da646ac3bf3be0908e",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -29,7 +29,7 @@
       "id": "evidence_public_01",
       "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "canonicalUrl": "https://example.test/research",
+      "canonicalUrl": "https://example.com/research",
       "fetchedAt": "2026-08-16T20:07:00.000Z",
       "futureExtension": {
         "preserve": true

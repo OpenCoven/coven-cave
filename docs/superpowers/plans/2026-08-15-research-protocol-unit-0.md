@@ -1235,13 +1235,15 @@ When `manifest.context` is present, `contextConsent` is required. When no contex
 6. A final revision remains final and preserves `finalizedAt`.
 7. After finalization, canonical values for `context`, `sources`, `artifacts`, `modelExecutions`, `usage`, and `retention.policy` are unchanged.
 8. After finalization, only `retention.effectivePolicy`, retention status/timestamps, deletion fields, `revision`, `previousDigest`, and `digest` may differ.
-9. Effective retention lengthening requires the caller to pass `freshConsent: true`.
+9. Effective retention or deadline lengthening requires `freshConsent: true`
+   and a `freshConsentAt` timestamp newer than the prior revision.
 
 Use this signature for rule 9:
 
 ```ts
 export type ManifestRevisionOptions = {
   freshConsent?: boolean;
+  freshConsentAt?: string;
   contextConsent?: RetentionPolicyV1;
 };
 

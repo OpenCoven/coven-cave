@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -19,6 +20,14 @@ import {
   parseResearchModelReceiptV1,
   type ResearchModelReceiptV1,
 } from "./topic-discovery.ts";
+import {
+  validateSafeExtensionKeys as validateSensitiveObjectKeys,
+} from "./privacy-extension.ts";
+
+export {
+  SENSITIVE_EXTENSION_KEY_PATTERN,
+  SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
+} from "./privacy-extension.ts";
 
 const RUN_MANIFEST_SCHEMA = "opencoven.run-manifest/v1";
 const RUN_MANIFEST_SCHEMA_RE = /^opencoven\.run-manifest\/v(\d+)$/;
@@ -38,53 +47,6 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-const SENSITIVE_EXTENSION_KEY_TOKENS = [
-  "excerpt",
-  "text",
-  "content",
-  "blob",
-  "filename",
-  "localpath",
-  "filepath",
-  "path",
-  "credential",
-  "credentials",
-  "secret",
-  "objectkey",
-  "storagekey",
-  "bucketkey",
-  "deletedcontent",
-] as const;
-const SENSITIVE_EXTENSION_KEY_VARIANTS = [
-  "prompt",
-  ...SENSITIVE_EXTENSION_KEY_TOKENS
-    .filter((token) => token !== "credentials")
-    .map((token) => `${token}s`),
-] as const;
-
-function caseInsensitiveTokenPattern(token: string): string {
-  return [...token]
-    .map((character) => `[${character}${character.toUpperCase()}]`)
-    .join("");
-}
-
-const SENSITIVE_EXTENSION_TOKEN_PATTERN = SENSITIVE_EXTENSION_KEY_TOKENS
-  .map(caseInsensitiveTokenPattern)
-  .join("|");
-const SENSITIVE_EXTENSION_CAMEL_TOKEN_PATTERN = SENSITIVE_EXTENSION_KEY_TOKENS
-  .map((token) => `${token[0]!.toUpperCase()}${caseInsensitiveTokenPattern(token.slice(1))}`)
-  .join("|");
-export const SENSITIVE_EXTENSION_KEY_PATTERN =
-  `(?:^(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})|` +
-  `(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})$|` +
-  `(?:^|[_.-])(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})(?:[_.-]|$)|` +
-  `(?:^|[_.-]|[a-z0-9])(?:${SENSITIVE_EXTENSION_CAMEL_TOKEN_PATTERN})(?:[A-Z0-9_.-]|$))`;
-export const SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN =
-  `(?:${SENSITIVE_EXTENSION_KEY_VARIANTS.map(caseInsensitiveTokenPattern).join("|")})`;
-const SENSITIVE_EXTENSION_KEY_RE = new RegExp(
-  `(?:${SENSITIVE_EXTENSION_KEY_PATTERN})|(?:${SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN})`,
-);
-const NO_DECLARED_FIELDS: ReadonlySet<string> = new Set();
 const RUN_MANIFEST_FIELDS = new Set([
   "schema",
   "id",
@@ -254,6 +216,7 @@ export type RunManifestV1 = {
 
 export type ManifestRevisionOptions = {
   freshConsent?: boolean;
+  freshConsentAt?: string;
   contextConsent?: RetentionPolicyV1;
 };
 
@@ -269,36 +232,6 @@ function indexPath(path: string, index: number): string {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
-}
-
-function validateSensitiveObjectKeys(
-  value: unknown,
-  path: string,
-  declaredFields: ReadonlySet<string> = NO_DECLARED_FIELDS,
-): ProtocolParseResult<void> {
-  if (Array.isArray(value)) {
-    for (const [index, entry] of value.entries()) {
-      const nested = validateSensitiveObjectKeys(entry, indexPath(path, index));
-      if (!nested.ok) return nested;
-    }
-    return pass(undefined);
-  }
-  if (!isRecord(value)) return pass(undefined);
-
-  for (const key of Object.keys(value)) {
-    if (declaredFields.has(key)) continue;
-    const keyPath = childPath(path, key);
-    if (SENSITIVE_EXTENSION_KEY_RE.test(key)) {
-      return fail(
-        "semantic_conflict",
-        keyPath,
-        `Sensitive manifest extensions must not contain ${key}`,
-      );
-    }
-    const nested = validateSensitiveObjectKeys(value[key], keyPath);
-    if (!nested.ok) return nested;
-  }
-  return pass(undefined);
 }
 
 function validateModelReceiptExtensionKeys(
@@ -459,6 +392,126 @@ function parseUtc(value: unknown, path: string, label: string): ProtocolParseRes
   return pass(value);
 }
 
+function isPublicIpv4(hostname: string): boolean {
+  const octets = hostname.split(".").map(Number);
+  if (
+    octets.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  ) {
+    return false;
+  }
+  const [first, second, third] = octets as [number, number, number, number];
+  return !(
+    first === 0 ||
+    first === 10 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    first === 127 ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 0 && third === 0) ||
+    (first === 192 && second === 0 && third === 2) ||
+    (first === 192 && second === 168) ||
+    (first === 198 && (second === 18 || second === 19)) ||
+    (first === 198 && second === 51 && third === 100) ||
+    (first === 203 && second === 0 && third === 113) ||
+    first >= 224
+  );
+}
+
+function isPublicHostname(hostname: string): boolean {
+  const normalized = hostname
+    .toLowerCase()
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .replace(/\.$/, "");
+  if (/^\d+(?:\.\d+){3}$/.test(normalized)) {
+    return isPublicIpv4(normalized);
+  }
+  if (normalized.includes(":")) {
+    return !(
+      normalized === "::" ||
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      normalized.startsWith("fe") ||
+      normalized.startsWith("ff") ||
+      normalized.startsWith("2001:db8:") ||
+      normalized.startsWith("::ffff:")
+    );
+  }
+
+  if (!normalized.includes(".")) return false;
+  if (
+    normalized.length > 253 ||
+    normalized
+      .split(".")
+      .some(
+        (label) =>
+          label.length === 0 ||
+          label.length > 63 ||
+          !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label),
+      )
+  ) {
+    return false;
+  }
+  return ![
+    "localhost",
+    "local",
+    "localdomain",
+    "internal",
+    "home",
+    "lan",
+    "test",
+    "invalid",
+    "example",
+  ].some((suffix) => normalized === suffix || normalized.endsWith(`.${suffix}`));
+}
+
+function parsePublicCanonicalUrl(
+  value: unknown,
+  path: string,
+): ProtocolParseResult<string> {
+  const parsedString = parseString(value, path, "canonicalUrl");
+  if (!parsedString.ok) return parsedString;
+  const candidate = parsedString.value;
+  if (
+    candidate.length === 0 ||
+    candidate !== candidate.trim() ||
+    /[\u0000-\u001f\u007f]/.test(candidate) ||
+    candidate.includes("#") ||
+    !/^[hH][tT][tT][pP][sS]?:\/\//.test(candidate)
+  ) {
+    return fail(
+      "invalid_value",
+      path,
+      "canonicalUrl must be an absolute public HTTP(S) URL without userinfo or fragments",
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return fail("invalid_value", path, "canonicalUrl must be a valid absolute URL");
+  }
+  const authority = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#]*)/.exec(candidate)?.[1] ?? "";
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    authority.includes("@") ||
+    parsed.hostname === "" ||
+    !isPublicHostname(parsed.hostname)
+  ) {
+    return fail(
+      "invalid_value",
+      path,
+      "canonicalUrl must identify a public HTTP(S) host without userinfo",
+    );
+  }
+  return pass(candidate);
+}
+
 function parseNullableUtc(value: unknown, path: string, label: string): ProtocolParseResult<string | null> {
   if (value === null) return pass(null);
   return parseUtc(value, path, label);
@@ -568,10 +621,9 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
 
   const canonicalUrlField = parseRequiredField(object.value, "canonicalUrl", path);
   if (!canonicalUrlField.ok) return canonicalUrlField;
-  const canonicalUrl = parseString(
+  const canonicalUrl = parsePublicCanonicalUrl(
     canonicalUrlField.value,
     childPath(path, "canonicalUrl"),
-    "canonicalUrl",
   );
   if (!canonicalUrl.ok) return canonicalUrl;
 
@@ -973,6 +1025,13 @@ function validateDeletionRequirements(
         return fail("missing_field", `$.deletion.${key}`, `Completed deletion requires ${key}`);
       }
     }
+    if (compareUtcTimestamps(deletion.completedAt!, deletion.requestedAt!) < 0) {
+      return fail(
+        "semantic_conflict",
+        "$.deletion.completedAt",
+        "completedAt must not be earlier than requestedAt",
+      );
+    }
   }
   return pass(undefined);
 }
@@ -1068,6 +1127,213 @@ const MUTABLE_DELETION_FIELDS = new Set([
   "retainedAuditUntil",
   "eventSequence",
 ]);
+const RETENTION_STATUS_ORDER = {
+  active: 0,
+  deletion_scheduled: 1,
+  deletion_pending: 2,
+  deleted: 3,
+} as const;
+const DELETION_STATUS_ORDER = {
+  not_scheduled: 0,
+  scheduled: 1,
+  pending: 2,
+  partial_failure: 2,
+  completed: 3,
+} as const;
+const RETENTION_DURATION_SECONDS = {
+  "run-only": 24 * 60 * 60,
+  "7-days": 7 * 24 * 60 * 60,
+} as const;
+
+function utcTimestampNanoseconds(value: string): bigint {
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const hour = Number(value.slice(11, 13));
+  const minute = Number(value.slice(14, 16));
+  const second = Number(value.slice(17, 19));
+  const fractionStart = value.indexOf(".");
+  const fraction =
+    fractionStart === -1
+      ? BigInt(0)
+      : BigInt(value.slice(fractionStart + 1, -1).padEnd(9, "0"));
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, Math.min(second, 59), 0);
+  const epochSeconds =
+    BigInt(date.getTime() / 1000) + (second === 60 ? BigInt(1) : BigInt(0));
+  return epochSeconds * BigInt(1_000_000_000) + fraction;
+}
+
+function validateFreshRetentionConsent(
+  previous: RunManifestV1,
+  next: RunManifestV1,
+  options: ManifestRevisionOptions,
+  path: string,
+): ProtocolParseResult<string> {
+  if (
+    options.freshConsent !== true ||
+    options.freshConsentAt === undefined ||
+    !isUtcTimestamp(options.freshConsentAt) ||
+    !next.context
+  ) {
+    return fail(
+      "semantic_conflict",
+      path,
+      "Retention extension requires explicit fresh Context Pack consent",
+    );
+  }
+  if (
+    compareUtcTimestamps(
+      options.freshConsentAt,
+      previous.retention.updatedAt,
+    ) <= 0 ||
+    compareUtcTimestamps(options.freshConsentAt, next.retention.updatedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      path,
+      "Fresh consent must be newer than the prior revision and no later than the new revision",
+    );
+  }
+  return pass(options.freshConsentAt);
+}
+
+function validateRetentionLifecycleRevision(
+  previous: RunManifestV1,
+  next: RunManifestV1,
+  options: ManifestRevisionOptions,
+): ProtocolParseResult<void> {
+  const previousDeadline = previous.retention.contentExpiresAt;
+  const nextDeadline = next.retention.contentExpiresAt;
+  if (previousDeadline !== null && nextDeadline === null) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "An established content expiration deadline cannot be cleared",
+    );
+  }
+  if (
+    compareUtcTimestamps(
+      next.retention.updatedAt,
+      previous.retention.updatedAt,
+    ) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "Retention updatedAt cannot move backward",
+    );
+  }
+  if (
+    RETENTION_STATUS_ORDER[next.retention.status] <
+    RETENTION_STATUS_ORDER[previous.retention.status]
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "Retention deletion progress cannot move backward",
+    );
+  }
+  if (
+    DELETION_STATUS_ORDER[next.deletion.status] <
+    DELETION_STATUS_ORDER[previous.deletion.status]
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.status",
+      "Deletion progress cannot move backward",
+    );
+  }
+  if (
+    previous.deletion.requestedAt !== undefined &&
+    next.deletion.requestedAt !== previous.deletion.requestedAt
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "An established deletion request timestamp cannot change",
+    );
+  }
+
+  const policyLengthened =
+    RETENTION_ORDER[next.retention.effectivePolicy] >
+    RETENTION_ORDER[previous.retention.effectivePolicy];
+  const deadlineExtended =
+    previousDeadline !== null &&
+    nextDeadline !== null &&
+    compareUtcTimestamps(nextDeadline, previousDeadline) > 0;
+  let freshConsentAt: string | undefined;
+  if (policyLengthened || deadlineExtended) {
+    const freshConsent = validateFreshRetentionConsent(
+      previous,
+      next,
+      options,
+      policyLengthened
+        ? "$.retention.effectivePolicy"
+        : "$.retention.contentExpiresAt",
+    );
+    if (!freshConsent.ok) return freshConsent;
+    freshConsentAt = freshConsent.value;
+  }
+
+  const effectivePolicy = next.retention.effectivePolicy;
+  if (nextDeadline !== null && effectivePolicy !== "project") {
+    const clockStart =
+      freshConsentAt ??
+      next.finalizedAt ??
+      previous.finalizedAt ??
+      next.retention.updatedAt;
+    const deadline =
+      utcTimestampNanoseconds(nextDeadline);
+    const ceiling =
+      utcTimestampNanoseconds(clockStart) +
+      BigInt(RETENTION_DURATION_SECONDS[effectivePolicy]) *
+        BigInt(1_000_000_000);
+    if (deadline > ceiling) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        `${effectivePolicy} content expiration exceeds its policy deadline ceiling`,
+      );
+    }
+  }
+
+  if (previous.deletion.status === "completed") {
+    for (const key of [
+      "requestedAt",
+      "completedAt",
+      "deletedObjectCount",
+      "retainedAuditUntil",
+      "eventSequence",
+    ] as const) {
+      if (canonicalField(previous.deletion, key) !== canonicalField(next.deletion, key)) {
+        return fail(
+          "semantic_conflict",
+          `$.deletion.${key}`,
+          "Completed deletion receipts are terminal",
+        );
+      }
+    }
+  }
+  if (previous.retention.status === "deleted") {
+    for (const key of [
+      "effectivePolicy",
+      "status",
+      "contentExpiresAt",
+      "updatedAt",
+    ] as const) {
+      if (canonicalField(previous.retention, key) !== canonicalField(next.retention, key)) {
+        return fail(
+          "semantic_conflict",
+          `$.retention.${key}`,
+          "Deleted retention state is terminal",
+        );
+      }
+    }
+  }
+  return pass(undefined);
+}
 
 function compareUnknownFields(
   previous: Record<string, unknown>,
@@ -1617,6 +1883,9 @@ export function validateRunManifestRevision(
   const consent = validateManifestRetentionConsent(next, options?.contextConsent);
   if (!consent.ok) return consent;
 
+  const lifecycle = validateRetentionLifecycleRevision(previous, next, options);
+  if (!lifecycle.ok) return lifecycle;
+
   const shortening = validateFinalRetentionShortening(
     next.state,
     RETENTION_ORDER[next.retention.effectivePolicy] <
@@ -1625,16 +1894,6 @@ export function validateRunManifestRevision(
     next.deletion,
   );
   if (!shortening.ok) return shortening;
-
-  if (RETENTION_ORDER[next.retention.effectivePolicy] > RETENTION_ORDER[previous.retention.effectivePolicy]) {
-    if (options.freshConsent !== true) {
-      return fail(
-        "semantic_conflict",
-        "$.retention.effectivePolicy",
-        "lengthening effective retention requires freshConsent",
-      );
-    }
-  }
 
   return pass(next);
 }

@@ -78,6 +78,37 @@ export function isUtcTimestamp(value: unknown): value is string {
   return day >= 1 && day <= daysInMonth[month - 1]!;
 }
 
+export function compareUtcTimestamps(left: string, right: string): -1 | 0 | 1 {
+  if (!isUtcTimestamp(left) || !isUtcTimestamp(right)) {
+    throw new TypeError("compareUtcTimestamps requires valid UTC RFC 3339 timestamps");
+  }
+
+  const components = (value: string): readonly number[] => {
+    const fractionStart = value.indexOf(".");
+    const fraction =
+      fractionStart === -1
+        ? 0
+        : Number(value.slice(fractionStart + 1, -1).padEnd(9, "0"));
+    return [
+      Number(value.slice(0, 4)),
+      Number(value.slice(5, 7)),
+      Number(value.slice(8, 10)),
+      Number(value.slice(11, 13)),
+      Number(value.slice(14, 16)),
+      Number(value.slice(17, 19)),
+      fraction,
+    ];
+  };
+
+  const leftComponents = components(left);
+  const rightComponents = components(right);
+  for (let index = 0; index < leftComponents.length; index += 1) {
+    if (leftComponents[index]! < rightComponents[index]!) return -1;
+    if (leftComponents[index]! > rightComponents[index]!) return 1;
+  }
+  return 0;
+}
+
 export function isJsonPointer(value: unknown): value is string {
   return typeof value === "string" && JSON_POINTER_RE.test(value);
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isUtcTimestamp } from "./common.ts";
+import { compareUtcTimestamps, isUtcTimestamp } from "./common.ts";
 
 test("UTC RFC 3339 timestamps accept ordinary timestamps and historical leap seconds", () => {
   for (const value of [
@@ -69,4 +69,34 @@ test("UTC RFC 3339 timestamps reject non-UTC syntax and invalid calendar or time
   ]) {
     assert.equal(isUtcTimestamp(value), false, value);
   }
+});
+
+test("UTC RFC 3339 comparison is exact across fractions and leap seconds", () => {
+  assert.equal(
+    compareUtcTimestamps("2026-08-15T20:00:00.1Z", "2026-08-15T20:00:00.100000000Z"),
+    0,
+  );
+  assert.equal(
+    compareUtcTimestamps("2026-08-15T20:00:00.099999999Z", "2026-08-15T20:00:00.1Z"),
+    -1,
+  );
+  assert.equal(
+    compareUtcTimestamps("2016-12-31T23:59:59.999999999Z", "2016-12-31T23:59:60Z"),
+    -1,
+  );
+  assert.equal(
+    compareUtcTimestamps("2016-12-31T23:59:60.999999999Z", "2017-01-01T00:00:00Z"),
+    -1,
+  );
+  assert.equal(
+    compareUtcTimestamps("2017-01-01T00:00:00Z", "2016-12-31T23:59:60.999999999Z"),
+    1,
+  );
+});
+
+test("UTC RFC 3339 comparison rejects invalid inputs", () => {
+  assert.throws(
+    () => compareUtcTimestamps("2026-08-15T20:00:00Z", "not-a-timestamp"),
+    /valid UTC RFC 3339 timestamps/,
+  );
 });
