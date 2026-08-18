@@ -9,9 +9,9 @@
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
         "revision": 3,
-        "previousDigest": "7ec5672568b774f99670bc12436fbb5f6c611afaa28a84731cc54f7430bd8690",
+        "previousDigest": "7bb2d0a7636bcf1b52b110f9d351cb8c7badfc3c89ace6cfeaecb75ae71ce1aa",
         "retention": {
-          "policy": "run-only",
+          "policy": "7-days",
           "effectivePolicy": "run-only",
           "status": "active",
           "updatedAt": "2026-08-16T20:07:00.000Z"
@@ -25,7 +25,7 @@
         "revision": 2,
         "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "retention": {
-          "policy": "run-only",
+          "policy": "7-days",
           "effectivePolicy": "7-days",
           "status": "active",
           "updatedAt": "2026-08-16T20:06:00.000Z"
@@ -582,7 +582,8 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
+        "stage": "parse",
+        "input": "next",
         "code": "semantic_conflict",
         "path": "$.retention.status"
       }
