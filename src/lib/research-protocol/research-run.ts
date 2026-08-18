@@ -6,7 +6,7 @@ import {
   isUtcTimestamp,
   parseResearchContextBindingV1,
   pass,
-  RETENTION_ORDER,
+  retentionDoesNotExceed,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
   type UnknownFields,
@@ -178,6 +178,8 @@ function contextBindingsMatch(
 /**
  * Validates two already-parsed objects. Run-field errors use run JSON paths;
  * pack-only policy errors use the synthetic `$.contextPack` path.
+ * Parsing a context-bound run is provisional; callers must compose it with its
+ * parsed Context Pack here before use, including when it embeds a manifest.
  */
 export function validateResearchRunContextPackV1(
   run: ResearchRunV1,
@@ -242,14 +244,24 @@ export function validateResearchRunContextPackV1(
       );
     }
   }
-  if (
-    RETENTION_ORDER[run.privacy.retention] >
-    RETENTION_ORDER[contextPack.consent.retention]
-  ) {
+  if (!retentionDoesNotExceed(run.privacy.retention, contextPack.consent.retention)) {
     return fail(
       "semantic_conflict",
       "$.privacy.retention",
       "Run retention exceeds Context Pack consent",
+    );
+  }
+  if (
+    run.artifactManifest &&
+    !retentionDoesNotExceed(
+      run.artifactManifest.retention.effectivePolicy,
+      contextPack.consent.retention,
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.retention.effectivePolicy",
+      "Artifact manifest effective retention exceeds Context Pack consent",
     );
   }
 
@@ -864,6 +876,19 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "semantic_conflict",
         "$.artifactManifest.retention.policy",
         "artifactManifest retention policy must match run privacy retention",
+      );
+    }
+    if (
+      !context &&
+      !retentionDoesNotExceed(
+        artifactManifest.retention.effectivePolicy,
+        privacy.value.retention,
+      )
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.retention.effectivePolicy",
+        "artifactManifest effective retention must not exceed run privacy retention",
       );
     }
     const cloudContentIndex = artifactManifest.artifacts.findIndex(
