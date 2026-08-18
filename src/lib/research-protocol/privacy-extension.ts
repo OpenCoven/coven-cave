@@ -40,6 +40,13 @@ const EXTENSION_SUFFIXES = [
   "ref",
   "refs",
 ] as const;
+const DANGEROUS_COMPONENTS = [
+  "object",
+  "store",
+  "storage",
+  "bucket",
+  "key",
+] as const;
 
 function caseInsensitiveWord(word: string): string {
   return [...word]
@@ -68,6 +75,12 @@ const UPPER_TOKEN_PATTERN = SENSITIVE_WORD_SEQUENCES
   .join("|");
 const PREFIX_PATTERN = SENSITIVE_PREFIXES.map(caseInsensitiveWord).join("|");
 const SUFFIX_PATTERN = EXTENSION_SUFFIXES.map(caseInsensitiveWord).join("|");
+const DANGEROUS_COMPONENT_PATTERN = DANGEROUS_COMPONENTS
+  .map(caseInsensitiveWord)
+  .join("|");
+const COMPACT_TOKEN_PATTERN = SENSITIVE_WORD_SEQUENCES
+  .map((words) => `${sequencePattern(words, "")}[sS]?`)
+  .join("|");
 
 export const SENSITIVE_EXTENSION_KEY_PATTERN =
   `(?:` +
@@ -81,8 +94,19 @@ export const SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN =
   `(?:${TOKEN_PATTERN})` +
   `(?:[_.-]*(?:${SUFFIX_PATTERN}))?$`;
 
+export const SENSITIVE_EXTENSION_COMPONENT_KEY_PATTERN =
+  `^(?:${DANGEROUS_COMPONENT_PATTERN})[sS]?$`;
+
+export const SENSITIVE_EXTENSION_COMPOUND_KEY_PATTERN =
+  `^(?:(?:${PREFIX_PATTERN})[_.-]*)?` +
+  `(?:${COMPACT_TOKEN_PATTERN})` +
+  `(?:${caseInsensitiveWord("payload")})[sS]?$`;
+
 const SENSITIVE_EXTENSION_KEY_RE = new RegExp(
-  `(?:${SENSITIVE_EXTENSION_KEY_PATTERN})|(?:${SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN})`,
+  `(?:${SENSITIVE_EXTENSION_KEY_PATTERN})|` +
+    `(?:${SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN})|` +
+    `(?:${SENSITIVE_EXTENSION_COMPONENT_KEY_PATTERN})|` +
+    `(?:${SENSITIVE_EXTENSION_COMPOUND_KEY_PATTERN})`,
 );
 const NO_DECLARED_FIELDS: ReadonlySet<string> = new Set();
 

@@ -80,7 +80,7 @@ function copyCanonicalJsonValueAtPath(
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
     if (
       !lengthDescriptor
-      || !("value" in lengthDescriptor)
+      || !Object.hasOwn(lengthDescriptor, "value")
       || lengthDescriptor.enumerable
       || lengthDescriptor.configurable
       || !lengthDescriptor.writable
@@ -118,7 +118,7 @@ function copyCanonicalJsonValueAtPath(
       if (!descriptor.enumerable) {
         throw createCanonicalJsonError(propertyPath, "array indices must be enumerable");
       }
-      if (!("value" in descriptor)) {
+      if (!Object.hasOwn(descriptor, "value")) {
         throw createCanonicalJsonError(propertyPath, "array indices must be data properties");
       }
       entries.push({ descriptor, index: Number(key), key });
@@ -182,7 +182,7 @@ function copyCanonicalJsonValueAtPath(
       if (!descriptor.enumerable) {
         throw createCanonicalJsonError(propertyPath, "non-enumerable own properties are not allowed");
       }
-      if (!("value" in descriptor)) {
+      if (!Object.hasOwn(descriptor, "value")) {
         throw createCanonicalJsonError(propertyPath, "accessor properties are not allowed");
       }
       Object.defineProperty(copy, key, {

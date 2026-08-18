@@ -32,12 +32,12 @@
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
         "artifactManifest": {
+          "digest": "b207c051bd22df4394f2afa81a938ea16d1ead516f3a17344e0f483f66a089cd",
           "retention": {
             "effectivePolicy": "project"
           }
         }
-      },
-      "digestTargets": ["/artifactManifest"]
+      }
     },
     "matching-run": {
       "fixture": "scenarios/objects/context-bound-extended-run.json"
@@ -132,8 +132,7 @@
       },
       "expected": {
         "ok": false,
-        "stage": "parse",
-        "input": "run",
+        "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.artifactManifest.retention.effectivePolicy"
       }

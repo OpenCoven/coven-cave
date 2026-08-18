@@ -30,7 +30,25 @@ export * from "./context-pack.ts";
 export * from "./digest.ts";
 export * from "./model-task.ts";
 export * from "./research-run.ts";
-export * from "./run-manifest.ts";
+export {
+  aggregateManifestUsage,
+  parseRunManifestV1,
+  SENSITIVE_EXTENSION_COMPONENT_KEY_PATTERN,
+  SENSITIVE_EXTENSION_COMPOUND_KEY_PATTERN,
+  SENSITIVE_EXTENSION_KEY_PATTERN,
+  SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
+  validateManifestRetentionConsent,
+  validateRunManifestRevision,
+  validateRunManifestRevisionV1,
+  type ArtifactRegistrationV1,
+  type ManifestRevisionOptions,
+  type RunManifestDeletionReceiptV1,
+  type RunManifestModelExecutionV1,
+  type RunManifestRetentionV1,
+  type RunManifestSourceV1,
+  type RunManifestUsageV1,
+  type RunManifestV1,
+} from "./run-manifest.ts";
 export * from "./topic-discovery.ts";
 
 /**

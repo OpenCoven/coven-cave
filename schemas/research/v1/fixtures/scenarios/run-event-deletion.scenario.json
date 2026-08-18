@@ -124,7 +124,7 @@
           "status": null,
           "deletedObjectCount": 3,
           "manifestStatus": "deleted",
-          "deletedContent": "private material"
+          "deletedcontentpayload": "private material"
         }
       }
     },
@@ -138,7 +138,13 @@
           "status": null,
           "deletedObjectCount": 3,
           "manifestStatus": "deleted",
-          "objectStoreKey": "tenant/private/object"
+          "audit": {
+            "object": {
+              "store": {
+                "key": "tenant/private/object"
+              }
+            }
+          }
         }
       }
     },
@@ -175,6 +181,12 @@
           "audit": {
             "context": "retention worker",
             "contentment": "complete",
+            "objectives": "met",
+            "storefront": "closed",
+            "storagelike": "audit-only",
+            "bucketed": true,
+            "keystone": "retention",
+            "deletedcontentmentpayload": "benign",
             "items": [
               {
                 "retryDisposition": "not-needed"
@@ -300,7 +312,7 @@
         "stage": "parse",
         "input": "events[1]",
         "code": "semantic_conflict",
-        "path": "$.data.deletedContent"
+        "path": "$.data.deletedcontentpayload"
       }
     },
     {
@@ -316,7 +328,7 @@
         "stage": "parse",
         "input": "events[1]",
         "code": "semantic_conflict",
-        "path": "$.data.objectStoreKey"
+        "path": "$.data.audit.object"
       }
     },
     {

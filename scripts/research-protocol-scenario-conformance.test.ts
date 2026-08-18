@@ -1920,8 +1920,7 @@ for (const corpus of corpora) {
   }
 }
 
-test("covers every required Unit 0 cross-object scenario", () => {
-  for (const requiredId of [
+const REQUIRED_UNIT_0_SCENARIO_IDS = [
     "manifest.assembling-to-final",
     "manifest.partial-usage",
     "manifest.changed-manifest-id",
@@ -1931,7 +1930,10 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.post-final-mutation",
     "manifest.retention-ceiling",
     "manifest.policy-shortening",
+    "manifest.policy-shortening-preserves-deletion-schedule",
+    "manifest.policy-shortening-revalidates-deadline",
     "manifest.active-shortening",
+    "manifest.contextless-shortening",
     "manifest.lengthening-without-fresh-consent",
     "manifest.lengthening-with-fresh-consent",
     "manifest.contextless-restoration-with-fresh-consent",
@@ -1973,6 +1975,10 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "model-task.wrong-familiar-id",
     "model-task.wrong-effective-model",
     "run-deletion.valid-completed",
+    "run-deletion.valid-benign-audit-extension",
+    "run-deletion.rejects-deleted-content",
+    "run-deletion.rejects-object-store-key",
+    "run-deletion.rejects-nested-array-content",
     "run-deletion.valid-no-manifest",
     "run-deletion.partial-failure-retryable",
     "run-deletion.partial-failure-incomplete-stream",
@@ -1990,7 +1996,18 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "run-events.empty-sequence",
     "run-events.gapped-sequence",
     "run-events.mixed-run-sequence",
-  ]) {
-    assert.ok(allScenarioIds.has(requiredId), `missing required scenario: ${requiredId}`);
-  }
+  ] as const;
+
+test("required Unit 0 scenario inventory exactly matches the corpus", () => {
+  assert.equal(REQUIRED_UNIT_0_SCENARIO_IDS.length, 75);
+  assert.equal(
+    new Set(REQUIRED_UNIT_0_SCENARIO_IDS).size,
+    REQUIRED_UNIT_0_SCENARIO_IDS.length,
+    "required scenario inventory must not contain duplicates",
+  );
+  assert.deepEqual(
+    [...allScenarioIds].sort(compareCodeUnits),
+    [...REQUIRED_UNIT_0_SCENARIO_IDS].sort(compareCodeUnits),
+    "required scenario inventory must exactly match discovered scenario ids",
+  );
 });
