@@ -140,6 +140,24 @@ test("Context Pack rejects sparse and custom arrays in additive data", () => {
   }
 });
 
+test("Context Pack parsing accepts an ordinary deeply frozen wire object", () => {
+  const deepFreeze = (value: unknown): unknown => {
+    if (value === null || typeof value !== "object") return value;
+    for (const child of Object.values(value)) {
+      deepFreeze(child);
+    }
+    return Object.freeze(value);
+  };
+  const frozen = deepFreeze(
+    structuredClone(validContextPack),
+  ) as typeof validContextPack;
+
+  const parsed = expectOk(parseContextPackV1(frozen));
+  assert.deepEqual(parsed, validContextPack);
+  assert.notStrictEqual(parsed, frozen);
+  assert.notStrictEqual(parsed.resources, frozen.resources);
+});
+
 test("Context Pack accepts safe canonical extensions", () => {
   const extension = Object.create(null) as Record<string, unknown>;
   Object.defineProperty(extension, "__proto__", {

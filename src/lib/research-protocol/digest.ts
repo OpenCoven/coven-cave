@@ -83,7 +83,6 @@ function copyCanonicalJsonValueAtPath(
       || !Object.hasOwn(lengthDescriptor, "value")
       || lengthDescriptor.enumerable
       || lengthDescriptor.configurable
-      || !lengthDescriptor.writable
     ) {
       throw createCanonicalJsonError(path, "arrays must have the standard length property");
     }
