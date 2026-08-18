@@ -93,6 +93,21 @@ property of how reflection works, never evidence about the thread. So:
 - If the transcript is too thin to judge, use "adequate" and say so in
   "contextNotes" — an honest "not enough evidence" beats an inflated rating.
 
+Signal classification and terminal-state rules:
+- A skill listed in "skillsUsed" and invoked successfully must not appear in
+  "skillsNeedingAccess" merely because a separate integration was unavailable.
+- Missing vendor authentication is a capability issue, not a skill-access gap.
+  Report it in "capabilitiesLacking" only when the task remains blocked at the
+  end of the thread and no usable fallback source or workflow completed it.
+- If a fallback source completed the task, do not report the optional direct
+  integration in "capabilitiesLacking" or "persistentBlockers". Mention a
+  material fidelity or reliability limitation in notes instead.
+- A visual refinement requires a changed artifact path and fresh render,
+  attachment, or equivalent focused check before it is verified.
+  Ending at a repeated choice prompt is incomplete, not a successful refinement.
+- "persistentBlockers" contains only problems unresolved at the end of the
+  thread. Do not carry forward a transient problem that the thread recovered.
+
 Delivery evidence rule:
 - Do NOT infer completion from plans, narration, or intent ("I will push", "about
   to schedule", "finishing the artifact").
