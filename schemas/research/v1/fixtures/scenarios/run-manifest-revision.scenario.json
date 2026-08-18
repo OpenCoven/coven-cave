@@ -251,7 +251,8 @@
       "digestTargets": [""]
     },
     "scheduled": {
-      "fixture": "valid/run-manifest-retention-update.json"
+      "fixture": "valid/run-manifest-retention-update.json",
+      "predecessor": "final"
     },
     "shortened-retention": {
       "fixture": "valid/run-manifest-retention-update.json",
@@ -298,6 +299,7 @@
     },
     "contextless-restoration-previous": {
       "fixture": "valid/run-manifest-final-local.json",
+      "predecessor": "contextless-original",
       "mergePatch": {
         "context": null,
         "sources": [],

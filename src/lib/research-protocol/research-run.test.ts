@@ -7,8 +7,8 @@ import researchRunSchema from "../../../schemas/research/v1/research-run.schema.
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
 import invalidLocalResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
-import invalidEmbeddedSevenDayRetention from "../../../schemas/research/v1/fixtures/invalid/research-run-embedded-retention-7-days-overflow.json" with { type: "json" };
-import invalidEmbeddedRunOnlyRetention from "../../../schemas/research/v1/fixtures/invalid/research-run-embedded-retention-run-only-overflow.json" with { type: "json" };
+import provisionalEmbeddedSevenDayRetention from "../../../schemas/research/v1/fixtures/valid/research-run-embedded-retention-7-days-provisional.json" with { type: "json" };
+import provisionalEmbeddedRunOnlyRetention from "../../../schemas/research/v1/fixtures/valid/research-run-embedded-retention-run-only-provisional.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
@@ -203,6 +203,10 @@ function runWithCompletedDeletion(
     ...validRunManifest,
     createdAt,
     finalizedAt,
+    artifacts: validRunManifest.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: finalizedAt,
+    })),
   });
   const deletedManifest: Record<string, unknown> = {
     ...finalManifest,
@@ -792,7 +796,7 @@ test("context-bound manifest effective retention cannot exceed the Context Pack 
   );
 });
 
-test("embedded consent-authorized retention revisions decode provisionally", () => {
+test("embedded retention lengthening requires revision-1-rooted replay and authentic fresh consent", () => {
   const freshPack = expectOk(
     parseContextPackV1(
       recalculateContextPack({
@@ -810,14 +814,26 @@ test("embedded consent-authorized retention revisions decode provisionally", () 
     contextPackId: freshPack.id,
     contextPackDigest: freshPack.digest,
   };
-  const extendedManifest = linkedManifest(
+  const rootManifest = linkedManifest(
     {
       ...validRunManifest,
-      revision: 2,
-      previousDigest:
-        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      revision: 1,
       retention: {
         ...validRunManifest.retention,
+        policy: "7-days",
+        effectivePolicy: "7-days",
+      },
+    },
+    freshContext,
+  );
+  const extendedManifest = linkedManifest(
+    {
+      ...rootManifest,
+      sources: rootManifest.sources as Array<Record<string, unknown>>,
+      revision: 2,
+      previousDigest: rootManifest.digest,
+      retention: {
+        ...(rootManifest.retention as Record<string, unknown>),
         policy: "7-days",
         effectivePolicy: "project",
         updatedAt: "2026-08-16T20:06:00.000Z",
@@ -841,9 +857,20 @@ test("embedded consent-authorized retention revisions decode provisionally", () 
       },
     }),
   );
+  expectError(
+    validateResearchRunContextPackV1(parsedRun, freshPack),
+    "$.artifactManifest.revision",
+    "semantic_conflict",
+  );
+  const serializedHistory = JSON.parse(
+    JSON.stringify([rootManifest, extendedManifest]),
+  ) as unknown[];
   assert.equal(
-    expectOk(validateResearchRunContextPackV1(parsedRun, freshPack))
-      .artifactManifest?.retention.effectivePolicy,
+    expectOk(
+      validateResearchRunContextPackV1(parsedRun, freshPack, {
+        manifestHistory: serializedHistory,
+      }),
+    ).artifactManifest?.retention.effectivePolicy,
     "project",
   );
   expectError(
@@ -852,15 +879,50 @@ test("embedded consent-authorized retention revisions decode provisionally", () 
     "semantic_conflict",
   );
 
+  const mismatchedTip = linkedManifest(
+    {
+      ...extendedManifest,
+      sources: extendedManifest.sources as Array<Record<string, unknown>>,
+      retention: {
+        ...(extendedManifest.retention as Record<string, unknown>),
+        updatedAt: "2026-08-16T20:06:30.000Z",
+      },
+    },
+    freshContext,
+  );
+  expectError(
+    validateResearchRunContextPackV1(parsedRun, freshPack, {
+      manifestHistory: [rootManifest, mismatchedTip],
+    }),
+    "$.artifactManifest.digest",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(parsedRun, freshPack, {
+      manifestHistory: [extendedManifest],
+    }),
+    "$.manifestHistory[0].revision",
+    "semantic_conflict",
+  );
+
   const stalePack = expectOk(parseContextPackV1(validContextPack));
   const staleContext = {
     ...freshContext,
     contextPackDigest: stalePack.digest,
   };
+  const staleRoot = linkedManifest(
+    {
+      ...rootManifest,
+      sources: rootManifest.sources as Array<Record<string, unknown>>,
+      revision: 1,
+    },
+    staleContext,
+  );
   const staleManifest = linkedManifest(
     {
       ...extendedManifest,
       sources: extendedManifest.sources as Array<Record<string, unknown>>,
+      previousDigest: staleRoot.digest,
     },
     staleContext,
   );
@@ -875,7 +937,9 @@ test("embedded consent-authorized retention revisions decode provisionally", () 
     }),
   );
   expectError(
-    validateResearchRunContextPackV1(staleRun, stalePack),
+    validateResearchRunContextPackV1(staleRun, stalePack, {
+      manifestHistory: [staleRoot, staleManifest],
+    }),
     "$.artifactManifest.retention.effectivePolicy",
     "semantic_conflict",
   );
@@ -885,6 +949,84 @@ test("embedded consent-authorized retention revisions decode provisionally", () 
     validateResearchRunContextPackV1(parsedRun, freshPack),
     "$.contextPack.digest",
     "digest_mismatch",
+  );
+});
+
+test("embedded deadline extension replays from serialized history at the fresh-consent boundary", () => {
+  const freshPack = expectOk(
+    parseContextPackV1(
+      recalculateContextPack({
+        ...validContextPack,
+        createdAt: "2026-08-16T20:05:30.000Z",
+      }),
+    ),
+  );
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: freshPack.id,
+    contextPackDigest: freshPack.digest,
+  };
+  const root = linkedManifest(
+    {
+      ...validRunManifest,
+      revision: 1,
+      retention: {
+        ...validRunManifest.retention,
+        policy: "7-days",
+        effectivePolicy: "7-days",
+        status: "deletion_scheduled",
+        contentExpiresAt: "2026-08-20T20:04:00.000Z",
+        updatedAt: "2026-08-16T20:05:00.000Z",
+      },
+      deletion: {
+        status: "scheduled",
+        requestedAt: "2026-08-16T20:05:00.000Z",
+      },
+    },
+    context,
+  );
+  const extended = linkedManifest(
+    {
+      ...root,
+      sources: root.sources as Array<Record<string, unknown>>,
+      revision: 2,
+      previousDigest: root.digest,
+      retention: {
+        ...(root.retention as Record<string, unknown>),
+        contentExpiresAt: "2026-08-23T20:05:30.000Z",
+        updatedAt: "2026-08-16T20:06:00.000Z",
+      },
+    },
+    context,
+  );
+  expectError(
+    parseRunManifestV1(extended),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const run = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", extended),
+      context,
+      privacy: {
+        ...validResearchRun.privacy,
+        retention: "7-days",
+      },
+    }),
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, freshPack),
+    "$.artifactManifest.revision",
+    "semantic_conflict",
+  );
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(run, freshPack, {
+        manifestHistory: JSON.parse(JSON.stringify([root, extended])) as unknown[],
+      }),
+    ).artifactManifest?.retention.contentExpiresAt,
+    "2026-08-23T20:05:30.000Z",
   );
 });
 
@@ -963,7 +1105,7 @@ test("content.deleted data permits only declared audit fields and safe recursive
   assert.equal(Value.Check(runEventSchema, event), true);
   assert.deepEqual(expectOk(parseRunEventV1(event)).data, event.data);
 
-  for (const [data, path] of [
+  for (const [data, path, expectedSchemaValid] of [
     [
       {
         deletedObjectCount: 3,
@@ -971,6 +1113,7 @@ test("content.deleted data permits only declared audit fields and safe recursive
         deletedContent: "private material",
       },
       "$.data.deletedContent",
+      false,
     ],
     [
       {
@@ -979,6 +1122,7 @@ test("content.deleted data permits only declared audit fields and safe recursive
         objectStoreKey: "tenant/private/object",
       },
       "$.data.objectStoreKey",
+      false,
     ],
     [
       {
@@ -987,6 +1131,7 @@ test("content.deleted data permits only declared audit fields and safe recursive
         audit: { deletedcontentpayload: "private material" },
       },
       "$.data.audit.deletedcontentpayload",
+      false,
     ],
     [
       {
@@ -994,7 +1139,8 @@ test("content.deleted data permits only declared audit fields and safe recursive
         manifestStatus: "deleted",
         audit: { object: { store: { key: "tenant/private/object" } } },
       },
-      "$.data.audit.object",
+      "$.data.audit.object.store.key",
+      true,
     ],
     [
       {
@@ -1002,7 +1148,8 @@ test("content.deleted data permits only declared audit fields and safe recursive
         manifestStatus: "deleted",
         audit: [{ storage: { key: "tenant/private/object" } }],
       },
-      "$.data.audit[0].storage",
+      "$.data.audit[0].storage.key",
+      true,
     ],
     [
       {
@@ -1010,7 +1157,8 @@ test("content.deleted data permits only declared audit fields and safe recursive
         manifestStatus: "deleted",
         audit: { bucket: { key: "tenant/private/object" } },
       },
-      "$.data.audit.bucket",
+      "$.data.audit.bucket.key",
+      true,
     ],
     [
       {
@@ -1019,6 +1167,7 @@ test("content.deleted data permits only declared audit fields and safe recursive
         audit: { rawTEXTvalue: "private material" },
       },
       "$.data.audit.rawTEXTvalue",
+      false,
     ],
     [
       {
@@ -1027,12 +1176,26 @@ test("content.deleted data permits only declared audit fields and safe recursive
         audit: [{ private_contentValue: "private material" }],
       },
       "$.data.audit[0].private_contentValue",
+      false,
     ],
   ] as const) {
     const invalid = { ...event, data };
-    assert.equal(Value.Check(runEventSchema, invalid), false, path);
+    assert.equal(Value.Check(runEventSchema, invalid), expectedSchemaValid, path);
     expectError(parseRunEventV1(invalid), path, "semantic_conflict");
   }
+
+  const benignKey = {
+    ...event,
+    data: {
+      ...event.data,
+      audit: { key: "benign standalone key" },
+    },
+  };
+  assert.equal(Value.Check(runEventSchema, benignKey), true);
+  assert.equal(
+    ((expectOk(parseRunEventV1(benignKey)).data.audit as { key: string }).key),
+    "benign standalone key",
+  );
 
   const missingCount = {
     ...event,
@@ -1196,21 +1359,24 @@ test("contextless embedded manifests cannot extend effective retention beyond th
   );
 });
 
-test("embedded later revisions cannot reset finite retention clocks with updatedAt", () => {
-  for (const invalidFixture of [
-    invalidEmbeddedRunOnlyRetention,
-    invalidEmbeddedSevenDayRetention,
+test("embedded later deadline extensions decode provisionally but remain outside standalone authority", () => {
+  for (const run of [
+    provisionalEmbeddedRunOnlyRetention,
+    provisionalEmbeddedSevenDayRetention,
   ]) {
-    const { expectedSchemaValid, ...run } = invalidFixture;
-    assert.equal(expectedSchemaValid, true);
     assert.equal(checkResearchRunSchema(run), true);
     assert.equal(
       run.artifactManifest.digest,
       digestProtocolObject(run.artifactManifest),
     );
+    const parsed = expectOk(parseResearchRunV1(run));
+    assert.equal(
+      parsed.artifactManifest?.retention.contentExpiresAt,
+      run.artifactManifest.retention.contentExpiresAt,
+    );
     expectError(
-      parseResearchRunV1(run),
-      "$.artifactManifest.retention.contentExpiresAt",
+      parseRunManifestV1(run.artifactManifest),
+      "$.retention.contentExpiresAt",
       "semantic_conflict",
     );
   }

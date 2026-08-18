@@ -683,6 +683,29 @@ test("Model Result accepts safe canonical output", () => {
   assert.equal(({} as { preserve?: boolean }).preserve, undefined);
 });
 
+test("Model Result preserves negative zero in detached additive output", () => {
+  const output = {
+    score: -0,
+    nested: { delta: -0 },
+    values: [-0],
+  };
+  const parsed = expectOk(
+    parseModelTaskResultV1({
+      ...validModelTaskResult,
+      output,
+      outputDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    }),
+  );
+
+  assert.equal(Object.is(parsed.output.score, -0), true);
+  assert.equal(
+    Object.is((parsed.output.nested as { delta: number }).delta, -0),
+    true,
+  );
+  assert.equal(Object.is((parsed.output.values as number[])[0], -0), true);
+  assert.notStrictEqual(parsed.output, output);
+});
+
 test("parser rejects nested output custom-prototype objects and non-json values", () => {
   const nestedCustomPrototype = {
     ...validModelTaskResult,

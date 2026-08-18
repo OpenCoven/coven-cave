@@ -328,7 +328,7 @@
         "stage": "parse",
         "input": "events[1]",
         "code": "semantic_conflict",
-        "path": "$.data.audit.object"
+        "path": "$.data.audit.object.store.key"
       }
     },
     {
