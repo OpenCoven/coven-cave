@@ -1,0 +1,60 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_content_expires_before_created_01",
+  "runId": "run_content_expires_before_created_01",
+  "digest": "d4862a2e835ce93df4ea0e4828840891c09a8e762a7a096d7e2e84d1b8a39822",
+  "revision": 1,
+  "state": "assembling",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "context": {
+    "contextPackId": "ctx_local_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "topicProposalId": "proposal_local_01",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_local_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2026-08-16T19:59:59.999999999Z",
+    "updatedAt": "2026-08-16T20:05:00.000Z",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "deletion": {
+    "status": "scheduled",
+    "requestedAt": "2026-08-16T20:00:00.000Z",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "futureExtension": {
+    "preserve": true
+  }
+}

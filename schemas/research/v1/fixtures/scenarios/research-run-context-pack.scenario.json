@@ -40,7 +40,14 @@
       }
     },
     "matching-run": {
-      "fixture": "scenarios/objects/context-bound-extended-run.json"
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "revision": 1,
+          "previousDigest": null
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
     },
     "run-retention-above-consent": {
       "fixture": "valid/research-run.json",

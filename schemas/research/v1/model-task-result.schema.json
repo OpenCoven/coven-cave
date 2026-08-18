@@ -28,7 +28,7 @@
       "additionalProperties": true
     },
     "outputDigest": { "$ref": "#/$defs/sha256" },
-    "executorDeviceId": { "$ref": "#/$defs/sha256" },
+    "executorDeviceId": { "$ref": "#/$defs/deviceId" },
     "modelReceipt": { "$ref": "#/$defs/modelReceipt" },
     "completedAt": { "$ref": "#/$defs/utcTimestamp" },
     "signature": { "$ref": "#/$defs/nonEmptyString" }
@@ -52,6 +52,10 @@
     "runId": {
       "type": "string",
       "pattern": "^run_[A-Za-z0-9_-]+$"
+    },
+    "deviceId": {
+      "type": "string",
+      "pattern": "^device_[A-Za-z0-9_-]+$"
     },
     "positiveSafeInteger": {
       "type": "integer",

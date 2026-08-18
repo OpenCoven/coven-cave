@@ -16,6 +16,8 @@ import validHostedResearchRun from "../../../schemas/research/v1/fixtures/valid/
 import validHostedResearchRunWithoutTenant from "../../../schemas/research/v1/fixtures/valid/research-run-hosted-without-tenant.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
+import validUnicodeRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event-unicode-extension.json" with { type: "json" };
+import invalidUnicodeSensitiveRunEvent from "../../../schemas/research/v1/fixtures/invalid/run-event-unicode-sensitive-extension.json" with { type: "json" };
 import assemblingRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
 import validCloudRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-cloud.json" with { type: "json" };
 import validRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-local.json" with { type: "json" };
@@ -125,8 +127,6 @@ function boundRetentionComposition(): { run: ResearchRunV1; contextPack: Context
   const manifest = linkedManifest(
     {
       ...validRunManifest,
-      revision: 2,
-      previousDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       retention: {
         ...validRunManifest.retention,
         policy: "7-days",
@@ -776,6 +776,152 @@ test("context-bound manifest accepts retention within the Context Pack ceiling",
   );
 });
 
+test("every embedded later manifest requires a complete revision-1-rooted replay", () => {
+  const contextPack = expectOk(parseContextPackV1(validContextPack));
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: contextPack.id,
+    contextPackDigest: contextPack.digest,
+  };
+  const root = linkedManifest(
+    {
+      ...validRunManifest,
+      sources: validRunManifest.sources,
+    },
+    context,
+  );
+  const next = linkedManifest(
+    {
+      ...root,
+      sources: root.sources as Array<Record<string, unknown>>,
+      revision: 2,
+      previousDigest: root.digest,
+      retention: {
+        ...(root.retention as Record<string, unknown>),
+        updatedAt: "2026-08-16T20:06:00.000Z",
+      },
+    },
+    context,
+  );
+  assert.equal(parseRunManifestV1(next).ok, true, "the later manifest is standalone-valid");
+  const run = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", next),
+      context,
+    }),
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack),
+    "$.artifactManifest.revision",
+    "semantic_conflict",
+  );
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory: [root, next],
+      }),
+    ),
+    run,
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [root],
+    }),
+    "$.artifactManifest.digest",
+    "semantic_conflict",
+  );
+
+  const fabricatedRoot = linkedManifest(
+    {
+      ...root,
+      sources: root.sources as Array<Record<string, unknown>>,
+      futureExtension: { preserve: false },
+    },
+    context,
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [fabricatedRoot, next],
+    }),
+    "$.manifestHistory[1].previousDigest",
+    "semantic_conflict",
+  );
+
+  const divergentTip = linkedManifest(
+    {
+      ...next,
+      sources: next.sources as Array<Record<string, unknown>>,
+      retention: {
+        ...(next.retention as Record<string, unknown>),
+        updatedAt: "2026-08-16T20:07:00.000Z",
+      },
+    },
+    context,
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [root, divergentTip],
+    }),
+    "$.artifactManifest.digest",
+    "semantic_conflict",
+  );
+
+  const contextlessRoot: Record<string, unknown> = {
+    ...validRunManifest,
+    runId: validResearchRun.id,
+    sources: [],
+  };
+  delete contextlessRoot.context;
+  contextlessRoot.digest = digestProtocolObject(contextlessRoot);
+  const contextlessNext: Record<string, unknown> = {
+    ...contextlessRoot,
+    revision: 2,
+    previousDigest: contextlessRoot.digest,
+    retention: {
+      ...(contextlessRoot.retention as Record<string, unknown>),
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+  };
+  contextlessNext.digest = digestProtocolObject(contextlessNext);
+  assert.equal(
+    parseRunManifestV1(contextlessNext).ok,
+    true,
+    "the contextless later manifest is standalone-valid",
+  );
+  const contextlessRunValue: Record<string, unknown> = runForStatus(
+    "completed",
+    contextlessNext,
+  );
+  delete contextlessRunValue.context;
+  const contextlessRun = expectOk(parseResearchRunV1(contextlessRunValue));
+
+  expectError(
+    validateResearchRunContextPackV1(contextlessRun),
+    "$.artifactManifest.revision",
+    "semantic_conflict",
+  );
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(contextlessRun, undefined, {
+        manifestHistory: [contextlessRoot, contextlessNext],
+      }),
+    ),
+    contextlessRun,
+  );
+
+  const revisionOneRun = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", root),
+      context,
+    }),
+  );
+  assert.equal(
+    expectOk(validateResearchRunContextPackV1(revisionOneRun, contextPack)),
+    revisionOneRun,
+  );
+});
+
 test("context-bound manifest effective retention cannot exceed the Context Pack ceiling", () => {
   const { run, contextPack } = boundRetentionComposition();
   const longerManifestRun = {
@@ -1206,6 +1352,24 @@ test("content.deleted data permits only declared audit fields and safe recursive
     parseRunEventV1(missingCount),
     "$.data.deletedObjectCount",
     "missing_field",
+  );
+});
+
+test("content.deleted events preserve benign Unicode keys and reject normalized sensitive forms", () => {
+  assert.equal(Value.Check(runEventSchema, validUnicodeRunEvent), true);
+  assert.deepEqual(
+    expectOk(parseRunEventV1(validUnicodeRunEvent)),
+    validUnicodeRunEvent,
+  );
+
+  const { expectedSchemaValid, ...invalidEvent } =
+    invalidUnicodeSensitiveRunEvent;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(Value.Check(runEventSchema, invalidEvent), true);
+  expectError(
+    parseRunEventV1(invalidEvent),
+    '$.data["ｏｂｊｅｃｔＫｅｙ"]',
+    "semantic_conflict",
   );
 });
 
