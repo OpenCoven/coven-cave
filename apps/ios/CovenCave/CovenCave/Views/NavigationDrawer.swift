@@ -69,8 +69,6 @@ struct CaveNavigationDrawer: View {
                     }
                     DrawerNavRow(systemImage: "checkmark.square", label: "Tasks",
                                  active: app.selectedTab == .tasks) { go(.tasks) }
-                    DrawerNavRow(systemImage: "terminal", label: "Terminal",
-                                 active: app.selectedTab == .terminal) { go(.terminal) }
                     DrawerNavRow(systemImage: "gearshape", label: "Settings",
                                  active: app.selectedTab == .settings) { go(.settings) }
 

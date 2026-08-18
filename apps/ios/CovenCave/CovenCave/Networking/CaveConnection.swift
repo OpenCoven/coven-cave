@@ -16,8 +16,8 @@ struct CaveConnection: Codable, Equatable {
 
         // Already a full URL? MagicDNS hosts always use HTTPS. A pasted
         // `http://*.ts.net` URL would otherwise be rejected by ATS (and derive
-        // an insecure `ws://` terminal URL), despite Tailscale Serve issuing a
-        // certificate for the host.
+        // an insecure endpoint), despite Tailscale Serve issuing a certificate
+        // for the host.
         if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
             if var components = URLComponents(string: trimmed),
                components.scheme?.lowercased() == "http",
@@ -46,15 +46,6 @@ struct CaveConnection: Codable, Equatable {
             return URL(string: "http://\(trimmed)")
         }
         return URL(string: "http://\(trimmed):\(CavePorts.production)")
-    }
-
-    /// WebSocket base derived from `baseURL` (https→wss, http→ws). Used by the
-    /// Developer terminal surface to reach `/api/pty-ws`.
-    var wsBaseURL: URL? {
-        guard let base = baseURL,
-              var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
-        comps.scheme = (comps.scheme == "https") ? "wss" : "ws"
-        return comps.url
     }
 
     /// Ordered base URLs to try when the configured one is unreachable — the fix

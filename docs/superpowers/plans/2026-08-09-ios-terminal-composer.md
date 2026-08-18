@@ -1,5 +1,9 @@
 # iOS Terminal Composer Implementation Plan
 
+> **Superseded 2026-08-16:** `cave-cma81` removes the native iOS terminal,
+> including this composer, its PTY transport, xterm renderer, and chat handoff.
+> This document remains as historical implementation context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an accessible native composer below the iOS terminal that safely sends shell input, exposes terminal slash commands, and hands drafts to native chat for review.

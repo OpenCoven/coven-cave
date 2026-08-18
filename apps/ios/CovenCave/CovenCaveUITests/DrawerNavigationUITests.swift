@@ -71,7 +71,7 @@ final class DrawerNavigationUITests: XCTestCase {
                       "a primary destination exposes the navigation drawer")
         openNavigation.tap()
 
-        for destination in ["Chats", "Projects", "Familiars", "Tasks", "Terminal", "Settings"] {
+        for destination in ["Chats", "Projects", "Familiars", "Tasks", "Settings"] {
             XCTAssertTrue(app.buttons[destination].waitForExistence(timeout: 5),
                           "drawer includes \(destination)")
         }

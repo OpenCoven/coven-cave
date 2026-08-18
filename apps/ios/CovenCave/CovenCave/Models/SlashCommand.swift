@@ -2,9 +2,10 @@ import Foundation
 
 /// Native slash-command catalog for the iOS app.
 ///
-/// Mirrors the web/TUI vocabulary (`src/lib/slash-commands.ts` →
+/// Mirrors the applicable web/TUI vocabulary (`src/lib/slash-commands.ts` →
 /// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`
-/// or `/board` does the same thing on the phone as on the desktop.
+/// or `/board` does the same thing on the phone as on the desktop. Terminal
+/// commands are intentionally absent because iOS has no terminal surface.
 /// Aliases are first-class: `/h`, `/cls`, `/q` resolve to their canonical command.
 ///
 /// Each command also carries an `action` (what it does on mobile) and an
@@ -38,7 +39,6 @@ struct SlashCommand: Identifiable, Hashable {
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
         case openBoard             // switch to the Tasks destination
-        case openTerminal          // switch to the Terminal destination
         case sendAsPrompt          // /run /codex /claude — send the args as a message
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
@@ -62,8 +62,8 @@ struct SlashCommand: Identifiable, Hashable {
 }
 
 enum SlashCatalog {
-    /// The full catalog, ordered for display. Kept in lock-step with the web
-    /// `SLASH_COMMANDS` array so the two surfaces never drift.
+    /// The full iOS catalog, ordered for display. It tracks the web
+    /// `SLASH_COMMANDS` array except for features deliberately absent on mobile.
     static let all: [SlashCommand] = [
         // MARK: Chat
         SlashCommand(name: "/help", aliases: ["/h"], hint: "show help",
@@ -147,9 +147,6 @@ enum SlashCatalog {
                      description: "Create a reminder — on the desktop for now.",
                      argPlaceholder: "when + text", section: .view,
                      availability: .desktopOnly, action: .desktopOnly("Reminders")),
-        SlashCommand(name: "/terminal", aliases: ["/comux"], hint: "Terminal",
-                     description: "Open the Terminal.",
-                     section: .view, availability: .native, action: .openTerminal),
         SlashCommand(name: "/attach", hint: "open session",
                      description: "Open a daemon session by id — desktop for now.",
                      argPlaceholder: "session-id", section: .view,

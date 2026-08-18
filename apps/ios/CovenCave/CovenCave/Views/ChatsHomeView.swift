@@ -102,14 +102,11 @@ struct ChatsHomeView: View {
                 isPresented: $showNewChat,
                 onDismiss: {
                     fixedNewChatFamiliarId = nil
-                    app.cancelTerminalFamiliarHandoff()
                 }
             ) {
                 NewChatView(
-                    fixedFamiliarId: fixedNewChatFamiliarId,
-                    initialProjectRoot: app.terminalFamiliarHandoff?.cwd
+                    fixedFamiliarId: fixedNewChatFamiliarId
                 ) { thread in
-                    app.applyTerminalFamiliarHandoff(to: thread)
                     showNewChat = false
                     open(.thread(thread))
                 }

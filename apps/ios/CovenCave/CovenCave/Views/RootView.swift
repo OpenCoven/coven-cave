@@ -183,8 +183,6 @@ struct MainShellView: View {
         return nil
     }()
     @State private var overlayDismissalAction: (() -> Void)?
-    @State private var terminal = PtyTerminal()
-    @State private var terminalCwd: String?
 
     var body: some View {
         ZStack {
@@ -242,7 +240,7 @@ struct MainShellView: View {
         // Command confirmations float above the whole shell so they're visible
         // whether a command stays in chat or jumps to the Tasks destination.
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
-        // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–4.
+        // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–3.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
             ForEach(Array(AppTab.shortcutOrder.enumerated()), id: \.element) { index, tab in
@@ -295,8 +293,6 @@ struct MainShellView: View {
             ChatsHomeView()
         case .tasks:
             TasksView()
-        case .terminal:
-            TerminalView(terminal: terminal, cwd: $terminalCwd)
         case .settings:
             SettingsView()
         }

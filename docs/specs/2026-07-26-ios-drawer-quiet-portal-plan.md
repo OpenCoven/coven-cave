@@ -1,5 +1,9 @@
 # iOS Drawer Shell and Quiet Portal Implementation Plan
 
+> **Navigation update (2026-08-16):** `cave-cma81` removes Terminal from the
+> drawer, `AppTab`, keyboard shortcuts, and selected-destination shell. Terminal
+> references below describe the historical implementation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove the native iOS bottom tab bar, make the Cave drawer the complete primary navigation surface, and replace the cold connection spinner with the approved Quiet Portal.

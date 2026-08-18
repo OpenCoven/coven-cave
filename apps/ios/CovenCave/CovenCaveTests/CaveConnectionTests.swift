@@ -10,10 +10,6 @@ final class CaveConnectionTests: XCTestCase {
             "https://cave.tailnet.example.ts.net:8443/api?source=pairing"
         )
         XCTAssertEqual(
-            connection.wsBaseURL?.absoluteString,
-            "wss://cave.tailnet.example.ts.net:8443/api?source=pairing"
-        )
-        XCTAssertEqual(
             connection.candidateBaseURLs.map(\.absoluteString),
             ["https://cave.tailnet.example.ts.net:8443/api?source=pairing"]
         )
@@ -23,17 +19,15 @@ final class CaveConnectionTests: XCTestCase {
         let connection = CaveConnection(host: "http://100.101.102.103:3000")
 
         XCTAssertEqual(connection.baseURL?.absoluteString, "http://100.101.102.103:3000")
-        XCTAssertEqual(connection.wsBaseURL?.absoluteString, "ws://100.101.102.103:3000")
         XCTAssertFalse(CaveConnection.isCredentialTransportSecure(connection.baseURL!))
-        XCTAssertFalse(CaveConnection.isCredentialTransportSecure(connection.wsBaseURL!))
     }
 
     func testCredentialTransportAllowsHTTPSAndLoopbackHTTP() {
         XCTAssertTrue(CaveConnection.isCredentialTransportSecure(URL(string: "https://cave.example.test")!))
-        XCTAssertTrue(CaveConnection.isCredentialTransportSecure(URL(string: "wss://cave.example.test/api/pty-ws")!))
+        XCTAssertTrue(CaveConnection.isCredentialTransportSecure(URL(string: "wss://cave.example.test/api/socket")!))
         XCTAssertTrue(CaveConnection.isCredentialTransportSecure(URL(string: "http://127.0.0.1:3020")!))
         XCTAssertTrue(CaveConnection.isCredentialTransportSecure(URL(string: "http://localhost:3000")!))
-        XCTAssertTrue(CaveConnection.isCredentialTransportSecure(URL(string: "ws://[::1]:3020/api/pty-ws")!))
+        XCTAssertTrue(CaveConnection.isCredentialTransportSecure(URL(string: "ws://[::1]:3020/api/socket")!))
     }
 
     func testUncredentialedRemoteHTTPClearsAStoredTokenEvenForTheSameEndpoint() {
@@ -53,7 +47,7 @@ final class CaveConnectionTests: XCTestCase {
             "https://cave.example.test:8443"
         )
         XCTAssertEqual(
-            CaveConnection.credentialOrigin(for: URL(string: "wss://cave.example.test:8443/api/pty-ws")!),
+            CaveConnection.credentialOrigin(for: URL(string: "wss://cave.example.test:8443/api/socket")!),
             "https://cave.example.test:8443"
         )
         XCTAssertNotEqual(
@@ -63,7 +57,7 @@ final class CaveConnectionTests: XCTestCase {
         XCTAssertTrue(
             CaveConnection.credentialOriginMatches(
                 "https://cave.example.test:8443",
-                requestURL: URL(string: "wss://cave.example.test:8443/api/pty-ws")!
+                requestURL: URL(string: "wss://cave.example.test:8443/api/socket")!
             )
         )
         XCTAssertFalse(

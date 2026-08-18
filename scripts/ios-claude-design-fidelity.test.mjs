@@ -28,7 +28,6 @@ const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift")
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
 const linkedTasks = await read("apps/ios/CovenCave/CovenCave/Views/LinkedTasksSheet.swift");
-const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swift");
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
@@ -148,14 +147,14 @@ assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutr
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(terminal: terminal, cwd: \$terminalCwd\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
+  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
   "the shell mounts exactly the selected primary destination",
 );
-for (const label of ["Chats", "Tasks", "Terminal", "Settings"]) {
+for (const label of ["Chats", "Tasks", "Settings"]) {
   const matches = drawer.match(new RegExp(`DrawerNavRow\\([\\s\\S]*?label: "${label}"`, "g")) ?? [];
   assert.equal(matches.length, 1, `drawer includes ${label} exactly once as a primary row`);
 }
-for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Terminal", terminal], ["Settings", settings]]) {
+for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Settings", settings]]) {
   assert.match(source, /navigationDrawerOpen = true/, `${name} exposes Open navigation`);
 }
 assert.doesNotMatch(chat, /\.toolbar\(\.hidden, for: \.tabBar\)/, "ChatView does not depend on a removed tab bar");

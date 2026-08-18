@@ -1,8 +1,12 @@
 # Project grouping, UX audit closeout, and iOS terminal composer
 
+> **Partial supersession (2026-08-16):** `cave-cma81` removes the native iOS
+> terminal and supersedes this document's terminal-composer delivery stream.
+> The project-grouping and UX-audit decisions remain historical context.
+
 **Date:** 2026-08-09  
 **Beads:** `cave-1vpy`, `cave-ui5z`, `cave-nv1dk.2`  
-**Status:** Approved for implementation
+**Status:** Partially superseded
 
 ## Delivery model
 
