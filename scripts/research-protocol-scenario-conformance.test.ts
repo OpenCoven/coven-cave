@@ -2,16 +2,26 @@
 //
 // Scenario behavior lives in JSON under
 // `schemas/research/v1/fixtures/scenarios/*.scenario.json`, with authoritative
-// support objects beneath `scenarios/objects/`. Each corpus names a format/family,
-// declares reusable objects (fixture or inline value, optional RFC 7396
-// mergePatch, optional digestTargets), then lists stable scenario ids,
+// support objects directly beneath `scenarios/objects/`. Each corpus names a
+// format/family, declares reusable objects (fixture or inline value, optional
+// RFC 7396 mergePatch, optional digestTargets), then lists stable scenario ids,
 // descriptions, input references, validator options, and exact expected
 // code/path outcomes. This runner owns assembly and strict format validation;
 // protocol behavior stays in the public parsers and composition validators.
 
 import assert from "node:assert/strict";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
-import { test } from "node:test";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { test, type TestContext } from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -112,6 +122,45 @@ function compareCodeUnits(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function withTemporaryDirectory<T>(callback: (directory: string) => T): T {
+  const cacheDirectory = path.join(repoRoot, "node_modules", ".cache");
+  mkdirSync(cacheDirectory, { recursive: true });
+  const temporaryDirectory = mkdtempSync(
+    path.join(cacheDirectory, "research-protocol-scenario-conformance-"),
+  );
+  try {
+    return callback(temporaryDirectory);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function createSymlinkOrSkip(
+  context: TestContext,
+  targetPath: string,
+  linkPath: string,
+  type: "file" | "dir",
+): boolean {
+  try {
+    symlinkSync(
+      targetPath,
+      linkPath,
+      process.platform === "win32" && type === "dir" ? "junction" : type,
+    );
+    return true;
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "unknown";
+    if (["EACCES", "ENOSYS", "ENOTSUP", "EOPNOTSUPP", "EPERM"].includes(code)) {
+      context.skip(`symlink creation is unavailable (${code})`);
+      return false;
+    }
+    throw error;
+  }
+}
+
 function classifyScenarioTreeEntry(
   relativePath: string,
   kind: ScenarioTreeEntryKind,
@@ -124,22 +173,29 @@ function classifyScenarioTreeEntry(
   }
 
   const isInObjectsDirectory = relativePath.startsWith("objects/");
+  const isDirectObject =
+    isInObjectsDirectory && !relativePath.slice("objects/".length).includes("/");
   if (kind === "directory") {
-    if (relativePath === "objects" || isInObjectsDirectory) return "directory";
-    assert.fail(`${relativePath}: unexpected directory outside the designated objects directory`);
+    if (relativePath === "objects") return "directory";
+    assert.fail(
+      `${relativePath}: unexpected directory; only the top-level objects directory is allowed`,
+    );
   }
 
   if (!relativePath.includes("/") && relativePath.endsWith(".scenario.json")) {
     return "corpus";
   }
-  if (isInObjectsDirectory && relativePath.endsWith(".json")) {
+  if (isDirectObject && relativePath.endsWith(".json")) {
     return "support";
+  }
+  if (isInObjectsDirectory && !isDirectObject) {
+    assert.fail(`${relativePath}: nested support object paths are not allowed`);
   }
   if (relativePath.endsWith(".json")) {
     assert.fail(`${relativePath}: JSON file is outside the objects directory and is not a top-level corpus`);
   }
   assert.fail(
-    `${relativePath}: unexpected file extension; expected a top-level .scenario.json corpus or an objects/**/*.json support object`,
+    `${relativePath}: unexpected file extension; expected a top-level .scenario.json corpus or an objects/*.json support object`,
   );
 }
 
@@ -154,6 +210,7 @@ function inventoryScenarioTree(rootDirectory: string): ScenarioInventory {
 
   const corpusFiles: ScenarioInventoryFile[] = [];
   const supportObjectFiles: ScenarioInventoryFile[] = [];
+  let foundObjectsDirectory = false;
 
   function visit(directoryPath: string, relativeDirectory: string): void {
     const entryNames = readdirSync(directoryPath).sort(compareCodeUnits);
@@ -173,6 +230,8 @@ function inventoryScenarioTree(rootDirectory: string): ScenarioInventory {
             : "other";
       const classification = classifyScenarioTreeEntry(relativePath, kind);
       if (classification === "directory") {
+        assert.equal(relativePath, "objects");
+        foundObjectsDirectory = true;
         visit(filePath, relativePath);
       } else if (classification === "corpus") {
         corpusFiles.push({ relativePath, filePath });
@@ -183,6 +242,10 @@ function inventoryScenarioTree(rootDirectory: string): ScenarioInventory {
   }
 
   visit(rootDirectory, "");
+  assert.ok(
+    foundObjectsDirectory,
+    `${rootDirectory}: required objects directory is missing`,
+  );
   corpusFiles.sort((left, right) => compareCodeUnits(left.relativePath, right.relativePath));
   supportObjectFiles.sort((left, right) =>
     compareCodeUnits(left.relativePath, right.relativePath),
@@ -567,17 +630,25 @@ function resolveJsonPointer(
   return requireRecord(current, location);
 }
 
-function resolveFixturePath(relativePath: string, location: string): string {
+function resolveFixturePath(
+  relativePath: string,
+  location: string,
+  fixtureRoot: string = fixturesDir,
+): string {
   assert.ok(relativePath !== "", `${location}: fixture path must not be empty`);
+  assert.ok(!relativePath.includes("\0"), `${location}: fixture path must not contain NUL bytes`);
   assert.ok(
     !path.posix.isAbsolute(relativePath) && !path.win32.isAbsolute(relativePath),
     `${location}: fixture path must be a repository-relative POSIX path beneath the fixture root`,
   );
   assert.ok(
+    !/^[A-Za-z]:/.test(relativePath),
+    `${location}: fixture path must not use platform-specific path syntax`,
+  );
+  assert.ok(
     !relativePath.includes("\\"),
     `${location}: fixture path must use POSIX separators, not backslashes`,
   );
-  assert.ok(!relativePath.includes("\0"), `${location}: fixture path must not contain NUL bytes`);
 
   const segments = relativePath.split("/");
   assert.ok(
@@ -588,18 +659,35 @@ function resolveFixturePath(relativePath: string, location: string): string {
     !segments.some((segment) => segment === "." || segment === ".."),
     `${location}: fixture path must not contain dot or traversal segments`,
   );
+  assert.equal(
+    path.posix.normalize(relativePath),
+    relativePath,
+    `${location}: fixture path must already be in normalized POSIX form`,
+  );
   assert.ok(
     relativePath.endsWith(".json"),
     `${location}: fixture path must end in .json`,
   );
 
-  const rootStats = lstatSync(fixturesDir, { throwIfNoEntry: false });
-  assert.ok(rootStats, `${fixturesDir}: fixture root does not exist`);
-  assert.ok(!rootStats.isSymbolicLink(), `${fixturesDir}: fixture root must not be a symlink`);
-  assert.ok(rootStats.isDirectory(), `${fixturesDir}: fixture root must be a directory`);
+  const absoluteFixtureRoot = path.resolve(fixtureRoot);
+  const rootStats = lstatSync(absoluteFixtureRoot, { throwIfNoEntry: false });
+  assert.ok(rootStats, `${absoluteFixtureRoot}: fixture root does not exist`);
+  assert.ok(
+    !rootStats.isSymbolicLink(),
+    `${absoluteFixtureRoot}: fixture root must not be a symlink`,
+  );
+  assert.ok(
+    rootStats.isDirectory(),
+    `${absoluteFixtureRoot}: fixture root must be a directory`,
+  );
+  const realFixtureRoot = realpathSync(absoluteFixtureRoot);
 
-  let resolved = fixturesDir;
+  let resolved = absoluteFixtureRoot;
   for (const [index, segment] of segments.entries()) {
+    assert.ok(
+      readdirSync(resolved).includes(segment),
+      `${location}: fixture does not exist (${segments.slice(0, index + 1).join("/")})`,
+    );
     resolved = path.join(resolved, segment);
     const stats = lstatSync(resolved, { throwIfNoEntry: false });
     const traversedPath = segments.slice(0, index + 1).join("/");
@@ -618,10 +706,14 @@ function resolveFixturePath(relativePath: string, location: string): string {
     }
   }
 
-  const relative = path.relative(fixturesDir, resolved);
+  const realResolved = realpathSync(resolved);
+  const relative = path.relative(realFixtureRoot, realResolved);
   assert.ok(
-    relative !== "" && !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative),
-    `${location}: fixture path must stay beneath ${fixturesDir}`,
+    relative !== "" &&
+      !relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative),
+    `${location}: fixture path must stay beneath ${absoluteFixtureRoot}`,
   );
   return resolved;
 }
@@ -876,6 +968,7 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
 
 function collectFixtureReferences(
   scenarioCorpora: readonly ScenarioCorpus[],
+  fixtureRoot: string = fixturesDir,
 ): Map<string, string[]> {
   const references = new Map<string, string[]>();
   for (const corpus of scenarioCorpora) {
@@ -884,7 +977,7 @@ function collectFixtureReferences(
       if (fixture === undefined) continue;
 
       const location = `${corpus.filePath}.objects.${objectName}.fixture`;
-      resolveFixturePath(fixture, location);
+      resolveFixturePath(fixture, location, fixtureRoot);
       const locations = references.get(fixture) ?? [];
       locations.push(location);
       references.set(fixture, locations);
@@ -1010,11 +1103,10 @@ test("validates raw support objects through the authoritative schema and public 
   );
 });
 
-test("classifies only top-level corpora and JSON support objects under objects", () => {
+test("classifies only top-level corpora and direct JSON support objects under objects", () => {
   assert.equal(classifyScenarioTreeEntry("model-task-result.scenario.json", "file"), "corpus");
   assert.equal(classifyScenarioTreeEntry("objects", "directory"), "directory");
   assert.equal(classifyScenarioTreeEntry("objects/base.json", "file"), "support");
-  assert.equal(classifyScenarioTreeEntry("objects/nested", "directory"), "directory");
 
   assert.throws(
     () => classifyScenarioTreeEntry("nested/base.json", "file"),
@@ -1029,6 +1121,14 @@ test("classifies only top-level corpora and JSON support objects under objects",
     /unexpected directory/,
   );
   assert.throws(
+    () => classifyScenarioTreeEntry("objects/nested", "directory"),
+    /unexpected directory/,
+  );
+  assert.throws(
+    () => classifyScenarioTreeEntry("objects/nested/base.json", "file"),
+    /nested support object/,
+  );
+  assert.throws(
     () => classifyScenarioTreeEntry("objects/link.json", "symlink"),
     /symlinks are not allowed/,
   );
@@ -1038,15 +1138,75 @@ test("classifies only top-level corpora and JSON support objects under objects",
   );
 });
 
+test("rejects nested directories, unexpected files, and a missing objects directory", () => {
+  withTemporaryDirectory((temporaryDirectory) => {
+    const scenarioRoot = path.join(temporaryDirectory, "scenarios");
+    mkdirSync(path.join(scenarioRoot, "objects"), { recursive: true });
+    mkdirSync(path.join(scenarioRoot, "nested"), { recursive: true });
+    writeFileSync(path.join(scenarioRoot, "nested", "hidden.scenario.json"), "{}\n");
+    assert.throws(() => inventoryScenarioTree(scenarioRoot), /nested: unexpected directory/);
+  });
+
+  withTemporaryDirectory((temporaryDirectory) => {
+    const scenarioRoot = path.join(temporaryDirectory, "scenarios");
+    mkdirSync(path.join(scenarioRoot, "objects", "nested"), { recursive: true });
+    writeFileSync(path.join(scenarioRoot, "objects", "nested", "hidden.json"), "{}\n");
+    assert.throws(
+      () => inventoryScenarioTree(scenarioRoot),
+      /objects\/nested: unexpected directory/,
+    );
+  });
+
+  withTemporaryDirectory((temporaryDirectory) => {
+    const scenarioRoot = path.join(temporaryDirectory, "scenarios");
+    mkdirSync(path.join(scenarioRoot, "objects"), { recursive: true });
+    writeFileSync(path.join(scenarioRoot, "unexpected.json"), "{}\n");
+    assert.throws(
+      () => inventoryScenarioTree(scenarioRoot),
+      /unexpected\.json: JSON file is outside the objects directory/,
+    );
+  });
+
+  withTemporaryDirectory((temporaryDirectory) => {
+    const scenarioRoot = path.join(temporaryDirectory, "scenarios");
+    mkdirSync(scenarioRoot, { recursive: true });
+    writeFileSync(path.join(scenarioRoot, "only.scenario.json"), "{}\n");
+    assert.throws(() => inventoryScenarioTree(scenarioRoot), /required objects directory/);
+  });
+});
+
+test("rejects symlink entries in isolated scenario trees", (context) => {
+  withTemporaryDirectory((temporaryDirectory) => {
+    const scenarioRoot = path.join(temporaryDirectory, "scenarios");
+    const targetPath = path.join(temporaryDirectory, "target.json");
+    mkdirSync(path.join(scenarioRoot, "objects"), { recursive: true });
+    writeFileSync(targetPath, "{}\n");
+    if (
+      !createSymlinkOrSkip(
+        context,
+        targetPath,
+        path.join(scenarioRoot, "objects", "linked.json"),
+        "file",
+      )
+    ) {
+      return;
+    }
+    assert.throws(() => inventoryScenarioTree(scenarioRoot), /symlinks are not allowed/);
+  });
+});
+
 test("rejects non-portable fixture references before filesystem lookup", () => {
   for (const [fixture, expected] of [
     [path.join(fixturesDir, "valid/model-task.json"), /relative POSIX path/],
     ["C:/checkout/model-task.json", /relative POSIX path/],
+    ["C:checkout/model-task.json", /platform-specific path syntax/],
     ["valid\\model-task.json", /POSIX separators/],
     ["./valid/model-task.json", /dot or traversal segments/],
     ["valid/../valid/model-task.json", /dot or traversal segments/],
     ["valid//model-task.json", /empty segments/],
     ["valid/model-task.json/", /empty segments/],
+    ["valid/model-task.json\0", /NUL bytes/],
+    ["valid/model-task.txt", /end in \.json/],
   ] as const) {
     assert.throws(
       () => resolveFixturePath(fixture, `fixture ${JSON.stringify(fixture)}`),
@@ -1058,24 +1218,79 @@ test("rejects non-portable fixture references before filesystem lookup", () => {
     resolveFixturePath("valid/model-task.json", "portable.fixture"),
     path.join(fixturesDir, "valid/model-task.json"),
   );
+  assert.equal(
+    resolveFixturePath(
+      "scenarios/objects/completed-deletion-run.json",
+      "shared-object.fixture",
+    ),
+    path.join(fixturesDir, "scenarios/objects/completed-deletion-run.json"),
+  );
+
+  withTemporaryDirectory((temporaryDirectory) => {
+    const isolatedFixtures = path.join(temporaryDirectory, "fixtures");
+    mkdirSync(path.join(isolatedFixtures, "valid"), { recursive: true });
+    writeFileSync(path.join(isolatedFixtures, "valid", "model-task.json"), "{}\n");
+    assert.equal(
+      resolveFixturePath("valid/model-task.json", "isolated.fixture", isolatedFixtures),
+      path.join(isolatedFixtures, "valid", "model-task.json"),
+    );
+  });
 });
 
-test("requires every inventoried support object to have a corpus fixture reference", () => {
-  const repeatedReference = new Map<string, readonly string[]>([
-    ["scenarios/objects/base.json", ["first.objects.base", "second.objects.base"]],
-  ]);
-  assert.doesNotThrow(() =>
-    assertSupportObjectsReferenced(["objects/base.json"], repeatedReference, "scenario-root"),
-  );
-  assert.throws(
-    () =>
-      assertSupportObjectsReferenced(
-        ["objects/base.json", "objects/orphan.json"],
-        repeatedReference,
-        "scenario-root",
-      ),
-    /objects\/orphan\.json: support object is not referenced by any corpus/,
-  );
+test("rejects an inventoried support object not referenced by any corpus", () => {
+  withTemporaryDirectory((temporaryDirectory) => {
+    const isolatedFixtures = path.join(temporaryDirectory, "fixtures");
+    const scenarioRoot = path.join(isolatedFixtures, "scenarios");
+    const objectsDirectory = path.join(scenarioRoot, "objects");
+    mkdirSync(objectsDirectory, { recursive: true });
+    writeFileSync(path.join(scenarioRoot, "corpus.scenario.json"), "{}\n");
+    writeFileSync(path.join(objectsDirectory, "used.json"), "{}\n");
+    writeFileSync(path.join(objectsDirectory, "orphan.json"), "{}\n");
+
+    const inventory = inventoryScenarioTree(scenarioRoot);
+    const corpus: ScenarioCorpus = {
+      filePath: path.join(scenarioRoot, "corpus.scenario.json"),
+      family: "model-task-result",
+      objects: {
+        used: { fixture: "scenarios/objects/used.json" },
+      },
+      scenarios: [],
+    };
+    const references = collectFixtureReferences([corpus], isolatedFixtures);
+    assert.throws(
+      () =>
+        assertSupportObjectsReferenced(
+          inventory.supportObjectFiles.map((file) => file.relativePath),
+          references,
+          scenarioRoot,
+        ),
+      /objects\/orphan\.json: support object is not referenced by any corpus/,
+    );
+  });
+});
+
+test("rejects an intermediate fixture symlink escape", (context) => {
+  withTemporaryDirectory((temporaryDirectory) => {
+    const isolatedFixtures = path.join(temporaryDirectory, "fixtures");
+    const outsideDirectory = path.join(temporaryDirectory, "outside");
+    mkdirSync(isolatedFixtures, { recursive: true });
+    mkdirSync(outsideDirectory, { recursive: true });
+    writeFileSync(path.join(outsideDirectory, "escaped.json"), "{}\n");
+    if (
+      !createSymlinkOrSkip(
+        context,
+        outsideDirectory,
+        path.join(isolatedFixtures, "escape"),
+        "dir",
+      )
+    ) {
+      return;
+    }
+    assert.throws(
+      () => resolveFixturePath("escape/escaped.json", "escaped.fixture", isolatedFixtures),
+      /fixture path component escape is a symlink/,
+    );
+  });
 });
 
 test("rejects unknown scenario kinds, duplicate ids, and incomplete expected errors", () => {
