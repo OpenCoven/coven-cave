@@ -285,7 +285,16 @@ export function pass<T>(value: T): ProtocolParseResult<T> {
 function toOrdinaryJsonValue(value: unknown): unknown {
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) {
-    return value.map((entry) => toOrdinaryJsonValue(entry));
+    const copy = new Array<unknown>(value.length);
+    for (let index = 0; index < value.length; index += 1) {
+      Object.defineProperty(copy, index, {
+        value: toOrdinaryJsonValue(value[index]),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return copy;
   }
 
   const copy: Record<string, unknown> = {};

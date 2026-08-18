@@ -172,6 +172,16 @@ export type ResearchRunCompositionOptionsV1 = {
   authorizedFreshConsentAt?: readonly string[];
 };
 
+type ParsedResearchRunCompositionOptionsV1 = {
+  manifestHistory?: readonly RunManifestV1[];
+  authorizedFreshConsentAt: readonly string[];
+};
+
+const RESEARCH_RUN_COMPOSITION_OPTION_KEYS = new Set([
+  "manifestHistory",
+  "authorizedFreshConsentAt",
+]);
+
 function childPath(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
     ? `${path}.${key}`
@@ -184,6 +194,100 @@ function indexPath(path: string, index: number): string {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function normalizedCompositionOptionKey(key: string): string {
+  return key.normalize("NFKC").replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
+}
+
+function validateResearchRunCompositionOptionKeys(
+  options: Record<string, unknown>,
+): ProtocolParseResult<void> {
+  for (const key of Object.keys(options)) {
+    if (RESEARCH_RUN_COMPOSITION_OPTION_KEYS.has(key)) continue;
+    const normalized = normalizedCompositionOptionKey(key);
+    if (
+      normalized.includes("history")
+      || normalized.includes("manifest")
+      || normalized.includes("consent")
+      || normalized.includes("authoriz")
+      || normalized.includes("retention")
+    ) {
+      return fail(
+        "invalid_value",
+        childPath("$.options", key),
+        `Unexpected security-sensitive research-run composition option ${key}`,
+      );
+    }
+  }
+  return pass(undefined);
+}
+
+function parseResearchRunCompositionOptions(
+  value: unknown,
+): ProtocolParseResult<ParsedResearchRunCompositionOptionsV1> {
+  const wireOptions = copyProtocolJsonValue(value, "$.options");
+  if (!wireOptions.ok) return wireOptions;
+  if (!isRecord(wireOptions.value)) {
+    return fail(
+      "invalid_type",
+      "$.options",
+      "Research Run composition options must be an object",
+    );
+  }
+
+  const keys = validateResearchRunCompositionOptionKeys(wireOptions.value);
+  if (!keys.ok) return keys;
+
+  let manifestHistory: RunManifestV1[] | undefined;
+  if (hasOwn(wireOptions.value, "manifestHistory")) {
+    if (!Array.isArray(wireOptions.value.manifestHistory)) {
+      return fail(
+        "invalid_type",
+        "$.manifestHistory",
+        "manifestHistory must be an array",
+      );
+    }
+    manifestHistory = [];
+    for (let index = 0; index < wireOptions.value.manifestHistory.length; index += 1) {
+      const parsedManifest = parseRunManifestV1(
+        wireOptions.value.manifestHistory[index],
+      );
+      if (!parsedManifest.ok) return parsedManifest;
+      manifestHistory.push(parsedManifest.value);
+    }
+  }
+
+  const authorizedFreshConsentAt: string[] = [];
+  if (hasOwn(wireOptions.value, "authorizedFreshConsentAt")) {
+    if (!Array.isArray(wireOptions.value.authorizedFreshConsentAt)) {
+      return fail(
+        "invalid_type",
+        "$.authorizedFreshConsentAt",
+        "authorizedFreshConsentAt must be an array",
+      );
+    }
+    for (
+      let index = 0;
+      index < wireOptions.value.authorizedFreshConsentAt.length;
+      index += 1
+    ) {
+      const authorizedAt = wireOptions.value.authorizedFreshConsentAt[index];
+      if (!isUtcTimestamp(authorizedAt)) {
+        return fail(
+          "invalid_value",
+          `$.authorizedFreshConsentAt[${index}]`,
+          "fresh-consent authorizations must be exact UTC timestamps",
+        );
+      }
+      authorizedFreshConsentAt.push(authorizedAt);
+    }
+  }
+
+  return pass({
+    ...(manifestHistory === undefined ? {} : { manifestHistory }),
+    authorizedFreshConsentAt,
+  });
 }
 
 function validateClosedObjectKeys(
@@ -466,35 +570,11 @@ function prefixManifestHistoryError<T>(
 function validateEmbeddedManifestHistory(
   run: ResearchRunV1,
   contextPack: ContextPackV1 | undefined,
-  options: ResearchRunCompositionOptionsV1,
+  options: ParsedResearchRunCompositionOptionsV1,
 ): ProtocolParseResult<void> {
   const manifest = run.artifactManifest;
   const history = options.manifestHistory;
-  const authorizations = options.authorizedFreshConsentAt ?? [];
-
-  if (history !== undefined && !Array.isArray(history)) {
-    return fail(
-      "invalid_type",
-      "$.manifestHistory",
-      "manifestHistory must be an array",
-    );
-  }
-  if (!Array.isArray(authorizations)) {
-    return fail(
-      "invalid_type",
-      "$.authorizedFreshConsentAt",
-      "authorizedFreshConsentAt must be an array",
-    );
-  }
-  for (const [index, authorizedAt] of authorizations.entries()) {
-    if (!isUtcTimestamp(authorizedAt)) {
-      return fail(
-        "invalid_value",
-        `$.authorizedFreshConsentAt[${index}]`,
-        "fresh-consent authorizations must be exact UTC timestamps",
-      );
-    }
-  }
+  const authorizations = options.authorizedFreshConsentAt;
 
   if (!manifest) {
     if (history !== undefined) {
@@ -549,7 +629,8 @@ function validateEmbeddedManifestHistory(
     );
   }
 
-  for (const [index, item] of history.entries()) {
+  for (let index = 0; index < history.length; index += 1) {
+    const item = history[index]!;
     const itemPath = `$.manifestHistory[${index}]`;
     if (item.revision !== index + 1) {
       return fail(
@@ -660,6 +741,9 @@ export function validateResearchRunContextPackV1(
   contextPack?: ContextPackV1,
   options: ResearchRunCompositionOptionsV1 = {},
 ): ProtocolParseResult<ResearchRunV1> {
+  const parsedOptions = parseResearchRunCompositionOptions(options);
+  if (!parsedOptions.ok) return parsedOptions;
+
   const parsedRun = parseResearchRunV1(run);
   if (!parsedRun.ok) return parsedRun;
 
@@ -670,54 +754,10 @@ export function validateResearchRunContextPackV1(
     parsedContextPack = parsed.value;
   }
 
-  const manifestHistory = options.manifestHistory;
-  let parsedManifestHistory: RunManifestV1[] | undefined;
-  if (manifestHistory !== undefined) {
-    if (!Array.isArray(manifestHistory)) {
-      return fail("invalid_type", "$.manifestHistory", "manifestHistory must be an array");
-    }
-    parsedManifestHistory = [];
-    for (const manifest of manifestHistory) {
-      const parsedManifest = parseRunManifestV1(manifest);
-      if (!parsedManifest.ok) return parsedManifest;
-      parsedManifestHistory.push(parsedManifest.value);
-    }
-  }
-
-  const authorizationTimestamps = options.authorizedFreshConsentAt;
-  let authorizedFreshConsentAt: string[] | undefined;
-  if (authorizationTimestamps !== undefined) {
-    if (!Array.isArray(authorizationTimestamps)) {
-      return fail(
-        "invalid_type",
-        "$.authorizedFreshConsentAt",
-        "authorizedFreshConsentAt must be an array",
-      );
-    }
-    authorizedFreshConsentAt = [];
-    for (const [index, authorizedAt] of authorizationTimestamps.entries()) {
-      if (!isUtcTimestamp(authorizedAt)) {
-        return fail(
-          "invalid_value",
-          `$.authorizedFreshConsentAt[${index}]`,
-          "fresh-consent authorizations must be exact UTC timestamps",
-        );
-      }
-      authorizedFreshConsentAt.push(authorizedAt);
-    }
-  }
-
   const composition = validateResearchRunContextPackParsedV1(
     parsedRun.value,
     parsedContextPack,
-    {
-      ...(parsedManifestHistory === undefined
-        ? {}
-        : { manifestHistory: parsedManifestHistory }),
-      ...(authorizedFreshConsentAt === undefined
-        ? {}
-        : { authorizedFreshConsentAt }),
-    },
+    parsedOptions.value,
   );
   if (!composition.ok) return composition;
   return pass(run);
@@ -726,7 +766,7 @@ export function validateResearchRunContextPackV1(
 function validateResearchRunContextPackParsedV1(
   run: ResearchRunV1,
   contextPack: ContextPackV1 | undefined,
-  options: ResearchRunCompositionOptionsV1,
+  options: ParsedResearchRunCompositionOptionsV1,
 ): ProtocolParseResult<ResearchRunV1> {
   if (run.artifactManifest) {
     const artifactContentSync = validateArtifactContentSyncConsent(
@@ -1642,16 +1682,23 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   });
 }
 
-function parseRunEventSnapshots(
+function snapshotRunEventContainer(
   events: readonly RunEventV1[],
-): ProtocolParseResult<RunEventV1[]> {
-  if (!Array.isArray(events)) {
-    return fail("invalid_type", "$", "events must be an array");
+): ProtocolParseResult<readonly unknown[]> {
+  const wireEvents = copyProtocolJsonValue(events, "$.events");
+  if (!wireEvents.ok) return wireEvents;
+  if (!Array.isArray(wireEvents.value)) {
+    return fail("invalid_type", "$.events", "events must be an array");
   }
+  return pass(wireEvents.value);
+}
 
+function parseRunEventSnapshots(
+  events: readonly unknown[],
+): ProtocolParseResult<RunEventV1[]> {
   const parsedEvents: RunEventV1[] = [];
-  for (const event of events) {
-    const parsedEvent = parseRunEventV1(event);
+  for (let index = 0; index < events.length; index += 1) {
+    const parsedEvent = parseRunEventV1(events[index]);
     if (!parsedEvent.ok) return parsedEvent;
     parsedEvents.push(parsedEvent.value);
   }
@@ -1674,7 +1721,8 @@ function validateRunEventSequenceParsed(
   }
 
   const runId = first.runId;
-  for (const [index, event] of events.entries()) {
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]!;
     const eventPath = indexPath("$", index);
     if (event.runId !== runId) {
       return fail("semantic_conflict", childPath(eventPath, "runId"), `Event runId must equal ${runId}`);
@@ -1706,7 +1754,10 @@ function validateRunEventSequenceParsed(
 export function validateRunEventSequence(
   events: readonly RunEventV1[],
 ): ProtocolParseResult<readonly RunEventV1[]> {
-  const parsedEvents = parseRunEventSnapshots(events);
+  const eventSnapshots = snapshotRunEventContainer(events);
+  if (!eventSnapshots.ok) return eventSnapshots;
+
+  const parsedEvents = parseRunEventSnapshots(eventSnapshots.value);
   if (!parsedEvents.ok) return parsedEvents;
 
   const sequence = validateRunEventSequenceParsed(parsedEvents.value);
@@ -1842,10 +1893,13 @@ export function validateRunManifestDeletionEventV1(
   run: ResearchRunV1,
   events: readonly RunEventV1[],
 ): ProtocolParseResult<ResearchRunV1> {
+  const eventSnapshots = snapshotRunEventContainer(events);
+  if (!eventSnapshots.ok) return eventSnapshots;
+
   const parsedRun = parseResearchRunV1(run);
   if (!parsedRun.ok) return parsedRun;
 
-  const parsedEvents = parseRunEventSnapshots(events);
+  const parsedEvents = parseRunEventSnapshots(eventSnapshots.value);
   if (!parsedEvents.ok) return parsedEvents;
 
   const composition = validateRunManifestDeletionEventParsedV1(

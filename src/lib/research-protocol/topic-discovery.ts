@@ -961,18 +961,21 @@ export function validateTopicDiscoveryCompositionV1(
   job: TopicDiscoveryJobV1,
   proposals: readonly TopicProposalV1[],
 ): ProtocolParseResult<TopicDiscoveryJobV1> {
+  const proposalSnapshots = copyProtocolJsonValue(proposals, "$.proposals");
+  if (!proposalSnapshots.ok) return proposalSnapshots;
+  if (!Array.isArray(proposalSnapshots.value)) {
+    return fail("invalid_type", "$.proposals", "proposals must be an array");
+  }
+
   const parsedContextPack = parseContextPackV1(contextPack);
   if (!parsedContextPack.ok) return parsedContextPack;
 
   const parsedJob = parseTopicDiscoveryJobV1(job);
   if (!parsedJob.ok) return parsedJob;
 
-  if (!Array.isArray(proposals)) {
-    return fail("invalid_type", "$", "proposals must be an array");
-  }
   const parsedProposals: TopicProposalV1[] = [];
-  for (const proposal of proposals) {
-    const parsedProposal = parseTopicProposalV1(proposal);
+  for (let index = 0; index < proposalSnapshots.value.length; index += 1) {
+    const parsedProposal = parseTopicProposalV1(proposalSnapshots.value[index]);
     if (!parsedProposal.ok) return parsedProposal;
     parsedProposals.push(parsedProposal.value);
   }
@@ -1027,7 +1030,8 @@ function validateTopicDiscoveryCompositionParsedV1(
     );
   }
 
-  for (const [index, proposal] of proposals.entries()) {
+  for (let index = 0; index < proposals.length; index += 1) {
+    const proposal = proposals[index]!;
     if (job.proposalIds[index] !== proposal.id) {
       return fail(
         "semantic_conflict",
@@ -1039,7 +1043,8 @@ function validateTopicDiscoveryCompositionParsedV1(
 
   const resources = new Map(contextPack.resources.map((resource) => [resource.id, resource]));
   const proposalCreatedAtLowerBound = job.startedAt ?? job.requestedAt;
-  for (const [proposalIndex, proposal] of proposals.entries()) {
+  for (let proposalIndex = 0; proposalIndex < proposals.length; proposalIndex += 1) {
+    const proposal = proposals[proposalIndex]!;
     const proposalPath = indexPath("$.proposals", proposalIndex);
     if (proposal.discoveryJobId !== job.id) {
       return fail(
@@ -1076,7 +1081,9 @@ function validateTopicDiscoveryCompositionParsedV1(
     }
 
     for (const evidenceKind of ["evidence", "counterevidence"] as const) {
-      for (const [evidenceIndex, evidence] of proposal[evidenceKind].entries()) {
+      const evidenceEntries = proposal[evidenceKind];
+      for (let evidenceIndex = 0; evidenceIndex < evidenceEntries.length; evidenceIndex += 1) {
+        const evidence = evidenceEntries[evidenceIndex]!;
         const evidencePath = indexPath(childPath(proposalPath, evidenceKind), evidenceIndex);
         const resource = resources.get(evidence.resourceId);
         if (!resource) {

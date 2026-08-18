@@ -136,6 +136,12 @@ export type ManifestRevisionOptions = {
   contextConsent?: RetentionPolicyV1;
 };
 
+const MANIFEST_REVISION_OPTION_KEYS = new Set([
+  "freshConsent",
+  "freshConsentAt",
+  "contextConsent",
+]);
+
 function childPath(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
     ? `${path}.${key}`
@@ -148,6 +154,93 @@ function indexPath(path: string, index: number): string {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function normalizedOptionKey(key: string): string {
+  return key.normalize("NFKC").replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
+}
+
+function validateManifestRevisionOptionKeys(
+  options: Record<string, unknown>,
+): ProtocolParseResult<void> {
+  for (const key of Object.keys(options)) {
+    if (MANIFEST_REVISION_OPTION_KEYS.has(key)) continue;
+    const normalized = normalizedOptionKey(key);
+    if (
+      normalized.includes("consent")
+      || normalized.includes("retention")
+      || normalized.includes("authoriz")
+    ) {
+      return fail(
+        "invalid_value",
+        childPath("$.options", key),
+        `Unexpected security-sensitive manifest revision option ${key}`,
+      );
+    }
+  }
+  return pass(undefined);
+}
+
+function parseContextConsentOption(
+  value: unknown,
+  path: string,
+): ProtocolParseResult<RetentionPolicyV1 | undefined> {
+  if (value === undefined) return pass(undefined);
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, "contextConsent must be a string");
+  }
+  if (!Object.hasOwn(RETENTION_ORDER, value)) {
+    return fail(
+      "invalid_value",
+      path,
+      "contextConsent must be run-only, 7-days, or project",
+    );
+  }
+  return pass(value as RetentionPolicyV1);
+}
+
+function parseManifestRevisionOptions(
+  value: unknown,
+): ProtocolParseResult<ManifestRevisionOptions> {
+  const wireOptions = copyProtocolJsonValue(value, "$.options");
+  if (!wireOptions.ok) return wireOptions;
+  if (!isRecord(wireOptions.value)) {
+    return fail("invalid_type", "$.options", "Manifest revision options must be an object");
+  }
+
+  const keys = validateManifestRevisionOptionKeys(wireOptions.value);
+  if (!keys.ok) return keys;
+
+  const options: ManifestRevisionOptions = {};
+  if (hasOwn(wireOptions.value, "freshConsent")) {
+    if (typeof wireOptions.value.freshConsent !== "boolean") {
+      return fail(
+        "invalid_type",
+        "$.options.freshConsent",
+        "freshConsent must be a boolean",
+      );
+    }
+    options.freshConsent = wireOptions.value.freshConsent;
+  }
+  if (hasOwn(wireOptions.value, "freshConsentAt")) {
+    if (typeof wireOptions.value.freshConsentAt !== "string") {
+      return fail(
+        "invalid_type",
+        "$.options.freshConsentAt",
+        "freshConsentAt must be a string",
+      );
+    }
+    options.freshConsentAt = wireOptions.value.freshConsentAt;
+  }
+  if (hasOwn(wireOptions.value, "contextConsent")) {
+    const contextConsent = parseContextConsentOption(
+      wireOptions.value.contextConsent,
+      "$.options.contextConsent",
+    );
+    if (!contextConsent.ok) return contextConsent;
+    options.contextConsent = contextConsent.value;
+  }
+  return pass(options);
 }
 
 function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
@@ -1943,12 +2036,18 @@ export function validateManifestRetentionConsent(
   manifest: RunManifestV1,
   contextConsent: RetentionPolicyV1 | undefined,
 ): ProtocolParseResult<RunManifestV1> {
+  const parsedContextConsent = parseContextConsentOption(
+    contextConsent,
+    "$.contextConsent",
+  );
+  if (!parsedContextConsent.ok) return parsedContextConsent;
+
   const parsedManifest = parseRunManifestV1(manifest);
   if (!parsedManifest.ok) return parsedManifest;
 
   const consent = validateManifestRetentionConsentParsed(
     parsedManifest.value,
-    contextConsent,
+    parsedContextConsent.value,
   );
   if (!consent.ok) return consent;
   return pass(manifest);
@@ -1957,7 +2056,7 @@ export function validateManifestRetentionConsent(
 function validateRunManifestRevisionParsed(
   previous: RunManifestV1,
   next: RunManifestV1,
-  options: ManifestRevisionOptions = {},
+  options: ManifestRevisionOptions,
 ): ProtocolParseResult<RunManifestV1> {
   if (next.revision !== previous.revision + 1) {
     return fail(
@@ -2301,6 +2400,9 @@ export function validateRunManifestRevision(
   next: RunManifestV1,
   options: ManifestRevisionOptions = {},
 ): ProtocolParseResult<RunManifestV1> {
+  const parsedOptions = parseManifestRevisionOptions(options);
+  if (!parsedOptions.ok) return parsedOptions;
+
   const parsedPrevious = parseRunManifestV1(previous);
   if (!parsedPrevious.ok) return parsedPrevious;
 
@@ -2310,7 +2412,7 @@ export function validateRunManifestRevision(
   const revision = validateRunManifestRevisionParsed(
     parsedPrevious.value,
     parsedNext.value,
-    options,
+    parsedOptions.value,
   );
   if (!revision.ok) return revision;
   return pass(next);

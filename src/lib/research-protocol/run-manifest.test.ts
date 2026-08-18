@@ -44,6 +44,7 @@ import {
   parseRunManifestV1,
   validateManifestRetentionConsent,
   validateRunManifestRevision,
+  type ManifestRevisionOptions,
   type RunManifestModelExecutionV1,
   type RunManifestV1,
 } from "./run-manifest.ts";
@@ -2168,6 +2169,71 @@ test("revision validation reparses both mutable manifest snapshots", () => {
     expectError(
       validateRunManifestRevision(previous, next, { contextConsent: "7-days" }),
       "$.artifacts[0].title",
+      "invalid_value",
+    );
+  }
+});
+
+test("revision options are snapshotted before either manifest and validated explicitly", () => {
+  {
+    const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+    const nextBefore = structuredClone(next);
+    let getterCalls = 0;
+    const options = {} as ManifestRevisionOptions;
+    Object.defineProperty(options, "contextConsent", {
+      get() {
+        getterCalls += 1;
+        next.revision = 0;
+        return "7-days";
+      },
+      enumerable: true,
+      configurable: true,
+    });
+
+    expectError(
+      validateRunManifestRevision(previous, next, options),
+      "$.options",
+      "invalid_value",
+    );
+    assert.equal(getterCalls, 0);
+    assert.deepEqual(next, nextBefore);
+  }
+
+  {
+    const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+    const options = Object.freeze({ contextConsent: "7-days" as const });
+    assert.strictEqual(
+      expectOk(validateRunManifestRevision(previous, next, options)),
+      next,
+    );
+    assert.strictEqual(
+      expectOk(
+        validateRunManifestRevision(previous, next, {
+          ...options,
+          futureDiagnosticLabel: "benign",
+        } as ManifestRevisionOptions),
+      ),
+      next,
+    );
+  }
+
+  {
+    const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+    expectError(
+      validateRunManifestRevision(previous, next, {
+        contextConsent: true,
+      } as unknown as ManifestRevisionOptions),
+      "$.options.contextConsent",
+      "invalid_type",
+    );
+    expectError(
+      validateRunManifestRevision(previous, next, {
+        context_consent: "7-days",
+      } as unknown as ManifestRevisionOptions),
+      "$.options.context_consent",
       "invalid_value",
     );
   }

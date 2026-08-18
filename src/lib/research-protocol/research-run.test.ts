@@ -29,6 +29,7 @@ import {
   validateResearchRunContextPackV1,
   validateRunManifestDeletionEventV1,
   validateRunEventSequence,
+  type ResearchRunCompositionOptionsV1,
   type ResearchRunV1,
   type ResearchRunStatusV1,
   type RunEventV1,
@@ -64,6 +65,46 @@ function expectError(
     assert.equal(result.error.code, code);
   }
   return result.error;
+}
+
+function hostileArrayContainers<T>(
+  values: readonly T[],
+): Array<{
+  label: string;
+  value: readonly T[];
+  accessorCalls: () => number;
+}> {
+  const indexAccessor = values.slice();
+  let indexAccessorCalls = 0;
+  Object.defineProperty(indexAccessor, "0", {
+    get() {
+      indexAccessorCalls += 1;
+      return values[0];
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  const customPrototype = values.slice();
+  Object.setPrototypeOf(customPrototype, Object.create(Array.prototype));
+
+  return [
+    {
+      label: "index accessor",
+      value: indexAccessor,
+      accessorCalls: () => indexAccessorCalls,
+    },
+    {
+      label: "custom prototype",
+      value: customPrototype,
+      accessorCalls: () => 0,
+    },
+    {
+      label: "Proxy",
+      value: new Proxy(values.slice(), {}),
+      accessorCalls: () => 0,
+    },
+  ];
 }
 
 const researchSchemaContext: Record<string, TSchema> = {
@@ -1253,6 +1294,71 @@ test("run and Context Pack composition reparses every mutable protocol input", (
   }
 });
 
+test("research-run options are snapshotted as one boundary before protocol parsing", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const runBefore = structuredClone(run);
+  let getterCalls = 0;
+  const options = {
+    authorizedFreshConsentAt: [freshConsentAt],
+  } as ResearchRunCompositionOptionsV1;
+  Object.defineProperty(options, "manifestHistory", {
+    get() {
+      getterCalls += 1;
+      run.status = "queued";
+      return [root, tip];
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, options),
+    "$.options",
+    "invalid_value",
+  );
+  assert.equal(getterCalls, 0);
+  assert.deepEqual(run, runBefore);
+});
+
+test("research-run option collection containers reject exotic arrays before iteration", () => {
+  for (const field of ["manifestHistory", "authorizedFreshConsentAt"] as const) {
+    const { run, contextPack, root, tip, freshConsentAt } =
+      rootedExtendedRetentionComposition();
+    const values: readonly unknown[] = field === "manifestHistory"
+      ? [root, tip]
+      : [freshConsentAt];
+
+    for (const hostile of hostileArrayContainers<unknown>(values)) {
+      const options = {
+        manifestHistory: [root, tip],
+        authorizedFreshConsentAt: [freshConsentAt],
+        [field]: hostile.value,
+      } as unknown as ResearchRunCompositionOptionsV1;
+      expectError(
+        validateResearchRunContextPackV1(run, contextPack, options),
+        "$.options",
+        "invalid_value",
+      );
+      assert.equal(hostile.accessorCalls(), 0, `${field}: ${hostile.label}`);
+    }
+  }
+});
+
+test("ordinary frozen research-run options and collection arrays preserve run identity", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const options = Object.freeze({
+    manifestHistory: Object.freeze([root, tip]),
+    authorizedFreshConsentAt: Object.freeze([freshConsentAt]),
+  });
+
+  assert.strictEqual(
+    expectOk(validateResearchRunContextPackV1(run, contextPack, options)),
+    run,
+  );
+});
+
 test("run and Context Pack composition requires research-run purpose and policy", () => {
   const pack = expectOk(parseContextPackV1(validContextPack));
   const boundRun = expectOk(
@@ -1930,7 +2036,7 @@ test("events parse and validateRunEventSequence enforces contiguous same-run seq
   expectError(parseRunEventV1(invalidRunEventSequence), "$.sequence", "invalid_value");
 
   const second: RunEventV1 = {
-    ...parsedEvent,
+    ...structuredClone(parsedEvent),
     sequence: 2,
     type: "run.status",
   };
@@ -1992,7 +2098,7 @@ test("validateRunEventSequence reparses every mutable event snapshot", () => {
       value: "not-canonical-wire-data",
       enumerable: false,
     });
-    expectError(validateRunEventSequence(events), "$", "invalid_value");
+    expectError(validateRunEventSequence(events), "$.events", "invalid_value");
   }
 });
 
@@ -2768,9 +2874,66 @@ test("deletion-event composition reparses the run and every event snapshot", () 
     });
     expectError(
       validateRunManifestDeletionEventV1(run, events),
-      "$",
+      "$.events",
       "invalid_value",
     );
+  }
+});
+
+test("event collection snapshots reject iterator substitution and exotic arrays", () => {
+  {
+    const events = [
+      parsedEvent(1, "run.created", { status: "queued" }),
+      parsedEvent(2, "run.status", { status: "scoping" }),
+    ];
+    const run = expectOk(
+      parseResearchRunV1({
+        ...runForStatus("scoping"),
+        nextEventSequence: 3,
+      }),
+    );
+    const runBefore = structuredClone(run);
+    let iteratorCalls = 0;
+    Object.defineProperty(events, Symbol.iterator, {
+      value: function* () {
+        iteratorCalls += 1;
+        run.nextEventSequence = 99;
+        yield events[0]!;
+        yield events[1]!;
+      },
+      configurable: true,
+    });
+
+    expectError(
+      validateRunManifestDeletionEventV1(run, events),
+      "$.events",
+      "invalid_value",
+    );
+    assert.equal(iteratorCalls, 0);
+    assert.deepEqual(run, runBefore);
+  }
+
+  {
+    const events = [
+      parsedEvent(1, "run.created", { status: "queued" }),
+      parsedEvent(2, "run.status", { status: "scoping" }),
+    ];
+    for (const hostile of hostileArrayContainers(events)) {
+      expectError(
+        validateRunEventSequence(hostile.value),
+        "$.events",
+        "invalid_value",
+      );
+      assert.equal(hostile.accessorCalls(), 0, hostile.label);
+    }
+  }
+
+  {
+    const events = Object.freeze([
+      parsedEvent(1, "run.created", { status: "queued" }),
+      parsedEvent(2, "run.status", { status: "scoping" }),
+    ]);
+    assert.strictEqual(expectOk(validateRunEventSequence(events)), events);
   }
 });
 

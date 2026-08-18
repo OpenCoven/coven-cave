@@ -182,6 +182,76 @@ test("topic discovery composition reparses every mutable protocol input", () => 
   }
 });
 
+test("proposal containers are snapshotted before protocol parsing and iteration", () => {
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    const jobBefore = structuredClone(job);
+    let iteratorCalls = 0;
+    Object.defineProperty(proposals, Symbol.iterator, {
+      value: function* () {
+        iteratorCalls += 1;
+        job.proposalIds.length = 0;
+        yield proposals[0]!;
+      },
+      configurable: true,
+    });
+
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+      "$.proposals",
+      "invalid_value",
+    );
+    assert.equal(iteratorCalls, 0);
+    assert.deepEqual(job, jobBefore);
+  }
+
+  for (const kind of ["index accessor", "custom prototype", "Proxy"] as const) {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    let accessorCalls = 0;
+    let container: readonly TopicProposalV1[];
+    if (kind === "index accessor") {
+      const accessor = proposals.slice();
+      Object.defineProperty(accessor, "0", {
+        get() {
+          accessorCalls += 1;
+          return proposals[0];
+        },
+        enumerable: true,
+        configurable: true,
+      });
+      container = accessor;
+    } else if (kind === "custom prototype") {
+      const customPrototype = proposals.slice();
+      Object.setPrototypeOf(customPrototype, Object.create(Array.prototype));
+      container = customPrototype;
+    } else {
+      container = new Proxy(proposals.slice(), {});
+    }
+
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, container),
+      "$.proposals",
+      "invalid_value",
+    );
+    assert.equal(accessorCalls, 0, kind);
+  }
+
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    const frozenProposals = Object.freeze(proposals.slice());
+    assert.strictEqual(
+      expectOk(
+        validateTopicDiscoveryCompositionV1(
+          contextPack,
+          job,
+          frozenProposals,
+        ),
+      ),
+      job,
+    );
+  }
+});
+
 test("topic discovery composition requires a discovery-purpose Context Pack and policy", () => {
   const { job, proposals } = validDiscoveryComposition();
   const researchRunPack = expectOk(parseContextPackV1(validContextPack));
