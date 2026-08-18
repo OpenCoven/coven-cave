@@ -58,6 +58,175 @@
       },
       "digestTargets": [""]
     },
+    "historical-synced-manifest-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "state": "assembling",
+        "finalizedAt": null,
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "cloud-content",
+            "contentSync": "synced",
+            "createdAt": "2026-08-15T20:08:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "historical-synced-manifest-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "c805799177727fea6a0af276285fa478e1c8add8bec7ab6cbdc34d5dd4b0f1bb",
+        "artifacts": []
+      },
+      "digestTargets": [""]
+    },
+    "historical-synced-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "revision": 2,
+          "previousDigest": "c805799177727fea6a0af276285fa478e1c8add8bec7ab6cbdc34d5dd4b0f1bb",
+          "artifacts": [],
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "historical-future-artifact-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "state": "assembling",
+        "finalizedAt": null,
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "device-local",
+            "contentSync": "not-requested",
+            "createdAt": "2030-01-01T00:00:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "historical-future-artifact-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "d1e388a21604a47fe83f8b1c1a86454ba5e9ea14ff29a77163a587e693b7628a",
+        "artifacts": []
+      },
+      "digestTargets": [""]
+    },
+    "historical-future-artifact-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "revision": 2,
+          "previousDigest": "d1e388a21604a47fe83f8b1c1a86454ba5e9ea14ff29a77163a587e693b7628a",
+          "artifacts": [],
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "historical-future-source-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "state": "assembling",
+        "finalizedAt": null,
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          },
+          {
+            "kind": "public-evidence",
+            "id": "evidence_future_01",
+            "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "canonicalUrl": "https://example.test/future",
+            "fetchedAt": "2030-01-01T00:00:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "historical-future-source-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "1c0efabd0f8f33114ba884f2045f5e6355a01e390fcb4f9b72bbb74f3455fcd5"
+      },
+      "digestTargets": [""]
+    },
+    "historical-future-source-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "revision": 2,
+          "previousDigest": "1c0efabd0f8f33114ba884f2045f5e6355a01e390fcb4f9b72bbb74f3455fcd5",
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "historical-future-deletion-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-16T20:09:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2030-01-01T00:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "historical-future-deletion-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json",
+      "mergePatch": {
+        "previousDigest": "8f45bf0dca01942df4d4a59a51d7ad69df33124af5e91d56f704100d7f28b2a7"
+      },
+      "digestTargets": [""]
+    },
+    "historical-future-deletion-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "previousDigest": "8f45bf0dca01942df4d4a59a51d7ad69df33124af5e91d56f704100d7f28b2a7"
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "occurrence-manifest-root": {
       "fixture": "scenarios/objects/context-bound-manifest-root.json",
       "mergePatch": {
@@ -981,6 +1150,85 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.manifestHistory[1]"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-historical-sync-without-consent",
+      "description": "A later revision cannot erase an unauthorized historical cloud-content sync.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "historical-synced-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "historical-synced-manifest-root",
+          "historical-synced-manifest-tip"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-historical-future-artifact",
+      "description": "A later revision cannot erase a historical artifact occurrence after the run snapshot.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "historical-future-artifact-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "historical-future-artifact-root",
+          "historical-future-artifact-tip"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].artifacts[0].createdAt"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-historical-future-source",
+      "description": "A later revision cannot erase a historical public-source occurrence after the run snapshot.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "historical-future-source-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "historical-future-source-root",
+          "historical-future-source-tip"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].sources[1].fetchedAt"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-historical-future-deletion",
+      "description": "A later revision cannot erase a historical deletion request after the run snapshot.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "historical-future-deletion-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "historical-future-deletion-root",
+          "historical-future-deletion-tip"
+        ]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].deletion.requestedAt"
       }
     },
     {

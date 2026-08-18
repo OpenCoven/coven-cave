@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_url_01",
   "runId": "run_url_01",
-  "digest": "e7718ecb3baebfc0f53e8acd06638cbf5c543812dc6f94f912aa61de46b518d5",
+  "digest": "6614886d837aa939b93da809669e3b479107c372e3922e5e48652b4a8eab2540",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-18T12:00:00.000Z",
@@ -13,7 +13,7 @@
       "id": "evidence_url_01",
       "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "snapshotDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "canonicalUrl": "https://例え.テスト:8443/検索?q=猫#証拠",
+      "canonicalUrl": "https://xn--r8jz45g.xn--zckzah:8443/%E6%A4%9C%E7%B4%A2?q=%E7%8C%AB#%E8%A8%BC%E6%8B%A0",
       "fetchedAt": "2026-08-18T12:01:00.000Z"
     }
   ],

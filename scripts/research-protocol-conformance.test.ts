@@ -232,12 +232,6 @@ test("external schema references resolve by RFC3986 semantics to registered sche
       reference: "../opencoven.run-manifest/v1",
       resolvedId: "opencoven.run-manifest/v1",
     },
-    {
-      sourceId: "opencoven.run-event/v1",
-      path: "$.$defs.sensitivePropertyName.$ref",
-      reference: "../opencoven.run-manifest/v1#/$defs/sensitivePropertyName",
-      resolvedId: "opencoven.run-manifest/v1",
-    },
   ]);
   for (const { sourceId, path: referencePath, reference, resolvedId } of references) {
     assert.ok(

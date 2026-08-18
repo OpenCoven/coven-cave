@@ -1,5 +1,6 @@
 {
   "schema": "opencoven.run-event/v1",
+  "id": "event_01",
   "runId": "run_01",
   "sequence": 1,
   "type": "run.created",

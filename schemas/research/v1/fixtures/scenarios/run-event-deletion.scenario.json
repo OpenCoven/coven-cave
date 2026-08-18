@@ -38,7 +38,7 @@
       }
     },
     "deleted-count-event": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 2,
         "type": "content.deleted",
@@ -51,7 +51,7 @@
       }
     },
     "deleted-duplicate-event": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 1,
         "type": "content.deleted",
@@ -59,11 +59,7 @@
         "data": {
           "status": null,
           "deletedObjectCount": 3,
-          "manifestStatus": "deleted",
-          "audit": {
-            "requestId": "delete_01",
-            "attempts": [1, 2]
-          }
+          "manifestStatus": "deleted"
         }
       }
     },
@@ -78,7 +74,7 @@
       }
     },
     "deleted-event-before-manifest": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 2,
         "type": "content.deleted",
@@ -91,7 +87,7 @@
       }
     },
     "deleted-event": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 2,
         "type": "content.deleted",
@@ -104,7 +100,7 @@
       }
     },
     "deleted-event-after-completion": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 2,
         "type": "content.deleted",
@@ -117,7 +113,7 @@
       }
     },
     "deleted-event-before-request": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 2,
         "type": "content.deleted",
@@ -130,7 +126,7 @@
       }
     },
     "deleted-event-other-run": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "runId": "run_other_01",
         "sequence": 2,
@@ -144,7 +140,7 @@
       }
     },
     "deleted-gap-event": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 3,
         "type": "content.deleted",
@@ -157,7 +153,7 @@
       }
     },
     "deleted-status-event": {
-      "fixture": "valid/run-event.json",
+      "fixture": "valid/run-event-content-deleted.json",
       "mergePatch": {
         "sequence": 2,
         "type": "content.deleted",
@@ -303,7 +299,7 @@
         "stage": "parse",
         "input": "events[1]",
         "code": "semantic_conflict",
-        "path": "$.data.audit.deletedContents"
+        "path": "$.data.audit"
       }
     },
     {

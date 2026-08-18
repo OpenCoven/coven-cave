@@ -1,5 +1,6 @@
 {
   "schema": "opencoven.run-event/v1",
+  "id": "event_delete_nested_private_01",
   "runId": "run_01",
   "sequence": 2,
   "type": "content.deleted",

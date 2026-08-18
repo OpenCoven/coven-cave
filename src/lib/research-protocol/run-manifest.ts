@@ -45,7 +45,8 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-const CANONICAL_EVIDENCE_URL_WHITESPACE_RE = /\s/;
+const CANONICAL_EVIDENCE_URL_FORBIDDEN_RE = /[\u0000-\u001f\u007f\s\\]/u;
+const MALFORMED_PERCENT_ESCAPE_RE = /%(?![0-9A-Fa-f]{2})/;
 
 export type ArtifactRegistrationV1 = {
   id: string;
@@ -325,25 +326,11 @@ function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<s
 }
 
 export function isCanonicalPublicHttpUrl(value: string): boolean {
-  const authorityStart = value.startsWith("https://")
-    ? "https://".length
-    : value.startsWith("http://")
-      ? "http://".length
-      : -1;
   if (
-    authorityStart < 0
-    || CANONICAL_EVIDENCE_URL_WHITESPACE_RE.test(value)
-    || value.includes("\\")
+    typeof value !== "string"
+    || CANONICAL_EVIDENCE_URL_FORBIDDEN_RE.test(value)
+    || MALFORMED_PERCENT_ESCAPE_RE.test(value)
   ) {
-    return false;
-  }
-
-  const authorityRemainder = value.slice(authorityStart);
-  const delimiterIndex = authorityRemainder.search(/[/?#]/);
-  const authority = delimiterIndex < 0
-    ? authorityRemainder
-    : authorityRemainder.slice(0, delimiterIndex);
-  if (authority.length === 0 || authority.includes("@")) {
     return false;
   }
 
@@ -354,6 +341,7 @@ export function isCanonicalPublicHttpUrl(value: string): boolean {
       && parsed.hostname.length > 0
       && parsed.username.length === 0
       && parsed.password.length === 0
+      && parsed.href === value
     );
   } catch {
     return false;
@@ -370,7 +358,7 @@ function parseCanonicalEvidenceUrl(
     return fail(
       "invalid_value",
       path,
-      "canonicalUrl must be a lowercase, absolute, credential-free HTTP(S) URL with a hostname and no whitespace or backslashes",
+      "canonicalUrl must exactly equal its canonical, credential-free absolute HTTP(S) URL",
     );
   }
   return canonicalUrl;

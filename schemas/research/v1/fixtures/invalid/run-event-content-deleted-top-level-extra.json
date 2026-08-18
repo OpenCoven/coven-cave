@@ -1,6 +1,6 @@
 {
   "schema": "opencoven.run-event/v1",
-  "id": "event_delete_fullwidth_private_01",
+  "id": "event_delete_extra_01",
   "runId": "run_01",
   "sequence": 2,
   "type": "content.deleted",
@@ -9,5 +9,7 @@
     "deletedObjectCount": 3,
     "manifestStatus": "deleted"
   },
-  "ｄｅｌｅｔｅｄＣｏｎｔｅｎｔｓ": ["private research"]
+  "auditMetadata": {
+    "requestId": "delete_01"
+  }
 }

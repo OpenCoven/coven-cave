@@ -8,9 +8,9 @@ import {
   parseResearchContextBindingV1,
   pass,
   retentionDoesNotExceed,
-  validateSensitiveExtensionKeys,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
+  type RetentionPolicyV1,
   type UnknownFields,
 } from "./common.ts";
 import type { ContextPackV1 } from "./context-pack.ts";
@@ -142,19 +142,28 @@ export type ResearchRunV1 = {
   failure?: ResearchRunFailureV1;
 } & UnknownFields;
 
-export type RunEventV1 = {
+type RunEventBaseV1 = {
   schema: "opencoven.run-event/v1";
+  id: string;
   runId: string;
   sequence: number;
-  type: RunEventTypeV1;
   at: string;
-  data: Record<string, unknown>;
-} & UnknownFields;
+};
 
 export type ContentDeletedEventDataV1 = {
   deletedObjectCount: number;
   manifestStatus: "deleted";
-} & UnknownFields;
+};
+
+export type RunEventV1 =
+  | (RunEventBaseV1 & {
+      type: "content.deleted";
+      data: ContentDeletedEventDataV1;
+    })
+  | (RunEventBaseV1 & {
+      type: Exclude<RunEventTypeV1, "content.deleted">;
+      data: Record<string, unknown>;
+    } & UnknownFields);
 
 export type ResearchRunCompositionOptionsV1 = {
   /** Complete ordered revisions 1..tip when an artifactManifest is embedded. */
@@ -177,6 +186,38 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
+function validateClosedObjectKeys(
+  record: Record<string, unknown>,
+  allowedKeys: ReadonlySet<string>,
+  path: string,
+  label: string,
+): ProtocolParseResult<void> {
+  for (const key of Object.keys(record)) {
+    if (!allowedKeys.has(key)) {
+      return fail(
+        "semantic_conflict",
+        childPath(path, key),
+        `${label} does not allow extension field ${key}`,
+      );
+    }
+  }
+  return pass(undefined);
+}
+
+const CONTENT_DELETED_EVENT_KEYS = new Set([
+  "schema",
+  "id",
+  "runId",
+  "sequence",
+  "at",
+  "type",
+  "data",
+]);
+const CONTENT_DELETED_DATA_KEYS = new Set([
+  "deletedObjectCount",
+  "manifestStatus",
+]);
+
 function contextBindingsMatch(
   runContext: ResearchContextBindingV1 | undefined,
   manifestContext: ResearchContextBindingV1 | undefined,
@@ -193,32 +234,42 @@ function contextBindingsMatch(
 
 function validateEmbeddedManifestOccurrenceClock(
   manifest: RunManifestV1,
+  runCreatedAt: string,
   runUpdatedAt: string,
+  manifestPath: string,
 ): ProtocolParseResult<void> {
+  if (compareUtcTimestamps(manifest.createdAt, runCreatedAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      childPath(manifestPath, "createdAt"),
+      "artifact manifest creation must not precede the enclosing run creation",
+    );
+  }
+
   const occurrences: Array<{ timestamp: string; path: string; message: string }> = [
     {
       timestamp: manifest.createdAt,
-      path: "$.artifactManifest.createdAt",
-      message: "artifactManifest.createdAt must not follow the enclosing run update",
+      path: childPath(manifestPath, "createdAt"),
+      message: "artifact manifest creation must not follow the enclosing run update",
     },
     ...(manifest.state === "final" && typeof manifest.finalizedAt === "string"
       ? [{
           timestamp: manifest.finalizedAt,
-          path: "$.artifactManifest.finalizedAt",
-          message: "artifactManifest.finalizedAt must not follow the enclosing run update",
+          path: childPath(manifestPath, "finalizedAt"),
+          message: "artifact manifest finalization must not follow the enclosing run update",
         }]
       : []),
     {
       timestamp: manifest.retention.updatedAt,
-      path: "$.artifactManifest.retention.updatedAt",
-      message: "artifactManifest retention update must not follow the enclosing run update",
+      path: childPath(childPath(manifestPath, "retention"), "updatedAt"),
+      message: "artifact manifest retention update must not follow the enclosing run update",
     },
   ];
 
   for (const [index, artifact] of manifest.artifacts.entries()) {
     occurrences.push({
       timestamp: artifact.createdAt,
-      path: childPath(indexPath("$.artifactManifest.artifacts", index), "createdAt"),
+      path: childPath(indexPath(childPath(manifestPath, "artifacts"), index), "createdAt"),
       message: "artifact createdAt must not follow the enclosing run update",
     });
   }
@@ -226,21 +277,21 @@ function validateEmbeddedManifestOccurrenceClock(
     if (source.kind !== "public-evidence") continue;
     occurrences.push({
       timestamp: source.fetchedAt,
-      path: childPath(indexPath("$.artifactManifest.sources", index), "fetchedAt"),
+      path: childPath(indexPath(childPath(manifestPath, "sources"), index), "fetchedAt"),
       message: "public-evidence fetchedAt must not follow the enclosing run update",
     });
   }
   if (typeof manifest.deletion.requestedAt === "string") {
     occurrences.push({
       timestamp: manifest.deletion.requestedAt,
-      path: "$.artifactManifest.deletion.requestedAt",
+      path: childPath(childPath(manifestPath, "deletion"), "requestedAt"),
       message: "deletion requestedAt must not follow the enclosing run update",
     });
   }
   if (typeof manifest.deletion.completedAt === "string") {
     occurrences.push({
       timestamp: manifest.deletion.completedAt,
-      path: "$.artifactManifest.deletion.completedAt",
+      path: childPath(childPath(manifestPath, "deletion"), "completedAt"),
       message: "deletion completedAt must not follow the enclosing run update",
     });
   }
@@ -254,19 +305,103 @@ function validateEmbeddedManifestOccurrenceClock(
 }
 
 function validateArtifactContentSyncConsent(
-  run: ResearchRunV1,
+  run: Pick<ResearchRunV1, "privacy">,
+  manifest: RunManifestV1,
+  manifestPath: string,
 ): ProtocolParseResult<void> {
-  const requestedSyncIndex = run.artifactManifest?.artifacts.findIndex(
+  const requestedSyncIndex = manifest.artifacts.findIndex(
     (artifact) => artifact.contentSync !== "not-requested",
-  ) ?? -1;
+  );
   if (requestedSyncIndex >= 0 && !run.privacy.artifactContentSync) {
     return fail(
       "semantic_conflict",
-      `$.artifactManifest.artifacts[${requestedSyncIndex}].contentSync`,
+      childPath(
+        indexPath(childPath(manifestPath, "artifacts"), requestedSyncIndex),
+        "contentSync",
+      ),
       "requested artifact content synchronization requires run artifactContentSync consent",
     );
   }
   return pass(undefined);
+}
+
+function validateEmbeddedManifestAgainstRun(
+  run: Pick<
+    ResearchRunV1,
+    "id" | "context" | "privacy" | "status" | "createdAt" | "updatedAt"
+  >,
+  manifest: RunManifestV1,
+  contextConsent: RetentionPolicyV1 | undefined,
+  manifestPath: string,
+  position: "history" | "tip",
+): ProtocolParseResult<void> {
+  if (manifest.runId !== run.id) {
+    return fail(
+      "semantic_conflict",
+      childPath(manifestPath, "runId"),
+      "artifact manifest runId must match the enclosing run id",
+    );
+  }
+  if (!contextBindingsMatch(run.context, manifest.context)) {
+    return fail(
+      "semantic_conflict",
+      childPath(manifestPath, "context"),
+      "artifact manifest context must match the enclosing run context",
+    );
+  }
+  if (manifest.retention.policy !== run.privacy.retention) {
+    return fail(
+      "semantic_conflict",
+      childPath(childPath(manifestPath, "retention"), "policy"),
+      "artifact manifest retention policy must match run privacy retention",
+    );
+  }
+
+  const effectiveRetentionCeiling = contextConsent ?? (
+    run.context === undefined ? run.privacy.retention : undefined
+  );
+  if (
+    effectiveRetentionCeiling !== undefined
+    && !retentionDoesNotExceed(
+      manifest.retention.effectivePolicy,
+      effectiveRetentionCeiling,
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      childPath(childPath(manifestPath, "retention"), "effectivePolicy"),
+      contextConsent === undefined
+        ? "artifact manifest effective retention must not exceed run privacy retention"
+        : "artifact manifest effective retention exceeds Context Pack consent",
+    );
+  }
+
+  const contentSync = validateArtifactContentSyncConsent(run, manifest, manifestPath);
+  if (!contentSync.ok) return contentSync;
+
+  if (position === "tip") {
+    if (TERMINAL_RUN_STATUSES.has(run.status) && manifest.state !== "final") {
+      return fail(
+        "semantic_conflict",
+        childPath(manifestPath, "state"),
+        "Terminal runs require a final artifactManifest",
+      );
+    }
+    if (!TERMINAL_RUN_STATUSES.has(run.status) && manifest.state === "final") {
+      return fail(
+        "semantic_conflict",
+        childPath(manifestPath, "state"),
+        "Nonterminal runs must not include a final artifactManifest",
+      );
+    }
+  }
+
+  return validateEmbeddedManifestOccurrenceClock(
+    manifest,
+    run.createdAt,
+    run.updatedAt,
+    manifestPath,
+  );
 }
 
 function canonicalValuesMatch(left: unknown, right: unknown): boolean {
@@ -342,6 +477,15 @@ function validateEmbeddedManifestHistory(
     return pass(undefined);
   }
 
+  const tipComposition = validateEmbeddedManifestAgainstRun(
+    run,
+    manifest,
+    contextPack?.consent.retention,
+    "$.artifactManifest",
+    "tip",
+  );
+  if (!tipComposition.ok) return tipComposition;
+
   if (history === undefined) {
     if (manifest.revision > 1) {
       return fail(
@@ -384,13 +528,14 @@ function validateEmbeddedManifestHistory(
         "manifest history id must match the embedded tip",
       );
     }
-    if (item.runId !== manifest.runId || item.runId !== run.id) {
-      return fail(
-        "semantic_conflict",
-        `${itemPath}.runId`,
-        "manifest history runId must match the embedded tip and enclosing run",
-      );
-    }
+    const itemComposition = validateEmbeddedManifestAgainstRun(
+      run,
+      item,
+      contextPack?.consent.retention,
+      itemPath,
+      index === history.length - 1 ? "tip" : "history",
+    );
+    if (!itemComposition.ok) return itemComposition;
     if (!canonicalValuesMatch(item.context, manifest.context)) {
       return fail(
         "semantic_conflict",
@@ -481,8 +626,14 @@ export function validateResearchRunContextPackV1(
   contextPack?: ContextPackV1,
   options: ResearchRunCompositionOptionsV1 = {},
 ): ProtocolParseResult<ResearchRunV1> {
-  const artifactContentSync = validateArtifactContentSyncConsent(run);
-  if (!artifactContentSync.ok) return artifactContentSync;
+  if (run.artifactManifest) {
+    const artifactContentSync = validateArtifactContentSyncConsent(
+      run,
+      run.artifactManifest,
+      "$.artifactManifest",
+    );
+    if (!artifactContentSync.ok) return artifactContentSync;
+  }
 
   if (!run.context) {
     if (contextPack !== undefined) {
@@ -552,20 +703,6 @@ export function validateResearchRunContextPackV1(
       "Run retention exceeds Context Pack consent",
     );
   }
-  if (
-    run.artifactManifest &&
-    !retentionDoesNotExceed(
-      run.artifactManifest.retention.effectivePolicy,
-      contextPack.consent.retention,
-    )
-  ) {
-    return fail(
-      "semantic_conflict",
-      "$.artifactManifest.retention.effectivePolicy",
-      "Artifact manifest effective retention exceeds Context Pack consent",
-    );
-  }
-
   const history = validateEmbeddedManifestHistory(run, contextPack, options);
   if (!history.ok) return history;
   return pass(run);
@@ -1013,6 +1150,14 @@ function parseContentDeletedEventData(
   value: Record<string, unknown>,
   path: string,
 ): ProtocolParseResult<ContentDeletedEventDataV1> {
+  const closedKeys = validateClosedObjectKeys(
+    value,
+    CONTENT_DELETED_DATA_KEYS,
+    path,
+    "content.deleted data",
+  );
+  if (!closedKeys.ok) return closedKeys;
+
   const deletedObjectCountField = parseRequiredField(
     value,
     "deletedObjectCount",
@@ -1039,7 +1184,6 @@ function parseContentDeletedEventData(
   if (!manifestStatus.ok) return manifestStatus;
 
   return pass({
-    ...value,
     deletedObjectCount: deletedObjectCount.value,
     manifestStatus: manifestStatus.value,
   });
@@ -1249,50 +1393,6 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
       };
     }
     artifactManifest = parsedArtifactManifest.value;
-    if (artifactManifest.runId !== id.value) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.runId",
-        "artifactManifest.runId must match the enclosing run id",
-      );
-    }
-    if (!contextBindingsMatch(context, artifactManifest.context)) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.context",
-        "artifactManifest context must match the enclosing run context",
-      );
-    }
-    if (artifactManifest.retention.policy !== privacy.value.retention) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.retention.policy",
-        "artifactManifest retention policy must match run privacy retention",
-      );
-    }
-    if (
-      !context &&
-      !retentionDoesNotExceed(
-        artifactManifest.retention.effectivePolicy,
-        privacy.value.retention,
-      )
-    ) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.retention.effectivePolicy",
-        "artifactManifest effective retention must not exceed run privacy retention",
-      );
-    }
-    const requestedSyncIndex = artifactManifest.artifacts.findIndex(
-      (artifact) => artifact.contentSync !== "not-requested",
-    );
-    if (requestedSyncIndex >= 0 && !privacy.value.artifactContentSync) {
-      return fail(
-        "semantic_conflict",
-        `$.artifactManifest.artifacts[${requestedSyncIndex}].contentSync`,
-        "requested artifact content synchronization requires run artifactContentSync consent",
-      );
-    }
   }
 
   let failure: ResearchRunFailureV1 | undefined;
@@ -1315,34 +1415,24 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "Terminal runs require an embedded final artifactManifest",
       );
     }
-    if (artifactManifest.state !== "final") {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.state",
-        "Terminal runs require a final artifactManifest",
-      );
-    }
-  } else if (artifactManifest?.state === "final") {
-    return fail(
-      "semantic_conflict",
-      "$.artifactManifest.state",
-      "Nonterminal runs must not include a final artifactManifest",
-    );
   }
 
   if (artifactManifest) {
-    if (compareUtcTimestamps(createdAt.value, artifactManifest.createdAt) > 0) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.createdAt",
-        "artifactManifest.createdAt must not precede the enclosing run creation",
-      );
-    }
-    const occurrenceClock = validateEmbeddedManifestOccurrenceClock(
+    const manifestComposition = validateEmbeddedManifestAgainstRun(
+      {
+        id: id.value,
+        ...(context ? { context } : {}),
+        privacy: privacy.value,
+        status: status.value,
+        createdAt: createdAt.value,
+        updatedAt: updatedAt.value,
+      },
       artifactManifest,
-      updatedAt.value,
+      undefined,
+      "$.artifactManifest",
+      "tip",
     );
-    if (!occurrenceClock.ok) return occurrenceClock;
+    if (!manifestComposition.ok) return manifestComposition;
   }
 
   return pass({
@@ -1384,6 +1474,11 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   );
   if (!schema.ok) return schema;
 
+  const idField = parseRequiredField(object.value, "id", "$");
+  if (!idField.ok) return idField;
+  const id = parseOpaqueIdentifier(idField.value, "event", "$.id", "id");
+  if (!id.ok) return id;
+
   const runIdField = parseRequiredField(object.value, "runId", "$");
   if (!runIdField.ok) return runIdField;
   const runId = parseOpaqueIdentifier(runIdField.value, "run", "$.runId", "runId");
@@ -1400,12 +1495,13 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   if (!type.ok) return type;
 
   if (type.value === "content.deleted") {
-    const safeEvent = validateSensitiveExtensionKeys(
+    const closedEvent = validateClosedObjectKeys(
       object.value,
+      CONTENT_DELETED_EVENT_KEYS,
       "$",
       "content.deleted event",
     );
-    if (!safeEvent.ok) return safeEvent;
+    if (!closedEvent.ok) return closedEvent;
   }
 
   const atField = parseRequiredField(object.value, "at", "$");
@@ -1417,20 +1513,29 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   if (!dataField.ok) return dataField;
   const data = parseObject(dataField.value, "$.data");
   if (!data.ok) return data;
-  const parsedData =
-    type.value === "content.deleted"
-      ? parseContentDeletedEventData(data.value, "$.data")
-      : pass({ ...data.value });
-  if (!parsedData.ok) return parsedData;
+  if (type.value === "content.deleted") {
+    const parsedData = parseContentDeletedEventData(data.value, "$.data");
+    if (!parsedData.ok) return parsedData;
+    return pass({
+      schema: schema.value,
+      id: id.value,
+      runId: runId.value,
+      sequence: sequence.value,
+      type: type.value,
+      at: at.value,
+      data: parsedData.value,
+    });
+  }
 
   return pass({
     ...object.value,
     schema: schema.value,
+    id: id.value,
     runId: runId.value,
     sequence: sequence.value,
     type: type.value,
     at: at.value,
-    data: parsedData.value,
+    data: { ...data.value },
   });
 }
 

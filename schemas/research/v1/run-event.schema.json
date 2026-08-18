@@ -4,9 +4,10 @@
   "title": "OpenCoven Run Event v1",
   "type": "object",
   "additionalProperties": true,
-  "required": ["schema", "runId", "sequence", "type", "at", "data"],
+  "required": ["schema", "id", "runId", "sequence", "type", "at", "data"],
   "properties": {
     "schema": { "const": "opencoven.run-event/v1" },
+    "id": { "$ref": "#/$defs/eventId" },
     "runId": { "$ref": "#/$defs/runId" },
     "sequence": { "$ref": "#/$defs/positiveSafeInteger" },
     "type": { "$ref": "#/$defs/eventType" },
@@ -20,15 +21,24 @@
         "required": ["type"]
       },
       "then": {
-        "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
-        "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+        "additionalProperties": false,
         "properties": {
+          "schema": { "const": "opencoven.run-event/v1" },
+          "id": { "$ref": "#/$defs/eventId" },
+          "runId": { "$ref": "#/$defs/runId" },
+          "sequence": { "$ref": "#/$defs/positiveSafeInteger" },
+          "type": { "const": "content.deleted" },
+          "at": { "$ref": "#/$defs/utcTimestamp" },
           "data": { "$ref": "#/$defs/contentDeletedData" }
         }
       }
     }
   ],
   "$defs": {
+    "eventId": {
+      "type": "string",
+      "pattern": "^event_[A-Za-z0-9_-]+$"
+    },
     "runId": {
       "type": "string",
       "pattern": "^run_[A-Za-z0-9_-]+$"
@@ -72,29 +82,9 @@
       "type": "object",
       "additionalProperties": true
     },
-    "sensitivePropertyName": {
-      "$ref": "../opencoven.run-manifest/v1#/$defs/sensitivePropertyName"
-    },
-    "safeExtensionValue": {
-      "anyOf": [
-        {
-          "type": ["string", "number", "boolean", "null"]
-        },
-        {
-          "type": "array",
-          "items": { "$ref": "#/$defs/safeExtensionValue" }
-        },
-        {
-          "type": "object",
-          "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
-          "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" }
-        }
-      ]
-    },
     "contentDeletedData": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
-      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "additionalProperties": false,
       "required": ["deletedObjectCount", "manifestStatus"],
       "properties": {
         "deletedObjectCount": { "$ref": "#/$defs/nonNegativeSafeInteger" },

@@ -70,10 +70,7 @@ const researchSchemaContext: Record<string, TSchema> = {
   [runManifestSchema.$id]: runManifestSchema as TSchema,
   [researchRunSchema.properties.artifactManifest.$ref]: runManifestSchema as TSchema,
 };
-const runEventSchemaContext: Record<string, TSchema> = {
-  [runEventSchema.$defs.sensitivePropertyName.$ref]:
-    runManifestSchema.$defs.sensitivePropertyName as TSchema,
-};
+const runEventSchemaContext: Record<string, TSchema> = {};
 
 function checkResearchRunSchema(value: unknown): boolean {
   return Check(researchSchemaContext, researchRunSchema as TSchema, value);
@@ -271,6 +268,33 @@ function runForStatus(
   return run;
 }
 
+function runEventValue(
+  sequence: number,
+  type: RunEventV1["type"],
+  data: Record<string, unknown>,
+  runId = validResearchRun.id,
+  at = validRunEvent.at,
+): Record<string, unknown> {
+  return type === "content.deleted"
+    ? {
+        schema: validRunEvent.schema,
+        id: `event_${sequence}`,
+        runId,
+        sequence,
+        type,
+        at,
+        data,
+      }
+    : {
+      ...validRunEvent,
+      runId,
+      sequence,
+      type,
+      at,
+      data,
+    };
+}
+
 function parsedEvent(
   sequence: number,
   type: RunEventV1["type"],
@@ -278,16 +302,7 @@ function parsedEvent(
   runId = validResearchRun.id,
   at = validRunEvent.at,
 ): RunEventV1 {
-  return expectOk(
-    parseRunEventV1({
-      ...validRunEvent,
-      runId,
-      sequence,
-      type,
-      at,
-      data,
-    }),
-  );
+  return expectOk(parseRunEventV1(runEventValue(sequence, type, data, runId, at)));
 }
 
 function parsedDeletionEvent(
@@ -1312,6 +1327,198 @@ test("embedded manifest history requires exact fresh-consent authorizations with
   );
 });
 
+test("embedded manifest history binds every revision to the run's original retention policy", () => {
+  const { run, contextPack, root } = rootedExtendedRetentionComposition();
+  const foreignPolicyRootValue = {
+    ...root,
+    state: "assembling",
+    retention: {
+      ...root.retention,
+      policy: "7-days",
+      effectivePolicy: "7-days",
+    },
+  } as Record<string, unknown>;
+  delete foreignPolicyRootValue.finalizedAt;
+  const foreignPolicyRoot = expectOk(
+    parseRunManifestV1(recalculatedManifest(foreignPolicyRootValue)),
+  );
+  const cleanTip = expectOk(
+    parseRunManifestV1(
+      recalculatedManifest({
+        ...foreignPolicyRoot,
+        revision: 2,
+        previousDigest: foreignPolicyRoot.digest,
+        state: "final",
+        finalizedAt: root.finalizedAt,
+        retention: root.retention,
+      }),
+    ),
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(
+      { ...run, artifactManifest: cleanTip },
+      contextPack,
+      { manifestHistory: [foreignPolicyRoot, cleanTip] },
+    ),
+    "$.manifestHistory[0].retention.policy",
+    "semantic_conflict",
+  );
+});
+
+test("embedded manifest history rejects a removed cloud-content sync without run consent", () => {
+  const { run, contextPack, root } = rootedExtendedRetentionComposition();
+  const historicalRootValue = {
+    ...root,
+    state: "assembling",
+    artifacts: root.artifacts.map((artifact) => ({
+      ...artifact,
+      placement: "cloud-content",
+      contentSync: "synced",
+    })),
+  } as Record<string, unknown>;
+  delete historicalRootValue.finalizedAt;
+  const historicalRoot = expectOk(
+    parseRunManifestV1(recalculatedManifest(historicalRootValue)),
+  );
+  const cleanTip = expectOk(
+    parseRunManifestV1(
+      recalculatedManifest({
+        ...historicalRoot,
+        revision: 2,
+        previousDigest: historicalRoot.digest,
+        state: "final",
+        finalizedAt: root.finalizedAt,
+        artifacts: [],
+      }),
+    ),
+  );
+  const candidate = {
+    ...run,
+    artifactManifest: cleanTip,
+    privacy: {
+      ...run.privacy,
+      artifactContentSync: false,
+    },
+  };
+  const tipSnapshot = structuredClone(candidate.artifactManifest);
+
+  expectError(
+    validateResearchRunContextPackV1(candidate, contextPack, {
+      manifestHistory: [historicalRoot, cleanTip],
+    }),
+    "$.manifestHistory[0].artifacts[0].contentSync",
+    "semantic_conflict",
+  );
+  assert.deepEqual(candidate.artifactManifest, tipSnapshot);
+});
+
+test("embedded manifest history bounds removed artifact, source, and deletion occurrences by run.updatedAt", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+
+  for (const { label, patch, expectedPath } of [
+    {
+      label: "artifact",
+      patch: {
+        artifacts: root.artifacts.map((artifact) => ({
+          ...artifact,
+          createdAt: "2030-01-01T00:00:00.000Z",
+        })),
+      },
+      expectedPath: "$.manifestHistory[0].artifacts[0].createdAt",
+    },
+    {
+      label: "public source",
+      patch: {
+        sources: [
+          ...root.sources,
+          {
+            kind: "public-evidence",
+            id: "evidence_future_01",
+            contentDigest: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            snapshotDigest: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            canonicalUrl: "https://example.test/future",
+            fetchedAt: "2030-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+      expectedPath: "$.manifestHistory[0].sources[1].fetchedAt",
+    },
+  ] as const) {
+    const historicalRootValue = {
+      ...root,
+      ...patch,
+      state: "assembling",
+    } as Record<string, unknown>;
+    delete historicalRootValue.finalizedAt;
+    const historicalRoot = expectOk(
+      parseRunManifestV1(recalculatedManifest(historicalRootValue)),
+    );
+    const cleanTip = expectOk(
+      parseRunManifestV1(
+        recalculatedManifest({
+          ...historicalRoot,
+          revision: 2,
+          previousDigest: historicalRoot.digest,
+          state: "final",
+          finalizedAt: root.finalizedAt,
+          sources: root.sources,
+          artifacts: [],
+        }),
+      ),
+    );
+
+    expectError(
+      validateResearchRunContextPackV1(
+        { ...run, artifactManifest: cleanTip },
+        contextPack,
+        { manifestHistory: [historicalRoot, cleanTip] },
+      ),
+      expectedPath,
+      "semantic_conflict",
+    );
+    assert.ok(label);
+  }
+
+  const deletionRoot = expectOk(
+    parseRunManifestV1(
+      recalculatedManifest({
+        ...root,
+        retention: {
+          ...root.retention,
+          status: "deletion_scheduled",
+          contentExpiresAt: "2026-08-17T20:04:00.000Z",
+        },
+        deletion: {
+          status: "scheduled",
+          requestedAt: "2030-01-01T00:00:00.000Z",
+        },
+      }),
+    ),
+  );
+  const deletionTip = expectOk(
+    parseRunManifestV1(
+      recalculatedManifest({
+        ...tip,
+        previousDigest: deletionRoot.digest,
+      }),
+    ),
+  );
+  expectError(
+    validateResearchRunContextPackV1(
+      { ...run, artifactManifest: deletionTip },
+      contextPack,
+      {
+        manifestHistory: [deletionRoot, deletionTip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      },
+    ),
+    "$.manifestHistory[0].deletion.requestedAt",
+    "semantic_conflict",
+  );
+});
+
 test("revision-one embedded manifests need no history but supplied history must equal the tip", () => {
   const { run, contextPack, root } = rootedExtendedRetentionComposition();
   const rootRun = expectOk(
@@ -1392,6 +1599,7 @@ test("schema and parser agree on expressible constraints and additive fields sur
   assert.equal(run.artifactManifest, undefined);
 
   const event = expectOk(parseRunEventV1(validRunEvent));
+  if (event.type === "content.deleted") assert.fail("run.created fixture changed type");
   assert.equal((event.futureExtension as { preserve: boolean }).preserve, true);
   assert.equal((event.data.futureExtension as { preserve: boolean }).preserve, true);
 
@@ -1787,26 +1995,54 @@ test("research runs reject embedded manifests for another run or context", () =>
   );
 });
 
-test("content.deleted events require metadata-only deletion receipts and preserve benign extensions", () => {
+test("content.deleted events preserve only their exact closed metadata shape", () => {
   const event = {
-    ...validRunEvent,
+    schema: "opencoven.run-event/v1",
+    id: "event_delete_01",
+    runId: validRunEvent.runId,
+    sequence: 2,
+    at: "2026-08-17T19:30:00.000Z",
     type: "content.deleted",
     data: {
       deletedObjectCount: 3,
       manifestStatus: "deleted",
-      audit: {
-        requestId: "delete_01",
-        retries: [0, 1],
-      },
-    },
-    auditMetadata: {
-      requestId: "delete_01",
-      records: [{ label: "deletedContents", status: "complete" }],
     },
   };
 
   assert.equal(checkRunEventSchema(event), true);
   assert.deepEqual(expectOk(parseRunEventV1(event)), event);
+
+  expectError(
+    parseRunEventV1({
+      ...event,
+      auditMetadata: "formerly benign",
+    }),
+    "$.auditMetadata",
+    "semantic_conflict",
+  );
+  expectError(
+    parseRunEventV1({
+      ...event,
+      data: {
+        ...event.data,
+        audit: { requestId: "delete_01" },
+      },
+    }),
+    "$.data.audit",
+    "semantic_conflict",
+  );
+  expectError(
+    parseRunEventV1({
+      schema: event.schema,
+      runId: event.runId,
+      sequence: event.sequence,
+      at: event.at,
+      type: event.type,
+      data: event.data,
+    }),
+    "$.id",
+    "missing_field",
+  );
 
   for (const [data, path, code] of [
     [
@@ -1844,27 +2080,11 @@ test("content.deleted events require metadata-only deletion receipts and preserv
   }
 });
 
-test("content.deleted events recursively reject sensitive metadata aliases before composition", () => {
-  const privateEvent = {
-    ...validRunEvent,
-    type: "content.deleted",
-    data: {
-      deletedObjectCount: 3,
-      manifestStatus: "deleted",
-      audit: {
-        deletedContents: ["private research"],
-      },
-    },
-  };
-
-  assert.equal(checkRunEventSchema(privateEvent), false);
-  expectError(
-    parseRunEventV1(privateEvent),
-    "$.data.audit.deletedContents",
-    "semantic_conflict",
-  );
-
+test("content.deleted rejects every data extension while other event types stay additive", () => {
   for (const key of [
+    "audit",
+    "privateContent",
+    "deletedContents",
     "deleted-content",
     "Excerpts",
     "local_path",
@@ -1873,18 +2093,19 @@ test("content.deleted events recursively reject sensitive metadata aliases befor
     "storageKeys",
     "bucket_key",
   ]) {
-    const candidate = {
-      ...privateEvent,
-      data: {
+    const candidate = runEventValue(
+      2,
+      "content.deleted",
+      {
         deletedObjectCount: 3,
         manifestStatus: "deleted",
-        audit: { [key]: "private" },
+        [key]: key === "audit" ? { requestId: "delete_01" } : "private",
       },
-    };
+    );
     assert.equal(checkRunEventSchema(candidate), false, key);
     expectError(
       parseRunEventV1(candidate),
-      `$.data.audit${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`}`,
+      `$.data${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`}`,
       "semantic_conflict",
     );
   }
@@ -1900,15 +2121,36 @@ test("content.deleted events recursively reject sensitive metadata aliases befor
   assert.equal(parseRunEventV1(unrelatedEvent).ok, true);
 });
 
+test("content.deleted canonical boundary rejects symbol-keyed and hidden audit data", () => {
+  for (const defineExtra of [
+    (event: Record<string | symbol, unknown>) => {
+      event[Symbol("audit")] = "hidden";
+    },
+    (event: Record<string | symbol, unknown>) => {
+      Object.defineProperty(event, "hiddenAudit", {
+        value: "hidden",
+        enumerable: false,
+      });
+    },
+  ]) {
+    const event = runEventValue(2, "content.deleted", {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+    });
+    defineExtra(event);
+    expectError(parseRunEventV1(event), "$", "invalid_value");
+  }
+});
+
 test("content.deleted events reject sensitive keys across the complete event object", () => {
-  const event = {
-    ...validRunEvent,
-    type: "content.deleted",
-    data: {
+  const event = runEventValue(
+    2,
+    "content.deleted",
+    {
       deletedObjectCount: 3,
       manifestStatus: "deleted",
     },
-  };
+  );
   const cases: ReadonlyArray<{
     extension: Record<string, unknown>;
     path: string;
@@ -1923,7 +2165,7 @@ test("content.deleted events reject sensitive keys across the complete event obj
           records: [{ localPath: "/private/research.md" }],
         },
       },
-      path: "$.auditMetadata.records[0].localPath",
+      path: "$.auditMetadata",
     },
     {
       extension: { "ｄｅｌｅｔｅｄＣｏｎｔｅｎｔｓ": ["private research"] },

@@ -569,6 +569,7 @@ authorization.
 ```ts
 type RunEventV1 = {
   schema: "opencoven.run-event/v1";
+  id: string;
   runId: string;
   sequence: number;
   type:
@@ -593,6 +594,9 @@ type RunEventV1 = {
 
 Sequences begin at 1 and increase by one per run. Clients treat a gap as a
 resync condition and call `GET /v1/research-runs/{id}/events?after=<sequence>`.
+Run events remain additive except `content.deleted`: that event has exactly the
+fields shown above, and its `data` contains only `deletedObjectCount` and
+`manifestStatus: "deleted"`.
 
 ### 8.7 Model Task and result
 
@@ -774,6 +778,11 @@ type RunManifestV1 = {
 };
 ```
 
+`canonicalUrl` is accepted only when the standard URL parser returns an
+identical `href`. Producers must therefore emit canonical HTTP(S) strings,
+including punycode hosts and percent-encoded non-ASCII components, rather than
+values a browser would rewrite.
+
 Rules:
 
 - Manifest revisions begin at `1` and increase by one without gaps.
@@ -882,6 +891,9 @@ Conformance fixtures must cover:
 - deterministic revision-chain digests;
 - missing or incorrect `previousDigest`;
 - changed manifest or run id within a revision chain;
+- every rooted history revision retaining its run/context/original-retention
+  bindings, staying within Context Pack consent, and containing no occurrence
+  timestamp after the enclosing run update;
 - mutation of immutable fields after finalization;
 - complete, partial, and unreported usage;
 - invalid retention/deletion status pairs;

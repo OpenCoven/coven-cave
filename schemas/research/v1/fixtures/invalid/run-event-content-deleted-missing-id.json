@@ -7,14 +7,5 @@
   "data": {
     "deletedObjectCount": 3,
     "manifestStatus": "deleted"
-  },
-  "auditMetadata": {
-    "requestId": "delete_01",
-    "records": [
-      {
-        "label": "deletedContents",
-        "status": "complete"
-      }
-    ]
   }
 }
