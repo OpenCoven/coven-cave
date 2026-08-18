@@ -128,6 +128,15 @@
         }
       }
     },
+    "no-manifest-run": {
+      "fixture": "valid/research-run.json",
+      "mergePatch": {
+        "status": "scoping",
+        "waitingReason": null,
+        "waitingForPhase": null,
+        "nextEventSequence": 3
+      }
+    },
     "partial-failure-run": {
       "fixture": "scenarios/objects/completed-deletion-run.json",
       "mergePatch": {
@@ -144,6 +153,16 @@
         }
       },
       "digestTargets": ["/artifactManifest"]
+    },
+    "scoping-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "run.status",
+        "data": {
+          "status": "scoping"
+        }
+      }
     },
     "wrong-receipt-run": {
       "fixture": "scenarios/objects/completed-deletion-run.json",
@@ -175,6 +194,18 @@
       "inputs": {
         "run": "completed-deletion-run",
         "events": ["created-event", "deleted-event", "completed-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.valid-no-manifest",
+      "description": "A non-completed run without a manifest accepts its complete ordered event stream.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "no-manifest-run",
+        "events": ["created-event", "scoping-event"]
       },
       "expected": {
         "ok": true

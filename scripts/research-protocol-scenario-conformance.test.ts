@@ -9,7 +9,7 @@
 // protocol behavior stays in the public parsers and composition validators.
 
 import assert from "node:assert/strict";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -485,6 +485,7 @@ function resolveFixturePath(relativePath: string, location: string): string {
     `${location}: fixture path must stay beneath ${fixturesDir}`,
   );
   assert.ok(resolved.endsWith(".json"), `${location}: fixture path must end in .json`);
+  assert.ok(existsSync(resolved), `${location}: fixture does not exist`);
   assert.ok(lstatSync(resolved).isFile(), `${location}: fixture path must identify a regular file`);
   return resolved;
 }
@@ -765,6 +766,25 @@ test("rejects malformed scenario definitions before protocol execution", () => {
       ),
     /unknown protocol error code/,
   );
+  assert.throws(
+    () =>
+      validateCorpus(
+        {
+          format: SCENARIO_FORMAT,
+          family: "model-task-result",
+          objects: {
+            task: { fixture: "valid/model-task.json" },
+          },
+          scenarios: [],
+        },
+        "empty-family.scenario.json",
+      ),
+    /scenarios: must not be empty/,
+  );
+  assert.throws(
+    () => resolveFixturePath("valid/missing-scenario-fixture.json", "missing.fixture"),
+    /missing\.fixture: fixture does not exist/,
+  );
 });
 
 test("rejects unknown scenario kinds, duplicate ids, and incomplete expected errors", () => {
@@ -900,11 +920,14 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.changed-manifest-id",
     "manifest.changed-run-id",
     "manifest.broken-previous-digest",
+    "manifest.gapped-revision",
     "manifest.post-final-mutation",
     "manifest.retention-ceiling",
     "manifest.policy-shortening",
     "manifest.lengthening-without-fresh-consent",
     "manifest.lengthening-with-fresh-consent",
+    "manifest.partial-failure-continues",
+    "manifest.completed-deletion-terminal",
     "research-run.valid-context-pack",
     "research-run.retention-ceiling",
     "research-run.embedded-manifest-retention-ceiling",
@@ -917,6 +940,7 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "model-task.wrong-familiar-id",
     "model-task.wrong-effective-model",
     "run-deletion.valid-completed",
+    "run-deletion.valid-no-manifest",
     "run-deletion.partial-failure-retryable",
     "run-deletion.partial-failure-incomplete-stream",
     "run-deletion.truncated-stream",
