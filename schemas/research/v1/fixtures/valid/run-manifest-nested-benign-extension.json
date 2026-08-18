@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_nested_benign_01",
   "runId": "run_nested_benign_01",
-  "digest": "deab4002bbbf11725e09b3c75ee1a6a120f940b03bb89585944ad9a026899527",
+  "digest": "7867636d4db3680460fd6c659b8f0fe7c50eb4ab3a0083a131208de33822e507",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -73,6 +73,12 @@
   "deletion": {
     "status": "not_scheduled",
     "metadata": {
+      "objectives": "met",
+      "storefront": "closed",
+      "storagelike": "audit-only",
+      "bucketed": true,
+      "keystone": "retention",
+      "deletedcontentmentpayload": "benign",
       "nested": [
         {
           "label": "safe",
