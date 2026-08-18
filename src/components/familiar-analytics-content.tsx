@@ -2,6 +2,11 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data";
+import type {
+  FamiliarExecutionAnalytics,
+  FamiliarExecutionAnalyticsWindow,
+  FamiliarExecutionSlice,
+} from "@/lib/familiar-execution-analytics";
 import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -52,6 +57,7 @@ import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trac
 import { sessionDayKey, type PulseDay } from "@/lib/session-pulse";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
 import { buildRehabilitationBrief } from "@/lib/familiar-rehabilitation";
+import { formatCost, formatTokens } from "@/lib/usage-format";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
@@ -848,6 +854,210 @@ function ModelFeedbackSection({ rollup }: { rollup: MessageFeedbackRollup }) {
           {rollup.up} up · {rollup.down} down — older votes carry no model stamp; new votes bucket automatically.
         </p>
       ) : null}
+    </div>
+  );
+}
+
+const COVERAGE_LABELS: Record<string, string> = {
+  harnessVersion: "Harness version",
+  confirmedModel: "Confirmed model",
+  usage: "Token usage",
+  cost: "Reported cost",
+  duration: "Total duration",
+  firstOutput: "First output",
+  tools: "Tool activity",
+  quality: "Quality signal",
+};
+
+function formatRuntimePercent(value: number | null | undefined): string {
+  return typeof value === "number" ? `${Math.round(value * 100)}%` : "Unreported";
+}
+
+function formatRuntimeDuration(value: number | null | undefined): string {
+  if (typeof value !== "number") return "Unreported";
+  if (value < 1_000) return `${Math.round(value)} ms`;
+  if (value < 60_000) return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} s`;
+  return `${(value / 60_000).toFixed(1)} min`;
+}
+
+function RuntimeSliceList({ label, slices }: { label: string; slices: FamiliarExecutionSlice[] }) {
+  if (slices.length === 0) return null;
+  return (
+    <div className="fa-feedback-group">
+      <h3 className="fa-feedback-group__label">{label}</h3>
+      <ul className="fa-feedback-list">
+        {slices.map((slice) => {
+          const pct = typeof slice.successRate === "number" ? Math.round(slice.successRate * 100) : 0;
+          const name = slice.label ?? slice.key;
+          return (
+            <li key={slice.key} className="fa-feedback-row fa-runtime-row">
+              <span className="fa-feedback-row__name" title={slice.key}>{name}</span>
+              <span className="fa-feedback-row__bar" aria-hidden>
+                <i style={{ width: `${pct}%` }} />
+              </span>
+              <span className="fa-runtime-row__detail">
+                {slice.attempts} attempt{slice.attempts === 1 ? "" : "s"} ·{" "}
+                {formatRuntimePercent(slice.successRate)} success ·{" "}
+                {formatRuntimeDuration(slice.medianDurationMs)}
+              </span>
+              <span className="sr-only">
+                {`${name}: ${slice.attempts} attempts, ${formatRuntimePercent(slice.successRate)} success, median duration ${formatRuntimeDuration(slice.medianDurationMs)}`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function RuntimeCoverage({ window }: { window: FamiliarExecutionAnalyticsWindow }) {
+  const coverage = Object.entries(window.coverage)
+    .filter(([, value]) => value.total > 0)
+    .sort((left, right) => left[1].ratio - right[1].ratio);
+  if (coverage.length === 0) return null;
+  return (
+    <div className="fa-feedback-group">
+      <h3 className="fa-feedback-group__label">Telemetry coverage</h3>
+      <ul className="fa-runtime-coverage">
+        {coverage.map(([key, value]) => (
+          <li key={key}>
+            <span>{COVERAGE_LABELS[key] ?? key}</span>
+            <b>{Math.round(value.ratio * 100)}%</b>
+            <small>{value.known} of {value.total}</small>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function RuntimeAttempts({
+  attempts,
+  onTrace,
+}: {
+  attempts: FamiliarExecutionAnalytics["recentAttempts"];
+  onTrace: (target: TraceTarget) => void;
+}) {
+  if (attempts.length === 0) return null;
+  return (
+    <div className="fa-feedback-group">
+      <h3 className="fa-feedback-group__label">Recent execution evidence</h3>
+      <ul className="fa-runtime-attempts">
+        {attempts.slice(0, 8).map((attempt) => {
+          const model = attempt.confirmedModel ?? attempt.forwardedModel ?? attempt.requestedModel ?? "Model unreported";
+          const harness = attempt.harnessVersion
+            ? `${attempt.harnessId} ${attempt.harnessVersion}`
+            : `${attempt.harnessId} · version unreported`;
+          const sessionId = attempt.sessionId;
+          return (
+            <li key={attempt.id} className="fa-runtime-attempt">
+              <span>
+                <b>{attempt.executionKind}</b>
+                <small>{model} · {harness}</small>
+              </span>
+              <span>
+                <b>{attempt.status}</b>
+                <small>
+                  {formatRuntimeDuration(attempt.durationMs)}
+                  {typeof attempt.totalTokens === "number" ? ` · ${formatTokens(attempt.totalTokens) ?? attempt.totalTokens} tokens` : ""}
+                  {typeof attempt.costUsd === "number" ? ` · ${formatCost(attempt.costUsd) ?? "reported cost"}` : ""}
+                </small>
+              </span>
+              {sessionId ? (
+                <button
+                  type="button"
+                  className="fa-primary-btn focus-ring"
+                  onClick={() => onTrace({ id: sessionId, title: `${attempt.executionKind} execution` })}
+                >
+                  Open trace
+                  <Icon name="ph:arrow-up-right" width={11} aria-hidden />
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function RuntimePerformanceSection({
+  analytics,
+  rollup,
+  windowId,
+  now,
+  onTrace,
+}: {
+  analytics: FamiliarExecutionAnalytics | null;
+  rollup: MessageFeedbackRollup;
+  windowId: WindowId;
+  now: number;
+  onTrace: (target: TraceTarget) => void;
+}) {
+  if (!analytics) {
+    return (
+      <div className="fa-feedback">
+        <EmptyState
+          compact
+          icon="ph:chart-bar"
+          headline="Execution telemetry unavailable."
+          subtitle="Runtime evidence could not be loaded. Existing thumbs feedback is still shown below."
+        />
+        <ModelFeedbackSection rollup={rollup} />
+      </div>
+    );
+  }
+
+  const window = analytics.windows[windowId];
+  const recentAttempts = analytics.recentAttempts.filter((attempt) =>
+    withinWindow(attempt.occurredAt, windowId, now));
+  if (window.attempts === 0 && rollup.total === 0) {
+    return (
+      <EmptyState
+        compact
+        icon="ph:chart-bar"
+        headline="No runtime evidence yet."
+        subtitle="Run this familiar in Chat or Board; reported execution fields will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="fa-runtime-performance">
+      <div className="fa-foot-panel__stats">
+        <span className="fa-pulse-stat fa-pulse-stat--accent">
+          <b>{window.attempts}</b>
+          <span>Attempts</span>
+          <small>{window.completed} completed</small>
+        </span>
+        <span className="fa-pulse-stat fa-pulse-stat--good">
+          <b>{formatRuntimePercent(window.successRate)}</b>
+          <span>Success</span>
+          <small>{window.failed} failed · {window.cancelled} cancelled</small>
+        </span>
+        <span className="fa-pulse-stat fa-pulse-stat--accent">
+          <b>{formatRuntimeDuration(window.medianDurationMs)}</b>
+          <span>Median duration</span>
+          <small>p95 {formatRuntimeDuration(window.p95DurationMs)}</small>
+        </span>
+        <span className="fa-pulse-stat fa-pulse-stat--warn">
+          <b>{typeof window.totalTokens === "number" ? formatTokens(window.totalTokens) ?? window.totalTokens : "Unreported"}</b>
+          <span>Tokens</span>
+          <small>{typeof window.costUsd === "number" ? formatCost(window.costUsd) ?? "Reported" : "cost unreported"}</small>
+        </span>
+      </div>
+
+      <div className="fa-runtime-grid">
+        <RuntimeSliceList label="Models" slices={window.models} />
+        <RuntimeSliceList label="Harnesses and versions" slices={window.harnesses} />
+      </div>
+      <RuntimeCoverage window={window} />
+      <RuntimeAttempts attempts={recentAttempts} onTrace={onTrace} />
+      <div className="fa-feedback-group">
+        <h3 className="fa-feedback-group__label">Thumbs feedback</h3>
+        <ModelFeedbackSection rollup={rollup} />
+      </div>
     </div>
   );
 }
@@ -1965,10 +2175,11 @@ export function FamiliarAnalyticsContent({
             aria-expanded={deepDive === "model"}
             onClick={() => setDeepDive((prev) => (prev === "model" ? null : "model"))}
           >
-            <Icon name="ph:thumbs-up" width={13} aria-hidden />
-            <b>Model performance</b>
+            <Icon name="ph:chart-bar" width={13} aria-hidden />
+            <b>Runtime performance</b>
             <span className="fa-band-count">
-              {model.modelFeedback.total} vote{model.modelFeedback.total === 1 ? "" : "s"}
+              {model.executionAnalytics?.windows[windowId].attempts ?? 0} attempt
+              {(model.executionAnalytics?.windows[windowId].attempts ?? 0) === 1 ? "" : "s"}
             </span>
             <Icon name="ph:caret-up" className="fa-foot__caret" width={11} aria-hidden />
           </button>
@@ -2044,10 +2255,10 @@ export function FamiliarAnalyticsContent({
         {deepDive === "model" ? (
           <div className="fa-foot-panel">
             <div className="fa-foot-panel__head">
-              <Icon name="ph:thumbs-up" width={14} aria-hidden />
-              <b>Model performance — summary</b>
+              <Icon name="ph:chart-bar" width={14} aria-hidden />
+              <b>Runtime performance — summary</b>
               <span className="fa-band-hint">
-                thumbs votes on chat replies, netted per message
+                measured execution metadata with explicit coverage
               </span>
               <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("model")}>
                 Open full view
@@ -2062,7 +2273,13 @@ export function FamiliarAnalyticsContent({
                 <Icon name="ph:caret-down" width={12} aria-hidden />
               </button>
             </div>
-            <ModelFeedbackSection rollup={model.modelFeedback} />
+            <RuntimePerformanceSection
+              analytics={model.executionAnalytics}
+              rollup={model.modelFeedback}
+              windowId={windowId}
+              now={now}
+              onTrace={setTraceTarget}
+            />
           </div>
         ) : null}
 
@@ -2087,21 +2304,28 @@ export function FamiliarAnalyticsContent({
 
         {overlay === "model" ? (
           <StageOverlay
-            label="Model performance"
+            label="Runtime performance"
             onClose={() => setOverlay(null)}
             head={
               <>
-                <h2 className="fa-overlay__title">Model performance</h2>
+                <h2 className="fa-overlay__title">Runtime performance</h2>
                 <span className="fa-band-count">
-                  {model.modelFeedback.total} vote{model.modelFeedback.total === 1 ? "" : "s"}
+                  {model.executionAnalytics?.windows[windowId].attempts ?? 0} attempt
+                  {(model.executionAnalytics?.windows[windowId].attempts ?? 0) === 1 ? "" : "s"}
                 </span>
                 <span className="fa-band-hint">
-                  thumbs votes on chat replies, netted per message — last vote wins
+                  local metadata only — unreported fields stay absent
                 </span>
               </>
             }
           >
-            <ModelFeedbackSection rollup={model.modelFeedback} />
+            <RuntimePerformanceSection
+              analytics={model.executionAnalytics}
+              rollup={model.modelFeedback}
+              windowId={windowId}
+              now={now}
+              onTrace={setTraceTarget}
+            />
           </StageOverlay>
         ) : null}
 

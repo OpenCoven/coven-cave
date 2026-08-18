@@ -1317,6 +1317,7 @@ export const SUITES = {
     "src/app/api/chat/conversation/[id]/route.test.ts",
     "src/app/api/sessions/[id]/route.test.ts",
     "src/app/api/canvas/route.test.ts",
+    "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/app/api/x/account-routes.test.ts",
     "src/app/api/x/research-routes.test.ts",

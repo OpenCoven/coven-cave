@@ -67,10 +67,103 @@ function mockFetchFor(score: "low" | "trusted") {
           violations: [],
           warnings: [],
         };
+  const executionWindow = {
+    attempts: score === "trusted" ? 2 : 0,
+    completed: score === "trusted" ? 2 : 0,
+    failed: 0,
+    cancelled: 0,
+    successRate: score === "trusted" ? 1 : null,
+    medianDurationMs: score === "trusted" ? 1_200 : undefined,
+    p95DurationMs: score === "trusted" ? 1_800 : undefined,
+    totalTokens: score === "trusted" ? 2_400 : undefined,
+    costUsd: score === "trusted" ? 0.04 : undefined,
+    toolCalls: score === "trusted" ? 3 : 0,
+    toolFailures: 0,
+    coverage: {
+      harnessVersion: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+      confirmedModel: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+      usage: { known: score === "trusted" ? 1 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 0.5 : 0 },
+      cost: { known: score === "trusted" ? 1 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 0.5 : 0 },
+      duration: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+      tools: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+    },
+    models: score === "trusted"
+      ? [{
+          key: "claude-sonnet-4",
+          label: "claude-sonnet-4",
+          attempts: 2,
+          completed: 2,
+          failed: 0,
+          cancelled: 0,
+          successRate: 1,
+          medianDurationMs: 1_200,
+          totalTokens: 2_400,
+          costUsd: 0.04,
+          toolCalls: 3,
+          toolFailures: 0,
+        }]
+      : [],
+    harnesses: score === "trusted"
+      ? [{
+          key: "claude@1.0.0",
+          label: "claude 1.0.0",
+          attempts: 2,
+          completed: 2,
+          failed: 0,
+          cancelled: 0,
+          successRate: 1,
+          medianDurationMs: 1_200,
+          totalTokens: 2_400,
+          costUsd: 0.04,
+          toolCalls: 3,
+          toolFailures: 0,
+        }]
+      : [],
+  };
 
   const responses = new Map<string, unknown>([
     ["/api/familiars", { ok: true, familiars: [familiar] }],
     ["/api/familiars/cody/contract", { ok: true, report: contract }],
+    [
+      "/api/familiars/cody/execution-analytics",
+      {
+        ok: true,
+        analytics: {
+          generatedAt: "2026-06-25T12:00:00.000Z",
+          windows: {
+            "7d": executionWindow,
+            "14d": executionWindow,
+            "8w": executionWindow,
+            all: executionWindow,
+          },
+          recentAttempts: score === "trusted"
+            ? [{
+                id: "attempt-1",
+                sessionId: "session-1",
+                turnId: "turn-1",
+                executionKind: "chat",
+                occurredAt: "2026-06-25T12:00:00.000Z",
+                harnessId: "claude",
+                harnessVersion: "1.0.0",
+                requestedModel: "claude-sonnet-4",
+                forwardedModel: "claude-sonnet-4",
+                confirmedModel: "claude-sonnet-4",
+                status: "completed",
+                durationMs: 1_200,
+                totalTokens: 1_200,
+                costUsd: 0.02,
+                toolCalls: 1,
+                toolFailures: 0,
+                provenance: "backfilled",
+              }]
+            : [],
+          backfill: {
+            state: "complete",
+            imported: score === "trusted" ? 2 : 0,
+          },
+        },
+      },
+    ],
     [
       "/api/sessions/list?includeArchived=1&familiarId=cody",
       {
@@ -506,17 +599,22 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(stageSource, /const pulse = model\.sessionPulse/, "pulse is wired to the model");
   });
 
-  it("surfaces thumbs-vote model/runtime performance from the feedback rollup", async () => {
+  it("surfaces execution telemetry and preserves thumbs feedback in runtime performance", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
+    assert.equal(model.executionAnalytics?.windows["14d"].attempts, 2);
+    assert.equal(model.executionAnalytics?.windows["14d"].coverage.usage.ratio, 0.5);
     assert.equal(model.modelFeedback.total, 3, "the rollup rides the model");
     assert.equal(model.modelFeedback.models[0].key, "claude-sonnet-4");
     assert.equal(model.modelFeedback.runtimes[0].up, 2);
-    assert.match(contentSource, /<b>Model performance<\/b>/, "the footer carries a Model performance deep dive");
+    assert.match(contentSource, /<b>Runtime performance<\/b>/, "the footer carries a Runtime performance deep dive");
     assert.match(contentSource, /openOverlay\("model"\)/, "the deep dive opens the full-stage view");
-    assert.match(source, /<ModelFeedbackSection rollup=\{model\.modelFeedback\}/, "the panel is wired to the rollup");
+    assert.match(source, /<RuntimePerformanceSection/, "the panel is wired to execution telemetry");
+    assert.match(source, /Telemetry coverage/, "missing-field coverage is explicit");
+    assert.match(source, /Recent execution evidence/, "recent attempts remain drillable");
+    assert.match(source, /Thumbs feedback/, "quality evidence remains visible");
     assert.match(source, /ph:thumbs-up/, "rows show up-vote counts");
     assert.match(source, /ph:thumbs-down/, "rows show down-vote counts");
   });
