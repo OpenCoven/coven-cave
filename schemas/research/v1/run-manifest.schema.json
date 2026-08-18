@@ -360,7 +360,8 @@
         "snapshotDigest": { "$ref": "#/$defs/sha256" },
         "canonicalUrl": {
           "type": "string",
-          "format": "uri",
+          "$comment": "Consumers validating Research Protocol schemas must implement the opencoven-canonical-http-url format; the runtime parser remains authoritative.",
+          "format": "opencoven-canonical-http-url",
           "minLength": 1,
           "pattern": "^https?://(?:\\[[^\\]/@?#\\s]+\\]|[^\\[\\]/@?#:\\s]+)(?::[0-9]*)?(?:[/?#][^\\s]*)?$"
         },

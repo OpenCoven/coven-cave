@@ -325,10 +325,41 @@ function validateArtifactContentSyncConsent(
   return pass(undefined);
 }
 
+function validateManifestModelReceipts(
+  modelBinding: ResearchModelBindingV1,
+  manifest: RunManifestV1,
+  manifestPath: string,
+): ProtocolParseResult<void> {
+  for (const [index, execution] of manifest.modelExecutions.entries()) {
+    const receiptPath = childPath(
+      indexPath(childPath(manifestPath, "modelExecutions"), index),
+      "receipt",
+    );
+    if (execution.receipt.familiarId !== modelBinding.familiarId) {
+      return fail(
+        "semantic_conflict",
+        childPath(receiptPath, "familiarId"),
+        "manifest receipt familiarId must equal the enclosing run familiarId",
+      );
+    }
+    if (
+      modelBinding.selection === "pinned"
+      && execution.receipt.effectiveModel !== modelBinding.model
+    ) {
+      return fail(
+        "semantic_conflict",
+        childPath(receiptPath, "effectiveModel"),
+        "manifest receipt effectiveModel must equal the pinned run model",
+      );
+    }
+  }
+  return pass(undefined);
+}
+
 function validateEmbeddedManifestAgainstRun(
   run: Pick<
     ResearchRunV1,
-    "id" | "context" | "privacy" | "status" | "createdAt" | "updatedAt"
+    "id" | "context" | "execution" | "privacy" | "status" | "createdAt" | "updatedAt"
   >,
   manifest: RunManifestV1,
   contextConsent: RetentionPolicyV1 | undefined,
@@ -349,6 +380,12 @@ function validateEmbeddedManifestAgainstRun(
       "artifact manifest context must match the enclosing run context",
     );
   }
+  const modelReceipts = validateManifestModelReceipts(
+    run.execution.modelBinding,
+    manifest,
+    manifestPath,
+  );
+  if (!modelReceipts.ok) return modelReceipts;
   if (manifest.retention.policy !== run.privacy.retention) {
     return fail(
       "semantic_conflict",
@@ -1422,6 +1459,7 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
       {
         id: id.value,
         ...(context ? { context } : {}),
+        execution: execution.value,
         privacy: privacy.value,
         status: status.value,
         createdAt: createdAt.value,

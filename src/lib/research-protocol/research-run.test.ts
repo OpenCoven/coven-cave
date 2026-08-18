@@ -117,6 +117,32 @@ function recalculatedManifest<T extends Record<string, unknown>>(manifest: T): T
   };
 }
 
+function manifestModelExecution(
+  familiarId: string,
+  effectiveModel: string | null,
+): Record<string, unknown> {
+  return {
+    taskId: "modeltask_binding_01",
+    phase: "scope",
+    attempt: 1,
+    inputDigest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    outputDigest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    receipt: {
+      familiarId,
+      runtime: "copilot",
+      effectiveModel,
+      modelSource: "session",
+      providerBilling: "user-connected",
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        reportedByRuntime: false,
+      },
+    },
+  };
+}
+
 function extendedRetentionComposition(
   effectivePolicy: "7-days" | "project",
 ): { run: ResearchRunV1; contextPack: ContextPackV1 } {
@@ -564,6 +590,68 @@ test("pinned selection requires own model and resolve-at-run-start forbids model
     parseResearchExecutionProfileV1(resolveWithModel, "$.execution"),
     "$.execution.modelBinding.model",
     "semantic_conflict",
+  );
+});
+
+test("embedded manifest receipts provisionally bind to the run familiar", () => {
+  const manifest = linkedManifest({
+    ...validRunManifest,
+    modelExecutions: [manifestModelExecution("nova", "gpt-5.6-sol")],
+  });
+
+  expectError(
+    parseResearchRunV1(runForStatus("completed", manifest)),
+    "$.artifactManifest.modelExecutions[0].receipt.familiarId",
+    "semantic_conflict",
+  );
+});
+
+test("embedded manifest receipts provisionally bind to the pinned run model", () => {
+  for (const effectiveModel of [null, "claude-sonnet-5"] as const) {
+    const manifest = linkedManifest({
+      ...validRunManifest,
+      modelExecutions: [manifestModelExecution("sage", effectiveModel)],
+    });
+
+    expectError(
+      parseResearchRunV1(runForStatus("completed", manifest)),
+      "$.artifactManifest.modelExecutions[0].receipt.effectiveModel",
+      "semantic_conflict",
+    );
+  }
+});
+
+test("embedded manifest receipts accept the exact pinned run binding", () => {
+  const manifest = linkedManifest({
+    ...validRunManifest,
+    modelExecutions: [manifestModelExecution("sage", "gpt-5.6-sol")],
+  });
+
+  assert.equal(
+    expectOk(parseResearchRunV1(runForStatus("completed", manifest)))
+      .artifactManifest?.modelExecutions[0]?.receipt.effectiveModel,
+    "gpt-5.6-sol",
+  );
+});
+
+test("resolve-at-run-start preserves a runtime-resolved receipt model", () => {
+  const manifest = linkedManifest({
+    ...validRunManifest,
+    modelExecutions: [manifestModelExecution("sage", "claude-sonnet-5")],
+  });
+  const candidate = runForStatus("completed", manifest);
+  candidate.execution = {
+    ...validResearchRun.execution,
+    modelBinding: {
+      familiarId: "sage",
+      selection: "resolve-at-run-start",
+    },
+  };
+
+  assert.equal(
+    expectOk(parseResearchRunV1(candidate))
+      .artifactManifest?.modelExecutions[0]?.receipt.effectiveModel,
+    "claude-sonnet-5",
   );
 });
 
@@ -1403,6 +1491,86 @@ test("embedded manifest history binds every revision to the run's original reten
       { manifestHistory: [foreignPolicyRoot, cleanTip] },
     ),
     "$.manifestHistory[0].retention.policy",
+    "semantic_conflict",
+  );
+});
+
+test("embedded manifest history rejects a removed receipt with the wrong run familiar", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const historicalRoot = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...root,
+          modelExecutions: [manifestModelExecution("nova", "gpt-5.6-sol")],
+        },
+        root.context!,
+      ),
+    ),
+  );
+  const cleanTip = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...tip,
+          previousDigest: historicalRoot.digest,
+        },
+        root.context!,
+      ),
+    ),
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(
+      { ...run, artifactManifest: cleanTip },
+      contextPack,
+      {
+        manifestHistory: [historicalRoot, cleanTip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      },
+    ),
+    "$.manifestHistory[0].modelExecutions[0].receipt.familiarId",
+    "semantic_conflict",
+  );
+});
+
+test("embedded manifest history rejects a removed receipt with the wrong pinned model", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const historicalRoot = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...root,
+          modelExecutions: [manifestModelExecution("sage", "claude-sonnet-5")],
+        },
+        root.context!,
+      ),
+    ),
+  );
+  const cleanTip = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...tip,
+          previousDigest: historicalRoot.digest,
+        },
+        root.context!,
+      ),
+    ),
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(
+      { ...run, artifactManifest: cleanTip },
+      contextPack,
+      {
+        manifestHistory: [historicalRoot, cleanTip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      },
+    ),
+    "$.manifestHistory[0].modelExecutions[0].receipt.effectiveModel",
     "semantic_conflict",
   );
 });

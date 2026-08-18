@@ -11,6 +11,202 @@
     "manifest-tip": {
       "fixture": "scenarios/objects/context-bound-manifest-tip.json"
     },
+    "manifest-root-wrong-receipt-familiar": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "modelExecutions": [
+          {
+            "taskId": "modeltask_binding_01",
+            "phase": "scope",
+            "attempt": 1,
+            "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "receipt": {
+              "familiarId": "nova",
+              "runtime": "copilot",
+              "effectiveModel": "gpt-5.6-sol",
+              "modelSource": "session",
+              "providerBilling": "user-connected",
+              "usage": {
+                "inputTokens": null,
+                "outputTokens": null,
+                "costUsd": null,
+                "reportedByRuntime": false
+              }
+            }
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "manifest-root-wrong-receipt-model": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "modelExecutions": [
+          {
+            "taskId": "modeltask_binding_01",
+            "phase": "scope",
+            "attempt": 1,
+            "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "receipt": {
+              "familiarId": "sage",
+              "runtime": "copilot",
+              "effectiveModel": "claude-sonnet-5",
+              "modelSource": "session",
+              "providerBilling": "user-connected",
+              "usage": {
+                "inputTokens": null,
+                "outputTokens": null,
+                "costUsd": null,
+                "reportedByRuntime": false
+              }
+            }
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "wrong-receipt-familiar-tip-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "modelExecutions": [
+            {
+              "taskId": "modeltask_binding_01",
+              "phase": "scope",
+              "attempt": 1,
+              "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "receipt": {
+                "familiarId": "nova",
+                "runtime": "copilot",
+                "effectiveModel": "gpt-5.6-sol",
+                "modelSource": "session",
+                "providerBilling": "user-connected",
+                "usage": {
+                  "inputTokens": null,
+                  "outputTokens": null,
+                  "costUsd": null,
+                  "reportedByRuntime": false
+                }
+              }
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "wrong-receipt-model-tip-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "modelExecutions": [
+            {
+              "taskId": "modeltask_binding_01",
+              "phase": "scope",
+              "attempt": 1,
+              "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "receipt": {
+                "familiarId": "sage",
+                "runtime": "copilot",
+                "effectiveModel": "claude-sonnet-5",
+                "modelSource": "session",
+                "providerBilling": "user-connected",
+                "usage": {
+                  "inputTokens": null,
+                  "outputTokens": null,
+                  "costUsd": null,
+                  "reportedByRuntime": false
+                }
+              }
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "pinned-receipt-root-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "revision": 1,
+          "previousDigest": null,
+          "modelExecutions": [
+            {
+              "taskId": "modeltask_binding_01",
+              "phase": "scope",
+              "attempt": 1,
+              "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "receipt": {
+                "familiarId": "sage",
+                "runtime": "copilot",
+                "effectiveModel": "gpt-5.6-sol",
+                "modelSource": "session",
+                "providerBilling": "user-connected",
+                "usage": {
+                  "inputTokens": null,
+                  "outputTokens": null,
+                  "costUsd": null,
+                  "reportedByRuntime": false
+                }
+              }
+            }
+          ],
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "resolved-receipt-root-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "execution": {
+          "modelBinding": {
+            "selection": "resolve-at-run-start",
+            "model": null
+          }
+        },
+        "artifactManifest": {
+          "revision": 1,
+          "previousDigest": null,
+          "modelExecutions": [
+            {
+              "taskId": "modeltask_binding_01",
+              "phase": "scope",
+              "attempt": 1,
+              "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "receipt": {
+                "familiarId": "sage",
+                "runtime": "copilot",
+                "effectiveModel": "claude-sonnet-5",
+                "modelSource": "runtime-default",
+                "providerBilling": "user-connected",
+                "usage": {
+                  "inputTokens": null,
+                  "outputTokens": null,
+                  "costUsd": null,
+                  "reportedByRuntime": false
+                }
+              }
+            }
+          ],
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "contextless-manifest-root": {
       "fixture": "scenarios/objects/context-bound-manifest-root.json",
       "mergePatch": {
@@ -1077,6 +1273,106 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "research-run.valid-pinned-manifest-receipt",
+      "description": "An embedded receipt exactly matches the pinned run familiar and model.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "pinned-receipt-root-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.valid-resolved-manifest-receipt",
+      "description": "A resolve-at-run-start binding preserves the runtime-resolved receipt model.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "resolved-receipt-root-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.manifest-tip-wrong-receipt-familiar",
+      "description": "An embedded tip receipt cannot name a familiar other than the run binding.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "wrong-receipt-familiar-tip-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.familiarId"
+      }
+    },
+    {
+      "id": "research-run.manifest-tip-wrong-receipt-model",
+      "description": "An embedded tip receipt must name the exact pinned run model.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "wrong-receipt-model-tip-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.effectiveModel"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-wrong-receipt-familiar",
+      "description": "Removing a historical receipt cannot hide a familiar mismatch.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "manifest-root-wrong-receipt-familiar",
+          "manifest-tip"
+        ]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].modelExecutions[0].receipt.familiarId"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-wrong-receipt-model",
+      "description": "Removing a historical receipt cannot hide a pinned-model mismatch.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "manifest-root-wrong-receipt-model",
+          "manifest-tip"
+        ]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].modelExecutions[0].receipt.effectiveModel"
       }
     },
     {

@@ -39,13 +39,15 @@ import {
 } from "./run-manifest.ts";
 import type { ResearchModelReceiptV1 } from "./topic-discovery.ts";
 
-const previousUriFormat = Format.Get("uri");
-if (previousUriFormat === undefined) {
-  throw new Error("TypeBox must provide its default uri format");
-}
-Format.Set("uri", isCanonicalPublicHttpUrl);
-assert.equal(Format.Get("uri"), isCanonicalPublicHttpUrl);
-test.after(() => Format.Set("uri", previousUriFormat));
+const CANONICAL_PUBLIC_HTTP_URL_FORMAT = "opencoven-canonical-http-url";
+const previousCanonicalHttpUrlFormat = Format.Get(CANONICAL_PUBLIC_HTTP_URL_FORMAT);
+Format.Set(CANONICAL_PUBLIC_HTTP_URL_FORMAT, isCanonicalPublicHttpUrl);
+assert.equal(Format.Get(CANONICAL_PUBLIC_HTTP_URL_FORMAT), isCanonicalPublicHttpUrl);
+test.after(() => {
+  if (previousCanonicalHttpUrlFormat !== undefined) {
+    Format.Set(CANONICAL_PUBLIC_HTTP_URL_FORMAT, previousCanonicalHttpUrlFormat);
+  }
+});
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {

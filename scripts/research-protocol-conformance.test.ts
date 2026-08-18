@@ -34,13 +34,20 @@ import {
   parseResearchProtocolObject,
 } from "../src/lib/research-protocol/index.ts";
 
-const previousUriFormat = Format.Get("uri");
-if (previousUriFormat === undefined) {
-  throw new Error("TypeBox must provide its default uri format");
-}
-Format.Set("uri", isCanonicalPublicHttpUrl);
-assert.equal(Format.Get("uri"), isCanonicalPublicHttpUrl);
-test.after(() => Format.Set("uri", previousUriFormat));
+const CANONICAL_PUBLIC_HTTP_URL_FORMAT = "opencoven-canonical-http-url";
+const standardFormatEntries = new Map(
+  Format.Entries().filter(([format]) => !format.startsWith("opencoven-")),
+);
+const previousCanonicalHttpUrlFormat = Format.Get(CANONICAL_PUBLIC_HTTP_URL_FORMAT);
+// Schema consumers must implement this protocol-owned format. The runtime
+// parser remains authoritative; standard URI format semantics are untouched.
+Format.Set(CANONICAL_PUBLIC_HTTP_URL_FORMAT, isCanonicalPublicHttpUrl);
+assert.equal(Format.Get(CANONICAL_PUBLIC_HTTP_URL_FORMAT), isCanonicalPublicHttpUrl);
+test.after(() => {
+  if (previousCanonicalHttpUrlFormat !== undefined) {
+    Format.Set(CANONICAL_PUBLIC_HTTP_URL_FORMAT, previousCanonicalHttpUrlFormat);
+  }
+});
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
@@ -148,6 +155,23 @@ function collectExternalSchemaReferences(
   return references;
 }
 
+function collectSchemaFormats(
+  value: unknown,
+  formats = new Set<string>(),
+): Set<string> {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectSchemaFormats(entry, formats));
+    return formats;
+  }
+  if (!isRecord(value)) return formats;
+
+  if (typeof value.format === "string") {
+    formats.add(value.format);
+  }
+  Object.values(value).forEach((entry) => collectSchemaFormats(entry, formats));
+  return formats;
+}
+
 function resolveSchemaReferenceTarget(
   schema: TSchema,
   reference: string,
@@ -217,6 +241,29 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
   }
 });
 
+test("registers every custom schema format without overriding standard formats", () => {
+  const schemaFormats = new Set(
+    [...schemaContext.values()].flatMap((schema) => [...collectSchemaFormats(schema)]),
+  );
+  const customFormats = [...schemaFormats]
+    .filter((format) => !standardFormatEntries.has(format))
+    .sort();
+
+  assert.deepEqual(customFormats, [CANONICAL_PUBLIC_HTTP_URL_FORMAT]);
+  assert.equal(
+    Format.Get(CANONICAL_PUBLIC_HTTP_URL_FORMAT),
+    isCanonicalPublicHttpUrl,
+    `${CANONICAL_PUBLIC_HTTP_URL_FORMAT} must use the authoritative runtime predicate`,
+  );
+  for (const [format, validator] of standardFormatEntries) {
+    assert.equal(
+      Format.Get(format),
+      validator,
+      `standard format ${format} must not be overridden`,
+    );
+  }
+});
+
 test("external schema references resolve by RFC3986 semantics to registered schema ids", () => {
   const registeredIds = new Set<string>(RESEARCH_PROTOCOL_SCHEMAS);
   const references = [...schemaContext.entries()]
@@ -238,6 +285,47 @@ test("external schema references resolve by RFC3986 semantics to registered sche
       registeredIds.has(resolvedId),
       `${sourceId} ${referencePath}: ${reference} resolves to unregistered schema id ${resolvedId}`,
     );
+  }
+});
+
+test("named canonical URL format and parser reject noncanonical URL fixtures", () => {
+  const manifestSchema = schemaContext.get("opencoven.run-manifest/v1");
+  assert.ok(manifestSchema);
+  const canonicalUrlSchema = resolveSchemaReferenceTarget(
+    manifestSchema,
+    "#/$defs/publicEvidenceSource/properties/canonicalUrl",
+    "run-manifest canonicalUrl",
+  ) as TSchema & Record<string, unknown>;
+  assert.equal(canonicalUrlSchema.format, CANONICAL_PUBLIC_HTTP_URL_FORMAT);
+  const lexicalSchema: Record<string, unknown> = { ...canonicalUrlSchema };
+  delete lexicalSchema.format;
+
+  for (const fileName of [
+    "run-manifest-public-url-uppercase-host.json",
+    "run-manifest-public-url-default-port.json",
+    "run-manifest-public-url-dot-segment.json",
+  ]) {
+    const filePath = path.join(fixturesDir, "invalid", fileName);
+    const fixture = readJsonFile(filePath);
+    assert.ok(isRecord(fixture));
+    assert.ok(Array.isArray(fixture.sources));
+    const source = fixture.sources[0];
+    assert.ok(isRecord(source));
+    const canonicalUrl = requireString(source.canonicalUrl, filePath, "$.sources[0].canonicalUrl");
+
+    assert.equal(
+      Check(Object.create(null), lexicalSchema as TSchema, canonicalUrl),
+      true,
+      `${fileName}: lexical constraints intentionally leave canonical semantics to the named format`,
+    );
+    assert.equal(Format.Test(CANONICAL_PUBLIC_HTTP_URL_FORMAT, canonicalUrl), false);
+    assert.equal(Check(Object.create(null), canonicalUrlSchema, canonicalUrl), false);
+    assert.equal(Check(schemaCheckContext, manifestSchema, fixture), false);
+    const parsed = parseResearchProtocolObject(fixture);
+    assert.equal(parsed.ok, false, `${fileName}: parser must remain authoritative`);
+    if (!parsed.ok) {
+      assert.equal(parsed.error.path, "$.sources[0].canonicalUrl");
+    }
   }
 });
 
