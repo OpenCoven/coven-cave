@@ -736,6 +736,7 @@ type RunManifestRetentionV1 = {
     | "deleted";
   contentExpiresAt: string | null;
   freshConsentAt?: string;
+  shortenedAt?: string;
   updatedAt: string;
 };
 
@@ -831,9 +832,22 @@ Rules:
   (`7-days`). A later `retention.updatedAt` does not renew that authority.
 - `retention.freshConsentAt`, when present, is the durable exact-UTC receipt for
   a post-final renewal or lengthening. The external revision option, this field,
-  and `retention.updatedAt` must exactly match when the receipt is recorded; it
-  cannot precede finalization or the prior retention update. A renewed finite
-  deadline stays between that receipt and one policy duration after it.
+  and `retention.updatedAt` exactly match while it is the current clock;
+  `retention.shortenedAt` is absent. It cannot precede finalization or the prior
+  retention update. A renewed finite deadline stays between that receipt and
+  one policy duration after it.
+- `retention.shortenedAt`, when present, is the durable exact-UTC receipt for a
+  post-final privacy shortening. It exactly matches `retention.updatedAt`,
+  requires no external consent, and replaces any stale `freshConsentAt`.
+  Project-to-finite deadlines use this receipt as their duration anchor; a
+  prior finite deadline and authority ceiling still cap finite-to-shorter
+  transitions.
+- The two clock receipts are mutually exclusive. An unchanged policy without a
+  deadline renewal preserves its current receipt; lengthening or renewal
+  replaces `shortenedAt` with `freshConsentAt`, while shortening replaces
+  `freshConsentAt` with `shortenedAt`. Project retention may preserve the
+  fresh-consent receipt that made it current until a later shortening replaces
+  it.
 - `contentExpiresAt` is `null` before the deletion clock begins. It remains
   `null` while the effective policy is `project`, until project deletion or a
   shorter policy is explicitly approved.
@@ -1362,16 +1376,19 @@ Retention behavior:
 These are product defaults. Legal or operational policy may shorten them but
 must not silently lengthen them.
 
-Finite retention starts at terminal finalization. Only a matching external and
-durable `freshConsentAt` receipt may establish a later renewal clock; changing
-`retention.updatedAt` alone has no authority. An unchanged finite policy remains
-capped by its prior authoritative ceiling, and moving a deadline later,
-renewing beyond that ceiling, lengthening policy, or canceling deletion because
-of lengthening requires that receipt. Privacy-shortening transitions instead
-use their transition `updatedAt`: finite-to-shorter deadlines cannot exceed the
-prior deadline or ceiling, while project-to-finite deadlines may run for the
-new shorter duration from that transition. Project retention otherwise remains
-unbounded until explicit deletion or shortening.
+Finite retention starts at terminal finalization. A matching external and
+durable `freshConsentAt` receipt establishes a later consent clock for renewal
+or lengthening. A mutually exclusive durable `shortenedAt` receipt establishes
+the clock for a privacy-shortening transition without external consent. The
+current receipt exactly matches `retention.updatedAt`; changing `updatedAt`
+alone has no authority. An unchanged finite policy remains capped by its prior
+authoritative ceiling, and moving a deadline later, renewing beyond that
+ceiling, lengthening policy, or canceling deletion because of lengthening
+requires fresh consent. Finite-to-shorter deadlines also remain capped by the
+prior finite deadline or ceiling, while project-to-finite deadlines may run for
+the new duration from `shortenedAt`. Project retention otherwise remains
+unbounded until explicit deletion or shortening and may retain the
+fresh-consent receipt that made it current.
 
 Duration checks use exact nanoseconds and proleptic-Gregorian UTC days of 86,400
 seconds. For the protocol's accepted `23:59:60` syntax, arithmetic floors an

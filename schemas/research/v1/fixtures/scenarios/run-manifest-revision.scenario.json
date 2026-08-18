@@ -72,6 +72,7 @@
           "effectivePolicy": "run-only",
           "status": "deletion_scheduled",
           "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "shortenedAt": "2026-08-16T20:06:00.000Z",
           "updatedAt": "2026-08-16T20:06:00.000Z"
         },
         "deletion": {
@@ -302,7 +303,8 @@
       "mergePatch": {
         "retention": {
           "effectivePolicy": "run-only",
-          "contentExpiresAt": "2026-08-17T20:06:00.000Z"
+          "contentExpiresAt": "2026-08-17T20:06:00.000Z",
+          "shortenedAt": "2026-08-16T20:06:00.000Z"
         }
       },
       "digestTargets": [""]
@@ -460,7 +462,8 @@
       "mergePatch": {
         "retention": {
           "effectivePolicy": "run-only",
-          "contentExpiresAt": "2026-08-17T20:00:00.000Z"
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "shortenedAt": "2026-08-16T20:06:00.000Z"
         }
       },
       "digestTargets": [""]
@@ -469,7 +472,7 @@
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
         "revision": 3,
-        "previousDigest": "4a608a0886aae1a1ca2e5408cde8a4b7e43885f21d4f73a4f34b5564eaabca93",
+        "previousDigest": "b680b9a879f248b126eed2470603fa154a439503850339eb443145e8d0077d92",
         "retention": {
           "freshConsentAt": "2026-08-17T20:01:00.000Z",
           "updatedAt": "2026-08-17T20:01:00.000Z"
@@ -510,6 +513,7 @@
           "effectivePolicy": "7-days",
           "status": "deletion_scheduled",
           "contentExpiresAt": "2027-02-08T12:00:00.123456789Z",
+          "shortenedAt": "2027-02-01T12:00:00.123456789Z",
           "updatedAt": "2027-02-01T12:00:00.123456789Z"
         },
         "deletion": {
@@ -529,6 +533,7 @@
           "effectivePolicy": "7-days",
           "status": "deletion_scheduled",
           "contentExpiresAt": "2027-02-08T12:00:00.123456790Z",
+          "shortenedAt": "2027-02-01T12:00:00.123456789Z",
           "updatedAt": "2027-02-01T12:00:00.123456789Z"
         },
         "deletion": {
@@ -536,6 +541,116 @@
           "requestedAt": "2027-02-01T12:00:00.123456789Z"
         }
       }
+    },
+    "consented-project-current": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "4c7161996cbbcb51d3e13f7a27f0cac88a389e5765c9f6706898ef5329080579",
+        "retention": {
+          "effectivePolicy": "project",
+          "freshConsentAt": "2026-08-16T20:06:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "consented-project-to-finite": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "e6d3458b2f467a60e857df808001ebe6ed6d72ad6b9ff0703e7a096ef67bccb1",
+        "retention": {
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2027-02-08T12:00:00.123456789Z",
+          "shortenedAt": "2027-02-01T12:00:00.123456789Z",
+          "updatedAt": "2027-02-01T12:00:00.123456789Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2027-02-01T12:00:00.123456789Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "consented-project-to-finite-stale-fresh": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "e6d3458b2f467a60e857df808001ebe6ed6d72ad6b9ff0703e7a096ef67bccb1",
+        "retention": {
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2027-02-08T12:00:00.123456789Z",
+          "freshConsentAt": "2026-08-16T20:06:00.000Z",
+          "updatedAt": "2027-02-01T12:00:00.123456789Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2027-02-01T12:00:00.123456789Z"
+        }
+      }
+    },
+    "both-retention-clock-markers": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "e6d3458b2f467a60e857df808001ebe6ed6d72ad6b9ff0703e7a096ef67bccb1",
+        "retention": {
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2027-02-08T12:00:00.123456789Z",
+          "freshConsentAt": "2027-02-01T12:00:00.123456789Z",
+          "shortenedAt": "2027-02-01T12:00:00.123456789Z",
+          "updatedAt": "2027-02-01T12:00:00.123456789Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2027-02-01T12:00:00.123456789Z"
+        }
+      }
+    },
+    "shortened-marker-without-policy-change": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "242559b199acf0bd3277f9f3e7f0c27486ba3b50a44d130f7ff8a9f67807a2d8",
+        "retention": {
+          "shortenedAt": "2026-08-16T20:07:00.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "shortening-marker-update-mismatch": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "run-only",
+          "contentExpiresAt": "2026-08-17T20:06:00.000Z",
+          "shortenedAt": "2026-08-16T20:05:59.999999999Z"
+        }
+      }
+    },
+    "renewed-after-shortening": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 4,
+        "previousDigest": "e676258bb2b63efdcb039a95aacf70724ba92592e135ab23941883e636332fe6",
+        "retention": {
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2027-02-09T12:00:00.123456789Z",
+          "freshConsentAt": "2027-02-02T12:00:00.123456789Z",
+          "updatedAt": "2027-02-02T12:00:00.123456789Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2027-02-01T12:00:00.123456789Z"
+        }
+      },
+      "digestTargets": [""]
     },
     "created-at-rollback": {
       "fixture": "valid/run-manifest-retention-update.json",
@@ -1140,6 +1255,131 @@
         "input": "next",
         "code": "semantic_conflict",
         "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.finite-project-finite-shortening",
+      "description": "A consented finite-to-project transition may later shorten back to finite retention using shortenedAt without new consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "consented-project-current",
+        "next": "consented-project-to-finite"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.shortening-rejects-stale-fresh-consent",
+      "description": "Project-to-finite shortening must clear the historical fresh-consent clock.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "consented-project-current",
+        "next": "consented-project-to-finite-stale-fresh"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.freshConsentAt"
+      }
+    },
+    {
+      "id": "manifest.retention-clock-markers-mutually-exclusive",
+      "description": "A manifest cannot carry both current retention clock markers.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "consented-project-current",
+        "next": "both-retention-clock-markers"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.shortenedAt"
+      }
+    },
+    {
+      "id": "manifest.shortened-marker-without-shortening",
+      "description": "An unchanged policy cannot add a privacy-shortening clock marker.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "shortened-marker-without-policy-change"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.shortenedAt"
+      }
+    },
+    {
+      "id": "manifest.shortening-marker-update-mismatch",
+      "description": "The durable shortening receipt must exactly match retention.updatedAt.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "shortening-marker-update-mismatch"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.shortenedAt"
+      }
+    },
+    {
+      "id": "manifest.shortened-policy-renewal-needs-consent",
+      "description": "Renewing the same finite policy must replace shortenedAt with externally bound fresh consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "consented-project-to-finite",
+        "next": "renewed-after-shortening"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.shortened-policy-renewal-with-consent",
+      "description": "Externally bound fresh consent replaces shortenedAt for a same-policy deadline renewal.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "consented-project-to-finite",
+        "next": "renewed-after-shortening"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2027-02-02T12:00:00.123456789Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
       }
     },
     {

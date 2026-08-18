@@ -1288,6 +1288,7 @@ test("embedded manifests bind original run privacy retention and every content-s
       effectivePolicy: "run-only",
       status: "deletion_scheduled",
       contentExpiresAt: "2026-08-17T20:00:00.000Z",
+      shortenedAt: validRunManifest.retention.updatedAt,
     },
     deletion: {
       ...validRunManifest.deletion,

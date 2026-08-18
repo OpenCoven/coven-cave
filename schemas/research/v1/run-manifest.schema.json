@@ -547,6 +547,7 @@
         },
         "contentExpiresAt": { "$ref": "#/$defs/nullableTimestamp" },
         "freshConsentAt": { "$ref": "#/$defs/utcTimestamp" },
+        "shortenedAt": { "$ref": "#/$defs/utcTimestamp" },
         "updatedAt": { "$ref": "#/$defs/utcTimestamp" }
       }
     },
