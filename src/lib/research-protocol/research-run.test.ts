@@ -63,23 +63,64 @@ function checkResearchRunSchema(value: unknown): boolean {
 
 function linkedManifest(
   manifest: Record<string, unknown> & { sources: Array<Record<string, unknown>> },
+  context: {
+    contextPackId: string;
+    contextPackDigest: string;
+    topicProposalId?: string;
+    [key: string]: unknown;
+  } = validResearchRun.context,
 ): Record<string, unknown> {
   const linked: Record<string, unknown> = {
     ...manifest,
     runId: validResearchRun.id,
-    context: validResearchRun.context,
+    context,
     sources: manifest.sources.map((source) =>
       source.kind === "context-pack"
         ? {
             ...source,
-            id: validResearchRun.context.contextPackId,
-            digest: validResearchRun.context.contextPackDigest,
+            id: context.contextPackId,
+            digest: context.contextPackDigest,
           }
         : source,
     ),
   };
   linked.digest = digestProtocolObject(linked);
   return linked;
+}
+
+function extendedRetentionComposition(
+  effectivePolicy: "7-days" | "project",
+): { run: ResearchRunV1; contextPack: ContextPackV1 } {
+  const contextPack = expectOk(parseContextPackV1(validContextPack));
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: contextPack.id,
+    contextPackDigest: contextPack.digest,
+  };
+  const manifest = linkedManifest(
+    {
+      ...validRunManifest,
+      revision: 2,
+      previousDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      retention: {
+        ...validRunManifest.retention,
+        policy: "run-only",
+        effectivePolicy,
+      },
+    },
+    context,
+  );
+  const run = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", manifest),
+      context,
+      privacy: {
+        ...validResearchRun.privacy,
+        retention: "run-only",
+      },
+    }),
+  );
+  return { run, contextPack };
 }
 
 function runForStatus(
@@ -601,6 +642,25 @@ test("run privacy cannot exceed Context Pack consent", () => {
   );
 });
 
+test("context-bound manifest accepts fresh-consent retention within the Context Pack ceiling", () => {
+  const { run, contextPack } = extendedRetentionComposition("7-days");
+
+  assert.equal(
+    expectOk(validateResearchRunContextPackV1(run, contextPack)),
+    run,
+  );
+});
+
+test("context-bound manifest effective retention cannot exceed the Context Pack ceiling", () => {
+  const { run, contextPack } = extendedRetentionComposition("project");
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack),
+    "$.artifactManifest.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+});
+
 test("events parse and validateRunEventSequence enforces contiguous same-run sequences", () => {
   assert.ok(Value.Check(runEventSchema, validRunEvent));
   const parsedEvent = expectOk(parseRunEventV1(validRunEvent));
@@ -763,6 +823,35 @@ test("embedded manifests bind original run privacy retention and cloud-content c
       parseResearchRunV1(runForStatus("completed", shortenedEffectivePolicy)),
     ).artifactManifest?.retention.effectivePolicy,
     "run-only",
+  );
+});
+
+test("contextless embedded manifests cannot extend effective retention beyond the run policy", () => {
+  const contextlessManifest: Record<string, unknown> = {
+    ...validRunManifest,
+    runId: validResearchRun.id,
+    revision: 2,
+    previousDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    sources: validRunManifest.sources.filter((source) => source.kind !== "context-pack"),
+    retention: {
+      ...validRunManifest.retention,
+      policy: "run-only",
+      effectivePolicy: "7-days",
+    },
+  };
+  delete contextlessManifest.context;
+  contextlessManifest.digest = digestProtocolObject(contextlessManifest);
+
+  const contextlessRun: Record<string, unknown> = {
+    ...runForStatus("completed", contextlessManifest),
+    privacy: { ...validResearchRun.privacy, retention: "run-only" },
+  };
+  delete contextlessRun.context;
+
+  expectError(
+    parseResearchRunV1(contextlessRun),
+    "$.artifactManifest.retention.effectivePolicy",
+    "semantic_conflict",
   );
 });
 
