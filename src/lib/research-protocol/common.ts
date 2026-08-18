@@ -31,7 +31,7 @@ export type RetentionPolicyV1 = keyof typeof RETENTION_ORDER;
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const OPAQUE_ID_BODY_RE = /^[A-Za-z0-9_-]+$/;
 export const UTC_TIMESTAMP_PATTERN =
-  String.raw`^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d|23:59:60)(?:\.\d{1,9})?Z$`;
+  String.raw`^\d{4}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d|(?:(?:01|03|05|07|08|10|12)-31|(?:04|06|09|11)-30|02-(?:28|29))T23:59:60)(?:\.\d{1,9})?Z$`;
 const UTC_TIMESTAMP_RE = new RegExp(UTC_TIMESTAMP_PATTERN);
 const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 
@@ -75,7 +75,10 @@ export function isUtcTimestamp(value: unknown): value is string {
     30,
     31,
   ];
-  return day >= 1 && day <= daysInMonth[month - 1]!;
+  const lastDayOfMonth = daysInMonth[month - 1]!;
+  return day >= 1
+    && day <= lastDayOfMonth
+    && (second !== 60 || day === lastDayOfMonth);
 }
 
 export function isJsonPointer(value: unknown): value is string {

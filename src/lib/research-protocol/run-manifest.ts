@@ -38,8 +38,10 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-const FORBIDDEN_SENSITIVE_KEYS = new Set([
+const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
   "excerpt",
+  "privateexcerpt",
+  "rawexcerpt",
   "text",
   "content",
   "blob",
@@ -55,6 +57,10 @@ const FORBIDDEN_SENSITIVE_KEYS = new Set([
   "bucketkey",
   "deletedcontent",
 ]);
+
+function normalizeSensitiveKey(key: string): string {
+  return key.toLowerCase().replaceAll(/[_-]/g, "");
+}
 
 export type ArtifactRegistrationV1 = {
   id: string;
@@ -170,7 +176,7 @@ function validateSensitiveObjectKeys(
 
   for (const key of Object.keys(value)) {
     const keyPath = childPath(path, key);
-    if (FORBIDDEN_SENSITIVE_KEYS.has(key.toLowerCase())) {
+    if (FORBIDDEN_NORMALIZED_SENSITIVE_KEYS.has(normalizeSensitiveKey(key))) {
       return fail(
         "semantic_conflict",
         keyPath,
@@ -1404,6 +1410,48 @@ export function validateRunManifestRevision(
       "$",
     );
     if (!rootUnknowns.ok) return rootUnknowns;
+  }
+
+  if (
+    previous.state === "final"
+    && RETENTION_ORDER[next.retention.effectivePolicy]
+      < RETENTION_ORDER[previous.retention.effectivePolicy]
+  ) {
+    if (next.retention.status !== "deletion_scheduled") {
+      return fail(
+        "semantic_conflict",
+        "$.retention.status",
+        "shortening effective retention must schedule deletion",
+      );
+    }
+    if (next.deletion.status !== "scheduled") {
+      return fail(
+        "semantic_conflict",
+        "$.deletion.status",
+        "shortening effective retention requires a scheduled deletion receipt",
+      );
+    }
+    if (!isUtcTimestamp(next.retention.contentExpiresAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        "shortening effective retention requires a valid content expiration timestamp",
+      );
+    }
+    if (!isUtcTimestamp(next.retention.updatedAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.updatedAt",
+        "shortening effective retention requires a valid retention update timestamp",
+      );
+    }
+    if (!isUtcTimestamp(next.deletion.requestedAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.deletion.requestedAt",
+        "shortening effective retention requires a valid deletion request timestamp",
+      );
+    }
   }
 
   const consent = validateManifestRetentionConsent(next, options?.contextConsent);

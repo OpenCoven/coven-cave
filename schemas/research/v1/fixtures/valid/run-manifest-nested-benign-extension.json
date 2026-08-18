@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_nested_benign_01",
   "runId": "run_nested_benign_01",
-  "digest": "5993362fa305f5af695ae7829068e673138fbb0c1b01b7d17670339867375adf",
+  "digest": "1dcc7f5474fac5e4cade72752560b726ebc4c7af7925d8fdef8772587bb898d8",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -18,7 +18,22 @@
       "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "availability": "device-local",
       "metadata": {
-        "items": [null, true, 1, { "label": "safe" }]
+        "context": {
+          "displayMetadata": {
+            "label": "safe",
+            "contentSync": "not-requested",
+            "credentialHint": "safe",
+            "textLabel": "safe"
+          }
+        },
+        "items": [
+          null,
+          true,
+          1,
+          {
+            "label": "local_file_path"
+          }
+        ]
       }
     }
   ],
@@ -34,7 +49,15 @@
       "contentSync": "not-requested",
       "createdAt": "2026-08-16T20:03:00.000Z",
       "metadata": {
-        "nested": [{ "label": "safe" }]
+        "nested": [
+          {
+            "label": "safe",
+            "examples": [
+              "credentialHint",
+              "deletedContent"
+            ]
+          }
+        ]
       }
     }
   ],
@@ -55,7 +78,12 @@
   "deletion": {
     "status": "not_scheduled",
     "metadata": {
-      "nested": [{ "label": "safe" }]
+      "nested": [
+        {
+          "label": "safe",
+          "note": "objectKey"
+        }
+      ]
     }
   }
 }

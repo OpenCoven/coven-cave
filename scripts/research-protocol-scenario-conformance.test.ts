@@ -1880,6 +1880,7 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.post-final-mutation",
     "manifest.retention-ceiling",
     "manifest.policy-shortening",
+    "manifest.unscheduled-shortening",
     "manifest.lengthening-without-fresh-consent",
     "manifest.lengthening-with-fresh-consent",
     "manifest.partial-failure-continues",

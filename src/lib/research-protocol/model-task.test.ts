@@ -5,6 +5,7 @@ import { Value } from "typebox/value";
 import invalidModelTaskPolicy from "../../../schemas/research/v1/fixtures/invalid/model-task-policy.json" with { type: "json" };
 import invalidModelTaskResultUsage from "../../../schemas/research/v1/fixtures/invalid/model-task-result-usage.json" with { type: "json" };
 import validModelTask from "../../../schemas/research/v1/fixtures/valid/model-task.json" with { type: "json" };
+import negativeZeroModelTaskResult from "../../../schemas/research/v1/fixtures/valid/model-task-result-negative-zero.json" with { type: "json" };
 import validModelTaskResult from "../../../schemas/research/v1/fixtures/valid/model-task-result.json" with { type: "json" };
 import modelTaskResultSchema from "../../../schemas/research/v1/model-task-result.schema.json" with { type: "json" };
 import modelTaskSchema from "../../../schemas/research/v1/model-task.schema.json" with { type: "json" };
@@ -574,6 +575,27 @@ test("parser preserves nested canonical JSON output as deep own-property data", 
   assert.notStrictEqual(parsed.output, output);
   assert.notStrictEqual(parsed.output.findings, output.findings);
   assert.notStrictEqual(parsed.output.metadata, output.metadata);
+});
+
+test("Model Result preserves negative zero while hashing its canonical zero form", () => {
+  assert.equal(Value.Check(modelTaskResultSchema, negativeZeroModelTaskResult), true);
+  assert.equal(Object.is(negativeZeroModelTaskResult.output.value, -0), true);
+  assert.equal(Object.is(negativeZeroModelTaskResult.output.nested.values[1], -0), true);
+
+  const parsed = expectOk(parseModelTaskResultV1(negativeZeroModelTaskResult));
+  const output = parsed.output as {
+    value: number;
+    nested: { values: number[] };
+  };
+  assert.equal(Object.is(output.value, -0), true);
+  assert.equal(Object.is(output.nested.values[1], -0), true);
+  assert.notStrictEqual(parsed.output, negativeZeroModelTaskResult.output);
+  assert.notStrictEqual(output.nested, negativeZeroModelTaskResult.output.nested);
+  assert.deepEqual(parsed, negativeZeroModelTaskResult);
+  assert.equal(
+    sha256Digest(canonicalJson(parsed.output)),
+    negativeZeroModelTaskResult.outputDigest,
+  );
 });
 
 test("Model Result rejects symbol keys, hidden data, and hidden or accessor toJSON", () => {

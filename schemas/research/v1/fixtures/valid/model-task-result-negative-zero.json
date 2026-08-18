@@ -1,0 +1,34 @@
+{
+  "schema": "opencoven.model-task-result/v1",
+  "taskId": "modeltask_negative_zero_01",
+  "runId": "run_negative_zero_01",
+  "attempt": 1,
+  "inputDigest": "6a28b9d62b79b42a133d52fe51636c161c67722929efa5f6178e2940c9136597",
+  "output": {
+    "decision": "continue",
+    "value": -0,
+    "nested": {
+      "values": [1, -0]
+    },
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "outputDigest": "813d652fc6a1c26b62e70d49c9ce4f633be9985c18fc3cecc721fd782572eff3",
+  "executorDeviceId": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+  "modelReceipt": {
+    "familiarId": "sage",
+    "runtime": "copilot",
+    "effectiveModel": "gpt-5.6-sol",
+    "modelSource": "session",
+    "providerBilling": "user-connected",
+    "usage": {
+      "inputTokens": 100,
+      "outputTokens": 20,
+      "costUsd": null,
+      "reportedByRuntime": true
+    }
+  },
+  "completedAt": "2026-08-15T20:10:00.000Z",
+  "signature": "base64-signature"
+}

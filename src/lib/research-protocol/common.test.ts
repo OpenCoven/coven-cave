@@ -3,14 +3,19 @@ import { test } from "node:test";
 
 import { isUtcTimestamp } from "./common.ts";
 
-test("UTC RFC 3339 timestamps accept zero through nine fractional digits", () => {
+test("UTC RFC 3339 timestamps accept ordinary timestamps and month-end leap-second placement", () => {
   for (const value of [
     "2026-08-15T20:00:00Z",
     "2026-08-15T20:00:00.1Z",
     "2026-08-15T20:00:00.123456789Z",
     "2024-02-29T23:59:59.000000000Z",
+    "1972-06-30T23:59:60Z",
+    "2023-02-28T23:59:60Z",
+    "2024-02-29T23:59:60Z",
+    "2026-04-30T23:59:60Z",
     "2016-12-31T23:59:60Z",
     "2016-12-31T23:59:60.123456789Z",
+    "2030-12-31T23:59:60Z",
   ]) {
     assert.equal(isUtcTimestamp(value), true, value);
   }
@@ -29,6 +34,10 @@ test("UTC RFC 3339 timestamps reject non-UTC syntax and invalid calendar or time
     "2026-08-15T24:00:00Z",
     "2026-08-15T20:60:00Z",
     "2026-08-15T20:00:60Z",
+    "1972-06-29T23:59:60Z",
+    "2026-08-15T23:59:60Z",
+    "2016-12-30T23:59:60Z",
+    "2024-02-28T23:59:60Z",
     "2016-12-31T22:59:60Z",
     "2016-12-31T23:58:60Z",
     "2016-12-31T23:59:61Z",
