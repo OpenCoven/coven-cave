@@ -331,6 +331,40 @@ test("validateModelTaskResultV1 rejects task input and result output mutations a
   );
 });
 
+test("validateModelTaskResultV1 reparses mutable task and result snapshots", () => {
+  {
+    const task = expectOk(parseModelTaskV1(validModelTask));
+    const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
+    (task.modelBinding as unknown as Record<string, unknown>).selection = "trusted-after-parse";
+    expectError(
+      validateModelTaskResultV1(task, result),
+      "$.modelBinding.selection",
+      "invalid_value",
+    );
+  }
+
+  {
+    const task = expectOk(parseModelTaskV1(validModelTask));
+    const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
+    (result.modelReceipt as unknown as Record<string, unknown>).providerBilling = "platform";
+    expectError(
+      validateModelTaskResultV1(task, result),
+      "$.modelReceipt.providerBilling",
+      "invalid_value",
+    );
+  }
+
+  {
+    const task = expectOk(parseModelTaskV1(validModelTask));
+    const result = expectOk(parseModelTaskResultV1(validModelTaskResult));
+    Object.defineProperty(result, "hidden", {
+      value: "not-canonical-wire-data",
+      enumerable: false,
+    });
+    expectError(validateModelTaskResultV1(task, result), "$", "invalid_value");
+  }
+});
+
 test("validateModelTaskResultV1 binds the result receipt to the task familiar", () => {
   const task = expectOk(parseModelTaskV1(validModelTask));
   const result = expectOk(parseModelTaskResultV1(validModelTaskResult));

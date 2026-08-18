@@ -13,7 +13,7 @@ import {
   type RetentionPolicyV1,
   type UnknownFields,
 } from "./common.ts";
-import type { ContextPackV1 } from "./context-pack.ts";
+import { parseContextPackV1, type ContextPackV1 } from "./context-pack.ts";
 import { canonicalJson } from "./digest.ts";
 import {
   parseRunManifestV1,
@@ -651,17 +651,82 @@ function validateEmbeddedManifestHistory(
 }
 
 /**
- * Validates two already-parsed objects. Run-field errors use run JSON paths;
- * pack-only policy errors use the synthetic `$.contextPack` path.
- * Parsing a context-bound run is provisional; callers must compose it with its
- * parsed Context Pack here before use. Embedded manifest revisions after 1 are
- * also provisional until this boundary receives their complete rooted history
- * and the exact external fresh-consent authorization receipts.
+ * Certifies every mutable protocol input by reparsing detached snapshots before
+ * composition. Authorization timestamps are checked at the same boundary.
+ * Success preserves the original Research Run identity.
  */
 export function validateResearchRunContextPackV1(
   run: ResearchRunV1,
   contextPack?: ContextPackV1,
   options: ResearchRunCompositionOptionsV1 = {},
+): ProtocolParseResult<ResearchRunV1> {
+  const parsedRun = parseResearchRunV1(run);
+  if (!parsedRun.ok) return parsedRun;
+
+  let parsedContextPack: ContextPackV1 | undefined;
+  if (contextPack !== undefined) {
+    const parsed = parseContextPackV1(contextPack);
+    if (!parsed.ok) return parsed;
+    parsedContextPack = parsed.value;
+  }
+
+  const manifestHistory = options.manifestHistory;
+  let parsedManifestHistory: RunManifestV1[] | undefined;
+  if (manifestHistory !== undefined) {
+    if (!Array.isArray(manifestHistory)) {
+      return fail("invalid_type", "$.manifestHistory", "manifestHistory must be an array");
+    }
+    parsedManifestHistory = [];
+    for (const manifest of manifestHistory) {
+      const parsedManifest = parseRunManifestV1(manifest);
+      if (!parsedManifest.ok) return parsedManifest;
+      parsedManifestHistory.push(parsedManifest.value);
+    }
+  }
+
+  const authorizationTimestamps = options.authorizedFreshConsentAt;
+  let authorizedFreshConsentAt: string[] | undefined;
+  if (authorizationTimestamps !== undefined) {
+    if (!Array.isArray(authorizationTimestamps)) {
+      return fail(
+        "invalid_type",
+        "$.authorizedFreshConsentAt",
+        "authorizedFreshConsentAt must be an array",
+      );
+    }
+    authorizedFreshConsentAt = [];
+    for (const [index, authorizedAt] of authorizationTimestamps.entries()) {
+      if (!isUtcTimestamp(authorizedAt)) {
+        return fail(
+          "invalid_value",
+          `$.authorizedFreshConsentAt[${index}]`,
+          "fresh-consent authorizations must be exact UTC timestamps",
+        );
+      }
+      authorizedFreshConsentAt.push(authorizedAt);
+    }
+  }
+
+  const composition = validateResearchRunContextPackParsedV1(
+    parsedRun.value,
+    parsedContextPack,
+    {
+      ...(parsedManifestHistory === undefined
+        ? {}
+        : { manifestHistory: parsedManifestHistory }),
+      ...(authorizedFreshConsentAt === undefined
+        ? {}
+        : { authorizedFreshConsentAt }),
+    },
+  );
+  if (!composition.ok) return composition;
+  return pass(run);
+}
+
+function validateResearchRunContextPackParsedV1(
+  run: ResearchRunV1,
+  contextPack: ContextPackV1 | undefined,
+  options: ResearchRunCompositionOptionsV1,
 ): ProtocolParseResult<ResearchRunV1> {
   if (run.artifactManifest) {
     const artifactContentSync = validateArtifactContentSyncConsent(
@@ -1577,7 +1642,23 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   });
 }
 
-export function validateRunEventSequence(
+function parseRunEventSnapshots(
+  events: readonly RunEventV1[],
+): ProtocolParseResult<RunEventV1[]> {
+  if (!Array.isArray(events)) {
+    return fail("invalid_type", "$", "events must be an array");
+  }
+
+  const parsedEvents: RunEventV1[] = [];
+  for (const event of events) {
+    const parsedEvent = parseRunEventV1(event);
+    if (!parsedEvent.ok) return parsedEvent;
+    parsedEvents.push(parsedEvent.value);
+  }
+  return pass(parsedEvents);
+}
+
+function validateRunEventSequenceParsed(
   events: readonly RunEventV1[],
 ): ProtocolParseResult<readonly RunEventV1[]> {
   if (events.length === 0) {
@@ -1619,16 +1700,26 @@ export function validateRunEventSequence(
 }
 
 /**
- * Validates an already-parsed run's deletion receipt against its complete event
- * stream. Runs without a manifest or completed deletion still validate stream
- * order and completeness, but do not require a content.deleted event.
+ * Certifies every mutable event by reparsing detached snapshots before sequence
+ * checks. Success preserves the original event-array identity.
  */
-export function validateRunManifestDeletionEventV1(
+export function validateRunEventSequence(
+  events: readonly RunEventV1[],
+): ProtocolParseResult<readonly RunEventV1[]> {
+  const parsedEvents = parseRunEventSnapshots(events);
+  if (!parsedEvents.ok) return parsedEvents;
+
+  const sequence = validateRunEventSequenceParsed(parsedEvents.value);
+  if (!sequence.ok) return sequence;
+  return pass(events);
+}
+
+function validateRunManifestDeletionEventParsedV1(
   run: ResearchRunV1,
   events: readonly RunEventV1[],
 ): ProtocolParseResult<ResearchRunV1> {
   if (events.length > 0) {
-    const orderedEvents = validateRunEventSequence(events);
+    const orderedEvents = validateRunEventSequenceParsed(events);
     if (!orderedEvents.ok) return orderedEvents;
     if (events[0].runId !== run.id) {
       return fail(
@@ -1739,5 +1830,28 @@ export function validateRunManifestDeletionEventV1(
     );
   }
 
+  return pass(run);
+}
+
+/**
+ * Certifies the mutable run and every mutable event by reparsing detached
+ * snapshots before deletion-receipt composition. Success preserves the
+ * original Research Run identity.
+ */
+export function validateRunManifestDeletionEventV1(
+  run: ResearchRunV1,
+  events: readonly RunEventV1[],
+): ProtocolParseResult<ResearchRunV1> {
+  const parsedRun = parseResearchRunV1(run);
+  if (!parsedRun.ok) return parsedRun;
+
+  const parsedEvents = parseRunEventSnapshots(events);
+  if (!parsedEvents.ok) return parsedEvents;
+
+  const composition = validateRunManifestDeletionEventParsedV1(
+    parsedRun.value,
+    parsedEvents.value,
+  );
+  if (!composition.ok) return composition;
   return pass(run);
 }

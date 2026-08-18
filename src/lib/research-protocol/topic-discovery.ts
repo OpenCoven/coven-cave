@@ -11,6 +11,7 @@ import {
   type UnknownFields,
 } from "./common.ts";
 import {
+  parseContextPackV1,
   parseContextSelectorV1,
   type ContextPackV1,
   type ContextSelectorV1,
@@ -951,7 +952,41 @@ export function parseTopicProposalV1(value: unknown): ProtocolParseResult<TopicP
   });
 }
 
+/**
+ * Certifies mutable protocol inputs by reparsing detached snapshots before
+ * composition. Successful validation preserves the original Job identity.
+ */
 export function validateTopicDiscoveryCompositionV1(
+  contextPack: ContextPackV1,
+  job: TopicDiscoveryJobV1,
+  proposals: readonly TopicProposalV1[],
+): ProtocolParseResult<TopicDiscoveryJobV1> {
+  const parsedContextPack = parseContextPackV1(contextPack);
+  if (!parsedContextPack.ok) return parsedContextPack;
+
+  const parsedJob = parseTopicDiscoveryJobV1(job);
+  if (!parsedJob.ok) return parsedJob;
+
+  if (!Array.isArray(proposals)) {
+    return fail("invalid_type", "$", "proposals must be an array");
+  }
+  const parsedProposals: TopicProposalV1[] = [];
+  for (const proposal of proposals) {
+    const parsedProposal = parseTopicProposalV1(proposal);
+    if (!parsedProposal.ok) return parsedProposal;
+    parsedProposals.push(parsedProposal.value);
+  }
+
+  const composition = validateTopicDiscoveryCompositionParsedV1(
+    parsedContextPack.value,
+    parsedJob.value,
+    parsedProposals,
+  );
+  if (!composition.ok) return composition;
+  return pass(job);
+}
+
+function validateTopicDiscoveryCompositionParsedV1(
   contextPack: ContextPackV1,
   job: TopicDiscoveryJobV1,
   proposals: readonly TopicProposalV1[],

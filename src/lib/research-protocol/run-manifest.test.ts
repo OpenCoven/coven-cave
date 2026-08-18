@@ -2060,7 +2060,10 @@ test("manifest-contained lifecycle timestamps stay within creation and finalizat
 test("retention consent uses context consent or the original policy ceiling", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   assert.equal(validateManifestRetentionConsent(local, undefined).ok, false);
-  assert.equal(validateManifestRetentionConsent(local, "7-days").ok, true);
+  assert.strictEqual(
+    expectOk(validateManifestRetentionConsent(local, "7-days")),
+    local,
+  );
 
   const contextCeiling = validateManifestRetentionConsent(local, "run-only");
   expectError(contextCeiling, "$.retention.policy", "semantic_conflict");
@@ -2076,6 +2079,29 @@ test("retention consent uses context consent or the original policy ceiling", ()
   });
   const tooLongParsed = parseRunManifestV1(tooLong);
   assert.equal(tooLongParsed.ok, false);
+});
+
+test("retention consent reparses mutable manifests before policy composition", () => {
+  {
+    const manifest = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    manifest.digest = "f".repeat(64);
+    expectError(
+      validateManifestRetentionConsent(manifest, "7-days"),
+      "$.digest",
+      "digest_mismatch",
+    );
+  }
+
+  {
+    const manifest = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    manifest.artifacts[0]!.title = "/Users/private/research.md";
+    manifest.digest = digestProtocolObject(manifest);
+    expectError(
+      validateManifestRetentionConsent(manifest, "7-days"),
+      "$.artifacts[0].title",
+      "invalid_value",
+    );
+  }
 });
 
 test("revision chains accept assembling-to-final and allowed retention updates", () => {
@@ -2100,6 +2126,51 @@ test("revision chains accept assembling-to-final and allowed retention updates",
     expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
     update,
   );
+});
+
+test("revision validation reparses both mutable manifest snapshots", () => {
+  {
+    const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+    assert.strictEqual(
+      expectOk(validateRunManifestRevision(previous, next, { contextConsent: "7-days" })),
+      next,
+    );
+  }
+
+  {
+    const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+    previous.digest = "f".repeat(64);
+    expectError(
+      validateRunManifestRevision(previous, next, { contextConsent: "7-days" }),
+      "$.digest",
+      "digest_mismatch",
+    );
+  }
+
+  {
+    const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+    next.revision = 0;
+    expectError(
+      validateRunManifestRevision(previous, next, { contextConsent: "7-days" }),
+      "$.revision",
+      "invalid_value",
+    );
+  }
+
+  {
+    const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+    const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+    next.artifacts[0]!.title = "file:///Users/private/research.md";
+    next.digest = digestProtocolObject(next);
+    expectError(
+      validateRunManifestRevision(previous, next, { contextConsent: "7-days" }),
+      "$.artifacts[0].title",
+      "invalid_value",
+    );
+  }
 });
 
 test("manifest revision lifecycle clocks cannot roll back at nanosecond precision", () => {
@@ -2174,7 +2245,7 @@ test("manifest revision lifecycle comparison rejects forged invalid timestamps w
       { contextConsent: "7-days" },
     ),
     "$.createdAt",
-    "semantic_conflict",
+    "invalid_value",
   );
 });
 
@@ -2199,8 +2270,8 @@ test("manifest revision validates both retention lifecycle timestamps before ord
       afterMalformedPrevious,
       { contextConsent: "7-days" },
     ),
-    "$.previous.retention.updatedAt",
-    "semantic_conflict",
+    "$.retention.updatedAt",
+    "invalid_value",
   );
 
   const malformedNext = recalculate({
@@ -2217,7 +2288,7 @@ test("manifest revision validates both retention lifecycle timestamps before ord
       { contextConsent: "7-days" },
     ),
     "$.retention.updatedAt",
-    "semantic_conflict",
+    "invalid_value",
   );
 
   const equalClock = expectOk(
@@ -2271,8 +2342,8 @@ test("manifest revision rejects an invalid prior durable consent clock without t
         contextConsent: "7-days",
       },
     ),
-    "$.previous.retention.freshConsentAt",
-    "semantic_conflict",
+    "$.retention.freshConsentAt",
+    "invalid_value",
   );
 });
 
@@ -2541,63 +2612,49 @@ test("final retention shortening starts a coherent deletion clock", () => {
   );
 
   const { requestedAt: _requestedAt, ...withoutRequestedAt } = scheduledShortening.deletion;
-  for (const [candidate, path] of [
-    [
-      recalculate({
-        ...scheduledShortening,
-        deletion: {
-          ...scheduledShortening.deletion,
-          status: "not_scheduled" as const,
-        },
-      }),
-      "$.deletion.status",
-    ],
-    [
-      recalculate({
-        ...scheduledShortening,
-        retention: {
-          ...scheduledShortening.retention,
-          contentExpiresAt: null,
-        },
-      }),
-      "$.retention.contentExpiresAt",
-    ],
-    [
-      recalculate({
-        ...scheduledShortening,
-        retention: {
-          ...scheduledShortening.retention,
-          updatedAt: "not-a-timestamp",
-        },
-      }),
-      "$.retention.updatedAt",
-    ],
-    [
-      recalculate({
-        ...scheduledShortening,
-        deletion: withoutRequestedAt,
-      }),
-      "$.deletion.requestedAt",
-    ],
-    [
-      recalculate({
-        ...scheduledShortening,
-        deletion: {
-          ...scheduledShortening.deletion,
-          requestedAt: "not-a-timestamp",
-        },
-      }),
-      "$.deletion.requestedAt",
-    ],
-  ] as const) {
-    expectError(
+  for (const candidate of [
+    recalculate({
+      ...scheduledShortening,
+      deletion: {
+        ...scheduledShortening.deletion,
+        status: "not_scheduled" as const,
+      },
+    }),
+    recalculate({
+      ...scheduledShortening,
+      retention: {
+        ...scheduledShortening.retention,
+        contentExpiresAt: null,
+      },
+    }),
+    recalculate({
+      ...scheduledShortening,
+      retention: {
+        ...scheduledShortening.retention,
+        updatedAt: "not-a-timestamp",
+      },
+    }),
+    recalculate({
+      ...scheduledShortening,
+      deletion: withoutRequestedAt,
+    }),
+    recalculate({
+      ...scheduledShortening,
+      deletion: {
+        ...scheduledShortening.deletion,
+        requestedAt: "not-a-timestamp",
+      },
+    }),
+  ]) {
+    const authoritative = parseRunManifestV1(candidate);
+    if (authoritative.ok) assert.fail("expected authoritative parse failure");
+    assert.deepEqual(
       validateRunManifestRevision(
         previous,
         candidate as unknown as RunManifestV1,
         { contextConsent: "7-days" },
       ),
-      path,
-      "semantic_conflict",
+      authoritative,
     );
   }
 });
@@ -2607,12 +2664,21 @@ test("revision chains reject bad links, immutable final mutations, and retention
   const next = expectOk(parseRunManifestV1(retentionUpdateJson));
 
   expectError(
-    validateRunManifestRevision(previous, { ...next, previousDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }),
+    validateRunManifestRevision(
+      previous,
+      recalculate({
+        ...next,
+        previousDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      }),
+    ),
     "$.previousDigest",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestRevision(previous, { ...next, id: "manifest_other" }),
+    validateRunManifestRevision(
+      previous,
+      recalculate({ ...next, id: "manifest_other" }),
+    ),
     "$.id",
     "semantic_conflict",
   );
@@ -3648,7 +3714,10 @@ test("final revisions preserve finalizedAt and unknown additive immutable fields
   expectError(
     validateRunManifestRevision(
       previous,
-      recalculate({ ...next, finalizedAt: "2026-08-16T20:00:00.000Z" }),
+      recalculate({
+        ...next,
+        finalizedAt: "2026-08-16T20:04:00.000000001Z",
+      }),
     ),
     "$.finalizedAt",
     "semantic_conflict",

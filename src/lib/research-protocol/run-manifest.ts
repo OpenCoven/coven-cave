@@ -1896,7 +1896,7 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   return pass(parsedManifest as RunManifestV1);
 }
 
-export function validateManifestRetentionConsent(
+function validateManifestRetentionConsentParsed(
   manifest: RunManifestV1,
   contextConsent: RetentionPolicyV1 | undefined,
 ): ProtocolParseResult<RunManifestV1> {
@@ -1935,7 +1935,26 @@ export function validateManifestRetentionConsent(
   return pass(manifest);
 }
 
-export function validateRunManifestRevision(
+/**
+ * Certifies a mutable manifest by reparsing a detached snapshot before
+ * retention composition. Success preserves the original Manifest identity.
+ */
+export function validateManifestRetentionConsent(
+  manifest: RunManifestV1,
+  contextConsent: RetentionPolicyV1 | undefined,
+): ProtocolParseResult<RunManifestV1> {
+  const parsedManifest = parseRunManifestV1(manifest);
+  if (!parsedManifest.ok) return parsedManifest;
+
+  const consent = validateManifestRetentionConsentParsed(
+    parsedManifest.value,
+    contextConsent,
+  );
+  if (!consent.ok) return consent;
+  return pass(manifest);
+}
+
+function validateRunManifestRevisionParsed(
   previous: RunManifestV1,
   next: RunManifestV1,
   options: ManifestRevisionOptions = {},
@@ -2161,7 +2180,7 @@ export function validateRunManifestRevision(
     }
   }
 
-  const consent = validateManifestRetentionConsent(next, options.contextConsent);
+  const consent = validateManifestRetentionConsentParsed(next, options.contextConsent);
   if (!consent.ok) return consent;
 
   const nextClock = validateRetentionClock(next);
@@ -2270,5 +2289,29 @@ export function validateRunManifestRevision(
   );
   if (!deadline.ok) return deadline;
 
+  return pass(next);
+}
+
+/**
+ * Certifies both mutable manifests by reparsing detached snapshots before
+ * revision checks. Success preserves the original next-Manifest identity.
+ */
+export function validateRunManifestRevision(
+  previous: RunManifestV1,
+  next: RunManifestV1,
+  options: ManifestRevisionOptions = {},
+): ProtocolParseResult<RunManifestV1> {
+  const parsedPrevious = parseRunManifestV1(previous);
+  if (!parsedPrevious.ok) return parsedPrevious;
+
+  const parsedNext = parseRunManifestV1(next);
+  if (!parsedNext.ok) return parsedNext;
+
+  const revision = validateRunManifestRevisionParsed(
+    parsedPrevious.value,
+    parsedNext.value,
+    options,
+  );
+  if (!revision.ok) return revision;
   return pass(next);
 }

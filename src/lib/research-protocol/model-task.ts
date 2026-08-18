@@ -644,11 +644,29 @@ export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<Mode
 }
 
 /**
- * Validates one parsed task/result association. Matching replays remain valid;
- * comparing a result with an already persisted receipt is a later storage
- * boundary concern.
+ * Certifies mutable task and result inputs by reparsing detached snapshots
+ * before association checks. Matching replays remain valid, and successful
+ * validation preserves the original Result identity.
  */
 export function validateModelTaskResultV1(
+  task: ModelTaskV1,
+  result: ModelTaskResultV1,
+): ProtocolParseResult<ModelTaskResultV1> {
+  const parsedTask = parseModelTaskV1(task);
+  if (!parsedTask.ok) return parsedTask;
+
+  const parsedResult = parseModelTaskResultV1(result);
+  if (!parsedResult.ok) return parsedResult;
+
+  const association = validateModelTaskResultParsedV1(
+    parsedTask.value,
+    parsedResult.value,
+  );
+  if (!association.ok) return association;
+  return pass(result);
+}
+
+function validateModelTaskResultParsedV1(
   task: ModelTaskV1,
   result: ModelTaskResultV1,
 ): ProtocolParseResult<ModelTaskResultV1> {

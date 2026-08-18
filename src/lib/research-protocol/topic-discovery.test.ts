@@ -89,7 +89,96 @@ test("valid topic discovery composition preserves every parsed input", () => {
   assert.deepEqual({ contextPack, job, proposals }, before);
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.deepEqual(result.value, job);
+    assert.strictEqual(result.value, job);
+  }
+});
+
+test("topic discovery composition reparses every mutable protocol input", () => {
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    contextPack.digest = "f".repeat(64);
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+      "$.digest",
+      "digest_mismatch",
+    );
+  }
+
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    contextPack.resources[0]!.selector = { type: "text-span", start: 1, end: 20 };
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+      "$.digest",
+      "digest_mismatch",
+    );
+  }
+
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    (contextPack.consent as unknown as Record<string, unknown>).retention = "forever";
+    contextPack.digest = digestProtocolObject(contextPack);
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+      "$.consent.retention",
+      "invalid_value",
+    );
+  }
+
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    (job as unknown as Record<string, unknown>).status = "trusted-after-parse";
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+      "$.status",
+      "invalid_value",
+    );
+  }
+
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    proposals[0]!.discoveryJobId = "not-an-opaque-id";
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+      "$.discoveryJobId",
+      "invalid_value",
+    );
+  }
+
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    proposals[0]!.evidence[0]!.selector = { type: "text-span", start: 20, end: 1 };
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+      "$.evidence[0].selector",
+      "semantic_conflict",
+    );
+  }
+
+  {
+    const { contextPack, job, proposals } = validDiscoveryComposition();
+    const secondProposal = expectOk(
+      parseTopicProposalV1({
+        ...proposals[0],
+        id: "proposal_02",
+      }),
+    );
+    const twoProposalJob = expectOk(
+      parseTopicDiscoveryJobV1({
+        ...job,
+        proposalIds: [proposals[0]!.id, secondProposal.id],
+      }),
+    );
+    secondProposal.scores.groundability = 6;
+    expectError(
+      validateTopicDiscoveryCompositionV1(
+        contextPack,
+        twoProposalJob,
+        [proposals[0]!, secondProposal],
+      ),
+      "$.scores.groundability",
+      "invalid_value",
+    );
   }
 });
 
@@ -112,7 +201,7 @@ test("topic discovery composition requires a discovery-purpose Context Pack and 
   } as ContextPackV1;
   expectError(
     validateTopicDiscoveryCompositionV1(policyDeniedPack, job, proposals),
-    "$.contextPack.policy.allowedPurposes",
+    "$.policy.allowedPurposes",
     "semantic_conflict",
   );
 });

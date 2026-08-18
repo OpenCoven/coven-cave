@@ -1170,6 +1170,89 @@ test("run and Context Pack composition requires matching presence and binding", 
   );
 });
 
+test("run and Context Pack composition reparses every mutable protocol input", () => {
+  const validComposition = (): { run: ResearchRunV1; pack: ContextPackV1 } => {
+    const pack = expectOk(parseContextPackV1(validContextPack));
+    const run = expectOk(
+      parseResearchRunV1({
+        ...validResearchRun,
+        context: {
+          ...validResearchRun.context,
+          contextPackId: pack.id,
+          contextPackDigest: pack.digest,
+        },
+      }),
+    );
+    return { run, pack };
+  };
+
+  {
+    const { run, pack } = validComposition();
+    run.context!.topicProposalId = "proposal_other";
+    expectError(
+      validateResearchRunContextPackV1(run, pack),
+      "$.context.topicProposalId",
+      "semantic_conflict",
+    );
+  }
+
+  {
+    const { run, pack } = validComposition();
+    (run.privacy as unknown as Record<string, unknown>).allowMemoryPromotion = true;
+    expectError(
+      validateResearchRunContextPackV1(run, pack),
+      "$.privacy.allowMemoryPromotion",
+      "invalid_value",
+    );
+  }
+
+  {
+    const { run, pack } = validComposition();
+    (pack.consent as unknown as Record<string, unknown>).selectionMode = "trusted-after-parse";
+    expectError(
+      validateResearchRunContextPackV1(run, pack),
+      "$.consent.selectionMode",
+      "invalid_value",
+    );
+  }
+
+  {
+    const { rootRun } = rootedContextlessManifestComposition();
+    rootRun.artifactManifest!.artifacts[0]!.bytes += 1;
+    expectError(
+      validateResearchRunContextPackV1(rootRun),
+      "$.artifactManifest.digest",
+      "digest_mismatch",
+    );
+  }
+
+  {
+    const { run, contextPack, root, tip, freshConsentAt } =
+      rootedExtendedRetentionComposition();
+    tip.revision = 0;
+    expectError(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory: [root, tip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      }),
+      "$.revision",
+      "invalid_value",
+    );
+  }
+
+  {
+    const { run, contextPack, root, tip } = rootedExtendedRetentionComposition();
+    expectError(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory: [root, tip],
+        authorizedFreshConsentAt: ["not-a-timestamp"],
+      }),
+      "$.authorizedFreshConsentAt[0]",
+      "invalid_value",
+    );
+  }
+});
+
 test("run and Context Pack composition requires research-run purpose and policy", () => {
   const pack = expectOk(parseContextPackV1(validContextPack));
   const boundRun = expectOk(
@@ -1182,11 +1265,27 @@ test("run and Context Pack composition requires research-run purpose and policy"
       },
     }),
   );
+  const topicPackValue = {
+    ...pack,
+    purpose: "topic-discovery" as const,
+    policy: {
+      ...pack.policy,
+      allowedPurposes: ["topic-discovery" as const],
+    },
+  };
+  topicPackValue.digest = digestProtocolObject(topicPackValue);
+  const topicPack = expectOk(parseContextPackV1(topicPackValue));
 
   expectError(
     validateResearchRunContextPackV1(
-      boundRun,
-      { ...pack, purpose: "topic-discovery" },
+      {
+        ...boundRun,
+        context: {
+          ...boundRun.context!,
+          contextPackDigest: topicPack.digest,
+        },
+      },
+      topicPack,
     ),
     "$.contextPack.purpose",
     "semantic_conflict",
@@ -1202,7 +1301,7 @@ test("run and Context Pack composition requires research-run purpose and policy"
         },
       } as ContextPackV1,
     ),
-    "$.contextPack.policy.allowedPurposes",
+    "$.policy.allowedPurposes",
     "semantic_conflict",
   );
 });
@@ -1225,16 +1324,23 @@ test("run privacy cannot exceed Context Pack consent", () => {
     ["remoteContent", "allowRemoteContent"],
     ["artifactContentSync", "artifactContentSync"],
   ] as const) {
+    const deniedPackValue = {
+      ...pack,
+      consent: { ...pack.consent, [consentKey]: false },
+    };
+    deniedPackValue.digest = digestProtocolObject(deniedPackValue);
+    const deniedPack = expectOk(parseContextPackV1(deniedPackValue));
     expectError(
       validateResearchRunContextPackV1(
         {
           ...boundRun,
+          context: {
+            ...boundRun.context!,
+            contextPackDigest: deniedPack.digest,
+          },
           privacy: { ...boundRun.privacy, [runKey]: true },
         },
-        {
-          ...pack,
-          consent: { ...pack.consent, [consentKey]: false },
-        },
+        deniedPack,
       ),
       `$.privacy.${runKey}`,
       "semantic_conflict",
@@ -1253,11 +1359,26 @@ test("run privacy cannot exceed Context Pack consent", () => {
     "semantic_conflict",
   );
 
+  const allowedPackValue = {
+    ...pack,
+    consent: {
+      ...pack.consent,
+      allowRemoteQueries: true,
+      allowRemoteContent: true,
+      artifactContentSync: true,
+    },
+  };
+  allowedPackValue.digest = digestProtocolObject(allowedPackValue);
+  const allowedPack = expectOk(parseContextPackV1(allowedPackValue));
   assert.equal(
     expectOk(
       validateResearchRunContextPackV1(
         {
           ...boundRun,
+          context: {
+            ...boundRun.context!,
+            contextPackDigest: allowedPack.digest,
+          },
           privacy: {
             ...boundRun.privacy,
             remoteQueries: true,
@@ -1266,15 +1387,7 @@ test("run privacy cannot exceed Context Pack consent", () => {
             retention: "run-only",
           },
         },
-        {
-          ...pack,
-          consent: {
-            ...pack.consent,
-            allowRemoteQueries: true,
-            allowRemoteContent: true,
-            artifactContentSync: true,
-          },
-        },
+        allowedPack,
       ),
     ).privacy.retention,
     "run-only",
@@ -1831,9 +1944,56 @@ test("events parse and validateRunEventSequence enforces contiguous same-run seq
       parsedEvent,
       { ...second, sequence: Number.MAX_SAFE_INTEGER + 1 } as unknown as RunEventV1,
     ]),
-    "$[1].sequence",
-    "semantic_conflict",
+    "$.sequence",
+    "invalid_value",
   );
+});
+
+test("validateRunEventSequence reparses every mutable event snapshot", () => {
+  {
+    const events = [
+      parsedEvent(1, "run.created", { status: "queued" }),
+      parsedEvent(2, "run.status", { status: "scoping" }),
+    ];
+    assert.strictEqual(expectOk(validateRunEventSequence(events)), events);
+  }
+
+  {
+    const event = parsedEvent(1, "run.created", { status: "queued" });
+    event.runId = "not-an-opaque-id";
+    expectError(validateRunEventSequence([event]), "$.runId", "invalid_value");
+  }
+
+  {
+    const event = parsedEvent(1, "run.created", { status: "queued" });
+    event.sequence = 0;
+    expectError(validateRunEventSequence([event]), "$.sequence", "invalid_value");
+  }
+
+  {
+    const event = parsedDeletionEvent(1, {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+    });
+    (event.data as unknown as Record<string, unknown>).deletedContents = ["private research"];
+    expectError(
+      validateRunEventSequence([event]),
+      "$.data.deletedContents",
+      "semantic_conflict",
+    );
+  }
+
+  {
+    const events = [
+      parsedEvent(1, "run.created", { status: "queued" }),
+      parsedEvent(2, "run.status", { status: "scoping" }),
+    ];
+    Object.defineProperty(events[1]!, "hidden", {
+      value: "not-canonical-wire-data",
+      enumerable: false,
+    });
+    expectError(validateRunEventSequence(events), "$", "invalid_value");
+  }
 });
 
 test("schema and parser agree on expressible constraints and additive fields survive", () => {
@@ -2038,67 +2198,68 @@ test("embedded manifests bind original run privacy retention and every content-s
 });
 
 test("Context Pack composition cannot approve artifact sync through manifest fields alone", () => {
-  const contextPack = expectOk(parseContextPackV1(validContextPack));
-  const context = {
-    ...validResearchRun.context,
-    contextPackId: contextPack.id,
-    contextPackDigest: contextPack.digest,
-  };
-  const failedLocalManifest = linkedManifest(
-    {
-      ...validRunManifest,
-      artifacts: validRunManifest.artifacts.map((artifact) => ({
-        ...artifact,
-        contentSync: "failed",
-      })),
+  const deniedPack = expectOk(parseContextPackV1(validContextPack));
+  const allowedPackValue = {
+    ...deniedPack,
+    consent: {
+      ...deniedPack.consent,
+      artifactContentSync: true,
     },
-    context,
-  );
-  const run = expectOk(
-    parseResearchRunV1({
-      ...runForStatus("completed", failedLocalManifest),
-      context,
-      privacy: {
-        ...validResearchRun.privacy,
-        artifactContentSync: true,
+  };
+  allowedPackValue.digest = digestProtocolObject(allowedPackValue);
+  const allowedPack = expectOk(parseContextPackV1(allowedPackValue));
+  const runForPack = (pack: ContextPackV1): ResearchRunV1 => {
+    const context = {
+      ...validResearchRun.context,
+      contextPackId: pack.id,
+      contextPackDigest: pack.digest,
+    };
+    const failedLocalManifest = linkedManifest(
+      {
+        ...validRunManifest,
+        artifacts: validRunManifest.artifacts.map((artifact) => ({
+          ...artifact,
+          contentSync: "failed",
+        })),
       },
-    }),
-  );
+      context,
+    );
+    return expectOk(
+      parseResearchRunV1({
+        ...runForStatus("completed", failedLocalManifest),
+        context,
+        privacy: {
+          ...validResearchRun.privacy,
+          artifactContentSync: true,
+        },
+      }),
+    );
+  };
+  const allowedRun = runForPack(allowedPack);
+  const deniedRun = runForPack(deniedPack);
 
   expectError(
     validateResearchRunContextPackV1(
       {
-        ...run,
+        ...allowedRun,
         privacy: {
-          ...run.privacy,
+          ...allowedRun.privacy,
           artifactContentSync: false,
         },
       },
-      {
-        ...contextPack,
-        consent: {
-          ...contextPack.consent,
-          artifactContentSync: true,
-        },
-      },
+      allowedPack,
     ),
     "$.artifactManifest.artifacts[0].contentSync",
     "semantic_conflict",
   );
   expectError(
-    validateResearchRunContextPackV1(run, contextPack),
+    validateResearchRunContextPackV1(deniedRun, deniedPack),
     "$.privacy.artifactContentSync",
     "semantic_conflict",
   );
   assert.equal(
     expectOk(
-      validateResearchRunContextPackV1(run, {
-        ...contextPack,
-        consent: {
-          ...contextPack.consent,
-          artifactContentSync: true,
-        },
-      }),
+      validateResearchRunContextPackV1(allowedRun, allowedPack),
     ).artifactManifest?.artifacts[0].contentSync,
     "failed",
   );
@@ -2481,7 +2642,7 @@ test("completed deletion requires a final manifest and its exact event in the co
   };
   expectError(
     validateRunManifestDeletionEventV1(nonFinalRun, [first, deletion, completed]),
-    "$.artifactManifest.state",
+    "$.artifactManifest.finalizedAt",
     "semantic_conflict",
   );
 
@@ -2503,8 +2664,8 @@ test("completed deletion requires a final manifest and its exact event in the co
       } as RunEventV1,
       completed,
     ]),
-    "$[1].data.deletedObjectCount",
-    "semantic_conflict",
+    "$.data.deletedObjectCount",
+    "missing_field",
   );
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
@@ -2527,8 +2688,8 @@ test("completed deletion requires a final manifest and its exact event in the co
       } as RunEventV1,
       completed,
     ]),
-    "$[1].data.manifestStatus",
-    "semantic_conflict",
+    "$.data.manifestStatus",
+    "missing_field",
   );
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
@@ -2542,8 +2703,8 @@ test("completed deletion requires a final manifest and its exact event in the co
       } as RunEventV1,
       completed,
     ]),
-    "$[1].data.manifestStatus",
-    "semantic_conflict",
+    "$.data.manifestStatus",
+    "invalid_value",
   );
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
@@ -2565,37 +2726,82 @@ test("completed deletion requires a final manifest and its exact event in the co
   );
 });
 
+test("deletion-event composition reparses the run and every event snapshot", () => {
+  const validEvents = (): RunEventV1[] => [
+    parsedEvent(1, "run.created", { status: "queued" }),
+    parsedDeletionEvent(2, {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+    }),
+    parsedEvent(3, "run.status", { status: "completed" }),
+  ];
+
+  {
+    const run = runWithCompletedDeletion();
+    (run.privacy as unknown as Record<string, unknown>).allowMemoryPromotion = true;
+    expectError(
+      validateRunManifestDeletionEventV1(run, validEvents()),
+      "$.privacy.allowMemoryPromotion",
+      "invalid_value",
+    );
+  }
+
+  {
+    const run = runWithCompletedDeletion();
+    const events = validEvents();
+    (events[1]!.data as unknown as Record<string, unknown>).deletedContents = [
+      "private research",
+    ];
+    expectError(
+      validateRunManifestDeletionEventV1(run, events),
+      "$.data.deletedContents",
+      "semantic_conflict",
+    );
+  }
+
+  {
+    const run = runWithCompletedDeletion();
+    const events = validEvents();
+    Object.defineProperty(events[2]!, "hidden", {
+      value: "not-canonical-wire-data",
+      enumerable: false,
+    });
+    expectError(
+      validateRunManifestDeletionEventV1(run, events),
+      "$",
+      "invalid_value",
+    );
+  }
+});
+
 test("content.deleted event chronology is bounded below by run and manifest creation", () => {
   const deletedRun = runWithCompletedDeletion();
   const first = parsedEvent(1, "run.created", { status: "queued" });
-  const deletion = parsedDeletionEvent(2, {
-    deletedObjectCount: 3,
-    manifestStatus: "deleted",
-  });
   const completed = parsedEvent(3, "run.status", { status: "completed" });
 
   expectError(
-    validateRunManifestDeletionEventV1(
-      {
-        ...deletedRun,
-        createdAt: "2026-08-17T19:30:00.000000001Z",
-      },
-      [first, deletion, completed],
-    ),
+    validateRunManifestDeletionEventV1(deletedRun, [
+      first,
+      parsedDeletionEvent(
+        2,
+        { deletedObjectCount: 3, manifestStatus: "deleted" },
+        "2026-08-15T19:59:59.999999999Z",
+      ),
+      completed,
+    ]),
     "$[1].at",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(
-      {
-        ...deletedRun,
-        artifactManifest: {
-          ...deletedRun.artifactManifest!,
-          createdAt: "2026-08-17T19:30:00.000000001Z",
-        },
-      },
-      [first, deletion, completed],
-    ),
+    validateRunManifestDeletionEventV1(deletedRun, [
+      first,
+      parsedDeletionEvent(
+        2,
+        { deletedObjectCount: 3, manifestStatus: "deleted" },
+        "2026-08-16T19:59:59.999999999Z",
+      ),
+      completed,
+    ]),
     "$[1].at",
     "semantic_conflict",
   );
@@ -2658,10 +2864,9 @@ test("deletion event chronology includes nanosecond boundaries and leap seconds"
     );
   }
 
-  const leapSecondRun: ResearchRunV1 = {
-    ...deletedRun,
-    createdAt: "2016-12-31T23:59:59Z",
-    artifactManifest: {
+  const leapSecondManifest = expectOk(
+    parseRunManifestV1(
+      recalculatedManifest({
       ...deletedRun.artifactManifest!,
       createdAt: "2016-12-31T23:59:59Z",
       deletion: {
@@ -2669,8 +2874,16 @@ test("deletion event chronology includes nanosecond boundaries and leap seconds"
         requestedAt: "2016-12-31T23:59:59.999999999Z",
         completedAt: "2017-01-01T00:00:00Z",
       },
-    },
-  };
+      }),
+    ),
+  );
+  const leapSecondRun = expectOk(
+    parseResearchRunV1({
+      ...deletedRun,
+      createdAt: "2016-12-31T23:59:59Z",
+      artifactManifest: leapSecondManifest,
+    }),
+  );
   assert.equal(
     expectOk(validateRunManifestDeletionEventV1(leapSecondRun, [
       first,
