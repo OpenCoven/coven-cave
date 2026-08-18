@@ -377,10 +377,8 @@
   display: flex;
   min-width: 0;
   min-height: var(--touch-target);
-  max-height: var(--touch-target);
   align-items: center;
   gap: var(--space-2);
-  overflow: hidden;
   border-color: var(--border-strong);
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
@@ -423,6 +421,7 @@
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--color-success) 14%, transparent);
+  color: var(--color-success);
   font-size: var(--text-2xs);
   line-height: 1;
 }
