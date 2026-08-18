@@ -8,14 +8,14 @@
     "unscheduled-shortening": {
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
+        "digest": "703a33f5d2d77102df2be8de87769936f02a9294835784a0d8fce4a7b547264f",
         "revision": 2,
         "previousDigest": "4c7161996cbbcb51d3e13f7a27f0cac88a389e5765c9f6706898ef5329080579",
         "retention": {
           "effectivePolicy": "run-only",
           "updatedAt": "2026-08-16T20:06:00.000Z"
         }
-      },
-      "digestTargets": [""]
+      }
     },
     "broken-previous-digest": {
       "fixture": "scenarios/objects/run-manifest-previous-digest.json"
@@ -62,6 +62,36 @@
         "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d"
       },
       "digestTargets": [""]
+    },
+    "scheduled-shortening-from-assembling": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "unscheduled-shortening-from-assembling": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "digest": "fa4d8c09bad77b7996c2bb616fc1521bab8fa6ee335ed912681ceff335145ea2",
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        }
+      }
     },
     "gapped-revision": {
       "fixture": "valid/run-manifest-retention-update.json",
@@ -190,6 +220,40 @@
       }
     },
     {
+      "id": "manifest.assembling-to-final-scheduled-shortening",
+      "description": "An assembling manifest may finalize with shorter retention after scheduling deletion.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "scheduled-shortening-from-assembling"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.assembling-to-final-unscheduled-shortening",
+      "description": "An assembling manifest cannot finalize with shorter retention while deletion remains unscheduled.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "unscheduled-shortening-from-assembling"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.status"
+      }
+    },
+    {
       "id": "manifest.partial-usage",
       "description": "A linked final manifest accepts correct partial usage completeness and accounting.",
       "validator": "run-manifest-revision",
@@ -307,7 +371,8 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
+        "stage": "parse",
+        "input": "next",
         "code": "semantic_conflict",
         "path": "$.retention.status"
       }

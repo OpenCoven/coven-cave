@@ -48,6 +48,17 @@ function requireString(value: unknown, filePath: string, label: string): string 
   return value;
 }
 
+function invokeParserWithMutationGuard<T>(
+  input: Record<string, unknown>,
+  parser: (value: Record<string, unknown>) => T,
+  label: string,
+): { snapshot: Record<string, unknown>; result: T } {
+  const snapshot = structuredClone(input);
+  const result = parser(input);
+  assert.deepEqual(input, snapshot, `${label}: parser must not mutate fixture input`);
+  return { snapshot, result };
+}
+
 // Every approved schema id follows `opencoven.<name>/v1`, and its
 // authoritative file lives right beside this suite as `<name>.schema.json`.
 // The mapping is derived from `RESEARCH_PROTOCOL_SCHEMAS` (the dispatcher's
@@ -117,6 +128,27 @@ test("schema lookup does not resolve inherited Object.prototype names as registe
   }
 });
 
+test("fixture parser mutation guard detects mutations on success and failure", () => {
+  for (const result of [
+    { ok: true, value: { accepted: true } },
+    { ok: false, error: { code: "invalid_value", path: "$", message: "rejected" } },
+  ] as const) {
+    const input = { nested: { value: "before" } };
+    assert.throws(
+      () =>
+        invokeParserWithMutationGuard(
+          input,
+          (candidate) => {
+            (candidate.nested as { value: string }).value = "after";
+            return result;
+          },
+          "mutation regression",
+        ),
+      /must not mutate fixture input/i,
+    );
+  }
+});
+
 function listFixtureFiles(kind: "valid" | "invalid"): string[] {
   const dir = path.join(fixturesDir, kind);
   return readdirSync(dir, { withFileTypes: true })
@@ -144,7 +176,11 @@ for (const fileName of listFixtureFiles("valid")) {
       `${filePath}: expected schema validation to pass`,
     );
 
-    const parsed = parseResearchProtocolObject(loaded);
+    const { snapshot, result: parsed } = invokeParserWithMutationGuard(
+      loaded,
+      parseResearchProtocolObject,
+      filePath,
+    );
     if (!parsed.ok) {
       assert.fail(`${filePath}: expected parser to accept fixture (${parsed.error.path}: ${parsed.error.message})`);
     }
@@ -155,7 +191,7 @@ for (const fileName of listFixtureFiles("valid")) {
     // rather than just the parser's own serialization of itself.
     assert.deepEqual(
       parsed.value,
-      loaded,
+      snapshot,
       `${filePath}: parser result must be deeply equal to the original fixture (lossless)`,
     );
 
@@ -170,16 +206,16 @@ for (const fileName of listFixtureFiles("valid")) {
     }
 
     const roundTripped: unknown = JSON.parse(JSON.stringify(parsed.value));
-    const sourceRoundTripped: unknown = JSON.parse(JSON.stringify(loaded));
+    const sourceRoundTripped: unknown = JSON.parse(JSON.stringify(snapshot));
     assert.deepEqual(
       roundTripped,
       sourceRoundTripped,
       `${filePath}: parser serialization must match source serialization`,
     );
 
-    if (typeof loaded.digest === "string") {
+    if (typeof snapshot.digest === "string") {
       const recomputed = digestProtocolObject(parsed.value);
-      assert.equal(recomputed, loaded.digest, `${filePath}: recomputed digest must equal fixture digest`);
+      assert.equal(recomputed, snapshot.digest, `${filePath}: recomputed digest must equal fixture digest`);
     }
   });
 }
@@ -226,7 +262,11 @@ for (const fileName of listFixtureFiles("invalid")) {
       );
     }
 
-    const parsed = parseResearchProtocolObject(fixture);
+    const { result: parsed } = invokeParserWithMutationGuard(
+      fixture,
+      parseResearchProtocolObject,
+      filePath,
+    );
     assert.equal(parsed.ok, false, `${filePath}: expected parser to reject fixture`);
     if (schema === undefined && !parsed.ok) {
       assert.equal(

@@ -345,7 +345,10 @@ test("resource ids must be unique", () => {
       ...validContextPack,
       resources: [
         validContextPack.resources[0],
-        { ...validContextPack.resources[0], uri: "coven://session/session_02" },
+        {
+          ...structuredClone(validContextPack.resources[0]),
+          uri: "coven://session/session_02",
+        },
       ],
     }),
     "$.resources[1].id",

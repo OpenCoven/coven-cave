@@ -74,16 +74,18 @@ function linkedManifest(
     [key: string]: unknown;
   } = validResearchRun.context,
 ): Record<string, unknown> {
+  const manifestCopy = structuredClone(manifest);
+  const contextCopy = structuredClone(context);
   const linked: Record<string, unknown> = {
-    ...manifest,
+    ...manifestCopy,
     runId: validResearchRun.id,
-    context,
-    sources: manifest.sources.map((source) =>
+    context: contextCopy,
+    sources: manifestCopy.sources.map((source) =>
       source.kind === "context-pack"
         ? {
             ...source,
-            id: context.contextPackId,
-            digest: context.contextPackDigest,
+            id: contextCopy.contextPackId,
+            digest: contextCopy.contextPackDigest,
           }
         : source,
     ),
@@ -131,11 +133,9 @@ function runForStatus(
   status: ResearchRunStatusV1,
   artifactManifest?: Record<string, unknown>,
 ): Record<string, unknown> {
-  const run: Record<string, unknown> = {
-    ...validResearchRun,
-    status,
-    ...(artifactManifest ? { artifactManifest } : {}),
-  };
+  const run: Record<string, unknown> = structuredClone(validResearchRun);
+  run.status = status;
+  if (artifactManifest) run.artifactManifest = structuredClone(artifactManifest);
   delete run.waitingReason;
   delete run.waitingForPhase;
   delete run.failure;
@@ -154,6 +154,7 @@ function parsedEvent(
   type: RunEventV1["type"],
   data: Record<string, unknown>,
   runId = validResearchRun.id,
+  at = validRunEvent.at,
 ): RunEventV1 {
   return expectOk(
     parseRunEventV1({
@@ -161,9 +162,18 @@ function parsedEvent(
       runId,
       sequence,
       type,
+      at,
       data,
     }),
   );
+}
+
+function parsedDeletionEvent(
+  sequence: number,
+  data: Record<string, unknown>,
+  at = "2026-08-17T19:30:00.000Z",
+): RunEventV1 {
+  return parsedEvent(sequence, "content.deleted", data, validResearchRun.id, at);
 }
 
 function runWithCompletedDeletion(
@@ -861,6 +871,13 @@ test("embedded manifests bind original run privacy retention and cloud-content c
     retention: {
       ...validRunManifest.retention,
       effectivePolicy: "run-only",
+      status: "deletion_scheduled",
+      contentExpiresAt: "2026-08-17T20:00:00.000Z",
+    },
+    deletion: {
+      ...validRunManifest.deletion,
+      status: "scheduled",
+      requestedAt: "2026-08-16T20:05:00.000Z",
     },
   });
   assert.equal(
@@ -1008,7 +1025,7 @@ test("research runs reject embedded manifests for another run or context", () =>
 test("completed deletion requires a final manifest and its exact event in the complete run stream", () => {
   const deletedRun = runWithCompletedDeletion();
   const first = parsedEvent(1, "run.created", { status: "queued" });
-  const deletion = parsedEvent(2, "content.deleted", {
+  const deletion = parsedDeletionEvent(2, {
     deletedObjectCount: 3,
     manifestStatus: "deleted",
   });
@@ -1074,7 +1091,7 @@ test("completed deletion requires a final manifest and its exact event in the co
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
       first,
-      parsedEvent(2, "content.deleted", { manifestStatus: "deleted" }),
+      parsedDeletionEvent(2, { manifestStatus: "deleted" }),
       completed,
     ]),
     "$[1].data.deletedObjectCount",
@@ -1083,7 +1100,7 @@ test("completed deletion requires a final manifest and its exact event in the co
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
       first,
-      parsedEvent(2, "content.deleted", {
+      parsedDeletionEvent(2, {
         deletedObjectCount: 4,
         manifestStatus: "deleted",
       }),
@@ -1095,7 +1112,7 @@ test("completed deletion requires a final manifest and its exact event in the co
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
       first,
-      parsedEvent(2, "content.deleted", { deletedObjectCount: 3 }),
+      parsedDeletionEvent(2, { deletedObjectCount: 3 }),
       completed,
     ]),
     "$[1].data.manifestStatus",
@@ -1104,7 +1121,7 @@ test("completed deletion requires a final manifest and its exact event in the co
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
       first,
-      parsedEvent(2, "content.deleted", {
+      parsedDeletionEvent(2, {
         deletedObjectCount: 3,
         manifestStatus: "active",
       }),
@@ -1113,12 +1130,74 @@ test("completed deletion requires a final manifest and its exact event in the co
     "$[1].data.manifestStatus",
     "semantic_conflict",
   );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedRun, [
+      first,
+      { ...deletion, at: "2026-08-17T18:59:59.999999999Z" },
+      completed,
+    ]),
+    "$[1].at",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedRun, [
+      first,
+      { ...deletion, at: "2026-08-17T20:00:00.000000001Z" },
+      completed,
+    ]),
+    "$[1].at",
+    "semantic_conflict",
+  );
+});
+
+test("deletion event chronology includes nanosecond boundaries and leap seconds", () => {
+  const deletedRun = runWithCompletedDeletion();
+  const first = parsedEvent(1, "run.created", { status: "queued" });
+  const completed = parsedEvent(3, "run.status", { status: "completed" });
+  const deletionData = {
+    deletedObjectCount: 3,
+    manifestStatus: "deleted",
+  };
+
+  for (const at of [
+    "2026-08-17T19:00:00.000Z",
+    "2026-08-17T20:00:00.000000000Z",
+  ]) {
+    assert.equal(
+      expectOk(validateRunManifestDeletionEventV1(deletedRun, [
+        first,
+        parsedDeletionEvent(2, deletionData, at),
+        completed,
+      ])),
+      deletedRun,
+    );
+  }
+
+  const leapSecondRun: ResearchRunV1 = {
+    ...deletedRun,
+    artifactManifest: {
+      ...deletedRun.artifactManifest!,
+      deletion: {
+        ...deletedRun.artifactManifest!.deletion,
+        requestedAt: "2016-12-31T23:59:59.999999999Z",
+        completedAt: "2017-01-01T00:00:00Z",
+      },
+    },
+  };
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(leapSecondRun, [
+      first,
+      parsedDeletionEvent(2, deletionData, "2016-12-31T23:59:60.5Z"),
+      completed,
+    ])),
+    leapSecondRun,
+  );
 });
 
 test("deletion event composition rejects incomplete, malformed, and wrong-run streams", () => {
   const deletedRun = runWithCompletedDeletion();
   const first = parsedEvent(1, "run.created", { status: "queued" });
-  const deletion = parsedEvent(2, "content.deleted", {
+  const deletion = parsedDeletionEvent(2, {
     deletedObjectCount: 3,
     manifestStatus: "deleted",
   });

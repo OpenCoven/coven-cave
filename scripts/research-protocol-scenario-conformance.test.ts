@@ -1904,6 +1904,8 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "model-task.wrong-familiar-id",
     "model-task.wrong-effective-model",
     "run-deletion.valid-completed",
+    "run-deletion.event-before-request",
+    "run-deletion.event-after-completion",
     "run-deletion.valid-no-manifest",
     "run-deletion.partial-failure-retryable",
     "run-deletion.partial-failure-incomplete-stream",

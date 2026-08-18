@@ -104,6 +104,85 @@ test("canonicalization rejects accessors and toJSON functions without invoking t
   assert.equal(calls, 0);
 });
 
+test("canonicalization rejects accessors under Object.prototype descriptor pollution", () => {
+  const originalValue = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+  let calls = 0;
+  const objectAccessor = {};
+  Object.defineProperty(objectAccessor, "secret", {
+    get() {
+      calls += 1;
+      return "not-json";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  const arrayAccessor = new Array<unknown>(1);
+  Object.defineProperty(arrayAccessor, "0", {
+    get() {
+      calls += 1;
+      return "not-json";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  try {
+    Object.defineProperty(Object.prototype, "value", {
+      value: "polluted descriptor value",
+      configurable: true,
+      writable: true,
+    });
+
+    assert.throws(() => canonicalJson(objectAccessor), /accessor properties/i);
+    assert.throws(() => canonicalJson(arrayAccessor), /array indices must be data properties/i);
+    assert.equal(calls, 0);
+  } finally {
+    if (originalValue) {
+      Object.defineProperty(Object.prototype, "value", originalValue);
+    } else {
+      Reflect.deleteProperty(Object.prototype, "value");
+    }
+  }
+});
+
+test("canonicalization rejects root and nested Proxy objects", () => {
+  const hiddenState = { visible: true, hidden: "must not disappear" };
+  const rootProxy = new Proxy(hiddenState, {
+    ownKeys: () => ["visible"],
+    getOwnPropertyDescriptor: (target, key) =>
+      key === "visible" ? Object.getOwnPropertyDescriptor(target, key) : undefined,
+  });
+  const nestedProxy = new Proxy({ visible: true }, {});
+  const arrayProxy = new Proxy([1, 2], {});
+
+  assert.throws(() => canonicalJson(rootProxy), /proxy/i);
+  assert.throws(() => canonicalJson({ nested: nestedProxy }), /proxy/i);
+  assert.throws(() => canonicalJson({ nested: [arrayProxy] }), /proxy/i);
+});
+
+test("canonicalization fails closed when standard structured clone is unavailable", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
+
+  try {
+    Object.defineProperty(globalThis, "structuredClone", {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+    assert.throws(
+      () => canonicalJson({ ordinary: "object" }),
+      /standard structured clone support is required/i,
+    );
+    assert.equal(canonicalJson("primitive"), '"primitive"');
+  } finally {
+    if (descriptor) {
+      Object.defineProperty(globalThis, "structuredClone", descriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, "structuredClone");
+    }
+  }
+});
+
 test("canonicalization enforces exact dense JSON arrays", () => {
   const sparse = [1, , 3];
   assert.throws(() => canonicalJson(sparse), /sparse array holes/i);
@@ -198,11 +277,24 @@ test("canonicalization and digests accept paired supplementary characters", () =
   assert.equal(digestProtocolObject({ digest: "ignored", ...value }), sha256Digest(canonicalJson(value)));
 });
 
-test("copyCanonicalJsonValue detaches objects and arrays without mistaking shared references for cycles", () => {
-  const shared = { label: "shared-🧙", values: [1, 2] };
+test("canonicalization rejects repeated object and array references", () => {
+  const sharedObject = { label: "shared-🧙", values: [1, 2] };
+  const sharedArray = [{ value: 1 }];
+
+  assert.throws(
+    () => copyCanonicalJsonValue({ left: sharedObject, right: sharedObject }),
+    /repeated object references/i,
+  );
+  assert.throws(
+    () => canonicalJson([sharedArray, sharedArray]),
+    /repeated object references/i,
+  );
+});
+
+test("canonicalization accepts duplicated-but-distinct JSON structures", () => {
   const source = {
-    left: shared,
-    right: shared,
+    left: { label: "duplicate", values: [1, 2] },
+    right: { label: "duplicate", values: [1, 2] },
   };
 
   const copy = copyCanonicalJsonValue(source);
@@ -211,14 +303,16 @@ test("copyCanonicalJsonValue detaches objects and arrays without mistaking share
   assert.equal(Object.getPrototypeOf(copy.left), null);
   assert.equal(Object.getPrototypeOf(copy.left.values), Array.prototype);
   assert.notStrictEqual(copy, source);
-  assert.notStrictEqual(copy.left, shared);
-  assert.notStrictEqual(copy.right, shared);
+  assert.notStrictEqual(copy.left, source.left);
   assert.notStrictEqual(copy.left, copy.right);
-  assert.notStrictEqual(copy.left.values, shared.values);
-
-  shared.label = "mutated";
-  shared.values[0] = 99;
-  assert.equal(copy.left.label, "shared-🧙");
+  assert.deepEqual(copy.left.values, [1, 2]);
+  assert.equal(
+    canonicalJson(source),
+    "{\"left\":{\"label\":\"duplicate\",\"values\":[1,2]},\"right\":{\"label\":\"duplicate\",\"values\":[1,2]}}",
+  );
+  source.left.label = "mutated";
+  source.left.values[0] = 99;
+  assert.equal(copy.left.label, "duplicate");
   assert.deepEqual(copy.left.values, [1, 2]);
 });
 

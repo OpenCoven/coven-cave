@@ -81,6 +81,22 @@ export function isUtcTimestamp(value: unknown): value is string {
     && (second !== 60 || day === lastDayOfMonth);
 }
 
+export function compareUtcTimestamps(left: string, right: string): number {
+  if (!isUtcTimestamp(left) || !isUtcTimestamp(right)) {
+    throw new TypeError("UTC timestamp comparison requires valid UTC RFC 3339 timestamps");
+  }
+
+  const leftSecond = left.slice(0, 19);
+  const rightSecond = right.slice(0, 19);
+  if (leftSecond !== rightSecond) {
+    return leftSecond < rightSecond ? -1 : 1;
+  }
+
+  const leftFraction = (left[19] === "." ? left.slice(20, -1) : "").padEnd(9, "0");
+  const rightFraction = (right[19] === "." ? right.slice(20, -1) : "").padEnd(9, "0");
+  return leftFraction < rightFraction ? -1 : leftFraction > rightFraction ? 1 : 0;
+}
+
 export function isJsonPointer(value: unknown): value is string {
   return typeof value === "string" && JSON_POINTER_RE.test(value);
 }

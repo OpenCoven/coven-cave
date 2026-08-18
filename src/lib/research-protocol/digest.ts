@@ -14,6 +14,27 @@ function createCanonicalJsonError(path: string, reason: string): TypeError {
   return new TypeError(`Value at ${path} is not canonical JSON: ${reason}`);
 }
 
+function assertNoProxyObjects(value: unknown): void {
+  if (typeof value !== "object" || value === null) return;
+  if (typeof globalThis.structuredClone !== "function") {
+    throw createCanonicalJsonError("$", "standard structured clone support is required");
+  }
+
+  try {
+    globalThis.structuredClone(value);
+  } catch (error) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "name" in error
+      && error.name === "DataCloneError"
+    ) {
+      throw createCanonicalJsonError("$", "Proxy objects are not allowed");
+    }
+    throw error;
+  }
+}
+
 function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -44,7 +65,7 @@ function isCanonicalArrayIndex(key: string): boolean {
 function copyCanonicalJsonValueAtPath(
   value: unknown,
   path: string,
-  stack: WeakSet<object>,
+  seen: WeakSet<object>,
 ): unknown {
   if (typeof value === "string") {
     assertPairedUtf16Surrogates(value, path);
@@ -73,14 +94,15 @@ function copyCanonicalJsonValueAtPath(
     if (Object.getPrototypeOf(value) !== Array.prototype) {
       throw createCanonicalJsonError(path, "arrays must use exact Array.prototype");
     }
-    if (stack.has(value)) {
-      throw createCanonicalJsonError(path, "cyclic structures are not allowed");
+    if (seen.has(value)) {
+      throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
     }
+    seen.add(value);
 
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
     if (
       !lengthDescriptor
-      || !("value" in lengthDescriptor)
+      || !Object.hasOwn(lengthDescriptor, "value")
       || lengthDescriptor.enumerable
       || lengthDescriptor.configurable
       || !lengthDescriptor.writable
@@ -118,7 +140,7 @@ function copyCanonicalJsonValueAtPath(
       if (!descriptor.enumerable) {
         throw createCanonicalJsonError(propertyPath, "array indices must be enumerable");
       }
-      if (!("value" in descriptor)) {
+      if (!Object.hasOwn(descriptor, "value")) {
         throw createCanonicalJsonError(propertyPath, "array indices must be data properties");
       }
       entries.push({ descriptor, index: Number(key), key });
@@ -140,66 +162,59 @@ function copyCanonicalJsonValueAtPath(
     }
 
     const copy = new Array<unknown>(length);
-    stack.add(value);
-    try {
-      for (const entry of entries) {
-        Object.defineProperty(copy, entry.key, {
-          value: copyCanonicalJsonValueAtPath(
-            entry.descriptor.value,
-            jsonPathForIndex(path, entry.index),
-            stack,
-          ),
-          enumerable: true,
-          configurable: true,
-          writable: true,
-        });
-      }
-    } finally {
-      stack.delete(value);
+    for (const entry of entries) {
+      Object.defineProperty(copy, entry.key, {
+        value: copyCanonicalJsonValueAtPath(
+          entry.descriptor.value,
+          jsonPathForIndex(path, entry.index),
+          seen,
+        ),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return copy;
   }
   if (!isPlainJsonObject(value)) {
     throw createCanonicalJsonError(path, "only JSON objects and arrays are allowed");
   }
-  if (stack.has(value)) {
-    throw createCanonicalJsonError(path, "cyclic structures are not allowed");
+  if (seen.has(value)) {
+    throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
   }
+  seen.add(value);
 
   const copy = Object.create(null) as Record<string, unknown>;
-  stack.add(value);
-  try {
-    for (const key of Reflect.ownKeys(value)) {
-      if (typeof key === "symbol") {
-        throw createCanonicalJsonError(path, "symbol-keyed own properties are not allowed");
-      }
-      const propertyPath = jsonPathForProperty(path, key);
-      assertPairedUtf16Surrogates(key, propertyPath);
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor) {
-        throw createCanonicalJsonError(propertyPath, "property descriptor is missing");
-      }
-      if (!descriptor.enumerable) {
-        throw createCanonicalJsonError(propertyPath, "non-enumerable own properties are not allowed");
-      }
-      if (!("value" in descriptor)) {
-        throw createCanonicalJsonError(propertyPath, "accessor properties are not allowed");
-      }
-      Object.defineProperty(copy, key, {
-        value: copyCanonicalJsonValueAtPath(descriptor.value, propertyPath, stack),
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      });
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key === "symbol") {
+      throw createCanonicalJsonError(path, "symbol-keyed own properties are not allowed");
     }
-  } finally {
-    stack.delete(value);
+    const propertyPath = jsonPathForProperty(path, key);
+    assertPairedUtf16Surrogates(key, propertyPath);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor) {
+      throw createCanonicalJsonError(propertyPath, "property descriptor is missing");
+    }
+    if (!descriptor.enumerable) {
+      throw createCanonicalJsonError(propertyPath, "non-enumerable own properties are not allowed");
+    }
+    if (!Object.hasOwn(descriptor, "value")) {
+      throw createCanonicalJsonError(propertyPath, "accessor properties are not allowed");
+    }
+    Object.defineProperty(copy, key, {
+      value: copyCanonicalJsonValueAtPath(descriptor.value, propertyPath, seen),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return copy;
 }
 
 export function copyCanonicalJsonValue<T>(value: T): T {
-  return copyCanonicalJsonValueAtPath(value, "$", new WeakSet<object>()) as T;
+  const copy = copyCanonicalJsonValueAtPath(value, "$", new WeakSet<object>()) as T;
+  assertNoProxyObjects(value);
+  return copy;
 }
 
 export function copyCanonicalJson(value: unknown): unknown {

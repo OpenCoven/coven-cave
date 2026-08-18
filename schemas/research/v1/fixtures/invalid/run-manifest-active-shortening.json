@@ -1,0 +1,31 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_active_shortening_01",
+  "runId": "run_active_shortening_01",
+  "digest": "b8dc73ec43b437ea8eba90d4a44c56c24ae496674f14909becd5afebb125f37b",
+  "revision": 2,
+  "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  },
+  "expectedSchemaValid": true
+}

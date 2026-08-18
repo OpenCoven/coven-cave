@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -59,7 +60,7 @@ const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
 ]);
 
 function normalizeSensitiveKey(key: string): string {
-  return key.toLowerCase().replaceAll(/[_-]/g, "");
+  return key.replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
 
 export type ArtifactRegistrationV1 = {
@@ -817,6 +818,17 @@ function validateDeletionRequirements(
         return fail("missing_field", `$.deletion.${key}`, `Completed deletion requires ${key}`);
       }
     }
+    if (
+      typeof deletion.requestedAt === "string"
+      && typeof deletion.completedAt === "string"
+      && compareUtcTimestamps(deletion.completedAt, deletion.requestedAt) < 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.deletion.completedAt",
+        "Completed deletion cannot precede its request",
+      );
+    }
   }
   return pass(undefined);
 }
@@ -913,27 +925,98 @@ function addTokenTotal(current: number | null, value: unknown, label: string, in
   return total;
 }
 
-function addCostTotal(current: number | null, value: unknown, index: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    throw new TypeError(`execution ${index} costUsd must be a finite number >= 0`);
+type ExactDecimal = {
+  coefficient: bigint;
+  exponent: number;
+};
+
+const BIGINT_ZERO = BigInt(0);
+const BIGINT_TEN = BigInt(10);
+
+function normalizeExactDecimal(coefficient: bigint, exponent: number): ExactDecimal {
+  if (coefficient === BIGINT_ZERO) return { coefficient: BIGINT_ZERO, exponent: 0 };
+  while (coefficient % BIGINT_TEN === BIGINT_ZERO) {
+    coefficient /= BIGINT_TEN;
+    exponent += 1;
   }
-  const total = (current ?? 0) + value;
-  if (!Number.isFinite(total) || total < 0) {
-    throw new RangeError("costUsd aggregate is not a finite non-negative number");
-  }
-  return total;
+  return { coefficient, exponent };
 }
 
-export function aggregateManifestUsage(
+function exactDecimalFromCost(value: unknown, label: string): ExactDecimal {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new TypeError(`${label} costUsd must be a finite number >= 0`);
+  }
+
+  // Decimal arithmetic starts from the canonical JSON spelling of each wire number.
+  const serialized = JSON.stringify(value);
+  if (typeof serialized !== "string") {
+    throw new TypeError(`${label} costUsd has no canonical decimal representation`);
+  }
+  const match = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/.exec(serialized);
+  if (!match) {
+    throw new TypeError(`${label} costUsd has no canonical decimal representation`);
+  }
+  const fraction = match[2] ?? "";
+  return normalizeExactDecimal(
+    BigInt(`${match[1]}${fraction}`),
+    Number(match[3] ?? 0) - fraction.length,
+  );
+}
+
+function addExactDecimals(left: ExactDecimal | null, right: ExactDecimal): ExactDecimal {
+  if (left === null || left.coefficient === BIGINT_ZERO) return right;
+  if (right.coefficient === BIGINT_ZERO) return left;
+
+  const exponent = Math.min(left.exponent, right.exponent);
+  const leftCoefficient =
+    left.coefficient * (BIGINT_TEN ** BigInt(left.exponent - exponent));
+  const rightCoefficient =
+    right.coefficient * (BIGINT_TEN ** BigInt(right.exponent - exponent));
+  return normalizeExactDecimal(leftCoefficient + rightCoefficient, exponent);
+}
+
+function exactDecimalToString(value: ExactDecimal): string {
+  const digits = value.coefficient.toString();
+  if (value.exponent >= 0) return `${digits}${"0".repeat(value.exponent)}`;
+
+  const decimalIndex = digits.length + value.exponent;
+  return decimalIndex > 0
+    ? `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`
+    : `0.${"0".repeat(-decimalIndex)}${digits}`;
+}
+
+function exactDecimalToNumber(value: ExactDecimal): number {
+  const result = Number(exactDecimalToString(value));
+  if (!Number.isFinite(result) || result < 0) {
+    throw new RangeError("costUsd aggregate is not a finite non-negative number");
+  }
+  const roundTripped = exactDecimalFromCost(result, "aggregate");
+  if (
+    roundTripped.coefficient !== value.coefficient
+    || roundTripped.exponent !== value.exponent
+  ) {
+    throw new RangeError("costUsd aggregate has no exact canonical JSON number representation");
+  }
+  return result;
+}
+
+function aggregateCostsMatch(declared: number | null, aggregate: ExactDecimal | null): boolean {
+  if (declared === null || aggregate === null) return declared === null && aggregate === null;
+  const declaredDecimal = exactDecimalFromCost(declared, "declared aggregate");
+  return declaredDecimal.coefficient === aggregate.coefficient
+    && declaredDecimal.exponent === aggregate.exponent;
+}
+
+function aggregateManifestUsageExact(
   executions: readonly RunManifestModelExecutionV1[],
-): RunManifestUsageV1 {
+): { usage: RunManifestUsageV1; exactCostUsd: ExactDecimal | null } {
   if (!Array.isArray(executions)) {
     throw new TypeError("model executions must be an array");
   }
 
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
-  let costUsd: number | null = null;
+  let exactCostUsd: ExactDecimal | null = null;
   let anyReported = false;
   let anyMissing = false;
 
@@ -958,21 +1041,33 @@ export function aggregateManifestUsage(
       anyMissing = true;
     } else {
       anyReported = true;
-      costUsd = addCostTotal(costUsd, usage.costUsd, index);
+      exactCostUsd = addExactDecimals(
+        exactCostUsd,
+        exactDecimalFromCost(usage.costUsd, `execution ${index}`),
+      );
     }
   }
 
   return {
-    inputTokens,
-    outputTokens,
-    costUsd,
-    completeness:
-      executions.length > 0 && !anyMissing
-        ? "complete"
-        : anyReported
-          ? "partial"
-          : "unreported",
+    exactCostUsd,
+    usage: {
+      inputTokens,
+      outputTokens,
+      costUsd: exactCostUsd === null ? null : exactDecimalToNumber(exactCostUsd),
+      completeness:
+        executions.length > 0 && !anyMissing
+          ? "complete"
+          : anyReported
+            ? "partial"
+            : "unreported",
+    },
   };
+}
+
+export function aggregateManifestUsage(
+  executions: readonly RunManifestModelExecutionV1[],
+): RunManifestUsageV1 {
+  return aggregateManifestUsageExact(executions).usage;
 }
 
 export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManifestV1> {
@@ -1160,8 +1255,11 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   }
 
   let expectedUsage: RunManifestUsageV1;
+  let exactCostUsd: ExactDecimal | null;
   try {
-    expectedUsage = aggregateManifestUsage(modelExecutions);
+    const aggregate = aggregateManifestUsageExact(modelExecutions);
+    expectedUsage = aggregate.usage;
+    exactCostUsd = aggregate.exactCostUsd;
   } catch (error) {
     return fail(
       "invalid_value",
@@ -1169,7 +1267,7 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
       error instanceof Error ? `usage aggregation failed: ${error.message}` : "usage aggregation failed",
     );
   }
-  for (const key of ["inputTokens", "outputTokens", "costUsd", "completeness"] as const) {
+  for (const key of ["inputTokens", "outputTokens", "completeness"] as const) {
     if (usage.value[key] !== expectedUsage[key]) {
       return fail(
         "semantic_conflict",
@@ -1178,12 +1276,29 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
       );
     }
   }
+  if (!aggregateCostsMatch(usage.value.costUsd, exactCostUsd)) {
+    return fail(
+      "semantic_conflict",
+      "$.usage.costUsd",
+      "usage.costUsd must equal the aggregate model execution usage",
+    );
+  }
 
   if (revision.value === 1 && retention.value.effectivePolicy !== retention.value.policy) {
     return fail(
       "semantic_conflict",
       "$.retention.effectivePolicy",
       "revision 1 effectivePolicy must equal policy",
+    );
+  }
+  if (
+    RETENTION_ORDER[retention.value.effectivePolicy] < RETENTION_ORDER[retention.value.policy]
+    && retention.value.status === "active"
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "shortened effective retention cannot remain active",
     );
   }
 
@@ -1413,8 +1528,7 @@ export function validateRunManifestRevision(
   }
 
   if (
-    previous.state === "final"
-    && RETENTION_ORDER[next.retention.effectivePolicy]
+    RETENTION_ORDER[next.retention.effectivePolicy]
       < RETENTION_ORDER[previous.retention.effectivePolicy]
   ) {
     if (next.retention.status !== "deletion_scheduled") {
