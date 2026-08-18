@@ -4,10 +4,11 @@
 // `schemas/research/v1/fixtures/scenarios/*.scenario.json`, with authoritative
 // support objects directly beneath `scenarios/objects/`. Each corpus names a
 // format/family, declares reusable objects (fixture or inline value, optional
-// RFC 7396 mergePatch, optional digestTargets), then lists stable scenario ids,
-// descriptions, input references, validator options, and exact expected
-// code/path outcomes. This runner owns assembly and strict format validation;
-// protocol behavior stays in the public parsers and composition validators.
+// RFC 7396 mergePatch, optional digestTargets, and optional manifest predecessor
+// links), then lists stable scenario ids, descriptions, input references,
+// validator options, and exact expected code/path outcomes. This runner owns
+// assembly and strict format validation; protocol behavior stays in the public
+// parsers and composition validators.
 
 import assert from "node:assert/strict";
 import {
@@ -120,6 +121,7 @@ type ObjectSpec = {
   value?: Record<string, unknown>;
   mergePatch?: Record<string, unknown>;
   digestTargets?: string[];
+  predecessor?: string;
 };
 
 type ScenarioDefinition = {
@@ -347,7 +349,11 @@ function requireObjectReference(
 
 function validateObjectSpec(value: unknown, location: string): ObjectSpec {
   const spec = requireRecord(value, location);
-  assertAllowedKeys(spec, ["fixture", "value", "mergePatch", "digestTargets"], location);
+  assertAllowedKeys(
+    spec,
+    ["fixture", "value", "mergePatch", "digestTargets", "predecessor"],
+    location,
+  );
 
   const hasFixture = Object.hasOwn(spec, "fixture");
   const hasValue = Object.hasOwn(spec, "value");
@@ -381,6 +387,9 @@ function validateObjectSpec(value: unknown, location: string): ObjectSpec {
       validated.digestTargets.length,
       `${location}.digestTargets: duplicate pointers are not allowed`,
     );
+  }
+  if (Object.hasOwn(spec, "predecessor")) {
+    validated.predecessor = requireString(spec.predecessor, `${location}.predecessor`);
   }
 
   return validated;
@@ -649,6 +658,23 @@ function validateCorpus(value: unknown, filePath: string): ScenarioCorpus {
     requireString(name, `${filePath}.objects key`);
     objects[name] = validateObjectSpec(rawObjects[name], `${filePath}.objects.${name}`);
   }
+  for (const [name, spec] of Object.entries(objects)) {
+    if (spec.predecessor === undefined) continue;
+    assert.equal(
+      family,
+      "run-manifest-revision",
+      `${filePath}.objects.${name}.predecessor: is only valid for manifest revision scenarios`,
+    );
+    assert.notEqual(
+      spec.predecessor,
+      name,
+      `${filePath}.objects.${name}.predecessor: cannot reference itself`,
+    );
+    assert.ok(
+      Object.hasOwn(objects, spec.predecessor),
+      `${filePath}.objects.${name}.predecessor: unknown object ${spec.predecessor}`,
+    );
+  }
 
   assert.ok(Array.isArray(corpus.scenarios), `${filePath}.scenarios: must be an array`);
   assert.ok(corpus.scenarios.length > 0, `${filePath}.scenarios: must not be empty`);
@@ -668,6 +694,9 @@ function validateCorpus(value: unknown, filePath: string): ScenarioCorpus {
     )) {
       usedObjects.add(entry.reference);
     }
+  }
+  for (const spec of Object.values(objects)) {
+    if (spec.predecessor !== undefined) usedObjects.add(spec.predecessor);
   }
   for (const objectName of Object.keys(objects)) {
     assert.ok(
@@ -994,6 +1023,70 @@ function requireParsedSchema<T extends ResearchProtocolObjectV1>(
   return parsed as T;
 }
 
+function replayScenarioManifestPredecessor(
+  corpus: ScenarioCorpus,
+  scenario: ScenarioDefinition,
+  parsedInputs: Map<string, ResearchProtocolObjectV1>,
+): void {
+  if (scenario.validator !== "run-manifest-revision") return;
+
+  const targetReference = scenario.inputs.previous as string;
+  if (corpus.objects[targetReference].predecessor === undefined) return;
+
+  const reverseChain = [targetReference];
+  const seen = new Set(reverseChain);
+  let cursor: string | undefined = corpus.objects[targetReference].predecessor;
+  while (cursor !== undefined) {
+    assert.ok(
+      !seen.has(cursor),
+      `${corpus.filePath}.objects.${targetReference}.predecessor: cycle detected`,
+    );
+    seen.add(cursor);
+    reverseChain.push(cursor);
+    cursor = corpus.objects[cursor].predecessor;
+  }
+  const chain = reverseChain.reverse();
+  const rootReference = chain[0];
+  const rootLocation = `${corpus.filePath}.objects.${rootReference} (revision history root)`;
+  const root = requireParsedSchema<RunManifestV1>(
+    validateAuthoritativeProtocolObject(
+      materializeObject(corpus.objects[rootReference], rootLocation),
+      rootLocation,
+    ),
+    "opencoven.run-manifest/v1",
+    rootLocation,
+  );
+  assert.equal(root.revision, 1, `${rootLocation}: revision history must start at revision 1`);
+
+  let replayed = root;
+  for (const reference of chain.slice(1)) {
+    const candidate =
+      reference === targetReference
+        ? requireParsedSchema<RunManifestV1>(
+            parsedInputs.get("previous")!,
+            "opencoven.run-manifest/v1",
+            `${scenario.id}.previous`,
+          )
+        : (validateProtocolObjectSchema(
+            materializeObject(
+              corpus.objects[reference],
+              `${corpus.filePath}.objects.${reference} (revision history)`,
+              true,
+            ),
+            `${corpus.filePath}.objects.${reference} (revision history)`,
+            "opencoven.run-manifest/v1",
+          ) as RunManifestV1);
+    const result = validateRunManifestRevisionV1(replayed, candidate, scenario.options);
+    if (!result.ok) {
+      assert.fail(
+        `${corpus.filePath}.objects.${reference}.predecessor: history replay failed (${result.error.code} at ${result.error.path}: ${result.error.message})`,
+      );
+    }
+    replayed = result.value;
+  }
+  parsedInputs.set("previous", replayed);
+}
+
 function executeComposition(
   scenario: ScenarioDefinition,
   parsedInputs: ReadonlyMap<string, ResearchProtocolObjectV1>,
@@ -1140,7 +1233,9 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
       scenario.expected.input === entry.name;
     if (
       scenario.validator === "run-manifest-revision" &&
-      entry.name === "next" &&
+      (entry.name === "next" ||
+        (entry.name === "previous" &&
+          corpus.objects[entry.reference].predecessor !== undefined)) &&
       !expectsThisParseFailure
     ) {
       parsedInputs.set(entry.name, materialized as ResearchProtocolObjectV1);
@@ -1176,6 +1271,7 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
   }
   assert.equal(expectedParseFailureSeen, false);
 
+  replayScenarioManifestPredecessor(corpus, scenario, parsedInputs);
   const before = structuredClone(Object.fromEntries(parsedInputs));
   const { result, expectedValue } = executeComposition(scenario, parsedInputs);
   assert.deepEqual(

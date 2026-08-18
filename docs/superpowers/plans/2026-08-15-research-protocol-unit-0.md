@@ -836,7 +836,9 @@ Encode §§8.4-8.6 and:
 - constrain `nextEventSequence` and event `sequence` to integers at least `1`;
 - allow `artifactManifest` through a `$ref` to `run-manifest.schema.json`;
 - require `waitingForPhase` exactly when status is `waiting_for_executor`;
-- allow `waitingReason: "checkpoint"` only with `awaiting_checkpoint`;
+- allow `waitingReason: "checkpoint"` only in active phases: `scoping`,
+  `gathering_public_sources`, `challenging`, `synthesizing`, `controlling`,
+  `awaiting_checkpoint`, or `publishing`;
 - require `failure` only for `failed`;
 - leave event `data` open with `additionalProperties: true`.
 

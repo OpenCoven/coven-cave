@@ -1,4 +1,5 @@
 {
+  "expectedSchemaValid": true,
   "schema": "opencoven.run-event/v1",
   "runId": "run_split_object_store_key_01",
   "sequence": 2,
