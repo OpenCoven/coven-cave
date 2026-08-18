@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { Value } from "typebox/value";
 
 import invalidTopicDiscoveryEight from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-eight.json" with { type: "json" };
+import invalidTopicDiscoveryReceiptFamiliar from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-receipt-familiar-mismatch.json" with { type: "json" };
 import invalidTopicProposalScore from "../../../schemas/research/v1/fixtures/invalid/topic-proposal-score.json" with { type: "json" };
 import topicDiscoveryJobSchema from "../../../schemas/research/v1/topic-discovery-job.schema.json" with { type: "json" };
 import topicProposalSchema from "../../../schemas/research/v1/topic-proposal.schema.json" with { type: "json" };
@@ -149,6 +150,17 @@ test("completed jobs accept one, two, or seven proposalIds", () => {
     assert.equal(Value.Check(topicDiscoveryJobSchema, job), true);
     expectOk(parseTopicDiscoveryJobV1(job));
   }
+});
+
+test("discovery model receipt must identify the job familiar", () => {
+  const { expectedSchemaValid, ...fixture } = invalidTopicDiscoveryReceiptFamiliar;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(Value.Check(topicDiscoveryJobSchema, fixture), true);
+  expectError(
+    parseTopicDiscoveryJobV1(fixture),
+    "$.modelReceipt.familiarId",
+    "semantic_conflict",
+  );
 });
 
 test("completed jobs reject zero or eight proposalIds", () => {

@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_nested_benign_01",
   "runId": "run_nested_benign_01",
-  "digest": "1dcc7f5474fac5e4cade72752560b726ebc4c7af7925d8fdef8772587bb898d8",
+  "digest": "22ae603bf60886d32a830e5b19f3a5003e4151e36b0b16e7da22f617df83a364",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -23,7 +23,10 @@
             "label": "safe",
             "contentSync": "not-requested",
             "credentialHint": "safe",
-            "textLabel": "safe"
+            "textLabel": "safe",
+            "private.excerptLabel": "safe",
+            "local.pathHint": "safe",
+            "object keyboard": "safe"
           }
         },
         "items": [

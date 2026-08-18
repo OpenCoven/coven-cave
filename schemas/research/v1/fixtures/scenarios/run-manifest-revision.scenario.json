@@ -8,14 +8,14 @@
     "unscheduled-shortening": {
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
+        "digest": "703a33f5d2d77102df2be8de87769936f02a9294835784a0d8fce4a7b547264f",
         "revision": 2,
         "previousDigest": "4c7161996cbbcb51d3e13f7a27f0cac88a389e5765c9f6706898ef5329080579",
         "retention": {
           "effectivePolicy": "run-only",
           "updatedAt": "2026-08-16T20:06:00.000Z"
         }
-      },
-      "digestTargets": [""]
+      }
     },
     "broken-previous-digest": {
       "fixture": "scenarios/objects/run-manifest-previous-digest.json"
@@ -307,7 +307,8 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
+        "stage": "parse",
+        "input": "next",
         "code": "semantic_conflict",
         "path": "$.retention.status"
       }

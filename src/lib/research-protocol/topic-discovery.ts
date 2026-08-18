@@ -732,6 +732,13 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
     const parsedModelReceipt = parseResearchModelReceiptV1(object.value.modelReceipt, "$.modelReceipt");
     if (!parsedModelReceipt.ok) return parsedModelReceipt;
     modelReceipt = parsedModelReceipt.value;
+    if (modelReceipt.familiarId !== familiarId.value) {
+      return fail(
+        "semantic_conflict",
+        "$.modelReceipt.familiarId",
+        "modelReceipt.familiarId must match the discovery job familiarId",
+      );
+    }
   }
 
   let failure: TopicDiscoveryFailureV1 | undefined;

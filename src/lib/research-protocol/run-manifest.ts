@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -59,7 +60,7 @@ const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
 ]);
 
 function normalizeSensitiveKey(key: string): string {
-  return key.toLowerCase().replaceAll(/[_-]/g, "");
+  return key.toLowerCase().replaceAll(/[-._\u0009-\u000d\u0020]/g, "");
 }
 
 export type ArtifactRegistrationV1 = {
@@ -817,6 +818,17 @@ function validateDeletionRequirements(
         return fail("missing_field", `$.deletion.${key}`, `Completed deletion requires ${key}`);
       }
     }
+    if (
+      typeof deletion.requestedAt === "string"
+      && typeof deletion.completedAt === "string"
+      && compareUtcTimestamps(deletion.completedAt, deletion.requestedAt) < 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.deletion.completedAt",
+        "Completed deletion cannot precede its request",
+      );
+    }
   }
   return pass(undefined);
 }
@@ -922,6 +934,24 @@ function addCostTotal(current: number | null, value: unknown, index: number): nu
     throw new RangeError("costUsd aggregate is not a finite non-negative number");
   }
   return total;
+}
+
+function floatingPointUlp(value: number): number {
+  const magnitude = Math.abs(value);
+  if (magnitude === 0 || magnitude < 2 ** -1022) return Number.MIN_VALUE;
+  const exponent = Math.min(1023, Math.floor(Math.log2(magnitude)));
+  return 2 ** (exponent - 52);
+}
+
+function aggregateCostsMatch(
+  declared: number | null,
+  aggregate: number | null,
+  operationCount: number,
+): boolean {
+  if (declared === aggregate) return true;
+  if (declared === null || aggregate === null) return false;
+  const ulp = Math.max(floatingPointUlp(declared), floatingPointUlp(aggregate));
+  return Math.abs(declared - aggregate) / ulp <= Math.max(1, operationCount);
 }
 
 export function aggregateManifestUsage(
@@ -1169,7 +1199,7 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
       error instanceof Error ? `usage aggregation failed: ${error.message}` : "usage aggregation failed",
     );
   }
-  for (const key of ["inputTokens", "outputTokens", "costUsd", "completeness"] as const) {
+  for (const key of ["inputTokens", "outputTokens", "completeness"] as const) {
     if (usage.value[key] !== expectedUsage[key]) {
       return fail(
         "semantic_conflict",
@@ -1178,12 +1208,33 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
       );
     }
   }
+  const costOperationCount = modelExecutions.reduce(
+    (count, execution) => count + (execution.receipt.usage.costUsd === null ? 0 : 1),
+    0,
+  );
+  if (!aggregateCostsMatch(usage.value.costUsd, expectedUsage.costUsd, costOperationCount)) {
+    return fail(
+      "semantic_conflict",
+      "$.usage.costUsd",
+      "usage.costUsd must equal the aggregate model execution usage",
+    );
+  }
 
   if (revision.value === 1 && retention.value.effectivePolicy !== retention.value.policy) {
     return fail(
       "semantic_conflict",
       "$.retention.effectivePolicy",
       "revision 1 effectivePolicy must equal policy",
+    );
+  }
+  if (
+    RETENTION_ORDER[retention.value.effectivePolicy] < RETENTION_ORDER[retention.value.policy]
+    && retention.value.status === "active"
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "shortened effective retention cannot remain active",
     );
   }
 
