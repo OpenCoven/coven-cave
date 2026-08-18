@@ -26,6 +26,24 @@
       },
       "digestTargets": [""]
     },
+    "completed-deletion-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deleted",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:00:00.000Z"
+        },
+        "deletion": {
+          "status": "completed",
+          "requestedAt": "2026-08-17T19:00:00.000Z",
+          "completedAt": "2026-08-17T20:00:00.000Z",
+          "deletedObjectCount": 3,
+          "eventSequence": 2
+        }
+      },
+      "digestTargets": [""]
+    },
     "final": {
       "fixture": "valid/run-manifest-final-local.json"
     },
@@ -34,6 +52,13 @@
       "mergePatch": {
         "revision": 2,
         "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d"
+      },
+      "digestTargets": [""]
+    },
+    "gapped-revision": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3
       },
       "digestTargets": [""]
     },
@@ -80,6 +105,37 @@
       },
       "digestTargets": [""]
     },
+    "partial-failure-next": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "f24b9bbae5824bc848ab050c62056f8dcf73bd0c3a9bf8975d35b4cc8b8ab09c",
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-failure-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:00:00.000Z"
+        },
+        "deletion": {
+          "status": "partial_failure",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "post-final-mutation": {
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
@@ -99,6 +155,22 @@
             }
           }
         ]
+      },
+      "digestTargets": [""]
+    },
+    "post-completed-pending": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "73d4928072341a118a4c5d4b9e9d2d7180dd7ec80ed3dc46612a8d5ddf3026a9",
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
       },
       "digestTargets": [""]
     },
@@ -189,6 +261,21 @@
       }
     },
     {
+      "id": "manifest.gapped-revision",
+      "description": "A linked manifest revision must advance by exactly one.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "gapped-revision"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.revision"
+      }
+    },
+    {
       "id": "manifest.post-final-mutation",
       "description": "A final manifest cannot mutate immutable artifact metadata.",
       "validator": "run-manifest-revision",
@@ -269,6 +356,39 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.partial-failure-continues",
+      "description": "A partial deletion failure may return to pending work in a linked revision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "partial-failure-previous",
+        "next": "partial-failure-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-terminal",
+      "description": "A completed deletion cannot return to pending in a later revision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "post-completed-pending"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
       }
     }
   ]
