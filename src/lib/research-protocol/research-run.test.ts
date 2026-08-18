@@ -25,11 +25,11 @@ import {
   validateResearchRunContextPackV1,
   validateRunManifestDeletionEventV1,
   validateRunEventSequence,
+  type ResearchRunV1,
   type ResearchRunStatusV1,
   type RunEventV1,
 } from "./research-run.ts";
 import { parseResearchContextBindingV1 } from "./common.ts";
-import { parseRunManifestV1 } from "./run-manifest.ts";
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
@@ -121,6 +121,35 @@ function parsedEvent(
   );
 }
 
+function runWithCompletedDeletion(
+  nextEventSequence = 4,
+  eventSequence = 2,
+): ResearchRunV1 {
+  const finalManifest = linkedManifest(validRunManifest);
+  const deletedManifest: Record<string, unknown> = {
+    ...finalManifest,
+    retention: {
+      ...(finalManifest.retention as Record<string, unknown>),
+      status: "deleted",
+      contentExpiresAt: "2026-08-17T20:00:00.000Z",
+    },
+    deletion: {
+      status: "completed",
+      requestedAt: "2026-08-17T19:00:00.000Z",
+      completedAt: "2026-08-17T20:00:00.000Z",
+      deletedObjectCount: 3,
+      eventSequence,
+    },
+  };
+  deletedManifest.digest = digestProtocolObject(deletedManifest);
+  return expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", deletedManifest),
+      nextEventSequence,
+    }),
+  );
+}
+
 test("waiting_for_executor without waitingForPhase rejects", () => {
   assert.equal(Value.Check(researchRunSchema, invalidResearchRunWaitingPhase), false);
   expectError(parseResearchRunV1(invalidResearchRunWaitingPhase), "$.waitingForPhase", "missing_field");
@@ -188,6 +217,7 @@ test("checkpoint pauses preserve active phases and reject inactive phases", () =
     "synthesizing",
     "controlling",
     "awaiting_checkpoint",
+    "publishing",
   ] as const) {
     const checkpointRun = runForStatus(status);
     checkpointRun.waitingReason = "checkpoint";
@@ -198,7 +228,6 @@ test("checkpoint pauses preserve active phases and reject inactive phases", () =
   for (const status of [
     "queued",
     "waiting_for_executor",
-    "publishing",
     "completed",
     "failed",
     "cancelled",
@@ -642,7 +671,7 @@ test("run event rejects custom-prototype nested data", () => {
   );
 });
 
-test("embedded manifests bind run privacy retention and cloud-content consent", () => {
+test("embedded manifests bind original run privacy retention and cloud-content consent", () => {
   const finalManifest = linkedManifest(validRunManifest);
 
   expectError(
@@ -654,7 +683,7 @@ test("embedded manifests bind run privacy retention and cloud-content consent", 
     "semantic_conflict",
   );
 
-  const excessiveEffectivePolicy = linkedManifest({
+  const longerEffectivePolicy = linkedManifest({
     ...validRunManifest,
     revision: 2,
     previousDigest: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -664,14 +693,14 @@ test("embedded manifests bind run privacy retention and cloud-content consent", 
       effectivePolicy: "7-days",
     },
   });
-  expectError(
+  const extendedRetentionRun = expectOk(
     parseResearchRunV1({
-      ...runForStatus("completed", excessiveEffectivePolicy),
+      ...runForStatus("completed", longerEffectivePolicy),
       privacy: { ...validResearchRun.privacy, retention: "run-only" },
     }),
-    "$.artifactManifest.retention.effectivePolicy",
-    "semantic_conflict",
   );
+  assert.equal(extendedRetentionRun.artifactManifest?.retention.policy, "run-only");
+  assert.equal(extendedRetentionRun.artifactManifest?.retention.effectivePolicy, "7-days");
 
   const cloudManifest = linkedManifest(validCloudRunManifest);
   expectError(
@@ -842,139 +871,190 @@ test("research runs reject embedded manifests for another run or context", () =>
   );
 });
 
-test("completed deletion requires its exact content.deleted event in a full ordered stream", () => {
-  const finalManifest = linkedManifest(validRunManifest);
-  const deletedManifestValue: Record<string, unknown> = {
-    ...finalManifest,
-    retention: {
-      ...(finalManifest.retention as Record<string, unknown>),
-      status: "deleted",
-      contentExpiresAt: "2026-08-17T20:00:00.000Z",
-    },
-    deletion: {
-      status: "completed",
-      requestedAt: "2026-08-17T19:00:00.000Z",
-      completedAt: "2026-08-17T20:00:00.000Z",
-      deletedObjectCount: 3,
-      eventSequence: 2,
-    },
-  };
-  deletedManifestValue.digest = digestProtocolObject(deletedManifestValue);
-  const deletedManifest = expectOk(parseRunManifestV1(deletedManifestValue));
+test("completed deletion requires a final manifest and its exact event in the complete run stream", () => {
+  const deletedRun = runWithCompletedDeletion();
   const first = parsedEvent(1, "run.created", { status: "queued" });
   const deletion = parsedEvent(2, "content.deleted", {
     deletedObjectCount: 3,
     manifestStatus: "deleted",
   });
+  const completed = parsedEvent(3, "run.status", { status: "completed" });
 
   assert.equal(
-    expectOk(validateRunManifestDeletionEventV1(deletedManifest, [first, deletion])),
-    deletedManifest,
-  );
-  const activeManifest = expectOk(parseRunManifestV1(finalManifest));
-  assert.equal(
-    expectOk(validateRunManifestDeletionEventV1(activeManifest, [])),
-    activeManifest,
+    expectOk(validateRunManifestDeletionEventV1(deletedRun, [first, deletion, completed])),
+    deletedRun,
   );
 
+  const activeRun = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", linkedManifest(validRunManifest)),
+      nextEventSequence: 2,
+    }),
+  );
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(activeRun, [first])),
+    activeRun,
+  );
+
+  const runWithoutManifest = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("scoping"),
+      nextEventSequence: 2,
+    }),
+  );
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(runWithoutManifest, [first])),
+    runWithoutManifest,
+  );
+
+  const newRun = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("queued"),
+      nextEventSequence: 1,
+    }),
+  );
+  assert.equal(expectOk(validateRunManifestDeletionEventV1(newRun, [])), newRun);
+
+  const nonFinalRun: ResearchRunV1 = {
+    ...deletedRun,
+    artifactManifest: {
+      ...deletedRun.artifactManifest!,
+      state: "assembling",
+    },
+  };
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [first]),
-    "$.deletion.eventSequence",
+    validateRunManifestDeletionEventV1(nonFinalRun, [first, deletion, completed]),
+    "$.artifactManifest.state",
     "semantic_conflict",
   );
+
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [
       first,
       parsedEvent(2, "run.status", { status: "completed" }),
+      completed,
     ]),
     "$[1].type",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [
       first,
       parsedEvent(2, "content.deleted", { manifestStatus: "deleted" }),
+      completed,
     ]),
     "$[1].data.deletedObjectCount",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [
       first,
       parsedEvent(2, "content.deleted", {
         deletedObjectCount: 4,
         manifestStatus: "deleted",
       }),
+      completed,
     ]),
     "$[1].data.deletedObjectCount",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [
       first,
       parsedEvent(2, "content.deleted", { deletedObjectCount: 3 }),
+      completed,
     ]),
     "$[1].data.manifestStatus",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [
       first,
       parsedEvent(2, "content.deleted", {
         deletedObjectCount: 3,
         manifestStatus: "active",
       }),
+      completed,
     ]),
     "$[1].data.manifestStatus",
     "semantic_conflict",
   );
 });
 
-test("deletion event composition rejects wrong runs, duplicate sequences, and gaps", () => {
-  const finalManifest = linkedManifest(validRunManifest);
-  const deletedManifestValue: Record<string, unknown> = {
-    ...finalManifest,
-    retention: {
-      ...(finalManifest.retention as Record<string, unknown>),
-      status: "deleted",
-      contentExpiresAt: "2026-08-17T20:00:00.000Z",
-    },
-    deletion: {
-      status: "completed",
-      requestedAt: "2026-08-17T19:00:00.000Z",
-      completedAt: "2026-08-17T20:00:00.000Z",
-      deletedObjectCount: 3,
-      eventSequence: 2,
-    },
-  };
-  deletedManifestValue.digest = digestProtocolObject(deletedManifestValue);
-  const deletedManifest = expectOk(parseRunManifestV1(deletedManifestValue));
+test("deletion event composition rejects incomplete, malformed, and wrong-run streams", () => {
+  const deletedRun = runWithCompletedDeletion();
   const first = parsedEvent(1, "run.created", { status: "queued" });
   const deletion = parsedEvent(2, "content.deleted", {
     deletedObjectCount: 3,
     manifestStatus: "deleted",
   });
+  const completed = parsedEvent(3, "run.status", { status: "completed" });
 
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [first, deletion]),
+    "$",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedRun, [
+      first,
+      deletion,
+      completed,
+      parsedEvent(4, "run.status", { status: "completed" }),
+    ]),
+    "$",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(deletedRun, [
       { ...first, runId: "run_other" },
       { ...deletion, runId: "run_other" },
+      { ...completed, runId: "run_other" },
     ]),
     "$[0].runId",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [
       first,
       { ...deletion, sequence: 1 },
+      completed,
     ]),
     "$[1].sequence",
     "semantic_conflict",
   );
   expectError(
-    validateRunManifestDeletionEventV1(deletedManifest, [
+    validateRunManifestDeletionEventV1(deletedRun, [
       first,
       { ...deletion, sequence: 3 },
+      completed,
+    ]),
+    "$[1].sequence",
+    "semantic_conflict",
+  );
+
+  const wrongReceiptRun = runWithCompletedDeletion(4, 4);
+  expectError(
+    validateRunManifestDeletionEventV1(wrongReceiptRun, [first, deletion, completed]),
+    "$.artifactManifest.deletion.eventSequence",
+    "semantic_conflict",
+  );
+
+  const runWithoutManifest = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("scoping"),
+      nextEventSequence: 3,
+    }),
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(runWithoutManifest, [first]),
+    "$",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(runWithoutManifest, [
+      first,
+      { ...parsedEvent(2, "run.status", { status: "scoping" }), sequence: 3 },
     ]),
     "$[1].sequence",
     "semantic_conflict",

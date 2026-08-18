@@ -36,7 +36,7 @@
     "checkpointEvery": 2,
     "stopWhenCostUnavailable": true
   },
-  "status": "scoping",
+  "status": "publishing",
   "waitingReason": "checkpoint",
   "createdAt": "2026-08-17T19:00:00.000Z",
   "updatedAt": "2026-08-17T19:01:00.000Z",
