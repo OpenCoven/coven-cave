@@ -20,6 +20,14 @@
         "required": ["type"]
       },
       "then": {
+        "propertyNames": {
+          "anyOf": [
+            {
+              "enum": ["schema", "runId", "sequence", "type", "at", "data"]
+            },
+            { "$ref": "#/$defs/sensitivePropertyName" }
+          ]
+        },
         "properties": {
           "data": { "$ref": "#/$defs/contentDeletedData" }
         }

@@ -7,15 +7,25 @@
 //   - the authoritative TypeBox/JSON Schema file for its `schema` string
 //   - the hand-written parser reached through `parseResearchProtocolObject`
 //
-// New fixtures are picked up automatically; nothing needs to be listed here
-// by hand. JSON Schema cannot express every cross-object revision rule the
-// protocol enforces. Persistent cross-object cases live in
+// Standalone fixture filenames are intentionally ratcheted below. Any addition,
+// deletion, or rename must update that inventory explicitly. JSON Schema cannot
+// express every cross-object revision rule the protocol enforces. Persistent
+// cross-object cases live in
 // `schemas/research/v1/fixtures/scenarios/*.scenario.json`; the focused sibling
 // runner keeps this suite limited to agreement for individual wire objects.
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { test } from "node:test";
+import {
+  mkdirSync,
+  mkdtempSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { test, type TestContext } from "node:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +46,89 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 const schemasDir = path.join(repoRoot, "schemas/research/v1");
 const fixturesDir = path.join(schemasDir, "fixtures");
+
+const EXPECTED_VALID_STANDALONE_FIXTURES = [
+  "context-pack.json",
+  "model-task-result.json",
+  "model-task.json",
+  "research-run-embedded-retention-7-days-provisional.json",
+  "research-run-embedded-retention-run-only-provisional.json",
+  "research-run-hosted-without-tenant.json",
+  "research-run-hosted.json",
+  "research-run-paused.json",
+  "research-run.json",
+  "run-event-deletion-benign-extension.json",
+  "run-event-leap-second-historical.json",
+  "run-event-leap-second.json",
+  "run-event-unicode-extension.json",
+  "run-event.json",
+  "run-manifest-assembling.json",
+  "run-manifest-chronology-boundaries.json",
+  "run-manifest-extension-boundaries.json",
+  "run-manifest-final-cloud.json",
+  "run-manifest-final-local.json",
+  "run-manifest-nested-benign-extension.json",
+  "run-manifest-retention-7-days-boundary.json",
+  "run-manifest-retention-7-days-leap-boundary.json",
+  "run-manifest-retention-run-only-boundary.json",
+  "run-manifest-retention-run-only-leap-boundary.json",
+  "run-manifest-retention-update.json",
+  "run-manifest-unicode-extension.json",
+  "topic-discovery-job-seven.json",
+  "topic-discovery-job.json",
+  "topic-proposal.json",
+] as const;
+
+const EXPECTED_INVALID_STANDALONE_FIXTURES = [
+  "context-pack-pdf-selector.json",
+  "context-pack-retention.json",
+  "model-task-policy.json",
+  "model-task-result-usage.json",
+  "research-run-checkpoint-queued.json",
+  "research-run-local-tenant.json",
+  "research-run-waiting-phase.json",
+  "run-event-deleted-content-payload.json",
+  "run-event-invalid-future-leap-second.json",
+  "run-event-invalid-leap-second-date.json",
+  "run-event-invalid-leap-second-placement.json",
+  "run-event-sequence.json",
+  "run-event-split-object-store-key.json",
+  "run-event-unicode-sensitive-extension.json",
+  "run-manifest-artifact-after-finalized.json",
+  "run-manifest-artifact-before-created.json",
+  "run-manifest-content-expires-before-created.json",
+  "run-manifest-content-expires-before-finalized.json",
+  "run-manifest-deleted-content-payload.json",
+  "run-manifest-deletion-event.json",
+  "run-manifest-deletion-pair.json",
+  "run-manifest-finalized-before-created.json",
+  "run-manifest-model-raw-prompt.json",
+  "run-manifest-nested-privacy-storage-keys.json",
+  "run-manifest-nested-private-extension.json",
+  "run-manifest-private-title.json",
+  "run-manifest-public-url-empty.json",
+  "run-manifest-public-url-file.json",
+  "run-manifest-public-url-localhost.json",
+  "run-manifest-public-url-malformed-authority.json",
+  "run-manifest-public-url-userinfo.json",
+  "run-manifest-retention-7-days-leap-overflow.json",
+  "run-manifest-retention-7-days-overflow.json",
+  "run-manifest-retention-before-created.json",
+  "run-manifest-retention-before-finalized.json",
+  "run-manifest-retention-run-only-leap-overflow.json",
+  "run-manifest-retention-run-only-overflow.json",
+  "run-manifest-root-private-excerpts.json",
+  "run-manifest-scheduled-null-expiry.json",
+  "run-manifest-source-after-finalized.json",
+  "run-manifest-source-before-created.json",
+  "run-manifest-split-object-store-key.json",
+  "run-manifest-unicode-sensitive-extension.json",
+  "topic-discovery-job-eight.json",
+  "topic-discovery-job-one.json",
+  "topic-discovery-job-two.json",
+  "topic-proposal-score.json",
+  "unknown-major.json",
+] as const;
 
 function readJsonFile(filePath: string): unknown {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -117,15 +210,155 @@ test("schema lookup does not resolve inherited Object.prototype names as registe
   }
 });
 
-function listFixtureFiles(kind: "valid" | "invalid"): string[] {
-  const dir = path.join(fixturesDir, kind);
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .map((entry) => entry.name)
-    .sort();
+function listFixtureFiles(
+  kind: "valid" | "invalid",
+  rootDirectory = fixturesDir,
+): string[] {
+  const dir = path.join(rootDirectory, kind);
+  const directoryStats = lstatSync(dir, { throwIfNoEntry: false });
+  assert.ok(directoryStats, `${dir}: standalone fixture directory is missing`);
+  assert.ok(
+    !directoryStats.isSymbolicLink() && directoryStats.isDirectory(),
+    `${dir}: standalone fixture root must be a real directory`,
+  );
+
+  const files: string[] = [];
+  for (const name of readdirSync(dir).sort()) {
+    const filePath = path.join(dir, name);
+    const stats = lstatSync(filePath, { throwIfNoEntry: false });
+    assert.ok(stats, `${filePath}: standalone fixture entry disappeared`);
+    assert.ok(
+      !stats.isSymbolicLink() &&
+        stats.isFile() &&
+        /^[a-z0-9]+(?:-[a-z0-9]+)*\.json$/.test(name),
+      `${filePath}: every standalone fixture entry must be a regular JSON file with a lowercase kebab-case name`,
+    );
+    files.push(name);
+  }
+  return files;
 }
 
-for (const fileName of listFixtureFiles("valid")) {
+function assertStandaloneFixtureInventory(
+  kind: "valid" | "invalid",
+  expected: readonly string[],
+  rootDirectory = fixturesDir,
+): string[] {
+  assert.equal(
+    new Set(expected).size,
+    expected.length,
+    `${kind} standalone fixture ratchet must not contain duplicates`,
+  );
+  const discovered = listFixtureFiles(kind, rootDirectory);
+  assert.deepEqual(
+    discovered,
+    [...expected],
+    `${kind} standalone fixture inventory must exactly match its ratchet`,
+  );
+  return discovered;
+}
+
+const validFixtureFiles = assertStandaloneFixtureInventory(
+  "valid",
+  EXPECTED_VALID_STANDALONE_FIXTURES,
+);
+const invalidFixtureFiles = assertStandaloneFixtureInventory(
+  "invalid",
+  EXPECTED_INVALID_STANDALONE_FIXTURES,
+);
+
+test("standalone fixture inventories are exact and duplicate-free", () => {
+  assert.equal(EXPECTED_VALID_STANDALONE_FIXTURES.length, 29);
+  assert.equal(EXPECTED_INVALID_STANDALONE_FIXTURES.length, 48);
+  assert.deepEqual(validFixtureFiles, [...EXPECTED_VALID_STANDALONE_FIXTURES]);
+  assert.deepEqual(invalidFixtureFiles, [...EXPECTED_INVALID_STANDALONE_FIXTURES]);
+});
+
+function withTemporaryFixtureTree<T>(
+  callback: (rootDirectory: string) => T,
+): T {
+  const cacheDirectory = path.join(repoRoot, "node_modules", ".cache");
+  mkdirSync(cacheDirectory, { recursive: true });
+  const rootDirectory = mkdtempSync(
+    path.join(cacheDirectory, "research-protocol-standalone-fixtures-"),
+  );
+  mkdirSync(path.join(rootDirectory, "valid"));
+  mkdirSync(path.join(rootDirectory, "invalid"));
+  try {
+    return callback(rootDirectory);
+  } finally {
+    rmSync(rootDirectory, { recursive: true, force: true });
+  }
+}
+
+function createSymlinkOrSkip(
+  context: TestContext,
+  targetPath: string,
+  linkPath: string,
+): boolean {
+  try {
+    symlinkSync(targetPath, linkPath, "file");
+    return true;
+  } catch (error) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "unknown";
+    if (["EACCES", "ENOSYS", "ENOTSUP", "EOPNOTSUPP", "EPERM"].includes(code)) {
+      context.skip(`symlink creation is unavailable (${code})`);
+      return false;
+    }
+    throw error;
+  }
+}
+
+test("standalone fixture inventory rejects directories and non-JSON files", () => {
+  withTemporaryFixtureTree((rootDirectory) => {
+    mkdirSync(path.join(rootDirectory, "valid", "nested"));
+    assert.throws(
+      () => assertStandaloneFixtureInventory("valid", [], rootDirectory),
+      /regular JSON file/i,
+    );
+  });
+  withTemporaryFixtureTree((rootDirectory) => {
+    writeFileSync(path.join(rootDirectory, "invalid", "notes.txt"), "not JSON");
+    assert.throws(
+      () => assertStandaloneFixtureInventory("invalid", [], rootDirectory),
+      /regular JSON file/i,
+    );
+  });
+});
+
+test("standalone fixture inventory rejects symlinks", (context) => {
+  withTemporaryFixtureTree((rootDirectory) => {
+    const targetPath = path.join(rootDirectory, "target.json");
+    writeFileSync(targetPath, "{}");
+    if (
+      !createSymlinkOrSkip(
+        context,
+        targetPath,
+        path.join(rootDirectory, "valid", "linked.json"),
+      )
+    ) {
+      return;
+    }
+    assert.throws(
+      () => assertStandaloneFixtureInventory("valid", [], rootDirectory),
+      /regular JSON file/i,
+    );
+  });
+});
+
+test("standalone fixture inventory rejects unexpected JSON names", () => {
+  withTemporaryFixtureTree((rootDirectory) => {
+    writeFileSync(path.join(rootDirectory, "valid", "unexpected.json"), "{}");
+    assert.throws(
+      () => assertStandaloneFixtureInventory("valid", [], rootDirectory),
+      /exactly match its ratchet/i,
+    );
+  });
+});
+
+for (const fileName of validFixtureFiles) {
   const filePath = path.join(fixturesDir, "valid", fileName);
 
   test(`valid fixture ${filePath} passes schema and parser`, () => {
@@ -169,7 +402,7 @@ for (const fileName of listFixtureFiles("valid")) {
   });
 }
 
-for (const fileName of listFixtureFiles("invalid")) {
+for (const fileName of invalidFixtureFiles) {
   const filePath = path.join(fixturesDir, "invalid", fileName);
 
   test(`invalid fixture ${filePath} is rejected by the parser`, () => {

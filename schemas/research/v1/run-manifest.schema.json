@@ -468,13 +468,14 @@
         "canonicalUrl": {
           "type": "string",
           "minLength": 1,
+          "description": "A canonical public URL whose stored value exactly equals WHATWG URL.href serialization, including the root slash.",
           "allOf": [
             {
-              "pattern": "^[hH][tT][tT][pP][sS]?://[^/?#@]+(?:[/?][^#]*)?$"
+              "pattern": "^https?://[^\\s\\\\/?#@]+(?:[/?][^\\s\\\\#]*)?$"
             },
             {
               "not": {
-                "pattern": "^[hH][tT][tT][pP][sS]?://[^/?#]*@"
+                "pattern": "^https?://[^/?#]*@"
               }
             },
             { "not": { "pattern": "#" } }

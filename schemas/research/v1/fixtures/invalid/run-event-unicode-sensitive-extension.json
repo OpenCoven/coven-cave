@@ -8,7 +8,7 @@
   "data": {
     "deletedObjectCount": 3,
     "manifestStatus": "deleted",
-    "ｏｂｊｅｃｔＫｅｙ": "tenant/private/object"
+    "deletedCon\u2060tentPayload": "private material"
   },
   "futureExtension": {
     "preserve": true

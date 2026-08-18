@@ -22,6 +22,7 @@ import {
   type ResearchModelReceiptV1,
 } from "./topic-discovery.ts";
 import {
+  normalizeUnicodeSecurityText,
   validateSafeExtensionKeys as validateSensitiveObjectKeys,
 } from "./privacy-extension.ts";
 
@@ -608,12 +609,15 @@ function parsePublicCanonicalUrl(
   const parsedString = parseString(value, path, "canonicalUrl");
   if (!parsedString.ok) return parsedString;
   const candidate = parsedString.value;
+  const syntax = /^(https?):\/\/([^/?#]+)/.exec(candidate);
   if (
     candidate.length === 0 ||
     candidate !== candidate.trim() ||
-    /[\u0000-\u001f\u007f]/.test(candidate) ||
+    /[\s\\]/u.test(candidate) ||
     candidate.includes("#") ||
-    !/^[hH][tT][tT][pP][sS]?:\/\//.test(candidate)
+    syntax === null ||
+    syntax[2] === "" ||
+    syntax[2]!.includes("@")
   ) {
     return fail(
       "invalid_value",
@@ -628,12 +632,10 @@ function parsePublicCanonicalUrl(
   } catch {
     return fail("invalid_value", path, "canonicalUrl must be a valid absolute URL");
   }
-  const authority = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#]*)/.exec(candidate)?.[1] ?? "";
   if (
     (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
     parsed.username !== "" ||
     parsed.password !== "" ||
-    authority.includes("@") ||
     parsed.hostname === "" ||
     !isPublicHostname(parsed.hostname)
   ) {
@@ -641,6 +643,13 @@ function parsePublicCanonicalUrl(
       "invalid_value",
       path,
       "canonicalUrl must identify a public HTTP(S) host without userinfo",
+    );
+  }
+  if (parsed.href !== candidate) {
+    return fail(
+      "invalid_value",
+      path,
+      "canonicalUrl must exactly equal its canonical WHATWG URL serialization",
     );
   }
   return pass(candidate);
@@ -661,12 +670,13 @@ function hasArtifactTitleUriScheme(value: string): boolean {
 function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<string> {
   const title = parseString(value, path, "title");
   if (!title.ok) return title;
+  const securityTitle = normalizeUnicodeSecurityText(title.value);
   if (
-    title.value.includes("/") ||
-    title.value.includes("\\") ||
-    hasArtifactTitleUriScheme(title.value) ||
-    ARTIFACT_TITLE_CONTROL_RE.test(title.value) ||
-    ARTIFACT_TITLE_SECRET_RE.test(title.value)
+    securityTitle.includes("/") ||
+    securityTitle.includes("\\") ||
+    hasArtifactTitleUriScheme(securityTitle) ||
+    ARTIFACT_TITLE_CONTROL_RE.test(securityTitle) ||
+    ARTIFACT_TITLE_SECRET_RE.test(securityTitle)
   ) {
     return fail(
       "invalid_value",

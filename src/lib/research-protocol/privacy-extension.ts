@@ -116,9 +116,18 @@ const SENSITIVE_EXTENSION_KEY_RE = new RegExp(
     `(?:${SENSITIVE_EXTENSION_COMPOUND_KEY_PATTERN})`,
 );
 const NO_DECLARED_FIELDS: ReadonlySet<string> = new Set();
+const DEFAULT_IGNORABLE_CODE_POINT_RE =
+  /\p{Default_Ignorable_Code_Point}/gu;
+
+export function normalizeUnicodeSecurityText(value: string): string {
+  return value
+    .replace(DEFAULT_IGNORABLE_CODE_POINT_RE, "")
+    .normalize("NFKC")
+    .replace(DEFAULT_IGNORABLE_CODE_POINT_RE, "");
+}
 
 export function isSensitiveExtensionKey(key: string): boolean {
-  const normalizedKey = key.normalize("NFKC");
+  const normalizedKey = normalizeUnicodeSecurityText(key);
   return (
     SENSITIVE_EXTENSION_KEY_RE.test(normalizedKey) ||
     extensionPathComponents(normalizedKey).some((component) =>
@@ -134,8 +143,7 @@ function childPath(path: string, key: string): string {
 }
 
 function extensionPathComponents(key: string): string[] {
-  return key
-    .normalize("NFKC")
+  return normalizeUnicodeSecurityText(key)
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
     .split(/[^A-Za-z0-9]+/)
@@ -185,7 +193,7 @@ function validateSafeExtensionKeysAtPath(
   for (const key of Object.keys(value)) {
     if (declaredFields.has(key)) continue;
     const keyPath = childPath(path, key);
-    const normalizedKey = key.normalize("NFKC");
+    const normalizedKey = normalizeUnicodeSecurityText(key);
     const nestedExtensionPath = [
       ...extensionPath,
       ...extensionPathComponents(normalizedKey),

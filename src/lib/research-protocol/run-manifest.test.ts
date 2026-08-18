@@ -748,6 +748,59 @@ test("public evidence canonicalUrl enforces HTTP(S) URL syntax", () => {
   }
 });
 
+test("public evidence canonicalUrl requires exact canonical WHATWG serialization", () => {
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  const withUrl = (canonicalUrl: string) =>
+    recalculate({
+      ...cloud,
+      sources: cloud.sources.map((source) =>
+        source.kind === "public-evidence"
+          ? { ...source, canonicalUrl }
+          : source,
+      ),
+    });
+
+  for (const canonicalUrl of [
+    "https://www.iana.org/",
+    "https://www.iana.org/research?phase=1",
+    "http://www.cloudflare.com:8080/path",
+  ]) {
+    const candidate = withUrl(canonicalUrl);
+    assert.equal(Value.Check(runManifestSchema, candidate), true, canonicalUrl);
+    assert.equal(
+      expectOk(parseRunManifestV1(candidate)).sources.find(
+        (source) => source.kind === "public-evidence",
+      )?.canonicalUrl,
+      canonicalUrl,
+    );
+  }
+
+  for (const [canonicalUrl, expectedSchemaValid] of [
+    ["http:////www.iana.org/path", false],
+    ["http:///www.iana.org/path", false],
+    ["http://", false],
+    ["http:\\\\www.iana.org\\path", false],
+    ["https://www.iana.org /path", false],
+    ["HTTPS://www.iana.org/path", false],
+    ["https://WWW.IANA.ORG/path", true],
+    ["http://www.iana.org:80/path", true],
+    ["https://www.iana.org", true],
+    ["https://www.iana.org/a/../research", true],
+  ] as const) {
+    const candidate = withUrl(canonicalUrl);
+    assert.equal(
+      Value.Check(runManifestSchema, candidate),
+      expectedSchemaValid,
+      canonicalUrl,
+    );
+    expectError(
+      parseRunManifestV1(candidate),
+      "$.sources[1].canonicalUrl",
+      "invalid_value",
+    );
+  }
+});
+
 test("public evidence canonicalUrl accepts global DNS and IP hosts", () => {
   const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
   const withUrl = (canonicalUrl: string) =>
@@ -804,7 +857,7 @@ test("public evidence canonicalUrl accepts global DNS and IP hosts", () => {
     "http://[2001:30::1]/",
     "http://[2001:200::1]/",
     "http://[2001:4860:4860::8888]/",
-    "http://[2002:0808:0808::1]/",
+    "http://[2002:808:808::1]/",
     "http://[2606:4700:4700::1111]/",
   ]) {
     const candidate = withUrl(canonicalUrl);
@@ -937,12 +990,48 @@ test("artifact titles reject paths, controls, and known secret prefixes", () => 
     expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
   }
 
-  assert.equal(Value.Check(runManifestSchema, invalidPrivateTitleJson), false);
+  const { expectedSchemaValid, ...invalidPrivateTitle } =
+    invalidPrivateTitleJson;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(Value.Check(runManifestSchema, invalidPrivateTitle), true);
+  assert.equal(
+    invalidPrivateTitle.digest,
+    digestProtocolObject(invalidPrivateTitle),
+  );
   expectError(
-    parseRunManifestV1(invalidPrivateTitleJson),
+    parseRunManifestV1(invalidPrivateTitle),
     "$.artifacts[0].title",
     "invalid_value",
   );
+});
+
+test("artifact title safety uses a Unicode security-normalized copy", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const title of [
+    "file：／／Users／alice／secret.txt",
+    "Users／alice／secret.txt",
+    "C：＼Users＼alice＼secret.txt",
+    "fi\u2060le：／／Users／alice／secret.txt",
+  ]) {
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], title }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), true, title);
+    expectError(
+      parseRunManifestV1(invalid),
+      "$.artifacts[0].title",
+      "invalid_value",
+    );
+  }
+
+  const title = "Résumé — 研究ノート";
+  const benign = recalculate({
+    ...local,
+    artifacts: [{ ...local.artifacts[0], title }],
+  });
+  assert.equal(Value.Check(runManifestSchema, benign), true);
+  assert.equal(expectOk(parseRunManifestV1(benign)).artifacts[0].title, title);
 });
 
 test("artifact titles reject RFC 3986 URI scheme prefixes", () => {

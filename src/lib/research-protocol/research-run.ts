@@ -16,6 +16,7 @@ import {
   parseContextPackV1,
   type ContextPackV1,
 } from "./context-pack.ts";
+import { canonicalJson } from "./digest.ts";
 import {
   parseEmbeddedRunManifestCandidateV1,
   parseRunManifestV1,
@@ -81,6 +82,14 @@ const RUN_EVENT_TYPES = [
 const CONTENT_DELETED_DATA_FIELDS = new Set([
   "deletedObjectCount",
   "manifestStatus",
+]);
+const RUN_EVENT_FIELDS = new Set([
+  "schema",
+  "runId",
+  "sequence",
+  "type",
+  "at",
+  "data",
 ]);
 
 type ResearchModelBindingV1 = {
@@ -195,24 +204,129 @@ function prefixProtocolErrorPath(path: string, prefix: string): string {
   return path === "$" ? prefix : `${prefix}${path.slice(1)}`;
 }
 
+function validateManifestRunAuthority(
+  manifest: RunManifestV1,
+  run: ResearchRunV1,
+  contextPack: ContextPackV1 | undefined,
+): ProtocolParseResult<void> {
+  if (manifest.runId !== run.id) {
+    return fail(
+      "semantic_conflict",
+      "$.runId",
+      "Manifest runId must match the enclosing run id",
+    );
+  }
+  if (!contextBindingsMatch(run.context, manifest.context)) {
+    return fail(
+      "semantic_conflict",
+      "$.context",
+      "Manifest context must match the enclosing run context",
+    );
+  }
+  if (
+    contextPack !== undefined &&
+    (
+      manifest.context?.contextPackId !== contextPack.id ||
+      manifest.context.contextPackDigest !== contextPack.digest
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.context",
+      "Manifest context must identify the composed Context Pack",
+    );
+  }
+  if (manifest.retention.policy !== run.privacy.retention) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.policy",
+      "Manifest retention policy must match the original run privacy retention",
+    );
+  }
+  const retentionCeiling =
+    contextPack?.consent.retention ?? run.privacy.retention;
+  if (
+    !retentionDoesNotExceed(
+      manifest.retention.effectivePolicy,
+      retentionCeiling,
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.effectivePolicy",
+      "Manifest effective retention exceeds enclosing consent",
+    );
+  }
+  const cloudContentIndex = manifest.artifacts.findIndex(
+    (artifact) => artifact.placement === "cloud-content",
+  );
+  if (
+    cloudContentIndex >= 0 &&
+    (
+      !run.privacy.artifactContentSync ||
+      contextPack?.consent.artifactContentSync === false
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      `$.artifacts[${cloudContentIndex}].placement`,
+      "cloud-content artifacts require enclosing artifactContentSync consent",
+    );
+  }
+  return pass(undefined);
+}
+
 function validateEmbeddedManifestAuthority(
   manifest: RunManifestV1,
+  run: ResearchRunV1,
   contextPack: ContextPackV1 | undefined,
   history: readonly unknown[] | undefined,
 ): ProtocolParseResult<RunManifestV1> {
-  const standalone = parseRunManifestV1(manifest);
-  if (manifest.revision === 1) {
-    if (standalone.ok) return pass(manifest);
+  const embedded = parseEmbeddedRunManifestCandidateV1(manifest);
+  if (!embedded.ok) {
     return {
       ok: false,
       error: {
-        ...standalone.error,
+        ...embedded.error,
         path: prefixProtocolErrorPath(
-          standalone.error.path,
+          embedded.error.path,
           "$.artifactManifest",
         ),
       },
     };
+  }
+  if (embedded.value.revision === 1) {
+    const standalone = parseRunManifestV1(embedded.value);
+    if (!standalone.ok) {
+      return {
+        ok: false,
+        error: {
+          ...standalone.error,
+          path: prefixProtocolErrorPath(
+            standalone.error.path,
+            "$.artifactManifest",
+          ),
+        },
+      };
+    }
+    const binding = validateManifestRunAuthority(
+      standalone.value,
+      run,
+      contextPack,
+    );
+    if (!binding.ok) {
+      return {
+        ok: false,
+        error: {
+          ...binding.error,
+          path: prefixProtocolErrorPath(
+            binding.error.path,
+            "$.artifactManifest",
+          ),
+        },
+      };
+    }
+    return standalone;
   }
   if (history === undefined || history.length === 0) {
     return fail(
@@ -252,6 +366,23 @@ function validateEmbeddedManifestAuthority(
       },
     };
   }
+  const rootBinding = validateManifestRunAuthority(
+    root.value,
+    run,
+    contextPack,
+  );
+  if (!rootBinding.ok) {
+    return {
+      ok: false,
+      error: {
+        ...rootBinding.error,
+        path: prefixProtocolErrorPath(
+          rootBinding.error.path,
+          "$.manifestHistory[0]",
+        ),
+      },
+    };
+  }
 
   let replayed = root.value;
   for (let index = 1; index < history.length; index += 1) {
@@ -279,16 +410,40 @@ function validateEmbeddedManifestAuthority(
       };
     }
     replayed = next.value;
+    const binding = validateManifestRunAuthority(
+      replayed,
+      run,
+      contextPack,
+    );
+    if (!binding.ok) {
+      return {
+        ok: false,
+        error: {
+          ...binding.error,
+          path: prefixProtocolErrorPath(
+            binding.error.path,
+            `$.manifestHistory[${index}]`,
+          ),
+        },
+      };
+    }
   }
 
-  if (replayed.digest !== manifest.digest) {
+  if (replayed.digest !== embedded.value.digest) {
     return fail(
       "semantic_conflict",
       "$.artifactManifest.digest",
       "Manifest history tip must match the embedded artifactManifest digest",
     );
   }
-  return pass(manifest);
+  if (canonicalJson(replayed) !== canonicalJson(embedded.value)) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest",
+      "Manifest history tip must canonically equal the embedded artifactManifest",
+    );
+  }
+  return pass(replayed);
 }
 
 /**
@@ -314,10 +469,15 @@ export function validateResearchRunContextPackV1(
     if (run.artifactManifest) {
       const authority = validateEmbeddedManifestAuthority(
         run.artifactManifest,
+        run,
         undefined,
         options.manifestHistory,
       );
       if (!authority.ok) return authority;
+      return pass({
+        ...run,
+        artifactManifest: authority.value,
+      });
     }
     return pass(run);
   }
@@ -396,26 +556,18 @@ export function validateResearchRunContextPackV1(
       "Run retention exceeds Context Pack consent",
     );
   }
-  if (
-    run.artifactManifest &&
-    !retentionDoesNotExceed(
-      run.artifactManifest.retention.effectivePolicy,
-      trustedContextPack.consent.retention,
-    )
-  ) {
-    return fail(
-      "semantic_conflict",
-      "$.artifactManifest.retention.effectivePolicy",
-      "Artifact manifest effective retention exceeds Context Pack consent",
-    );
-  }
   if (run.artifactManifest) {
     const authority = validateEmbeddedManifestAuthority(
       run.artifactManifest,
+      run,
       trustedContextPack,
       options.manifestHistory,
     );
     if (!authority.ok) return authority;
+    return pass({
+      ...run,
+      artifactManifest: authority.value,
+    });
   }
 
   return pass(run);
@@ -1186,6 +1338,13 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   if (!data.ok) return data;
 
   if (type.value === "content.deleted") {
+    const safeEventKeys = validateSafeExtensionKeys(
+      object.value,
+      "$",
+      RUN_EVENT_FIELDS,
+    );
+    if (!safeEventKeys.ok) return safeEventKeys;
+
     const safeKeys = validateSafeExtensionKeys(
       data.value,
       "$.data",
