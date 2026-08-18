@@ -729,13 +729,6 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   const id = parseOpaqueIdentifier(idField.value, "run", "$.id", "id");
   if (!id.ok) return id;
 
-  let tenantOpaqueId: string | undefined;
-  if (hasOwn(object.value, "tenantOpaqueId")) {
-    const parsedTenantOpaqueId = parseString(object.value.tenantOpaqueId, "$.tenantOpaqueId", "tenantOpaqueId");
-    if (!parsedTenantOpaqueId.ok) return parsedTenantOpaqueId;
-    tenantOpaqueId = parsedTenantOpaqueId.value;
-  }
-
   let context: ResearchContextBindingV1 | undefined;
   if (hasOwn(object.value, "context")) {
     const parsedContext = parseResearchContextBindingV1(object.value.context, "$.context");
@@ -752,6 +745,25 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!executionField.ok) return executionField;
   const execution = parseResearchExecutionProfileV1(executionField.value, "$.execution");
   if (!execution.ok) return execution;
+
+  let tenantOpaqueId: string | undefined;
+  if (hasOwn(object.value, "tenantOpaqueId")) {
+    if (execution.value.location === "local") {
+      return fail(
+        "semantic_conflict",
+        "$.tenantOpaqueId",
+        "local runs must not include tenantOpaqueId",
+      );
+    }
+    const parsedTenantOpaqueId = parseOpaqueIdentifier(
+      object.value.tenantOpaqueId,
+      "tenant",
+      "$.tenantOpaqueId",
+      "tenantOpaqueId",
+    );
+    if (!parsedTenantOpaqueId.ok) return parsedTenantOpaqueId;
+    tenantOpaqueId = parsedTenantOpaqueId.value;
+  }
 
   const privacyField = parseRequiredField(object.value, "privacy", "$");
   if (!privacyField.ok) return privacyField;

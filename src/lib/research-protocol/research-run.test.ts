@@ -6,9 +6,13 @@ import { Check, Value } from "typebox/value";
 import researchRunSchema from "../../../schemas/research/v1/research-run.schema.json" with { type: "json" };
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
+import invalidHostedTenantResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-hosted-tenant-id.json" with { type: "json" };
+import invalidLocalTenantResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
+import validHostedResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run-hosted.json" with { type: "json" };
+import validHostedResearchRunWithoutTenant from "../../../schemas/research/v1/fixtures/valid/research-run-hosted-without-tenant.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
 import assemblingRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
@@ -201,6 +205,47 @@ test("valid waiting_for_executor run with resumable phase accepts", () => {
   const parsed = expectOk(parseResearchRunV1(validResearchRun));
   assert.equal(parsed.status, "waiting_for_executor");
   assert.equal(parsed.waitingForPhase, "challenge");
+});
+
+test("local runs reject hosted-only tenantOpaqueId", () => {
+  assert.equal(Object.hasOwn(validResearchRun, "tenantOpaqueId"), false);
+  assert.equal(checkResearchRunSchema(validResearchRun), true);
+  assert.deepEqual(expectOk(parseResearchRunV1(validResearchRun)), validResearchRun);
+
+  assert.equal(checkResearchRunSchema(invalidLocalTenantResearchRun), false);
+  expectError(
+    parseResearchRunV1(invalidLocalTenantResearchRun),
+    "$.tenantOpaqueId",
+    "semantic_conflict",
+  );
+});
+
+test("hosted runs accept tenantOpaqueId omission or a valid opaque tenant identifier", () => {
+  for (const run of [validHostedResearchRunWithoutTenant, validHostedResearchRun]) {
+    assert.equal(checkResearchRunSchema(run), true);
+    assert.deepEqual(expectOk(parseResearchRunV1(run)), run);
+  }
+  assert.equal(Object.hasOwn(validHostedResearchRunWithoutTenant, "tenantOpaqueId"), false);
+  assert.equal(validHostedResearchRun.tenantOpaqueId, "tenant_alpha");
+});
+
+test("hosted tenantOpaqueId must be a nonempty opaque tenant identifier when present", () => {
+  for (const tenantOpaqueId of ["", "tenant alpha", "run_01"]) {
+    const run = { ...validHostedResearchRun, tenantOpaqueId };
+    assert.equal(checkResearchRunSchema(run), false);
+    expectError(parseResearchRunV1(run), "$.tenantOpaqueId", "invalid_value");
+  }
+
+  assert.equal(checkResearchRunSchema(invalidHostedTenantResearchRun), false);
+  expectError(
+    parseResearchRunV1(invalidHostedTenantResearchRun),
+    "$.tenantOpaqueId",
+    "invalid_value",
+  );
+
+  const wrongType = { ...validHostedResearchRun, tenantOpaqueId: 42 };
+  assert.equal(checkResearchRunSchema(wrongType), false);
+  expectError(parseResearchRunV1(wrongType), "$.tenantOpaqueId", "invalid_type");
 });
 
 test("Research Run and Run Event reject schema accessors without invoking them", () => {

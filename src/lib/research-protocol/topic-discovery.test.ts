@@ -3,10 +3,13 @@ import { test } from "node:test";
 import { Value } from "typebox/value";
 
 import invalidTopicDiscoveryEight from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-eight.json" with { type: "json" };
+import invalidTopicDiscoveryFour from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-four.json" with { type: "json" };
+import invalidTopicDiscoveryReceiptFamiliar from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-receipt-familiar-mismatch.json" with { type: "json" };
 import invalidTopicProposalScore from "../../../schemas/research/v1/fixtures/invalid/topic-proposal-score.json" with { type: "json" };
 import topicDiscoveryJobSchema from "../../../schemas/research/v1/topic-discovery-job.schema.json" with { type: "json" };
 import topicProposalSchema from "../../../schemas/research/v1/topic-proposal.schema.json" with { type: "json" };
-import sevenProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-seven.json" with { type: "json" };
+import noGroundedTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-no-grounded-proposals.json" with { type: "json" };
+import threeProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-three.json" with { type: "json" };
 import twoProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-two.json" with { type: "json" };
 import validTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job.json" with { type: "json" };
 import validTopicProposal from "../../../schemas/research/v1/fixtures/valid/topic-proposal.json" with { type: "json" };
@@ -50,6 +53,18 @@ test("valid fixtures satisfy schemas and parse", () => {
   assert.equal((job.futureExtension as { preserve: boolean }).preserve, true);
   assert.equal((job.modelReceipt?.futureExtension as { preserve: boolean }).preserve, true);
   assert.equal((proposal.futureExtension as { preserve: boolean }).preserve, true);
+});
+
+test("topic discovery model receipt must identify the job familiar", () => {
+  const { expectedSchemaValid, ...mismatchedReceiptJob } = invalidTopicDiscoveryReceiptFamiliar;
+
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(Value.Check(topicDiscoveryJobSchema, mismatchedReceiptJob), true);
+  expectError(
+    parseTopicDiscoveryJobV1(mismatchedReceiptJob),
+    "$.modelReceipt.familiarId",
+    "semantic_conflict",
+  );
 });
 
 test("topicProposalVisibleTotal applies the Section 10.3 weights in integer hundredths", () => {
@@ -140,22 +155,46 @@ test("proposal visibleTotal mismatches reject with semantic_conflict", () => {
   );
 });
 
-test("completed jobs accept one, two, or seven proposalIds", () => {
+test("completed jobs accept one, two, or three proposalIds", () => {
   for (const job of [
     validTopicDiscoveryJob,
     twoProposalTopicDiscoveryJob,
-    sevenProposalTopicDiscoveryJob,
+    threeProposalTopicDiscoveryJob,
   ]) {
     assert.equal(Value.Check(topicDiscoveryJobSchema, job), true);
     expectOk(parseTopicDiscoveryJobV1(job));
   }
 });
 
-test("completed jobs reject zero or eight proposalIds", () => {
-  for (const job of [{ ...validTopicDiscoveryJob, proposalIds: [] }, invalidTopicDiscoveryEight]) {
-    assert.equal(Value.Check(topicDiscoveryJobSchema, job), false);
-    expectError(parseTopicDiscoveryJobV1(job), "$.proposalIds", "semantic_conflict");
-  }
+test("completed jobs reject zero or more than three proposalIds", () => {
+  const emptyCompletedJob = {
+    ...validTopicDiscoveryJob,
+    proposalIds: [],
+  };
+
+  assert.equal(Value.Check(topicDiscoveryJobSchema, emptyCompletedJob), false);
+  expectError(parseTopicDiscoveryJobV1(emptyCompletedJob), "$.proposalIds", "semantic_conflict");
+
+  assert.equal(Value.Check(topicDiscoveryJobSchema, invalidTopicDiscoveryFour), false);
+  expectError(
+    parseTopicDiscoveryJobV1(invalidTopicDiscoveryFour),
+    "$.proposalIds",
+    "semantic_conflict",
+  );
+  assert.equal(Value.Check(topicDiscoveryJobSchema, invalidTopicDiscoveryEight), false);
+  expectError(
+    parseTopicDiscoveryJobV1(invalidTopicDiscoveryEight),
+    "$.proposalIds",
+    "semantic_conflict",
+  );
+});
+
+test("all rejected proposals produce a failed no_grounded_proposals job", () => {
+  assert.equal(Value.Check(topicDiscoveryJobSchema, noGroundedTopicDiscoveryJob), true);
+  const job = expectOk(parseTopicDiscoveryJobV1(noGroundedTopicDiscoveryJob));
+  assert.equal(job.status, "failed");
+  assert.deepEqual(job.proposalIds, []);
+  assert.equal(job.failure?.code, "no_grounded_proposals");
 });
 
 test("proposal cardinality bounds apply only to completed jobs", () => {

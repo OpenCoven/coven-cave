@@ -1,7 +1,6 @@
 {
   "schema": "opencoven.research-run/v1",
   "id": "run_01",
-  "tenantOpaqueId": "tenant_alpha",
   "context": {
     "contextPackId": "ctx_01",
     "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
