@@ -340,3 +340,40 @@ test("loadResearchMission backfills standard artifact refs on legacy missions", 
     ["primary", "findings", "source-ledger", "research-log"],
   );
 });
+
+test("loadResearchMission repairs a completed mission downgraded by the missing-cost gate", async (t) => {
+  const legacyRoot = await mkdtemp(path.join(os.tmpdir(), "research-store-cost-pause-"));
+  const previousRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
+  process.env.COVEN_RESEARCH_MISSIONS_DIR = legacyRoot;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.COVEN_RESEARCH_MISSIONS_DIR;
+    else process.env.COVEN_RESEARCH_MISSIONS_DIR = previousRoot;
+    await rm(legacyRoot, { recursive: true, force: true });
+  });
+  const corrupted = {
+    ...mission("cost-paused-complete"),
+    status: "paused",
+    finishedAt: "2026-08-15T04:51:00.510Z",
+    lastError: "Cost unavailable; review before another iteration",
+    bounds: {
+      ...mission("cost-paused-complete").bounds,
+      stopWhenCostUnavailable: true,
+    },
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: "2026-08-15T04:51:00.510Z",
+      decision: "complete",
+      decisionReason: "Decision-ready result published",
+    }],
+  };
+  await mkdir(path.join(legacyRoot, corrupted.id), { recursive: true });
+  await writeFile(
+    path.join(legacyRoot, corrupted.id, "mission.json"),
+    JSON.stringify(corrupted),
+  );
+  const loaded = await loadResearchMission(corrupted.id);
+  assert.equal(loaded?.status, "completed");
+  assert.equal(loaded?.lastError, undefined);
+  assert.equal(loaded?.finishedAt, corrupted.finishedAt);
+});

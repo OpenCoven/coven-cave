@@ -12,6 +12,7 @@ import type { ResearchMission } from "../research-missions.ts";
 import {
   ensureStandardArtifactRefs,
   parseResearchMission,
+  repairResearchMissionState,
 } from "../research-missions.ts";
 import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-write.ts";
@@ -399,7 +400,7 @@ export async function loadResearchMission(id: string): Promise<ResearchMission |
     if (!parsed || parsed.id !== id) return null;
     // Additive read-time backfill: missions created before the standard refs
     // existed gain them on load; the refs persist on the next save.
-    return ensureStandardArtifactRefs(parsed);
+    return ensureStandardArtifactRefs(repairResearchMissionState(parsed));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || error instanceof SyntaxError) return null;
