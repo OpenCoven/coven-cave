@@ -467,7 +467,7 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
   );
 });
 
-test("sensitive manifest objects reject forbidden keys nested in extension objects and arrays", () => {
+test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [candidate, path] of [
     [
@@ -505,7 +505,7 @@ test("sensitive manifest objects reject forbidden keys nested in extension objec
       "$.deletion.metadata[0].ObJeCtKeY",
     ],
   ] as const) {
-    assert.equal(Value.Check(runManifestSchema, candidate), true);
+    assert.equal(Value.Check(runManifestSchema, candidate), false);
     expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
   }
 });
@@ -514,6 +514,14 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const benign = recalculate({
     ...local,
+    sources: [
+      {
+        ...local.sources[0],
+        displayMetadata: {
+          nested: [{ label: "safe", values: [null, true, 1] }],
+        },
+      },
+    ],
     artifacts: [
       {
         ...local.artifacts[0],
@@ -529,7 +537,12 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
       auditMetadata: { note: "objectKey" },
     },
   });
+  assert.equal(Value.Check(runManifestSchema, benign), true);
   const parsedBenign = expectOk(parseRunManifestV1(benign));
+  assert.deepEqual(
+    (parsedBenign.sources[0].displayMetadata as { nested: Array<{ values: unknown[] }> }).nested[0].values,
+    [null, true, 1],
+  );
   assert.deepEqual(
     (parsedBenign.artifacts[0].displayMetadata as { examples: string[] }).examples,
     ["/Users/example/private.md", "deletedContent"],

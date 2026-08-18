@@ -1,0 +1,61 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_nested_benign_01",
+  "runId": "run_nested_benign_01",
+  "digest": "5993362fa305f5af695ae7829068e673138fbb0c1b01b7d17670339867375adf",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "context": {
+    "contextPackId": "ctx_nested_benign_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_nested_benign_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "metadata": {
+        "items": [null, true, 1, { "label": "safe" }]
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_nested_benign_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "metadata": {
+        "nested": [{ "label": "safe" }]
+      }
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "metadata": {
+      "nested": [{ "label": "safe" }]
+    }
+  }
+}
