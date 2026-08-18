@@ -13,6 +13,12 @@
  * an asynchronous kind.
  */
 
+import {
+  isValidElevenLabsModelId,
+  validateElevenLabsVoiceSettings,
+  type ElevenLabsVoiceSettings,
+} from "./voice/elevenlabs-shared.ts";
+
 export const RESEARCH_GENERATION_KINDS = [
   "diagram",
   "blog",
@@ -142,6 +148,18 @@ export type ResearchMediaRenderConfig = {
    * configs keep validating and re-draft exactly as the default style.
    */
   style?: ResearchPodcastStyle;
+  /**
+   * Podcast only (ElevenLabs): the synthesis model id. Absent means the
+   * offline quality-tier default (DEFAULT_ELEVENLABS_PODCAST_MODEL_ID),
+   * decoupled from the live-voice default.
+   */
+  model?: string;
+  /**
+   * Podcast only (ElevenLabs): delivery controls for synthesis. Absent means
+   * the shared baseline settings. Stored normalized so the renderer sends
+   * them verbatim.
+   */
+  voiceSettings?: ElevenLabsVoiceSettings;
 };
 
 export type ResearchGenerationProgress = {
@@ -235,6 +253,33 @@ export function validateResearchMediaRenderConfig(
     }
     style = value.style;
   }
+  let model: string | undefined;
+  if (value.model !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast model is only valid for podcasts" };
+    }
+    if (value.provider !== "elevenlabs") {
+      return { ok: false, error: "podcast model is only valid for the ElevenLabs provider" };
+    }
+    if (!isValidElevenLabsModelId(value.model)) {
+      return { ok: false, error: "podcast model must be a valid ElevenLabs model id" };
+    }
+    model = value.model;
+  }
+  let voiceSettings: ElevenLabsVoiceSettings | undefined;
+  if (value.voiceSettings !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast voice settings are only valid for podcasts" };
+    }
+    if (value.provider !== "elevenlabs") {
+      return { ok: false, error: "podcast voice settings are only valid for the ElevenLabs provider" };
+    }
+    const normalized = validateElevenLabsVoiceSettings(value.voiceSettings);
+    if (!normalized) {
+      return { ok: false, error: "podcast voice settings are malformed" };
+    }
+    voiceSettings = normalized;
+  }
   return {
     ok: true,
     value: {
@@ -243,6 +288,8 @@ export function validateResearchMediaRenderConfig(
       length: value.length,
       ...(voices ? { voices } : {}),
       ...(style ? { style } : {}),
+      ...(model ? { model } : {}),
+      ...(voiceSettings ? { voiceSettings } : {}),
     },
   };
 }
