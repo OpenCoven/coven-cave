@@ -1,9 +1,9 @@
 {
   "schema": "opencoven.research-run/v1",
-  "id": "run_01",
+  "id": "run_hosted_01",
   "tenantOpaqueId": "tenant_alpha",
   "acceptedTopic": {
-    "question": "How should the research executor resume this run?",
+    "question": "How should hosted execution coordinate this run?",
     "editedByUser": false
   },
   "execution": {
@@ -29,9 +29,9 @@
     "checkpointEvery": 1,
     "stopWhenCostUnavailable": true
   },
-  "status": "waiting_for_executor",
-  "waitingReason": "executor",
+  "status": "queued",
   "createdAt": "2026-08-15T20:00:00.000Z",
   "updatedAt": "2026-08-15T20:01:00.000Z",
-  "nextEventSequence": 1
+  "nextEventSequence": 1,
+  "futureExtension": { "preserve": true }
 }

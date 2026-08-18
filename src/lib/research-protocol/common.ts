@@ -31,7 +31,7 @@ export type RetentionPolicyV1 = keyof typeof RETENTION_ORDER;
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const OPAQUE_ID_BODY_RE = /^[A-Za-z0-9_-]+$/;
 export const UTC_TIMESTAMP_PATTERN =
-  String.raw`^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d|23:59:60)(?:\.\d{1,9})?Z$`;
+  String.raw`^(?:(?:\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d)|(?:1972-(?:06-30|12-31)|197[3-9]-12-31|198[1235]-06-30|198[79]-12-31|1990-12-31|199[2347]-06-30|199[58]-12-31|200[58]-12-31|201[25]-06-30|2016-12-31)T23:59:60)(?:\.\d{1,9})?Z$`;
 const UTC_TIMESTAMP_RE = new RegExp(UTC_TIMESTAMP_PATTERN);
 const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 

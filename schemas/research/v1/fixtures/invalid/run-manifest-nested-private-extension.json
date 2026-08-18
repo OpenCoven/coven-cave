@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_nested_private_01",
   "runId": "run_nested_private_01",
-  "digest": "261b4a1008a03e08723e0df67115886e84716a16eaeef3cbda702b54b0bbcfd0",
+  "digest": "4c6f04975d547bc74589ebe71fd8bc5ce37564a468e408fb85bc1f5ecf0ca218",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -20,13 +20,30 @@
       "metadata": {
         "items": [
           {
-            "ExCeRpT": "private material"
+            "privateExcerpt": "private material"
           }
         ]
       }
     }
   ],
-  "artifacts": [],
+  "artifacts": [
+    {
+      "id": "artifact_nested_private_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "metadata": {
+        "nested": {
+          "local_file_path": "/private/report.md"
+        }
+      }
+    }
+  ],
   "modelExecutions": [],
   "usage": {
     "inputTokens": null,
@@ -42,6 +59,11 @@
     "updatedAt": "2026-08-16T20:05:00.000Z"
   },
   "deletion": {
-    "status": "not_scheduled"
+    "status": "not_scheduled",
+    "auditMetadata": [
+      {
+        "credentialHint": "tenant/private/object"
+      }
+    ]
   }
 }
