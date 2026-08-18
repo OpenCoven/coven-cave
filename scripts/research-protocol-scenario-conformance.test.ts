@@ -48,6 +48,7 @@ import {
   type ModelTaskV1,
   type ProtocolParseResult,
   type ResearchProtocolObjectV1,
+  type ResearchRunManifestRevisionOptionsV1,
   type ResearchRunV1,
   type RunEventV1,
   type RunManifestV1,
@@ -129,7 +130,9 @@ type ScenarioDefinition = {
   description: string;
   validator: ValidatorKind;
   inputs: Record<string, unknown>;
-  options?: ManifestRevisionOptions;
+  options?: ManifestRevisionOptions & {
+    manifestRevisionOptions?: readonly ResearchRunManifestRevisionOptionsV1[];
+  };
   expected: ExpectedResult;
 };
 
@@ -463,7 +466,11 @@ function scenarioInputEntries(
       );
       break;
     case "research-run-context-pack":
-      assertAllowedKeys(scenario.inputs, ["run", "contextPack"], location);
+      assertAllowedKeys(
+        scenario.inputs,
+        ["run", "contextPack", "manifestHistory"],
+        location,
+      );
       assert.ok(Object.hasOwn(scenario.inputs, "run"), `${location}: missing field run`);
       entries.push({
         name: "run",
@@ -480,6 +487,27 @@ function scenarioInputEntries(
           ),
           schema: "opencoven.context-pack/v1",
         });
+      }
+      if (Object.hasOwn(scenario.inputs, "manifestHistory")) {
+        assert.ok(
+          Array.isArray(scenario.inputs.manifestHistory),
+          `${location}.manifestHistory: must be an array`,
+        );
+        assert.ok(
+          scenario.inputs.manifestHistory.length > 0,
+          `${location}.manifestHistory: must not be empty`,
+        );
+        for (const [index, manifest] of scenario.inputs.manifestHistory.entries()) {
+          entries.push({
+            name: `manifestHistory[${index}]`,
+            reference: requireObjectReference(
+              manifest,
+              objects,
+              `${location}.manifestHistory[${index}]`,
+            ),
+            schema: "opencoven.run-manifest/v1",
+          });
+        }
       }
       break;
     case "manifest-retention-consent":
@@ -572,7 +600,7 @@ function validateScenario(
     `${location}.inputs`,
   );
 
-  let options: ManifestRevisionOptions | undefined;
+  let options: ScenarioDefinition["options"];
   if (
     validator === "run-manifest-revision" ||
     validator === "manifest-retention-consent"
@@ -619,6 +647,70 @@ function validateScenario(
           ? {}
           : { freshConsentAt: rawOptions.freshConsentAt as string }),
       };
+    }
+  } else if (validator === "research-run-context-pack") {
+    if (scenario.options !== undefined) {
+      const rawOptions = requireRecord(scenario.options, `${location}.options`);
+      requireExactInputKeys(
+        rawOptions,
+        ["manifestRevisionOptions"],
+        `${location}.options`,
+      );
+      assert.ok(
+        Array.isArray(rawOptions.manifestRevisionOptions),
+        `${location}.options.manifestRevisionOptions: must be an array`,
+      );
+      const manifestRevisionOptions = rawOptions.manifestRevisionOptions.map(
+        (rawEntry, index) => {
+          const entryLocation =
+            `${location}.options.manifestRevisionOptions[${index}]`;
+          const entry = requireRecord(rawEntry, entryLocation);
+          requireExactInputKeys(
+            entry,
+            [
+              "successorRevision",
+              "successorDigest",
+              "freshConsent",
+              "freshConsentAt",
+              "contextConsent",
+            ],
+            entryLocation,
+          );
+          assert.ok(
+            Number.isSafeInteger(entry.successorRevision) &&
+              (entry.successorRevision as number) >= 2,
+            `${entryLocation}.successorRevision: must be a safe integer of at least 2`,
+          );
+          assert.equal(
+            isSha256(entry.successorDigest),
+            true,
+            `${entryLocation}.successorDigest: must be a lowercase SHA-256 digest`,
+          );
+          assert.equal(
+            entry.freshConsent,
+            true,
+            `${entryLocation}.freshConsent: must equal true`,
+          );
+          assert.equal(
+            isUtcTimestamp(entry.freshConsentAt),
+            true,
+            `${entryLocation}.freshConsentAt: must be a UTC RFC 3339 timestamp`,
+          );
+          assert.ok(
+            RETENTION_POLICIES.has(entry.contextConsent as string),
+            `${entryLocation}.contextConsent: must be run-only, 7-days, or project`,
+          );
+          return {
+            successorRevision: entry.successorRevision as number,
+            successorDigest: entry.successorDigest as string,
+            freshConsent: true as const,
+            freshConsentAt: entry.freshConsentAt as string,
+            contextConsent:
+              entry.contextConsent as ResearchRunManifestRevisionOptionsV1["contextConsent"],
+          };
+        },
+      );
+      options = { manifestRevisionOptions };
     }
   } else {
     assert.equal(
@@ -1137,8 +1229,27 @@ function executeComposition(
               "opencoven.context-pack/v1",
               `${scenario.id}.contextPack`,
             );
+      const historyReferences = scenario.inputs.manifestHistory;
+      const manifestHistory =
+        historyReferences === undefined
+          ? undefined
+          : (historyReferences as unknown[]).map((_, index) =>
+              requireParsedSchema<RunManifestV1>(
+                parsedInputs.get(`manifestHistory[${index}]`)!,
+                "opencoven.run-manifest/v1",
+                `${scenario.id}.manifestHistory[${index}]`,
+              ),
+            );
       return {
-        result: validateResearchRunContextPackV1(run, contextPack),
+        result: validateResearchRunContextPackV1(run, contextPack, {
+          ...(manifestHistory === undefined ? {} : { manifestHistory }),
+          ...(scenario.options?.manifestRevisionOptions === undefined
+            ? {}
+            : {
+                manifestRevisionOptions:
+                  scenario.options.manifestRevisionOptions,
+              }),
+        }),
         expectedValue: run,
       };
     }
@@ -2063,6 +2174,14 @@ const REQUIRED_UNIT_0_SCENARIO_IDS = [
     "research-run.retention-ceiling",
     "research-run.embedded-manifest-retention-ceiling",
     "research-run.contextless-manifest-lengthening",
+    "research-run.replay-explicit-transition-consent",
+    "research-run.replay-missing-transition-consent",
+    "research-run.replay-duplicate-transition-consent",
+    "research-run.replay-unknown-transition-consent",
+    "research-run.replay-extra-non-lengthening-consent",
+    "research-run.replay-stale-transition-consent",
+    "research-run.replay-future-transition-consent",
+    "research-run.replay-misbound-transition-consent",
     "model-task.valid-pair",
     "model-task.wrong-task-id",
     "model-task.wrong-run-id",
@@ -2095,7 +2214,7 @@ const REQUIRED_UNIT_0_SCENARIO_IDS = [
   ] as const;
 
 test("required Unit 0 scenario inventory exactly matches the corpus", () => {
-  assert.equal(REQUIRED_UNIT_0_SCENARIO_IDS.length, 75);
+  assert.equal(REQUIRED_UNIT_0_SCENARIO_IDS.length, 83);
   assert.equal(
     new Set(REQUIRED_UNIT_0_SCENARIO_IDS).size,
     REQUIRED_UNIT_0_SCENARIO_IDS.length,

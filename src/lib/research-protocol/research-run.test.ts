@@ -17,6 +17,7 @@ import validHostedResearchRunWithoutTenant from "../../../schemas/research/v1/fi
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
 import validUnicodeRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event-unicode-extension.json" with { type: "json" };
+import invalidNonAsciiDeletionExtension from "../../../schemas/research/v1/fixtures/invalid/run-event-non-ascii-deletion-extension.json" with { type: "json" };
 import invalidUnicodeSensitiveRunEvent from "../../../schemas/research/v1/fixtures/invalid/run-event-unicode-sensitive-extension.json" with { type: "json" };
 import assemblingRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
 import validCloudRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-cloud.json" with { type: "json" };
@@ -100,6 +101,23 @@ function recalculateContextPack(
   value: Record<string, unknown>,
 ): Record<string, unknown> {
   return { ...value, digest: digestProtocolObject(value) };
+}
+
+function replayConsent(
+  successor: Record<string, unknown>,
+  freshConsentAt: string,
+  contextConsent: "run-only" | "7-days" | "project",
+) {
+  const { revision, digest } = successor;
+  assert.ok(typeof revision === "number");
+  assert.ok(typeof digest === "string");
+  return {
+    successorRevision: revision,
+    successorDigest: digest,
+    freshConsent: true as const,
+    freshConsentAt,
+    contextConsent,
+  };
 }
 
 function runBoundToPack(
@@ -1249,9 +1267,56 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
     expectOk(
       validateResearchRunContextPackV1(parsedRun, freshPack, {
         manifestHistory: serializedHistory,
+        manifestRevisionOptions: [
+          replayConsent(
+            extendedManifest,
+            "2026-08-16T20:05:30.000Z",
+            "project",
+          ),
+        ],
       }),
     ).artifactManifest?.retention.effectivePolicy,
     "project",
+  );
+  expectError(
+    validateResearchRunContextPackV1(parsedRun, freshPack, {
+      manifestHistory: serializedHistory,
+      manifestRevisionOptions: [
+        replayConsent(
+          extendedManifest,
+          "2026-08-16T20:05:15.000Z",
+          "project",
+        ),
+      ],
+    }),
+    "$.manifestRevisionOptions[0].freshConsentAt",
+    "semantic_conflict",
+  );
+  const laterCreatedRun = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", extendedManifest),
+      context: freshContext,
+      privacy: {
+        ...validResearchRun.privacy,
+        retention: "7-days",
+      },
+      createdAt: "2026-08-16T20:05:45.000Z",
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    }),
+  );
+  expectError(
+    validateResearchRunContextPackV1(laterCreatedRun, freshPack, {
+      manifestHistory: serializedHistory,
+      manifestRevisionOptions: [
+        replayConsent(
+          extendedManifest,
+          "2026-08-16T20:05:30.000Z",
+          "project",
+        ),
+      ],
+    }),
+    "$.manifestRevisionOptions[0].freshConsentAt",
+    "semantic_conflict",
   );
   expectError(
     validateResearchRunContextPackV1(parsedRun),
@@ -1273,6 +1338,13 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
   expectError(
     validateResearchRunContextPackV1(parsedRun, freshPack, {
       manifestHistory: [rootManifest, mismatchedTip],
+      manifestRevisionOptions: [
+        replayConsent(
+          mismatchedTip,
+          "2026-08-16T20:05:30.000Z",
+          "project",
+        ),
+      ],
     }),
     "$.artifactManifest.digest",
     "semantic_conflict",
@@ -1319,6 +1391,13 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
   expectError(
     validateResearchRunContextPackV1(staleRun, stalePack, {
       manifestHistory: [staleRoot, staleManifest],
+      manifestRevisionOptions: [
+        replayConsent(
+          staleManifest,
+          "2026-08-16T20:05:30.000Z",
+          "7-days",
+        ),
+      ],
     }),
     "$.manifestHistory[1].retention.effectivePolicy",
     "semantic_conflict",
@@ -1404,9 +1483,200 @@ test("embedded deadline extension replays from serialized history at the fresh-c
     expectOk(
       validateResearchRunContextPackV1(run, freshPack, {
         manifestHistory: JSON.parse(JSON.stringify([root, extended])) as unknown[],
+        manifestRevisionOptions: [
+          replayConsent(
+            extended,
+            "2026-08-16T20:05:30.000Z",
+            "7-days",
+          ),
+        ],
       }),
     ).artifactManifest?.retention.contentExpiresAt,
     "2026-08-23T20:05:30.000Z",
+  );
+});
+
+test("embedded replay consumes one explicit keyed option per lengthening transition", () => {
+  const contextPack = expectOk(parseContextPackV1(validContextPack));
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: contextPack.id,
+    contextPackDigest: contextPack.digest,
+  };
+  const root = linkedManifest(
+    {
+      ...validRunManifest,
+      retention: {
+        ...validRunManifest.retention,
+        policy: "7-days",
+        effectivePolicy: "7-days",
+        status: "deletion_scheduled",
+        contentExpiresAt: "2026-08-20T20:05:00.000Z",
+        updatedAt: "2026-08-16T20:05:00.000Z",
+      },
+      deletion: {
+        status: "scheduled",
+        requestedAt: "2026-08-16T20:05:00.000Z",
+      },
+    },
+    context,
+  );
+  const successor = (
+    previous: Record<string, unknown>,
+    revision: number,
+    contentExpiresAt: string,
+    updatedAt: string,
+  ) =>
+    linkedManifest(
+      {
+        ...previous,
+        sources: previous.sources as Array<Record<string, unknown>>,
+        revision,
+        previousDigest: previous.digest,
+        retention: {
+          ...(previous.retention as Record<string, unknown>),
+          contentExpiresAt,
+          updatedAt,
+        },
+      },
+      context,
+    );
+  const firstLengthening = successor(
+    root,
+    2,
+    "2026-08-21T20:05:30.000Z",
+    "2026-08-16T20:06:00.000Z",
+  );
+  const unchanged = successor(
+    firstLengthening,
+    3,
+    "2026-08-21T20:05:30.000Z",
+    "2026-08-16T20:07:00.000Z",
+  );
+  const secondLengthening = successor(
+    unchanged,
+    4,
+    "2026-08-22T20:07:30.000Z",
+    "2026-08-16T20:08:00.000Z",
+  );
+  const run = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", secondLengthening),
+      context,
+      privacy: {
+        ...validResearchRun.privacy,
+        retention: "7-days",
+      },
+    }),
+  );
+  const manifestHistory = JSON.parse(
+    JSON.stringify([root, firstLengthening, unchanged, secondLengthening]),
+  ) as unknown[];
+  const firstOption = replayConsent(
+    firstLengthening,
+    "2026-08-16T20:05:30.000Z",
+    "7-days",
+  );
+  const secondOption = replayConsent(
+    secondLengthening,
+    "2026-08-16T20:07:30.000Z",
+    "7-days",
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, { manifestHistory }),
+    "$.manifestHistory[1].retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory,
+      manifestRevisionOptions: [firstOption],
+    }),
+    "$.manifestHistory[3].retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory,
+        manifestRevisionOptions: [secondOption, firstOption],
+      }),
+    ).artifactManifest?.digest,
+    secondLengthening.digest,
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory,
+      manifestRevisionOptions: [firstOption, firstOption, secondOption],
+    }),
+    "$.manifestRevisionOptions[1].successorRevision",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory,
+      manifestRevisionOptions: [
+        firstOption,
+        secondOption,
+        {
+          ...secondOption,
+          successorRevision: 5,
+          successorDigest:
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        },
+      ],
+    }),
+    "$.manifestRevisionOptions[2].successorRevision",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory,
+      manifestRevisionOptions: [
+        firstOption,
+        replayConsent(unchanged, "2026-08-16T20:06:30.000Z", "7-days"),
+        secondOption,
+      ],
+    }),
+    "$.manifestRevisionOptions[1].successorRevision",
+    "semantic_conflict",
+  );
+
+  for (const [firstConsentAt, path] of [
+    [
+      "2026-08-16T20:05:00.000Z",
+      "$.manifestHistory[1].retention.contentExpiresAt",
+    ],
+    [
+      "2026-08-16T20:06:00.000000001Z",
+      "$.manifestHistory[1].retention.contentExpiresAt",
+    ],
+  ] as const) {
+    expectError(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory,
+        manifestRevisionOptions: [
+          replayConsent(firstLengthening, firstConsentAt, "7-days"),
+          secondOption,
+        ],
+      }),
+      path,
+      "semantic_conflict",
+    );
+  }
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory,
+      manifestRevisionOptions: [
+        replayConsent(firstLengthening, "2026-08-16T20:05:30.000Z", "project"),
+        secondOption,
+      ],
+    }),
+    "$.manifestRevisionOptions[0].contextConsent",
+    "semantic_conflict",
   );
 });
 
@@ -1623,22 +1893,70 @@ test("content.deleted data permits only declared audit fields and safe recursive
   );
 });
 
-test("content.deleted events preserve benign Unicode keys and reject normalized sensitive forms", () => {
+test("non-deletion events preserve benign Unicode extension keys", () => {
   assert.equal(Value.Check(runEventSchema, validUnicodeRunEvent), true);
   assert.deepEqual(
     expectOk(parseRunEventV1(validUnicodeRunEvent)),
     validUnicodeRunEvent,
   );
+});
+
+test("content.deleted extensions require ASCII keys after default-ignorable removal", () => {
+  const { expectedSchemaValid: nonAsciiSchemaValid, ...nonAsciiEvent } =
+    invalidNonAsciiDeletionExtension;
+  assert.equal(nonAsciiSchemaValid, false);
+  assert.equal(Value.Check(runEventSchema, nonAsciiEvent), false);
+  expectError(
+    parseRunEventV1(nonAsciiEvent),
+    '$.data["deletedCоntentPayload"]',
+    "semantic_conflict",
+  );
 
   const { expectedSchemaValid, ...invalidEvent } =
     invalidUnicodeSensitiveRunEvent;
-  assert.equal(expectedSchemaValid, true);
-  assert.equal(Value.Check(runEventSchema, invalidEvent), true);
+  assert.equal(expectedSchemaValid, false);
+  assert.equal(Value.Check(runEventSchema, invalidEvent), false);
   expectError(
     parseRunEventV1(invalidEvent),
     '$.data["deletedCon\u2060tentPayload"]',
     "semantic_conflict",
   );
+
+  const base = {
+    ...validRunEvent,
+    type: "content.deleted",
+    data: {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+    },
+  };
+  for (const [candidate, path] of [
+    [{ ...base, аudit: true }, '$["аudit"]'],
+    [
+      {
+        ...base,
+        data: { ...base.data, 監査: true },
+      },
+      '$.data["監査"]',
+    ],
+    [
+      {
+        ...base,
+        data: { ...base.data, ａｕｄｉｔ: true },
+      },
+      '$.data["ａｕｄｉｔ"]',
+    ],
+    [
+      {
+        ...base,
+        data: { ...base.data, audit: { résumé: "complete" } },
+      },
+      '$.data.audit["résumé"]',
+    ],
+  ] as const) {
+    assert.equal(Value.Check(runEventSchema, candidate), false, path);
+    expectError(parseRunEventV1(candidate), path, "semantic_conflict");
+  }
 });
 
 test("run event rejects custom-prototype nested data", () => {

@@ -118,10 +118,14 @@ const SENSITIVE_EXTENSION_KEY_RE = new RegExp(
 const NO_DECLARED_FIELDS: ReadonlySet<string> = new Set();
 const DEFAULT_IGNORABLE_CODE_POINT_RE =
   /\p{Default_Ignorable_Code_Point}/gu;
+const ASCII_EXTENSION_KEY_RE = /^[\x00-\x7f]+$/;
+
+function removeDefaultIgnorableCodePoints(value: string): string {
+  return value.replace(DEFAULT_IGNORABLE_CODE_POINT_RE, "");
+}
 
 export function normalizeUnicodeSecurityText(value: string): string {
-  return value
-    .replace(DEFAULT_IGNORABLE_CODE_POINT_RE, "")
+  return removeDefaultIgnorableCodePoints(value)
     .normalize("NFKC")
     .replace(DEFAULT_IGNORABLE_CODE_POINT_RE, "");
 }
@@ -175,6 +179,7 @@ function validateSafeExtensionKeysAtPath(
   path: string,
   declaredFields: ReadonlySet<string>,
   extensionPath: readonly string[],
+  asciiOnly: boolean,
 ): ProtocolParseResult<void> {
   if (Array.isArray(value)) {
     for (const [index, entry] of value.entries()) {
@@ -183,6 +188,7 @@ function validateSafeExtensionKeysAtPath(
         `${path}[${index}]`,
         NO_DECLARED_FIELDS,
         extensionPath,
+        asciiOnly,
       );
       if (!nested.ok) return nested;
     }
@@ -199,6 +205,16 @@ function validateSafeExtensionKeysAtPath(
       ...extensionPathComponents(normalizedKey),
     ];
     if (
+      asciiOnly &&
+      !ASCII_EXTENSION_KEY_RE.test(removeDefaultIgnorableCodePoints(key))
+    ) {
+      return fail(
+        "semantic_conflict",
+        keyPath,
+        "Deletion-event extension keys must use ASCII spelling after default-ignorable removal",
+      );
+    }
+    if (
       isSensitiveExtensionKey(normalizedKey) ||
       hasDangerousPathSuffix(nestedExtensionPath)
     ) {
@@ -213,6 +229,7 @@ function validateSafeExtensionKeysAtPath(
       keyPath,
       NO_DECLARED_FIELDS,
       nestedExtensionPath,
+      asciiOnly,
     );
     if (!nested.ok) return nested;
   }
@@ -224,5 +241,25 @@ export function validateSafeExtensionKeys(
   path: string,
   declaredFields: ReadonlySet<string> = NO_DECLARED_FIELDS,
 ): ProtocolParseResult<void> {
-  return validateSafeExtensionKeysAtPath(value, path, declaredFields, []);
+  return validateSafeExtensionKeysAtPath(
+    value,
+    path,
+    declaredFields,
+    [],
+    false,
+  );
+}
+
+export function validateSafeDeletionExtensionKeys(
+  value: unknown,
+  path: string,
+  declaredFields: ReadonlySet<string> = NO_DECLARED_FIELDS,
+): ProtocolParseResult<void> {
+  return validateSafeExtensionKeysAtPath(
+    value,
+    path,
+    declaredFields,
+    [],
+    true,
+  );
 }

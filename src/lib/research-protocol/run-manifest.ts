@@ -661,10 +661,7 @@ function parseNullableUtc(value: unknown, path: string, label: string): Protocol
 }
 
 function hasArtifactTitleUriScheme(value: string): boolean {
-  const match = ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE.exec(value);
-  if (!match) return false;
-  const schemeSpecificPart = value.slice(match[0].length);
-  return schemeSpecificPart.length === 0 || !/^\s/.test(schemeSpecificPart);
+  return ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE.test(value);
 }
 
 function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<string> {
