@@ -35,6 +35,7 @@ import {
   isSha256,
   isUtcTimestamp,
   parseResearchProtocolObject,
+  parseRunManifestRevisionCandidateV1,
   validateManifestRetentionConsent,
   validateModelTaskResultV1,
   validateResearchRunContextPackV1,
@@ -942,9 +943,13 @@ function validateAuthoritativeProtocolObject(
   location: string,
 ): ResearchProtocolObjectV1 {
   const protocolObject = validateProtocolObjectSchema(value, location);
+  const parser =
+    protocolObject.schema === "opencoven.run-manifest/v1"
+      ? parseRunManifestRevisionCandidateV1
+      : parseResearchProtocolObject;
   const parsed = invokeParserWithSnapshot(
     protocolObject,
-    parseResearchProtocolObject,
+    parser,
     location,
   );
   if (!parsed.ok) {
@@ -1118,11 +1123,18 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
   }));
 
   for (const { entry, location, materialized } of materializedInputs) {
-    const parsed = invokeParserWithSnapshot(
-      materialized,
-      parseResearchProtocolObject,
-      location,
-    );
+    const parsed =
+      scenario.validator === "run-manifest-revision"
+        ? invokeParserWithSnapshot(
+            materialized,
+            parseRunManifestRevisionCandidateV1,
+            location,
+          )
+        : invokeParserWithSnapshot(
+            materialized,
+            parseResearchProtocolObject,
+            location,
+          );
     if (!parsed.ok) {
       assert.equal(
         scenario.expected.ok,
@@ -1905,12 +1917,16 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.active-shortening",
     "manifest.lengthening-without-fresh-consent",
     "manifest.lengthening-with-fresh-consent",
-    "manifest.contextless-lengthening-with-fresh-context-consent",
+    "manifest.contextless-restoration-with-fresh-consent",
+    "manifest.contextless-restoration-without-fresh-consent",
+    "manifest.contextless-restoration-with-stale-consent",
+    "manifest.contextless-restoration-beyond-original-policy",
     "manifest.scheduled-project-restoration-with-fresh-consent",
     "manifest.scheduled-project-restoration-without-fresh-consent",
     "manifest.scheduled-project-restoration-with-stale-consent",
-    "manifest.scheduled-project-restoration-above-consent",
     "manifest.pending-project-restoration-with-fresh-consent",
+    "manifest.partial-failure-project-restoration-with-fresh-consent",
+    "manifest.completed-project-restoration-with-fresh-consent",
     "manifest.partial-failure-continues",
     "manifest.deadline-2099",
     "manifest.deadline-cleared",

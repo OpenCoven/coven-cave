@@ -7,6 +7,8 @@ import researchRunSchema from "../../../schemas/research/v1/research-run.schema.
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
 import invalidLocalResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
+import invalidEmbeddedSevenDayRetention from "../../../schemas/research/v1/fixtures/invalid/research-run-embedded-retention-7-days-overflow.json" with { type: "json" };
+import invalidEmbeddedRunOnlyRetention from "../../../schemas/research/v1/fixtures/invalid/research-run-embedded-retention-run-only-overflow.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
@@ -91,7 +93,7 @@ function linkedManifest(
   return linked;
 }
 
-function extendedRetentionComposition(
+function boundRetentionComposition(
   effectivePolicy: "7-days" | "project",
 ): { run: ResearchRunV1; contextPack: ContextPackV1 } {
   const contextPack = expectOk(parseContextPackV1(validContextPack));
@@ -677,8 +679,8 @@ test("run privacy cannot exceed Context Pack consent", () => {
   );
 });
 
-test("context-bound manifest accepts fresh-consent retention within the Context Pack ceiling", () => {
-  const { run, contextPack } = extendedRetentionComposition("7-days");
+test("context-bound manifest accepts retention within the Context Pack ceiling", () => {
+  const { run, contextPack } = boundRetentionComposition("7-days");
 
   assert.equal(
     expectOk(validateResearchRunContextPackV1(run, contextPack)),
@@ -687,7 +689,7 @@ test("context-bound manifest accepts fresh-consent retention within the Context 
 });
 
 test("context-bound manifest effective retention cannot exceed the Context Pack ceiling", () => {
-  const { run, contextPack } = extendedRetentionComposition("project");
+  const { run, contextPack } = boundRetentionComposition("project");
 
   expectError(
     validateResearchRunContextPackV1(run, contextPack),
@@ -962,6 +964,26 @@ test("contextless embedded manifests cannot extend effective retention beyond th
     "$.artifactManifest.retention.effectivePolicy",
     "semantic_conflict",
   );
+});
+
+test("embedded later revisions cannot reset finite retention clocks with updatedAt", () => {
+  for (const invalidFixture of [
+    invalidEmbeddedRunOnlyRetention,
+    invalidEmbeddedSevenDayRetention,
+  ]) {
+    const { expectedSchemaValid, ...run } = invalidFixture;
+    assert.equal(expectedSchemaValid, true);
+    assert.equal(checkResearchRunSchema(run), true);
+    assert.equal(
+      run.artifactManifest.digest,
+      digestProtocolObject(run.artifactManifest),
+    );
+    expectError(
+      parseResearchRunV1(run),
+      "$.artifactManifest.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
 });
 
 test("terminal runs require final manifests and nonterminal runs permit only assembling manifests", () => {
