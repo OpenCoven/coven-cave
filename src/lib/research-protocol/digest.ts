@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 
+const defineOwnProperty = Object.defineProperty;
+const structuredCloneIntrinsic = globalThis.structuredClone;
+
 function jsonPathForProperty(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
     ? `${path}.${key}`
@@ -14,14 +17,14 @@ function createCanonicalJsonError(path: string, reason: string): TypeError {
   return new TypeError(`Value at ${path} is not canonical JSON: ${reason}`);
 }
 
-function assertNoProxyObjects(value: unknown): void {
-  if (typeof value !== "object" || value === null) return;
-  if (typeof globalThis.structuredClone !== "function") {
+function assertNoProxyObjects(retainedIdentities: object[]): void {
+  if (retainedIdentities.length === 0) return;
+  if (typeof structuredCloneIntrinsic !== "function") {
     throw createCanonicalJsonError("$", "standard structured clone support is required");
   }
 
   try {
-    globalThis.structuredClone(value);
+    structuredCloneIntrinsic(retainedIdentities);
   } catch (error) {
     if (
       typeof error === "object"
@@ -33,6 +36,15 @@ function assertNoProxyObjects(value: unknown): void {
     }
     throw error;
   }
+}
+
+function retainObjectIdentity(retainedIdentities: object[], value: object): void {
+  defineOwnProperty(retainedIdentities, retainedIdentities.length, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
 }
 
 function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
@@ -99,7 +111,7 @@ function copyCanonicalJsonValueAtPath(
       throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
     }
     seen.add(value);
-    traversedObjects.push(value);
+    retainObjectIdentity(traversedObjects, value);
 
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
     if (
@@ -186,7 +198,7 @@ function copyCanonicalJsonValueAtPath(
     throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
   }
   seen.add(value);
-  traversedObjects.push(value);
+  retainObjectIdentity(traversedObjects, value);
 
   const copy = Object.create(null) as Record<string, unknown>;
   for (const key of Reflect.ownKeys(value)) {
@@ -228,9 +240,7 @@ export function copyCanonicalJsonValue<T>(value: T): T {
     new WeakSet<object>(),
     traversedObjects,
   ) as T;
-  for (const traversedObject of traversedObjects) {
-    assertNoProxyObjects(traversedObject);
-  }
+  assertNoProxyObjects(traversedObjects);
   return copy;
 }
 

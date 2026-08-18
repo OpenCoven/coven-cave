@@ -188,6 +188,75 @@ test("canonicalization rejects an array Proxy entry that removes itself during t
   assert.deepEqual(parent[0], { replacement: true });
 });
 
+test("canonicalization rejects a nested self-removing Proxy that replaces Array.prototype.push", () => {
+  const pushDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "push");
+  assert.ok(pushDescriptor);
+  const parent: Record<string, unknown> = {};
+  const nestedProxy = new Proxy({}, {
+    getPrototypeOf(target) {
+      parent.nested = { replacement: true };
+      Object.defineProperty(Array.prototype, "push", {
+        value(this: unknown[]) {
+          return this.length;
+        },
+        configurable: true,
+        writable: true,
+      });
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  parent.nested = nestedProxy;
+  let rejection: unknown;
+
+  try {
+    canonicalJson(parent);
+  } catch (error) {
+    rejection = error;
+  } finally {
+    Object.defineProperty(Array.prototype, "push", pushDescriptor);
+  }
+
+  assert.match(String(rejection), /proxy/i);
+  assert.deepEqual(parent.nested, { replacement: true });
+});
+
+test("canonicalization retains Proxy identities despite inherited numeric setters", () => {
+  const retainedIndex = "1";
+  const indexDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, retainedIndex);
+  const parent: Record<string, unknown> = {};
+  let setterCalls = 0;
+  const nestedProxy = new Proxy({}, {
+    getPrototypeOf(target) {
+      parent.nested = { replacement: true };
+      Object.defineProperty(Array.prototype, retainedIndex, {
+        set(_value: unknown) {
+          setterCalls += 1;
+        },
+        configurable: true,
+      });
+      return Reflect.getPrototypeOf(target);
+    },
+  });
+  parent.nested = nestedProxy;
+  let rejection: unknown;
+
+  try {
+    canonicalJson(parent);
+  } catch (error) {
+    rejection = error;
+  } finally {
+    if (indexDescriptor) {
+      Object.defineProperty(Array.prototype, retainedIndex, indexDescriptor);
+    } else {
+      Reflect.deleteProperty(Array.prototype, retainedIndex);
+    }
+  }
+
+  assert.match(String(rejection), /proxy/i);
+  assert.equal(setterCalls, 0);
+  assert.deepEqual(parent.nested, { replacement: true });
+});
+
 test("canonicalization accepts an ordinary nested graph", () => {
   assert.equal(
     canonicalJson({
@@ -199,8 +268,64 @@ test("canonicalization accepts an ordinary nested graph", () => {
   );
 });
 
-test("canonicalization fails closed when standard structured clone is unavailable", () => {
+test("canonicalization validates a bounded deep identity ledger with one structured clone", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
+  assert.ok(descriptor);
+  const originalStructuredClone = globalThis.structuredClone;
+  let cloneCalls = 0;
+  let clonedInput: unknown;
+  let isolatedDigest: typeof import("./digest.ts") | undefined;
+
+  function countingStructuredClone<T>(
+    value: T,
+    options?: StructuredSerializeOptions,
+  ): T {
+    cloneCalls += 1;
+    clonedInput = value;
+    return originalStructuredClone(value, options);
+  }
+
+  try {
+    Object.defineProperty(globalThis, "structuredClone", {
+      value: countingStructuredClone,
+      configurable: true,
+      writable: true,
+    });
+    isolatedDigest = await import(`./digest.ts?single-clone=${Date.now()}`);
+  } finally {
+    Object.defineProperty(globalThis, "structuredClone", descriptor);
+  }
+
+  assert.ok(isolatedDigest);
+  const isolatedCanonicalJson = isolatedDigest.canonicalJson;
+  let value: Record<string, unknown> = { leaf: true };
+  for (let depth = 0; depth < 128; depth += 1) {
+    value = { nested: value };
+  }
+
+  assert.doesNotThrow(() => isolatedCanonicalJson(value));
+  assert.equal(cloneCalls, 1);
+  assert.ok(Array.isArray(clonedInput));
+  assert.strictEqual(clonedInput[0], value);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(clonedInput, "length"), {
+    value: 129,
+    writable: true,
+    enumerable: false,
+    configurable: false,
+  });
+  for (let index = 0; index < clonedInput.length; index += 1) {
+    const entryDescriptor = Object.getOwnPropertyDescriptor(clonedInput, index);
+    assert.ok(entryDescriptor);
+    assert.equal(Object.hasOwn(entryDescriptor, "value"), true);
+    assert.equal(entryDescriptor.writable, true);
+    assert.equal(entryDescriptor.enumerable, true);
+    assert.equal(entryDescriptor.configurable, true);
+  }
+});
+
+test("canonicalization fails closed when standard structured clone is unavailable", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
+  let isolatedDigest: typeof import("./digest.ts") | undefined;
 
   try {
     Object.defineProperty(globalThis, "structuredClone", {
@@ -208,11 +333,7 @@ test("canonicalization fails closed when standard structured clone is unavailabl
       configurable: true,
       writable: true,
     });
-    assert.throws(
-      () => canonicalJson({ ordinary: "object" }),
-      /standard structured clone support is required/i,
-    );
-    assert.equal(canonicalJson("primitive"), '"primitive"');
+    isolatedDigest = await import(`./digest.ts?without-structured-clone=${Date.now()}`);
   } finally {
     if (descriptor) {
       Object.defineProperty(globalThis, "structuredClone", descriptor);
@@ -220,6 +341,14 @@ test("canonicalization fails closed when standard structured clone is unavailabl
       Reflect.deleteProperty(globalThis, "structuredClone");
     }
   }
+
+  assert.ok(isolatedDigest);
+  const isolatedCanonicalJson = isolatedDigest.canonicalJson;
+  assert.throws(
+    () => isolatedCanonicalJson({ ordinary: "object" }),
+    /standard structured clone support is required/i,
+  );
+  assert.equal(isolatedCanonicalJson("primitive"), '"primitive"');
 });
 
 test("canonicalization enforces exact dense JSON arrays", () => {
