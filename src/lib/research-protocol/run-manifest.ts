@@ -1655,14 +1655,12 @@ export function validateRunManifestRevision(
     }
   }
 
-  if (previous.state === "final") {
-    const lifecycle = validateDeletionLifecycleTransition(
-      previous,
-      next,
-      lengthensEffectivePolicy && options.freshConsent === true,
-    );
-    if (!lifecycle.ok) return lifecycle;
-  }
+  const lifecycle = validateDeletionLifecycleTransition(
+    previous,
+    next,
+    lengthensEffectivePolicy && options.freshConsent === true,
+  );
+  if (!lifecycle.ok) return lifecycle;
 
   return pass(next);
 }

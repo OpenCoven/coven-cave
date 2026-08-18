@@ -81,6 +81,109 @@
       },
       "digestTargets": [""]
     },
+    "assembling-scheduled-previous": {
+      "fixture": "valid/run-manifest-assembling.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "active-after-assembling-scheduled": {
+      "fixture": "valid/run-manifest-assembling.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "3c6c0a4caf36d094f54c9f6c227a5faf32b7174f3f24a31d30d930817b1b8bec",
+        "state": "final",
+        "finalizedAt": "2026-08-16T20:08:00.000Z",
+        "retention": {
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-after-assembling-scheduled": {
+      "fixture": "valid/run-manifest-assembling.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "3c6c0a4caf36d094f54c9f6c227a5faf32b7174f3f24a31d30d930817b1b8bec",
+        "state": "final",
+        "finalizedAt": "2026-08-16T20:08:00.000Z",
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "assembling-pending-previous": {
+      "fixture": "valid/run-manifest-assembling.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "active-after-assembling-pending": {
+      "fixture": "valid/run-manifest-assembling.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "5ef7077ac5ad859b6965dd119798f433f5feab6aa4c2ad8cb714752fccb60507",
+        "state": "final",
+        "finalizedAt": "2026-08-16T20:08:00.000Z",
+        "retention": {
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "assembling-partial-failure-previous": {
+      "fixture": "valid/run-manifest-assembling.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "partial_failure",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "active-after-assembling-partial-failure": {
+      "fixture": "valid/run-manifest-assembling.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "c25416e524558f0b2fa866de1c400e6f3d5eebdce07ac14c390e8bbdd99afb55",
+        "state": "final",
+        "finalizedAt": "2026-08-16T20:08:00.000Z",
+        "retention": {
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "unscheduled-shortening-from-assembling": {
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
@@ -303,6 +406,76 @@
       "inputs": {
         "previous": "assembling",
         "next": "scheduled-shortening-from-assembling"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.assembling-scheduled-to-active-rollback",
+      "description": "Fresh-consent metadata alone cannot cancel a scheduled deletion while an assembling manifest finalizes.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling-scheduled-previous",
+        "next": "active-after-assembling-scheduled"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.assembling-pending-to-active-rollback",
+      "description": "A pending deletion cannot return to active retention while an assembling manifest finalizes.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling-pending-previous",
+        "next": "active-after-assembling-pending"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.assembling-partial-failure-to-active-rollback",
+      "description": "A partial deletion failure cannot return to active retention while an assembling manifest finalizes.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling-partial-failure-previous",
+        "next": "active-after-assembling-partial-failure"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.assembling-scheduled-to-final-pending",
+      "description": "An assembling manifest may finalize while advancing scheduled deletion to pending.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling-scheduled-previous",
+        "next": "pending-after-assembling-scheduled"
       },
       "options": {
         "contextConsent": "7-days"

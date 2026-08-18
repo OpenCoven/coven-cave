@@ -70,6 +70,56 @@ function recalculate<T extends Record<string, unknown>>(value: T): T {
   return { ...value, digest: digestProtocolObject(ownJson(value)) };
 }
 
+function assemblingWithDeletion(
+  status: "scheduled" | "pending" | "partial_failure",
+): RunManifestV1 {
+  return expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...assemblingManifestJson,
+        retention: {
+          ...assemblingManifestJson.retention,
+          status:
+            status === "scheduled"
+              ? ("deletion_scheduled" as const)
+              : ("deletion_pending" as const),
+          contentExpiresAt: "2026-08-17T20:00:00.000Z",
+          updatedAt: "2026-08-16T20:06:00.000Z",
+        },
+        deletion: {
+          ...assemblingManifestJson.deletion,
+          status,
+          requestedAt: "2026-08-16T20:06:00.000Z",
+        },
+      }),
+    ),
+  );
+}
+
+function finalActiveRevision(previous: RunManifestV1): RunManifestV1 {
+  return expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...previous,
+        revision: previous.revision + 1,
+        previousDigest: previous.digest,
+        state: "final" as const,
+        finalizedAt: "2026-08-16T20:08:00.000Z",
+        retention: {
+          ...previous.retention,
+          status: "active" as const,
+          contentExpiresAt: null,
+          updatedAt: "2026-08-16T20:08:00.000Z",
+        },
+        deletion: {
+          status: "not_scheduled" as const,
+          futureExtension: { preserve: true },
+        },
+      }),
+    ),
+  );
+}
+
 function withoutExpectedSchemaValid(value: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...value };
   delete copy.expectedSchemaValid;
@@ -1080,6 +1130,73 @@ test("revision chains accept assembling-to-final and allowed retention updates",
   assert.deepEqual(
     expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
     update,
+  );
+});
+
+test("assembling scheduled deletion cannot roll back to active with fresh-consent metadata alone", () => {
+  const scheduled = assemblingWithDeletion("scheduled");
+  const active = finalActiveRevision(scheduled);
+
+  expectError(
+    validateRunManifestRevision(scheduled, active, {
+      freshConsent: true,
+      contextConsent: "7-days",
+    }),
+    "$.deletion.status",
+    "semantic_conflict",
+  );
+});
+
+test("assembling pending deletion cannot roll back to active", () => {
+  const pending = assemblingWithDeletion("pending");
+  const active = finalActiveRevision(pending);
+
+  expectError(
+    validateRunManifestRevision(pending, active, { contextConsent: "7-days" }),
+    "$.deletion.status",
+    "semantic_conflict",
+  );
+});
+
+test("assembling partial-failure deletion cannot roll back to active", () => {
+  const partialFailure = assemblingWithDeletion("partial_failure");
+  const active = finalActiveRevision(partialFailure);
+
+  expectError(
+    validateRunManifestRevision(partialFailure, active, { contextConsent: "7-days" }),
+    "$.deletion.status",
+    "semantic_conflict",
+  );
+});
+
+test("assembling scheduled deletion can advance to pending while finalizing", () => {
+  const scheduled = assemblingWithDeletion("scheduled");
+  const pending = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...scheduled,
+        revision: scheduled.revision + 1,
+        previousDigest: scheduled.digest,
+        state: "final" as const,
+        finalizedAt: "2026-08-16T20:08:00.000Z",
+        retention: {
+          ...scheduled.retention,
+          status: "deletion_pending" as const,
+          updatedAt: "2026-08-16T20:08:00.000Z",
+        },
+        deletion: {
+          ...scheduled.deletion,
+          status: "pending" as const,
+        },
+      }),
+    ),
+  );
+
+  assert.deepEqual(
+    expectOk(validateRunManifestRevision(scheduled, pending, {
+      contextConsent: "7-days",
+    })),
+    pending,
   );
 });
 
