@@ -44,14 +44,20 @@ const getPrototypeOfIntrinsic = Object.getPrototypeOf;
 const getOwnPropertyDescriptorIntrinsic = Object.getOwnPropertyDescriptor;
 const defineOwnPropertyIntrinsic = Object.defineProperty;
 const reflectOwnKeysIntrinsic = Reflect.ownKeys;
+const reflectApplyIntrinsic = Reflect.apply;
 const objectHasOwnIntrinsic = Object.hasOwn;
 const isProxyIntrinsic = nodeUtilTypes.isProxy;
-const isMapIntrinsic = nodeUtilTypes.isMap;
-const isSetIntrinsic = nodeUtilTypes.isSet;
-const isDateIntrinsic = nodeUtilTypes.isDate;
-const isRegExpIntrinsic = nodeUtilTypes.isRegExp;
-const isAnyArrayBufferIntrinsic = nodeUtilTypes.isAnyArrayBuffer;
-const arrayBufferIsViewIntrinsic = ArrayBuffer.isView;
+const objectToStringIntrinsic = Object.prototype.toString;
+const symbolToStringTagIntrinsic = Symbol.toStringTag;
+const urlHrefGetterIntrinsic = getOwnPropertyDescriptorIntrinsic(
+  URL.prototype,
+  "href",
+)!.get!;
+type IntrinsicObjectBrandCheck = (value: unknown) => boolean;
+const intrinsicObjectBrandChecks = Object.values(nodeUtilTypes).filter(
+  (check): check is IntrinsicObjectBrandCheck =>
+    typeof check === "function" && check !== isProxyIntrinsic,
+);
 const EXISTING_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
   "excerpt",
   "privateexcerpt",
@@ -420,16 +426,6 @@ export function snapshotProtocolObjectProperties(
   if (isProxyIntrinsic(value)) {
     return fail("invalid_value", path, `${label} must be an ordinary object`);
   }
-  if (
-    isMapIntrinsic(value)
-    || isSetIntrinsic(value)
-    || isDateIntrinsic(value)
-    || isRegExpIntrinsic(value)
-    || isAnyArrayBufferIntrinsic(value)
-    || arrayBufferIsViewIntrinsic(value)
-  ) {
-    return fail("invalid_value", path, `${label} must be an ordinary object`);
-  }
   if (arrayIsArrayIntrinsic(value)) {
     return fail("invalid_type", path, `${label} must be an object`);
   }
@@ -438,7 +434,19 @@ export function snapshotProtocolObjectProperties(
     return fail("invalid_value", path, `${label} must be an ordinary object`);
   }
 
-  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (let index = 0; index < intrinsicObjectBrandChecks.length; index += 1) {
+    if (intrinsicObjectBrandChecks[index]!(value)) {
+      return fail("invalid_value", path, `${label} must be an ordinary object`);
+    }
+  }
+  try {
+    reflectApplyIntrinsic(urlHrefGetterIntrinsic, value, []);
+    return fail("invalid_value", path, `${label} must be an ordinary object`);
+  } catch {
+    // The captured URL getter throws for every non-URL receiver.
+  }
+
+  const properties: Array<readonly [string, PropertyDescriptor]> = [];
   for (const key of reflectOwnKeysIntrinsic(value)) {
     if (typeof key === "symbol") {
       return fail("invalid_value", path, `${label} must not have symbol properties`);
@@ -446,9 +454,36 @@ export function snapshotProtocolObjectProperties(
     const descriptor = getOwnPropertyDescriptorIntrinsic(value, key);
     if (
       !descriptor
-      || !descriptor.enumerable
       || !objectHasOwnIntrinsic(descriptor, "value")
     ) {
+      return fail(
+        "invalid_value",
+        path,
+        `${label} fields must be enumerable data properties`,
+      );
+    }
+    properties.push([key, descriptor]);
+  }
+
+  if (
+    prototype === objectPrototypeIntrinsic
+    && getOwnPropertyDescriptorIntrinsic(
+      objectPrototypeIntrinsic,
+      symbolToStringTagIntrinsic,
+    ) !== undefined
+  ) {
+    return fail("invalid_value", path, `${label} must be an ordinary object`);
+  }
+  if (
+    reflectApplyIntrinsic(objectToStringIntrinsic, value, [])
+      !== "[object Object]"
+  ) {
+    return fail("invalid_value", path, `${label} must be an ordinary object`);
+  }
+
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (const [key, descriptor] of properties) {
+    if (!descriptor.enumerable) {
       return fail(
         "invalid_value",
         path,

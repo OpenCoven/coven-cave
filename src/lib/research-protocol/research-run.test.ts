@@ -137,21 +137,45 @@ function hostileArrayContainers<T>(
   ];
 }
 
-function spoofedExoticObjects(): Array<readonly [string, object]> {
-  const factories: Array<readonly [string, () => object]> = [
-    ["Map", () => new Map([["key", "value"]])],
-    ["Set", () => new Set(["value"])],
-    ["Date", () => new Date("2026-08-18T20:00:00.000Z")],
-    ["RegExp", () => /research/giu],
-    ["typed array", () => new Uint8Array([1, 2, 3])],
-    ["ArrayBuffer", () => new ArrayBuffer(8)],
+function spoofedNonOptionShells(): Array<
+  readonly [string, object, "invalid_type" | "invalid_value"]
+> {
+  const factories: Array<
+    readonly [string, () => object, "invalid_type" | "invalid_value"]
+  > = [
+    ["Array", () => ["value"], "invalid_type"],
+    ["Map", () => new Map([["key", "value"]]), "invalid_value"],
+    ["Set", () => new Set(["value"]), "invalid_value"],
+    ["WeakMap", () => new WeakMap([[{}, {}]]), "invalid_value"],
+    ["WeakSet", () => new WeakSet([{}]), "invalid_value"],
+    ["Promise", () => Promise.resolve("value"), "invalid_value"],
+    ["URL", () => new URL("https://example.com/research"), "invalid_value"],
+    ["Date", () => new Date("2026-08-18T20:00:00.000Z"), "invalid_value"],
+    ["RegExp", () => /research/giu, "invalid_value"],
+    ["typed array", () => new Uint8Array([1, 2, 3]), "invalid_value"],
+    ["DataView", () => new DataView(new ArrayBuffer(8)), "invalid_value"],
+    ["ArrayBuffer", () => new ArrayBuffer(8), "invalid_value"],
+    ["SharedArrayBuffer", () => new SharedArrayBuffer(8), "invalid_value"],
+    ["boxed Boolean", () => Object(true), "invalid_value"],
+    ["boxed Number", () => Object(1), "invalid_value"],
+    ["boxed String", () => Object("research"), "invalid_value"],
+    ["boxed BigInt", () => Object(BigInt(1)), "invalid_value"],
+    ["boxed Symbol", () => Object(Symbol("research")), "invalid_value"],
+    ["Error", () => new Error("research"), "invalid_value"],
+    ["function", () => function researchOptions() {}, "invalid_type"],
   ];
-  const values: Array<readonly [string, object]> = [];
-  for (const [label, create] of factories) {
+  const values: Array<
+    readonly [string, object, "invalid_type" | "invalid_value"]
+  > = [];
+  for (const [label, create, code] of factories) {
     for (const prototype of [Object.prototype, null]) {
       const value = create();
       Object.setPrototypeOf(value, prototype);
-      values.push([`${label} with ${prototype === null ? "null" : "Object"} prototype`, value]);
+      values.push([
+        `${label} with ${prototype === null ? "null" : "Object"} prototype`,
+        value,
+        code,
+      ]);
     }
   }
   return values;
@@ -1411,9 +1435,49 @@ test("research-run options are snapshotted as one boundary before protocol parsi
     "invalid_value",
   );
   assert.equal(symbolAccessorCalls, 0);
+
+  let tagAccessorCalls = 0;
+  const taggedOptions = {
+    manifestHistory: [root, tip],
+    authorizedFreshConsentAt: [freshConsentAt],
+  };
+  Object.defineProperty(taggedOptions, Symbol.toStringTag, {
+    get() {
+      tagAccessorCalls += 1;
+      return "Object";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, taggedOptions),
+    "$.options",
+    "invalid_value",
+  );
+  assert.equal(tagAccessorCalls, 0);
+
+  let inheritedTagAccessorCalls = 0;
+  const customPrototype = {};
+  Object.defineProperty(customPrototype, Symbol.toStringTag, {
+    get() {
+      inheritedTagAccessorCalls += 1;
+      return "Object";
+    },
+    configurable: true,
+  });
+  const customPrototypeOptions = Object.assign(Object.create(customPrototype), {
+    manifestHistory: [root, tip],
+    authorizedFreshConsentAt: [freshConsentAt],
+  }) as ResearchRunCompositionOptionsV1;
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, customPrototypeOptions),
+    "$.options",
+    "invalid_value",
+  );
+  assert.equal(inheritedTagAccessorCalls, 0);
 });
 
-test("research-run option roots reject prototype-spoofed exotic objects", () => {
+test("research-run option roots reject prototype-spoofed non-object brands", () => {
   const contextPack = expectOk(parseContextPackV1(validContextPack));
   const run = expectOk(
     parseResearchRunV1({
@@ -1430,7 +1494,7 @@ test("research-run option roots reject prototype-spoofed exotic objects", () => 
     run,
   );
 
-  for (const [label, options] of spoofedExoticObjects()) {
+  for (const [label, options, code] of spoofedNonOptionShells()) {
     const error = expectError(
       validateResearchRunContextPackV1(
         run,
@@ -1438,9 +1502,11 @@ test("research-run option roots reject prototype-spoofed exotic objects", () => 
         options as ResearchRunCompositionOptionsV1,
       ),
       "$.options",
-      "invalid_value",
+      code,
     );
-    assert.match(error.message, /ordinary object/i, label);
+    if (code === "invalid_value") {
+      assert.match(error.message, /ordinary object/i, label);
+    }
   }
 });
 
