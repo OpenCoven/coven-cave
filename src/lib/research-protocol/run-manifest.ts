@@ -367,6 +367,8 @@ function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<s
 function parseSource(value: unknown, path: string): ProtocolParseResult<RunManifestSourceV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
+  const safeKeys = validateSensitiveObjectKeys(object.value, path);
+  if (!safeKeys.ok) return safeKeys;
 
   const kindField = parseRequiredField(object.value, "kind", path);
   if (!kindField.ok) return kindField;
@@ -384,9 +386,6 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
   if (!id.ok) return id;
 
   if (kind.value === "context-pack") {
-    const safeKeys = validateSensitiveObjectKeys(object.value, path);
-    if (!safeKeys.ok) return safeKeys;
-
     const digestField = parseRequiredField(object.value, "digest", path);
     if (!digestField.ok) return digestField;
     const digest = parseSha256(digestField.value, childPath(path, "digest"), "digest");
@@ -1417,6 +1416,8 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     deletion.value,
   );
   if (!chronology.ok) return chronology;
+  const deadline = validateRetentionDeadlineCeiling(retention.value);
+  if (!deadline.ok) return deadline;
 
   let computedDigest: string;
   try {

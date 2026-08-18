@@ -17,6 +17,13 @@ import invalidFinalizationChronologyJson from "../../../schemas/research/v1/fixt
 import invalidRetentionChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-created.json" with { type: "json" };
 import invalidArtifactAfterFinalizationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-after-finalization.json" with { type: "json" };
 import invalidSourceAfterFinalizationJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-source-after-finalization.json" with { type: "json" };
+import invalidInitialRunOnlyDeadlineJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-initial-run-only-late-expiry.json" with { type: "json" };
+import invalidInitialSevenDayDeadlineJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-initial-seven-day-far-expiry.json" with { type: "json" };
+import invalidPublicEvidenceCredentialsJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-public-evidence-nested-credentials.json" with { type: "json" };
+import invalidPublicEvidenceExcerptJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-public-evidence-nested-excerpt.json" with { type: "json" };
+import invalidPublicEvidenceLocalPathJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-public-evidence-nested-local-path.json" with { type: "json" };
+import invalidPublicEvidenceObjectKeyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-public-evidence-nested-object-key.json" with { type: "json" };
+import benignPublicEvidenceJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-public-evidence-benign-extension.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
 import {
@@ -614,7 +621,47 @@ test("schema and parser reject separator-normalized keys nested in sensitive ext
   }
 });
 
-test("privacy key checks do not scan values or public-evidence metadata", () => {
+test("public-evidence sources reject normalized sensitive keys at every extension depth", () => {
+  for (const { fixture, path } of [
+    {
+      fixture: invalidPublicEvidenceLocalPathJson,
+      path: '$.sources[1].metadata.nested[0]["LoCaL-PaTh"]',
+    },
+    {
+      fixture: invalidPublicEvidenceCredentialsJson,
+      path: '$.sources[1].metadata.security["Cre_Den-Ti.Als"]',
+    },
+    {
+      fixture: invalidPublicEvidenceExcerptJson,
+      path: '$.sources[1].metadata.selections[0]["Ex_Cer-Pt"]',
+    },
+    {
+      fixture: invalidPublicEvidenceObjectKeyJson,
+      path: '$.sources[1].metadata.storage["ObJeCt.KeY"]',
+    },
+  ] as const) {
+    assert.equal(Value.Check(runManifestSchema, fixture), false);
+    assert.equal(fixture.digest, digestProtocolObject(fixture));
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+});
+
+test("public-evidence sources preserve required fields and benign nested extensions", () => {
+  assert.equal(Value.Check(runManifestSchema, benignPublicEvidenceJson), true);
+  const parsed = expectOk(parseRunManifestV1(benignPublicEvidenceJson));
+  const evidence = parsed.sources.find((source) => source.kind === "public-evidence");
+  assert.equal(evidence?.canonicalUrl, "https://example.test/research");
+  assert.deepEqual(
+    (
+      evidence?.displayMetadata as {
+        nested: Array<{ values: string[] }>;
+      }
+    ).nested[0].values,
+    ["localPath", "credentials", "excerpt", "objectKey"],
+  );
+});
+
+test("privacy key checks scan keys without scanning benign values", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const benign = recalculate({
     ...local,
@@ -651,27 +698,6 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
     (parsedBenign.artifacts[0].displayMetadata as { examples: string[] }).examples,
     ["/Users/example/private.md", "deletedContent"],
   );
-
-  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
-  const publicEvidence = recalculate({
-    ...cloud,
-    sources: cloud.sources.map((source) =>
-      source.kind === "public-evidence"
-        ? {
-            ...source,
-            excerpt: "approved public passage",
-            metadata: {
-              text: "approved public passage",
-              path: ["section", 2],
-              canonicalUrl: source.canonicalUrl,
-            },
-          }
-        : source,
-    ),
-  });
-  const parsedPublicEvidence = expectOk(parseRunManifestV1(publicEvidence));
-  const evidence = parsedPublicEvidence.sources.find((source) => source.kind === "public-evidence");
-  assert.equal(evidence?.excerpt, "approved public passage");
 });
 
 test("privacy key normalization does not overmatch unrelated extension keys", () => {
@@ -918,6 +944,22 @@ test("scheduled retention timestamps follow manifest and deletion chronology", (
   );
 });
 
+test("revision-one scheduled manifests enforce bounded retention deadlines", () => {
+  for (const fixture of [
+    invalidInitialRunOnlyDeadlineJson,
+    invalidInitialSevenDayDeadlineJson,
+  ]) {
+    const invalid = withoutExpectedSchemaValid(fixture);
+    assert.equal(Value.Check(runManifestSchema, invalid), true);
+    assert.equal(invalid.digest, digestProtocolObject(invalid));
+    expectError(
+      parseRunManifestV1(invalid),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
 test("retention consent uses context consent or the original policy ceiling", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   assert.equal(validateManifestRetentionConsent(local, undefined).ok, false);
@@ -982,21 +1024,15 @@ test("post-final retention shortening requires a coherent deletion schedule", ()
     true,
   );
 
-  const overDeadline = expectOk(
-    parseRunManifestV1(
-      recalculate({
-        ...scheduled,
-        retention: {
-          ...scheduled.retention,
-          contentExpiresAt: "2026-08-16T20:06:00.001Z",
-        },
-      }),
-    ),
-  );
+  const overDeadline = recalculate({
+    ...scheduled,
+    retention: {
+      ...scheduled.retention,
+      contentExpiresAt: "2026-08-16T20:06:00.001Z",
+    },
+  });
   expectError(
-    validateRunManifestRevision(previous, overDeadline, {
-      contextConsent: "7-days",
-    }),
+    parseRunManifestV1(overDeadline),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
   );
@@ -1114,43 +1150,30 @@ test("post-final seven-day shortening uses the effective update timestamp as its
     true,
   );
 
-  const overDeadline = expectOk(
-    parseRunManifestV1(
-      recalculate({
-        ...nextBase,
-        retention: {
-          ...nextBase.retention,
-          contentExpiresAt: "2026-08-23T20:06:00.000000001Z",
-        },
-      }),
-    ),
-  );
+  const overDeadline = recalculate({
+    ...nextBase,
+    retention: {
+      ...nextBase.retention,
+      contentExpiresAt: "2026-08-23T20:06:00.000000001Z",
+    },
+  });
   expectError(
-    validateRunManifestRevision(previous, overDeadline, {
-      contextConsent: "project",
-    }),
+    parseRunManifestV1(overDeadline),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
   );
 });
 
 test("newly scheduled bounded deadlines cannot exceed their effective update baseline", () => {
-  const sevenDayPrevious = expectOk(parseRunManifestV1(finalLocalManifestJson));
-  const sevenDayOverDeadline = expectOk(
-    parseRunManifestV1(
-      recalculate({
-        ...retentionUpdateJson,
-        retention: {
-          ...retentionUpdateJson.retention,
-          contentExpiresAt: "2026-08-23T20:06:00.000000001Z",
-        },
-      }),
-    ),
-  );
+  const sevenDayOverDeadline = recalculate({
+    ...retentionUpdateJson,
+    retention: {
+      ...retentionUpdateJson.retention,
+      contentExpiresAt: "2026-08-23T20:06:00.000000001Z",
+    },
+  });
   expectError(
-    validateRunManifestRevision(sevenDayPrevious, sevenDayOverDeadline, {
-      contextConsent: "7-days",
-    }),
+    parseRunManifestV1(sevenDayOverDeadline),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
   );
@@ -1167,30 +1190,24 @@ test("newly scheduled bounded deadlines cannot exceed their effective update bas
       }),
     ),
   );
-  const runOnlyOverDeadline = expectOk(
-    parseRunManifestV1(
-      recalculate({
-        ...runOnlyPrevious,
-        revision: runOnlyPrevious.revision + 1,
-        previousDigest: runOnlyPrevious.digest,
-        retention: {
-          ...runOnlyPrevious.retention,
-          status: "deletion_scheduled" as const,
-          contentExpiresAt: "2026-08-16T20:06:00.000000001Z",
-          updatedAt: "2026-08-16T20:06:00.000Z",
-        },
-        deletion: {
-          ...runOnlyPrevious.deletion,
-          status: "scheduled" as const,
-          requestedAt: "2026-08-16T20:06:00.000Z",
-        },
-      }),
-    ),
-  );
+  const runOnlyOverDeadline = recalculate({
+    ...runOnlyPrevious,
+    revision: runOnlyPrevious.revision + 1,
+    previousDigest: runOnlyPrevious.digest,
+    retention: {
+      ...runOnlyPrevious.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: "2026-08-16T20:06:00.000000001Z",
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...runOnlyPrevious.deletion,
+      status: "scheduled" as const,
+      requestedAt: "2026-08-16T20:06:00.000Z",
+    },
+  });
   expectError(
-    validateRunManifestRevision(runOnlyPrevious, runOnlyOverDeadline, {
-      contextConsent: "7-days",
-    }),
+    parseRunManifestV1(runOnlyOverDeadline),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
   );

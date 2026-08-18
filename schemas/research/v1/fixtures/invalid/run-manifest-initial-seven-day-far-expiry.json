@@ -1,0 +1,76 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_initial_seven_day_far_expiry",
+  "runId": "run_initial_seven_day_far_expiry",
+  "digest": "2fec7f6d1a6e90b9c7bc2027b1630a9faef61c7046c986058d7e42b1a1ce7547",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "context": {
+    "contextPackId": "ctx_local_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "topicProposalId": "proposal_local_01",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_local_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_local_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2026-08-23T20:05:00.000000001Z",
+    "updatedAt": "2026-08-16T20:05:00.000Z",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "deletion": {
+    "status": "scheduled",
+    "futureExtension": {
+      "preserve": true
+    },
+    "requestedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "futureExtension": {
+    "preserve": true
+  },
+  "expectedSchemaValid": true
+}

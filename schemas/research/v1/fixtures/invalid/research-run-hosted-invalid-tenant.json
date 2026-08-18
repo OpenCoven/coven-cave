@@ -1,8 +1,9 @@
 {
   "schema": "opencoven.research-run/v1",
-  "id": "run_hosted_missing_tenant_01",
+  "id": "run_hosted_invalid_tenant",
+  "tenantOpaqueId": "not-an-opaque-tenant-id",
   "acceptedTopic": {
-    "question": "Can a hosted run omit its opaque support correlator?",
+    "question": "How should the hosted research executor resume this run?",
     "editedByUser": true
   },
   "execution": {
@@ -23,14 +24,20 @@
     "allowMemoryPromotion": false
   },
   "bounds": {
-    "wallClockMinutes": 30,
-    "maxIterations": 2,
-    "sourceTarget": 4,
-    "checkpointEvery": 1,
+    "wallClockMinutes": 45,
+    "maxIterations": 4,
+    "sourceTarget": 8,
+    "maxSpendUsd": 1,
+    "checkpointEvery": 2,
     "stopWhenCostUnavailable": true
   },
-  "status": "queued",
+  "status": "waiting_for_executor",
+  "waitingReason": "executor",
+  "waitingForPhase": "challenge",
   "createdAt": "2026-08-15T20:00:00.000Z",
-  "updatedAt": "2026-08-15T20:00:00.000Z",
-  "nextEventSequence": 1
+  "updatedAt": "2026-08-15T20:01:00.000Z",
+  "nextEventSequence": 2,
+  "futureExtension": {
+    "preserve": true
+  }
 }

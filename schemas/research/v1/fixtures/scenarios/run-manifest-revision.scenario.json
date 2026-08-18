@@ -221,7 +221,7 @@
         "previousDigest": "f24b9bbae5824bc848ab050c62056f8dcf73bd0c3a9bf8975d35b4cc8b8ab09c",
         "retention": {
           "status": "deletion_pending",
-          "contentExpiresAt": "2099-12-31T23:59:59.999999999Z",
+          "contentExpiresAt": "2026-08-17T20:00:00.000000001Z",
           "updatedAt": "2026-08-17T20:01:00.000Z"
         },
         "deletion": {
@@ -297,6 +297,7 @@
     "project-to-seven-days-over-deadline": {
       "fixture": "valid/run-manifest-final-local.json",
       "mergePatch": {
+        "digest": "f93458c3baca2f5f9155ad86670a1750ecce234edd43ba02a7f8acd2fe730421",
         "revision": 2,
         "previousDigest": "5a28937d656e97ce8d73b31f3c97e97c5122e455ee0c8f782ce16201fb8a6a96",
         "retention": {
@@ -310,8 +311,7 @@
           "status": "scheduled",
           "requestedAt": "2026-08-16T20:06:00.000Z"
         }
-      },
-      "digestTargets": [""]
+      }
     },
     "seven-days-deadline-extension": {
       "fixture": "valid/run-manifest-final-local.json",
@@ -322,8 +322,8 @@
           "policy": "project",
           "effectivePolicy": "7-days",
           "status": "deletion_scheduled",
-          "contentExpiresAt": "2099-12-31T23:59:59.999999999Z",
-          "updatedAt": "2026-08-16T20:06:00.000Z"
+          "contentExpiresAt": "2026-08-23T20:06:00.000000001Z",
+          "updatedAt": "2026-08-17T20:06:00.000Z"
         },
         "deletion": {
           "status": "scheduled",
@@ -345,12 +345,12 @@
     "shortened-retention-over-deadline": {
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
+        "digest": "e8c8997308598ae479d393b0147385794ad945151e3452ce2f839235a9cc5d5a",
         "retention": {
           "effectivePolicy": "run-only",
           "contentExpiresAt": "2026-08-16T20:06:00.000000001Z"
         }
-      },
-      "digestTargets": [""]
+      }
     },
     "shortened-retention-unscheduled": {
       "fixture": "valid/run-manifest-final-local.json",
@@ -499,7 +499,8 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
+        "stage": "parse",
+        "input": "next",
         "code": "semantic_conflict",
         "path": "$.retention.contentExpiresAt"
       }
@@ -532,7 +533,8 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
+        "stage": "parse",
+        "input": "next",
         "code": "semantic_conflict",
         "path": "$.retention.contentExpiresAt"
       }

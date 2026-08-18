@@ -6,14 +6,21 @@ import { Check, Value } from "typebox/value";
 import researchRunSchema from "../../../schemas/research/v1/research-run.schema.json" with { type: "json" };
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
-import invalidHostedResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-hosted-missing-tenant.json" with { type: "json" };
+import invalidContextTopicWithoutProposal from "../../../schemas/research/v1/fixtures/invalid/research-run-context-topic-without-proposal.json" with { type: "json" };
+import invalidHostedTenantResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-hosted-invalid-tenant.json" with { type: "json" };
 import invalidLocalResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
+import invalidManifestCreatedBeforeRun from "../../../schemas/research/v1/fixtures/invalid/research-run-manifest-created-before-run.json" with { type: "json" };
+import invalidManifestCreatedAfterUpdate from "../../../schemas/research/v1/fixtures/invalid/research-run-assembling-manifest-created-after-run-updated.json" with { type: "json" };
+import invalidManifestFinalizedAfterUpdate from "../../../schemas/research/v1/fixtures/invalid/research-run-manifest-finalized-after-run-updated.json" with { type: "json" };
+import invalidProposalWithoutContext from "../../../schemas/research/v1/fixtures/invalid/research-run-proposal-without-context.json" with { type: "json" };
+import invalidProposalWithoutContextTopic from "../../../schemas/research/v1/fixtures/invalid/research-run-proposal-without-context-topic.json" with { type: "json" };
 import invalidResearchRunChronology from "../../../schemas/research/v1/fixtures/invalid/research-run-updated-before-created.json" with { type: "json" };
 import invalidResearchRunTopicLineage from "../../../schemas/research/v1/fixtures/invalid/research-run-topic-proposal-conflict.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
 import validHostedResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run-hosted.json" with { type: "json" };
+import validHostedResearchRunWithoutTenant from "../../../schemas/research/v1/fixtures/valid/research-run-hosted-no-tenant.json" with { type: "json" };
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
 import assemblingRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
@@ -144,6 +151,9 @@ function runForStatus(
     status,
     ...(artifactManifest ? { artifactManifest } : {}),
   };
+  if (artifactManifest) {
+    run.updatedAt = "2026-08-17T20:00:00.000Z";
+  }
   delete run.waitingReason;
   delete run.waitingForPhase;
   delete run.failure;
@@ -223,6 +233,27 @@ test("research run updatedAt cannot precede createdAt", () => {
   expectError(parseResearchRunV1(invalid), "$.updatedAt", "semantic_conflict");
 });
 
+test("embedded manifest creation and finalization stay within the enclosing run chronology", () => {
+  for (const { fixture, path } of [
+    {
+      fixture: invalidManifestCreatedBeforeRun,
+      path: "$.artifactManifest.createdAt",
+    },
+    {
+      fixture: invalidManifestCreatedAfterUpdate,
+      path: "$.artifactManifest.createdAt",
+    },
+    {
+      fixture: invalidManifestFinalizedAfterUpdate,
+      path: "$.artifactManifest.finalizedAt",
+    },
+  ] as const) {
+    const invalid = withoutExpectedSchemaValid(fixture);
+    assert.equal(checkResearchRunSchema(invalid), true);
+    expectError(parseResearchRunV1(invalid), path, "semantic_conflict");
+  }
+});
+
 test("research run context proposal must match the accepted topic proposal", () => {
   const invalid = withoutExpectedSchemaValid(invalidResearchRunTopicLineage);
 
@@ -232,6 +263,26 @@ test("research run context proposal must match the accepted topic proposal", () 
     "$.acceptedTopic.proposalId",
     "semantic_conflict",
   );
+});
+
+test("proposal lineage requires reciprocal context and accepted-topic identifiers", () => {
+  for (const { fixture, path } of [
+    {
+      fixture: invalidProposalWithoutContext,
+      path: "$.context",
+    },
+    {
+      fixture: invalidProposalWithoutContextTopic,
+      path: "$.context.topicProposalId",
+    },
+    {
+      fixture: invalidContextTopicWithoutProposal,
+      path: "$.acceptedTopic.proposalId",
+    },
+  ] as const) {
+    assert.equal(checkResearchRunSchema(fixture), false);
+    expectError(parseResearchRunV1(fixture), path, "missing_field");
+  }
 });
 
 test("local runs forbid tenantOpaqueId while preserving unrelated additive fields", () => {
@@ -249,18 +300,43 @@ test("local runs forbid tenantOpaqueId while preserving unrelated additive field
   );
 });
 
-test("hosted runs require tenantOpaqueId while preserving unrelated additive fields", () => {
-  assert.equal(checkResearchRunSchema(validHostedResearchRun), true);
-  const hosted = expectOk(parseResearchRunV1(validHostedResearchRun));
-  assert.equal(hosted.tenantOpaqueId, "tenant_alpha");
-  assert.deepEqual(hosted.futureExtension, { preserve: true });
-
-  assert.equal(checkResearchRunSchema(invalidHostedResearchRun), false);
-  expectError(
-    parseResearchRunV1(invalidHostedResearchRun),
-    "$.tenantOpaqueId",
-    "missing_field",
+test("hosted runs may omit tenantOpaqueId and validate it only when present", () => {
+  for (const fixture of [
+    validHostedResearchRun,
+    validHostedResearchRunWithoutTenant,
+  ]) {
+    assert.equal(checkResearchRunSchema(fixture), true);
+    const hosted = expectOk(parseResearchRunV1(fixture));
+    assert.deepEqual(hosted.futureExtension, { preserve: true });
+  }
+  assert.equal(
+    expectOk(parseResearchRunV1(validHostedResearchRun)).tenantOpaqueId,
+    "tenant_alpha",
   );
+  assert.equal(
+    Object.hasOwn(
+      expectOk(parseResearchRunV1(validHostedResearchRunWithoutTenant)),
+      "tenantOpaqueId",
+    ),
+    false,
+  );
+
+  assert.equal(checkResearchRunSchema(invalidHostedTenantResearchRun), false);
+  expectError(
+    parseResearchRunV1(invalidHostedTenantResearchRun),
+    "$.tenantOpaqueId",
+    "invalid_value",
+  );
+  for (const tenantOpaqueId of ["tenant_", "tenant space"]) {
+    expectError(
+      parseResearchRunV1({
+        ...validHostedResearchRun,
+        tenantOpaqueId,
+      }),
+      "$.tenantOpaqueId",
+      "invalid_value",
+    );
+  }
 });
 
 test("Research Run and Run Event reject schema accessors without invoking them", () => {
@@ -361,6 +437,7 @@ test("failure is required exactly for failed and absent otherwise", () => {
     ...failedWithoutFailure,
     failure: { code: "runtime_error", message: "try again", retryable: true },
     artifactManifest: linkedManifest(validRunManifest),
+    updatedAt: "2026-08-17T20:00:00.000Z",
   };
   assert.ok(checkResearchRunSchema(validFailed));
   assert.equal(expectOk(parseResearchRunV1(validFailed)).failure?.retryable, true);
@@ -551,6 +628,10 @@ test("run and Context Pack composition requires matching presence and binding", 
 
   const contextlessValue: Record<string, unknown> = { ...validResearchRun };
   delete contextlessValue.context;
+  contextlessValue.acceptedTopic = {
+    ...validResearchRun.acceptedTopic,
+  };
+  delete (contextlessValue.acceptedTopic as Record<string, unknown>).proposalId;
   const contextlessRun = expectOk(parseResearchRunV1(contextlessValue));
   assert.equal(expectOk(validateResearchRunContextPackV1(contextlessRun)), contextlessRun);
   expectError(
@@ -591,37 +672,65 @@ test("run and Context Pack composition requires matching presence and binding", 
   );
 });
 
-test("run and Context Pack composition requires research-run purpose and policy", () => {
+test("run and Context Pack composition authorizes reusable packs by allowed purpose", () => {
   const pack = expectOk(parseContextPackV1(validContextPack));
-  const boundRun = expectOk(
+  const discoveryPackValue = {
+    ...validContextPack,
+    purpose: "topic-discovery" as const,
+    policy: {
+      ...validContextPack.policy,
+      allowedPurposes: ["topic-discovery", "research-run"] as const,
+    },
+  };
+  const discoveryPack = expectOk(
+    parseContextPackV1({
+      ...discoveryPackValue,
+      digest: digestProtocolObject(discoveryPackValue),
+    }),
+  );
+  const discoveryRun = expectOk(
     parseResearchRunV1({
       ...validResearchRun,
       context: {
         ...validResearchRun.context,
-        contextPackId: pack.id,
-        contextPackDigest: pack.digest,
+        contextPackId: discoveryPack.id,
+        contextPackDigest: discoveryPack.digest,
       },
     }),
   );
+  assert.equal(
+    expectOk(validateResearchRunContextPackV1(discoveryRun, discoveryPack)),
+    discoveryRun,
+  );
 
-  expectError(
-    validateResearchRunContextPackV1(
-      boundRun,
-      { ...pack, purpose: "topic-discovery" },
-    ),
-    "$.contextPack.purpose",
-    "semantic_conflict",
+  const discoveryOnlyValue = {
+    ...pack,
+    purpose: "topic-discovery" as const,
+    policy: {
+      ...pack.policy,
+      allowedPurposes: ["topic-discovery"] as const,
+    },
+  };
+  const discoveryOnlyPack = expectOk(
+    parseContextPackV1({
+      ...discoveryOnlyValue,
+      digest: digestProtocolObject(discoveryOnlyValue),
+    }),
+  );
+  const discoveryOnlyRun = expectOk(
+    parseResearchRunV1({
+      ...validResearchRun,
+      context: {
+        ...validResearchRun.context,
+        contextPackId: discoveryOnlyPack.id,
+        contextPackDigest: discoveryOnlyPack.digest,
+      },
+    }),
   );
   expectError(
     validateResearchRunContextPackV1(
-      boundRun,
-      {
-        ...pack,
-        policy: {
-          ...pack.policy,
-          allowedPurposes: ["topic-discovery"],
-        },
-      } as ContextPackV1,
+      discoveryOnlyRun,
+      discoveryOnlyPack,
     ),
     "$.contextPack.policy.allowedPurposes",
     "semantic_conflict",
@@ -904,9 +1013,13 @@ test("contextless embedded manifests cannot extend effective retention beyond th
 
   const contextlessRun: Record<string, unknown> = {
     ...runForStatus("completed", contextlessManifest),
+    acceptedTopic: {
+      ...validResearchRun.acceptedTopic,
+    },
     privacy: { ...validResearchRun.privacy, retention: "run-only" },
   };
   delete contextlessRun.context;
+  delete (contextlessRun.acceptedTopic as Record<string, unknown>).proposalId;
 
   expectError(
     parseResearchRunV1(contextlessRun),
@@ -964,6 +1077,67 @@ test("terminal runs require final manifests and nonterminal runs permit only ass
     researchRunSchema.properties.artifactManifest,
     { $ref: "../opencoven.run-manifest/v1" },
   );
+});
+
+test("assembling manifest evidence and updates cannot postdate the enclosing run", () => {
+  const cloud = linkedManifest(validCloudRunManifest);
+  const baseManifest: Record<string, unknown> = {
+    ...cloud,
+    state: "assembling",
+  };
+  delete baseManifest.finalizedAt;
+
+  for (const { manifest, updatedAt, path } of [
+    {
+      manifest: baseManifest,
+      updatedAt: "2026-08-16T20:06:00.000Z",
+      path: "$.artifactManifest.sources[1].fetchedAt",
+    },
+    {
+      manifest: {
+        ...baseManifest,
+        sources: (baseManifest.sources as Array<Record<string, unknown>>).map(
+          (source) =>
+            source.kind === "public-evidence"
+              ? { ...source, fetchedAt: "2026-08-16T20:06:00.000Z" }
+              : source,
+        ),
+      },
+      updatedAt: "2026-08-16T20:08:00.000Z",
+      path: "$.artifactManifest.artifacts[0].createdAt",
+    },
+    {
+      manifest: {
+        ...baseManifest,
+        artifacts: (baseManifest.artifacts as Array<Record<string, unknown>>).map(
+          (artifact) => ({
+            ...artifact,
+            createdAt: "2026-08-16T20:08:00.000Z",
+          }),
+        ),
+      },
+      updatedAt: "2026-08-16T20:09:00.000Z",
+      path: "$.artifactManifest.retention.updatedAt",
+    },
+  ] as const) {
+    const recalculatedManifest = {
+      ...manifest,
+      digest: digestProtocolObject(manifest),
+    };
+    expectError(
+      parseResearchRunV1({
+        ...runForStatus("scoping", recalculatedManifest),
+        privacy: {
+          ...validResearchRun.privacy,
+          artifactContentSync: true,
+          retention: "project",
+        },
+        updatedAt,
+      }),
+      path,
+      "semantic_conflict",
+    );
+  }
 });
 
 test("research runs parse full run manifests and reject invalid embedded manifests", () => {

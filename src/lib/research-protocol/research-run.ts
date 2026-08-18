@@ -176,6 +176,71 @@ function contextBindingsMatch(
   );
 }
 
+function validateEmbeddedManifestChronology(
+  manifest: RunManifestV1,
+  runCreatedAt: string,
+  runUpdatedAt: string,
+): ProtocolParseResult<void> {
+  if (compareUtcTimestamps(manifest.createdAt, runCreatedAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.createdAt",
+      "artifactManifest.createdAt must not precede the enclosing run createdAt",
+    );
+  }
+
+  if (manifest.state === "final") {
+    if (
+      manifest.finalizedAt !== undefined &&
+      compareUtcTimestamps(manifest.finalizedAt, runUpdatedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.finalizedAt",
+        "artifactManifest.finalizedAt must not follow the enclosing run updatedAt",
+      );
+    }
+    return pass(undefined);
+  }
+
+  if (compareUtcTimestamps(manifest.createdAt, runUpdatedAt) > 0) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.createdAt",
+      "assembling artifactManifest.createdAt must not follow the enclosing run updatedAt",
+    );
+  }
+  for (const [index, source] of manifest.sources.entries()) {
+    if (
+      source.kind === "public-evidence" &&
+      compareUtcTimestamps(source.fetchedAt, runUpdatedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        `$.artifactManifest.sources[${index}].fetchedAt`,
+        "assembling source fetchedAt must not follow the enclosing run updatedAt",
+      );
+    }
+  }
+  for (const [index, artifact] of manifest.artifacts.entries()) {
+    if (compareUtcTimestamps(artifact.createdAt, runUpdatedAt) > 0) {
+      return fail(
+        "semantic_conflict",
+        `$.artifactManifest.artifacts[${index}].createdAt`,
+        "assembling artifact createdAt must not follow the enclosing run updatedAt",
+      );
+    }
+  }
+  if (compareUtcTimestamps(manifest.retention.updatedAt, runUpdatedAt) > 0) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.retention.updatedAt",
+      "assembling retention.updatedAt must not follow the enclosing run updatedAt",
+    );
+  }
+  return pass(undefined);
+}
+
 /**
  * Validates two already-parsed objects. Run-field errors use run JSON paths;
  * pack-only policy errors use the synthetic `$.contextPack` path.
@@ -215,13 +280,6 @@ export function validateResearchRunContextPackV1(
       "semantic_conflict",
       "$.context.contextPackDigest",
       "Run contextPackDigest must match the Context Pack digest",
-    );
-  }
-  if (contextPack.purpose !== "research-run") {
-    return fail(
-      "semantic_conflict",
-      "$.contextPack.purpose",
-      "Context Pack purpose must be research-run",
     );
   }
   if (!contextPack.policy.allowedPurposes.includes("research-run")) {
@@ -741,15 +799,33 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!acceptedTopicField.ok) return acceptedTopicField;
   const acceptedTopic = parseAcceptedTopic(acceptedTopicField.value, "$.acceptedTopic");
   if (!acceptedTopic.ok) return acceptedTopic;
-  if (
-    context?.topicProposalId !== undefined &&
-    acceptedTopic.value.proposalId !== undefined &&
-    context.topicProposalId !== acceptedTopic.value.proposalId
-  ) {
+  if (acceptedTopic.value.proposalId !== undefined) {
+    if (!context) {
+      return fail(
+        "missing_field",
+        "$.context",
+        "acceptedTopic.proposalId requires a Context Pack binding",
+      );
+    }
+    if (context.topicProposalId === undefined) {
+      return fail(
+        "missing_field",
+        "$.context.topicProposalId",
+        "acceptedTopic.proposalId requires context.topicProposalId",
+      );
+    }
+    if (context.topicProposalId !== acceptedTopic.value.proposalId) {
+      return fail(
+        "semantic_conflict",
+        "$.acceptedTopic.proposalId",
+        "acceptedTopic.proposalId must match context.topicProposalId",
+      );
+    }
+  } else if (context?.topicProposalId !== undefined) {
     return fail(
-      "semantic_conflict",
+      "missing_field",
       "$.acceptedTopic.proposalId",
-      "acceptedTopic.proposalId must match context.topicProposalId",
+      "context.topicProposalId requires acceptedTopic.proposalId",
     );
   }
 
@@ -767,16 +843,10 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "local runs must not include tenantOpaqueId",
       );
     }
-  } else {
-    if (!hasOwn(object.value, "tenantOpaqueId")) {
-      return fail(
-        "missing_field",
-        "$.tenantOpaqueId",
-        "hosted runs require tenantOpaqueId",
-      );
-    }
-    const parsedTenantOpaqueId = parseString(
+  } else if (hasOwn(object.value, "tenantOpaqueId")) {
+    const parsedTenantOpaqueId = parseOpaqueIdentifier(
       object.value.tenantOpaqueId,
+      "tenant",
       "$.tenantOpaqueId",
       "tenantOpaqueId",
     );
@@ -902,6 +972,12 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "artifactManifest.runId must match the enclosing run id",
       );
     }
+    const manifestChronology = validateEmbeddedManifestChronology(
+      artifactManifest,
+      createdAt.value,
+      updatedAt.value,
+    );
+    if (!manifestChronology.ok) return manifestChronology;
     if (!contextBindingsMatch(context, artifactManifest.context)) {
       return fail(
         "semantic_conflict",

@@ -8,13 +8,19 @@
     "contextless-run": {
       "fixture": "valid/research-run.json",
       "mergePatch": {
-        "context": null
+        "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        }
       }
     },
     "contextless-lengthened-run": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
         "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        },
         "artifactManifest": {
           "context": null,
           "sources": []
@@ -53,6 +59,100 @@
         "privacy": {
           "retention": "project"
         }
+      }
+    },
+    "topic-discovery-authorized-pack": {
+      "fixture": "valid/context-pack.json",
+      "mergePatch": {
+        "purpose": "topic-discovery",
+        "policy": {
+          "allowedPurposes": [
+            "topic-discovery",
+            "research-run"
+          ]
+        }
+      },
+      "digestTargets": [""]
+    },
+    "topic-discovery-authorized-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "7b640043355ce719f395513b50a542fd2f2f4077250bfef68da931cb7f1b5742"
+        },
+        "artifactManifest": {
+          "context": {
+            "contextPackDigest": "7b640043355ce719f395513b50a542fd2f2f4077250bfef68da931cb7f1b5742"
+          },
+          "sources": [
+            {
+              "kind": "context-pack",
+              "id": "ctx_01",
+              "digest": "7b640043355ce719f395513b50a542fd2f2f4077250bfef68da931cb7f1b5742",
+              "availability": "device-local"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "topic-discovery-disallowed-pack": {
+      "fixture": "valid/context-pack.json",
+      "mergePatch": {
+        "purpose": "topic-discovery",
+        "policy": {
+          "allowedPurposes": [
+            "topic-discovery"
+          ]
+        }
+      },
+      "digestTargets": [""]
+    },
+    "topic-discovery-disallowed-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "a1b7013bac6a97b1714692d012a7bee4bdd6fc3e79a2b5052aec2f284ed39445"
+        },
+        "artifactManifest": {
+          "context": {
+            "contextPackDigest": "a1b7013bac6a97b1714692d012a7bee4bdd6fc3e79a2b5052aec2f284ed39445"
+          },
+          "sources": [
+            {
+              "kind": "context-pack",
+              "id": "ctx_01",
+              "digest": "a1b7013bac6a97b1714692d012a7bee4bdd6fc3e79a2b5052aec2f284ed39445",
+              "availability": "device-local"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "manifest-created-before-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "createdAt": "2026-08-15T20:00:00.000000001Z"
+      }
+    },
+    "assembling-manifest-created-after-run-update": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "status": "scoping",
+        "updatedAt": "2026-08-15T20:00:00.000Z",
+        "artifactManifest": {
+          "state": "assembling",
+          "createdAt": "2026-08-15T20:00:00.000000001Z",
+          "finalizedAt": null
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "final-manifest-finalized-after-run-update": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:08:59.999999999Z"
       }
     }
   },
@@ -169,6 +269,90 @@
         "input": "run",
         "code": "semantic_conflict",
         "path": "$.acceptedTopic.proposalId"
+      }
+    },
+    {
+      "id": "research-run.reuses-authorized-discovery-pack",
+      "description": "A sealed discovery Context Pack remains reusable when its policy authorizes research runs.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "topic-discovery-authorized-run",
+        "contextPack": "topic-discovery-authorized-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.rejects-disallowed-discovery-pack",
+      "description": "A discovery Context Pack that omits research-run from allowedPurposes cannot authorize a run.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "topic-discovery-disallowed-run",
+        "contextPack": "topic-discovery-disallowed-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.contextPack.policy.allowedPurposes"
+      }
+    },
+    {
+      "id": "research-run.edited-topic-preserves-proposal-lineage",
+      "description": "Editing an accepted question preserves its reciprocal proposal and immutable Context Pack lineage.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.manifest-created-before-run",
+      "description": "An embedded manifest cannot predate its enclosing run.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "manifest-created-before-run"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.createdAt"
+      }
+    },
+    {
+      "id": "research-run.assembling-manifest-created-after-run-update",
+      "description": "An assembling manifest cannot contain creation evidence after the enclosing run update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "assembling-manifest-created-after-run-update"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.createdAt"
+      }
+    },
+    {
+      "id": "research-run.final-manifest-finalized-after-run-update",
+      "description": "A terminal run update cannot precede its embedded manifest finalization.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "final-manifest-finalized-after-run-update"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.finalizedAt"
       }
     }
   ]

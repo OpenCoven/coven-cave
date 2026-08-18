@@ -1,7 +1,16 @@
 {
   "schema": "opencoven.research-run/v1",
   "id": "run_01",
+  "context": {
+    "contextPackId": "ctx_01",
+    "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+    "topicProposalId": "proposal_01",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
   "acceptedTopic": {
+    "proposalId": "proposal_01",
     "question": "How should the research executor resume this run?",
     "editedByUser": true,
     "futureExtension": {
@@ -28,7 +37,7 @@
     "remoteQueries": false,
     "remoteContent": false,
     "artifactContentSync": false,
-    "retention": "7-days",
+    "retention": "run-only",
     "allowMemoryPromotion": false,
     "futureExtension": {
       "preserve": true
@@ -47,24 +56,39 @@
   },
   "status": "completed",
   "createdAt": "2026-08-15T20:00:00.000Z",
-  "updatedAt": "2026-08-17T20:00:00.000Z",
-  "nextEventSequence": 4,
+  "updatedAt": "2026-08-15T20:08:59.999999999Z",
+  "nextEventSequence": 2,
   "artifactManifest": {
     "schema": "opencoven.run-manifest/v1",
-    "id": "manifest_deleted_01",
+    "id": "manifest_context_01",
     "runId": "run_01",
-    "digest": "46465b06099663bdcea155c00fa7e17383b69a5413781aa96507780b3cc491b7",
+    "digest": "4de59635083bc791daf70627cc9fa7a2e9bd20dae34f9bd7698c4d88520e3c54",
     "revision": 2,
     "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "state": "final",
     "createdAt": "2026-08-15T20:00:00.000Z",
-    "finalizedAt": "2026-08-15T20:10:00.000Z",
-    "sources": [],
+    "finalizedAt": "2026-08-15T20:09:00.000Z",
+    "context": {
+      "contextPackId": "ctx_01",
+      "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+      "topicProposalId": "proposal_01",
+      "futureExtension": {
+        "preserve": true
+      }
+    },
+    "sources": [
+      {
+        "kind": "context-pack",
+        "id": "ctx_01",
+        "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+        "availability": "device-local"
+      }
+    ],
     "artifacts": [
       {
-        "id": "artifact_deleted_01",
+        "id": "artifact_context_01",
         "kind": "research-notes",
-        "title": "Deleted research notes",
+        "title": "Context-bound research notes",
         "mediaType": "text/markdown",
         "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "bytes": 128,
@@ -81,21 +105,18 @@
       "completeness": "unreported"
     },
     "retention": {
-      "policy": "7-days",
+      "policy": "run-only",
       "effectivePolicy": "7-days",
-      "status": "deleted",
-      "contentExpiresAt": "2026-08-17T20:00:00.000Z",
-      "updatedAt": "2026-08-17T20:00:00.000Z"
+      "status": "active",
+      "contentExpiresAt": null,
+      "updatedAt": "2026-08-15T20:09:00.000Z"
     },
     "deletion": {
-      "status": "completed",
-      "requestedAt": "2026-08-17T19:00:00.000Z",
-      "completedAt": "2026-08-17T20:00:00.000Z",
-      "deletedObjectCount": 3,
-      "eventSequence": 2
+      "status": "not_scheduled"
     }
   },
   "futureExtension": {
     "preserve": true
-  }
+  },
+  "expectedSchemaValid": true
 }

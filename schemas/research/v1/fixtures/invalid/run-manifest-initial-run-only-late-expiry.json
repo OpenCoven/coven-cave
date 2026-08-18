@@ -1,0 +1,76 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_initial_run_only_late_expiry",
+  "runId": "run_initial_run_only_late_expiry",
+  "digest": "9e09e3db6a60a6b53c708d408f0c95c4b7aa4f3e6bcbc93f915e42ba88e216cb",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "context": {
+    "contextPackId": "ctx_local_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "topicProposalId": "proposal_local_01",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_local_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_local_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2026-08-16T20:05:00.000000001Z",
+    "updatedAt": "2026-08-16T20:05:00.000Z",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "deletion": {
+    "status": "scheduled",
+    "futureExtension": {
+      "preserve": true
+    },
+    "requestedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "futureExtension": {
+    "preserve": true
+  },
+  "expectedSchemaValid": true
+}

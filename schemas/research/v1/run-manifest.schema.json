@@ -335,7 +335,8 @@
     },
     "publicEvidenceSource": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
       "required": [
         "kind",
         "id",
