@@ -219,8 +219,9 @@ export function clientV1ErrorResponse(
   message: string,
   options: ClientV1ErrorResponseOptions = {},
 ): Response {
-  const status = canonicalErrorStatus(code, options.status);
-  return Response.json(clientV1Error(code, message, options), { status });
+  const { status: requestedStatus, ...envelopeOptions } = options;
+  const status = canonicalErrorStatus(code, requestedStatus);
+  return Response.json(clientV1Error(code, message, envelopeOptions), { status });
 }
 
 export function clientV1OperationInProgressError(operation: string): ClientV1ErrorEnvelope {
