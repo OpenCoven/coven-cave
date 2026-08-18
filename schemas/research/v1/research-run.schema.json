@@ -47,9 +47,6 @@
       },
       "then": {
         "not": { "required": ["tenantOpaqueId"] }
-      },
-      "else": {
-        "required": ["tenantOpaqueId"]
       }
     },
     {

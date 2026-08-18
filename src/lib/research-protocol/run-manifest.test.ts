@@ -12,8 +12,12 @@ import invalidFinalMutationJson from "../../../schemas/research/v1/fixtures/scen
 import invalidDeletionPairJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-pair.json" with { type: "json" };
 import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-private-title.json" with { type: "json" };
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
+import invalidModelRawPromptJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-model-raw-prompt.json" with { type: "json" };
 import invalidNestedPrivateExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-private-extension.json" with { type: "json" };
+import invalidNestedPrivacyStorageKeysJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-privacy-storage-keys.json" with { type: "json" };
+import invalidRootPrivateExcerptsJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-root-private-excerpts.json" with { type: "json" };
 import invalidScheduledNullExpiryJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-scheduled-null-expiry.json" with { type: "json" };
+import validExtensionBoundariesJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-extension-boundaries.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
@@ -21,6 +25,7 @@ import {
   aggregateManifestUsage,
   parseRunManifestV1,
   SENSITIVE_EXTENSION_KEY_PATTERN,
+  SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
   validateManifestRetentionConsent,
   validateRunManifestRevision,
   type RunManifestModelExecutionV1,
@@ -66,12 +71,6 @@ function recalculate<T extends Record<string, unknown>>(value: T): T {
     return result;
   };
   return { ...value, digest: digestProtocolObject(ownJson(value)) };
-}
-
-function withoutExpectedSchemaValid(value: Record<string, unknown>): Record<string, unknown> {
-  const copy = { ...value };
-  delete copy.expectedSchemaValid;
-  return copy;
 }
 
 function receiptUsage(
@@ -399,12 +398,13 @@ test("artifact titles reject paths, controls, and known secret prefixes", () => 
       ...local,
       artifacts: [{ ...local.artifacts[0], title }],
     });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, title);
     expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
   }
 
-  assert.equal(Value.Check(runManifestSchema, invalidPrivateTitleJson), true);
+  assert.equal(Value.Check(runManifestSchema, invalidPrivateTitleJson), false);
   expectError(
-    parseRunManifestV1(withoutExpectedSchemaValid(invalidPrivateTitleJson)),
+    parseRunManifestV1(invalidPrivateTitleJson),
     "$.artifacts[0].title",
     "invalid_value",
   );
@@ -425,6 +425,7 @@ test("artifact titles reject RFC 3986 URI scheme prefixes", () => {
       ...local,
       artifacts: [{ ...local.artifacts[0], title }],
     });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, title);
     expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
   }
 });
@@ -443,6 +444,7 @@ test("artifact title URI detection preserves ordinary colon text and RFC 3986 bo
       ...local,
       artifacts: [{ ...local.artifacts[0], title }],
     });
+    assert.equal(Value.Check(runManifestSchema, candidate), true, title);
     assert.equal(expectOk(parseRunManifestV1(candidate)).artifacts[0].title, title);
   }
 });
@@ -452,23 +454,46 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
     runManifestSchema.$defs.sensitivePropertyName.not.pattern,
     SENSITIVE_EXTENSION_KEY_PATTERN,
   );
+  assert.equal(
+    runManifestSchema.$defs.sensitivePropertyName.allOf[0].not.pattern,
+    SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN,
+  );
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const key of [
     "excerpt",
+    "excerpts",
+    "prompt",
+    "prompts",
     "text",
+    "texts",
     "content",
+    "contents",
     "blob",
+    "blobs",
     "filename",
+    "filenames",
     "localPath",
+    "localPaths",
     "filePath",
+    "filePaths",
     "path",
+    "paths",
     "credential",
     "credentials",
     "secret",
+    "secrets",
     "objectKey",
+    "objectKeys",
     "storageKey",
+    "storageKeys",
     "bucketKey",
+    "bucketKeys",
     "deletedContent",
+    "deletedContents",
+    "privateExcerpts",
+    "privacyPrompts",
+    "rawPrompt",
+    "rawPrompts",
     "CoNtEnT",
   ]) {
     const invalid = recalculate({
@@ -582,7 +607,146 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
   );
 });
 
-test("privacy key checks do not scan values or public-evidence metadata", () => {
+test("digest-correct fixtures enforce root, model, plural, and nested privacy boundaries", () => {
+  for (const [fixture, path] of [
+    [invalidRootPrivateExcerptsJson, "$.privateExcerpts"],
+    [invalidModelRawPromptJson, "$.modelExecutions[0].rawPrompt"],
+    [
+      invalidNestedPrivacyStorageKeysJson,
+      "$.retention.extensionMetadata.items[0].privacyStorageKeys",
+    ],
+  ] as const) {
+    assert.equal(fixture.digest, digestProtocolObject(fixture));
+    assert.equal(Value.Check(runManifestSchema, fixture), false);
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+
+  assert.equal(
+    validExtensionBoundariesJson.digest,
+    digestProtocolObject(validExtensionBoundariesJson),
+  );
+  assert.equal(Value.Check(runManifestSchema, validExtensionBoundariesJson), true);
+  assert.deepEqual(
+    expectOk(parseRunManifestV1(validExtensionBoundariesJson)),
+    validExtensionBoundariesJson,
+  );
+});
+
+test("schema and parser enforce privacy keys at every manifest object boundary", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  assert.ok(local.context);
+
+  const cases: Array<{ candidate: Record<string, unknown>; path: string }> = [
+    {
+      candidate: recalculate({ ...local, privateExcerpts: ["private"] }),
+      path: "$.privateExcerpts",
+    },
+    {
+      candidate: recalculate({
+        ...local,
+        context: { ...local.context, privacyPrompts: ["private"] },
+      }),
+      path: "$.context.privacyPrompts",
+    },
+    {
+      candidate: recalculate({
+        ...local,
+        sources: [{ ...local.sources[0], privateExcerpts: ["private"] }],
+      }),
+      path: "$.sources[0].privateExcerpts",
+    },
+    {
+      candidate: recalculate({
+        ...cloud,
+        sources: cloud.sources.map((source) =>
+          source.kind === "public-evidence"
+            ? { ...source, rawPrompt: "private" }
+            : source,
+        ),
+      }),
+      path: "$.sources[1].rawPrompt",
+    },
+    {
+      candidate: recalculate({
+        ...local,
+        artifacts: [{ ...local.artifacts[0], privateExcerpts: ["private"] }],
+      }),
+      path: "$.artifacts[0].privateExcerpts",
+    },
+    {
+      candidate: recalculate({
+        ...cloud,
+        modelExecutions: [
+          { ...cloud.modelExecutions[0], rawPrompt: "private" },
+        ],
+      }),
+      path: "$.modelExecutions[0].rawPrompt",
+    },
+    {
+      candidate: recalculate({
+        ...cloud,
+        modelExecutions: [
+          {
+            ...cloud.modelExecutions[0],
+            receipt: {
+              ...cloud.modelExecutions[0].receipt,
+              privateExcerpts: ["private"],
+            },
+          },
+        ],
+      }),
+      path: "$.modelExecutions[0].receipt.privateExcerpts",
+    },
+    {
+      candidate: recalculate({
+        ...cloud,
+        modelExecutions: [
+          {
+            ...cloud.modelExecutions[0],
+            receipt: {
+              ...cloud.modelExecutions[0].receipt,
+              usage: {
+                ...cloud.modelExecutions[0].receipt.usage,
+                privacyPrompts: ["private"],
+              },
+            },
+          },
+        ],
+      }),
+      path: "$.modelExecutions[0].receipt.usage.privacyPrompts",
+    },
+    {
+      candidate: recalculate({
+        ...local,
+        usage: { ...local.usage, privateExcerpts: ["private"] },
+      }),
+      path: "$.usage.privateExcerpts",
+    },
+    {
+      candidate: recalculate({
+        ...local,
+        retention: { ...local.retention, privacyStorageKeys: ["private"] },
+      }),
+      path: "$.retention.privacyStorageKeys",
+    },
+    {
+      candidate: recalculate({
+        ...local,
+        deletion: { ...local.deletion, deletedContents: ["private"] },
+      }),
+      path: "$.deletion.deletedContents",
+    },
+  ];
+
+  for (const { candidate, path } of cases) {
+    assert.equal(candidate.digest, digestProtocolObject(candidate), path);
+    assert.equal(Value.Check(runManifestSchema, candidate), false, path);
+    expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
+  }
+});
+
+test("privacy key checks do not scan extension values", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const benign = recalculate({
     ...local,
@@ -627,10 +791,9 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
       source.kind === "public-evidence"
         ? {
             ...source,
-            excerpt: "approved public passage",
-            metadata: {
-              text: "approved public passage",
-              path: ["section", 2],
+            displayMetadata: {
+              label: "excerpt",
+              examples: ["text", "path"],
               canonicalUrl: source.canonicalUrl,
             },
           }
@@ -639,7 +802,10 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
   });
   const parsedPublicEvidence = expectOk(parseRunManifestV1(publicEvidence));
   const evidence = parsedPublicEvidence.sources.find((source) => source.kind === "public-evidence");
-  assert.equal(evidence?.excerpt, "approved public passage");
+  assert.deepEqual(
+    (evidence?.displayMetadata as { examples: string[] }).examples,
+    ["text", "path"],
+  );
 
   assert.equal(Value.Check(runManifestSchema, validNestedBenignExtensionJson), true);
   assert.deepEqual(

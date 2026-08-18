@@ -646,22 +646,14 @@ export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<Mode
     signature: signature.value,
   } as ModelTaskResultV1;
 
-  const expectedOutputDigest = sha256Digest(canonicalJson(parsed.output));
-  if (parsed.outputDigest !== expectedOutputDigest) {
-    return fail(
-      "digest_mismatch",
-      "$.outputDigest",
-      `outputDigest must equal recomputed digest ${expectedOutputDigest}`,
-    );
-  }
-
   return pass(parsed);
 }
 
 /**
  * Validates one parsed task/result association. Matching replays remain valid;
  * comparing a result with an already persisted receipt is a later storage
- * boundary concern.
+ * boundary concern. Unit 4 verifies outputDigest against the declared output
+ * schema.
  */
 export function validateModelTaskResultV1(
   task: ModelTaskV1,
@@ -674,13 +666,6 @@ export function validateModelTaskResultV1(
     return fail("invalid_value", "$.input", "Model Task input must be canonical JSON");
   }
 
-  let expectedOutputDigest: string;
-  try {
-    expectedOutputDigest = sha256Digest(canonicalJson(result.output));
-  } catch {
-    return fail("invalid_value", "$.output", "Model Task Result output must be canonical JSON");
-  }
-
   if (task.inputDigest !== expectedInputDigest) {
     return fail(
       "digest_mismatch",
@@ -688,14 +673,6 @@ export function validateModelTaskResultV1(
       `Model Task inputDigest must equal recomputed digest ${expectedInputDigest}`,
     );
   }
-  if (result.outputDigest !== expectedOutputDigest) {
-    return fail(
-      "digest_mismatch",
-      "$.outputDigest",
-      `outputDigest must equal recomputed digest ${expectedOutputDigest}`,
-    );
-  }
-
   if (result.taskId !== task.id) {
     return fail("semantic_conflict", "$.taskId", "taskId must equal the Model Task id");
   }

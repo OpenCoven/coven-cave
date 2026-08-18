@@ -3,7 +3,32 @@
   "$id": "opencoven.run-manifest/v1",
   "title": "OpenCoven Run Manifest v1",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+  "propertyNames": {
+    "anyOf": [
+      {
+        "enum": [
+          "schema",
+          "id",
+          "runId",
+          "digest",
+          "revision",
+          "previousDigest",
+          "state",
+          "createdAt",
+          "finalizedAt",
+          "context",
+          "sources",
+          "artifacts",
+          "modelExecutions",
+          "usage",
+          "retention",
+          "deletion"
+        ]
+      },
+      { "$ref": "#/$defs/sensitivePropertyName" }
+    ]
+  },
   "required": [
     "schema",
     "id",
@@ -270,6 +295,13 @@
   "$defs": {
     "sensitivePropertyName": {
       "type": "string",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "(?:[pP][rR][oO][mM][pP][tT]|[eE][xX][cC][eE][rR][pP][tT][sS]|[tT][eE][xX][tT][sS]|[cC][oO][nN][tT][eE][nN][tT][sS]|[bB][lL][oO][bB][sS]|[fF][iI][lL][eE][nN][aA][mM][eE][sS]|[lL][oO][cC][aA][lL][pP][aA][tT][hH][sS]|[fF][iI][lL][eE][pP][aA][tT][hH][sS]|[pP][aA][tT][hH][sS]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|[sS][eE][cC][rR][eE][tT][sS]|[oO][bB][jJ][eE][cC][tT][kK][eE][yY][sS]|[sS][tT][oO][rR][aA][gG][eE][kK][eE][yY][sS]|[bB][uU][cC][kK][eE][tT][kK][eE][yY][sS]|[dD][eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT][sS])"
+          }
+        }
+      ],
       "not": {
         "pattern": "(?:^(?:[eE][xX][cC][eE][rR][pP][tT]|[tT][eE][xX][tT]|[cC][oO][nN][tT][eE][nN][tT]|[bB][lL][oO][bB]|[fF][iI][lL][eE][nN][aA][mM][eE]|[lL][oO][cC][aA][lL][pP][aA][tT][hH]|[fF][iI][lL][eE][pP][aA][tT][hH]|[pP][aA][tT][hH]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|[sS][eE][cC][rR][eE][tT]|[oO][bB][jJ][eE][cC][tT][kK][eE][yY]|[sS][tT][oO][rR][aA][gG][eE][kK][eE][yY]|[bB][uU][cC][kK][eE][tT][kK][eE][yY]|[dD][eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT])|(?:[eE][xX][cC][eE][rR][pP][tT]|[tT][eE][xX][tT]|[cC][oO][nN][tT][eE][nN][tT]|[bB][lL][oO][bB]|[fF][iI][lL][eE][nN][aA][mM][eE]|[lL][oO][cC][aA][lL][pP][aA][tT][hH]|[fF][iI][lL][eE][pP][aA][tT][hH]|[pP][aA][tT][hH]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|[sS][eE][cC][rR][eE][tT]|[oO][bB][jJ][eE][cC][tT][kK][eE][yY]|[sS][tT][oO][rR][aA][gG][eE][kK][eE][yY]|[bB][uU][cC][kK][eE][tT][kK][eE][yY]|[dD][eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT])$|(?:^|[_.-])(?:[eE][xX][cC][eE][rR][pP][tT]|[tT][eE][xX][tT]|[cC][oO][nN][tT][eE][nN][tT]|[bB][lL][oO][bB]|[fF][iI][lL][eE][nN][aA][mM][eE]|[lL][oO][cC][aA][lL][pP][aA][tT][hH]|[fF][iI][lL][eE][pP][aA][tT][hH]|[pP][aA][tT][hH]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|[sS][eE][cC][rR][eE][tT]|[oO][bB][jJ][eE][cC][tT][kK][eE][yY]|[sS][tT][oO][rR][aA][gG][eE][kK][eE][yY]|[bB][uU][cC][kK][eE][tT][kK][eE][yY]|[dD][eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT])(?:[_.-]|$)|(?:^|[_.-]|[a-z0-9])(?:E[xX][cC][eE][rR][pP][tT]|T[eE][xX][tT]|C[oO][nN][tT][eE][nN][tT]|B[lL][oO][bB]|F[iI][lL][eE][nN][aA][mM][eE]|L[oO][cC][aA][lL][pP][aA][tT][hH]|F[iI][lL][eE][pP][aA][tT][hH]|P[aA][tT][hH]|C[rR][eE][dD][eE][nN][tT][iI][aA][lL]|C[rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|S[eE][cC][rR][eE][tT]|O[bB][jJ][eE][cC][tT][kK][eE][yY]|S[tT][oO][rR][aA][gG][eE][kK][eE][yY]|B[uU][cC][kK][eE][tT][kK][eE][yY]|D[eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT])(?:[A-Z0-9_.-]|$))"
       }
@@ -360,7 +392,13 @@
     },
     "contextBinding": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          { "enum": ["contextPackId", "contextPackDigest", "topicProposalId"] },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
       "required": ["contextPackId", "contextPackDigest"],
       "properties": {
         "contextPackId": { "$ref": "#/$defs/contextPackId" },
@@ -393,7 +431,22 @@
     },
     "publicEvidenceSource": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "kind",
+              "id",
+              "contentDigest",
+              "snapshotDigest",
+              "canonicalUrl",
+              "fetchedAt"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
       "required": [
         "kind",
         "id",
@@ -412,7 +465,21 @@
       }
     },
     "artifactTitle": {
-      "type": "string"
+      "type": "string",
+      "allOf": [
+        { "not": { "pattern": "[/\\\\]" } },
+        {
+          "not": {
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:(?:$|[^\\s])"
+          }
+        },
+        {
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+          }
+        },
+        { "not": { "pattern": "(?:sk-|ghp_|github_pat_)" } }
+      ]
     },
     "artifact": {
       "type": "object",
@@ -479,7 +546,20 @@
     },
     "modelUsage": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "inputTokens",
+              "outputTokens",
+              "costUsd",
+              "reportedByRuntime"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
       "required": ["inputTokens", "outputTokens", "costUsd", "reportedByRuntime"],
       "properties": {
         "inputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
@@ -527,7 +607,22 @@
     },
     "modelReceipt": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "familiarId",
+              "runtime",
+              "effectiveModel",
+              "modelSource",
+              "providerBilling",
+              "usage"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
       "required": [
         "familiarId",
         "runtime",
@@ -555,7 +650,22 @@
     },
     "modelExecution": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "taskId",
+              "phase",
+              "attempt",
+              "inputDigest",
+              "outputDigest",
+              "receipt"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
       "required": [
         "taskId",
         "phase",
@@ -575,7 +685,13 @@
     },
     "usage": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          { "enum": ["inputTokens", "outputTokens", "costUsd", "completeness"] },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
       "required": ["inputTokens", "outputTokens", "costUsd", "completeness"],
       "properties": {
         "inputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
@@ -588,7 +704,21 @@
     },
     "retention": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "policy",
+              "effectivePolicy",
+              "status",
+              "contentExpiresAt",
+              "updatedAt"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
       "required": [
         "policy",
         "effectivePolicy",

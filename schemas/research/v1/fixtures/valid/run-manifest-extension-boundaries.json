@@ -1,0 +1,114 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_extension_boundaries_01",
+  "runId": "run_extension_boundaries_01",
+  "digest": "5eeca96140436e34f3eb84a9f12a13a51151e96d1365f107d3b73cda0dcee1b0",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:10:00.000Z",
+  "context": {
+    "contextPackId": "ctx_extension_boundaries_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "extensionMetadata": {
+      "items": [{ "label": "context" }]
+    }
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_extension_boundaries_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "extensionMetadata": {
+        "items": [{ "label": "context source" }]
+      }
+    },
+    {
+      "kind": "public-evidence",
+      "id": "evidence_extension_boundaries_01",
+      "contentDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "snapshotDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "canonicalUrl": "https://example.test/evidence",
+      "fetchedAt": "2026-08-16T20:07:00.000Z",
+      "extensionMetadata": {
+        "items": [{ "label": "public source" }]
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_extension_boundaries_01",
+      "kind": "research-report",
+      "title": "Research report",
+      "mediaType": "text/markdown",
+      "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "bytes": 1024,
+      "placement": "cloud-content",
+      "contentSync": "synced",
+      "createdAt": "2026-08-16T20:09:00.000Z",
+      "extensionMetadata": {
+        "items": [{ "label": "artifact" }]
+      }
+    }
+  ],
+  "modelExecutions": [
+    {
+      "taskId": "modeltask_extension_boundaries_01",
+      "phase": "synthesize",
+      "attempt": 1,
+      "inputDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "outputDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "receipt": {
+        "familiarId": "sage",
+        "runtime": "copilot",
+        "effectiveModel": "gpt-5.6-sol",
+        "modelSource": "session",
+        "providerBilling": "user-connected",
+        "usage": {
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "reportedByRuntime": false,
+          "extensionMetadata": {
+            "items": [{ "label": "receipt usage" }]
+          }
+        },
+        "extensionMetadata": {
+          "items": [{ "label": "receipt" }]
+        }
+      },
+      "extensionMetadata": {
+        "items": [{ "label": "model execution" }]
+      }
+    }
+  ],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported",
+    "extensionMetadata": {
+      "items": [{ "label": "manifest usage" }]
+    }
+  },
+  "retention": {
+    "policy": "project",
+    "effectivePolicy": "project",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:10:00.000Z",
+    "extensionMetadata": {
+      "items": [{ "label": "retention" }]
+    }
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "extensionMetadata": {
+      "items": [{ "label": "deletion" }]
+    }
+  },
+  "extensionMetadata": {
+    "items": [{ "label": "manifest root" }]
+  }
+}
