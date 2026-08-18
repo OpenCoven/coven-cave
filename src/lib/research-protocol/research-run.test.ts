@@ -7,6 +7,7 @@ import researchRunSchema from "../../../schemas/research/v1/research-run.schema.
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
 import invalidResearchRunChronology from "../../../schemas/research/v1/fixtures/invalid/research-run-chronology.json" with { type: "json" };
+import invalidResearchRunFinalizationChronology from "../../../schemas/research/v1/fixtures/invalid/research-run-finalization-chronology.json" with { type: "json" };
 import invalidResearchRunProposalLineage from "../../../schemas/research/v1/fixtures/invalid/research-run-proposal-lineage.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
@@ -57,6 +58,7 @@ function expectError(
 
 const researchSchemaContext: Record<string, TSchema> = {
   [runManifestSchema.$id]: runManifestSchema as TSchema,
+  "run-manifest.schema.json": runManifestSchema as TSchema,
 };
 
 function checkResearchRunSchema(value: unknown): boolean {
@@ -132,6 +134,9 @@ function runForStatus(
   const run: Record<string, unknown> = {
     ...validResearchRun,
     status,
+    ...(typeof artifactManifest?.finalizedAt === "string"
+      ? { updatedAt: artifactManifest.finalizedAt }
+      : {}),
     ...(artifactManifest ? { artifactManifest } : {}),
   };
   delete run.waitingReason;
@@ -226,6 +231,22 @@ test("research run timestamps are monotonic", () => {
     createdAt: "2016-12-31T23:59:60.999999999Z",
     updatedAt: "2017-01-01T00:00:00Z",
   }));
+});
+
+test("terminal run updates cannot precede embedded manifest finalization", () => {
+  const { expectedSchemaValid, ...fixture } = invalidResearchRunFinalizationChronology;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(checkResearchRunSchema(fixture), true);
+  expectError(parseResearchRunV1(fixture), "$.updatedAt", "semantic_conflict");
+
+  const manifest = linkedManifest(validRunManifest);
+  const boundary = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", manifest),
+      updatedAt: manifest.finalizedAt,
+    }),
+  );
+  assert.equal(boundary.updatedAt, boundary.artifactManifest?.finalizedAt);
 });
 
 test("accepted proposal lineage matches the optional context proposal", () => {
@@ -347,10 +368,12 @@ test("failure is required exactly for failed and absent otherwise", () => {
   assert.equal(Value.Check(researchRunSchema, failedWithoutFailure), false);
   expectError(parseResearchRunV1(failedWithoutFailure), "$.failure", "missing_field");
 
+  const artifactManifest = linkedManifest(validRunManifest);
   const validFailed = {
     ...failedWithoutFailure,
     failure: { code: "runtime_error", message: "try again", retryable: true },
-    artifactManifest: linkedManifest(validRunManifest),
+    updatedAt: artifactManifest.finalizedAt,
+    artifactManifest,
   };
   assert.ok(checkResearchRunSchema(validFailed));
   assert.equal(expectOk(parseResearchRunV1(validFailed)).failure?.retryable, true);
@@ -883,6 +906,63 @@ test("embedded manifests bind original run privacy retention and cloud-content c
   );
 });
 
+test("every requested artifact content sync requires run consent regardless of placement", () => {
+  for (const placement of ["device-local", "cloud-metadata"] as const) {
+    const notRequestedManifest = linkedManifest({
+      ...validRunManifest,
+      artifacts: validRunManifest.artifacts.map((artifact) => ({
+        ...artifact,
+        placement,
+        contentSync: "not-requested",
+      })),
+    });
+    expectOk(
+      parseResearchRunV1({
+        ...runForStatus("completed", notRequestedManifest),
+        privacy: {
+          ...validResearchRun.privacy,
+          artifactContentSync: false,
+        },
+      }),
+    );
+
+    for (const contentSync of ["pending", "synced", "failed"] as const) {
+      const manifest = linkedManifest({
+        ...validRunManifest,
+        artifacts: validRunManifest.artifacts.map((artifact) => ({
+          ...artifact,
+          placement,
+          contentSync,
+        })),
+      });
+      const withoutConsent = {
+        ...runForStatus("completed", manifest),
+        privacy: {
+          ...validResearchRun.privacy,
+          artifactContentSync: false,
+        },
+      };
+      expectError(
+        parseResearchRunV1(withoutConsent),
+        "$.artifactManifest.artifacts[0].contentSync",
+        "semantic_conflict",
+      );
+      assert.equal(
+        expectOk(
+          parseResearchRunV1({
+            ...withoutConsent,
+            privacy: {
+              ...withoutConsent.privacy,
+              artifactContentSync: true,
+            },
+          }),
+        ).artifactManifest?.artifacts[0].contentSync,
+        contentSync,
+      );
+    }
+  }
+});
+
 test("single-agent manifests bind every receipt to the familiar and pinned model", () => {
   const manifest = linkedManifest(validCloudRunManifest);
   const baseRun = {
@@ -1037,7 +1117,7 @@ test("terminal runs require final manifests and nonterminal runs permit only ass
 
   assert.deepEqual(
     researchRunSchema.properties.artifactManifest,
-    { $ref: "opencoven.run-manifest/v1" },
+    { $ref: "run-manifest.schema.json" },
   );
 });
 

@@ -35,28 +35,56 @@ const RETENTION_STATUSES = ["active", "deletion_scheduled", "deletion_pending", 
 const DELETION_STATUSES = ["not_scheduled", "scheduled", "pending", "completed", "partial_failure"] as const;
 const MANIFEST_STATES = ["assembling", "final"] as const;
 const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
+const RETENTION_STATUS_ORDER = {
+  active: 0,
+  deletion_scheduled: 1,
+  deletion_pending: 2,
+  deleted: 3,
+} as const;
+const DELETION_STATUS_ORDER = {
+  not_scheduled: 0,
+  scheduled: 1,
+  pending: 2,
+  partial_failure: 2,
+  completed: 3,
+} as const;
 
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
   "excerpt",
+  "excerpts",
   "privateexcerpt",
+  "privateexcerpts",
   "rawexcerpt",
+  "rawexcerpts",
   "text",
+  "texts",
   "content",
+  "contents",
   "blob",
+  "blobs",
   "filename",
+  "filenames",
   "localpath",
+  "localpaths",
   "filepath",
+  "filepaths",
   "path",
+  "paths",
   "credential",
   "credentials",
   "secret",
+  "secrets",
   "objectkey",
+  "objectkeys",
   "storagekey",
+  "storagekeys",
   "bucketkey",
+  "bucketkeys",
   "deletedcontent",
+  "deletedcontents",
 ]);
 
 function normalizeSensitiveKey(key: string): string {
@@ -1141,6 +1169,30 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     artifacts.push(artifact.value);
   }
 
+  if (typeof finalizedAt === "string") {
+    for (const [index, source] of sources.entries()) {
+      if (
+        source.kind === "public-evidence"
+        && compareUtcTimestamps(source.fetchedAt, finalizedAt) > 0
+      ) {
+        return fail(
+          "semantic_conflict",
+          `$.sources[${index}].fetchedAt`,
+          "public evidence cannot be fetched after manifest finalization",
+        );
+      }
+    }
+    for (const [index, artifact] of artifacts.entries()) {
+      if (compareUtcTimestamps(artifact.createdAt, finalizedAt) > 0) {
+        return fail(
+          "semantic_conflict",
+          `$.artifacts[${index}].createdAt`,
+          "artifacts cannot be created after manifest finalization",
+        );
+      }
+    }
+  }
+
   const modelExecutionsField = parseRequiredField(object.value, "modelExecutions", "$");
   if (!modelExecutionsField.ok) return modelExecutionsField;
   if (!Array.isArray(modelExecutionsField.value)) {
@@ -1407,14 +1459,22 @@ export function validateRunManifestRevision(
   const policy = compareImmutableField(previousRetention, nextRetention, "policy", "$.retention.policy");
   if (!policy.ok) return policy;
 
-  if (previous.deletion.status === "completed" && next.deletion.status !== "completed") {
+  if (
+    previous.state === "final"
+    && previous.deletion.status === "completed"
+    && next.deletion.status !== "completed"
+  ) {
     return fail(
       "semantic_conflict",
       "$.deletion.status",
       "completed deletion is terminal",
     );
   }
-  if (previous.retention.status === "deleted" && next.retention.status !== "deleted") {
+  if (
+    previous.state === "final"
+    && previous.retention.status === "deleted"
+    && next.retention.status !== "deleted"
+  ) {
     return fail(
       "semantic_conflict",
       "$.retention.status",
@@ -1422,23 +1482,36 @@ export function validateRunManifestRevision(
     );
   }
   if (
-    previous.retention.status !== "active"
+    previous.state === "final"
+    && previous.retention.status !== "active"
     && next.retention.status === "active"
   ) {
     return fail(
       "semantic_conflict",
       "$.retention.status",
-      "retention cannot return to active after deletion is scheduled",
+      "retention progress cannot move backward after finalization",
     );
   }
   if (
-    previous.deletion.status !== "not_scheduled"
-    && next.deletion.status === "not_scheduled"
+    previous.state === "final"
+    && DELETION_STATUS_ORDER[next.deletion.status]
+      < DELETION_STATUS_ORDER[previous.deletion.status]
   ) {
     return fail(
       "semantic_conflict",
       "$.deletion.status",
-      "deletion cannot return to not_scheduled after it is scheduled",
+      "deletion progress cannot move backward after finalization",
+    );
+  }
+  if (
+    previous.state === "final"
+    && RETENTION_STATUS_ORDER[next.retention.status]
+      < RETENTION_STATUS_ORDER[previous.retention.status]
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "retention progress cannot move backward after finalization",
     );
   }
   if (

@@ -113,6 +113,69 @@
       },
       "digestTargets": [""]
     },
+    "pending-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:00:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-to-completed-next": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "91d24368a371983049838e400fb6b77e264def9bcfa518eb6804a73b56689b8c",
+        "retention": {
+          "status": "deleted",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "completed",
+          "requestedAt": "2026-08-17T19:00:00.000Z",
+          "completedAt": "2026-08-17T20:01:00.000Z",
+          "deletedObjectCount": 1,
+          "eventSequence": 2
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-to-partial-failure-next": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "91d24368a371983049838e400fb6b77e264def9bcfa518eb6804a73b56689b8c",
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "partial_failure",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-to-scheduled-next": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "91d24368a371983049838e400fb6b77e264def9bcfa518eb6804a73b56689b8c",
+        "retention": {
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "partial-failure-next": {
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
@@ -124,6 +187,19 @@
         },
         "deletion": {
           "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-failure-to-scheduled-next": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "f24b9bbae5824bc848ab050c62056f8dcf73bd0c3a9bf8975d35b4cc8b8ab09c",
+        "retention": {
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
           "requestedAt": "2026-08-17T19:00:00.000Z"
         }
       },
@@ -402,6 +478,72 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.pending-retry-records-partial-failure",
+      "description": "Pending deletion work may record a partial failure without regressing its retryable stage.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "pending-previous",
+        "next": "pending-to-partial-failure-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.pending-deletion-completes",
+      "description": "Pending deletion work may advance to completed deletion.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "pending-previous",
+        "next": "pending-to-completed-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.pending-deletion-cannot-return-to-scheduled",
+      "description": "Pending deletion work cannot regress to the scheduled stage.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "pending-previous",
+        "next": "pending-to-scheduled-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.partial-failure-cannot-return-to-scheduled",
+      "description": "A partial deletion failure cannot regress to the scheduled stage.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "partial-failure-previous",
+        "next": "partial-failure-to-scheduled-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
       }
     },
     {

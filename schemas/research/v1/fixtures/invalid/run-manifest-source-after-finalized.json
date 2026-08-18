@@ -1,0 +1,99 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_source_after_finalized_01",
+  "runId": "run_source_after_finalized_01",
+  "digest": "b2accb4e7706b92f19da1441c5b2174d33560ce9abb8e3bd15bdd5c442369df1",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:10:00.000Z",
+  "sources": [
+    {
+      "kind": "public-evidence",
+      "id": "evidence_public_01",
+      "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "canonicalUrl": "https://example.test/research",
+      "fetchedAt": "2026-08-16T20:10:00.000000001Z",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_cloud_01",
+      "kind": "research-report",
+      "title": "Research report",
+      "mediaType": "text/markdown",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 1024,
+      "placement": "cloud-content",
+      "contentSync": "synced",
+      "createdAt": "2026-08-16T20:09:00.000Z",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "modelExecutions": [
+    {
+      "taskId": "modeltask_cloud_01",
+      "phase": "synthesize",
+      "attempt": 1,
+      "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "receipt": {
+        "familiarId": "sage",
+        "runtime": "copilot",
+        "effectiveModel": "gpt-5.6-sol",
+        "modelSource": "session",
+        "providerBilling": "user-connected",
+        "usage": {
+          "inputTokens": 1200,
+          "outputTokens": 300,
+          "costUsd": 0.42,
+          "reportedByRuntime": true,
+          "futureExtension": {
+            "preserve": true
+          }
+        },
+        "futureExtension": {
+          "preserve": true
+        }
+      },
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "usage": {
+    "inputTokens": 1200,
+    "outputTokens": 300,
+    "costUsd": 0.42,
+    "completeness": "complete",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "retention": {
+    "policy": "project",
+    "effectivePolicy": "project",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:10:00.000Z",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "futureExtension": {
+    "preserve": true
+  },
+  "expectedSchemaValid": true
+}

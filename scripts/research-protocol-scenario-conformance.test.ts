@@ -872,6 +872,9 @@ for (const schemaId of RESEARCH_PROTOCOL_SCHEMAS) {
   assert.ok(IsSchema(schema), `${schemaPath}: must be a valid JSON Schema`);
   schemaContext.set(schemaId, schema);
   schemaCheckContext[schemaId] = schema;
+  if (schemaId === "opencoven.run-manifest/v1") {
+    schemaCheckContext["run-manifest.schema.json"] = schema;
+  }
 }
 
 function validateProtocolObjectSchema(

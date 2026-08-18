@@ -1,0 +1,123 @@
+{
+  "schema": "opencoven.research-run/v1",
+  "id": "run_01",
+  "tenantOpaqueId": "tenant_alpha",
+  "context": {
+    "contextPackId": "ctx_01",
+    "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+    "topicProposalId": "proposal_01",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "acceptedTopic": {
+    "proposalId": "proposal_01",
+    "question": "How should the research executor resume this run?",
+    "editedByUser": true,
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "execution": {
+    "location": "local",
+    "modelExecution": "cave-device",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "pinned",
+      "model": "gpt-5.6-sol",
+      "futureExtension": {
+        "preserve": true
+      }
+    },
+    "strategy": "single-agent",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "privacy": {
+    "remoteQueries": false,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false,
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "bounds": {
+    "wallClockMinutes": 45,
+    "maxIterations": 4,
+    "sourceTarget": 8,
+    "maxSpendUsd": 0,
+    "checkpointEvery": 2,
+    "stopWhenCostUnavailable": true,
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "status": "completed",
+  "createdAt": "2026-08-15T20:00:00.000Z",
+  "updatedAt": "2026-08-15T20:08:59.999999999Z",
+  "nextEventSequence": 2,
+  "artifactManifest": {
+    "schema": "opencoven.run-manifest/v1",
+    "id": "manifest_context_01",
+    "runId": "run_01",
+    "digest": "4de59635083bc791daf70627cc9fa7a2e9bd20dae34f9bd7698c4d88520e3c54",
+    "revision": 2,
+    "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "state": "final",
+    "createdAt": "2026-08-15T20:00:00.000Z",
+    "finalizedAt": "2026-08-15T20:09:00.000Z",
+    "context": {
+      "contextPackId": "ctx_01",
+      "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+      "topicProposalId": "proposal_01",
+      "futureExtension": {
+        "preserve": true
+      }
+    },
+    "sources": [
+      {
+        "kind": "context-pack",
+        "id": "ctx_01",
+        "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+        "availability": "device-local"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "artifact_context_01",
+        "kind": "research-notes",
+        "title": "Context-bound research notes",
+        "mediaType": "text/markdown",
+        "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "bytes": 128,
+        "placement": "device-local",
+        "contentSync": "not-requested",
+        "createdAt": "2026-08-15T20:08:00.000Z"
+      }
+    ],
+    "modelExecutions": [],
+    "usage": {
+      "inputTokens": null,
+      "outputTokens": null,
+      "costUsd": null,
+      "completeness": "unreported"
+    },
+    "retention": {
+      "policy": "run-only",
+      "effectivePolicy": "7-days",
+      "status": "active",
+      "contentExpiresAt": null,
+      "updatedAt": "2026-08-15T20:09:00.000Z"
+    },
+    "deletion": {
+      "status": "not_scheduled"
+    }
+  },
+  "futureExtension": {
+    "preserve": true
+  },
+  "expectedSchemaValid": true
+}

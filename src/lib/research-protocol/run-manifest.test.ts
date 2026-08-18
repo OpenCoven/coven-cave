@@ -13,10 +13,13 @@ import invalidDeletionPairJson from "../../../schemas/research/v1/fixtures/inval
 import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-private-title.json" with { type: "json" };
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
 import invalidActiveShorteningJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-active-shortening.json" with { type: "json" };
+import invalidArtifactAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-after-finalized.json" with { type: "json" };
 import invalidCompletionBeforeRequestJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-completion-before-request.json" with { type: "json" };
 import invalidFinalizedChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-finalized-chronology.json" with { type: "json" };
 import invalidNestedPrivateExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-private-extension.json" with { type: "json" };
+import invalidPluralSecretsJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-plural-secrets.json" with { type: "json" };
 import invalidRetentionChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-chronology.json" with { type: "json" };
+import invalidSourceAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-source-after-finalized.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
@@ -74,6 +77,56 @@ function withoutExpectedSchemaValid(value: Record<string, unknown>): Record<stri
   const copy = { ...value };
   delete copy.expectedSchemaValid;
   return copy;
+}
+
+function parsedDeletionStage(
+  status: "scheduled" | "pending" | "partial_failure" | "completed",
+  previous?: RunManifestV1,
+): RunManifestV1 {
+  const retentionStatus =
+    status === "scheduled"
+      ? "deletion_scheduled"
+      : status === "completed"
+        ? "deleted"
+        : "deletion_pending";
+  const timestamp = previous
+    ? "2026-08-17T20:01:00.000Z"
+    : "2026-08-17T20:00:00.000Z";
+  const deletion =
+    status === "completed"
+      ? {
+          ...finalLocalManifestJson.deletion,
+          status,
+          requestedAt: "2026-08-17T19:00:00.000Z",
+          completedAt: timestamp,
+          deletedObjectCount: 1,
+          eventSequence: 2,
+        }
+      : {
+          ...finalLocalManifestJson.deletion,
+          status,
+          requestedAt: "2026-08-17T19:00:00.000Z",
+        };
+  return expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...finalLocalManifestJson,
+        ...(previous
+          ? {
+              revision: previous.revision + 1,
+              previousDigest: previous.digest,
+            }
+          : {}),
+        retention: {
+          ...finalLocalManifestJson.retention,
+          status: retentionStatus,
+          contentExpiresAt: "2026-08-17T20:00:00.000Z",
+          updatedAt: timestamp,
+        },
+        deletion,
+      }),
+    ),
+  );
 }
 
 function receiptUsage(
@@ -706,6 +759,87 @@ test("sensitive key normalization removes every non-ASCII-alphanumeric separator
   expectOk(parseRunManifestV1(benign));
 });
 
+test("plural sensitive aliases are exact and bounded to the three protected surfaces", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const aliases = [
+    "excerpts",
+    "privateExcerpts",
+    "raw_excerpts",
+    "texts",
+    "contents",
+    "blobs",
+    "fileNames",
+    "localPaths",
+    "file_paths",
+    "paths",
+    "credentials",
+    "secrets",
+    "objectKeys",
+    "storage_keys",
+    "bucket-keys",
+    "deletedContents",
+  ];
+
+  for (const key of aliases) {
+    const keyPath = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+      ? `.${key}`
+      : `[${JSON.stringify(key)}]`;
+    for (const { candidate, path } of [
+      {
+        candidate: recalculate({
+          ...local,
+          sources: [{ ...local.sources[0], [key]: "private material" }],
+        }),
+        path: `$.sources[0]${keyPath}`,
+      },
+      {
+        candidate: recalculate({
+          ...local,
+          artifacts: [{ ...local.artifacts[0], [key]: "private material" }],
+        }),
+        path: `$.artifacts[0]${keyPath}`,
+      },
+      {
+        candidate: recalculate({
+          ...local,
+          deletion: { ...local.deletion, [key]: "private material" },
+        }),
+        path: `$.deletion${keyPath}`,
+      },
+    ]) {
+      assert.equal(Value.Check(runManifestSchema, candidate), false, path);
+      expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
+    }
+  }
+
+  assert.equal(Value.Check(runManifestSchema, invalidPluralSecretsJson), false);
+  expectError(
+    parseRunManifestV1(invalidPluralSecretsJson),
+    "$.artifacts[0].metadata.secrets",
+    "semantic_conflict",
+  );
+
+  const benignKeys = [
+    "excerptsCount",
+    "privateExcerptsLabel",
+    "filepathsHint",
+    "secretsHint",
+    "objectKeysVisible",
+    "deletedContentsSummary",
+  ];
+  const benignFields = Object.fromEntries(
+    benignKeys.map((key) => [key, "display metadata"]),
+  );
+  const benign = recalculate({
+    ...local,
+    sources: [{ ...local.sources[0], ...benignFields }],
+    artifacts: [{ ...local.artifacts[0], ...benignFields }],
+    deletion: { ...local.deletion, ...benignFields },
+  });
+  assert.equal(Value.Check(runManifestSchema, benign), true);
+  expectOk(parseRunManifestV1(benign));
+});
+
 test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [candidate, path] of [
@@ -1051,6 +1185,10 @@ test("completed deletion rejects completion before request and accepts precise U
       previousDigest: local.digest,
       createdAt: requestedAt,
       finalizedAt: completedAt,
+      artifacts: local.artifacts.map((artifact) => ({
+        ...artifact,
+        createdAt: completedAt,
+      })),
       retention: {
         ...local.retention,
         status: "deleted" as const,
@@ -1080,10 +1218,49 @@ test("manifest lifecycle timestamps are monotonic", () => {
     expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
   }
 
+  for (const [fixtureWithMarker, path] of [
+    [invalidArtifactAfterFinalizedJson, "$.artifacts[0].createdAt"],
+    [invalidSourceAfterFinalizedJson, "$.sources[0].fetchedAt"],
+  ] as const) {
+    const fixture = withoutExpectedSchemaValid(fixtureWithMarker);
+    assert.equal(fixtureWithMarker.expectedSchemaValid, true);
+    assert.equal(Value.Check(runManifestSchema, fixture), true);
+    assert.equal(fixture.digest, digestProtocolObject(fixture));
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+
+  const finalizedBoundary = finalCloudManifestJson.finalizedAt;
+  const materialAtFinalization = recalculate({
+    ...finalCloudManifestJson,
+    sources: finalCloudManifestJson.sources.map((source) =>
+      source.kind === "public-evidence"
+        ? { ...source, fetchedAt: finalizedBoundary }
+        : { ...source, fetchedAt: "2099-12-31T23:59:59Z" },
+    ),
+    artifacts: finalCloudManifestJson.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: finalizedBoundary,
+    })),
+  });
+  const boundary = expectOk(parseRunManifestV1(materialAtFinalization));
+  assert.equal(boundary.artifacts[0].createdAt, boundary.finalizedAt);
+  assert.equal(
+    boundary.sources.find((source) => source.kind === "public-evidence")?.fetchedAt,
+    boundary.finalizedAt,
+  );
+  assert.equal(
+    boundary.sources.find((source) => source.kind === "context-pack")?.fetchedAt,
+    "2099-12-31T23:59:59Z",
+  );
+
   const leapSecondManifest = recalculate({
     ...finalLocalManifestJson,
     createdAt: "2016-12-31T23:59:59.999999999Z",
     finalizedAt: "2016-12-31T23:59:60Z",
+    artifacts: finalLocalManifestJson.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: "2016-12-31T23:59:60Z",
+    })),
     retention: {
       ...finalLocalManifestJson.retention,
       updatedAt: "2017-01-01T00:00:00Z",
@@ -1151,6 +1328,41 @@ test("revision retention clocks cannot move backward", () => {
     "$.retention.updatedAt",
     "semantic_conflict",
   );
+});
+
+test("post-final pending and partial-failure deletion stages cannot regress to scheduled", () => {
+  for (const status of ["pending", "partial_failure"] as const) {
+    const previous = parsedDeletionStage(status);
+    const next = parsedDeletionStage("scheduled", previous);
+    expectError(
+      validateRunManifestRevision(previous, next, { contextConsent: "7-days" }),
+      "$.deletion.status",
+      "semantic_conflict",
+    );
+  }
+});
+
+test("post-final deletion retries may change retryable state and continue forward", () => {
+  const pending = parsedDeletionStage("pending");
+  const partialFailure = parsedDeletionStage("partial_failure");
+  const scheduled = parsedDeletionStage("scheduled");
+
+  for (const [previous, nextStatus] of [
+    [pending, "partial_failure"],
+    [partialFailure, "pending"],
+    [scheduled, "pending"],
+    [pending, "completed"],
+  ] as const) {
+    const next = parsedDeletionStage(nextStatus, previous);
+    assert.deepEqual(
+      expectOk(
+        validateRunManifestRevision(previous, next, {
+          contextConsent: "7-days",
+        }),
+      ),
+      next,
+    );
+  }
 });
 
 test("final retention shortening starts a coherent deletion clock", () => {

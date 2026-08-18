@@ -17,13 +17,14 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { IsSchema, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 
 import {
   isRecord,
+  isUtcTimestamp,
   UTC_TIMESTAMP_PATTERN,
 } from "../src/lib/research-protocol/common.ts";
 import { digestProtocolObject } from "../src/lib/research-protocol/digest.ts";
@@ -99,6 +100,74 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
     );
     schemaContext.set(schemaId, loaded);
     schemaCheckContext[schemaId] = loaded;
+    if (schemaId === "opencoven.run-manifest/v1") {
+      schemaCheckContext["run-manifest.schema.json"] = loaded;
+    }
+  }
+});
+
+test("research-run artifactManifest ref resolves to the sibling run-manifest schema retrieval URI", () => {
+  const researchRunSchema = schemaContext.get("opencoven.research-run/v1");
+  const runManifestSchema = schemaContext.get("opencoven.run-manifest/v1");
+  assert.ok(researchRunSchema);
+  assert.ok(runManifestSchema);
+  const researchRunSchemaValue: unknown = researchRunSchema;
+  assert.ok(isRecord(researchRunSchemaValue));
+  assert.ok(isRecord(researchRunSchemaValue.properties));
+  assert.ok(isRecord(researchRunSchemaValue.properties.artifactManifest));
+
+  const ref = requireString(
+    researchRunSchemaValue.properties.artifactManifest.$ref,
+    path.join(schemasDir, "research-run.schema.json"),
+    "$.properties.artifactManifest.$ref",
+  );
+  assert.equal(ref, "run-manifest.schema.json");
+
+  const researchRunRetrievalUri = pathToFileURL(
+    path.join(schemasDir, "research-run.schema.json"),
+  );
+  const runManifestRetrievalUri = pathToFileURL(
+    path.join(schemasDir, "run-manifest.schema.json"),
+  );
+  assert.equal(new URL(ref, researchRunRetrievalUri).href, runManifestRetrievalUri.href);
+  assert.equal(schemaCheckContext[ref], runManifestSchema);
+});
+
+test("all schema timestamp definitions align with Gregorian leap-second month ends", () => {
+  const valid = [
+    "2026-08-15T20:00:00Z",
+    "2026-08-15T20:00:00.1Z",
+    "2026-08-15T20:00:00.123456789Z",
+    "2023-02-28T23:59:60Z",
+    "2024-02-29T23:59:60Z",
+    "1900-02-28T23:59:60Z",
+    "2000-02-29T23:59:60Z",
+    "1972-06-30T23:59:60Z",
+    "2016-12-31T23:59:60.123456789Z",
+    "2030-12-31T23:59:60Z",
+  ];
+  const invalid = [
+    "2024-02-28T23:59:60Z",
+    "2023-02-29T23:59:60Z",
+    "1900-02-29T23:59:60Z",
+    "2000-02-28T23:59:60Z",
+    "2026-08-15T20:00:00.1234567890Z",
+  ];
+
+  for (const [schemaId, schema] of schemaContext) {
+    const schemaValue: unknown = schema;
+    assert.ok(isRecord(schemaValue), `${schemaId}: schema must be an object`);
+    assert.ok(isRecord(schemaValue.$defs), `${schemaId}: $defs must be an object`);
+    const utcTimestamp = schemaValue.$defs.utcTimestamp;
+    assert.ok(IsSchema(utcTimestamp), `${schemaId}: utcTimestamp must be a schema`);
+    for (const value of valid) {
+      assert.equal(Check(utcTimestamp, value), true, `${schemaId}: ${value}`);
+      assert.equal(isUtcTimestamp(value), true, `parser: ${value}`);
+    }
+    for (const value of invalid) {
+      assert.equal(Check(utcTimestamp, value), false, `${schemaId}: ${value}`);
+      assert.equal(isUtcTimestamp(value), false, `parser: ${value}`);
+    }
   }
 });
 

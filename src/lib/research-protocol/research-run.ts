@@ -942,6 +942,16 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "cloud-content artifacts require run artifactContentSync consent",
       );
     }
+    const contentSyncIndex = artifactManifest.artifacts.findIndex(
+      (artifact) => artifact.contentSync !== "not-requested",
+    );
+    if (contentSyncIndex >= 0 && !privacy.value.artifactContentSync) {
+      return fail(
+        "semantic_conflict",
+        `$.artifactManifest.artifacts[${contentSyncIndex}].contentSync`,
+        "requested artifact content synchronization requires run artifactContentSync consent",
+      );
+    }
   }
 
   let failure: ResearchRunFailureV1 | undefined;
@@ -969,6 +979,16 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "semantic_conflict",
         "$.artifactManifest.state",
         "Terminal runs require a final artifactManifest",
+      );
+    }
+    if (
+      typeof artifactManifest.finalizedAt === "string"
+      && compareUtcTimestamps(updatedAt.value, artifactManifest.finalizedAt) < 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.updatedAt",
+        "Terminal run updatedAt must not precede artifactManifest.finalizedAt",
       );
     }
   } else if (artifactManifest?.state === "final") {
