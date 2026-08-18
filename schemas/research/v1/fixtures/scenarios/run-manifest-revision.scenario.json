@@ -6,11 +6,7 @@
       "fixture": "valid/run-manifest-assembling.json"
     },
     "broken-previous-digest": {
-      "fixture": "valid/run-manifest-retention-update.json",
-      "mergePatch": {
-        "previousDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-      },
-      "digestTargets": [""]
+      "fixture": "scenarios/objects/run-manifest-previous-digest.json"
     },
     "changed-manifest-id": {
       "fixture": "valid/run-manifest-retention-update.json",
@@ -137,26 +133,7 @@
       "digestTargets": [""]
     },
     "post-final-mutation": {
-      "fixture": "valid/run-manifest-retention-update.json",
-      "mergePatch": {
-        "artifacts": [
-          {
-            "id": "artifact_local_01",
-            "kind": "research-notes",
-            "title": "Changed research notes",
-            "mediaType": "text/markdown",
-            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            "bytes": 128,
-            "placement": "device-local",
-            "contentSync": "not-requested",
-            "createdAt": "2026-08-16T20:03:00.000Z",
-            "futureExtension": {
-              "preserve": true
-            }
-          }
-        ]
-      },
-      "digestTargets": [""]
+      "fixture": "scenarios/objects/run-manifest-final-mutation.json"
     },
     "post-completed-pending": {
       "fixture": "valid/run-manifest-retention-update.json",

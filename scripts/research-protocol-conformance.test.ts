@@ -22,7 +22,10 @@ import { fileURLToPath } from "node:url";
 import { IsSchema, type TSchema } from "typebox";
 import { Check } from "typebox/value";
 
-import { isRecord } from "../src/lib/research-protocol/common.ts";
+import {
+  isRecord,
+  UTC_TIMESTAMP_PATTERN,
+} from "../src/lib/research-protocol/common.ts";
 import { digestProtocolObject } from "../src/lib/research-protocol/digest.ts";
 import {
   RESEARCH_PROTOCOL_SCHEMAS,
@@ -84,6 +87,16 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
     assert.ok(isRecord(loaded), `${filePath}: schema file root must be an object`);
     assert.ok(IsSchema(loaded), `${filePath}: schema file must be a valid JSON Schema object`);
     assert.equal(loaded.$id, schemaId, `${filePath}: $id must equal ${schemaId}`);
+    assert.ok(isRecord(loaded.$defs), `${filePath}: $defs must be an object`);
+    assert.ok(
+      isRecord(loaded.$defs.utcTimestamp),
+      `${filePath}: $defs.utcTimestamp must be an object`,
+    );
+    assert.equal(
+      loaded.$defs.utcTimestamp.pattern,
+      UTC_TIMESTAMP_PATTERN,
+      `${filePath}: UTC timestamp pattern must match the shared protocol convention`,
+    );
     schemaContext.set(schemaId, loaded);
     schemaCheckContext[schemaId] = loaded;
   }
