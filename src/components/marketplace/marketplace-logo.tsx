@@ -18,7 +18,10 @@ export function MarketplaceLogo({
   logo,
   size = "card",
 }: MarketplaceLogoProps) {
-  const resolved = logo ?? resolveMarketplaceLogo(id, displayName);
+  const bundled = resolveMarketplaceLogo(id, displayName);
+  const resolved = logo?.kind === "brand" && !logo.svgPath && bundled.kind === "brand"
+    ? { ...logo, svgPath: bundled.svgPath }
+    : logo ?? bundled;
   return (
     <span
       className={`marketplace-logo marketplace-logo--${size}`}

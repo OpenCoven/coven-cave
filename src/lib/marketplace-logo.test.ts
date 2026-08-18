@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
   marketplaceLogoCoverage,
+  marketplaceLogoForTransport,
   marketplaceMonogram,
   resolveMarketplaceLogo,
 } from "./marketplace-logo.ts";
@@ -53,6 +54,15 @@ assert.equal(resolveMarketplaceLogo("unlisted-local-tool", "Unlisted Local Tool"
 assert.equal(marketplaceMonogram("Prompt Pack: Shipping"), "PS");
 assert.equal(marketplaceMonogram("GitHub"), "GH");
 assert.equal(marketplaceMonogram("OpenCoven"), "OC");
+const githubTransport = marketplaceLogoForTransport(resolveMarketplaceLogo("github", "GitHub"));
+assert.deepEqual(githubTransport, {
+  kind: "brand",
+  title: "GitHub",
+  monogram: "GH",
+  assetPath: "/marketplace-logos/github.png",
+});
+assert.equal("svgPath" in githubTransport, false, "API identities omit large inline SVG paths");
+assert.equal("source" in githubTransport, false, "API identities omit generator-only metadata");
 
 const expectedAssets = Object.entries(registry.entries)
   .filter(([, logo]) => logo.kind === "brand")
@@ -74,6 +84,7 @@ const componentSource = await readFile(
 assert.match(componentSource, /data-marketplace-logo-kind=\{resolved\.kind\}/);
 assert.match(componentSource, /resolved\.kind === "brand" && resolved\.svgPath/);
 assert.match(componentSource, /marketplace-logo__monogram/);
+assert.match(componentSource, /\{ \.\.\.logo, svgPath: bundled\.svgPath \}/);
 
 for (const file of [
   "src/components/marketplace/marketplace-card.tsx",
@@ -110,6 +121,6 @@ const marketplaceRoute = await readFile(
   path.join(root, "src/app/api/marketplace/route.ts"),
   "utf8",
 );
-assert.match(marketplaceRoute, /logo: plugin\.logo \?\? resolveMarketplaceLogo\(plugin\.id, plugin\.displayName\)/);
+assert.match(marketplaceRoute, /logo: marketplaceLogoForTransport\(/);
 
 console.log(`marketplace-logo.test.ts: ${catalogIds.length} entries covered`);
