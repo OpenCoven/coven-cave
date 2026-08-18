@@ -9,9 +9,9 @@
 //
 // New fixtures are picked up automatically; nothing needs to be listed here
 // by hand. JSON Schema cannot express every cross-object revision rule the
-// protocol enforces (see the per-module `*.test.ts` files for those); this
-// suite only asserts that every fixture on disk agrees with both layers,
-// leaving focused parser tests as the authority on semantic sequences.
+// protocol enforces. Persistent cross-object cases live in
+// `schemas/research/v1/fixtures/scenarios/*.scenario.json`; the focused sibling
+// runner keeps this suite limited to agreement for individual wire objects.
 
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";

@@ -1,0 +1,166 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "model-task-result",
+  "objects": {
+    "pinned-task": {
+      "fixture": "valid/model-task.json",
+      "mergePatch": {
+        "modelBinding": {
+          "familiarId": "sage",
+          "selection": "pinned",
+          "model": "gpt-5.6-sol"
+        }
+      }
+    },
+    "result": {
+      "fixture": "valid/model-task-result.json"
+    },
+    "task": {
+      "fixture": "valid/model-task.json"
+    },
+    "wrong-attempt-result": {
+      "fixture": "valid/model-task-result.json",
+      "mergePatch": {
+        "attempt": 2
+      }
+    },
+    "wrong-effective-model-result": {
+      "fixture": "valid/model-task-result.json",
+      "mergePatch": {
+        "modelReceipt": {
+          "effectiveModel": "other-model"
+        }
+      }
+    },
+    "wrong-familiar-result": {
+      "fixture": "valid/model-task-result.json",
+      "mergePatch": {
+        "modelReceipt": {
+          "familiarId": "other-familiar"
+        }
+      }
+    },
+    "wrong-input-digest-result": {
+      "fixture": "valid/model-task-result.json",
+      "mergePatch": {
+        "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "wrong-run-result": {
+      "fixture": "valid/model-task-result.json",
+      "mergePatch": {
+        "runId": "run_other_01"
+      }
+    },
+    "wrong-task-result": {
+      "fixture": "valid/model-task-result.json",
+      "mergePatch": {
+        "taskId": "modeltask_other_01"
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "model-task.valid-pair",
+      "description": "The canonical Model Task and Model Task Result form a valid pair.",
+      "validator": "model-task-result",
+      "inputs": {
+        "task": "task",
+        "result": "result"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "model-task.wrong-task-id",
+      "description": "The result must name the task that produced it.",
+      "validator": "model-task-result",
+      "inputs": {
+        "task": "task",
+        "result": "wrong-task-result"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.taskId"
+      }
+    },
+    {
+      "id": "model-task.wrong-run-id",
+      "description": "Task and result must belong to the same run.",
+      "validator": "model-task-result",
+      "inputs": {
+        "task": "task",
+        "result": "wrong-run-result"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.runId"
+      }
+    },
+    {
+      "id": "model-task.wrong-attempt",
+      "description": "The result attempt must equal the leased task attempt.",
+      "validator": "model-task-result",
+      "inputs": {
+        "task": "task",
+        "result": "wrong-attempt-result"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.attempt"
+      }
+    },
+    {
+      "id": "model-task.wrong-input-digest",
+      "description": "The result must echo the task input digest.",
+      "validator": "model-task-result",
+      "inputs": {
+        "task": "task",
+        "result": "wrong-input-digest-result"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.inputDigest"
+      }
+    },
+    {
+      "id": "model-task.wrong-familiar-id",
+      "description": "The result receipt must identify the task-bound familiar.",
+      "validator": "model-task-result",
+      "inputs": {
+        "task": "task",
+        "result": "wrong-familiar-result"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.modelReceipt.familiarId"
+      }
+    },
+    {
+      "id": "model-task.wrong-effective-model",
+      "description": "A pinned task requires the exact effective model in the result receipt.",
+      "validator": "model-task-result",
+      "inputs": {
+        "task": "pinned-task",
+        "result": "wrong-effective-model-result"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.modelReceipt.effectiveModel"
+      }
+    }
+  ]
+}

@@ -1,0 +1,275 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "run-manifest-revision",
+  "objects": {
+    "assembling": {
+      "fixture": "valid/run-manifest-assembling.json"
+    },
+    "broken-previous-digest": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "digestTargets": [""]
+    },
+    "changed-manifest-id": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "id": "manifest_other_01"
+      },
+      "digestTargets": [""]
+    },
+    "changed-run-id": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "runId": "run_other_01"
+      },
+      "digestTargets": [""]
+    },
+    "final": {
+      "fixture": "valid/run-manifest-final-local.json"
+    },
+    "final-from-assembling": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d"
+      },
+      "digestTargets": [""]
+    },
+    "lengthened-retention": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "project"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-usage-final": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "modelExecutions": [
+          {
+            "taskId": "modeltask_partial_01",
+            "phase": "scope",
+            "attempt": 1,
+            "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "receipt": {
+              "familiarId": "sage",
+              "runtime": "copilot",
+              "effectiveModel": "gpt-5.6-sol",
+              "modelSource": "session",
+              "providerBilling": "user-connected",
+              "usage": {
+                "inputTokens": 100,
+                "outputTokens": null,
+                "costUsd": null,
+                "reportedByRuntime": true
+              }
+            }
+          }
+        ],
+        "usage": {
+          "inputTokens": 100,
+          "completeness": "partial"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "post-final-mutation": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "artifacts": [
+          {
+            "id": "artifact_local_01",
+            "kind": "research-notes",
+            "title": "Changed research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "device-local",
+            "contentSync": "not-requested",
+            "createdAt": "2026-08-16T20:03:00.000Z",
+            "futureExtension": {
+              "preserve": true
+            }
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "shortened-retention": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "run-only"
+        }
+      },
+      "digestTargets": [""]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "manifest.assembling-to-final",
+      "description": "A valid assembling manifest advances to a linked final revision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "final-from-assembling"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.partial-usage",
+      "description": "A linked final manifest accepts correct partial usage completeness and accounting.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "partial-usage-final"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.changed-manifest-id",
+      "description": "A linked revision cannot change the manifest identity.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "changed-manifest-id"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.id"
+      }
+    },
+    {
+      "id": "manifest.changed-run-id",
+      "description": "A linked revision cannot move to another run.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "changed-run-id"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.runId"
+      }
+    },
+    {
+      "id": "manifest.broken-previous-digest",
+      "description": "A linked revision must identify the immediately preceding manifest digest.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "broken-previous-digest"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.previousDigest"
+      }
+    },
+    {
+      "id": "manifest.post-final-mutation",
+      "description": "A final manifest cannot mutate immutable artifact metadata.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "post-final-mutation"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.artifacts"
+      }
+    },
+    {
+      "id": "manifest.policy-shortening",
+      "description": "Effective retention may be shortened within the Context Pack ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "shortened-retention"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.lengthening-without-fresh-consent",
+      "description": "Effective retention cannot be lengthened without fresh Context Pack consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "lengthened-retention"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.lengthening-with-fresh-consent",
+      "description": "Fresh consent permits effective retention lengthening within the Context Pack ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "lengthened-retention"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.retention-ceiling",
+      "description": "Effective retention cannot exceed the Context Pack consent ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "lengthened-retention"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    }
+  ]
+}

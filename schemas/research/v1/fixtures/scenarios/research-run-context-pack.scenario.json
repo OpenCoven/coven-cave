@@ -1,0 +1,105 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "research-run-context-pack",
+  "objects": {
+    "context-pack": {
+      "fixture": "valid/context-pack.json"
+    },
+    "contextless-lengthened-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": null,
+        "artifactManifest": {
+          "context": null,
+          "sources": []
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "embedded-retention-above-consent-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "retention": {
+            "effectivePolicy": "project"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "matching-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json"
+    },
+    "run-retention-above-consent": {
+      "fixture": "valid/research-run.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118"
+        },
+        "privacy": {
+          "retention": "project"
+        }
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "research-run.valid-context-pack",
+      "description": "A research run matches its Context Pack binding and consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.retention-ceiling",
+      "description": "Run retention cannot exceed Context Pack consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "run-retention-above-consent",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.privacy.retention"
+      }
+    },
+    {
+      "id": "research-run.embedded-manifest-retention-ceiling",
+      "description": "Embedded manifest effective retention cannot exceed Context Pack consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "embedded-retention-above-consent-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "research-run.contextless-manifest-lengthening",
+      "description": "A contextless embedded manifest cannot lengthen beyond run retention.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-lengthened-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.retention.effectivePolicy"
+      }
+    }
+  ]
+}
