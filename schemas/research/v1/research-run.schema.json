@@ -61,7 +61,8 @@
               "challenging",
               "synthesizing",
               "controlling",
-              "awaiting_checkpoint"
+              "awaiting_checkpoint",
+              "publishing"
             ]
           }
         },

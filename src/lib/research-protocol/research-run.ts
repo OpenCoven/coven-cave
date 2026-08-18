@@ -6,7 +6,6 @@ import {
   isUtcTimestamp,
   parseResearchContextBindingV1,
   pass,
-  retentionDoesNotExceed,
   RETENTION_ORDER,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
@@ -53,6 +52,7 @@ const CHECKPOINT_WAITING_STATUSES = new Set([
   "synthesizing",
   "controlling",
   "awaiting_checkpoint",
+  "publishing",
 ]);
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "expired"]);
 const RUN_EVENT_TYPES = [
@@ -866,18 +866,6 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "artifactManifest retention policy must match run privacy retention",
       );
     }
-    if (
-      !retentionDoesNotExceed(
-        artifactManifest.retention.effectivePolicy,
-        privacy.value.retention,
-      )
-    ) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.retention.effectivePolicy",
-        "artifactManifest effective retention must not exceed run privacy retention",
-      );
-    }
     const cloudContentIndex = artifactManifest.artifacts.findIndex(
       (artifact) => artifact.placement === "cloud-content",
     );
@@ -1042,35 +1030,51 @@ export function validateRunEventSequence(
 }
 
 /**
- * Validates a manifest deletion receipt against the run's complete event stream.
- * Non-empty streams must start at sequence 1 and be contiguous. An empty stream
- * is accepted only while deletion is not completed.
+ * Validates an already-parsed run's deletion receipt against its complete event
+ * stream. Runs without a manifest or completed deletion still validate stream
+ * order and completeness, but do not require a content.deleted event.
  */
 export function validateRunManifestDeletionEventV1(
-  manifest: RunManifestV1,
+  run: ResearchRunV1,
   events: readonly RunEventV1[],
-): ProtocolParseResult<RunManifestV1> {
-  if (events.length === 0) {
-    if (manifest.deletion.status === "completed") {
+): ProtocolParseResult<ResearchRunV1> {
+  if (events.length > 0) {
+    const orderedEvents = validateRunEventSequence(events);
+    if (!orderedEvents.ok) return orderedEvents;
+    if (events[0].runId !== run.id) {
       return fail(
         "semantic_conflict",
-        "$.deletion.eventSequence",
-        "Completed deletion requires its content.deleted event",
+        "$[0].runId",
+        "Event stream runId must match the enclosing run id",
       );
     }
-    return pass(manifest);
   }
 
-  const orderedEvents = validateRunEventSequence(events);
-  if (!orderedEvents.ok) return orderedEvents;
-  if (manifest.deletion.status !== "completed") {
-    return pass(manifest);
-  }
-  if (events[0].runId !== manifest.runId) {
+  const expectedEventCount = run.nextEventSequence - 1;
+  if (events.length !== expectedEventCount) {
     return fail(
       "semantic_conflict",
-      "$[0].runId",
-      "Event stream runId must match the manifest runId",
+      "$",
+      `Complete event stream must contain exactly ${expectedEventCount} events`,
+    );
+  }
+
+  const manifest = run.artifactManifest;
+  if (!manifest || manifest.deletion.status !== "completed") {
+    return pass(run);
+  }
+  if (manifest.runId !== run.id) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.runId",
+      "artifactManifest.runId must match the enclosing run id",
+    );
+  }
+  if (manifest.state !== "final") {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.state",
+      "Completed deletion requires a final artifactManifest",
     );
   }
 
@@ -1078,16 +1082,16 @@ export function validateRunManifestDeletionEventV1(
   if (eventSequence === undefined || !Number.isSafeInteger(eventSequence) || eventSequence < 1) {
     return fail(
       "semantic_conflict",
-      "$.deletion.eventSequence",
+      "$.artifactManifest.deletion.eventSequence",
       "Completed deletion requires a valid eventSequence",
     );
   }
   const eventIndex = eventSequence - 1;
   const event = events[eventIndex];
-  if (!event || event.sequence !== eventSequence || event.runId !== manifest.runId) {
+  if (!event || event.sequence !== eventSequence || event.runId !== run.id) {
     return fail(
       "semantic_conflict",
-      "$.deletion.eventSequence",
+      "$.artifactManifest.deletion.eventSequence",
       "Deletion eventSequence must identify an event in the complete run stream",
     );
   }
@@ -1113,5 +1117,5 @@ export function validateRunManifestDeletionEventV1(
     );
   }
 
-  return pass(manifest);
+  return pass(run);
 }
