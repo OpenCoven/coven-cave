@@ -193,6 +193,22 @@ describe("buildThreadReflectPrompt", () => {
     assert.match(prompt, /\[visible attachments:/i);
   });
 
+  it("separates skill access from vendor authentication and reports only unresolved fallback gaps", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-design-fallback",
+      transcript: [
+        "assistant: frontend-design loaded successfully.",
+        "assistant: claude_design MCP is unavailable, so I used the exported HTML.",
+        "assistant: Updated /tmp/Components.dc.html and rendered /tmp/components.png.",
+      ].join("\n"),
+    });
+
+    assert.match(prompt, /skill listed in "skillsUsed"[\s\S]*must not[\s\S]*"skillsNeedingAccess"/i);
+    assert.match(prompt, /vendor authentication[\s\S]*capability[\s\S]*not a skill-access gap/i);
+    assert.match(prompt, /fallback[\s\S]*completed the task[\s\S]*do not report[\s\S]*persistentBlockers/i);
+    assert.match(prompt, /visual refinement[\s\S]*changed artifact path[\s\S]*fresh render/i);
+  });
+
   it("builds a resolution prompt that directs the thread to fix a selected review item", () => {
     const prompt = buildThreadSignalResolutionPrompt({
       kind: "skill-access",
