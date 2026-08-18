@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_final_cloud_01",
   "runId": "run_final_cloud_01",
-  "digest": "509747792b70e50a9efbc6a02271b8c0b92f5d449d6550da646ac3bf3be0908e",
+  "digest": "b93f97eab4c93f58cdbfd72f1dc5abecc8070c6a7f2eba1f0e0c429edab39f78",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -29,7 +29,7 @@
       "id": "evidence_public_01",
       "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "canonicalUrl": "https://example.com/research",
+      "canonicalUrl": "https://www.iana.org/research",
       "fetchedAt": "2026-08-16T20:07:00.000Z",
       "futureExtension": {
         "preserve": true

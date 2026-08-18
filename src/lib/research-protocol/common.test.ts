@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { compareUtcTimestamps, isUtcTimestamp } from "./common.ts";
+import {
+  compareUtcTimestamps,
+  isUtcTimestamp,
+  utcTimestampToProtocolNanoseconds,
+} from "./common.ts";
 
 test("UTC RFC 3339 timestamps accept ordinary timestamps and historical leap seconds", () => {
   for (const value of [
@@ -98,5 +102,24 @@ test("UTC RFC 3339 comparison rejects invalid inputs", () => {
   assert.throws(
     () => compareUtcTimestamps("2026-08-15T20:00:00Z", "not-a-timestamp"),
     /valid UTC RFC 3339 timestamps/,
+  );
+});
+
+test("the protocol timeline counts positive leap seconds in elapsed durations", () => {
+  const second = BigInt(1_000_000_000);
+  assert.equal(
+    utcTimestampToProtocolNanoseconds("2017-01-01T00:00:00Z") -
+      utcTimestampToProtocolNanoseconds("2016-12-31T23:59:59Z"),
+    BigInt(2) * second,
+  );
+  assert.equal(
+    utcTimestampToProtocolNanoseconds("2017-01-01T00:00:00Z") -
+      utcTimestampToProtocolNanoseconds("2016-12-31T23:59:60Z"),
+    second,
+  );
+  assert.equal(
+    utcTimestampToProtocolNanoseconds("2017-01-01T11:59:59Z") -
+      utcTimestampToProtocolNanoseconds("2016-12-31T12:00:00Z"),
+    BigInt(86_400) * second,
   );
 });
