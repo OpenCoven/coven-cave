@@ -131,4 +131,28 @@ assert.deepEqual(
 assert.equal(settleEnhance("draft", "draft"), "apply", "an unchanged draft applies in place");
 assert.equal(settleEnhance("draft", "draft edited"), "suggest", "a changed draft downgrades to a suggestion");
 
+// ── Research idempotency (#4628) ──────────────────────────────────────────────
+// Improve resends the input on every click, so a second pass re-wraps an
+// already-formatted Research prompt unless the formatter recovers the question.
+function countOccurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
+}
+
+const researchOnce = buildPromptEnhancement({ draft: "compare local llm runtimes", mode: "research" });
+const researchTwice = buildPromptEnhancement({ draft: researchOnce.enhanced, mode: "research" });
+assert.equal(researchTwice.ok, true, "a second research pass should still succeed");
+assert.equal(
+  researchTwice.enhanced,
+  researchOnce.enhanced,
+  "formatting twice returns the same text as formatting once",
+);
+for (const section of ["Primary questions:", "Method:", "Sources and confidence:", "Output format:"]) {
+  assert.equal(countOccurrences(researchOnce.enhanced, section), 1, `one copy of "${section}" after the first pass`);
+  assert.equal(countOccurrences(researchTwice.enhanced, section), 1, `one copy of "${section}" after the second pass`);
+}
+// A question that already ended with a period is reconstructed verbatim.
+const dottedOnce = buildPromptEnhancement({ draft: "compare runtimes.", mode: "research" });
+const dottedTwice = buildPromptEnhancement({ draft: dottedOnce.enhanced, mode: "research" });
+assert.equal(dottedTwice.enhanced, dottedOnce.enhanced, "a trailing period in the question survives idempotency");
+
 console.log("prompt-enhancer.test.ts: ok");
