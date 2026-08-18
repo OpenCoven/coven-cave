@@ -765,6 +765,60 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
   );
 });
 
+test("Run Manifest context bindings enforce the recursive sensitive-key boundary", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const directExcerpt = recalculate({
+    ...local,
+    context: {
+      ...local.context!,
+      excerpt: "private material",
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, directExcerpt), false);
+  expectError(
+    parseRunManifestV1(directExcerpt),
+    "$.context.excerpt",
+    "semantic_conflict",
+  );
+
+  const nestedFullwidthExcerpt = recalculate({
+    ...local,
+    context: {
+      ...local.context!,
+      metadata: {
+        items: [
+          {
+            "ｅｘｃｅｒｐｔ": "private material",
+          },
+        ],
+      },
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, nestedFullwidthExcerpt), false);
+  expectError(
+    parseRunManifestV1(nestedFullwidthExcerpt),
+    '$.context.metadata.items[0]["ｅｘｃｅｒｐｔ"]',
+    "semantic_conflict",
+  );
+
+  const benign = recalculate({
+    ...local,
+    context: {
+      ...local.context!,
+      displayMetadata: {
+        labels: ["excerpt", "localPath"],
+        nested: {
+          credentialHint: "safe",
+          "display-name": "safe",
+        },
+      },
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, benign), true);
+  const parsed = expectOk(parseRunManifestV1(benign));
+  assert.deepEqual(parsed.context?.displayMetadata, benign.context.displayMetadata);
+});
+
 test("sensitive manifest property names require printable ASCII before forbidden-name comparison", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [candidate, path] of [
@@ -1088,6 +1142,30 @@ test("completed deletion rejects completion before request and accepts precise U
   }
 });
 
+test("final manifest timestamps are monotonic at nanosecond precision", () => {
+  const reversed = recalculate({
+    ...finalLocalManifestJson,
+    createdAt: "2026-08-16T20:00:00.000000002Z",
+    finalizedAt: "2026-08-16T20:00:00.000000001Z",
+  });
+  expectError(
+    parseRunManifestV1(reversed),
+    "$.finalizedAt",
+    "semantic_conflict",
+  );
+
+  assert.equal(
+    parseRunManifestV1(
+      recalculate({
+        ...finalLocalManifestJson,
+        createdAt: "2026-08-16T20:00:00.000000001Z",
+        finalizedAt: "2026-08-16T20:00:00.000000001Z",
+      }),
+    ).ok,
+    true,
+  );
+});
+
 test("retention consent uses context consent or the original policy ceiling", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   assert.equal(validateManifestRetentionConsent(local, undefined).ok, false);
@@ -1130,6 +1208,82 @@ test("revision chains accept assembling-to-final and allowed retention updates",
   assert.deepEqual(
     expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
     update,
+  );
+});
+
+test("manifest revision lifecycle clocks cannot roll back at nanosecond precision", () => {
+  const previousCreatedAt = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...finalLocalManifestJson,
+        createdAt: "2026-08-16T20:00:00.000000002Z",
+      }),
+    ),
+  );
+  const createdAtRollback = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retentionUpdateJson,
+        previousDigest: previousCreatedAt.digest,
+        createdAt: "2026-08-16T20:00:00.000000001Z",
+      }),
+    ),
+  );
+  const createdAtError = expectError(
+    validateRunManifestRevision(previousCreatedAt, createdAtRollback, {
+      contextConsent: "7-days",
+    }),
+    "$.createdAt",
+    "semantic_conflict",
+  );
+  assert.match(createdAtError.message, /must not precede/i);
+
+  const previousRetention = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...finalLocalManifestJson,
+        retention: {
+          ...finalLocalManifestJson.retention,
+          updatedAt: "2026-08-16T20:05:00.000000002Z",
+        },
+      }),
+    ),
+  );
+  const retentionRollback = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retentionUpdateJson,
+        previousDigest: previousRetention.digest,
+        retention: {
+          ...retentionUpdateJson.retention,
+          updatedAt: "2026-08-16T20:05:00.000000001Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previousRetention, retentionRollback, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.updatedAt",
+    "semantic_conflict",
+  );
+});
+
+test("manifest revision lifecycle comparison rejects forged invalid timestamps without throwing", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const invalidCreatedAt = recalculate({
+    ...retentionUpdateJson,
+    createdAt: "not-a-timestamp",
+  });
+  expectError(
+    validateRunManifestRevision(
+      previous,
+      invalidCreatedAt as unknown as RunManifestV1,
+      { contextConsent: "7-days" },
+    ),
+    "$.createdAt",
+    "semantic_conflict",
   );
 });
 

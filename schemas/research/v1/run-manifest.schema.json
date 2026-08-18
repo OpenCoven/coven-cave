@@ -290,7 +290,8 @@
     },
     "contextBinding": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
       "required": ["contextPackId", "contextPackDigest"],
       "properties": {
         "contextPackId": { "$ref": "#/$defs/contextPackId" },

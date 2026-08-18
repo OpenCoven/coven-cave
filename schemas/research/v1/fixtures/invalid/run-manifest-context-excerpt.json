@@ -1,0 +1,41 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_context_excerpt_01",
+  "runId": "run_context_excerpt_01",
+  "digest": "707a075c665abc6df2d6c56739e80583bfe0192c4e24f1ea6254a88bf9edc70b",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-18T10:00:00.000Z",
+  "finalizedAt": "2026-08-18T10:01:00.000Z",
+  "context": {
+    "contextPackId": "ctx_context_excerpt_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "excerpt": "private material"
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_context_excerpt_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local"
+    }
+  ],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-18T10:01:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  }
+}

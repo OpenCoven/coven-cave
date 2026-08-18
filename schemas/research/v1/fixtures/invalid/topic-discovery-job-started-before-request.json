@@ -1,0 +1,13 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.topic-discovery-job/v1",
+  "id": "topicjob_started_before_request_01",
+  "contextPackId": "ctx_01",
+  "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "familiarId": "sage",
+  "status": "completed",
+  "requestedAt": "2026-08-18T10:00:00.000000002Z",
+  "startedAt": "2026-08-18T10:00:00.000000001Z",
+  "finishedAt": "2026-08-18T10:00:00.000000003Z",
+  "proposalIds": ["proposal_01"]
+}

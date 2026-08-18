@@ -1,0 +1,42 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.research-run/v1",
+  "id": "run_context_proposal_mismatch_01",
+  "context": {
+    "contextPackId": "ctx_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "topicProposalId": "proposal_context"
+  },
+  "acceptedTopic": {
+    "proposalId": "proposal_accepted",
+    "question": "Which proposal authorized this run?",
+    "editedByUser": false
+  },
+  "execution": {
+    "location": "local",
+    "modelExecution": "cave-device",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "resolve-at-run-start"
+    },
+    "strategy": "single-agent"
+  },
+  "privacy": {
+    "remoteQueries": false,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false
+  },
+  "bounds": {
+    "wallClockMinutes": 30,
+    "maxIterations": 3,
+    "sourceTarget": 6,
+    "checkpointEvery": 1,
+    "stopWhenCostUnavailable": true
+  },
+  "status": "queued",
+  "createdAt": "2026-08-18T10:00:00.000Z",
+  "updatedAt": "2026-08-18T10:00:00.000Z",
+  "nextEventSequence": 1
+}

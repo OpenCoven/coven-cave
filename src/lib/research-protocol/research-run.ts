@@ -761,6 +761,36 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   const acceptedTopic = parseAcceptedTopic(acceptedTopicField.value, "$.acceptedTopic");
   if (!acceptedTopic.ok) return acceptedTopic;
 
+  if (typeof acceptedTopic.value.proposalId === "string") {
+    if (!context) {
+      return fail(
+        "missing_field",
+        "$.context",
+        "Proposal-backed accepted topics require a context binding",
+      );
+    }
+    if (typeof context.topicProposalId !== "string") {
+      return fail(
+        "missing_field",
+        "$.context.topicProposalId",
+        "Proposal-backed accepted topics require context.topicProposalId",
+      );
+    }
+    if (context.topicProposalId !== acceptedTopic.value.proposalId) {
+      return fail(
+        "semantic_conflict",
+        "$.context.topicProposalId",
+        "context.topicProposalId must equal acceptedTopic.proposalId",
+      );
+    }
+  } else if (typeof context?.topicProposalId === "string") {
+    return fail(
+      "missing_field",
+      "$.acceptedTopic.proposalId",
+      "context.topicProposalId requires acceptedTopic.proposalId",
+    );
+  }
+
   const executionField = parseRequiredField(object.value, "execution", "$");
   if (!executionField.ok) return executionField;
   const execution = parseResearchExecutionProfileV1(executionField.value, "$.execution");
@@ -863,6 +893,13 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!updatedAtField.ok) return updatedAtField;
   const updatedAt = parseUtc(updatedAtField.value, "$.updatedAt", "updatedAt");
   if (!updatedAt.ok) return updatedAt;
+  if (compareUtcTimestamps(createdAt.value, updatedAt.value) > 0) {
+    return fail(
+      "semantic_conflict",
+      "$.updatedAt",
+      "updatedAt must not precede createdAt",
+    );
+  }
 
   const nextEventSequenceField = parseRequiredField(object.value, "nextEventSequence", "$");
   if (!nextEventSequenceField.ok) return nextEventSequenceField;

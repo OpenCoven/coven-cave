@@ -530,6 +530,90 @@ test("context parser validates ids and digest, preserves additive fields, and re
   );
 });
 
+test("proposal-backed runs require bidirectional accepted-topic context provenance", () => {
+  const mismatched = {
+    ...validResearchRun,
+    context: {
+      ...validResearchRun.context,
+      topicProposalId: "proposal_other",
+    },
+  };
+  assert.equal(checkResearchRunSchema(mismatched), true);
+  expectError(
+    parseResearchRunV1(mismatched),
+    "$.context.topicProposalId",
+    "semantic_conflict",
+  );
+
+  const missingContext = structuredClone(validResearchRun) as Record<string, unknown>;
+  delete missingContext.context;
+  assert.equal(checkResearchRunSchema(missingContext), false);
+  expectError(parseResearchRunV1(missingContext), "$.context", "missing_field");
+
+  const missingContextProposal = structuredClone(validResearchRun);
+  delete (missingContextProposal.context as Record<string, unknown>).topicProposalId;
+  assert.equal(checkResearchRunSchema(missingContextProposal), false);
+  expectError(
+    parseResearchRunV1(missingContextProposal),
+    "$.context.topicProposalId",
+    "missing_field",
+  );
+
+  const orphanContextProposal = structuredClone(validResearchRun);
+  delete (orphanContextProposal.acceptedTopic as Record<string, unknown>).proposalId;
+  assert.equal(checkResearchRunSchema(orphanContextProposal), false);
+  expectError(
+    parseResearchRunV1(orphanContextProposal),
+    "$.acceptedTopic.proposalId",
+    "missing_field",
+  );
+});
+
+test("manually authored topics may be context-bound or fully contextless", () => {
+  const contextBoundManual = structuredClone(validResearchRun);
+  delete (contextBoundManual.context as Record<string, unknown>).topicProposalId;
+  delete (contextBoundManual.acceptedTopic as Record<string, unknown>).proposalId;
+  assert.equal(checkResearchRunSchema(contextBoundManual), true);
+  const parsedContextBound = expectOk(parseResearchRunV1(contextBoundManual));
+  assert.equal(parsedContextBound.context?.topicProposalId, undefined);
+  assert.equal(parsedContextBound.acceptedTopic.proposalId, undefined);
+
+  const contextlessManual = structuredClone(contextBoundManual) as Record<string, unknown>;
+  delete contextlessManual.context;
+  assert.equal(checkResearchRunSchema(contextlessManual), true);
+  const parsedContextless = expectOk(parseResearchRunV1(contextlessManual));
+  assert.equal(parsedContextless.context, undefined);
+  assert.equal(parsedContextless.acceptedTopic.proposalId, undefined);
+});
+
+test("research run lifecycle timestamps are monotonic at nanosecond precision", () => {
+  expectError(
+    parseResearchRunV1({
+      ...validHostedResearchRun,
+      createdAt: "2026-08-15T20:00:00.000000002Z",
+      updatedAt: "2026-08-15T20:00:00.000000001Z",
+    }),
+    "$.updatedAt",
+    "semantic_conflict",
+  );
+  assert.equal(
+    parseResearchRunV1({
+      ...validHostedResearchRun,
+      createdAt: "2026-08-15T20:00:00.000000001Z",
+      updatedAt: "2026-08-15T20:00:00.000000001Z",
+    }).ok,
+    true,
+  );
+  assert.equal(
+    parseResearchRunV1({
+      ...validHostedResearchRun,
+      createdAt: "2026-08-15T20:00:00.000000001Z",
+      updatedAt: "2026-08-15T20:00:00.000000002Z",
+    }).ok,
+    true,
+  );
+});
+
 test("run and Context Pack composition requires matching presence and binding", () => {
   const pack = expectOk(parseContextPackV1(validContextPack));
   const boundRun = expectOk(
@@ -546,6 +630,10 @@ test("run and Context Pack composition requires matching presence and binding", 
 
   const contextlessValue: Record<string, unknown> = { ...validResearchRun };
   delete contextlessValue.context;
+  contextlessValue.acceptedTopic = {
+    ...validResearchRun.acceptedTopic,
+  };
+  delete (contextlessValue.acceptedTopic as Record<string, unknown>).proposalId;
   const contextlessRun = expectOk(parseResearchRunV1(contextlessValue));
   assert.equal(expectOk(validateResearchRunContextPackV1(contextlessRun)), contextlessRun);
   expectError(
@@ -1028,8 +1116,12 @@ test("contextless embedded manifests cannot extend effective retention beyond th
   const contextlessRun: Record<string, unknown> = {
     ...runForStatus("completed", contextlessManifest),
     privacy: { ...validResearchRun.privacy, retention: "run-only" },
+    acceptedTopic: {
+      ...validResearchRun.acceptedTopic,
+    },
   };
   delete contextlessRun.context;
+  delete (contextlessRun.acceptedTopic as Record<string, unknown>).proposalId;
 
   expectError(
     parseResearchRunV1(contextlessRun),

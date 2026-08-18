@@ -381,6 +381,22 @@
         }
       },
       "digestTargets": [""]
+    },
+    "created-at-rollback": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "createdAt": "2026-08-16T19:59:59.999999999Z"
+      },
+      "digestTargets": [""]
+    },
+    "retention-clock-rollback": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "updatedAt": "2026-08-16T20:04:59.999999999Z"
+        }
+      },
+      "digestTargets": [""]
     }
   },
   "scenarios": [
@@ -800,6 +816,42 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.created-at-rollback",
+      "description": "A linked manifest revision cannot roll its creation timestamp backward.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "created-at-rollback"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.createdAt"
+      }
+    },
+    {
+      "id": "manifest.retention-clock-rollback",
+      "description": "A linked manifest revision cannot roll its retention lifecycle clock backward.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "retention-clock-rollback"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.updatedAt"
       }
     }
   ]

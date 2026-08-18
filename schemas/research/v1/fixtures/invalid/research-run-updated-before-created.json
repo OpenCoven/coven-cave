@@ -1,0 +1,36 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.research-run/v1",
+  "id": "run_updated_before_created_01",
+  "acceptedTopic": {
+    "question": "Can a run update before creation?",
+    "editedByUser": true
+  },
+  "execution": {
+    "location": "hosted",
+    "modelExecution": "cave-device",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "resolve-at-run-start"
+    },
+    "strategy": "orchestrator-workers"
+  },
+  "privacy": {
+    "remoteQueries": false,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false
+  },
+  "bounds": {
+    "wallClockMinutes": 30,
+    "maxIterations": 3,
+    "sourceTarget": 6,
+    "checkpointEvery": 1,
+    "stopWhenCostUnavailable": true
+  },
+  "status": "queued",
+  "createdAt": "2026-08-18T10:00:00.000000002Z",
+  "updatedAt": "2026-08-18T10:00:00.000000001Z",
+  "nextEventSequence": 1
+}

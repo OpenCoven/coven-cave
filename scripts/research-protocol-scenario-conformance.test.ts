@@ -37,6 +37,7 @@ import {
   validateManifestRetentionConsent,
   validateModelTaskResultV1,
   validateResearchRunContextPackV1,
+  validateTopicDiscoveryCompositionV1,
   validateRunEventSequence,
   validateRunManifestDeletionEventV1,
   validateRunManifestRevision,
@@ -49,6 +50,8 @@ import {
   type ResearchRunV1,
   type RunEventV1,
   type RunManifestV1,
+  type TopicDiscoveryJobV1,
+  type TopicProposalV1,
 } from "../src/lib/research-protocol/index.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -75,6 +78,7 @@ const PUBLIC_VALIDATOR_ENTRY_POINTS = [
   "validateManifestRetentionConsent",
   "validateModelTaskResultV1",
   "validateResearchRunContextPackV1",
+  "validateTopicDiscoveryCompositionV1",
   "validateRunEventSequence",
   "validateRunManifestDeletionEventV1",
   "validateRunManifestRevision",
@@ -84,6 +88,7 @@ const VALIDATOR_ENTRY_POINT_BY_ACTION = {
   "manifest-retention-consent": "validateManifestRetentionConsent",
   "model-task-result": "validateModelTaskResultV1",
   "research-run-context-pack": "validateResearchRunContextPackV1",
+  "topic-discovery-composition": "validateTopicDiscoveryCompositionV1",
   "run-event-deletion": "validateRunManifestDeletionEventV1",
   "run-event-sequence": "validateRunEventSequence",
   "run-manifest-revision": "validateRunManifestRevision",
@@ -469,6 +474,48 @@ function scenarioInputEntries(
             `${location}.contextPack`,
           ),
           schema: "opencoven.context-pack/v1",
+        });
+      }
+      break;
+    case "topic-discovery-composition":
+      requireExactInputKeys(
+        scenario.inputs,
+        ["contextPack", "job", "proposals"],
+        location,
+      );
+      entries.push(
+        {
+          name: "contextPack",
+          reference: requireObjectReference(
+            scenario.inputs.contextPack,
+            objects,
+            `${location}.contextPack`,
+          ),
+          schema: "opencoven.context-pack/v1",
+        },
+        {
+          name: "job",
+          reference: requireObjectReference(
+            scenario.inputs.job,
+            objects,
+            `${location}.job`,
+          ),
+          schema: "opencoven.topic-discovery-job/v1",
+        },
+      );
+      assert.ok(
+        Array.isArray(scenario.inputs.proposals),
+        `${location}.proposals: must be an array`,
+      );
+      for (const [index, proposal] of scenario.inputs.proposals.entries()) {
+        entries.push({
+          name: `proposals[${index}]`,
+          reference: requireObjectReference(
+            proposal,
+            objects,
+            `${location}.proposals[${index}]`,
+          ),
+          schema: "opencoven.topic-proposal/v1",
         });
       }
       break;
@@ -1025,6 +1072,33 @@ function executeComposition(
       return {
         result: validateResearchRunContextPackV1(run, contextPack),
         expectedValue: run,
+      };
+    }
+    case "topic-discovery-composition": {
+      const contextPack = requireParsedSchema<ContextPackV1>(
+        parsedInputs.get("contextPack")!,
+        "opencoven.context-pack/v1",
+        `${scenario.id}.contextPack`,
+      );
+      const job = requireParsedSchema<TopicDiscoveryJobV1>(
+        parsedInputs.get("job")!,
+        "opencoven.topic-discovery-job/v1",
+        `${scenario.id}.job`,
+      );
+      const proposals: TopicProposalV1[] = [];
+      const rawProposals = scenario.inputs.proposals as unknown[];
+      for (const index of rawProposals.keys()) {
+        proposals.push(
+          requireParsedSchema<TopicProposalV1>(
+            parsedInputs.get(`proposals[${index}]`)!,
+            "opencoven.topic-proposal/v1",
+            `${scenario.id}.proposals[${index}]`,
+          ),
+        );
+      }
+      return {
+        result: validateTopicDiscoveryCompositionV1(contextPack, job, proposals),
+        expectedValue: job,
       };
     }
     case "model-task-result": {
@@ -1871,6 +1945,66 @@ test("validates optional and event-array input roles before honoring a parse fai
   );
 });
 
+test("validates every topic discovery composition input against its exact role schema", () => {
+  const corpus = corpora.find(
+    (candidate) => candidate.family === "topic-discovery-composition",
+  );
+  assert.ok(corpus);
+  const scenario = corpus.scenarios.find(
+    (candidate) => candidate.id === "discovery.valid-composition",
+  );
+  assert.ok(scenario);
+
+  for (const [inputs, expectedMessage] of [
+    [
+      {
+        ...scenario.inputs,
+        contextPack: "job",
+      },
+      /input contextPack.*opencoven\.context-pack\/v1/i,
+    ],
+    [
+      {
+        ...scenario.inputs,
+        job: "context-pack",
+      },
+      /input job.*opencoven\.topic-discovery-job\/v1/i,
+    ],
+    [
+      {
+        ...scenario.inputs,
+        proposals: ["job", "proposal-two"],
+      },
+      /input proposals\[0\].*opencoven\.topic-proposal\/v1/i,
+    ],
+  ] as const) {
+    assert.throws(
+      () =>
+        executeScenario(corpus, {
+          ...scenario,
+          inputs,
+        }),
+      expectedMessage,
+    );
+  }
+
+  assert.throws(
+    () =>
+      scenarioInputEntries(
+        {
+          validator: "topic-discovery-composition",
+          inputs: {
+            ...scenario.inputs,
+            extra: "proposal-one",
+          },
+        },
+        corpus.objects,
+        "topic-discovery-composition.inputs",
+      ),
+    /unknown field extra/i,
+  );
+});
+
 const allScenarioIds = new Set<string>();
 for (const corpus of corpora) {
   for (const scenario of corpus.scenarios) {
@@ -1906,6 +2040,8 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.unchanged-policy-is-not-renewal",
     "manifest.partial-failure-continues",
     "manifest.completed-deletion-terminal",
+    "manifest.created-at-rollback",
+    "manifest.retention-clock-rollback",
     "manifest-consent.valid-context-consent",
     "manifest-consent.missing-context-consent",
     "manifest-consent.retention-above-consent",
@@ -1925,6 +2061,21 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "research-run.retention-ceiling",
     "research-run.embedded-manifest-retention-ceiling",
     "research-run.contextless-manifest-lengthening",
+    "discovery.valid-composition",
+    "discovery.research-run-pack",
+    "discovery.wrong-pack-id",
+    "discovery.wrong-pack-digest",
+    "discovery.missing-proposal",
+    "discovery.extra-proposal",
+    "discovery.swapped-proposals",
+    "discovery.wrong-job-id",
+    "discovery.wrong-proposal-pack-id",
+    "discovery.missing-resource",
+    "discovery.selector-mismatch",
+    "discovery.proposal-before-request",
+    "discovery.proposal-after-finish",
+    "discovery.started-before-request",
+    "discovery.finished-before-started",
     "model-task.valid-pair",
     "model-task.wrong-task-id",
     "model-task.wrong-run-id",

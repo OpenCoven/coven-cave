@@ -228,13 +228,19 @@
     "contextless-run": {
       "fixture": "valid/research-run.json",
       "mergePatch": {
-        "context": null
+        "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        }
       }
     },
     "contextless-lengthened-run": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
         "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        },
         "artifactManifest": {
           "context": null,
           "sources": []

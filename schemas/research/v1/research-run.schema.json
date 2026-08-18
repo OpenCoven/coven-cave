@@ -38,6 +38,41 @@
     {
       "if": {
         "properties": {
+          "acceptedTopic": {
+            "required": ["proposalId"]
+          }
+        },
+        "required": ["acceptedTopic"]
+      },
+      "then": {
+        "required": ["context"],
+        "properties": {
+          "context": {
+            "required": ["topicProposalId"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "context": {
+            "required": ["topicProposalId"]
+          }
+        },
+        "required": ["context"]
+      },
+      "then": {
+        "properties": {
+          "acceptedTopic": {
+            "required": ["proposalId"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "execution": {
             "properties": { "location": { "const": "local" } },
             "required": ["location"]

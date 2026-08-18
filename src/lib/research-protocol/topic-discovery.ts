@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -11,8 +12,10 @@ import {
 } from "./common.ts";
 import {
   parseContextSelectorV1,
+  type ContextPackV1,
   type ContextSelectorV1,
 } from "./context-pack.ts";
+import { canonicalJson } from "./digest.ts";
 
 const TOPIC_DISCOVERY_JOB_SCHEMA = "opencoven.topic-discovery-job/v1";
 const TOPIC_DISCOVERY_JOB_SCHEMA_RE = /^opencoven\.topic-discovery-job\/v(\d+)$/;
@@ -752,6 +755,32 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
   const hasFinishedAt = typeof finishedAt !== "undefined";
   const hasFailure = typeof failure !== "undefined";
 
+  if (
+    typeof startedAt === "string"
+    && compareUtcTimestamps(requestedAt.value, startedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.startedAt",
+      "startedAt must not precede requestedAt",
+    );
+  }
+  if (
+    typeof finishedAt === "string"
+    && compareUtcTimestamps(
+      typeof startedAt === "string" ? startedAt : requestedAt.value,
+      finishedAt,
+    ) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finishedAt",
+      typeof startedAt === "string"
+        ? "finishedAt must not precede startedAt"
+        : "finishedAt must not precede requestedAt",
+    );
+  }
+
   if (status.value === "queued") {
     if (hasFinishedAt) {
       return fail("semantic_conflict", "$.finishedAt", "queued jobs must not include finishedAt");
@@ -920,4 +949,125 @@ export function parseTopicProposalV1(value: unknown): ProtocolParseResult<TopicP
     relatedMissionIds: relatedMissionIds.value,
     createdAt: createdAt.value,
   });
+}
+
+export function validateTopicDiscoveryCompositionV1(
+  contextPack: ContextPackV1,
+  job: TopicDiscoveryJobV1,
+  proposals: readonly TopicProposalV1[],
+): ProtocolParseResult<TopicDiscoveryJobV1> {
+  if (contextPack.purpose !== "topic-discovery") {
+    return fail(
+      "semantic_conflict",
+      "$.contextPack.purpose",
+      "Context Pack purpose must be topic-discovery",
+    );
+  }
+  if (!contextPack.policy.allowedPurposes.includes("topic-discovery")) {
+    return fail(
+      "semantic_conflict",
+      "$.contextPack.policy.allowedPurposes",
+      "Context Pack allowedPurposes must include topic-discovery",
+    );
+  }
+  if (job.contextPackId !== contextPack.id) {
+    return fail(
+      "semantic_conflict",
+      "$.contextPackId",
+      "Topic Discovery Job contextPackId must match the Context Pack id",
+    );
+  }
+  if (job.contextPackDigest !== contextPack.digest) {
+    return fail(
+      "semantic_conflict",
+      "$.contextPackDigest",
+      "Topic Discovery Job contextPackDigest must match the Context Pack digest",
+    );
+  }
+  if (job.proposalIds.length !== proposals.length) {
+    return fail(
+      "semantic_conflict",
+      "$.proposalIds",
+      "Topic Discovery Job proposalIds must match the complete persisted proposal list",
+    );
+  }
+
+  for (const [index, proposal] of proposals.entries()) {
+    if (job.proposalIds[index] !== proposal.id) {
+      return fail(
+        "semantic_conflict",
+        indexPath("$.proposalIds", index),
+        "Topic Discovery Job proposalIds must match persisted proposal order",
+      );
+    }
+  }
+
+  const resources = new Map(contextPack.resources.map((resource) => [resource.id, resource]));
+  for (const [proposalIndex, proposal] of proposals.entries()) {
+    const proposalPath = indexPath("$.proposals", proposalIndex);
+    if (proposal.discoveryJobId !== job.id) {
+      return fail(
+        "semantic_conflict",
+        childPath(proposalPath, "discoveryJobId"),
+        "Topic Proposal discoveryJobId must match the Topic Discovery Job id",
+      );
+    }
+    if (proposal.contextPackId !== contextPack.id) {
+      return fail(
+        "semantic_conflict",
+        childPath(proposalPath, "contextPackId"),
+        "Topic Proposal contextPackId must match the Context Pack id",
+      );
+    }
+    if (compareUtcTimestamps(proposal.createdAt, job.requestedAt) < 0) {
+      return fail(
+        "semantic_conflict",
+        childPath(proposalPath, "createdAt"),
+        "Topic Proposal createdAt must not precede the discovery request",
+      );
+    }
+    if (
+      typeof job.finishedAt === "string"
+      && compareUtcTimestamps(proposal.createdAt, job.finishedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        childPath(proposalPath, "createdAt"),
+        "Topic Proposal createdAt must not follow discovery completion",
+      );
+    }
+
+    for (const evidenceKind of ["evidence", "counterevidence"] as const) {
+      for (const [evidenceIndex, evidence] of proposal[evidenceKind].entries()) {
+        const evidencePath = indexPath(childPath(proposalPath, evidenceKind), evidenceIndex);
+        const resource = resources.get(evidence.resourceId);
+        if (!resource) {
+          return fail(
+            "semantic_conflict",
+            childPath(evidencePath, "resourceId"),
+            "Topic evidence resourceId must identify a sealed Context Pack resource",
+          );
+        }
+        let selectorsMatch = false;
+        try {
+          selectorsMatch = canonicalJson(evidence.selector) === canonicalJson(resource.selector);
+        } catch {
+          return fail(
+            "invalid_value",
+            childPath(evidencePath, "selector"),
+            "Topic evidence selectors must be canonical JSON",
+          );
+        }
+        if (!selectorsMatch) {
+          return fail(
+            "semantic_conflict",
+            childPath(evidencePath, "selector"),
+            "Topic evidence selector must match the sealed Context Pack resource selector",
+          );
+        }
+      }
+    }
+  }
+
+  return pass(job);
 }

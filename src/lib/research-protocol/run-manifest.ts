@@ -1213,9 +1213,21 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     if (!parsedFinalizedAt.ok) return parsedFinalizedAt;
     finalizedAt = parsedFinalizedAt.value;
   }
+  if (
+    typeof finalizedAt === "string"
+    && compareUtcTimestamps(createdAt.value, finalizedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finalizedAt",
+      "finalizedAt must not precede createdAt",
+    );
+  }
 
   let context: ResearchContextBindingV1 | undefined;
   if (hasOwn(object.value, "context")) {
+    const safeKeys = validateSensitiveObjectKeys(object.value.context, "$.context");
+    if (!safeKeys.ok) return safeKeys;
     const parsedContext = parseResearchContextBindingV1(object.value.context, "$.context");
     if (!parsedContext.ok) return parsedContext;
     context = parsedContext.value;
@@ -1484,8 +1496,39 @@ export function validateRunManifestRevision(
   if (next.runId !== previous.runId) {
     return fail("semantic_conflict", "$.runId", "runId cannot change across revisions");
   }
+  if (!isUtcTimestamp(previous.createdAt) || !isUtcTimestamp(next.createdAt)) {
+    return fail(
+      "semantic_conflict",
+      "$.createdAt",
+      "manifest revision createdAt values must be valid UTC timestamps",
+    );
+  }
+  if (compareUtcTimestamps(previous.createdAt, next.createdAt) > 0) {
+    return fail(
+      "semantic_conflict",
+      "$.createdAt",
+      "next createdAt must not precede previous createdAt",
+    );
+  }
   if (next.createdAt !== previous.createdAt) {
     return fail("semantic_conflict", "$.createdAt", "createdAt cannot change across revisions");
+  }
+  if (!isUtcTimestamp(next.retention.updatedAt)) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "next retention.updatedAt must be a valid UTC timestamp",
+    );
+  }
+  if (
+    isUtcTimestamp(previous.retention.updatedAt)
+    && compareUtcTimestamps(previous.retention.updatedAt, next.retention.updatedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "next retention.updatedAt must not precede previous retention.updatedAt",
+    );
   }
 
   let previousDigest: string;

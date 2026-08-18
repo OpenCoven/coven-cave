@@ -1,0 +1,392 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "topic-discovery-composition",
+  "objects": {
+    "context-pack": {
+      "fixture": "valid/context-pack.json",
+      "mergePatch": {
+        "purpose": "topic-discovery",
+        "policy": {
+          "allowedPurposes": ["topic-discovery"]
+        },
+        "resources": [
+          {
+            "id": "resource_01",
+            "kind": "session",
+            "uri": "coven://session/session_01",
+            "digest": "0b9c966e9a7c4831f255cebbba0e7726fc8410ed32998179b32221097b404f9b",
+            "localBlobDigest": "4b94f5f75ee88c0e995251afe98fb468499215b33bbb6c18d01b1dd583f69e9d",
+            "selector": {
+              "type": "text-span",
+              "start": 0,
+              "end": 20
+            },
+            "trust": "mixed-conversation",
+            "sensitivity": "private",
+            "capturedAt": "2026-08-15T19:59:00.000Z",
+            "title": "Selected research discussion",
+            "mediaType": "application/json"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "research-run-context-pack": {
+      "fixture": "valid/context-pack.json"
+    },
+    "job": {
+      "fixture": "valid/topic-discovery-job.json",
+      "mergePatch": {
+        "contextPackDigest": "43de58e0293ec5ffb09bb16ede9212ddbf4c5067ac08009d8846ed24f42c0635",
+        "proposalIds": ["proposal_01", "proposal_02"]
+      }
+    },
+    "job-finished-before-started": {
+      "fixture": "valid/topic-discovery-job.json",
+      "mergePatch": {
+        "contextPackDigest": "43de58e0293ec5ffb09bb16ede9212ddbf4c5067ac08009d8846ed24f42c0635",
+        "startedAt": "2026-08-15T20:06:00.000000002Z",
+        "finishedAt": "2026-08-15T20:06:00.000000001Z",
+        "proposalIds": ["proposal_01", "proposal_02"]
+      }
+    },
+    "job-started-before-request": {
+      "fixture": "valid/topic-discovery-job.json",
+      "mergePatch": {
+        "contextPackDigest": "43de58e0293ec5ffb09bb16ede9212ddbf4c5067ac08009d8846ed24f42c0635",
+        "requestedAt": "2026-08-15T20:00:00.000000002Z",
+        "startedAt": "2026-08-15T20:00:00.000000001Z",
+        "proposalIds": ["proposal_01", "proposal_02"]
+      }
+    },
+    "job-wrong-digest": {
+      "fixture": "valid/topic-discovery-job.json",
+      "mergePatch": {
+        "contextPackDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "proposalIds": ["proposal_01", "proposal_02"]
+      }
+    },
+    "job-wrong-pack": {
+      "fixture": "valid/topic-discovery-job.json",
+      "mergePatch": {
+        "contextPackId": "ctx_other",
+        "contextPackDigest": "43de58e0293ec5ffb09bb16ede9212ddbf4c5067ac08009d8846ed24f42c0635",
+        "proposalIds": ["proposal_01", "proposal_02"]
+      }
+    },
+    "proposal-after-finish": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "createdAt": "2026-08-15T20:06:00.000000001Z"
+      }
+    },
+    "proposal-before-request": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "createdAt": "2026-08-15T19:59:59.999999999Z"
+      }
+    },
+    "proposal-extra": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "id": "proposal_03"
+      }
+    },
+    "proposal-missing-resource": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "evidence": [
+          {
+            "resourceId": "resource_missing",
+            "selector": {
+              "type": "text-span",
+              "start": 0,
+              "end": 20
+            },
+            "excerpt": "Evidence excerpt",
+            "excerptDigest": "84e3d621a6705b03cc38559364169efff401aa7155f85cecd46b51660dd1ae42"
+          }
+        ]
+      }
+    },
+    "proposal-one": {
+      "fixture": "valid/topic-proposal.json"
+    },
+    "proposal-selector-mismatch": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "evidence": [
+          {
+            "resourceId": "resource_01",
+            "selector": {
+              "type": "text-span",
+              "start": 0,
+              "end": 19
+            },
+            "excerpt": "Evidence excerpt",
+            "excerptDigest": "84e3d621a6705b03cc38559364169efff401aa7155f85cecd46b51660dd1ae42"
+          }
+        ]
+      }
+    },
+    "proposal-two": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "id": "proposal_02"
+      }
+    },
+    "proposal-wrong-job": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "discoveryJobId": "topicjob_other"
+      }
+    },
+    "proposal-wrong-pack": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "contextPackId": "ctx_other"
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "discovery.valid-composition",
+      "description": "A completed discovery job binds its ordered proposals to the sealed Context Pack.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-one", "proposal-two"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "discovery.research-run-pack",
+      "description": "A research-run Context Pack cannot authorize topic discovery.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "research-run-context-pack",
+        "job": "job",
+        "proposals": ["proposal-one", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.contextPack.purpose"
+      }
+    },
+    {
+      "id": "discovery.wrong-pack-id",
+      "description": "The discovery job must name the supplied Context Pack.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job-wrong-pack",
+        "proposals": ["proposal-one", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.contextPackId"
+      }
+    },
+    {
+      "id": "discovery.wrong-pack-digest",
+      "description": "The discovery job must bind the supplied Context Pack digest.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job-wrong-digest",
+        "proposals": ["proposal-one", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.contextPackDigest"
+      }
+    },
+    {
+      "id": "discovery.missing-proposal",
+      "description": "A persisted proposal cannot be omitted from composition.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-one"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposalIds"
+      }
+    },
+    {
+      "id": "discovery.extra-proposal",
+      "description": "An unpersisted proposal cannot be added to composition.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-one", "proposal-two", "proposal-extra"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposalIds"
+      }
+    },
+    {
+      "id": "discovery.swapped-proposals",
+      "description": "Persisted proposal order is authoritative.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-two", "proposal-one"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposalIds[0]"
+      }
+    },
+    {
+      "id": "discovery.wrong-job-id",
+      "description": "Every proposal must name the composing discovery job.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-wrong-job", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposals[0].discoveryJobId"
+      }
+    },
+    {
+      "id": "discovery.wrong-proposal-pack-id",
+      "description": "Every proposal must name the composing Context Pack.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-wrong-pack", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposals[0].contextPackId"
+      }
+    },
+    {
+      "id": "discovery.missing-resource",
+      "description": "Proposal evidence must resolve to a sealed Context Pack resource.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-missing-resource", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposals[0].evidence[0].resourceId"
+      }
+    },
+    {
+      "id": "discovery.selector-mismatch",
+      "description": "Proposal evidence selectors must equal their sealed resource selectors.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-selector-mismatch", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposals[0].evidence[0].selector"
+      }
+    },
+    {
+      "id": "discovery.proposal-before-request",
+      "description": "A proposal cannot predate its discovery request.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-before-request", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposals[0].createdAt"
+      }
+    },
+    {
+      "id": "discovery.proposal-after-finish",
+      "description": "A proposal cannot follow discovery completion.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-after-finish", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposals[0].createdAt"
+      }
+    },
+    {
+      "id": "discovery.started-before-request",
+      "description": "A discovery job cannot start before it is requested.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job-started-before-request",
+        "proposals": ["proposal-one", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "job",
+        "code": "semantic_conflict",
+        "path": "$.startedAt"
+      }
+    },
+    {
+      "id": "discovery.finished-before-started",
+      "description": "A discovery job cannot finish before it starts.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job-finished-before-started",
+        "proposals": ["proposal-one", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "job",
+        "code": "semantic_conflict",
+        "path": "$.finishedAt"
+      }
+    }
+  ]
+}

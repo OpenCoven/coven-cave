@@ -12,14 +12,20 @@ import fourProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures
 import sevenProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-seven.json" with { type: "json" };
 import threeProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-three.json" with { type: "json" };
 import twoProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-two.json" with { type: "json" };
+import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
 import validTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job.json" with { type: "json" };
 import validTopicProposal from "../../../schemas/research/v1/fixtures/valid/topic-proposal.json" with { type: "json" };
 
+import { parseContextPackV1, type ContextPackV1 } from "./context-pack.ts";
+import { digestProtocolObject } from "./digest.ts";
 import {
   parseResearchModelReceiptV1,
   parseTopicDiscoveryJobV1,
   parseTopicProposalV1,
   topicProposalVisibleTotal,
+  validateTopicDiscoveryCompositionV1,
+  type TopicDiscoveryJobV1,
+  type TopicProposalV1,
 } from "./topic-discovery.ts";
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
@@ -43,6 +49,335 @@ function expectError(
   }
   return result.error;
 }
+
+function validDiscoveryComposition(): {
+  contextPack: ContextPackV1;
+  job: TopicDiscoveryJobV1;
+  proposals: TopicProposalV1[];
+} {
+  const contextPackValue = structuredClone(validContextPack) as Record<string, unknown> & {
+    policy: Record<string, unknown>;
+    resources: Array<Record<string, unknown>>;
+  };
+  contextPackValue.purpose = "topic-discovery";
+  contextPackValue.policy.allowedPurposes = ["topic-discovery"];
+  contextPackValue.resources[0]!.selector = structuredClone(validTopicProposal.evidence[0]!.selector);
+  contextPackValue.digest = digestProtocolObject(contextPackValue);
+  const contextPack = expectOk(parseContextPackV1(contextPackValue));
+  const job = expectOk(
+    parseTopicDiscoveryJobV1({
+      ...validTopicDiscoveryJob,
+      contextPackId: contextPack.id,
+      contextPackDigest: contextPack.digest,
+    }),
+  );
+  const proposal = expectOk(
+    parseTopicProposalV1({
+      ...validTopicProposal,
+      discoveryJobId: job.id,
+      contextPackId: contextPack.id,
+    }),
+  );
+  return { contextPack, job, proposals: [proposal] };
+}
+
+test("valid topic discovery composition preserves every parsed input", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  const before = structuredClone({ contextPack, job, proposals });
+  const result = validateTopicDiscoveryCompositionV1(contextPack, job, proposals);
+
+  assert.deepEqual({ contextPack, job, proposals }, before);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(result.value, job);
+  }
+});
+
+test("topic discovery composition requires a discovery-purpose Context Pack and policy", () => {
+  const { job, proposals } = validDiscoveryComposition();
+  const researchRunPack = expectOk(parseContextPackV1(validContextPack));
+  expectError(
+    validateTopicDiscoveryCompositionV1(researchRunPack, job, proposals),
+    "$.contextPack.purpose",
+    "semantic_conflict",
+  );
+
+  const { contextPack } = validDiscoveryComposition();
+  const policyDeniedPack = {
+    ...contextPack,
+    policy: {
+      ...contextPack.policy,
+      allowedPurposes: ["research-run"],
+    },
+  } as ContextPackV1;
+  expectError(
+    validateTopicDiscoveryCompositionV1(policyDeniedPack, job, proposals),
+    "$.contextPack.policy.allowedPurposes",
+    "semantic_conflict",
+  );
+});
+
+test("topic discovery composition binds the job to the Context Pack id and digest", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  const wrongId = expectOk(
+    parseTopicDiscoveryJobV1({
+      ...job,
+      contextPackId: "ctx_other",
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, wrongId, proposals),
+    "$.contextPackId",
+    "semantic_conflict",
+  );
+
+  const wrongDigest = expectOk(
+    parseTopicDiscoveryJobV1({
+      ...job,
+      contextPackDigest: "f".repeat(64),
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, wrongDigest, proposals),
+    "$.contextPackDigest",
+    "semantic_conflict",
+  );
+});
+
+test("topic discovery composition requires the complete persisted proposal order", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  const secondProposal = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      id: "proposal_02",
+    }),
+  );
+
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, []),
+    "$.proposalIds",
+    "semantic_conflict",
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [proposals[0]!, secondProposal]),
+    "$.proposalIds",
+    "semantic_conflict",
+  );
+
+  const twoProposalJob = expectOk(
+    parseTopicDiscoveryJobV1({
+      ...job,
+      proposalIds: [proposals[0]!.id, secondProposal.id],
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(
+      contextPack,
+      twoProposalJob,
+      [secondProposal, proposals[0]!],
+    ),
+    "$.proposalIds[0]",
+    "semantic_conflict",
+  );
+});
+
+test("topic discovery composition binds every proposal to its job and Context Pack", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  const wrongJob = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      discoveryJobId: "topicjob_other",
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [wrongJob]),
+    "$.proposals[0].discoveryJobId",
+    "semantic_conflict",
+  );
+
+  const wrongPack = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      contextPackId: "ctx_other",
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [wrongPack]),
+    "$.proposals[0].contextPackId",
+    "semantic_conflict",
+  );
+});
+
+test("topic discovery composition resolves evidence resources and sealed selectors", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  for (const field of ["evidence", "counterevidence"] as const) {
+    const proposalValue = structuredClone(proposals[0]!);
+    proposalValue[field] = [
+      {
+        ...structuredClone(proposals[0]!.evidence[0]!),
+        resourceId: "resource_missing",
+      },
+    ];
+    const invalidProposal = expectOk(
+      parseTopicProposalV1(proposalValue),
+    );
+    expectError(
+      validateTopicDiscoveryCompositionV1(contextPack, job, [invalidProposal]),
+      `$.proposals[0].${field}[0].resourceId`,
+      "semantic_conflict",
+    );
+  }
+
+  const selectorMismatch = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      evidence: [
+        {
+          ...proposals[0]!.evidence[0],
+          selector: { type: "text-span", start: 0, end: 19 },
+        },
+      ],
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [selectorMismatch]),
+    "$.proposals[0].evidence[0].selector",
+    "semantic_conflict",
+  );
+});
+
+test("topic discovery selector equality is canonical JSON equality, not identity or key order", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  const resourceSelector = {
+    type: "text-span" as const,
+    start: 0,
+    end: 20,
+    alpha: 1,
+    nested: { left: true, right: false },
+  };
+  const evidenceSelector = {
+    nested: { right: false, left: true },
+    alpha: 1,
+    end: 20,
+    start: 0,
+    type: "text-span" as const,
+  };
+  const packValue = {
+    ...contextPack,
+    resources: [
+      {
+        ...contextPack.resources[0],
+        selector: resourceSelector,
+      },
+    ],
+  };
+  packValue.digest = digestProtocolObject(packValue);
+  const reorderedPack = expectOk(parseContextPackV1(packValue));
+  const reboundJob = expectOk(
+    parseTopicDiscoveryJobV1({
+      ...job,
+      contextPackDigest: reorderedPack.digest,
+    }),
+  );
+  const reorderedProposal = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      evidence: [
+        {
+          ...proposals[0]!.evidence[0],
+          selector: evidenceSelector,
+        },
+      ],
+    }),
+  );
+
+  assert.notEqual(reorderedPack.resources[0]!.selector, reorderedProposal.evidence[0]!.selector);
+  assert.equal(
+    validateTopicDiscoveryCompositionV1(reorderedPack, reboundJob, [reorderedProposal]).ok,
+    true,
+  );
+});
+
+test("topic discovery job lifecycle timestamps are monotonic at nanosecond precision", () => {
+  const { startedAt: _startedAt, ...jobWithoutStart } = validTopicDiscoveryJob;
+  expectError(
+    parseTopicDiscoveryJobV1({
+      ...validTopicDiscoveryJob,
+      requestedAt: "2026-08-15T20:00:00.000000002Z",
+      startedAt: "2026-08-15T20:00:00.000000001Z",
+    }),
+    "$.startedAt",
+    "semantic_conflict",
+  );
+  expectError(
+    parseTopicDiscoveryJobV1({
+      ...validTopicDiscoveryJob,
+      startedAt: "2026-08-15T20:06:00.000000002Z",
+      finishedAt: "2026-08-15T20:06:00.000000001Z",
+    }),
+    "$.finishedAt",
+    "semantic_conflict",
+  );
+  expectError(
+    parseTopicDiscoveryJobV1({
+      ...jobWithoutStart,
+      status: "cancelled",
+      requestedAt: "2026-08-15T20:06:00.000000002Z",
+      finishedAt: "2026-08-15T20:06:00.000000001Z",
+      proposalIds: [],
+    }),
+    "$.finishedAt",
+    "semantic_conflict",
+  );
+
+  assert.equal(
+    parseTopicDiscoveryJobV1({
+      ...validTopicDiscoveryJob,
+      requestedAt: "2026-08-15T20:00:00.000000001Z",
+      startedAt: "2026-08-15T20:00:00.000000001Z",
+      finishedAt: "2026-08-15T20:00:00.000000002Z",
+    }).ok,
+    true,
+  );
+});
+
+test("topic proposal creation stays within its discovery job lifecycle", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  const beforeRequest = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: "2026-08-15T19:59:59.999999999Z",
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [beforeRequest]),
+    "$.proposals[0].createdAt",
+    "semantic_conflict",
+  );
+
+  const afterFinish = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: "2026-08-15T20:06:00.000000001Z",
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [afterFinish]),
+    "$.proposals[0].createdAt",
+    "semantic_conflict",
+  );
+
+  const atFinish = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: job.finishedAt,
+    }),
+  );
+  assert.equal(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [atFinish]).ok,
+    true,
+  );
+});
 
 test("valid fixtures satisfy schemas and parse", () => {
   assert.ok(Value.Check(topicDiscoveryJobSchema, validTopicDiscoveryJob));

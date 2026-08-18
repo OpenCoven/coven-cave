@@ -16,6 +16,7 @@ import { parseContextPackV1 } from "./context-pack.ts";
 import {
   RESEARCH_PROTOCOL_SCHEMAS,
   parseResearchProtocolObject,
+  validateTopicDiscoveryCompositionV1,
   type ResearchProtocolObjectV1,
 } from "./index.ts";
 
@@ -50,6 +51,10 @@ test("RESEARCH_PROTOCOL_SCHEMAS lists all eight v1 schema identifiers in order",
     "opencoven.run-manifest/v1",
   ]);
   assert.equal(RESEARCH_PROTOCOL_SCHEMAS.length, 8);
+});
+
+test("protocol index exports the topic discovery composition validator", () => {
+  assert.equal(typeof validateTopicDiscoveryCompositionV1, "function");
 });
 
 const VALID_FIXTURES: Array<[string, unknown]> = [
