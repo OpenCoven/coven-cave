@@ -42,22 +42,37 @@ const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
 const PRINTABLE_ASCII_PROPERTY_NAME_RE = /^[\u0020-\u007e]*$/;
 const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
   "excerpt",
+  "excerpts",
   "privateexcerpt",
+  "privateexcerpts",
   "rawexcerpt",
+  "rawexcerpts",
   "text",
+  "texts",
   "content",
+  "contents",
   "blob",
+  "blobs",
   "filename",
+  "filenames",
   "localpath",
+  "localpaths",
   "filepath",
+  "filepaths",
   "path",
+  "paths",
   "credential",
   "credentials",
   "secret",
+  "secrets",
   "objectkey",
+  "objectkeys",
   "storagekey",
+  "storagekeys",
   "bucketkey",
+  "bucketkeys",
   "deletedcontent",
+  "deletedcontents",
 ]);
 
 function normalizeSensitiveKey(key: string): string {
@@ -1254,6 +1269,17 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
       contextSourceCount += 1;
       contextSourceIndex = index;
     }
+    if (
+      source.value.kind === "public-evidence"
+      && typeof finalizedAt === "string"
+      && compareUtcTimestamps(source.value.fetchedAt, finalizedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        childPath(sourcePath, "fetchedAt"),
+        "public-evidence fetchedAt must not follow manifest finalization",
+      );
+    }
     sources.push(source.value);
   }
 
@@ -1270,6 +1296,23 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     if (!artifact.ok) return artifact;
     if (artifactIds.has(artifact.value.id)) {
       return fail("semantic_conflict", childPath(artifactPath, "id"), "artifact ids must be unique");
+    }
+    if (compareUtcTimestamps(artifact.value.createdAt, createdAt.value) < 0) {
+      return fail(
+        "semantic_conflict",
+        childPath(artifactPath, "createdAt"),
+        "artifact createdAt must not precede manifest creation",
+      );
+    }
+    if (
+      typeof finalizedAt === "string"
+      && compareUtcTimestamps(artifact.value.createdAt, finalizedAt) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        childPath(artifactPath, "createdAt"),
+        "artifact createdAt must not follow manifest finalization",
+      );
     }
     artifactIds.add(artifact.value.id);
     artifacts.push(artifact.value);
@@ -1303,6 +1346,13 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!retentionField.ok) return retentionField;
   const retention = parseRetention(retentionField.value, "$.retention");
   if (!retention.ok) return retention;
+  if (compareUtcTimestamps(retention.value.updatedAt, createdAt.value) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt must not precede manifest creation",
+    );
+  }
 
   const deletionField = parseRequiredField(object.value, "deletion", "$");
   if (!deletionField.ok) return deletionField;
@@ -1513,6 +1563,13 @@ export function validateRunManifestRevision(
   if (next.createdAt !== previous.createdAt) {
     return fail("semantic_conflict", "$.createdAt", "createdAt cannot change across revisions");
   }
+  if (!isUtcTimestamp(previous.retention.updatedAt)) {
+    return fail(
+      "semantic_conflict",
+      "$.previous.retention.updatedAt",
+      "previous retention.updatedAt must be a valid UTC timestamp",
+    );
+  }
   if (!isUtcTimestamp(next.retention.updatedAt)) {
     return fail(
       "semantic_conflict",
@@ -1520,10 +1577,7 @@ export function validateRunManifestRevision(
       "next retention.updatedAt must be a valid UTC timestamp",
     );
   }
-  if (
-    isUtcTimestamp(previous.retention.updatedAt)
-    && compareUtcTimestamps(previous.retention.updatedAt, next.retention.updatedAt) > 0
-  ) {
+  if (compareUtcTimestamps(previous.retention.updatedAt, next.retention.updatedAt) > 0) {
     return fail(
       "semantic_conflict",
       "$.retention.updatedAt",

@@ -86,6 +86,18 @@
         "createdAt": "2026-08-15T19:59:59.999999999Z"
       }
     },
+    "proposal-before-start": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "createdAt": "2026-08-15T20:00:59.999999999Z"
+      }
+    },
+    "proposal-at-start": {
+      "fixture": "valid/topic-proposal.json",
+      "mergePatch": {
+        "createdAt": "2026-08-15T20:01:00.000Z"
+      }
+    },
     "proposal-extra": {
       "fixture": "valid/topic-proposal.json",
       "mergePatch": {
@@ -336,6 +348,35 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.proposals[0].createdAt"
+      }
+    },
+    {
+      "id": "discovery.proposal-before-start",
+      "description": "A proposal cannot be created after request but before actual discovery starts.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-before-start", "proposal-two"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.proposals[0].createdAt"
+      }
+    },
+    {
+      "id": "discovery.proposal-at-start",
+      "description": "A proposal may be created exactly when discovery starts.",
+      "validator": "topic-discovery-composition",
+      "inputs": {
+        "contextPack": "context-pack",
+        "job": "job",
+        "proposals": ["proposal-at-start", "proposal-two"]
+      },
+      "expected": {
+        "ok": true
       }
     },
     {

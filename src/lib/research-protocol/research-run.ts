@@ -1007,6 +1007,41 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
     );
   }
 
+  if (artifactManifest) {
+    if (compareUtcTimestamps(createdAt.value, artifactManifest.createdAt) > 0) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.createdAt",
+        "artifactManifest.createdAt must not precede the enclosing run creation",
+      );
+    }
+    if (compareUtcTimestamps(artifactManifest.createdAt, updatedAt.value) > 0) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.createdAt",
+        "artifactManifest.createdAt must not follow the enclosing run update",
+      );
+    }
+    if (
+      artifactManifest.state === "final"
+      && typeof artifactManifest.finalizedAt === "string"
+      && compareUtcTimestamps(artifactManifest.finalizedAt, updatedAt.value) > 0
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.finalizedAt",
+        "artifactManifest.finalizedAt must not follow the enclosing run update",
+      );
+    }
+    if (compareUtcTimestamps(artifactManifest.retention.updatedAt, updatedAt.value) > 0) {
+      return fail(
+        "semantic_conflict",
+        "$.artifactManifest.retention.updatedAt",
+        "artifactManifest retention update must not follow the enclosing run update",
+      );
+    }
+  }
+
   return pass({
     ...object.value,
     schema: schema.value,

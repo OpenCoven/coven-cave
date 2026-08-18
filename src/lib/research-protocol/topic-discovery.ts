@@ -1003,6 +1003,7 @@ export function validateTopicDiscoveryCompositionV1(
   }
 
   const resources = new Map(contextPack.resources.map((resource) => [resource.id, resource]));
+  const proposalCreatedAtLowerBound = job.startedAt ?? job.requestedAt;
   for (const [proposalIndex, proposal] of proposals.entries()) {
     const proposalPath = indexPath("$.proposals", proposalIndex);
     if (proposal.discoveryJobId !== job.id) {
@@ -1019,11 +1020,13 @@ export function validateTopicDiscoveryCompositionV1(
         "Topic Proposal contextPackId must match the Context Pack id",
       );
     }
-    if (compareUtcTimestamps(proposal.createdAt, job.requestedAt) < 0) {
+    if (compareUtcTimestamps(proposal.createdAt, proposalCreatedAtLowerBound) < 0) {
       return fail(
         "semantic_conflict",
         childPath(proposalPath, "createdAt"),
-        "Topic Proposal createdAt must not precede the discovery request",
+        typeof job.startedAt === "string"
+          ? "Topic Proposal createdAt must not precede discovery start"
+          : "Topic Proposal createdAt must not precede the discovery request",
       );
     }
     if (

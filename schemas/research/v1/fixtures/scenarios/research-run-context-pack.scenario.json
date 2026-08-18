@@ -262,6 +262,51 @@
     "matching-run": {
       "fixture": "scenarios/objects/context-bound-extended-run.json"
     },
+    "manifest-before-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "createdAt": "2026-08-15T19:59:59.999999999Z"
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "run-updated-before-finalization": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:08:59.999999999Z"
+      }
+    },
+    "run-manifest-clock-equality": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:09:00.000Z"
+      }
+    },
+    "retention-update-after-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "artifactManifest": {
+          "retention": {
+            "updatedAt": "2026-08-15T20:09:00.000000001Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "post-final-retention-revision": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:10:00.000Z",
+        "artifactManifest": {
+          "retention": {
+            "updatedAt": "2026-08-15T20:10:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "run-retention-above-consent": {
       "fixture": "valid/research-run.json",
       "mergePatch": {
@@ -281,6 +326,78 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "matching-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.manifest-before-run",
+      "description": "An embedded manifest cannot claim creation before its enclosing run.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "manifest-before-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.createdAt"
+      }
+    },
+    {
+      "id": "research-run.updated-before-manifest-finalization",
+      "description": "A terminal run cannot be updated before its embedded manifest finalizes.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "run-updated-before-finalization",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.finalizedAt"
+      }
+    },
+    {
+      "id": "research-run.manifest-clock-equality",
+      "description": "Run and manifest creation and update boundaries are inclusive.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "run-manifest-clock-equality",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.retention-update-after-run",
+      "description": "An embedded retention revision cannot postdate the enclosing run snapshot.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "retention-update-after-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.retention.updatedAt"
+      }
+    },
+    {
+      "id": "research-run.post-final-retention-revision",
+      "description": "A run may embed a post-final retention revision after advancing its own update clock.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "post-final-retention-revision",
         "contextPack": "context-pack"
       },
       "expected": {

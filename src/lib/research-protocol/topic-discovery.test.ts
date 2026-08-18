@@ -355,6 +355,29 @@ test("topic proposal creation stays within its discovery job lifecycle", () => {
     "semantic_conflict",
   );
 
+  const betweenRequestAndStart = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: "2026-08-15T20:00:59.999999999Z",
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [betweenRequestAndStart]),
+    "$.proposals[0].createdAt",
+    "semantic_conflict",
+  );
+
+  const atStart = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: job.startedAt,
+    }),
+  );
+  assert.equal(
+    validateTopicDiscoveryCompositionV1(contextPack, job, [atStart]).ok,
+    true,
+  );
+
   const afterFinish = expectOk(
     parseTopicProposalV1({
       ...proposals[0],
@@ -375,6 +398,57 @@ test("topic proposal creation stays within its discovery job lifecycle", () => {
   );
   assert.equal(
     validateTopicDiscoveryCompositionV1(contextPack, job, [atFinish]).ok,
+    true,
+  );
+
+  const { startedAt: _startedAt, ...jobWithoutStartValue } = job;
+  const jobWithoutStart = expectOk(parseTopicDiscoveryJobV1(jobWithoutStartValue));
+  const atRequest = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: jobWithoutStart.requestedAt,
+    }),
+  );
+  assert.equal(
+    validateTopicDiscoveryCompositionV1(contextPack, jobWithoutStart, [atRequest]).ok,
+    true,
+  );
+
+  const leapSecondJob = expectOk(
+    parseTopicDiscoveryJobV1({
+      ...job,
+      requestedAt: "2026-06-30T23:59:59.999999999Z",
+      startedAt: "2026-06-30T23:59:60.000000001Z",
+      finishedAt: "2026-07-01T00:00:00.000000001Z",
+    }),
+  );
+  const beforeLeapSecondStart = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: "2026-06-30T23:59:60Z",
+    }),
+  );
+  expectError(
+    validateTopicDiscoveryCompositionV1(
+      contextPack,
+      leapSecondJob,
+      [beforeLeapSecondStart],
+    ),
+    "$.proposals[0].createdAt",
+    "semantic_conflict",
+  );
+  const atLeapSecondStart = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      createdAt: leapSecondJob.startedAt,
+    }),
+  );
+  assert.equal(
+    validateTopicDiscoveryCompositionV1(
+      contextPack,
+      leapSecondJob,
+      [atLeapSecondStart],
+    ).ok,
     true,
   );
 });

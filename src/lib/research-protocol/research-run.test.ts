@@ -33,7 +33,11 @@ import {
   type ResearchRunStatusV1,
   type RunEventV1,
 } from "./research-run.ts";
-import { parseResearchContextBindingV1 } from "./common.ts";
+import {
+  compareUtcTimestamps,
+  isUtcTimestamp,
+  parseResearchContextBindingV1,
+} from "./common.ts";
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
@@ -135,7 +139,28 @@ function runForStatus(
 ): Record<string, unknown> {
   const run: Record<string, unknown> = structuredClone(validResearchRun);
   run.status = status;
-  if (artifactManifest) run.artifactManifest = structuredClone(artifactManifest);
+  if (artifactManifest) {
+    run.artifactManifest = structuredClone(artifactManifest);
+    if (isUtcTimestamp(artifactManifest.createdAt)) {
+      run.createdAt = artifactManifest.createdAt;
+    }
+    const retention =
+      typeof artifactManifest.retention === "object"
+        && artifactManifest.retention !== null
+        && !Array.isArray(artifactManifest.retention)
+        ? artifactManifest.retention as Record<string, unknown>
+        : undefined;
+    const manifestTimestamps = [
+      artifactManifest.createdAt,
+      artifactManifest.finalizedAt,
+      retention?.updatedAt,
+    ].filter(isUtcTimestamp);
+    if (manifestTimestamps.length > 0) {
+      run.updatedAt = manifestTimestamps.reduce((latest, timestamp) =>
+        compareUtcTimestamps(timestamp, latest) > 0 ? timestamp : latest
+      );
+    }
+  }
   delete run.waitingReason;
   delete run.waitingForPhase;
   delete run.failure;
@@ -353,9 +378,8 @@ test("failure is required exactly for failed and absent otherwise", () => {
   expectError(parseResearchRunV1(failedWithoutFailure), "$.failure", "missing_field");
 
   const validFailed = {
-    ...failedWithoutFailure,
+    ...runForStatus("failed", linkedManifest(validRunManifest)),
     failure: { code: "runtime_error", message: "try again", retryable: true },
-    artifactManifest: linkedManifest(validRunManifest),
   };
   assert.ok(checkResearchRunSchema(validFailed));
   assert.equal(expectOk(parseResearchRunV1(validFailed)).failure?.retryable, true);
@@ -610,6 +634,76 @@ test("research run lifecycle timestamps are monotonic at nanosecond precision", 
       createdAt: "2026-08-15T20:00:00.000000001Z",
       updatedAt: "2026-08-15T20:00:00.000000002Z",
     }).ok,
+    true,
+  );
+});
+
+test("embedded manifest chronology stays within the enclosing run snapshot", () => {
+  const finalManifest = linkedManifest(validRunManifest);
+  const beforeRun = {
+    ...runForStatus("completed", finalManifest),
+    createdAt: "2026-08-16T20:00:00.000000001Z",
+  };
+  expectError(
+    parseResearchRunV1(beforeRun),
+    "$.artifactManifest.createdAt",
+    "semantic_conflict",
+  );
+
+  const updatedBeforeFinalization = {
+    ...runForStatus("completed", finalManifest),
+    updatedAt: "2026-08-16T20:03:59.999999999Z",
+  };
+  expectError(
+    parseResearchRunV1(updatedBeforeFinalization),
+    "$.artifactManifest.finalizedAt",
+    "semantic_conflict",
+  );
+
+  const assemblingManifest = linkedManifest(assemblingRunManifest);
+  const updatedBeforeManifestCreation = {
+    ...runForStatus("publishing", assemblingManifest),
+    createdAt: "2026-08-16T19:59:59.999999998Z",
+    updatedAt: "2026-08-16T19:59:59.999999999Z",
+  };
+  expectError(
+    parseResearchRunV1(updatedBeforeManifestCreation),
+    "$.artifactManifest.createdAt",
+    "semantic_conflict",
+  );
+
+  const updatedBeforeRetentionRevision = {
+    ...runForStatus("completed", finalManifest),
+    updatedAt: "2026-08-16T20:04:00.000Z",
+  };
+  expectError(
+    parseResearchRunV1(updatedBeforeRetentionRevision),
+    "$.artifactManifest.retention.updatedAt",
+    "semantic_conflict",
+  );
+
+  const equalityManifest = linkedManifest({
+    ...validRunManifest,
+    retention: {
+      ...validRunManifest.retention,
+      updatedAt: validRunManifest.finalizedAt,
+    },
+  });
+  const equalityRun = {
+    ...runForStatus("completed", equalityManifest),
+    createdAt: equalityManifest.createdAt,
+    updatedAt: equalityManifest.finalizedAt,
+  };
+  assert.equal(parseResearchRunV1(equalityRun).ok, true);
+
+  const postFinalRetentionRun = {
+    ...runForStatus("completed", finalManifest),
+    updatedAt: (finalManifest.retention as Record<string, unknown>).updatedAt,
+  };
+  assert.equal(parseResearchRunV1(postFinalRetentionRun).ok, true);
+
+  assert.equal(
+    parseResearchRunV1(runForStatus("publishing", assemblingManifest)).ok,
     true,
   );
 });
