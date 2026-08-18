@@ -38,6 +38,7 @@
     "deleted-count-event": {
       "fixture": "valid/run-event.json",
       "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
         "sequence": 2,
         "type": "content.deleted",
         "data": {
@@ -50,6 +51,7 @@
     "deleted-duplicate-event": {
       "fixture": "valid/run-event.json",
       "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
         "sequence": 1,
         "type": "content.deleted",
         "data": {
@@ -62,6 +64,7 @@
     "deleted-event": {
       "fixture": "valid/run-event.json",
       "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
         "sequence": 2,
         "type": "content.deleted",
         "data": {
@@ -74,6 +77,7 @@
     "deleted-event-other-run": {
       "fixture": "valid/run-event.json",
       "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
         "runId": "run_other_01",
         "sequence": 2,
         "type": "content.deleted",
@@ -87,6 +91,7 @@
     "deleted-gap-event": {
       "fixture": "valid/run-event.json",
       "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
         "sequence": 3,
         "type": "content.deleted",
         "data": {
@@ -99,12 +104,83 @@
     "deleted-status-event": {
       "fixture": "valid/run-event.json",
       "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
         "sequence": 2,
         "type": "content.deleted",
         "data": {
           "status": null,
           "deletedObjectCount": 3,
           "manifestStatus": "active"
+        }
+      }
+    },
+    "deleted-content-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "deletedContent": "private material"
+        }
+      }
+    },
+    "deleted-object-store-key-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "objectStoreKey": "tenant/private/object"
+        }
+      }
+    },
+    "deleted-nested-array-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "auditTrail": [
+            {
+              "nested": {
+                "deletedContents": ["private material"]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "deleted-benign-audit-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "audit": {
+            "context": "retention worker",
+            "contentment": "complete",
+            "items": [
+              {
+                "retryDisposition": "not-needed"
+              }
+            ]
+          }
         }
       }
     },
@@ -197,6 +273,66 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.valid-benign-audit-extension",
+      "description": "A content.deleted event preserves recursively safe additive audit fields.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-benign-audit-event", "completed-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.rejects-deleted-content",
+      "description": "A content.deleted event cannot carry deleted content.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-content-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "semantic_conflict",
+        "path": "$.data.deletedContent"
+      }
+    },
+    {
+      "id": "run-deletion.rejects-object-store-key",
+      "description": "A content.deleted event cannot carry an object-store key.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-object-store-key-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "semantic_conflict",
+        "path": "$.data.objectStoreKey"
+      }
+    },
+    {
+      "id": "run-deletion.rejects-nested-array-content",
+      "description": "A content.deleted event rejects sensitive keys nested through arrays.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-nested-array-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "semantic_conflict",
+        "path": "$.data.auditTrail[0].nested.deletedContents"
       }
     },
     {
@@ -372,9 +508,10 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
-        "code": "semantic_conflict",
-        "path": "$[1].data.manifestStatus"
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "invalid_value",
+        "path": "$.data.manifestStatus"
       }
     },
     {

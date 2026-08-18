@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_extension_boundaries_01",
   "runId": "run_extension_boundaries_01",
-  "digest": "5eeca96140436e34f3eb84a9f12a13a51151e96d1365f107d3b73cda0dcee1b0",
+  "digest": "83f812119035feb9c30fbbaeb47fd81fde47808dd8e0a3037be2895f52ddc3e2",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -29,7 +29,7 @@
       "id": "evidence_extension_boundaries_01",
       "contentDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "snapshotDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "canonicalUrl": "https://example.test/evidence",
+      "canonicalUrl": "http://example.com/evidence",
       "fetchedAt": "2026-08-16T20:07:00.000Z",
       "extensionMetadata": {
         "items": [{ "label": "public source" }]
@@ -109,6 +109,12 @@
     }
   },
   "extensionMetadata": {
+    "context": "benign audit metadata",
+    "contentment": "benign audit metadata",
+    "textile": "benign audit metadata",
+    "pathology": "benign audit metadata",
+    "secretary": "benign audit metadata",
+    "credentialed": "benign audit metadata",
     "items": [{ "label": "manifest root" }]
   }
 }

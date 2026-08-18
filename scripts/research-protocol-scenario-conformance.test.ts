@@ -33,6 +33,7 @@ import {
   digestProtocolObject,
   isRecord,
   isSha256,
+  isUtcTimestamp,
   parseResearchProtocolObject,
   validateManifestRetentionConsent,
   validateModelTaskResultV1,
@@ -572,7 +573,7 @@ function validateScenario(
       assertAllowedKeys(
         rawOptions,
         validator === "run-manifest-revision"
-          ? ["contextConsent", "freshConsent"]
+          ? ["contextConsent", "freshConsent", "freshConsentAt"]
           : ["contextConsent"],
         `${location}.options`,
       );
@@ -589,6 +590,13 @@ function validateScenario(
           `${location}.options.freshConsent: must be a boolean`,
         );
       }
+      if (rawOptions.freshConsentAt !== undefined) {
+        assert.equal(
+          isUtcTimestamp(rawOptions.freshConsentAt),
+          true,
+          `${location}.options.freshConsentAt: must be a UTC RFC 3339 timestamp`,
+        );
+      }
       options = {
         ...(rawOptions.contextConsent === undefined
           ? {}
@@ -598,6 +606,9 @@ function validateScenario(
         ...(rawOptions.freshConsent === undefined
           ? {}
           : { freshConsent: rawOptions.freshConsent as boolean }),
+        ...(rawOptions.freshConsentAt === undefined
+          ? {}
+          : { freshConsentAt: rawOptions.freshConsentAt as string }),
       };
     }
   } else {
@@ -878,6 +889,7 @@ function validateProtocolObjectSchema(
   value: unknown,
   location: string,
   expectedSchema?: ResearchProtocolObjectV1["schema"],
+  allowSchemaInvalid = false,
 ): Record<string, unknown> {
   const protocolObject = requireRecord(value, location);
   const declaredSchema = requireString(protocolObject.schema, `${location}.schema`);
@@ -891,13 +903,15 @@ function validateProtocolObjectSchema(
   const schemaId = expectedSchema ?? declaredSchema;
   const schema = schemaContext.get(schemaId);
   assert.ok(schema !== undefined, `${location}: schema ${schemaId} is not an approved v1 schema`);
-  assert.equal(
-    Check(schemaCheckContext, schema, protocolObject),
-    true,
-    expectedSchema === undefined
-      ? `${location}: object must pass its authoritative schema before parsing or composition`
-      : `${location}: input must pass expected protocol role schema ${expectedSchema} before parsing or composition`,
-  );
+  if (!allowSchemaInvalid) {
+    assert.equal(
+      Check(schemaCheckContext, schema, protocolObject),
+      true,
+      expectedSchema === undefined
+        ? `${location}: object must pass its authoritative schema before parsing or composition`
+        : `${location}: input must pass expected protocol role schema ${expectedSchema} before parsing or composition`,
+    );
+  }
   return protocolObject;
 }
 
@@ -944,12 +958,14 @@ function validateAuthoritativeProtocolObject(
 function materializeScenarioInput(
   corpus: ScenarioCorpus,
   entry: ScenarioInputEntry,
+  allowSchemaInvalid = false,
 ): Record<string, unknown> {
   const location = `${corpus.filePath}.objects.${entry.reference} (input ${entry.name})`;
   return validateProtocolObjectSchema(
     materializeObject(corpus.objects[entry.reference], location),
     location,
     entry.schema,
+    allowSchemaInvalid,
   );
 }
 
@@ -1092,7 +1108,13 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
   const materializedInputs = entries.map((entry) => ({
     entry,
     location: `${corpus.filePath}.objects.${entry.reference} (input ${entry.name})`,
-    materialized: materializeScenarioInput(corpus, entry),
+    materialized: materializeScenarioInput(
+      corpus,
+      entry,
+      !scenario.expected.ok &&
+        scenario.expected.stage === "parse" &&
+        scenario.expected.input === entry.name,
+    ),
   }));
 
   for (const { entry, location, materialized } of materializedInputs) {
@@ -1884,6 +1906,14 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.lengthening-without-fresh-consent",
     "manifest.lengthening-with-fresh-consent",
     "manifest.partial-failure-continues",
+    "manifest.deadline-2099",
+    "manifest.deadline-cleared",
+    "manifest.deletion-cancellation",
+    "manifest.deadline-shortening",
+    "manifest.deadline-extension-without-fresh-consent",
+    "manifest.deadline-extension-with-stale-consent",
+    "manifest.deadline-extension-with-fresh-consent",
+    "manifest.deadline-extension-exceeds-fresh-ceiling",
     "manifest.completed-deletion-terminal",
     "manifest-consent.valid-context-consent",
     "manifest-consent.missing-context-consent",

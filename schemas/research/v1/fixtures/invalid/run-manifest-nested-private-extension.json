@@ -2,7 +2,7 @@
   "schema": "opencoven.run-manifest/v1",
   "id": "manifest_nested_private_01",
   "runId": "run_nested_private_01",
-  "digest": "4c6f04975d547bc74589ebe71fd8bc5ce37564a468e408fb85bc1f5ecf0ca218",
+  "digest": "79e4b345621ed9b72672d1ab42bdf2b42de4577ca1c0658c34595ecf5139f36f",
   "revision": 1,
   "state": "final",
   "createdAt": "2026-08-16T20:00:00.000Z",
@@ -20,7 +20,11 @@
       "metadata": {
         "items": [
           {
-            "privateExcerpt": "private material"
+            "privateExcerpt": "private material",
+            "private_contentValue": "private material",
+            "privateCONTENTvalue": "private material",
+            "rawTEXTvalue": "private material",
+            "private_storageKeyValue": "tenant/private/object"
           }
         ]
       }
