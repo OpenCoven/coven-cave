@@ -584,11 +584,11 @@ const scores = {
   feasibility: 3,
   humanResonance: 4,
   riskPenalty: 2,
-  visibleTotal: 25,
+  visibleTotal: 2.64,
 };
 
 test("recomputes the visible proposal score", () => {
-  assert.equal(topicProposalVisibleTotal(scores), 25);
+  assert.equal(topicProposalVisibleTotal(scores), 2.64);
   assert.equal(parseTopicProposalV1({
     schema: "opencoven.topic-proposal/v1",
     id: "proposal_01",
@@ -618,8 +618,8 @@ test("recomputes the visible proposal score", () => {
 });
 
 test("rejects a model-supplied total that does not recompute", () => {
-  const invalid = { ...scores, visibleTotal: 26 };
-  assert.equal(topicProposalVisibleTotal(invalid), 25);
+  const invalid = { ...scores, visibleTotal: 2.65 };
+  assert.equal(topicProposalVisibleTotal(invalid), 2.64);
 });
 
 test("requires lifecycle timestamps when their state has begun", () => {
@@ -707,7 +707,7 @@ export function parseTopicProposalV1(
 ): ProtocolParseResult<TopicProposalV1>;
 ```
 
-`topicProposalVisibleTotal` sums the nine positive dimensions and subtracts `riskPenalty`. `parseTopicProposalV1` rejects a mismatched `visibleTotal`; it does not silently replace it.
+`topicProposalVisibleTotal` applies the §10.3 decimal weights to the nine positive integer component scores and the `-0.20` risk-penalty weight, yielding `2.64` for the fixture above. `parseTopicProposalV1` rejects a mismatched `visibleTotal`; it does not silently replace it.
 
 For usage, enforce non-negative safe integer token counts, non-negative finite cost, and:
 

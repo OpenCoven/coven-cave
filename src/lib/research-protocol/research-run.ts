@@ -4,12 +4,15 @@ import {
   fail,
   isOpaqueId,
   isRecord,
+  isSha256,
   isUtcTimestamp,
   parseResearchContextBindingV1,
   pass,
+  RETENTION_ORDER,
   retentionDoesNotExceed,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
+  type RetentionPolicyV1,
   type UnknownFields,
 } from "./common.ts";
 import {
@@ -21,9 +24,12 @@ import {
   parseEmbeddedRunManifestCandidateV1,
   parseRunManifestV1,
   validateRunManifestRevisionV1,
+  type ManifestRevisionOptions,
   type RunManifestV1,
 } from "./run-manifest.ts";
-import { validateSafeExtensionKeys } from "./privacy-extension.ts";
+import {
+  validateSafeDeletionExtensionKeys,
+} from "./privacy-extension.ts";
 
 const RESEARCH_RUN_SCHEMA = "opencoven.research-run/v1";
 const RESEARCH_RUN_SCHEMA_RE = /^opencoven\.research-run\/v(\d+)$/;
@@ -161,6 +167,18 @@ export type ResearchRunV1 = {
 export type ResearchRunContextPackValidationOptionsV1 = {
   /** Serialized revision-1-to-tip chain, including the embedded manifest. */
   manifestHistory?: readonly unknown[];
+  /** Explicit fresh-consent authority keyed to each lengthening successor. */
+  manifestRevisionOptions?: readonly ResearchRunManifestRevisionOptionsV1[];
+};
+
+export type ResearchRunManifestRevisionOptionsV1 = Omit<
+  ManifestRevisionOptions,
+  "freshConsent" | "freshConsentAt"
+> & {
+  successorRevision: number;
+  successorDigest: string;
+  freshConsent: true;
+  freshConsentAt: string;
 };
 
 export type RunEventV1 = {
@@ -202,6 +220,222 @@ function contextBindingsMatch(
 
 function prefixProtocolErrorPath(path: string, prefix: string): string {
   return path === "$" ? prefix : `${prefix}${path.slice(1)}`;
+}
+
+type ParsedReplayRevisionOptions = {
+  index: number;
+  successorRevision: number;
+  successorDigest: string;
+  options: ManifestRevisionOptions;
+};
+
+const REPLAY_REVISION_OPTION_FIELDS = new Set([
+  "successorRevision",
+  "successorDigest",
+  "freshConsent",
+  "freshConsentAt",
+  "contextConsent",
+]);
+
+function parseReplayRevisionOptions(
+  value: readonly ResearchRunManifestRevisionOptionsV1[] | undefined,
+): ProtocolParseResult<ParsedReplayRevisionOptions[]> {
+  if (value === undefined) return pass([]);
+  const wireValue = copyProtocolJsonValue(value);
+  if (!wireValue.ok) {
+    return {
+      ok: false,
+      error: {
+        ...wireValue.error,
+        path: prefixProtocolErrorPath(
+          wireValue.error.path,
+          "$.manifestRevisionOptions",
+        ),
+      },
+    };
+  }
+  if (!Array.isArray(wireValue.value)) {
+    return fail(
+      "invalid_type",
+      "$.manifestRevisionOptions",
+      "manifestRevisionOptions must be an array",
+    );
+  }
+
+  const parsed: ParsedReplayRevisionOptions[] = [];
+  const revisions = new Set<number>();
+  const digests = new Set<string>();
+  for (const [index, entryValue] of wireValue.value.entries()) {
+    const entryPath = `$.manifestRevisionOptions[${index}]`;
+    if (!isRecord(entryValue)) {
+      return fail(
+        "invalid_type",
+        entryPath,
+        "A manifest revision option must be an object",
+      );
+    }
+    for (const key of Object.keys(entryValue)) {
+      if (!REPLAY_REVISION_OPTION_FIELDS.has(key)) {
+        return fail(
+          "invalid_value",
+          childPath(entryPath, key),
+          `Unknown manifest revision option field ${key}`,
+        );
+      }
+    }
+
+    const successorRevision = entryValue.successorRevision;
+    if (
+      typeof successorRevision !== "number" ||
+      !Number.isSafeInteger(successorRevision) ||
+      successorRevision < 2
+    ) {
+      return fail(
+        "invalid_value",
+        `${entryPath}.successorRevision`,
+        "successorRevision must be a safe integer of at least 2",
+      );
+    }
+    const successorDigest = entryValue.successorDigest;
+    if (!isSha256(successorDigest)) {
+      return fail(
+        "invalid_value",
+        `${entryPath}.successorDigest`,
+        "successorDigest must be a lowercase SHA-256 digest",
+      );
+    }
+    if (revisions.has(successorRevision)) {
+      return fail(
+        "semantic_conflict",
+        `${entryPath}.successorRevision`,
+        "Each successor revision may have only one replay option",
+      );
+    }
+    if (digests.has(successorDigest)) {
+      return fail(
+        "semantic_conflict",
+        `${entryPath}.successorDigest`,
+        "Each successor digest may have only one replay option",
+      );
+    }
+    revisions.add(successorRevision);
+    digests.add(successorDigest);
+
+    const revisionOptions: ManifestRevisionOptions = {};
+    if (Object.hasOwn(entryValue, "freshConsent")) {
+      if (typeof entryValue.freshConsent !== "boolean") {
+        return fail(
+          "invalid_type",
+          `${entryPath}.freshConsent`,
+          "freshConsent must be a boolean",
+        );
+      }
+      revisionOptions.freshConsent = entryValue.freshConsent;
+    }
+    if (Object.hasOwn(entryValue, "freshConsentAt")) {
+      if (!isUtcTimestamp(entryValue.freshConsentAt)) {
+        return fail(
+          "invalid_value",
+          `${entryPath}.freshConsentAt`,
+          "freshConsentAt must be a UTC RFC 3339 timestamp",
+        );
+      }
+      revisionOptions.freshConsentAt = entryValue.freshConsentAt;
+    }
+    if (Object.hasOwn(entryValue, "contextConsent")) {
+      if (
+        typeof entryValue.contextConsent !== "string" ||
+        !RETENTION_POLICIES.includes(
+          entryValue.contextConsent as RetentionPolicyV1,
+        )
+      ) {
+        return fail(
+          "invalid_value",
+          `${entryPath}.contextConsent`,
+          "contextConsent must be run-only, 7-days, or project",
+        );
+      }
+      revisionOptions.contextConsent =
+        entryValue.contextConsent as RetentionPolicyV1;
+    }
+
+    parsed.push({
+      index,
+      successorRevision,
+      successorDigest,
+      options: revisionOptions,
+    });
+  }
+  return pass(parsed);
+}
+
+function retentionLengtheningPath(
+  previous: RunManifestV1,
+  next: RunManifestV1,
+): "$.retention.effectivePolicy" | "$.retention.contentExpiresAt" | undefined {
+  if (
+    RETENTION_ORDER[next.retention.effectivePolicy] >
+    RETENTION_ORDER[previous.retention.effectivePolicy]
+  ) {
+    return "$.retention.effectivePolicy";
+  }
+  const previousDeadline = previous.retention.contentExpiresAt;
+  const nextDeadline = next.retention.contentExpiresAt;
+  if (
+    previousDeadline !== null &&
+    (
+      nextDeadline === null ||
+      compareUtcTimestamps(nextDeadline, previousDeadline) > 0
+    )
+  ) {
+    return "$.retention.contentExpiresAt";
+  }
+  return undefined;
+}
+
+function validateReplayConsentCreationChronology(
+  entry: ParsedReplayRevisionOptions,
+  run: ResearchRunV1,
+  contextPack: ContextPackV1 | undefined,
+): ProtocolParseResult<void> {
+  const entryPath = `$.manifestRevisionOptions[${entry.index}]`;
+  if (
+    entry.options.freshConsent !== true ||
+    entry.options.freshConsentAt === undefined
+  ) {
+    return fail(
+      "semantic_conflict",
+      `${entryPath}.freshConsent`,
+      "A lengthening replay transition requires explicit fresh consent",
+    );
+  }
+  if (
+    compareUtcTimestamps(entry.options.freshConsentAt, run.createdAt) < 0 ||
+    (
+      contextPack !== undefined &&
+      compareUtcTimestamps(
+        entry.options.freshConsentAt,
+        contextPack.createdAt,
+      ) < 0
+    )
+  ) {
+    return fail(
+      "semantic_conflict",
+      `${entryPath}.freshConsentAt`,
+      "Fresh consent must not predate run or Context Pack creation",
+    );
+  }
+  if (
+    contextPack !== undefined &&
+    entry.options.contextConsent !== contextPack.consent.retention
+  ) {
+    return fail(
+      "semantic_conflict",
+      `${entryPath}.contextConsent`,
+      "Replay contextConsent must equal the authenticated Context Pack retention ceiling",
+    );
+  }
+  return pass(undefined);
 }
 
 function validateManifestRunAuthority(
@@ -281,6 +515,7 @@ function validateEmbeddedManifestAuthority(
   run: ResearchRunV1,
   contextPack: ContextPackV1 | undefined,
   history: readonly unknown[] | undefined,
+  revisionOptions: readonly ParsedReplayRevisionOptions[],
 ): ProtocolParseResult<RunManifestV1> {
   const embedded = parseEmbeddedRunManifestCandidateV1(manifest);
   if (!embedded.ok) {
@@ -296,6 +531,13 @@ function validateEmbeddedManifestAuthority(
     };
   }
   if (embedded.value.revision === 1) {
+    if (revisionOptions.length > 0) {
+      return fail(
+        "semantic_conflict",
+        `$.manifestRevisionOptions[${revisionOptions[0]!.index}].successorRevision`,
+        "Manifest replay options do not identify a history transition",
+      );
+    }
     const standalone = parseRunManifestV1(embedded.value);
     if (!standalone.ok) {
       return {
@@ -385,17 +627,93 @@ function validateEmbeddedManifestAuthority(
   }
 
   let replayed = root.value;
+  const optionsByRevision = new Map(
+    revisionOptions.map((entry) => [entry.successorRevision, entry]),
+  );
+  const optionsByDigest = new Map(
+    revisionOptions.map((entry) => [entry.successorDigest, entry]),
+  );
+  const consumedOptions = new Set<number>();
   for (let index = 1; index < history.length; index += 1) {
-    const next = validateRunManifestRevisionV1(
+    const candidate = parseEmbeddedRunManifestCandidateV1(history[index]);
+    if (!candidate.ok) {
+      return {
+        ok: false,
+        error: {
+          ...candidate.error,
+          path: prefixProtocolErrorPath(
+            candidate.error.path,
+            `$.manifestHistory[${index}]`,
+          ),
+        },
+      };
+    }
+    const revisionEntry = optionsByRevision.get(candidate.value.revision);
+    const digestEntry = optionsByDigest.get(candidate.value.digest);
+    if (
+      revisionEntry !== undefined &&
+      revisionEntry.successorDigest !== candidate.value.digest
+    ) {
+      return fail(
+        "semantic_conflict",
+        `$.manifestRevisionOptions[${revisionEntry.index}].successorDigest`,
+        "Replay option successorDigest does not match its history revision",
+      );
+    }
+    if (
+      digestEntry !== undefined &&
+      digestEntry.successorRevision !== candidate.value.revision
+    ) {
+      return fail(
+        "semantic_conflict",
+        `$.manifestRevisionOptions[${digestEntry.index}].successorRevision`,
+        "Replay option successorRevision does not match its history digest",
+      );
+    }
+    const transitionOptions =
+      revisionEntry !== undefined && revisionEntry === digestEntry
+        ? revisionEntry
+        : undefined;
+    const lengtheningPath = retentionLengtheningPath(
       replayed,
-      history[index],
+      candidate.value,
+    );
+    if (lengtheningPath === undefined && transitionOptions !== undefined) {
+      return fail(
+        "semantic_conflict",
+        `$.manifestRevisionOptions[${transitionOptions.index}].successorRevision`,
+        "Replay options are not allowed for a non-lengthening transition",
+      );
+    }
+    if (lengtheningPath !== undefined && transitionOptions === undefined) {
+      return fail(
+        "semantic_conflict",
+        prefixProtocolErrorPath(
+          lengtheningPath,
+          `$.manifestHistory[${index}]`,
+        ),
+        "A lengthening history transition requires its own explicit replay consent",
+      );
+    }
+
+    let directOptions: ManifestRevisionOptions =
       contextPack === undefined
         ? {}
-        : {
-            contextConsent: contextPack.consent.retention,
-            freshConsent: true,
-            freshConsentAt: contextPack.createdAt,
-          },
+        : { contextConsent: contextPack.consent.retention };
+    if (transitionOptions !== undefined) {
+      const chronology = validateReplayConsentCreationChronology(
+        transitionOptions,
+        run,
+        contextPack,
+      );
+      if (!chronology.ok) return chronology;
+      directOptions = transitionOptions.options;
+      consumedOptions.add(transitionOptions.index);
+    }
+    const next = validateRunManifestRevisionV1(
+      replayed,
+      candidate.value,
+      directOptions,
     );
     if (!next.ok) {
       return {
@@ -429,6 +747,16 @@ function validateEmbeddedManifestAuthority(
     }
   }
 
+  const unusedOption = revisionOptions.find(
+    (entry) => !consumedOptions.has(entry.index),
+  );
+  if (unusedOption !== undefined) {
+    return fail(
+      "semantic_conflict",
+      `$.manifestRevisionOptions[${unusedOption.index}].successorRevision`,
+      "Replay option does not identify a lengthening history transition",
+    );
+  }
   if (replayed.digest !== embedded.value.digest) {
     return fail(
       "semantic_conflict",
@@ -458,6 +786,10 @@ export function validateResearchRunContextPackV1(
   contextPack?: ContextPackV1,
   options: ResearchRunContextPackValidationOptionsV1 = {},
 ): ProtocolParseResult<ResearchRunV1> {
+  const revisionOptions = parseReplayRevisionOptions(
+    options.manifestRevisionOptions,
+  );
+  if (!revisionOptions.ok) return revisionOptions;
   if (!run.context) {
     if (contextPack !== undefined) {
       return fail(
@@ -472,12 +804,20 @@ export function validateResearchRunContextPackV1(
         run,
         undefined,
         options.manifestHistory,
+        revisionOptions.value,
       );
       if (!authority.ok) return authority;
       return pass({
         ...run,
         artifactManifest: authority.value,
       });
+    }
+    if (revisionOptions.value.length > 0) {
+      return fail(
+        "semantic_conflict",
+        `$.manifestRevisionOptions[${revisionOptions.value[0]!.index}].successorRevision`,
+        "Manifest replay options require an embedded manifest history",
+      );
     }
     return pass(run);
   }
@@ -562,6 +902,7 @@ export function validateResearchRunContextPackV1(
       run,
       trustedContextPack,
       options.manifestHistory,
+      revisionOptions.value,
     );
     if (!authority.ok) return authority;
     return pass({
@@ -570,6 +911,13 @@ export function validateResearchRunContextPackV1(
     });
   }
 
+  if (revisionOptions.value.length > 0) {
+    return fail(
+      "semantic_conflict",
+      `$.manifestRevisionOptions[${revisionOptions.value[0]!.index}].successorRevision`,
+      "Manifest replay options require an embedded manifest history",
+    );
+  }
   return pass(run);
 }
 
@@ -1338,14 +1686,14 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   if (!data.ok) return data;
 
   if (type.value === "content.deleted") {
-    const safeEventKeys = validateSafeExtensionKeys(
+    const safeEventKeys = validateSafeDeletionExtensionKeys(
       object.value,
       "$",
       RUN_EVENT_FIELDS,
     );
     if (!safeEventKeys.ok) return safeEventKeys;
 
-    const safeKeys = validateSafeExtensionKeys(
+    const safeKeys = validateSafeDeletionExtensionKeys(
       data.value,
       "$.data",
       CONTENT_DELETED_DATA_FIELDS,

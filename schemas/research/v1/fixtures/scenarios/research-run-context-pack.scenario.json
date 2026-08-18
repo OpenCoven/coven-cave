@@ -59,6 +59,147 @@
           "retention": "project"
         }
       }
+    },
+    "replay-run": {
+      "fixture": "scenarios/objects/replay-consent-run.json"
+    },
+    "replay-root": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-20T20:05:00.000Z",
+          "updatedAt": "2026-08-16T20:05:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
+    },
+    "replay-first-lengthening": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "revision": 2,
+        "previousDigest": "02d819908b8025038608e563ae1356e401d86fb7b3ec30888fe64cb657510998",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-21T20:05:30.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
+    },
+    "replay-unchanged": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "revision": 3,
+        "previousDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-21T20:05:30.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
+    },
+    "replay-second-lengthening": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "revision": 4,
+        "previousDigest": "0449d175c0b8c19640c597eb7693bf7e9f2178efbf16a0a426653331bee6eacb",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-22T20:07:30.000Z",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
     }
   },
   "scenarios": [
@@ -158,6 +299,329 @@
         "input": "run",
         "code": "semantic_conflict",
         "path": "$.artifactManifest.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "research-run.replay-explicit-transition-consent",
+      "description": "A multi-lengthening replay consumes independently keyed fresh consent for each lengthening successor.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.replay-missing-transition-consent",
+      "description": "Every lengthening successor requires its own explicit replay consent entry.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[3].retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "research-run.replay-duplicate-transition-consent",
+      "description": "A replay rejects duplicate options for one successor revision and digest.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:45.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[1].successorRevision"
+      }
+    },
+    {
+      "id": "research-run.replay-unknown-transition-consent",
+      "description": "A replay rejects an option keyed to no history successor.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 5,
+            "successorDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:08:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[2].successorRevision"
+      }
+    },
+    {
+      "id": "research-run.replay-extra-non-lengthening-consent",
+      "description": "A replay rejects an extra option for a non-lengthening successor.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 3,
+            "successorDigest": "0449d175c0b8c19640c597eb7693bf7e9f2178efbf16a0a426653331bee6eacb",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:06:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[1].successorRevision"
+      }
+    },
+    {
+      "id": "research-run.replay-stale-transition-consent",
+      "description": "Fresh replay consent must postdate prior retention and deletion authority.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:00.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[1].retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "research-run.replay-future-transition-consent",
+      "description": "Fresh replay consent cannot postdate its successor retention update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:06:00.000000001Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[1].retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "research-run.replay-misbound-transition-consent",
+      "description": "Replay consent must carry the authenticated Context Pack retention ceiling.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "project"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[0].contextConsent"
       }
     }
   ]
