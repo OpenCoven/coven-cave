@@ -1867,6 +1867,59 @@ test("revision retention deadlines are policy-bounded and monotonic", () => {
   );
 });
 
+test("policy-shortened successors revalidate inherited deadline authority", () => {
+  const original = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduled = expectOk(
+    validateRunManifestRevisionV1(original, retentionUpdateJson, {
+      contextConsent: "7-days",
+    }),
+  );
+  const overRunOnlyCeiling = recalculate({
+    ...scheduled,
+    revision: 3,
+    previousDigest: scheduled.digest,
+    retention: {
+      ...scheduled.retention,
+      effectivePolicy: "run-only" as const,
+      updatedAt: "2026-08-16T20:07:00.000Z",
+    },
+  });
+
+  expectError(
+    validateRunManifestRevisionV1(scheduled, overRunOnlyCeiling, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const compliant = recalculate({
+    ...overRunOnlyCeiling,
+    retention: {
+      ...overRunOnlyCeiling.retention,
+      contentExpiresAt: "2026-08-17T20:04:00.000Z",
+    },
+  });
+  const validated = expectOk(
+    validateRunManifestRevisionV1(scheduled, compliant, {
+      contextConsent: "7-days",
+    }),
+  );
+  assert.deepEqual(validated, compliant);
+  assert.deepEqual(
+    {
+      retentionStatus: validated.retention.status,
+      deletionStatus: validated.deletion.status,
+      requestedAt: validated.deletion.requestedAt,
+    },
+    {
+      retentionStatus: "deletion_scheduled",
+      deletionStatus: "scheduled",
+      requestedAt: "2026-08-16T20:06:00.000Z",
+    },
+  );
+});
+
 test("validated deadline authority carries through scheduled, partial, and completed successors", () => {
   const original = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const scheduled = expectOk(
