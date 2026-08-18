@@ -176,6 +176,68 @@ function contextBindingsMatch(
   );
 }
 
+function validateEmbeddedManifestOccurrenceClock(
+  manifest: RunManifestV1,
+  runUpdatedAt: string,
+): ProtocolParseResult<void> {
+  const occurrences: Array<{ timestamp: string; path: string; message: string }> = [
+    {
+      timestamp: manifest.createdAt,
+      path: "$.artifactManifest.createdAt",
+      message: "artifactManifest.createdAt must not follow the enclosing run update",
+    },
+    ...(manifest.state === "final" && typeof manifest.finalizedAt === "string"
+      ? [{
+          timestamp: manifest.finalizedAt,
+          path: "$.artifactManifest.finalizedAt",
+          message: "artifactManifest.finalizedAt must not follow the enclosing run update",
+        }]
+      : []),
+    {
+      timestamp: manifest.retention.updatedAt,
+      path: "$.artifactManifest.retention.updatedAt",
+      message: "artifactManifest retention update must not follow the enclosing run update",
+    },
+  ];
+
+  for (const [index, artifact] of manifest.artifacts.entries()) {
+    occurrences.push({
+      timestamp: artifact.createdAt,
+      path: childPath(indexPath("$.artifactManifest.artifacts", index), "createdAt"),
+      message: "artifact createdAt must not follow the enclosing run update",
+    });
+  }
+  for (const [index, source] of manifest.sources.entries()) {
+    if (source.kind !== "public-evidence") continue;
+    occurrences.push({
+      timestamp: source.fetchedAt,
+      path: childPath(indexPath("$.artifactManifest.sources", index), "fetchedAt"),
+      message: "public-evidence fetchedAt must not follow the enclosing run update",
+    });
+  }
+  if (typeof manifest.deletion.requestedAt === "string") {
+    occurrences.push({
+      timestamp: manifest.deletion.requestedAt,
+      path: "$.artifactManifest.deletion.requestedAt",
+      message: "deletion requestedAt must not follow the enclosing run update",
+    });
+  }
+  if (typeof manifest.deletion.completedAt === "string") {
+    occurrences.push({
+      timestamp: manifest.deletion.completedAt,
+      path: "$.artifactManifest.deletion.completedAt",
+      message: "deletion completedAt must not follow the enclosing run update",
+    });
+  }
+
+  for (const occurrence of occurrences) {
+    if (compareUtcTimestamps(occurrence.timestamp, runUpdatedAt) > 0) {
+      return fail("semantic_conflict", occurrence.path, occurrence.message);
+    }
+  }
+  return pass(undefined);
+}
+
 function validateArtifactContentSyncConsent(
   run: ResearchRunV1,
 ): ProtocolParseResult<void> {
@@ -1015,31 +1077,11 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "artifactManifest.createdAt must not precede the enclosing run creation",
       );
     }
-    if (compareUtcTimestamps(artifactManifest.createdAt, updatedAt.value) > 0) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.createdAt",
-        "artifactManifest.createdAt must not follow the enclosing run update",
-      );
-    }
-    if (
-      artifactManifest.state === "final"
-      && typeof artifactManifest.finalizedAt === "string"
-      && compareUtcTimestamps(artifactManifest.finalizedAt, updatedAt.value) > 0
-    ) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.finalizedAt",
-        "artifactManifest.finalizedAt must not follow the enclosing run update",
-      );
-    }
-    if (compareUtcTimestamps(artifactManifest.retention.updatedAt, updatedAt.value) > 0) {
-      return fail(
-        "semantic_conflict",
-        "$.artifactManifest.retention.updatedAt",
-        "artifactManifest retention update must not follow the enclosing run update",
-      );
-    }
+    const occurrenceClock = validateEmbeddedManifestOccurrenceClock(
+      artifactManifest,
+      updatedAt.value,
+    );
+    if (!occurrenceClock.ok) return occurrenceClock;
   }
 
   return pass({

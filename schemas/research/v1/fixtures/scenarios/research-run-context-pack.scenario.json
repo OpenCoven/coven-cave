@@ -307,6 +307,148 @@
       },
       "digestTargets": ["/artifactManifest"]
     },
+    "assembling-artifact-after-run-update": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "status": "publishing",
+        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "artifactManifest": {
+          "state": "assembling",
+          "finalizedAt": null,
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "device-local",
+              "contentSync": "not-requested",
+              "createdAt": "2026-08-15T20:09:00.000000001Z"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "public-source-after-run-update": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "status": "publishing",
+        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "artifactManifest": {
+          "state": "assembling",
+          "finalizedAt": null,
+          "sources": [
+            {
+              "kind": "context-pack",
+              "id": "ctx_01",
+              "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+              "availability": "device-local"
+            },
+            {
+              "kind": "public-evidence",
+              "id": "evidence_public_01",
+              "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "canonicalUrl": "https://example.test/research",
+              "fetchedAt": "2026-08-15T20:09:00.000000001Z"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "completed-deletion-after-run-update": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "artifactManifest": {
+          "retention": {
+            "status": "deleted",
+            "contentExpiresAt": "2026-08-22T20:09:00.000Z"
+          },
+          "deletion": {
+            "status": "completed",
+            "requestedAt": "2026-08-15T20:09:00.000Z",
+            "completedAt": "2026-08-15T20:09:00.000000001Z",
+            "deletedObjectCount": 1,
+            "eventSequence": 2
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "occurrence-clock-equality": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "artifactManifest": {
+          "sources": [
+            {
+              "kind": "context-pack",
+              "id": "ctx_01",
+              "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+              "availability": "device-local"
+            },
+            {
+              "kind": "public-evidence",
+              "id": "evidence_public_01",
+              "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "canonicalUrl": "https://example.test/research",
+              "fetchedAt": "2026-08-15T20:09:00.000Z"
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "device-local",
+              "contentSync": "not-requested",
+              "createdAt": "2026-08-15T20:09:00.000Z"
+            }
+          ],
+          "retention": {
+            "status": "deleted"
+          },
+          "deletion": {
+            "status": "completed",
+            "requestedAt": "2026-08-15T20:09:00.000Z",
+            "completedAt": "2026-08-15T20:09:00.000Z",
+            "deletedObjectCount": 1,
+            "eventSequence": 2
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "future-deadlines-after-run-update": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "artifactManifest": {
+          "retention": {
+            "status": "deleted",
+            "contentExpiresAt": "2026-08-22T20:09:00.000Z"
+          },
+          "deletion": {
+            "status": "completed",
+            "requestedAt": "2026-08-15T20:08:00.000Z",
+            "completedAt": "2026-08-15T20:09:00.000Z",
+            "deletedObjectCount": 1,
+            "retainedAuditUntil": "2027-08-15T20:09:00.000Z",
+            "eventSequence": 2
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "run-retention-above-consent": {
       "fixture": "valid/research-run.json",
       "mergePatch": {
@@ -398,6 +540,78 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "post-final-retention-revision",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.assembling-artifact-after-run-update",
+      "description": "An assembling manifest cannot record an artifact created after its enclosing run update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "assembling-artifact-after-run-update",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].createdAt"
+      }
+    },
+    {
+      "id": "research-run.public-source-after-run-update",
+      "description": "An embedded manifest cannot record public evidence fetched after its enclosing run update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "public-source-after-run-update",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.sources[1].fetchedAt"
+      }
+    },
+    {
+      "id": "research-run.completed-deletion-after-run-update",
+      "description": "An embedded manifest cannot complete deletion after its enclosing run update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "completed-deletion-after-run-update",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.deletion.completedAt"
+      }
+    },
+    {
+      "id": "research-run.occurrence-clock-equality",
+      "description": "Manifest occurrence clocks may equal the enclosing run update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "occurrence-clock-equality",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.future-deadlines-after-run-update",
+      "description": "Manifest content expiry and retained-audit deadlines may follow the enclosing run update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "future-deadlines-after-run-update",
         "contextPack": "context-pack"
       },
       "expected": {

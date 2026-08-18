@@ -35,6 +35,7 @@ import {
 } from "./research-run.ts";
 import {
   compareUtcTimestamps,
+  isRecord,
   isUtcTimestamp,
   parseResearchContextBindingV1,
 } from "./common.ts";
@@ -145,15 +146,29 @@ function runForStatus(
       run.createdAt = artifactManifest.createdAt;
     }
     const retention =
-      typeof artifactManifest.retention === "object"
-        && artifactManifest.retention !== null
-        && !Array.isArray(artifactManifest.retention)
+      isRecord(artifactManifest.retention)
         ? artifactManifest.retention as Record<string, unknown>
         : undefined;
+    const deletion =
+      isRecord(artifactManifest.deletion)
+        ? artifactManifest.deletion as Record<string, unknown>
+        : undefined;
+    const artifacts = Array.isArray(artifactManifest.artifacts)
+      ? artifactManifest.artifacts.filter(isRecord)
+      : [];
+    const sources = Array.isArray(artifactManifest.sources)
+      ? artifactManifest.sources.filter(isRecord)
+      : [];
     const manifestTimestamps = [
       artifactManifest.createdAt,
       artifactManifest.finalizedAt,
       retention?.updatedAt,
+      ...artifacts.map((artifact) => artifact.createdAt),
+      ...sources
+        .filter((source) => source.kind === "public-evidence")
+        .map((source) => source.fetchedAt),
+      deletion?.requestedAt,
+      deletion?.completedAt,
     ].filter(isUtcTimestamp);
     if (manifestTimestamps.length > 0) {
       run.updatedAt = manifestTimestamps.reduce((latest, timestamp) =>
@@ -706,6 +721,166 @@ test("embedded manifest chronology stays within the enclosing run snapshot", () 
     parseResearchRunV1(runForStatus("publishing", assemblingManifest)).ok,
     true,
   );
+});
+
+test("assembling manifest artifacts cannot postdate the enclosing run update", () => {
+  const artifactManifest = linkedManifest({
+    ...assemblingRunManifest,
+    artifacts: [
+      {
+        ...validRunManifest.artifacts[0],
+        createdAt: "2026-08-16T20:05:00.000000001Z",
+      },
+    ],
+  });
+  const run = {
+    ...runForStatus("publishing", artifactManifest),
+    updatedAt: "2026-08-16T20:05:00.000Z",
+  };
+
+  expectError(
+    parseResearchRunV1(run),
+    "$.artifactManifest.artifacts[0].createdAt",
+    "semantic_conflict",
+  );
+});
+
+test("public evidence cannot be fetched after the enclosing run update", () => {
+  const artifactManifest = linkedManifest({
+    ...assemblingRunManifest,
+    sources: [
+      ...assemblingRunManifest.sources,
+      {
+        ...validCloudRunManifest.sources[1],
+        fetchedAt: "2026-08-16T20:05:00.000000001Z",
+      },
+    ],
+  });
+  const run = {
+    ...runForStatus("publishing", artifactManifest),
+    updatedAt: "2026-08-16T20:05:00.000Z",
+  };
+
+  expectError(
+    parseResearchRunV1(run),
+    "$.artifactManifest.sources[1].fetchedAt",
+    "semantic_conflict",
+  );
+});
+
+test("deletion requests cannot postdate the enclosing run update", () => {
+  const artifactManifest = linkedManifest({
+    ...validRunManifest,
+    retention: {
+      ...validRunManifest.retention,
+      status: "deletion_scheduled",
+      contentExpiresAt: "2026-08-23T20:05:00.000Z",
+    },
+    deletion: {
+      status: "scheduled",
+      requestedAt: "2026-08-16T20:05:00.000000001Z",
+    },
+  });
+  const run = {
+    ...runForStatus("completed", artifactManifest),
+    updatedAt: "2026-08-16T20:05:00.000Z",
+  };
+
+  expectError(
+    parseResearchRunV1(run),
+    "$.artifactManifest.deletion.requestedAt",
+    "semantic_conflict",
+  );
+});
+
+test("completed deletion receipt clocks cannot postdate the enclosing run update", () => {
+  const artifactManifest = linkedManifest({
+    ...validRunManifest,
+    retention: {
+      ...validRunManifest.retention,
+      status: "deleted",
+      contentExpiresAt: "2026-08-23T20:05:00.000Z",
+    },
+    deletion: {
+      status: "completed",
+      requestedAt: "2026-08-16T20:05:00.000Z",
+      completedAt: "2026-08-16T20:05:00.000000001Z",
+      deletedObjectCount: 1,
+      eventSequence: 2,
+    },
+  });
+  const run = {
+    ...runForStatus("completed", artifactManifest),
+    updatedAt: "2026-08-16T20:05:00.000Z",
+  };
+
+  expectError(
+    parseResearchRunV1(run),
+    "$.artifactManifest.deletion.completedAt",
+    "semantic_conflict",
+  );
+});
+
+test("embedded manifest occurrence clocks include the enclosing run update boundary", () => {
+  const boundary = "2026-08-16T20:05:00.000Z";
+  const artifactManifest = linkedManifest({
+    ...validRunManifest,
+    finalizedAt: boundary,
+    sources: [
+      ...validRunManifest.sources,
+      {
+        ...validCloudRunManifest.sources[1],
+        fetchedAt: boundary,
+      },
+    ],
+    artifacts: validRunManifest.artifacts.map((artifact) => ({
+      ...artifact,
+      createdAt: boundary,
+    })),
+    retention: {
+      ...validRunManifest.retention,
+      status: "deleted",
+      updatedAt: boundary,
+    },
+    deletion: {
+      status: "completed",
+      requestedAt: boundary,
+      completedAt: boundary,
+      deletedObjectCount: 1,
+      eventSequence: 2,
+    },
+  });
+  const run = {
+    ...runForStatus("completed", artifactManifest),
+    updatedAt: boundary,
+  };
+
+  assert.equal(parseResearchRunV1(run).ok, true);
+});
+
+test("embedded manifest future deadlines may follow the enclosing run update", () => {
+  const artifactManifest = linkedManifest({
+    ...validRunManifest,
+    retention: {
+      ...validRunManifest.retention,
+      status: "deleted",
+      contentExpiresAt: "2026-08-23T20:05:00.000Z",
+    },
+    deletion: {
+      status: "completed",
+      requestedAt: "2026-08-16T20:04:00.000Z",
+      completedAt: "2026-08-16T20:05:00.000Z",
+      deletedObjectCount: 1,
+      retainedAuditUntil: "2027-08-16T20:05:00.000Z",
+      eventSequence: 2,
+    },
+  });
+  const run = {
+    ...runForStatus("completed", artifactManifest),
+    updatedAt: "2026-08-16T20:05:00.000Z",
+  };
+
+  assert.equal(parseResearchRunV1(run).ok, true);
 });
 
 test("run and Context Pack composition requires matching presence and binding", () => {
