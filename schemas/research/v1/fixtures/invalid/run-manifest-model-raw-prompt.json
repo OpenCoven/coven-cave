@@ -1,0 +1,51 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_model_raw_prompt_01",
+  "runId": "run_model_raw_prompt_01",
+  "digest": "718f5a036c474135977292dec29a41402ced49d3659c6bd6cc03ee9828d034ba",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [
+    {
+      "taskId": "modeltask_raw_prompt_01",
+      "phase": "scope",
+      "attempt": 1,
+      "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "receipt": {
+        "familiarId": "sage",
+        "runtime": "copilot",
+        "effectiveModel": "gpt-5.6-sol",
+        "modelSource": "session",
+        "providerBilling": "user-connected",
+        "usage": {
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "reportedByRuntime": false
+        }
+      },
+      "rawPrompt": "private model input"
+    }
+  ],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  }
+}

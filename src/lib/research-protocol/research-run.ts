@@ -755,11 +755,9 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "local runs must not include tenantOpaqueId",
       );
     }
-  } else {
-    const tenantOpaqueIdField = parseRequiredField(object.value, "tenantOpaqueId", "$");
-    if (!tenantOpaqueIdField.ok) return tenantOpaqueIdField;
+  } else if (hasOwn(object.value, "tenantOpaqueId")) {
     const parsedTenantOpaqueId = parseString(
-      tenantOpaqueIdField.value,
+      object.value.tenantOpaqueId,
       "$.tenantOpaqueId",
       "tenantOpaqueId",
     );

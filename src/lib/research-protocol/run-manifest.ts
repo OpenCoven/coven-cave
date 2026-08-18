@@ -55,6 +55,12 @@ const SENSITIVE_EXTENSION_KEY_TOKENS = [
   "bucketkey",
   "deletedcontent",
 ] as const;
+const SENSITIVE_EXTENSION_KEY_VARIANTS = [
+  "prompt",
+  ...SENSITIVE_EXTENSION_KEY_TOKENS
+    .filter((token) => token !== "credentials")
+    .map((token) => `${token}s`),
+] as const;
 
 function caseInsensitiveTokenPattern(token: string): string {
   return [...token]
@@ -73,9 +79,44 @@ export const SENSITIVE_EXTENSION_KEY_PATTERN =
   `(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})$|` +
   `(?:^|[_.-])(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})(?:[_.-]|$)|` +
   `(?:^|[_.-]|[a-z0-9])(?:${SENSITIVE_EXTENSION_CAMEL_TOKEN_PATTERN})(?:[A-Z0-9_.-]|$))`;
-const SENSITIVE_EXTENSION_KEY_RE = new RegExp(SENSITIVE_EXTENSION_KEY_PATTERN);
+export const SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN =
+  `(?:${SENSITIVE_EXTENSION_KEY_VARIANTS.map(caseInsensitiveTokenPattern).join("|")})`;
+const SENSITIVE_EXTENSION_KEY_RE = new RegExp(
+  `(?:${SENSITIVE_EXTENSION_KEY_PATTERN})|(?:${SENSITIVE_EXTENSION_VARIANT_KEY_PATTERN})`,
+);
 const NO_DECLARED_FIELDS: ReadonlySet<string> = new Set();
+const RUN_MANIFEST_FIELDS = new Set([
+  "schema",
+  "id",
+  "runId",
+  "digest",
+  "revision",
+  "previousDigest",
+  "state",
+  "createdAt",
+  "finalizedAt",
+  "context",
+  "sources",
+  "artifacts",
+  "modelExecutions",
+  "usage",
+  "retention",
+  "deletion",
+]);
+const CONTEXT_BINDING_FIELDS = new Set([
+  "contextPackId",
+  "contextPackDigest",
+  "topicProposalId",
+]);
 const CONTEXT_PACK_SOURCE_FIELDS = new Set(["kind", "id", "digest", "availability"]);
+const PUBLIC_EVIDENCE_SOURCE_FIELDS = new Set([
+  "kind",
+  "id",
+  "contentDigest",
+  "snapshotDigest",
+  "canonicalUrl",
+  "fetchedAt",
+]);
 const ARTIFACT_FIELDS = new Set([
   "id",
   "kind",
@@ -86,6 +127,41 @@ const ARTIFACT_FIELDS = new Set([
   "placement",
   "contentSync",
   "createdAt",
+]);
+const MODEL_EXECUTION_FIELDS = new Set([
+  "taskId",
+  "phase",
+  "attempt",
+  "inputDigest",
+  "outputDigest",
+  "receipt",
+]);
+const MODEL_RECEIPT_FIELDS = new Set([
+  "familiarId",
+  "runtime",
+  "effectiveModel",
+  "modelSource",
+  "providerBilling",
+  "usage",
+]);
+const MODEL_USAGE_FIELDS = new Set([
+  "inputTokens",
+  "outputTokens",
+  "costUsd",
+  "reportedByRuntime",
+]);
+const MANIFEST_USAGE_FIELDS = new Set([
+  "inputTokens",
+  "outputTokens",
+  "costUsd",
+  "completeness",
+]);
+const RETENTION_FIELDS = new Set([
+  "policy",
+  "effectivePolicy",
+  "status",
+  "contentExpiresAt",
+  "updatedAt",
 ]);
 const DELETION_FIELDS = new Set([
   "status",
@@ -223,6 +299,20 @@ function validateSensitiveObjectKeys(
     if (!nested.ok) return nested;
   }
   return pass(undefined);
+}
+
+function validateModelReceiptExtensionKeys(
+  value: unknown,
+  path: string,
+): ProtocolParseResult<void> {
+  const receiptKeys = validateSensitiveObjectKeys(value, path, MODEL_RECEIPT_FIELDS);
+  if (!receiptKeys.ok) return receiptKeys;
+  if (!isRecord(value) || !hasOwn(value, "usage")) return pass(undefined);
+  return validateSensitiveObjectKeys(
+    value.usage,
+    childPath(path, "usage"),
+    MODEL_USAGE_FIELDS,
+  );
 }
 
 function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
@@ -451,6 +541,13 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
     });
   }
 
+  const safeKeys = validateSensitiveObjectKeys(
+    object.value,
+    path,
+    PUBLIC_EVIDENCE_SOURCE_FIELDS,
+  );
+  if (!safeKeys.ok) return safeKeys;
+
   const contentDigestField = parseRequiredField(object.value, "contentDigest", path);
   if (!contentDigestField.ok) return contentDigestField;
   const contentDigest = parseSha256(
@@ -588,6 +685,12 @@ function parseModelExecution(
 ): ProtocolParseResult<RunManifestModelExecutionV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
+  const safeKeys = validateSensitiveObjectKeys(
+    object.value,
+    path,
+    MODEL_EXECUTION_FIELDS,
+  );
+  if (!safeKeys.ok) return safeKeys;
 
   const taskIdField = parseRequiredField(object.value, "taskId", path);
   if (!taskIdField.ok) return taskIdField;
@@ -624,6 +727,11 @@ function parseModelExecution(
 
   const receiptField = parseRequiredField(object.value, "receipt", path);
   if (!receiptField.ok) return receiptField;
+  const safeReceiptKeys = validateModelReceiptExtensionKeys(
+    receiptField.value,
+    childPath(path, "receipt"),
+  );
+  if (!safeReceiptKeys.ok) return safeReceiptKeys;
   const receipt = parseResearchModelReceiptV1(receiptField.value, childPath(path, "receipt"));
   if (!receipt.ok) return receipt;
 
@@ -641,6 +749,12 @@ function parseModelExecution(
 function parseUsage(value: unknown, path: string): ProtocolParseResult<RunManifestUsageV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
+  const safeKeys = validateSensitiveObjectKeys(
+    object.value,
+    path,
+    MANIFEST_USAGE_FIELDS,
+  );
+  if (!safeKeys.ok) return safeKeys;
 
   const inputTokensField = parseRequiredField(object.value, "inputTokens", path);
   if (!inputTokensField.ok) return inputTokensField;
@@ -691,6 +805,8 @@ function parseUsage(value: unknown, path: string): ProtocolParseResult<RunManife
 function parseRetention(value: unknown, path: string): ProtocolParseResult<RunManifestRetentionV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
+  const safeKeys = validateSensitiveObjectKeys(object.value, path, RETENTION_FIELDS);
+  if (!safeKeys.ok) return safeKeys;
 
   const policyField = parseRequiredField(object.value, "policy", path);
   if (!policyField.ok) return policyField;
@@ -1047,6 +1163,12 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
 
   const object = parseObject(wireValue.value, "$");
   if (!object.ok) return object;
+  const safeKeys = validateSensitiveObjectKeys(
+    object.value,
+    "$",
+    RUN_MANIFEST_FIELDS,
+  );
+  if (!safeKeys.ok) return safeKeys;
 
   const schemaField = parseRequiredField(object.value, "schema", "$");
   if (!schemaField.ok) return schemaField;
@@ -1116,6 +1238,12 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
 
   let context: ResearchContextBindingV1 | undefined;
   if (hasOwn(object.value, "context")) {
+    const safeContextKeys = validateSensitiveObjectKeys(
+      object.value.context,
+      "$.context",
+      CONTEXT_BINDING_FIELDS,
+    );
+    if (!safeContextKeys.ok) return safeContextKeys;
     const parsedContext = parseResearchContextBindingV1(object.value.context, "$.context");
     if (!parsedContext.ok) return parsedContext;
     context = parsedContext.value;

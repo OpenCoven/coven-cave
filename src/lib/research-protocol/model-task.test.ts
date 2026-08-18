@@ -172,7 +172,7 @@ test("modelTaskResultSignaturePayload returns exactly the signed fields", () => 
     runId: "run_01",
     attempt: 1,
     inputDigest: "6a28b9d62b79b42a133d52fe51636c161c67722929efa5f6178e2940c9136597",
-    outputDigest: "24c988fffd8b3c3a556595626c557b8c449ac24d063da6504ca350661748bdff",
+    outputDigest: validModelTaskResult.outputDigest,
     executorDeviceId: "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
     completedAt: "2026-08-15T20:10:00.000Z",
   });
@@ -258,15 +258,19 @@ test("invalid usage fixture rejects in schema and parser", () => {
   expectError(parseModelTaskResultV1(invalidModelTaskResultUsage), "$.modelReceipt.usage", "semantic_conflict");
 });
 
-test("fixture digests and device fingerprint match helper computations", () => {
+test("result outputDigest remains opaque while task input and device digests are verifiable", () => {
   assert.equal(validModelTask.inputDigest, sha256Digest(canonicalJson(validModelTask.input)));
   assert.equal(validModelTaskResult.inputDigest, validModelTask.inputDigest);
   assert.equal(validModelTaskResult.inputDigest, sha256Digest(canonicalJson(validModelTask.input)));
-  assert.equal(validModelTaskResult.outputDigest, sha256Digest(canonicalJson(validModelTaskResult.output)));
+  assert.match(validModelTaskResult.outputDigest, /^[a-f0-9]{64}$/);
+  assert.notEqual(
+    validModelTaskResult.outputDigest,
+    sha256Digest(canonicalJson(validModelTaskResult.output)),
+  );
   assert.equal(validModelTaskResult.executorDeviceId, FIXTURE_EXECUTOR_DEVICE_ID);
 });
 
-test("task and result parsers reject stale input and output digests", () => {
+test("task parser verifies inputDigest while result parser defers outputDigest verification", () => {
   expectError(
     parseModelTaskV1({
       ...validModelTask,
@@ -279,13 +283,12 @@ test("task and result parsers reject stale input and output digests", () => {
     "digest_mismatch",
   );
 
-  expectError(
-    parseModelTaskResultV1({
+  assert.deepEqual(
+    expectOk(parseModelTaskResultV1({
       ...validModelTaskResult,
       output: { decision: "stop" },
-    }),
-    "$.outputDigest",
-    "digest_mismatch",
+    })).output,
+    { decision: "stop" },
   );
 });
 
@@ -310,7 +313,7 @@ test("validateModelTaskResultV1 accepts matching replays and rejects conflicting
   }
 });
 
-test("validateModelTaskResultV1 rejects task input and result output mutations after parsing", () => {
+test("association validation verifies task input but defers result output digest semantics", () => {
   const mutatedTask = expectOk(parseModelTaskV1(validModelTask));
   const matchingResult = expectOk(parseModelTaskResultV1(validModelTaskResult));
   mutatedTask.input.publicEvidenceRefs.push("evidence://mutated");
@@ -323,10 +326,9 @@ test("validateModelTaskResultV1 rejects task input and result output mutations a
   const matchingTask = expectOk(parseModelTaskV1(validModelTask));
   const mutatedResult = expectOk(parseModelTaskResultV1(validModelTaskResult));
   mutatedResult.output.decision = "mutated";
-  expectError(
-    validateModelTaskResultV1(matchingTask, mutatedResult),
-    "$.outputDigest",
-    "digest_mismatch",
+  assert.strictEqual(
+    expectOk(validateModelTaskResultV1(matchingTask, mutatedResult)),
+    mutatedResult,
   );
 });
 
@@ -733,7 +735,7 @@ test("custom-prototype top-level objects are rejected", () => {
   expectError(parseModelTaskResultV1(inheritedResult), "$", "invalid_value");
 });
 
-test("parser verifies content digests but leaves signature verification to the executor boundary", () => {
+test("parser verifies task input but leaves result output and signature verification to Unit 4", () => {
   const changedDigestTask = {
     ...validModelTask,
     inputDigest: VALID_SHA256_MISMATCH_B,
@@ -749,7 +751,10 @@ test("parser verifies content digests but leaves signature verification to the e
   };
 
   assert.ok(Value.Check(modelTaskResultSchema, changedDigestResult));
-  expectError(parseModelTaskResultV1(changedDigestResult), "$.outputDigest", "digest_mismatch");
+  assert.deepEqual(
+    expectOk(parseModelTaskResultV1(changedDigestResult)).output,
+    { decision: "stop" },
+  );
 
   const parsed = expectOk(parseModelTaskResultV1({
     ...validModelTaskResult,

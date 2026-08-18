@@ -1,6 +1,6 @@
 {
   "schema": "opencoven.research-run/v1",
-  "id": "run_hosted_missing_tenant_01",
+  "id": "run_hosted_without_tenant_01",
   "acceptedTopic": {
     "question": "How should hosted execution coordinate this run?",
     "editedByUser": false
