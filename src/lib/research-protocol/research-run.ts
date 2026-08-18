@@ -22,6 +22,7 @@ const RESEARCH_RUN_SCHEMA = "opencoven.research-run/v1";
 const RESEARCH_RUN_SCHEMA_RE = /^opencoven\.research-run\/v(\d+)$/;
 const RUN_EVENT_SCHEMA = "opencoven.run-event/v1";
 const RUN_EVENT_SCHEMA_RE = /^opencoven\.run-event\/v(\d+)$/;
+const TENANT_OPAQUE_ID_RE = /^tenant_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 const EXECUTION_LOCATIONS = ["local", "hosted"] as const;
@@ -456,6 +457,20 @@ function parseOpaqueIdentifier(
   return pass(value);
 }
 
+function parseTenantOpaqueId(value: unknown, path: string): ProtocolParseResult<string> {
+  if (typeof value !== "string") {
+    return fail("invalid_type", path, "tenantOpaqueId must be a string");
+  }
+  if (!TENANT_OPAQUE_ID_RE.test(value)) {
+    return fail(
+      "invalid_value",
+      path,
+      "tenantOpaqueId must match tenant_[A-Za-z0-9][A-Za-z0-9_-]*",
+    );
+  }
+  return pass(value);
+}
+
 function parseAcceptedTopic(value: unknown, path: string): ProtocolParseResult<ResearchAcceptedTopicV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
@@ -844,11 +859,9 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
       );
     }
   } else if (hasOwn(object.value, "tenantOpaqueId")) {
-    const parsedTenantOpaqueId = parseOpaqueIdentifier(
+    const parsedTenantOpaqueId = parseTenantOpaqueId(
       object.value.tenantOpaqueId,
-      "tenant",
       "$.tenantOpaqueId",
-      "tenantOpaqueId",
     );
     if (!parsedTenantOpaqueId.ok) return parsedTenantOpaqueId;
     tenantOpaqueId = parsedTenantOpaqueId.value;

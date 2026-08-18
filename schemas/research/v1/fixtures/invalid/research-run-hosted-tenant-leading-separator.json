@@ -1,0 +1,43 @@
+{
+  "schema": "opencoven.research-run/v1",
+  "id": "run_hosted_tenant_leading_separator",
+  "tenantOpaqueId": "tenant__",
+  "acceptedTopic": {
+    "question": "How should the hosted research executor resume this run?",
+    "editedByUser": true
+  },
+  "execution": {
+    "location": "hosted",
+    "modelExecution": "user-hosted-executor",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "pinned",
+      "model": "gpt-5.6-sol"
+    },
+    "strategy": "orchestrator-workers"
+  },
+  "privacy": {
+    "remoteQueries": true,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false
+  },
+  "bounds": {
+    "wallClockMinutes": 45,
+    "maxIterations": 4,
+    "sourceTarget": 8,
+    "maxSpendUsd": 1,
+    "checkpointEvery": 2,
+    "stopWhenCostUnavailable": true
+  },
+  "status": "waiting_for_executor",
+  "waitingReason": "executor",
+  "waitingForPhase": "challenge",
+  "createdAt": "2026-08-15T20:00:00.000Z",
+  "updatedAt": "2026-08-15T20:01:00.000Z",
+  "nextEventSequence": 2,
+  "futureExtension": {
+    "preserve": true
+  }
+}

@@ -8,6 +8,7 @@ import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" 
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
 import invalidContextTopicWithoutProposal from "../../../schemas/research/v1/fixtures/invalid/research-run-context-topic-without-proposal.json" with { type: "json" };
 import invalidHostedTenantResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-hosted-invalid-tenant.json" with { type: "json" };
+import invalidHostedTenantLeadingSeparatorResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-hosted-tenant-leading-separator.json" with { type: "json" };
 import invalidLocalResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
 import invalidManifestCreatedBeforeRun from "../../../schemas/research/v1/fixtures/invalid/research-run-manifest-created-before-run.json" with { type: "json" };
 import invalidManifestCreatedAfterUpdate from "../../../schemas/research/v1/fixtures/invalid/research-run-assembling-manifest-created-after-run-updated.json" with { type: "json" };
@@ -322,17 +323,42 @@ test("hosted runs may omit tenantOpaqueId and validate it only when present", ()
   );
 
   assert.equal(checkResearchRunSchema(invalidHostedTenantResearchRun), false);
-  expectError(
-    parseResearchRunV1(invalidHostedTenantResearchRun),
-    "$.tenantOpaqueId",
-    "invalid_value",
-  );
-  for (const tenantOpaqueId of ["tenant_", "tenant space"]) {
+  for (const fixture of [
+    invalidHostedTenantResearchRun,
+    invalidHostedTenantLeadingSeparatorResearchRun,
+  ]) {
+    expectError(parseResearchRunV1(fixture), "$.tenantOpaqueId", "invalid_value");
+  }
+});
+
+test("hosted tenantOpaqueId parser matches schema edge spellings", () => {
+  for (const tenantOpaqueId of [
+    "tenant_0",
+    "tenant_A",
+    "tenant_a_",
+    "tenant_a-",
+    "tenant_a_-",
+    "tenant_a-b_C9",
+  ]) {
+    const run = { ...validHostedResearchRun, tenantOpaqueId };
+    assert.equal(checkResearchRunSchema(run), true, `${tenantOpaqueId} must pass schema`);
+    assert.equal(expectOk(parseResearchRunV1(run)).tenantOpaqueId, tenantOpaqueId);
+  }
+
+  for (const tenantOpaqueId of [
+    "tenant_",
+    "tenant__",
+    "tenant_-",
+    "tenant__a",
+    "tenant_-a",
+    "Tenant_a",
+    "tenant.a",
+    "tenant_é",
+  ]) {
+    const run = { ...validHostedResearchRun, tenantOpaqueId };
+    assert.equal(checkResearchRunSchema(run), false, `${tenantOpaqueId} must fail schema`);
     expectError(
-      parseResearchRunV1({
-        ...validHostedResearchRun,
-        tenantOpaqueId,
-      }),
+      parseResearchRunV1(run),
       "$.tenantOpaqueId",
       "invalid_value",
     );
