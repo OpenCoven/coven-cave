@@ -594,8 +594,9 @@ export function parseModelTaskResultV1(value: unknown): ProtocolParseResult<Mode
 
   const executorDeviceIdField = parseRequiredField(object.value, "executorDeviceId", "$");
   if (!executorDeviceIdField.ok) return executorDeviceIdField;
-  const executorDeviceId = parseSha256(
+  const executorDeviceId = parseOpaqueIdentifier(
     executorDeviceIdField.value,
+    "device",
     "$.executorDeviceId",
     "executorDeviceId",
   );

@@ -55,7 +55,6 @@ const DANGEROUS_PATH_SEQUENCES = [
   ["bucket", "key"],
 ] as const;
 const DANGEROUS_PATH_COMPONENTS = new Set<string>(DANGEROUS_COMPONENTS);
-const ASCII_PROPERTY_NAME_RE = /^[\u0000-\u007f]*$/;
 
 function caseInsensitiveWord(word: string): string {
   return [...word]
@@ -119,7 +118,13 @@ const SENSITIVE_EXTENSION_KEY_RE = new RegExp(
 const NO_DECLARED_FIELDS: ReadonlySet<string> = new Set();
 
 export function isSensitiveExtensionKey(key: string): boolean {
-  return SENSITIVE_EXTENSION_KEY_RE.test(key.normalize("NFKC"));
+  const normalizedKey = key.normalize("NFKC");
+  return (
+    SENSITIVE_EXTENSION_KEY_RE.test(normalizedKey) ||
+    extensionPathComponents(normalizedKey).some((component) =>
+      SENSITIVE_EXTENSION_KEY_RE.test(component),
+    )
+  );
 }
 
 function childPath(path: string, key: string): string {
@@ -187,7 +192,6 @@ function validateSafeExtensionKeysAtPath(
     ];
     if (
       isSensitiveExtensionKey(normalizedKey) ||
-      !ASCII_PROPERTY_NAME_RE.test(key) ||
       hasDangerousPathSuffix(nestedExtensionPath)
     ) {
       return fail(

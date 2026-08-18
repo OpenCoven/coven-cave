@@ -10,7 +10,7 @@
     "futureExtension": { "preserve": true }
   },
   "outputDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-  "executorDeviceId": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+  "executorDeviceId": "device_01",
   "modelReceipt": {
     "familiarId": "sage",
     "runtime": "copilot",
