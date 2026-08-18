@@ -904,6 +904,38 @@ test("two Continue calls create exactly one next iteration", async () => {
   assert.equal(starts, 1);
 });
 
+test("Continue advances from the latest persisted iteration number", async () => {
+  let stored = checkpointMission({
+    bounds: {
+      ...checkpointMission().bounds,
+      maxIterations: 5,
+    },
+    iterations: [
+      { number: 1, status: "completed" },
+      { number: 3, status: "checkpoint" },
+    ],
+  });
+  let startedFlowId = "";
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async (flow) => {
+      startedFlowId = flow.id;
+      return {
+        ok: true,
+        executor: "session",
+        sessionId: "session-4",
+        run: { ...RUN, id: "run-4", flowId: flow.id, sessionId: "session-4" },
+      };
+    },
+  }));
+
+  const result = await runner.act(stored.id, { action: "continue" });
+
+  assert.equal(result.iterations.at(-1)?.number, 4);
+  assert.match(startedFlowId, /iteration-4$/);
+});
+
 test("cost-unavailable policy pauses before another iteration", async () => {
   let stored = checkpointMission({
     bounds: {

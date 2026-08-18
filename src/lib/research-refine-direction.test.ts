@@ -68,6 +68,7 @@ test("refine prompt asks for a decisive agentic direction grounded in mission ev
   assert.match(prompt, /lead with imperative verbs/);
   assert.match(prompt, /Do not broaden the mission/);
   assert.match(prompt, /ask a question, request approval/);
+  assert.match(prompt, /Next iteration: 2 of 4/);
   assert.match(prompt, /Latest synthesis: The first pass found incompatible vendor throughput claims/);
   assert.match(prompt, /Control decision: The benchmark methods are not comparable yet/);
   assert.match(prompt, /Operator draft to strengthen: Verify the throughput comparison/);

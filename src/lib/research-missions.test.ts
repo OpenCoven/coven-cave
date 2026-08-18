@@ -23,6 +23,7 @@ import {
   RESEARCH_MODEL_MAX_LENGTH,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
   RESEARCH_TITLE_MAX_LENGTH,
+  nextResearchIterationNumber,
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
@@ -1012,7 +1013,7 @@ test("Continue is labeled with its real consequence", () => {
     { iterations: [{ number: 1, status: "checkpoint" }], bounds, startedAt },
     tenMinutesIn,
   );
-  assert.equal(withinPlan.label, "Continue (i2/3)");
+  assert.equal(withinPlan.label, "Continue to iteration 2 of 3");
   assert.equal(withinPlan.gated, false);
   // Even ungated, the sentence is a request, not a promise — the runner
   // re-checks its stop gates with live clocks.
@@ -1029,10 +1030,21 @@ test("Continue is labeled with its real consequence", () => {
     },
     tenMinutesIn,
   );
-  assert.equal(beyond.label, "Continue (i2/1)");
+  assert.equal(beyond.label, "Iteration limit reached");
   assert.equal(beyond.gated, true);
   assert.match(beyond.description, /past the planned 1/);
   assert.match(beyond.description, /iteration limit/);
+
+  assert.equal(
+    nextResearchIterationNumber({
+      iterations: [
+        { number: 1, status: "completed" },
+        { number: 3, status: "checkpoint" },
+      ],
+    }),
+    4,
+    "the next iteration follows the latest persisted iteration number, not the array length",
+  );
 });
 
 test("Continue reports every runner stop gate, not just the iteration limit", () => {
