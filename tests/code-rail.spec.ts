@@ -195,7 +195,7 @@ test.describe("code rail beside chat", () => {
     await rail.getByRole("button", { name: "Exit code rail fullscreen" }).click();
     await expect(rail).not.toHaveAttribute("data-fullscreen", "true");
     await expect(rail.locator(".workspace-rail__files--ide")).toHaveCount(0);
-    await expect(rail.getByRole("button", { name: "Terminal" })).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "Terminal" })).toBeVisible();
   });
 
   // PR 3 / Task 3: below the mobile breakpoint there's no room for the
@@ -221,7 +221,7 @@ test.describe("code rail beside chat", () => {
   // under tests/mobile/ (see playwright.config.ts testMatch). A mobile-only test
   // placed here would only ever run under the desktop project and self-skip.
 
-  test("(f) Terminal tab → fullscreen-only lazy pty host", async ({ page }) => {
+  test("(f) Terminal tab → compact-rail lazy pty host", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);
 
@@ -233,27 +233,21 @@ test.describe("code rail beside chat", () => {
     const rail = page.locator(".workspace-rail");
     await expect(rail).toBeVisible({ timeout: 15_000 });
 
-    // The normal side rail has Changes/Files only; Terminal is reserved for
-    // the user-expanded fullscreen rail.
-    await expect(rail.getByRole("button", { name: "Terminal" })).toHaveCount(0);
-    await expect(rail.locator(".workspace-rail__terminal")).toHaveCount(0);
-
-    await rail.getByRole("button", { name: "Expand code rail fullscreen" }).click();
-    await expect(rail).toHaveAttribute("data-fullscreen", "true");
-
-    // The Terminal tab button appears only after fullscreen expansion…
+    // Terminal stays visible below Files in the compact rail.
     const terminalTab = rail.getByRole("button", { name: "Terminal" });
     await expect(terminalTab).toBeVisible();
+    await expect(rail).not.toHaveAttribute("data-fullscreen", "true");
 
-    // …but its host container is ABSENT before the first click (genuine
-    // laziness — the pty must not start early).
+    // Its host container is absent before the first click (genuine laziness —
+    // the pty must not start early).
     await expect(rail.locator(".workspace-rail__terminal")).toHaveCount(0);
 
-    // Clicking Terminal mounts the host wrapper. In daemon-less e2e there is no
-    // live pty websocket bridge, so we assert the host wrapper mounts (not a
-    // working shell) and that the "next step" placeholder is gone.
+    // Clicking Terminal mounts the host without forcing fullscreen. In
+    // daemon-less e2e there is no live pty websocket bridge, so assert the host
+    // wrapper mounts (not a working shell) and the placeholder is gone.
     await terminalTab.click();
     await expect(rail.locator(".workspace-rail__terminal")).toBeVisible({ timeout: 15_000 });
+    await expect(rail).not.toHaveAttribute("data-fullscreen", "true");
     await expect(rail.locator(".workspace-rail__soon")).toHaveCount(0);
   });
 
