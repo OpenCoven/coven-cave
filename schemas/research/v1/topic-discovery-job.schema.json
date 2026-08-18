@@ -69,7 +69,10 @@
       },
       "then": {
         "properties": {
-          "proposalIds": { "minItems": 1, "maxItems": 7 }
+          "proposalIds": {
+            "minItems": 1,
+            "maxItems": 3
+          }
         },
         "not": { "required": ["failure"] }
       }
