@@ -32,9 +32,12 @@ import {
   RESEARCH_PROTOCOL_SCHEMAS,
   digestProtocolObject,
   isRecord,
+  isSha256,
   parseResearchProtocolObject,
+  validateManifestRetentionConsent,
   validateModelTaskResultV1,
   validateResearchRunContextPackV1,
+  validateRunEventSequence,
   validateRunManifestDeletionEventV1,
   validateRunManifestRevision,
   type ContextPackV1,
@@ -66,14 +69,41 @@ const PROTOCOL_ERROR_CODES = new Set([
   "digest_mismatch",
   "semantic_conflict",
 ]);
-const VALIDATORS = [
-  "run-manifest-revision",
-  "research-run-context-pack",
-  "model-task-result",
-  "run-event-deletion",
+// Keep this independent from the action registry so an omitted action cannot
+// make the registry's own coverage assertion pass.
+const PUBLIC_VALIDATOR_ENTRY_POINTS = [
+  "validateManifestRetentionConsent",
+  "validateModelTaskResultV1",
+  "validateResearchRunContextPackV1",
+  "validateRunEventSequence",
+  "validateRunManifestDeletionEventV1",
+  "validateRunManifestRevision",
 ] as const;
 
-type ValidatorKind = (typeof VALIDATORS)[number];
+const VALIDATOR_ENTRY_POINT_BY_ACTION = {
+  "manifest-retention-consent": "validateManifestRetentionConsent",
+  "model-task-result": "validateModelTaskResultV1",
+  "research-run-context-pack": "validateResearchRunContextPackV1",
+  "run-event-deletion": "validateRunManifestDeletionEventV1",
+  "run-event-sequence": "validateRunEventSequence",
+  "run-manifest-revision": "validateRunManifestRevision",
+} as const satisfies Record<string, (typeof PUBLIC_VALIDATOR_ENTRY_POINTS)[number]>;
+
+type ValidatorKind = keyof typeof VALIDATOR_ENTRY_POINT_BY_ACTION;
+const VALIDATORS = Object.keys(VALIDATOR_ENTRY_POINT_BY_ACTION) as ValidatorKind[];
+const DIGEST_TARGET_SCHEMA_BY_CONTAINER: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  "opencoven.context-pack/v1": {
+    "": "opencoven.context-pack/v1",
+  },
+  "opencoven.research-run/v1": {
+    "/artifactManifest": "opencoven.run-manifest/v1",
+  },
+  "opencoven.run-manifest/v1": {
+    "": "opencoven.run-manifest/v1",
+  },
+};
 type ExpectedResult =
   | { ok: true }
   | {
@@ -415,21 +445,33 @@ function scenarioInputEntries(
       );
       break;
     case "research-run-context-pack":
-      requireExactInputKeys(scenario.inputs, ["run", "contextPack"], location);
-      entries.push(
-        {
-          name: "run",
-          reference: requireObjectReference(scenario.inputs.run, objects, `${location}.run`),
-        },
-        {
+      assertAllowedKeys(scenario.inputs, ["run", "contextPack"], location);
+      assert.ok(Object.hasOwn(scenario.inputs, "run"), `${location}: missing field run`);
+      entries.push({
+        name: "run",
+        reference: requireObjectReference(scenario.inputs.run, objects, `${location}.run`),
+      });
+      if (Object.hasOwn(scenario.inputs, "contextPack")) {
+        entries.push({
           name: "contextPack",
           reference: requireObjectReference(
             scenario.inputs.contextPack,
             objects,
             `${location}.contextPack`,
           ),
-        },
-      );
+        });
+      }
+      break;
+    case "manifest-retention-consent":
+      requireExactInputKeys(scenario.inputs, ["manifest"], location);
+      entries.push({
+        name: "manifest",
+        reference: requireObjectReference(
+          scenario.inputs.manifest,
+          objects,
+          `${location}.manifest`,
+        ),
+      });
       break;
     case "model-task-result":
       requireExactInputKeys(scenario.inputs, ["task", "result"], location);
@@ -450,6 +492,17 @@ function scenarioInputEntries(
         name: "run",
         reference: requireObjectReference(scenario.inputs.run, objects, `${location}.run`),
       });
+      assert.ok(Array.isArray(scenario.inputs.events), `${location}.events: must be an array`);
+      for (const [index, event] of scenario.inputs.events.entries()) {
+        entries.push({
+          name: `events[${index}]`,
+          reference: requireObjectReference(event, objects, `${location}.events[${index}]`),
+        });
+      }
+      break;
+    }
+    case "run-event-sequence": {
+      requireExactInputKeys(scenario.inputs, ["events"], location);
       assert.ok(Array.isArray(scenario.inputs.events), `${location}.events: must be an array`);
       for (const [index, event] of scenario.inputs.events.entries()) {
         entries.push({
@@ -494,10 +547,19 @@ function validateScenario(
   );
 
   let options: ManifestRevisionOptions | undefined;
-  if (validator === "run-manifest-revision") {
+  if (
+    validator === "run-manifest-revision" ||
+    validator === "manifest-retention-consent"
+  ) {
     if (scenario.options !== undefined) {
       const rawOptions = requireRecord(scenario.options, `${location}.options`);
-      assertAllowedKeys(rawOptions, ["contextConsent", "freshConsent"], `${location}.options`);
+      assertAllowedKeys(
+        rawOptions,
+        validator === "run-manifest-revision"
+          ? ["contextConsent", "freshConsent"]
+          : ["contextConsent"],
+        `${location}.options`,
+      );
       if (rawOptions.contextConsent !== undefined) {
         assert.ok(
           RETENTION_POLICIES.has(rawOptions.contextConsent as string),
@@ -523,7 +585,11 @@ function validateScenario(
       };
     }
   } else {
-    assert.equal(scenario.options, undefined, `${location}.options: is only valid for manifest revisions`);
+    assert.equal(
+      scenario.options,
+      undefined,
+      `${location}.options: is only valid for manifest retention consent or revisions`,
+    );
   }
 
   const expected = validateExpected(
@@ -630,6 +696,32 @@ function resolveJsonPointer(
   return requireRecord(current, location);
 }
 
+function recomputeDigestTarget(
+  value: Record<string, unknown>,
+  pointer: string,
+  location: string,
+): void {
+  const containerSchema = requireString(value.schema, `${location}.container.schema`);
+  const targetSchema = DIGEST_TARGET_SCHEMA_BY_CONTAINER[containerSchema]?.[pointer];
+  assert.ok(
+    targetSchema !== undefined,
+    `${location}: does not identify a recognized self-digest-bearing protocol object`,
+  );
+
+  const target = resolveJsonPointer(value, pointer, location);
+  assert.equal(
+    target.schema,
+    targetSchema,
+    `${location}: digest target must declare schema ${targetSchema}`,
+  );
+  assert.ok(
+    isSha256(target.digest),
+    `${location}: digest target must already contain a valid digest field`,
+  );
+  target.digest = digestProtocolObject(target);
+  validateAuthoritativeProtocolObject(target, `${location} synthesized target`);
+}
+
 function resolveFixturePath(
   relativePath: string,
   location: string,
@@ -648,6 +740,10 @@ function resolveFixturePath(
   assert.ok(
     !relativePath.includes("\\"),
     `${location}: fixture path must use POSIX separators, not backslashes`,
+  );
+  assert.ok(
+    !/%[0-9A-Fa-f]{2}/.test(relativePath),
+    `${location}: fixture path must not use percent-encoded path syntax`,
   );
 
   const segments = relativePath.split("/");
@@ -723,17 +819,19 @@ function materializeObject(spec: ObjectSpec, location: string): Record<string, u
     spec.fixture === undefined
       ? structuredClone(spec.value)
       : readJsonFile(resolveFixturePath(spec.fixture, `${location}.fixture`));
-  let materialized = requireRecord(source, location);
+  const rawSupportObject = requireRecord(source, `${location}.raw`);
+  validateAuthoritativeProtocolObject(rawSupportObject, `${location}.raw`);
+
+  let materialized = structuredClone(rawSupportObject);
   if (spec.mergePatch !== undefined) {
     materialized = requireRecord(applyMergePatch(materialized, spec.mergePatch), location);
   }
   for (const [index, targetPointer] of (spec.digestTargets ?? []).entries()) {
-    const target = resolveJsonPointer(
+    recomputeDigestTarget(
       materialized,
       targetPointer,
       `${location}.digestTargets[${index}]`,
     );
-    target.digest = digestProtocolObject(target);
   }
   return materialized;
 }
@@ -822,9 +920,20 @@ function executeComposition(
   parsedInputs: ReadonlyMap<string, ResearchProtocolObjectV1>,
 ): {
   result: ProtocolParseResult<ResearchProtocolObjectV1 | readonly RunEventV1[]>;
-  expectedValue: ResearchProtocolObjectV1;
+  expectedValue: ResearchProtocolObjectV1 | readonly RunEventV1[];
 } {
   switch (scenario.validator) {
+    case "manifest-retention-consent": {
+      const manifest = requireParsedSchema<RunManifestV1>(
+        parsedInputs.get("manifest")!,
+        "opencoven.run-manifest/v1",
+        `${scenario.id}.manifest`,
+      );
+      return {
+        result: validateManifestRetentionConsent(manifest, scenario.options?.contextConsent),
+        expectedValue: manifest,
+      };
+    }
     case "run-manifest-revision": {
       const previous = requireParsedSchema<RunManifestV1>(
         parsedInputs.get("previous")!,
@@ -847,11 +956,15 @@ function executeComposition(
         "opencoven.research-run/v1",
         `${scenario.id}.run`,
       );
-      const contextPack = requireParsedSchema<ContextPackV1>(
-        parsedInputs.get("contextPack")!,
-        "opencoven.context-pack/v1",
-        `${scenario.id}.contextPack`,
-      );
+      const parsedContextPack = parsedInputs.get("contextPack");
+      const contextPack =
+        parsedContextPack === undefined
+          ? undefined
+          : requireParsedSchema<ContextPackV1>(
+              parsedContextPack,
+              "opencoven.context-pack/v1",
+              `${scenario.id}.contextPack`,
+            );
       return {
         result: validateResearchRunContextPackV1(run, contextPack),
         expectedValue: run,
@@ -896,6 +1009,26 @@ function executeComposition(
       return {
         result,
         expectedValue: run,
+      };
+    }
+    case "run-event-sequence": {
+      const events: RunEventV1[] = [];
+      const rawEvents = scenario.inputs.events as unknown[];
+      for (const index of rawEvents.keys()) {
+        events.push(
+          requireParsedSchema<RunEventV1>(
+            parsedInputs.get(`events[${index}]`)!,
+            "opencoven.run-event/v1",
+            `${scenario.id}.events[${index}]`,
+          ),
+        );
+      }
+      const eventsBefore = structuredClone(events);
+      const result = validateRunEventSequence(events);
+      assert.deepEqual(events, eventsBefore, "sequence composition must not reorder or mutate events");
+      return {
+        result,
+        expectedValue: events,
       };
     }
   }
@@ -1038,6 +1171,14 @@ test("discovers every structured Research Protocol scenario fixture deterministi
   );
 });
 
+test("maps actions onto the complete intended public validator surface", () => {
+  assert.deepEqual(
+    [...new Set(Object.values(VALIDATOR_ENTRY_POINT_BY_ACTION))].sort(compareCodeUnits),
+    [...PUBLIC_VALIDATOR_ENTRY_POINTS].sort(compareCodeUnits),
+    "scenario action registry must cover every intended public cross-object/stream validator",
+  );
+});
+
 test("rejects malformed scenario definitions before protocol execution", () => {
   assert.throws(
     () =>
@@ -1100,6 +1241,85 @@ test("validates raw support objects through the authoritative schema and public 
   assert.throws(
     () => validateAuthoritativeProtocolObject(parserInvalid, "parser-invalid-support.json"),
     /public parser.*digest_mismatch.*\$\.artifactManifest\.digest/,
+  );
+});
+
+test("rejects an invalid raw digest before declarative recomputation can repair it", () => {
+  const filePath = path.join(fixturesDir, "valid/run-manifest-final-local.json");
+  const invalidManifest = requireRecord(readJsonFile(filePath), filePath);
+  invalidManifest.digest = "0".repeat(64);
+
+  assert.throws(
+    () =>
+      materializeObject(
+        {
+          value: invalidManifest,
+          mergePatch: {
+            retention: {
+              effectivePolicy: "run-only",
+            },
+          },
+          digestTargets: [""],
+        },
+        "invalid-raw-digest",
+      ),
+    /support object must pass the public parser.*digest_mismatch.*\$\.digest/,
+  );
+});
+
+test("restricts digest targets to recognized self-digest-bearing protocol records", () => {
+  const runPath = path.join(fixturesDir, "valid/research-run.json");
+  const run = requireRecord(readJsonFile(runPath), runPath);
+  assert.throws(
+    () => materializeObject({ value: run, digestTargets: [""] }, "research-run-root"),
+    /digestTargets\[0\].*does not identify a recognized self-digest-bearing protocol object/,
+  );
+
+  const manifestPath = path.join(fixturesDir, "valid/run-manifest-final-local.json");
+  const manifest = requireRecord(readJsonFile(manifestPath), manifestPath);
+  assert.throws(
+    () =>
+      materializeObject(
+        {
+          value: manifest,
+          mergePatch: {
+            retention: {
+              digest: "0".repeat(64),
+            },
+          },
+          digestTargets: ["/retention"],
+        },
+        "manifest-retention-record",
+      ),
+    /digestTargets\[0\].*does not identify a recognized self-digest-bearing protocol object/,
+  );
+  assert.throws(
+    () =>
+      materializeObject(
+        {
+          value: manifest,
+          mergePatch: {
+            digest: "not-a-digest",
+          },
+          digestTargets: [""],
+        },
+        "invalid-target-digest",
+      ),
+    /digestTargets\[0\].*must already contain a valid digest field/,
+  );
+  assert.throws(
+    () =>
+      materializeObject(
+        {
+          value: manifest,
+          mergePatch: {
+            digest: null,
+          },
+          digestTargets: [""],
+        },
+        "missing-target-digest",
+      ),
+    /digestTargets\[0\].*must already contain a valid digest field/,
   );
 });
 
@@ -1205,6 +1425,9 @@ test("rejects non-portable fixture references before filesystem lookup", () => {
     ["valid/../valid/model-task.json", /dot or traversal segments/],
     ["valid//model-task.json", /empty segments/],
     ["valid/model-task.json/", /empty segments/],
+    ["%2e%2e/valid/model-task.json", /percent-encoded path syntax/],
+    ["valid%2fmodel-task.json", /percent-encoded path syntax/],
+    ["valid%5Cmodel-task.json", /percent-encoded path syntax/],
     ["valid/model-task.json\0", /NUL bytes/],
     ["valid/model-task.txt", /end in \.json/],
   ] as const) {
@@ -1289,6 +1512,45 @@ test("rejects an intermediate fixture symlink escape", (context) => {
     assert.throws(
       () => resolveFixturePath("escape/escaped.json", "escaped.fixture", isolatedFixtures),
       /fixture path component escape is a symlink/,
+    );
+  });
+});
+
+test("rejects a final fixture file symlink", (context) => {
+  withTemporaryDirectory((temporaryDirectory) => {
+    const isolatedFixtures = path.join(temporaryDirectory, "fixtures");
+    const targetPath = path.join(temporaryDirectory, "target.json");
+    mkdirSync(isolatedFixtures, { recursive: true });
+    writeFileSync(targetPath, "{}\n");
+    if (
+      !createSymlinkOrSkip(
+        context,
+        targetPath,
+        path.join(isolatedFixtures, "linked.json"),
+        "file",
+      )
+    ) {
+      return;
+    }
+    assert.throws(
+      () => resolveFixturePath("linked.json", "linked.fixture", isolatedFixtures),
+      /fixture path component linked\.json is a symlink/,
+    );
+  });
+});
+
+test("rejects a fixture root symlink", (context) => {
+  withTemporaryDirectory((temporaryDirectory) => {
+    const actualFixtures = path.join(temporaryDirectory, "actual-fixtures");
+    const linkedFixtures = path.join(temporaryDirectory, "linked-fixtures");
+    mkdirSync(actualFixtures, { recursive: true });
+    writeFileSync(path.join(actualFixtures, "fixture.json"), "{}\n");
+    if (!createSymlinkOrSkip(context, actualFixtures, linkedFixtures, "dir")) {
+      return;
+    }
+    assert.throws(
+      () => resolveFixturePath("fixture.json", "root-link.fixture", linkedFixtures),
+      /fixture root must not be a symlink/,
     );
   });
 });
@@ -1434,7 +1696,14 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.lengthening-with-fresh-consent",
     "manifest.partial-failure-continues",
     "manifest.completed-deletion-terminal",
+    "manifest-consent.valid-context-consent",
+    "manifest-consent.missing-context-consent",
+    "manifest-consent.retention-above-consent",
+    "manifest-consent.contextless-without-consent",
     "research-run.valid-context-pack",
+    "research-run.missing-context-pack",
+    "research-run.contextless-without-pack",
+    "research-run.contextless-with-pack",
     "research-run.retention-ceiling",
     "research-run.embedded-manifest-retention-ceiling",
     "research-run.contextless-manifest-lengthening",
@@ -1459,6 +1728,10 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "run-deletion.wrong-object-count",
     "run-deletion.wrong-manifest-status",
     "run-deletion.wrong-receipt-sequence",
+    "run-events.valid-sequence",
+    "run-events.empty-sequence",
+    "run-events.gapped-sequence",
+    "run-events.mixed-run-sequence",
   ]) {
     assert.ok(allScenarioIds.has(requiredId), `missing required scenario: ${requiredId}`);
   }
