@@ -165,6 +165,40 @@ export function settleEnhance(baseDraft: string, currentDraft: string): "apply" 
   return baseDraft === currentDraft ? "apply" : "suggest";
 }
 
+// ── Research idempotency (#4628) ──────────────────────────────────────────────
+// Improve sends the full input back through the formatter on every click, so a
+// second click re-wraps an already-formatted Research prompt and duplicates the
+// generated sections. Recover the underlying question from a prior wrapper so a
+// second pass rebuilds the wrapper instead of nesting another copy inside it.
+
+const RESEARCH_PREFIX = "Research and compare: ";
+const RESEARCH_SECTION_HEADERS = [
+  "Primary questions:",
+  "Method:",
+  "Sources and confidence:",
+  "Output format:",
+] as const;
+
+/** Returns the original question embedded in a prior research-mode enhancement,
+ *  or null when `draft` is not a wrapped research prompt. The formatter appends
+ *  exactly one "." to the draft, so exactly one trailing "." is dropped — that
+ *  reconstructs a draft that already ended with a period verbatim. */
+function recoverResearchCore(draft: string): string | null {
+  if (!draft.startsWith(RESEARCH_PREFIX)) return null;
+  const body = draft.slice(RESEARCH_PREFIX.length);
+  // cleanDraft collapses whitespace, so sections may follow the question
+  // separated by a single space; the first generated header is the boundary.
+  let boundary = -1;
+  for (const header of RESEARCH_SECTION_HEADERS) {
+    const index = body.indexOf(header);
+    if (index >= 0 && (boundary < 0 || index < boundary)) boundary = index;
+  }
+  if (boundary < 0) return null;
+  const core = body.slice(0, boundary).trim();
+  if (!core) return null;
+  return core.endsWith(".") ? core.slice(0, -1).trim() : core;
+}
+
 export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhanceResult {
   const mode = normalizeEnhanceMode(input.mode);
   const draft = cleanDraft(input.draft);
@@ -212,12 +246,13 @@ export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhan
   }
 
   if (mode === "research") {
+    const question = recoverResearchCore(draft) ?? draft;
     return {
       ok: true,
       mode,
       label: "Research",
       enhanced: [
-        `Research and compare: ${draft}.`,
+        `Research and compare: ${question}.`,
         "Primary questions: identify the key claims, tradeoffs, and decision criteria to answer.",
         "Method: use current primary sources where possible, compare alternatives, and separate facts from inference.",
         "Sources and confidence: cite sources, note publication dates, and label confidence or uncertainty.",
