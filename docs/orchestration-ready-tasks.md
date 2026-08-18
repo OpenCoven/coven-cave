@@ -9,9 +9,10 @@ This is the shared operating contract for Cave tasks. The spec explains *why* an
 task shape. Read it before writing anything that creates, blocks, unblocks, or
 dispatches a task.
 
-Status: approved design. The fields described here are the target contract, not
-yet shipped — until they land, treat this as the shape to design toward and do
-not invent a competing one.
+Status: the canonical fields, mutator enforcement, lifecycle blockers, primary
+blocker promotion, and promotion audit are implemented. Board and Chart Room
+editing surfaces, Enhance proposals, and overlay retirement remain phased work;
+do not invent a competing task shape while those surfaces migrate.
 
 ## The one rule
 
