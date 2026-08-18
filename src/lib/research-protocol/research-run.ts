@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -1158,6 +1159,21 @@ export function validateRunManifestDeletionEventV1(
       "semantic_conflict",
       `$[${eventIndex}].data.manifestStatus`,
       "content.deleted manifestStatus must equal deleted",
+    );
+  }
+  const requestedAt = manifest.deletion.requestedAt;
+  const completedAt = manifest.deletion.completedAt;
+  if (
+    !isUtcTimestamp(requestedAt) ||
+    !isUtcTimestamp(completedAt) ||
+    !isUtcTimestamp(event.at) ||
+    compareUtcTimestamps(event.at, requestedAt) < 0 ||
+    compareUtcTimestamps(event.at, completedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].at`,
+      "content.deleted must occur between deletion requestedAt and completedAt",
     );
   }
 

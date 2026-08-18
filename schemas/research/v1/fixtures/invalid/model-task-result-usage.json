@@ -26,6 +26,6 @@
     "futureExtension": { "preserve": true }
   },
   "completedAt": "2026-08-15T20:10:00.000Z",
-  "signature": "base64-signature",
+  "signature": "base64-signature-over-canonical-result-payload",
   "futureExtension": { "preserve": true }
 }

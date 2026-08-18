@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -9,6 +10,7 @@ import {
   pass,
   retentionDoesNotExceed,
   RETENTION_ORDER,
+  utcTimestampPlusDays,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
   type RetentionPolicyV1,
@@ -35,11 +37,16 @@ const DELETION_STATUSES = ["not_scheduled", "scheduled", "pending", "completed",
 const MANIFEST_STATES = ["assembling", "final"] as const;
 const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 
+/** V1 USD wire numbers compare within one billionth of a dollar. */
+export const USD_AGGREGATE_TOLERANCE = 1e-9;
+
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Z][A-Z0-9+.-]*:/i;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
+const SENSITIVE_KEY_SEPARATOR_RE = /[._\s-]+/g;
 const FORBIDDEN_SENSITIVE_KEYS = new Set([
   "excerpt",
+  "privateexcerpt",
   "text",
   "content",
   "blob",
@@ -55,6 +62,12 @@ const FORBIDDEN_SENSITIVE_KEYS = new Set([
   "bucketkey",
   "deletedcontent",
 ]);
+
+function normalizeSensitiveKey(key: string): string {
+  return key
+    .replace(/[A-Z]/g, (character) => character.toLowerCase())
+    .replace(SENSITIVE_KEY_SEPARATOR_RE, "");
+}
 
 export type ArtifactRegistrationV1 = {
   id: string;
@@ -170,7 +183,7 @@ function validateSensitiveObjectKeys(
 
   for (const key of Object.keys(value)) {
     const keyPath = childPath(path, key);
-    if (FORBIDDEN_SENSITIVE_KEYS.has(key.toLowerCase())) {
+    if (FORBIDDEN_SENSITIVE_KEYS.has(normalizeSensitiveKey(key))) {
       return fail(
         "semantic_conflict",
         keyPath,
@@ -828,6 +841,134 @@ function validateRetentionClock(
   return pass(undefined);
 }
 
+function validateManifestChronology(
+  createdAt: string,
+  retention: RunManifestRetentionV1,
+  deletion: RunManifestDeletionReceiptV1,
+): ProtocolParseResult<void> {
+  if (compareUtcTimestamps(retention.updatedAt, createdAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt must not precede manifest createdAt",
+    );
+  }
+  if (
+    retention.contentExpiresAt !== null &&
+    compareUtcTimestamps(retention.contentExpiresAt, createdAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "retention.contentExpiresAt must not precede manifest createdAt",
+    );
+  }
+
+  if (
+    deletion.requestedAt !== undefined &&
+    compareUtcTimestamps(deletion.requestedAt, createdAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "deletion.requestedAt must not precede manifest createdAt",
+    );
+  }
+  if (
+    deletion.completedAt !== undefined &&
+    deletion.requestedAt !== undefined &&
+    compareUtcTimestamps(deletion.completedAt, deletion.requestedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.completedAt",
+      "deletion.completedAt must not precede deletion.requestedAt",
+    );
+  }
+  if (
+    deletion.requestedAt !== undefined &&
+    compareUtcTimestamps(deletion.requestedAt, retention.updatedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "deletion.requestedAt must not follow retention.updatedAt",
+    );
+  }
+  if (
+    deletion.completedAt !== undefined &&
+    compareUtcTimestamps(deletion.completedAt, retention.updatedAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.completedAt",
+      "deletion.completedAt must not follow retention.updatedAt",
+    );
+  }
+
+  if (
+    retention.status === "deletion_scheduled" &&
+    retention.contentExpiresAt !== null &&
+    compareUtcTimestamps(retention.contentExpiresAt, retention.updatedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "scheduled contentExpiresAt must not precede retention.updatedAt",
+    );
+  }
+  if (
+    retention.status === "deletion_scheduled" &&
+    retention.contentExpiresAt !== null &&
+    deletion.requestedAt !== undefined &&
+    compareUtcTimestamps(deletion.requestedAt, retention.contentExpiresAt) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "scheduled deletion.requestedAt must not follow contentExpiresAt",
+    );
+  }
+  return pass(undefined);
+}
+
+function validateRetentionShorteningDeadline(
+  retention: RunManifestRetentionV1,
+  deletion: RunManifestDeletionReceiptV1,
+): ProtocolParseResult<void> {
+  const contentExpiresAt = retention.contentExpiresAt;
+  const requestedAt = deletion.requestedAt;
+  if (!isUtcTimestamp(contentExpiresAt) || !isUtcTimestamp(requestedAt)) {
+    return pass(undefined);
+  }
+  if (compareUtcTimestamps(requestedAt, retention.updatedAt) !== 0) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "retention shortening requires requestedAt and retention.updatedAt to identify the same instant",
+    );
+  }
+
+  let deadline: string | undefined;
+  if (retention.effectivePolicy === "run-only") {
+    deadline = retention.updatedAt;
+  } else if (retention.effectivePolicy === "7-days") {
+    try {
+      deadline = utcTimestampPlusDays(retention.updatedAt, 7);
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+    }
+  }
+  if (deadline && compareUtcTimestamps(contentExpiresAt, deadline) > 0) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      `contentExpiresAt exceeds the ${retention.effectivePolicy} deadline from retention.updatedAt`,
+    );
+  }
+  return pass(undefined);
+}
+
 function manifestDigest(value: unknown): string {
   return digestProtocolObject(value);
 }
@@ -909,6 +1050,11 @@ function addCostTotal(current: number | null, value: unknown, index: number): nu
     throw new RangeError("costUsd aggregate is not a finite non-negative number");
   }
   return total;
+}
+
+function usdAggregatesEqual(left: number | null, right: number | null): boolean {
+  if (left === null || right === null) return left === right;
+  return Math.abs(left - right) <= USD_AGGREGATE_TOLERANCE;
 }
 
 export function aggregateManifestUsage(
@@ -1157,7 +1303,11 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     );
   }
   for (const key of ["inputTokens", "outputTokens", "costUsd", "completeness"] as const) {
-    if (usage.value[key] !== expectedUsage[key]) {
+    const equal =
+      key === "costUsd"
+        ? usdAggregatesEqual(usage.value.costUsd, expectedUsage.costUsd)
+        : usage.value[key] === expectedUsage[key];
+    if (!equal) {
       return fail(
         "semantic_conflict",
         childPath("$.usage", key),
@@ -1180,6 +1330,12 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!deletionRequirements.ok) return deletionRequirements;
   const clock = validateRetentionClock(retention.value);
   if (!clock.ok) return clock;
+  const chronology = validateManifestChronology(
+    createdAt.value,
+    retention.value,
+    deletion.value,
+  );
+  if (!chronology.ok) return chronology;
 
   let computedDigest: string;
   try {
@@ -1287,6 +1443,17 @@ export function validateRunManifestRevision(
   }
   if (next.createdAt !== previous.createdAt) {
     return fail("semantic_conflict", "$.createdAt", "createdAt cannot change across revisions");
+  }
+  if (
+    !isUtcTimestamp(previous.retention.updatedAt) ||
+    !isUtcTimestamp(next.retention.updatedAt) ||
+    compareUtcTimestamps(next.retention.updatedAt, previous.retention.updatedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt cannot move backward across revisions",
+    );
   }
 
   let previousDigest: string;
@@ -1439,6 +1606,8 @@ export function validateRunManifestRevision(
         "post-final retention shortening requires a deletion request timestamp",
       );
     }
+    const deadline = validateRetentionShorteningDeadline(next.retention, next.deletion);
+    if (!deadline.ok) return deadline;
   }
 
   const consent = validateManifestRetentionConsent(next, options?.contextConsent);

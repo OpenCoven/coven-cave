@@ -174,6 +174,7 @@ test("modelTaskResultSignaturePayload returns exactly the signed fields", () => 
     inputDigest: "6a28b9d62b79b42a133d52fe51636c161c67722929efa5f6178e2940c9136597",
     outputDigest: "24c988fffd8b3c3a556595626c557b8c449ac24d063da6504ca350661748bdff",
     executorDeviceId: "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+    modelReceipt: validModelTaskResult.modelReceipt,
     completedAt: "2026-08-15T20:10:00.000Z",
   });
   assert.deepEqual(Object.keys(payload).sort(), [
@@ -181,13 +182,38 @@ test("modelTaskResultSignaturePayload returns exactly the signed fields", () => 
     "completedAt",
     "executorDeviceId",
     "inputDigest",
+    "modelReceipt",
     "outputDigest",
     "runId",
     "taskId",
   ]);
   assert.equal("output" in payload, false);
-  assert.equal("modelReceipt" in payload, false);
   assert.equal("signature" in payload, false);
+});
+
+test("modelTaskResultSignaturePayload binds every canonical receipt field", () => {
+  const parsed = expectOk(
+    parseModelTaskResultV1({
+      ...validModelTaskResult,
+      modelReceipt: {
+        ...validModelTaskResult.modelReceipt,
+        provenanceExtension: { providerRequestId: "request_01" },
+        usage: {
+          ...validModelTaskResult.modelReceipt.usage,
+          billingExtension: { currency: "USD" },
+        },
+      },
+    }),
+  );
+
+  const payload = modelTaskResultSignaturePayload(parsed);
+  assert.deepEqual(payload.modelReceipt, parsed.modelReceipt);
+  assert.deepEqual(payload.modelReceipt.provenanceExtension, {
+    providerRequestId: "request_01",
+  });
+  assert.deepEqual(payload.modelReceipt.usage.billingExtension, {
+    currency: "USD",
+  });
 });
 
 test("permissionMode write rejects in schema and parser", () => {

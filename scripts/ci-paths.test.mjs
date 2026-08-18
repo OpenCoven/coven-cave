@@ -25,6 +25,10 @@ test("workflow and script changes run frontend validation", () => {
   });
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).frontend, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
+  assert.equal(
+    classifyCiPaths(["schemas/research/v1/run-event.schema.json"]).frontend,
+    true,
+  );
 });
 
 test("Rust-only changes avoid frontend and E2E work", () => {

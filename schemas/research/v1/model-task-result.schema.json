@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "opencoven.model-task-result/v1",
   "title": "OpenCoven Model Task Result v1",
+  "$comment": "The signature authenticates canonical JSON containing taskId, runId, attempt, inputDigest, outputDigest, executorDeviceId, the complete modelReceipt including additive fields, and completedAt.",
   "type": "object",
   "additionalProperties": true,
   "required": [
@@ -43,7 +44,7 @@
       "format": "date-time",
       "minLength": 20,
       "maxLength": 30,
-      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|23:59:60)(?:\\.\\d{1,9})?Z$"
+      "pattern": "^(?:\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|\\d{4}-(?:06-30|12-31)T23:59:60)(?:\\.\\d{1,9})?Z$"
     },
     "modelTaskId": {
       "type": "string",

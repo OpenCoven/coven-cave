@@ -87,6 +87,7 @@ export type ModelTaskResultSignaturePayloadV1 = Pick<
   | "inputDigest"
   | "outputDigest"
   | "executorDeviceId"
+  | "modelReceipt"
   | "completedAt"
 >;
 
@@ -739,6 +740,7 @@ export function modelTaskResultSignaturePayload(
     inputDigest: value.inputDigest,
     outputDigest: value.outputDigest,
     executorDeviceId: value.executorDeviceId,
+    modelReceipt: value.modelReceipt,
     completedAt: value.completedAt,
   };
 }

@@ -1,6 +1,6 @@
 // CI guard: every `*.test.ts` / `*.test.tsx` / `*.test.mjs` under src/ and scripts/ must be
 // wired into a CI-run test suite (the SUITES map in scripts/run-tests.mjs,
-// which `test:app` / `test:api` / `test:mobile` execute), so an authored test
+// which the frontend-validation matrix executes), so an authored test
 // can't silently never run. (110 of 243 tests were orphaned this way before
 // #524.) Playwright `*.spec.ts` are e2e, run separately and intentionally not
 // in CI — they're excluded here.
@@ -58,6 +58,14 @@ for (const files of Object.values(SUITES)) {
 const unwired = onDisk.filter((f) => !referenced.has(f) && !ALLOWLIST.has(f));
 const missing = [...referenced].filter((f) => !onDisk.includes(f)).sort();
 const staleAllow = [...ALLOWLIST.keys()].filter((f) => !onDisk.includes(f));
+const focusedProtocolSuite = new Set(SUITES["research-protocol"] ?? []);
+const protocolTestsOutsideFocusedSuite = onDisk.filter(
+  (file) =>
+    (file.startsWith("src/lib/research-protocol/") ||
+      file === "scripts/research-protocol-conformance.test.ts" ||
+      file === "scripts/research-protocol-scenario-conformance.test.ts") &&
+    !focusedProtocolSuite.has(file),
+);
 
 let failed = false;
 
@@ -65,7 +73,7 @@ if (unwired.length) {
   failed = true;
   console.error(`\n✗ ${unwired.length} test file(s) on disk are not wired into any CI test suite (${Object.keys(SUITES).join(", ")}):\n`);
   for (const f of unwired) console.error(`    ${f}`);
-  console.error(`\n  Fix: append the file path to the relevant suite array (app/api/mobile) in scripts/run-tests.mjs.`);
+  console.error(`\n  Fix: append the file path to the relevant CI suite array in scripts/run-tests.mjs.`);
   console.error(`  (.mjs tests that need the TS stripper go in STRIP_TYPES_MJS; tests whose import graph reaches the \`@/\` alias go in ALIAS_LOADER.)`);
   console.error(`  If it genuinely can't run in CI, add it to ALLOWLIST in scripts/check-tests-wired.mjs with a reason.\n`);
 }
@@ -82,6 +90,13 @@ if (staleAllow.length) {
   console.error(`\n✗ ${staleAllow.length} ALLOWLIST entr(y/ies) point at a file that no longer exists:\n`);
   for (const f of staleAllow) console.error(`    ${f}`);
   console.error(`\n  Fix: drop the stale entry from ALLOWLIST in scripts/check-tests-wired.mjs.\n`);
+}
+
+if (protocolTestsOutsideFocusedSuite.length) {
+  failed = true;
+  console.error(`\n✗ ${protocolTestsOutsideFocusedSuite.length} Research Protocol test file(s) are missing from the PR-focused research-protocol suite:\n`);
+  for (const f of protocolTestsOutsideFocusedSuite) console.error(`    ${f}`);
+  console.error(`\n  Fix: add every listed file to RESEARCH_PROTOCOL_TESTS in scripts/run-tests.mjs.\n`);
 }
 
 if (failed) process.exit(1);

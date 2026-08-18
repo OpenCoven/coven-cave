@@ -65,6 +65,7 @@
     "test:research-media:ffmpeg": "node --experimental-strip-types scripts/research-media-ffmpeg.integration.test.mjs",
     "test:mobile": "node scripts/run-tests.mjs mobile",
     "test:conformance": "node scripts/run-tests.mjs conformance",
+    "test:research-protocol": "node scripts/run-tests.mjs research-protocol",
     "test:daemon-faults": "node --experimental-strip-types scripts/daemon-connectivity-faults.test.ts",
     "beads:prime": "bd prime",
     "beads:ready": "bd ready --json",

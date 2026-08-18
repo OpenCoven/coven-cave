@@ -10,6 +10,7 @@
       "mergePatch": {
         "sequence": 3,
         "type": "run.status",
+        "at": "2026-08-17T20:00:00.000Z",
         "data": {
           "status": "completed"
         }
@@ -21,6 +22,7 @@
         "runId": "run_other_01",
         "sequence": 3,
         "type": "run.status",
+        "at": "2026-08-17T20:00:00.000Z",
         "data": {
           "status": "completed"
         }
@@ -64,6 +66,33 @@
       "mergePatch": {
         "sequence": 2,
         "type": "content.deleted",
+        "at": "2026-08-17T19:30:00.000Z",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-event-after-completion": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "content.deleted",
+        "at": "2026-08-17T20:00:00.000000001Z",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-event-before-request": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "content.deleted",
+        "at": "2026-08-17T18:59:59.999999999Z",
         "data": {
           "status": null,
           "deletedObjectCount": 3,
@@ -197,6 +226,36 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.event-before-request",
+      "description": "The corresponding content.deleted event cannot precede the deletion request.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-event-before-request", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].at"
+      }
+    },
+    {
+      "id": "run-deletion.event-after-completion",
+      "description": "The corresponding content.deleted event cannot follow receipt completion.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-event-after-completion", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].at"
       }
     },
     {

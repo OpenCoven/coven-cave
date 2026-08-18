@@ -176,6 +176,7 @@ function runWithCompletedDeletion(
       ...(finalManifest.retention as Record<string, unknown>),
       status: "deleted",
       contentExpiresAt: "2026-08-17T20:00:00.000Z",
+      updatedAt: "2026-08-17T20:00:00.000Z",
     },
     deletion: {
       status: "completed",
@@ -999,6 +1000,7 @@ test("completed deletion requires a final manifest and its exact event in the co
     deletedObjectCount: 3,
     manifestStatus: "deleted",
   });
+  deletion.at = "2026-08-17T19:30:00.000Z";
   const completed = parsedEvent(3, "run.status", { status: "completed" });
 
   assert.equal(
@@ -1100,6 +1102,31 @@ test("completed deletion requires a final manifest and its exact event in the co
     "$[1].data.manifestStatus",
     "semantic_conflict",
   );
+});
+
+test("completed deletion event occurs between request and completion", () => {
+  const deletedRun = runWithCompletedDeletion();
+  const first = parsedEvent(1, "run.created", { status: "queued" });
+  const completed = parsedEvent(3, "run.status", { status: "completed" });
+  const deletion = parsedEvent(2, "content.deleted", {
+    deletedObjectCount: 3,
+    manifestStatus: "deleted",
+  });
+
+  for (const at of [
+    "2026-08-17T18:59:59.999999999Z",
+    "2026-08-17T20:00:00.000000001Z",
+  ]) {
+    expectError(
+      validateRunManifestDeletionEventV1(deletedRun, [
+        first,
+        { ...deletion, at },
+        completed,
+      ]),
+      "$[1].at",
+      "semantic_conflict",
+    );
+  }
 });
 
 test("deletion event composition rejects incomplete, malformed, and wrong-run streams", () => {

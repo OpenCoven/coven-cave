@@ -1,0 +1,37 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_nested_deletion_private_01",
+  "runId": "run_nested_deletion_private_01",
+  "digest": "e5ab2bd21a8bd7febb979ee4cc0a8f2da22043b261a1c47a2e251dcd5ad1b57a",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "metadata": [
+      {
+        "ObJeCt.KeY": "tenant/private/object"
+      },
+      {
+        "DeLeTeD CoNtEnT": "private material"
+      }
+    ]
+  }
+}

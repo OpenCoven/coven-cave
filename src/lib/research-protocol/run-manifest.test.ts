@@ -145,6 +145,37 @@ test("aggregates complete usage with exact sums", () => {
   );
 });
 
+test("parser compares USD aggregates with stable decimal tolerance", () => {
+  const executions = [
+    execution("modeltask_decimal_1", 1, 10, 5, 0.1),
+    execution("modeltask_decimal_2", 1, 20, 10, 0.2),
+  ];
+  const equivalent = recalculate({
+    ...finalCloudManifestJson,
+    modelExecutions: executions,
+    usage: {
+      inputTokens: 30,
+      outputTokens: 15,
+      costUsd: 0.3,
+      completeness: "complete" as const,
+    },
+  });
+  assert.equal(expectOk(parseRunManifestV1(equivalent)).usage.costUsd, 0.3);
+
+  const materiallyDifferent = recalculate({
+    ...equivalent,
+    usage: {
+      ...equivalent.usage,
+      costUsd: 0.300001,
+    },
+  });
+  expectError(
+    parseRunManifestV1(materiallyDifferent),
+    "$.usage.costUsd",
+    "semantic_conflict",
+  );
+});
+
 test("rejects aggregate token and cost overflow", () => {
   assert.throws(
     () =>
@@ -467,13 +498,26 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
     "bucketKey",
     "deletedContent",
     "CoNtEnT",
+    "private_excerpt",
+    "PRIVATE-EXCERPT",
+    "file_name",
+    "local-path",
+    "file.path",
+    "object.key",
+    "storage key",
+    "bucket-KEY",
+    "deleted CONTENT",
+    "_SeCrEt-",
   ]) {
     const invalid = recalculate({
       ...local,
       artifacts: [{ ...local.artifacts[0], [key]: "private material" }],
     });
     assert.equal(Value.Check(runManifestSchema, invalid), false, key);
-    expectError(parseRunManifestV1(invalid), `$.artifacts[0].${key}`, "semantic_conflict");
+    const keyPath = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+      ? `$.artifacts[0].${key}`
+      : `$.artifacts[0][${JSON.stringify(key)}]`;
+    expectError(parseRunManifestV1(invalid), keyPath, "semantic_conflict");
   }
 
   const contextSource = recalculate({
@@ -512,7 +556,7 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
   );
 });
 
-test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
+test("schema and parser reject separator-normalized keys nested in sensitive extension objects and arrays", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [candidate, path] of [
     [
@@ -521,11 +565,11 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
         sources: [
           {
             ...local.sources[0],
-            metadata: { items: [{ ExCeRpT: "private material" }] },
+            metadata: { items: [{ private_ExCeRpT: "private material" }] },
           },
         ],
       }),
-      "$.sources[0].metadata.items[0].ExCeRpT",
+      "$.sources[0].metadata.items[0].private_ExCeRpT",
     ],
     [
       recalculate({
@@ -533,21 +577,31 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
         artifacts: [
           {
             ...local.artifacts[0],
-            metadata: { nested: { LoCaLpAtH: "/private/report.md" } },
+            metadata: { nested: { "LoCaL-PaTh": "/private/report.md" } },
           },
         ],
       }),
-      "$.artifacts[0].metadata.nested.LoCaLpAtH",
+      '$.artifacts[0].metadata.nested["LoCaL-PaTh"]',
     ],
     [
       recalculate({
         ...local,
         deletion: {
           ...local.deletion,
-          metadata: [{ ObJeCtKeY: "tenant/private/object" }],
+          metadata: [{ "ObJeCt.KeY": "tenant/private/object" }],
         },
       }),
-      "$.deletion.metadata[0].ObJeCtKeY",
+      '$.deletion.metadata[0]["ObJeCt.KeY"]',
+    ],
+    [
+      recalculate({
+        ...local,
+        deletion: {
+          ...local.deletion,
+          metadata: [{ "DeLeTeD CoNtEnT": "private material" }],
+        },
+      }),
+      '$.deletion.metadata[0]["DeLeTeD CoNtEnT"]',
     ],
   ] as const) {
     assert.equal(Value.Check(runManifestSchema, candidate), false);
@@ -615,6 +669,44 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
   assert.equal(evidence?.excerpt, "approved public passage");
 });
 
+test("privacy key normalization does not overmatch unrelated extension keys", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const benign = recalculate({
+    ...local,
+    sources: [
+      {
+        ...local.sources[0],
+        metadata: {
+          excerptCount: 1,
+          contentType: "text/markdown",
+          pathology: "none",
+        },
+      },
+    ],
+    artifacts: [
+      {
+        ...local.artifacts[0],
+        metadata: {
+          fileNameDisplay: "Research notes",
+          objectKeyboard: "compact",
+          objectKey: "unicode lookalikes are not ASCII case variants",
+          privateExcerptCount: 0,
+        },
+      },
+    ],
+    deletion: {
+      ...local.deletion,
+      metadata: {
+        secretary: "audit",
+        deletedContentCount: 0,
+      },
+    },
+  });
+
+  assert.equal(Value.Check(runManifestSchema, benign), true);
+  expectOk(parseRunManifestV1(benign));
+});
+
 test("retention and deletion status pairs and receipt requirements are enforced", () => {
   assert.equal(Value.Check(runManifestSchema, invalidDeletionPairJson), false);
   expectError(parseRunManifestV1(invalidDeletionPairJson), "$.retention.status", "semantic_conflict");
@@ -664,6 +756,80 @@ test("scheduled retention requires a non-null content expiry", () => {
   expectError(
     parseRunManifestV1(scheduledWithoutExpiry),
     "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
+test("completed deletion chronology cannot finish before its request", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const invalid = recalculate({
+    ...local,
+    retention: {
+      ...local.retention,
+      status: "deleted" as const,
+      contentExpiresAt: "2026-08-16T20:06:00.000Z",
+      updatedAt: "2026-08-16T20:08:00.000Z",
+    },
+    deletion: {
+      ...local.deletion,
+      status: "completed" as const,
+      requestedAt: "2026-08-16T20:07:00.000Z",
+      completedAt: "2026-08-16T20:06:59.999999999Z",
+      deletedObjectCount: 1,
+      eventSequence: 2,
+    },
+  });
+
+  assert.equal(Value.Check(runManifestSchema, invalid), true);
+  expectError(
+    parseRunManifestV1(invalid),
+    "$.deletion.completedAt",
+    "semantic_conflict",
+  );
+});
+
+test("scheduled retention timestamps follow manifest and deletion chronology", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const beforeManifest = recalculate({
+    ...local,
+    retention: {
+      ...local.retention,
+      updatedAt: "2026-08-16T19:59:59.999999999Z",
+    },
+  });
+  expectError(
+    parseRunManifestV1(beforeManifest),
+    "$.retention.updatedAt",
+    "semantic_conflict",
+  );
+
+  const expiryBeforeSchedule = recalculate({
+    ...retentionUpdateJson,
+    retention: {
+      ...retentionUpdateJson.retention,
+      contentExpiresAt: "2026-08-16T20:05:59.999999999Z",
+    },
+  });
+  expectError(
+    parseRunManifestV1(expiryBeforeSchedule),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const requestAfterExpiry = recalculate({
+    ...retentionUpdateJson,
+    retention: {
+      ...retentionUpdateJson.retention,
+      contentExpiresAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...retentionUpdateJson.deletion,
+      requestedAt: "2026-08-16T20:06:00.000000001Z",
+    },
+  });
+  expectError(
+    parseRunManifestV1(requestAfterExpiry),
+    "$.deletion.requestedAt",
     "semantic_conflict",
   );
 });
@@ -720,6 +886,7 @@ test("post-final retention shortening requires a coherent deletion schedule", ()
     retention: {
       ...retentionUpdateJson.retention,
       effectivePolicy: "run-only" as const,
+      contentExpiresAt: "2026-08-16T20:06:00.000Z",
     },
   });
   assert.equal(Value.Check(runManifestSchema, scheduled), true);
@@ -729,6 +896,68 @@ test("post-final retention shortening requires a coherent deletion schedule", ()
       contextConsent: "7-days",
     }).ok,
     true,
+  );
+
+  const overDeadline = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...scheduled,
+        retention: {
+          ...scheduled.retention,
+          contentExpiresAt: "2026-08-16T20:06:00.001Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previous, overDeadline, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+
+  const mismatchedBaseline = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...scheduled,
+        deletion: {
+          ...scheduled.deletion,
+          requestedAt: "2026-08-16T20:05:59.999999999Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previous, mismatchedBaseline, {
+      contextConsent: "7-days",
+    }),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
+
+  const backdatedUpdate = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...scheduled,
+        retention: {
+          ...scheduled.retention,
+          contentExpiresAt: "2026-08-16T20:04:00.000Z",
+          updatedAt: "2026-08-16T20:04:00.000Z",
+        },
+        deletion: {
+          ...scheduled.deletion,
+          requestedAt: "2026-08-16T20:04:00.000Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previous, backdatedUpdate, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.updatedAt",
+    "semantic_conflict",
   );
 
   const unscheduled = recalculate({
@@ -750,6 +979,98 @@ test("post-final retention shortening requires a coherent deletion schedule", ()
     }),
     "$.retention.status",
     "semantic_conflict",
+  );
+});
+
+test("post-final seven-day shortening uses the effective update timestamp as its deadline baseline", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const previous = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...local,
+        retention: {
+          ...local.retention,
+          policy: "project" as const,
+          effectivePolicy: "project" as const,
+        },
+      }),
+    ),
+  );
+  const nextBase = {
+    ...previous,
+    revision: previous.revision + 1,
+    previousDigest: previous.digest,
+    retention: {
+      ...previous.retention,
+      effectivePolicy: "7-days" as const,
+      status: "deletion_scheduled" as const,
+      updatedAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...previous.deletion,
+      status: "scheduled" as const,
+      requestedAt: "2026-08-16T20:06:00.000Z",
+    },
+  };
+  const atDeadline = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...nextBase,
+        retention: {
+          ...nextBase.retention,
+          contentExpiresAt: "2026-08-23T20:06:00.000Z",
+        },
+      }),
+    ),
+  );
+  assert.equal(
+    validateRunManifestRevision(previous, atDeadline, {
+      contextConsent: "project",
+    }).ok,
+    true,
+  );
+
+  const overDeadline = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...nextBase,
+        retention: {
+          ...nextBase.retention,
+          contentExpiresAt: "2026-08-23T20:06:00.000000001Z",
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(previous, overDeadline, {
+      contextConsent: "project",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
+test("project retention has no protocol deadline ceiling", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const next = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...retentionUpdateJson,
+        retention: {
+          ...retentionUpdateJson.retention,
+          effectivePolicy: "project" as const,
+          contentExpiresAt: "2099-12-31T23:59:59.999999999Z",
+        },
+      }),
+    ),
+  );
+
+  assert.equal(
+    validateRunManifestRevision(previous, next, {
+      freshConsent: true,
+      contextConsent: "project",
+    }).ok,
+    true,
   );
 });
 
@@ -778,7 +1099,11 @@ test("revision chains reject bad links, immutable final mutations, and retention
 
   const shortened = recalculate({
     ...next,
-    retention: { ...next.retention, effectivePolicy: "run-only" as const },
+    retention: {
+      ...next.retention,
+      effectivePolicy: "run-only" as const,
+      contentExpiresAt: next.retention.updatedAt,
+    },
   });
   expectError(
     validateRunManifestRevision(previous, shortened),

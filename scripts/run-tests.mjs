@@ -4,7 +4,8 @@
 // single 30k-char line) and impossible to read. The lists now live here.
 //
 // Usage:  node scripts/run-tests.mjs <suite> [suite...]
-//   suites: app | api | mobile   (pass "all" or nothing to run every suite)
+//   suites: app | api | mobile | research-protocol | conformance
+//   (pass "all" or nothing to run every suite)
 //
 // Each test runs in its own `node` process, sequentially; the runner exits on
 // the first failure (preserving the old `&&` short-circuit). `.ts` tests get
@@ -18,6 +19,19 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const RESEARCH_PROTOCOL_TESTS = [
+  "scripts/research-protocol-conformance.test.ts",
+  "scripts/research-protocol-scenario-conformance.test.ts",
+  "src/lib/research-protocol/common.test.ts",
+  "src/lib/research-protocol/digest.test.ts",
+  "src/lib/research-protocol/context-pack.test.ts",
+  "src/lib/research-protocol/topic-discovery.test.ts",
+  "src/lib/research-protocol/research-run.test.ts",
+  "src/lib/research-protocol/model-task.test.ts",
+  "src/lib/research-protocol/run-manifest.test.ts",
+  "src/lib/research-protocol/index.test.ts",
+];
 
 /** Suite name -> ordered list of repo-relative test file paths. */
 export const SUITES = {
@@ -1727,20 +1741,12 @@ export const SUITES = {
   // the matrix is where per-OS behavior is verified.
   conformance: [
     "scripts/cross-environment.test.ts",
-    "scripts/research-protocol-conformance.test.ts",
-    "scripts/research-protocol-scenario-conformance.test.ts",
-    "src/lib/research-protocol/common.test.ts",
-    "src/lib/research-protocol/digest.test.ts",
-    "src/lib/research-protocol/context-pack.test.ts",
-    "src/lib/research-protocol/topic-discovery.test.ts",
-    "src/lib/research-protocol/research-run.test.ts",
-    "src/lib/research-protocol/model-task.test.ts",
-    "src/lib/research-protocol/run-manifest.test.ts",
-    "src/lib/research-protocol/index.test.ts",
+    ...RESEARCH_PROTOCOL_TESTS,
     "scripts/daemon-connectivity-faults.test.ts",
     "scripts/windows-native-browser-regression.test.mjs",
     "scripts/cave-home-migration-windows.test.ts",
   ],
+  "research-protocol": RESEARCH_PROTOCOL_TESTS,
 };
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).

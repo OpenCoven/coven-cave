@@ -216,8 +216,9 @@
   "$defs": {
     "sensitivePropertyName": {
       "type": "string",
+      "$comment": "Forbidden concepts are matched exactly after ASCII case folding and removing spaces, underscores, hyphens, and dots.",
       "not": {
-        "pattern": "^(?:[Ee][Xx][Cc][Ee][Rr][Pp][Tt]|[Tt][Ee][Xx][Tt]|[Cc][Oo][Nn][Tt][Ee][Nn][Tt]|[Bb][Ll][Oo][Bb]|[Ff][Ii][Ll][Ee][Nn][Aa][Mm][Ee]|[Ll][Oo][Cc][Aa][Ll][Pp][Aa][Tt][Hh]|[Ff][Ii][Ll][Ee][Pp][Aa][Tt][Hh]|[Pp][Aa][Tt][Hh]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll][Ss]?|[Ss][Ee][Cc][Rr][Ee][Tt]|[Oo][Bb][Jj][Ee][Cc][Tt][Kk][Ee][Yy]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee][Kk][Ee][Yy]|[Bb][Uu][Cc][Kk][Ee][Tt][Kk][Ee][Yy]|[Dd][Ee][Ll][Ee][Tt][Ee][Dd][Cc][Oo][Nn][Tt][Ee][Nn][Tt])$"
+        "pattern": "^[\\s_.-]*(?:[eE][\\s_.-]*[xX][\\s_.-]*[cC][\\s_.-]*[eE][\\s_.-]*[rR][\\s_.-]*[pP][\\s_.-]*[tT]|[pP][\\s_.-]*[rR][\\s_.-]*[iI][\\s_.-]*[vV][\\s_.-]*[aA][\\s_.-]*[tT][\\s_.-]*[eE][\\s_.-]*[eE][\\s_.-]*[xX][\\s_.-]*[cC][\\s_.-]*[eE][\\s_.-]*[rR][\\s_.-]*[pP][\\s_.-]*[tT]|[tT][\\s_.-]*[eE][\\s_.-]*[xX][\\s_.-]*[tT]|[cC][\\s_.-]*[oO][\\s_.-]*[nN][\\s_.-]*[tT][\\s_.-]*[eE][\\s_.-]*[nN][\\s_.-]*[tT]|[bB][\\s_.-]*[lL][\\s_.-]*[oO][\\s_.-]*[bB]|[fF][\\s_.-]*[iI][\\s_.-]*[lL][\\s_.-]*[eE][\\s_.-]*[nN][\\s_.-]*[aA][\\s_.-]*[mM][\\s_.-]*[eE]|[lL][\\s_.-]*[oO][\\s_.-]*[cC][\\s_.-]*[aA][\\s_.-]*[lL][\\s_.-]*[pP][\\s_.-]*[aA][\\s_.-]*[tT][\\s_.-]*[hH]|[fF][\\s_.-]*[iI][\\s_.-]*[lL][\\s_.-]*[eE][\\s_.-]*[pP][\\s_.-]*[aA][\\s_.-]*[tT][\\s_.-]*[hH]|[pP][\\s_.-]*[aA][\\s_.-]*[tT][\\s_.-]*[hH]|[cC][\\s_.-]*[rR][\\s_.-]*[eE][\\s_.-]*[dD][\\s_.-]*[eE][\\s_.-]*[nN][\\s_.-]*[tT][\\s_.-]*[iI][\\s_.-]*[aA][\\s_.-]*[lL]|[cC][\\s_.-]*[rR][\\s_.-]*[eE][\\s_.-]*[dD][\\s_.-]*[eE][\\s_.-]*[nN][\\s_.-]*[tT][\\s_.-]*[iI][\\s_.-]*[aA][\\s_.-]*[lL][\\s_.-]*[sS]|[sS][\\s_.-]*[eE][\\s_.-]*[cC][\\s_.-]*[rR][\\s_.-]*[eE][\\s_.-]*[tT]|[oO][\\s_.-]*[bB][\\s_.-]*[jJ][\\s_.-]*[eE][\\s_.-]*[cC][\\s_.-]*[tT][\\s_.-]*[kK][\\s_.-]*[eE][\\s_.-]*[yY]|[sS][\\s_.-]*[tT][\\s_.-]*[oO][\\s_.-]*[rR][\\s_.-]*[aA][\\s_.-]*[gG][\\s_.-]*[eE][\\s_.-]*[kK][\\s_.-]*[eE][\\s_.-]*[yY]|[bB][\\s_.-]*[uU][\\s_.-]*[cC][\\s_.-]*[kK][\\s_.-]*[eE][\\s_.-]*[tT][\\s_.-]*[kK][\\s_.-]*[eE][\\s_.-]*[yY]|[dD][\\s_.-]*[eE][\\s_.-]*[lL][\\s_.-]*[eE][\\s_.-]*[tT][\\s_.-]*[eE][\\s_.-]*[dD][\\s_.-]*[cC][\\s_.-]*[oO][\\s_.-]*[nN][\\s_.-]*[tT][\\s_.-]*[eE][\\s_.-]*[nN][\\s_.-]*[tT])[\\s_.-]*$"
       }
     },
     "safeExtensionValue": {
@@ -245,7 +246,7 @@
       "format": "date-time",
       "minLength": 20,
       "maxLength": 30,
-      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|23:59:60)(?:\\.\\d{1,9})?Z$"
+      "pattern": "^(?:\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d|\\d{4}-(?:06-30|12-31)T23:59:60)(?:\\.\\d{1,9})?Z$"
     },
     "manifestId": {
       "type": "string",

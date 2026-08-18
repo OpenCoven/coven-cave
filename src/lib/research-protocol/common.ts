@@ -31,7 +31,7 @@ export type RetentionPolicyV1 = keyof typeof RETENTION_ORDER;
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const OPAQUE_ID_BODY_RE = /^[A-Za-z0-9_-]+$/;
 export const UTC_TIMESTAMP_PATTERN =
-  String.raw`^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d|23:59:60)(?:\.\d{1,9})?Z$`;
+  String.raw`^(?:\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d|\d{4}-(?:06-30|12-31)T23:59:60)(?:\.\d{1,9})?Z$`;
 const UTC_TIMESTAMP_RE = new RegExp(UTC_TIMESTAMP_PATTERN);
 const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 
@@ -55,7 +55,10 @@ export function isUtcTimestamp(value: unknown): value is string {
     hour > 23 ||
     minute > 59 ||
     second > 60 ||
-    (second === 60 && (hour !== 23 || minute !== 59))
+    (second === 60 &&
+      (hour !== 23 ||
+        minute !== 59 ||
+        !((month === 6 && day === 30) || (month === 12 && day === 31))))
   ) {
     return false;
   }
@@ -76,6 +79,47 @@ export function isUtcTimestamp(value: unknown): value is string {
     31,
   ];
   return day >= 1 && day <= daysInMonth[month - 1]!;
+}
+
+export function compareUtcTimestamps(left: string, right: string): -1 | 0 | 1 {
+  if (!isUtcTimestamp(left) || !isUtcTimestamp(right)) {
+    throw new TypeError("UTC timestamp comparison requires valid protocol timestamps");
+  }
+  const sortKey = (value: string): string => {
+    const fractionStart = value.indexOf(".", 19);
+    const fraction = fractionStart === -1 ? "" : value.slice(fractionStart + 1, -1);
+    return `${value.slice(0, 19)}.${fraction.padEnd(9, "0")}`;
+  };
+  const leftKey = sortKey(left);
+  const rightKey = sortKey(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
+export function utcTimestampPlusDays(value: string, days: number): string {
+  if (!isUtcTimestamp(value) || !Number.isSafeInteger(days)) {
+    throw new TypeError("UTC timestamp day arithmetic requires a valid timestamp and safe integer");
+  }
+
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const hour = Number(value.slice(11, 13));
+  const minute = Number(value.slice(14, 16));
+  const second = Number(value.slice(17, 19));
+  const fractionStart = value.indexOf(".", 19);
+  const fraction = fractionStart === -1 ? "" : value.slice(fractionStart, -1);
+  const shifted = new Date(0);
+  shifted.setUTCHours(0, 0, 0, 0);
+  shifted.setUTCFullYear(year, month - 1, day);
+  shifted.setUTCHours(hour, minute, Math.min(second, 59), 0);
+  if (second === 60) shifted.setUTCSeconds(60);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+
+  const result = `${shifted.toISOString().slice(0, 19)}${fraction}Z`;
+  if (!isUtcTimestamp(result)) {
+    throw new RangeError("UTC timestamp day arithmetic exceeded the protocol year range");
+  }
+  return result;
 }
 
 export function isJsonPointer(value: unknown): value is string {

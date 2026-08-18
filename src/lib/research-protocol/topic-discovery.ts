@@ -776,6 +776,17 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
       "completed jobs require between three and seven proposalIds",
     );
   }
+  if (
+    status.value === "completed" &&
+    modelReceipt &&
+    modelReceipt.familiarId !== familiarId.value
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.modelReceipt.familiarId",
+      "completed job modelReceipt familiarId must equal job familiarId",
+    );
+  }
   if (status.value === "completed" && hasFailure) {
     return fail("semantic_conflict", "$.failure", "completed jobs must not include failure");
   }

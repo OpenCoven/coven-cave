@@ -112,6 +112,8 @@ jobs:
             command: test:api
           - name: mobile tests
             command: test:mobile
+          - name: research protocol
+            command: test:research-protocol
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

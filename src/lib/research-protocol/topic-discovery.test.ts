@@ -275,6 +275,25 @@ test("completed, failed, and cancelled jobs without finishedAt reject", () => {
   }
 });
 
+test("completed jobs reject a model receipt from a different familiar without mutating input", () => {
+  const mismatched = {
+    ...validTopicDiscoveryJob,
+    modelReceipt: {
+      ...validTopicDiscoveryJob.modelReceipt,
+      familiarId: "other-familiar",
+    },
+  };
+  const before = structuredClone(mismatched);
+
+  assert.equal(Value.Check(topicDiscoveryJobSchema, mismatched), true);
+  expectError(
+    parseTopicDiscoveryJobV1(mismatched),
+    "$.modelReceipt.familiarId",
+    "semantic_conflict",
+  );
+  assert.deepEqual(mismatched, before);
+});
+
 test("completed job with failure rejects and cancelled job with failure rejects", () => {
   const completedWithFailure = {
     ...validTopicDiscoveryJob,

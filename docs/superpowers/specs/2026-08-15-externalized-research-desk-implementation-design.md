@@ -261,7 +261,9 @@ Rules:
 - Canonical digests use RFC 8785 JSON canonicalization and SHA-256.
 - An object's own `digest` field is omitted while computing that object digest;
   referenced blob and child-object digests remain included.
-- Timestamps are UTC RFC 3339 strings.
+- Timestamps are UTC RFC 3339 strings with zero through nine fractional
+  digits. Leap seconds are accepted only at `23:59:60` on June 30 or December
+  31; offsets, other calendar positions, and second `61` are invalid.
 - IDs are opaque strings with a type prefix; consumers do not parse meaning from
   them.
 
@@ -422,6 +424,9 @@ type TopicDiscoveryJobV1 = {
   };
 };
 ```
+
+For a completed discovery job, `modelReceipt.familiarId` must equal the job's
+top-level `familiarId`.
 
 ### 8.3 Topic Proposal
 
@@ -659,7 +664,9 @@ type ResearchModelReceiptV1 = {
 ```
 
 The signature covers canonical JSON containing `taskId`, `runId`, `attempt`,
-`inputDigest`, `outputDigest`, `executorDeviceId`, and `completedAt`.
+`inputDigest`, `outputDigest`, `executorDeviceId`, the complete
+`modelReceipt` (including additive receipt and usage fields), and
+`completedAt`. The output bytes remain bound through `outputDigest`.
 
 Model phases map to run states as follows:
 
@@ -794,11 +801,18 @@ Rules:
   `retention.effectivePolicy`, retention status/timestamps, and deletion
   receipt updates. They retain `state: "final"` and preserve every other field
   byte-for-byte after canonicalization.
+- `retention.updatedAt` never moves backward across revisions.
 - `context` is present exactly when the run has a Context Pack binding. When
   present, `sources` contains exactly one matching `context-pack` id and
   digest; when absent, `sources` contains no `context-pack` entry.
 - Context Pack entries contain only opaque identity and digest metadata. They
   never contain private excerpts, filenames, local paths, or blob contents.
+- Sensitive source, artifact, and deletion property names are compared after
+  ASCII case folding and removal of spaces, underscores, hyphens, and dots.
+  Exact normalized concepts such as `privateexcerpt`, `filename`, `localpath`,
+  `filepath`, `objectkey`, `storagekey`, `bucketkey`, and `deletedcontent` are
+  forbidden at every nested extension level; unrelated names and values are
+  not matched.
 - Public-evidence entries identify the exact fetched snapshot. A changed live
   URL does not alter an existing manifest.
 - `placement: "cloud-metadata"` records artifact metadata and digest only.
@@ -820,11 +834,20 @@ Rules:
     model executions.
 - Aggregate token and cost fields sum reported values only. They remain `null`
   when no corresponding value was reported.
+- Because v1 represents USD as JSON numbers, an aggregate `costUsd` compares
+  equal within an absolute tolerance of `0.000000001` USD; materially different
+  totals remain invalid.
 - `retention.policy` records the original run privacy policy and never changes.
   It must not exceed the Context Pack consent defined in §8.4.
 - `retention.effectivePolicy` initially equals `retention.policy`. It may move
   to a shorter policy; moving to a longer policy requires fresh consent and
   still must not exceed the Context Pack consent.
+- A post-final shortening revision uses one effective-change baseline:
+  `retention.updatedAt` and `deletion.requestedAt` must identify the same
+  instant.
+  `run-only` expires at that scheduling instant; `7-days` expires no earlier
+  than that instant and no later than seven days after it. `project` has no
+  protocol deadline ceiling.
 - `contentExpiresAt` is `null` before the deletion clock begins. It remains
   `null` while the effective policy is `project`, until project deletion or a
   shorter policy is explicitly approved.
@@ -840,9 +863,15 @@ Rules:
 
 - `scheduled`, `pending`, and `partial_failure` deletion receipts require
   `requestedAt`.
+- Manifest chronology requires `retention.updatedAt` and deletion timestamps
+  not to precede manifest creation. A scheduled receipt satisfies
+  `requestedAt <= retention.updatedAt <= contentExpiresAt`. When completion is
+  present, `requestedAt <= completedAt <= retention.updatedAt`.
 - `deletion.status: "completed"` requires `completedAt`,
   `requestedAt`, `deletedObjectCount`, and the sequence of the corresponding
   `content.deleted` event.
+- The corresponding completed-deletion event must satisfy
+  `requestedAt <= event.at <= completedAt`.
 - Partial deletion failure sets both retention status `deletion_pending` and
   deletion status `partial_failure`; retries create new manifest revisions.
 - Deletion receipts contain counts and timestamps only, never deleted content
@@ -863,10 +892,14 @@ Conformance fixtures must cover:
 - complete, partial, and unreported usage;
 - invalid retention/deletion status pairs;
 - original or effective retention exceeding Context Pack consent;
-- effective retention shortening and consented lengthening;
+- effective retention shortening at and beyond each bounded deadline, plus
+  consented lengthening;
 - scheduled, partial-failure, and completed deletion states;
+- completion-before-request and completed deletion events outside their receipt
+  interval;
 - completed deletion without a matching event sequence;
-- private path or private excerpt leakage in manifest fields.
+- separator and case variants of private path, excerpt, object-key, and deleted
+  content leakage in nested manifest fields.
 
 ## 9. Local Context Pack implementation
 

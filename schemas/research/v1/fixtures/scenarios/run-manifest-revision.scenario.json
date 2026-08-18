@@ -151,11 +151,70 @@
       },
       "digestTargets": [""]
     },
+    "project-final": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "project-to-seven-days": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "5a28937d656e97ce8d73b31f3c97e97c5122e455ee0c8f782ce16201fb8a6a96",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-23T20:06:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "project-to-seven-days-over-deadline": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "5a28937d656e97ce8d73b31f3c97e97c5122e455ee0c8f782ce16201fb8a6a96",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-23T20:06:00.000000001Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "shortened-retention": {
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
         "retention": {
-          "effectivePolicy": "run-only"
+          "effectivePolicy": "run-only",
+          "contentExpiresAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "shortened-retention-over-deadline": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "run-only",
+          "contentExpiresAt": "2026-08-16T20:06:00.000000001Z"
         }
       },
       "digestTargets": [""]
@@ -281,7 +340,7 @@
     },
     {
       "id": "manifest.policy-shortening",
-      "description": "Effective retention may be shortened with a coherent deletion schedule.",
+      "description": "Run-only retention shortening schedules expiry at the effective policy update.",
       "validator": "run-manifest-revision",
       "inputs": {
         "previous": "final",
@@ -292,6 +351,57 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.policy-shortening-over-deadline",
+      "description": "Run-only retention shortening cannot retain content beyond the effective update.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "shortened-retention-over-deadline"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.seven-day-shortening-at-deadline",
+      "description": "Seven-day retention shortening accepts expiry exactly seven days after its effective update.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-final",
+        "next": "project-to-seven-days"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.seven-day-shortening-over-deadline",
+      "description": "Seven-day retention shortening rejects expiry even one nanosecond beyond its deadline.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-final",
+        "next": "project-to-seven-days-over-deadline"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
       }
     },
     {
