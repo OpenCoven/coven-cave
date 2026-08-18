@@ -309,12 +309,13 @@ function hasArtifactTitleUriScheme(value: string): boolean {
 function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<string> {
   const title = parseString(value, path, "title");
   if (!title.ok) return title;
+  const inspectionTitle = title.value.normalize("NFKC");
   if (
-    title.value.includes("/") ||
-    title.value.includes("\\") ||
-    hasArtifactTitleUriScheme(title.value) ||
-    ARTIFACT_TITLE_CONTROL_RE.test(title.value) ||
-    ARTIFACT_TITLE_SECRET_RE.test(title.value)
+    inspectionTitle.includes("/") ||
+    inspectionTitle.includes("\\") ||
+    hasArtifactTitleUriScheme(inspectionTitle) ||
+    ARTIFACT_TITLE_CONTROL_RE.test(inspectionTitle) ||
+    ARTIFACT_TITLE_SECRET_RE.test(inspectionTitle)
   ) {
     return fail(
       "invalid_value",

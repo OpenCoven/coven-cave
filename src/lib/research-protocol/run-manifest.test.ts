@@ -25,7 +25,11 @@ import invalidDeletionPluralJson from "../../../schemas/research/v1/fixtures/inv
 import invalidRetentionBeforeCreatedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-created.json" with { type: "json" };
 import invalidArtifactAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-after-finalized.json" with { type: "json" };
 import invalidPublicSourceAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-public-source-after-finalized.json" with { type: "json" };
+import invalidFullwidthFileUriTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-fullwidth-file-uri.json" with { type: "json" };
+import invalidFullwidthWindowsPathTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-fullwidth-windows-path.json" with { type: "json" };
+import invalidMixedNormalizedSecretPathTitleJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-title-mixed-normalized-secret-path.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
+import validBenignUnicodeTitleJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-title-benign-unicode.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
 import {
@@ -601,6 +605,28 @@ test("artifact titles reject RFC 3986 URI scheme prefixes", () => {
     });
     expectError(parseRunManifestV1(invalid), "$.artifacts[0].title", "invalid_value");
   }
+});
+
+test("artifact title privacy checks inspect NFKC-normalized text", () => {
+  for (const fixture of [
+    invalidFullwidthFileUriTitleJson,
+    invalidFullwidthWindowsPathTitleJson,
+    invalidMixedNormalizedSecretPathTitleJson,
+  ]) {
+    assert.equal(Value.Check(runManifestSchema, fixture), true);
+    expectError(
+      parseRunManifestV1(withoutExpectedSchemaValid(fixture)),
+      "$.artifacts[0].title",
+      "invalid_value",
+    );
+  }
+});
+
+test("artifact titles preserve benign Unicode losslessly after safety inspection", () => {
+  assert.equal(Value.Check(runManifestSchema, validBenignUnicodeTitleJson), true);
+  const parsed = expectOk(parseRunManifestV1(validBenignUnicodeTitleJson));
+  assert.equal(parsed.artifacts[0].title, "Ｆｉｎｄｉｎｇｓ： 猫とcafé");
+  assert.deepEqual(parsed, validBenignUnicodeTitleJson);
 });
 
 test("artifact title URI detection preserves ordinary colon text and RFC 3986 boundaries", () => {
