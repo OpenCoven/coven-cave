@@ -80,8 +80,23 @@ assert.match(
 );
 assert.match(
   iosJob,
-  /appstore:status[\s\S]*--allow-missing[\s\S]*case "\$STATUS_EXIT" in[\s\S]*0\)[\s\S]*3\)[\s\S]*exit "\$STATUS_EXIT"/,
-  "only an explicit build-not-found result permits a retry upload",
+  /IOS_DELIVERY_ID: \$\{\{ inputs\.ios_delivery_id \}\}[\s\S]*appstore:status[\s\S]*--delivery-id "\$IOS_DELIVERY_ID"[\s\S]*--wait[\s\S]*resume-confirmed=true/,
+  "a manual retry can resume and verify only the exact delivery ID returned by an earlier upload",
+);
+assert.match(
+  iosJob,
+  /else[\s\S]*resume-confirmed=false[\s\S]*fresh iOS[\s\S]*uploaded and awaited by delivery ID/,
+  "a fresh tag build uploads its unique build and waits on the returned delivery ID",
+);
+assert.doesNotMatch(
+  iosJob,
+  /appstore:status[\s\S]{0,300}--apple-id/,
+  "fresh releases never trust the unreliable version-selector status preflight",
+);
+assert.match(
+  workflow,
+  /ios_delivery_id:[\s\S]*RECOVERY ONLY:[\s\S]*required: false[\s\S]*type: string/,
+  "manual release recovery exposes the delivery ID needed to resume processing safely",
 );
 assert.match(
   iosJob,
