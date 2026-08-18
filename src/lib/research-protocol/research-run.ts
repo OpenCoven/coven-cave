@@ -18,6 +18,8 @@ import {
 } from "./context-pack.ts";
 import {
   parseEmbeddedRunManifestCandidateV1,
+  parseRunManifestV1,
+  validateRunManifestRevisionV1,
   type RunManifestV1,
 } from "./run-manifest.ts";
 import { validateSafeExtensionKeys } from "./privacy-extension.ts";
@@ -147,6 +149,11 @@ export type ResearchRunV1 = {
   failure?: ResearchRunFailureV1;
 } & UnknownFields;
 
+export type ResearchRunContextPackValidationOptionsV1 = {
+  /** Serialized revision-1-to-tip chain, including the embedded manifest. */
+  manifestHistory?: readonly unknown[];
+};
+
 export type RunEventV1 = {
   schema: "opencoven.run-event/v1";
   runId: string;
@@ -184,6 +191,101 @@ function contextBindingsMatch(
   );
 }
 
+function prefixProtocolErrorPath(path: string, prefix: string): string {
+  return path === "$" ? prefix : `${prefix}${path.slice(1)}`;
+}
+
+function validateEmbeddedManifestAuthority(
+  manifest: RunManifestV1,
+  contextPack: ContextPackV1,
+  history: readonly unknown[] | undefined,
+): ProtocolParseResult<RunManifestV1> {
+  const standalone = parseRunManifestV1(manifest);
+  if (standalone.ok) return pass(manifest);
+
+  if (manifest.revision === 1) {
+    return {
+      ok: false,
+      error: {
+        ...standalone.error,
+        path: prefixProtocolErrorPath(
+          standalone.error.path,
+          "$.artifactManifest",
+        ),
+      },
+    };
+  }
+  if (history === undefined || history.length === 0) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.revision",
+      "Retention beyond standalone authority requires revision-1-rooted manifest history",
+    );
+  }
+
+  const rootCandidate = parseEmbeddedRunManifestCandidateV1(history[0]);
+  if (!rootCandidate.ok) {
+    return {
+      ok: false,
+      error: {
+        ...rootCandidate.error,
+        path: prefixProtocolErrorPath(
+          rootCandidate.error.path,
+          "$.manifestHistory[0]",
+        ),
+      },
+    };
+  }
+  if (rootCandidate.value.revision !== 1) {
+    return fail(
+      "semantic_conflict",
+      "$.manifestHistory[0].revision",
+      "Manifest history must begin with revision 1",
+    );
+  }
+  const root = parseRunManifestV1(history[0]);
+  if (!root.ok) {
+    return {
+      ok: false,
+      error: {
+        ...root.error,
+        path: prefixProtocolErrorPath(root.error.path, "$.manifestHistory[0]"),
+      },
+    };
+  }
+
+  let replayed = root.value;
+  for (let index = 1; index < history.length; index += 1) {
+    const next = validateRunManifestRevisionV1(replayed, history[index], {
+      contextConsent: contextPack.consent.retention,
+      freshConsent: true,
+      freshConsentAt: contextPack.createdAt,
+    });
+    if (!next.ok) {
+      return {
+        ok: false,
+        error: {
+          ...next.error,
+          path: prefixProtocolErrorPath(
+            next.error.path,
+            `$.manifestHistory[${index}]`,
+          ),
+        },
+      };
+    }
+    replayed = next.value;
+  }
+
+  if (replayed.digest !== manifest.digest) {
+    return fail(
+      "semantic_conflict",
+      "$.artifactManifest.digest",
+      "Manifest history tip must match the embedded artifactManifest digest",
+    );
+  }
+  return pass(manifest);
+}
+
 /**
  * Revalidates and detaches the supplied Context Pack before composition.
  * Run-field errors use run JSON paths; pack-only errors use the synthetic
@@ -194,6 +296,7 @@ function contextBindingsMatch(
 export function validateResearchRunContextPackV1(
   run: ResearchRunV1,
   contextPack?: ContextPackV1,
+  options: ResearchRunContextPackValidationOptionsV1 = {},
 ): ProtocolParseResult<ResearchRunV1> {
   if (!run.context) {
     if (contextPack !== undefined) {
@@ -202,6 +305,21 @@ export function validateResearchRunContextPackV1(
         "$.context",
         "A Context Pack must not be supplied when the run has no context binding",
       );
+    }
+    if (run.artifactManifest) {
+      const trustedManifest = parseRunManifestV1(run.artifactManifest);
+      if (!trustedManifest.ok) {
+        return {
+          ok: false,
+          error: {
+            ...trustedManifest.error,
+            path: prefixProtocolErrorPath(
+              trustedManifest.error.path,
+              "$.artifactManifest",
+            ),
+          },
+        };
+      }
     }
     return pass(run);
   }
@@ -292,6 +410,14 @@ export function validateResearchRunContextPackV1(
       "$.artifactManifest.retention.effectivePolicy",
       "Artifact manifest effective retention exceeds Context Pack consent",
     );
+  }
+  if (run.artifactManifest) {
+    const authority = validateEmbeddedManifestAuthority(
+      run.artifactManifest,
+      trustedContextPack,
+      options.manifestHistory,
+    );
+    if (!authority.ok) return authority;
   }
 
   return pass(run);
@@ -933,6 +1059,22 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "$.artifactManifest.retention.effectivePolicy",
         "artifactManifest effective retention must not exceed run privacy retention",
       );
+    }
+    if (!context) {
+      const standaloneManifest = parseRunManifestV1(artifactManifest);
+      if (!standaloneManifest.ok) {
+        return {
+          ok: false,
+          error: {
+            ...standaloneManifest.error,
+            path: prefixProtocolErrorPath(
+              standaloneManifest.error.path,
+              "$.artifactManifest",
+            ),
+          },
+        };
+      }
+      artifactManifest = standaloneManifest.value;
     }
     const cloudContentIndex = artifactManifest.artifacts.findIndex(
       (artifact) => artifact.placement === "cloud-content",

@@ -1,5 +1,4 @@
 {
-  "expectedSchemaValid": true,
   "schema": "opencoven.research-run/v1",
   "id": "run_01",
   "context": {
@@ -38,7 +37,7 @@
     "remoteQueries": false,
     "remoteContent": false,
     "artifactContentSync": false,
-    "retention": "run-only",
+    "retention": "7-days",
     "allowMemoryPromotion": false,
     "futureExtension": {
       "preserve": true
@@ -66,7 +65,7 @@
     "schema": "opencoven.run-manifest/v1",
     "id": "manifest_final_local_01",
     "runId": "run_01",
-    "digest": "7b65013ebf9b45f81f668672f158d1cba3202b54ea6a547c223b4a0d75c1e17f",
+    "digest": "edd1b15c77b6684cf9010cef9c4f90445fa5adafcfb461802f1b03f2d1057c4b",
     "revision": 2,
     "state": "final",
     "createdAt": "2026-08-16T20:00:00.000Z",
@@ -117,10 +116,10 @@
       }
     },
     "retention": {
-      "policy": "run-only",
-      "effectivePolicy": "run-only",
+      "policy": "7-days",
+      "effectivePolicy": "7-days",
       "status": "deletion_scheduled",
-      "contentExpiresAt": "2026-08-21T20:04:00.000Z",
+      "contentExpiresAt": "2026-08-27T20:04:00.000Z",
       "updatedAt": "2026-08-20T20:04:00.000Z",
       "futureExtension": {
         "preserve": true

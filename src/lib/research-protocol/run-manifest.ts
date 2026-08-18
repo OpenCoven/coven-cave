@@ -1196,6 +1196,73 @@ function validateDeletionChronology(
   return pass(undefined);
 }
 
+function validateManifestChronology(
+  createdAt: string,
+  finalizedAt: string | undefined,
+  sources: readonly RunManifestSourceV1[],
+  artifacts: readonly ArtifactRegistrationV1[],
+  retention: RunManifestRetentionV1,
+): ProtocolParseResult<void> {
+  if (
+    finalizedAt !== undefined &&
+    compareUtcTimestamps(finalizedAt, createdAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finalizedAt",
+      "finalizedAt must not be earlier than manifest createdAt",
+    );
+  }
+
+  for (const [index, source] of sources.entries()) {
+    if (source.kind !== "public-evidence") continue;
+    if (
+      compareUtcTimestamps(source.fetchedAt, createdAt) < 0 ||
+      (finalizedAt !== undefined &&
+        compareUtcTimestamps(source.fetchedAt, finalizedAt) > 0)
+    ) {
+      return fail(
+        "semantic_conflict",
+        `$.sources[${index}].fetchedAt`,
+        "Public evidence fetchedAt must fall within the manifest assembly window",
+      );
+    }
+  }
+
+  for (const [index, artifact] of artifacts.entries()) {
+    if (
+      compareUtcTimestamps(artifact.createdAt, createdAt) < 0 ||
+      (finalizedAt !== undefined &&
+        compareUtcTimestamps(artifact.createdAt, finalizedAt) > 0)
+    ) {
+      return fail(
+        "semantic_conflict",
+        `$.artifacts[${index}].createdAt`,
+        "Artifact createdAt must fall within the manifest assembly window",
+      );
+    }
+  }
+
+  if (compareUtcTimestamps(retention.updatedAt, createdAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "Retention updatedAt must not be earlier than manifest createdAt",
+    );
+  }
+  if (
+    finalizedAt !== undefined &&
+    compareUtcTimestamps(retention.updatedAt, finalizedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "Final manifest retention updatedAt must not be earlier than finalizedAt",
+    );
+  }
+  return pass(undefined);
+}
+
 function validateRetentionClock(
   retention: RunManifestRetentionV1,
 ): ProtocolParseResult<void> {
@@ -1644,7 +1711,7 @@ function parseRunManifestValueV1(
   mode: RunManifestParseMode,
 ): ProtocolParseResult<RunManifestV1> {
   const standalone = mode === "standalone";
-  const validateStandaloneDeadline = mode !== "revision-candidate";
+  const validateStandaloneDeadline = mode === "standalone";
   const wireValue = copyProtocolJsonValue(value);
   if (!wireValue.ok) return wireValue;
 
@@ -1891,6 +1958,14 @@ function parseRunManifestValueV1(
     deletion.value,
   );
   if (!deletionChronology.ok) return deletionChronology;
+  const chronology = validateManifestChronology(
+    createdAt.value,
+    finalizedAt,
+    sources,
+    artifacts,
+    retention.value,
+  );
+  if (!chronology.ok) return chronology;
   const clock = validateRetentionClock(retention.value);
   if (!clock.ok) return clock;
   if (validateStandaloneDeadline) {
@@ -1950,7 +2025,14 @@ function parseRunManifestValueV1(
 }
 
 export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManifestV1> {
-  return parseRunManifestValueV1(value, "standalone");
+  const parsed = parseRunManifestValueV1(value, "standalone");
+  if (!parsed.ok || parsed.value.revision !== 1) return parsed;
+  const remembered = rememberValidatedRevisionReference(
+    parsed.value,
+    parsed.value,
+  );
+  if (!remembered.ok) return remembered;
+  return parsed;
 }
 
 /**
@@ -2247,15 +2329,20 @@ function resolveTrustedPredecessor(
     }
     return pass(provenance.detachedValue);
   }
-  return parseRunManifestV1(previous);
+  return fail(
+    "semantic_conflict",
+    "$.revision",
+    "Previous manifest lacks revision-1-rooted validation provenance",
+  );
 }
 
 /**
  * Parses and validates one candidate revision atomically. Candidate parsing may
  * defer standalone retention ceilings only inside this composition boundary;
  * the linked previous revision and fresh consent checks must then authorize any
- * extension before the parsed candidate is returned. Unproven predecessors are
- * strictly reparsed; consent-authorized predecessors carry private provenance.
+ * extension before the parsed candidate is returned. Only strict revision-1
+ * parsing establishes root provenance; every later predecessor must be the
+ * unmodified result returned by a successful sequential validation.
  */
 export function validateRunManifestRevisionV1(
   previous: RunManifestV1,
@@ -2277,13 +2364,6 @@ export function validateRunManifestRevisionV1(
     validated.value,
   );
   if (!rememberedResult.ok) return rememberedResult;
-  if (candidate !== null && typeof candidate === "object") {
-    const rememberedCandidate = rememberValidatedRevisionReference(
-      candidate,
-      validated.value,
-    );
-    if (!rememberedCandidate.ok) return rememberedCandidate;
-  }
   return validated;
 }
 
