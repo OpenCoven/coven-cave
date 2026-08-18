@@ -19,8 +19,10 @@ assert.match(src, /projectRoot=\{projectRoot\}/, "threads projectRoot into the f
 assert.match(src, /RailTerminalPanel/, "Terminal tab renders RailTerminalPanel");
 assert.match(src, /isFullscreen,\s*setIsFullscreen/, "rail tracks fullscreen expansion state");
 assert.match(src, /aria-label=\{isFullscreen \? "Exit code rail fullscreen" : "Expand code rail fullscreen"\}/, "rail exposes a fullscreen toggle");
-assert.match(src, /isFullscreen && \(\s*<button[\s\S]*?aria-label="Terminal"/, "Terminal tab is only available while the rail is fullscreen");
-assert.match(src, /terminalEverOpened && isFullscreen/, "terminal host is gated behind fullscreen expansion");
+assert.doesNotMatch(src, /isFullscreen && \(\s*<button[\s\S]*?aria-label="Terminal"/, "Terminal tab stays available before fullscreen expansion");
+assert.match(src, /aria-label="Files"[\s\S]*aria-label="Terminal"/, "Terminal is listed below Files in the rail strip");
+assert.doesNotMatch(src, /terminalEverOpened && isFullscreen/, "terminal host is not gated behind fullscreen expansion");
+assert.match(src, /\{terminalEverOpened \? \(/, "terminal host mounts after its first selection at any rail size");
 assert.match(src, /terminalEverOpened/, "lazy gate: terminal not mounted until first opened");
 assert.match(src, /setTerminalEverOpened\(true\)/, "flips the lazy gate once the Terminal tab opens");
 assert.match(src, /workspace-rail__terminal/, "terminal wrapper class for keepalive hide/show");
