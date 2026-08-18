@@ -1039,6 +1039,27 @@ test("research runs parse full run manifests and reject invalid embedded manifes
   expectError(invalid, "$.artifactManifest.retention.status", "semantic_conflict");
 });
 
+test("research runs reject independently parsed embedded manifests above their retention ceiling", () => {
+  const overflowManifest = linkedManifest({
+    ...validRunManifest,
+    retention: {
+      ...validRunManifest.retention,
+      policy: "7-days",
+      effectivePolicy: "7-days",
+      contentExpiresAt: "2099-01-01T00:00:00.000Z",
+    },
+  });
+
+  expectError(
+    parseResearchRunV1({
+      ...runForStatus("completed", overflowManifest),
+      privacy: { ...validResearchRun.privacy, retention: "7-days" },
+    }),
+    "$.artifactManifest.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
 test("research runs reject embedded manifests for another run or context", () => {
   const manifest = linkedManifest(validRunManifest);
 

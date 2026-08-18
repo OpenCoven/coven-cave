@@ -17,8 +17,16 @@ import invalidNestedPrivateExtensionJson from "../../../schemas/research/v1/fixt
 import invalidNestedPrivacyStorageKeysJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-privacy-storage-keys.json" with { type: "json" };
 import invalidRootPrivateExcerptsJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-root-private-excerpts.json" with { type: "json" };
 import invalidScheduledNullExpiryJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-scheduled-null-expiry.json" with { type: "json" };
+import invalidSevenDayOverflowJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-7-days-overflow.json" with { type: "json" };
+import invalidRunOnlyOverflowJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-run-only-overflow.json" with { type: "json" };
+import invalidSevenDayLeapOverflowJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-7-days-leap-overflow.json" with { type: "json" };
+import invalidRunOnlyLeapOverflowJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-run-only-leap-overflow.json" with { type: "json" };
 import validExtensionBoundariesJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-extension-boundaries.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
+import validSevenDayBoundaryJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-retention-7-days-boundary.json" with { type: "json" };
+import validRunOnlyBoundaryJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-retention-run-only-boundary.json" with { type: "json" };
+import validSevenDayLeapBoundaryJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-retention-7-days-leap-boundary.json" with { type: "json" };
+import validRunOnlyLeapBoundaryJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-retention-run-only-leap-boundary.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
 import {
@@ -221,6 +229,52 @@ test("valid fixtures satisfy the schema, parse, and recalculate their root diges
   assert.equal((local.sources[0].futureExtension as { preserve: boolean }).preserve, true);
 });
 
+test("standalone revision-1 finite retention deadlines cannot exceed their policy ceilings", () => {
+  for (const manifest of [validSevenDayBoundaryJson, validRunOnlyBoundaryJson]) {
+    assert.equal(Value.Check(runManifestSchema, manifest), true);
+    assert.equal(manifest.digest, digestProtocolObject(manifest));
+    expectOk(parseRunManifestV1(manifest));
+  }
+
+  for (const fixture of [invalidSevenDayOverflowJson, invalidRunOnlyOverflowJson]) {
+    const { expectedSchemaValid, ...manifest } = fixture;
+    assert.equal(expectedSchemaValid, true);
+    assert.equal(Value.Check(runManifestSchema, manifest), true);
+    assert.equal(manifest.digest, digestProtocolObject(manifest));
+    expectError(
+      parseRunManifestV1(manifest),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
+test("finite retention duration counts the 2016 positive leap second", () => {
+  for (const manifest of [
+    validRunOnlyLeapBoundaryJson,
+    validSevenDayLeapBoundaryJson,
+  ]) {
+    assert.equal(Value.Check(runManifestSchema, manifest), true);
+    assert.equal(manifest.digest, digestProtocolObject(manifest));
+    expectOk(parseRunManifestV1(manifest));
+  }
+
+  for (const fixture of [
+    invalidRunOnlyLeapOverflowJson,
+    invalidSevenDayLeapOverflowJson,
+  ]) {
+    const { expectedSchemaValid, ...manifest } = fixture;
+    assert.equal(expectedSchemaValid, true);
+    assert.equal(Value.Check(runManifestSchema, manifest), true);
+    assert.equal(manifest.digest, digestProtocolObject(manifest));
+    expectError(
+      parseRunManifestV1(manifest),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
 test("Run Manifest rejects non-canonical wire data before invoking accessors", () => {
   class CustomArray<T> extends Array<T> {}
   let accessorCalls = 0;
@@ -382,7 +436,7 @@ test("context absent forbids context-pack sources", () => {
   expectError(parseRunManifestV1(invalid), "$.sources[0]", "semantic_conflict");
 });
 
-test("public evidence canonicalUrl accepts only absolute public HTTP(S) URLs", () => {
+test("public evidence canonicalUrl enforces HTTP(S) URL syntax", () => {
   const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
   const withUrl = (canonicalUrl: string) =>
     recalculate({
@@ -395,12 +449,14 @@ test("public evidence canonicalUrl accepts only absolute public HTTP(S) URLs", (
     });
 
   for (const canonicalUrl of [
-    "https://example.com/research",
-    "http://public.example.org:8080/path?query=1",
+    "https://www.iana.org/research",
+    "http://www.cloudflare.com:8080/path?query=1",
   ]) {
     const candidate = withUrl(canonicalUrl);
     assert.equal(Value.Check(runManifestSchema, candidate), true, canonicalUrl);
-    const parsed = expectOk(parseRunManifestV1(candidate));
+    const result = parseRunManifestV1(candidate);
+    assert.equal(result.ok, true, canonicalUrl);
+    const parsed = expectOk(result);
     assert.equal(
       parsed.sources.find((source) => source.kind === "public-evidence")?.canonicalUrl,
       canonicalUrl,
@@ -430,6 +486,175 @@ test("public evidence canonicalUrl accepts only absolute public HTTP(S) URLs", (
     );
     expectError(
       parseRunManifestV1(candidate),
+      "$.sources[1].canonicalUrl",
+      "invalid_value",
+    );
+  }
+});
+
+test("public evidence canonicalUrl accepts global DNS and IP hosts", () => {
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  const withUrl = (canonicalUrl: string) =>
+    recalculate({
+      ...cloud,
+      sources: cloud.sources.map((source) =>
+        source.kind === "public-evidence"
+          ? { ...source, canonicalUrl }
+          : source,
+      ),
+    });
+
+  for (const canonicalUrl of [
+    "https://www.iana.org/research",
+    "http://www.cloudflare.com:8080/path?query=1",
+    "https://www.iana.org./research",
+    "http://1.0.0.0/",
+    "http://9.255.255.255/",
+    "http://11.0.0.0/",
+    "http://100.63.255.255/",
+    "http://100.128.0.0/",
+    "http://126.255.255.255/",
+    "http://128.0.0.0/",
+    "http://169.253.255.255/",
+    "http://169.255.0.0/",
+    "http://172.15.255.255/",
+    "http://172.32.0.0/",
+    "http://192.0.0.9/",
+    "http://192.0.0.10/",
+    "http://192.0.1.255/",
+    "http://192.0.3.0/",
+    "http://192.31.196.1/",
+    "http://192.52.193.1/",
+    "http://192.167.255.255/",
+    "http://192.169.0.0/",
+    "http://192.175.48.1/",
+    "http://198.17.255.255/",
+    "http://198.20.0.0/",
+    "http://198.51.99.255/",
+    "http://198.51.101.0/",
+    "http://203.0.112.255/",
+    "http://203.0.114.0/",
+    "http://223.255.255.255/",
+    "http://[::808:808]/",
+    "http://[::ffff:808:808]/",
+    "http://[64:ff9b::808:808]/",
+    "http://[2000::1]/",
+    "http://[2001:1::1]/",
+    "http://[2001:1::2]/",
+    "http://[2001:1::3]/",
+    "http://[2001:3::1]/",
+    "http://[2001:4:112::1]/",
+    "http://[2001:20::1]/",
+    "http://[2001:30::1]/",
+    "http://[2001:200::1]/",
+    "http://[2001:4860:4860::8888]/",
+    "http://[2002:0808:0808::1]/",
+    "http://[2606:4700:4700::1111]/",
+  ]) {
+    const candidate = withUrl(canonicalUrl);
+    assert.equal(Value.Check(runManifestSchema, candidate), true, canonicalUrl);
+    const result = parseRunManifestV1(candidate);
+    assert.equal(result.ok, true, canonicalUrl);
+    const parsed = expectOk(result);
+    assert.equal(
+      parsed.sources.find((source) => source.kind === "public-evidence")
+        ?.canonicalUrl,
+      canonicalUrl,
+    );
+  }
+});
+
+test("public evidence canonicalUrl rejects special-use names and non-global IP literals", () => {
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  const withUrl = (canonicalUrl: string) =>
+    recalculate({
+      ...cloud,
+      sources: cloud.sources.map((source) =>
+        source.kind === "public-evidence"
+          ? { ...source, canonicalUrl }
+          : source,
+      ),
+    });
+
+  for (const canonicalUrl of [
+    "http://localhost/research",
+    "http://localhost./research",
+    "http://service.local/research",
+    "http://service.localdomain/research",
+    "http://service.corp/research",
+    "http://service.mail/research",
+    "http://service.internal/research",
+    "http://service.invalid/research",
+    "http://service.test/research",
+    "http://service.onion/research",
+    "http://service.alt/research",
+    "http://home.arpa/research",
+    "http://router.home.arpa/research",
+    "http://in-addr.arpa/research",
+    "http://service.arpa/research",
+    "http://service.home/research",
+    "http://service.lan/research",
+    "https://example.com/research",
+    "https://sub.example.net/research",
+    "https://example.org/research",
+    "http://0.255.255.255/research",
+    "http://127.0.0.1/research",
+    "https://10.0.0.1/research",
+    "https://100.64.0.0/research",
+    "https://100.127.255.255/research",
+    "https://169.254.0.1/research",
+    "https://172.16.0.1/research",
+    "https://172.31.255.255/research",
+    "https://192.0.0.0/research",
+    "https://192.0.0.8/research",
+    "https://192.0.0.11/research",
+    "https://192.0.0.170/research",
+    "https://192.0.2.1/research",
+    "https://192.88.99.1/research",
+    "https://192.168.1.1/research",
+    "https://198.18.0.1/research",
+    "https://198.19.255.255/research",
+    "https://198.51.100.1/research",
+    "https://203.0.113.1/research",
+    "https://224.0.0.1/research",
+    "https://239.255.255.255/research",
+    "https://240.0.0.1/research",
+    "https://255.255.255.255/research",
+    "http://[::]/research",
+    "http://[::1]/research",
+    "http://[::a00:1]/research",
+    "http://[::c0a8:101]/research",
+    "http://[::ffff:c0a8:101]/research",
+    "http://[64:ff9b::c0a8:101]/research",
+    "http://[64:ff9b:1::1]/research",
+    "http://[100::1]/research",
+    "http://[100:0:0:1::1]/research",
+    "http://[2001::1]/research",
+    "http://[2001:1::4]/research",
+    "http://[2001:2::1]/research",
+    "http://[2001:4:111:ffff::1]/research",
+    "http://[2001:10::1]/research",
+    "http://[2001:40::1]/research",
+    "http://[2001:db8::1]/research",
+    "http://[2002:0a00:0001::1]/research",
+    "http://[2002:c0a8:0101::1]/research",
+    "http://[3ffe::1]/research",
+    "http://[3fff::1]/research",
+    "http://[4000::1]/research",
+    "http://[5f00::1]/research",
+    "http://[fc00::1]/research",
+    "http://[fdff::1]/research",
+    "http://[fe80::1]/research",
+    "http://[fec0::1]/research",
+    "http://[ff02::1]/research",
+    "https://-invalid.iana.org/research",
+  ]) {
+    const candidate = withUrl(canonicalUrl);
+    assert.equal(Value.Check(runManifestSchema, candidate), true, canonicalUrl);
+    const result = parseRunManifestV1(candidate);
+    assert.equal(result.ok, false, canonicalUrl);
+    expectError(
+      result,
       "$.sources[1].canonicalUrl",
       "invalid_value",
     );
@@ -1244,28 +1469,29 @@ test("revision retention deadlines are policy-bounded and monotonic", () => {
     true,
   );
 
+  const manifestWithDeadline = (
+    effectivePolicy: "run-only" | "7-days",
+    contentExpiresAt: string,
+  ) =>
+    recalculate({
+      ...scheduled,
+      retention: {
+        ...scheduled.retention,
+        effectivePolicy,
+        contentExpiresAt,
+      },
+    });
   const scheduleWithDeadline = (
     effectivePolicy: "run-only" | "7-days",
     contentExpiresAt: string,
   ) =>
     expectOk(
-      parseRunManifestV1(
-        recalculate({
-          ...scheduled,
-          retention: {
-            ...scheduled.retention,
-            effectivePolicy,
-            contentExpiresAt,
-          },
-        }),
-      ),
+      parseRunManifestV1(manifestWithDeadline(effectivePolicy, contentExpiresAt)),
     );
 
   expectError(
-    validateRunManifestRevision(
-      final,
-      scheduleWithDeadline("7-days", "2099-01-01T00:00:00.000Z"),
-      { contextConsent: "7-days" },
+    parseRunManifestV1(
+      manifestWithDeadline("7-days", "2099-01-01T00:00:00.000Z"),
     ),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
@@ -1619,7 +1845,11 @@ test("completed deletion cannot be resurrected by a later revision", () => {
   );
 
   expectError(
-    validateRunManifestRevision(deleted, resurrected, { contextConsent: "7-days" }),
+    validateRunManifestRevision(deleted, resurrected, {
+      contextConsent: "project",
+      freshConsent: true,
+      freshConsentAt: "2026-08-16T20:06:30.000Z",
+    }),
     "$.deletion.status",
     "semantic_conflict",
   );

@@ -109,6 +109,79 @@ export function compareUtcTimestamps(left: string, right: string): -1 | 0 | 1 {
   return 0;
 }
 
+const POSITIVE_LEAP_SECOND_EFFECTIVE_TIMESTAMPS = [
+  "1972-07-01T00:00:00Z",
+  "1973-01-01T00:00:00Z",
+  "1974-01-01T00:00:00Z",
+  "1975-01-01T00:00:00Z",
+  "1976-01-01T00:00:00Z",
+  "1977-01-01T00:00:00Z",
+  "1978-01-01T00:00:00Z",
+  "1979-01-01T00:00:00Z",
+  "1980-01-01T00:00:00Z",
+  "1981-07-01T00:00:00Z",
+  "1982-07-01T00:00:00Z",
+  "1983-07-01T00:00:00Z",
+  "1985-07-01T00:00:00Z",
+  "1988-01-01T00:00:00Z",
+  "1990-01-01T00:00:00Z",
+  "1991-01-01T00:00:00Z",
+  "1992-07-01T00:00:00Z",
+  "1993-07-01T00:00:00Z",
+  "1994-07-01T00:00:00Z",
+  "1996-01-01T00:00:00Z",
+  "1997-07-01T00:00:00Z",
+  "1999-01-01T00:00:00Z",
+  "2006-01-01T00:00:00Z",
+  "2009-01-01T00:00:00Z",
+  "2012-07-01T00:00:00Z",
+  "2015-07-01T00:00:00Z",
+  "2017-01-01T00:00:00Z",
+] as const;
+const DAYS_BEFORE_MONTH = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334] as const;
+
+export function utcTimestampToProtocolNanoseconds(value: string): bigint {
+  if (!isUtcTimestamp(value)) {
+    throw new TypeError(
+      "utcTimestampToProtocolNanoseconds requires a valid UTC RFC 3339 timestamp",
+    );
+  }
+
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const hour = Number(value.slice(11, 13));
+  const minute = Number(value.slice(14, 16));
+  const second = Number(value.slice(17, 19));
+  const fractionStart = value.indexOf(".");
+  const fraction =
+    fractionStart === -1
+      ? BigInt(0)
+      : BigInt(value.slice(fractionStart + 1, -1).padEnd(9, "0"));
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const leapYearsBeforeYear =
+    Math.floor((year + 3) / 4) -
+    Math.floor((year + 99) / 100) +
+    Math.floor((year + 399) / 400);
+  const daysBeforeYear = 365 * year + leapYearsBeforeYear;
+  const daysBeforeDate =
+    daysBeforeYear +
+    DAYS_BEFORE_MONTH[month - 1]! +
+    (leapYear && month > 2 ? 1 : 0) +
+    day -
+    1;
+  const nominalSeconds =
+    BigInt(daysBeforeDate) * BigInt(86_400) +
+    BigInt(hour * 3_600 + minute * 60 + second);
+  const completedLeapSeconds = POSITIVE_LEAP_SECOND_EFFECTIVE_TIMESTAMPS.filter(
+    (effectiveAt) => compareUtcTimestamps(value, effectiveAt) >= 0,
+  ).length;
+  return (
+    (nominalSeconds + BigInt(completedLeapSeconds)) * BigInt(1_000_000_000) +
+    fraction
+  );
+}
+
 export function isJsonPointer(value: unknown): value is string {
   return typeof value === "string" && JSON_POINTER_RE.test(value);
 }

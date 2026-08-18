@@ -10,6 +10,7 @@ import {
   pass,
   retentionDoesNotExceed,
   RETENTION_ORDER,
+  utcTimestampToProtocolNanoseconds,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
   type RetentionPolicyV1,
@@ -392,31 +393,172 @@ function parseUtc(value: unknown, path: string, label: string): ProtocolParseRes
   return pass(value);
 }
 
-function isPublicIpv4(hostname: string): boolean {
-  const octets = hostname.split(".").map(Number);
+const NON_GLOBAL_IPV4_RANGES = [
+  [0x00000000, 8],
+  [0x0a000000, 8],
+  [0x64400000, 10],
+  [0x7f000000, 8],
+  [0xa9fe0000, 16],
+  [0xac100000, 12],
+  [0xc0000000, 24],
+  [0xc0000200, 24],
+  [0xc0586300, 24],
+  [0xc0a80000, 16],
+  [0xc6120000, 15],
+  [0xc6336400, 24],
+  [0xcb007100, 24],
+  [0xe0000000, 4],
+  [0xf0000000, 4],
+] as const;
+const GLOBAL_IPV4_EXCEPTIONS = new Set([0xc0000009, 0xc000000a]);
+
+function parseIpv4Address(hostname: string): number | undefined {
+  const parts = hostname.split(".");
   if (
-    octets.length !== 4 ||
-    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+    parts.length !== 4 ||
+    parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)
+  ) {
+    return undefined;
+  }
+  return parts.reduce((address, part) => address * 256 + Number(part), 0);
+}
+
+function ipv4AddressIsInRange(
+  address: number,
+  base: number,
+  prefixLength: number,
+): boolean {
+  const size = 2 ** (32 - prefixLength);
+  return address >= base && address < base + size;
+}
+
+function isPublicIpv4Address(address: number): boolean {
+  if (GLOBAL_IPV4_EXCEPTIONS.has(address)) return true;
+  return !NON_GLOBAL_IPV4_RANGES.some(([base, prefixLength]) =>
+    ipv4AddressIsInRange(address, base, prefixLength),
+  );
+}
+
+function isPublicIpv4(hostname: string): boolean {
+  const address = parseIpv4Address(hostname);
+  return address !== undefined && isPublicIpv4Address(address);
+}
+
+function parseIpv6Address(hostname: string): readonly number[] | undefined {
+  let normalized = hostname
+    .toLowerCase()
+    .replace(/^\[/, "")
+    .replace(/\]$/, "");
+  if (normalized.includes(".")) {
+    const finalColon = normalized.lastIndexOf(":");
+    if (finalColon < 0) return undefined;
+    const ipv4 = parseIpv4Address(normalized.slice(finalColon + 1));
+    if (ipv4 === undefined) return undefined;
+    normalized = `${normalized.slice(0, finalColon)}:${(ipv4 >>> 16).toString(16)}:${(ipv4 & 0xffff).toString(16)}`;
+  }
+
+  const halves = normalized.split("::");
+  if (halves.length > 2) return undefined;
+  const parseHalf = (half: string): number[] | undefined => {
+    if (half === "") return [];
+    const groups = half.split(":");
+    if (groups.some((group) => !/^[a-f0-9]{1,4}$/.test(group))) {
+      return undefined;
+    }
+    return groups.map((group) => Number.parseInt(group, 16));
+  };
+  const left = parseHalf(halves[0]!);
+  const right = parseHalf(halves[1] ?? "");
+  if (!left || !right) return undefined;
+
+  if (halves.length === 1) {
+    return left.length === 8 ? left : undefined;
+  }
+  const omittedGroups = 8 - left.length - right.length;
+  if (omittedGroups < 1) return undefined;
+  return [...left, ...Array.from({ length: omittedGroups }, () => 0), ...right];
+}
+
+function ipv6HasPrefix(
+  address: readonly number[],
+  prefix: readonly number[],
+  prefixLength: number,
+): boolean {
+  const completeGroups = Math.floor(prefixLength / 16);
+  for (let index = 0; index < completeGroups; index += 1) {
+    if (address[index] !== (prefix[index] ?? 0)) return false;
+  }
+  const remainingBits = prefixLength % 16;
+  if (remainingBits === 0) return true;
+  const mask = (0xffff << (16 - remainingBits)) & 0xffff;
+  return (
+    (address[completeGroups]! & mask) ===
+    ((prefix[completeGroups] ?? 0) & mask)
+  );
+}
+
+function isPublicIpv6(hostname: string): boolean {
+  const address = parseIpv6Address(hostname);
+  if (!address) return false;
+  const embeddedIpv4 = address[6]! * 0x10000 + address[7]!;
+
+  if (
+    ipv6HasPrefix(address, [0, 0, 0, 0, 0, 0], 96) ||
+    ipv6HasPrefix(address, [0, 0, 0, 0, 0, 0xffff], 96) ||
+    ipv6HasPrefix(address, [0, 0, 0, 0, 0xffff, 0], 96) ||
+    ipv6HasPrefix(address, [0x0064, 0xff9b, 0, 0, 0, 0], 96)
+  ) {
+    return isPublicIpv4Address(embeddedIpv4);
+  }
+  if (ipv6HasPrefix(address, [0x2002], 16)) {
+    const sixToFourIpv4 = address[1]! * 0x10000 + address[2]!;
+    return isPublicIpv4Address(sixToFourIpv4);
+  }
+  if (ipv6HasPrefix(address, [0x2001, 0], 23)) {
+    const protocolAnycast =
+      address[1] === 1 &&
+      address.slice(2, 7).every((group) => group === 0) &&
+      address[7]! >= 1 &&
+      address[7]! <= 3;
+    return (
+      protocolAnycast ||
+      ipv6HasPrefix(address, [0x2001, 0x0003], 32) ||
+      ipv6HasPrefix(address, [0x2001, 0x0004, 0x0112], 48) ||
+      ipv6HasPrefix(address, [0x2001, 0x0020], 28) ||
+      ipv6HasPrefix(address, [0x2001, 0x0030], 28)
+    );
+  }
+  if (
+    ipv6HasPrefix(address, [0x2001, 0x0db8], 32) ||
+    ipv6HasPrefix(address, [0x3ffe], 16) ||
+    ipv6HasPrefix(address, [0x3fff], 20)
   ) {
     return false;
   }
-  const [first, second, third] = octets as [number, number, number, number];
-  return !(
-    first === 0 ||
-    first === 10 ||
-    (first === 100 && second >= 64 && second <= 127) ||
-    first === 127 ||
-    (first === 169 && second === 254) ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 0 && third === 0) ||
-    (first === 192 && second === 0 && third === 2) ||
-    (first === 192 && second === 168) ||
-    (first === 198 && (second === 18 || second === 19)) ||
-    (first === 198 && second === 51 && third === 100) ||
-    (first === 203 && second === 0 && third === 113) ||
-    first >= 224
-  );
+  return (address[0]! & 0xe000) === 0x2000;
 }
+
+const SPECIAL_USE_HOST_SUFFIXES = [
+  "alt",
+  "arpa",
+  "corp",
+  "example",
+  "home",
+  "internal",
+  "invalid",
+  "lan",
+  "local",
+  "localdomain",
+  "localhost",
+  "mail",
+  "onion",
+  "test",
+] as const;
+const SPECIAL_USE_HOSTNAMES = new Set([
+  "example.com",
+  "example.net",
+  "example.org",
+]);
 
 function isPublicHostname(hostname: string): boolean {
   const normalized = hostname
@@ -428,16 +570,7 @@ function isPublicHostname(hostname: string): boolean {
     return isPublicIpv4(normalized);
   }
   if (normalized.includes(":")) {
-    return !(
-      normalized === "::" ||
-      normalized === "::1" ||
-      normalized.startsWith("fc") ||
-      normalized.startsWith("fd") ||
-      normalized.startsWith("fe") ||
-      normalized.startsWith("ff") ||
-      normalized.startsWith("2001:db8:") ||
-      normalized.startsWith("::ffff:")
-    );
+    return isPublicIpv6(normalized);
   }
 
   if (!normalized.includes(".")) return false;
@@ -454,17 +587,16 @@ function isPublicHostname(hostname: string): boolean {
   ) {
     return false;
   }
-  return ![
-    "localhost",
-    "local",
-    "localdomain",
-    "internal",
-    "home",
-    "lan",
-    "test",
-    "invalid",
-    "example",
-  ].some((suffix) => normalized === suffix || normalized.endsWith(`.${suffix}`));
+  if (
+    SPECIAL_USE_HOST_SUFFIXES.some(
+      (suffix) => normalized === suffix || normalized.endsWith(`.${suffix}`),
+    )
+  ) {
+    return false;
+  }
+  return ![...SPECIAL_USE_HOSTNAMES].some(
+    (name) => normalized === name || normalized.endsWith(`.${name}`),
+  );
 }
 
 function parsePublicCanonicalUrl(
@@ -1145,24 +1277,29 @@ const RETENTION_DURATION_SECONDS = {
   "7-days": 7 * 24 * 60 * 60,
 } as const;
 
-function utcTimestampNanoseconds(value: string): bigint {
-  const year = Number(value.slice(0, 4));
-  const month = Number(value.slice(5, 7));
-  const day = Number(value.slice(8, 10));
-  const hour = Number(value.slice(11, 13));
-  const minute = Number(value.slice(14, 16));
-  const second = Number(value.slice(17, 19));
-  const fractionStart = value.indexOf(".");
-  const fraction =
-    fractionStart === -1
-      ? BigInt(0)
-      : BigInt(value.slice(fractionStart + 1, -1).padEnd(9, "0"));
-  const date = new Date(0);
-  date.setUTCFullYear(year, month - 1, day);
-  date.setUTCHours(hour, minute, Math.min(second, 59), 0);
-  const epochSeconds =
-    BigInt(date.getTime() / 1000) + (second === 60 ? BigInt(1) : BigInt(0));
-  return epochSeconds * BigInt(1_000_000_000) + fraction;
+function validateFiniteRetentionDeadline(
+  retention: RunManifestRetentionV1,
+  clockStart: string,
+): ProtocolParseResult<void> {
+  if (
+    retention.contentExpiresAt === null ||
+    retention.effectivePolicy === "project"
+  ) {
+    return pass(undefined);
+  }
+  const deadline = utcTimestampToProtocolNanoseconds(retention.contentExpiresAt);
+  const ceiling =
+    utcTimestampToProtocolNanoseconds(clockStart) +
+    BigInt(RETENTION_DURATION_SECONDS[retention.effectivePolicy]) *
+      BigInt(1_000_000_000);
+  if (deadline > ceiling) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      `${retention.effectivePolicy} content expiration exceeds its policy deadline ceiling`,
+    );
+  }
+  return pass(undefined);
 }
 
 function validateFreshRetentionConsent(
@@ -1175,7 +1312,7 @@ function validateFreshRetentionConsent(
     options.freshConsent !== true ||
     options.freshConsentAt === undefined ||
     !isUtcTimestamp(options.freshConsentAt) ||
-    !next.context
+    options.contextConsent === undefined
   ) {
     return fail(
       "semantic_conflict",
@@ -1206,13 +1343,6 @@ function validateRetentionLifecycleRevision(
 ): ProtocolParseResult<void> {
   const previousDeadline = previous.retention.contentExpiresAt;
   const nextDeadline = next.retention.contentExpiresAt;
-  if (previousDeadline !== null && nextDeadline === null) {
-    return fail(
-      "semantic_conflict",
-      "$.retention.contentExpiresAt",
-      "An established content expiration deadline cannot be cleared",
-    );
-  }
   if (
     compareUtcTimestamps(
       next.retention.updatedAt,
@@ -1225,37 +1355,6 @@ function validateRetentionLifecycleRevision(
       "Retention updatedAt cannot move backward",
     );
   }
-  if (
-    RETENTION_STATUS_ORDER[next.retention.status] <
-    RETENTION_STATUS_ORDER[previous.retention.status]
-  ) {
-    return fail(
-      "semantic_conflict",
-      "$.retention.status",
-      "Retention deletion progress cannot move backward",
-    );
-  }
-  if (
-    DELETION_STATUS_ORDER[next.deletion.status] <
-    DELETION_STATUS_ORDER[previous.deletion.status]
-  ) {
-    return fail(
-      "semantic_conflict",
-      "$.deletion.status",
-      "Deletion progress cannot move backward",
-    );
-  }
-  if (
-    previous.deletion.requestedAt !== undefined &&
-    next.deletion.requestedAt !== previous.deletion.requestedAt
-  ) {
-    return fail(
-      "semantic_conflict",
-      "$.deletion.requestedAt",
-      "An established deletion request timestamp cannot change",
-    );
-  }
-
   const policyLengthened =
     RETENTION_ORDER[next.retention.effectivePolicy] >
     RETENTION_ORDER[previous.retention.effectivePolicy];
@@ -1263,6 +1362,32 @@ function validateRetentionLifecycleRevision(
     previousDeadline !== null &&
     nextDeadline !== null &&
     compareUtcTimestamps(nextDeadline, previousDeadline) > 0;
+  const restoration =
+    policyLengthened &&
+    previous.retention.status === "deletion_scheduled" &&
+    previous.deletion.status === "scheduled" &&
+    next.retention.effectivePolicy === "project" &&
+    next.retention.status === "active" &&
+    next.deletion.status === "not_scheduled" &&
+    nextDeadline === null;
+  const deletionPendingOrLater = [previous, next].some(
+    (manifest) =>
+      manifest.retention.status === "deletion_pending" ||
+      manifest.retention.status === "deleted" ||
+      manifest.deletion.status === "pending" ||
+      manifest.deletion.status === "partial_failure" ||
+      manifest.deletion.status === "completed",
+  );
+  if ((policyLengthened || deadlineExtended) && deletionPendingOrLater) {
+    return fail(
+      "semantic_conflict",
+      policyLengthened
+        ? "$.retention.effectivePolicy"
+        : "$.retention.contentExpiresAt",
+      "Retention cannot be restored after deletion has started",
+    );
+  }
+
   let freshConsentAt: string | undefined;
   if (policyLengthened || deadlineExtended) {
     const freshConsent = validateFreshRetentionConsent(
@@ -1277,27 +1402,55 @@ function validateRetentionLifecycleRevision(
     freshConsentAt = freshConsent.value;
   }
 
-  const effectivePolicy = next.retention.effectivePolicy;
-  if (nextDeadline !== null && effectivePolicy !== "project") {
-    const clockStart =
-      freshConsentAt ??
+  if (previousDeadline !== null && nextDeadline === null && !restoration) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "An established content expiration deadline cannot be cleared",
+    );
+  }
+  if (
+    RETENTION_STATUS_ORDER[next.retention.status] <
+      RETENTION_STATUS_ORDER[previous.retention.status] &&
+    !restoration
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "Retention deletion progress cannot move backward",
+    );
+  }
+  if (
+    DELETION_STATUS_ORDER[next.deletion.status] <
+      DELETION_STATUS_ORDER[previous.deletion.status] &&
+    !restoration
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.status",
+      "Deletion progress cannot move backward",
+    );
+  }
+  if (
+    previous.deletion.requestedAt !== undefined &&
+    next.deletion.requestedAt !== previous.deletion.requestedAt &&
+    !restoration
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "An established deletion request timestamp cannot change",
+    );
+  }
+
+  const deadline = validateFiniteRetentionDeadline(
+    next.retention,
+    freshConsentAt ??
       next.finalizedAt ??
       previous.finalizedAt ??
-      next.retention.updatedAt;
-    const deadline =
-      utcTimestampNanoseconds(nextDeadline);
-    const ceiling =
-      utcTimestampNanoseconds(clockStart) +
-      BigInt(RETENTION_DURATION_SECONDS[effectivePolicy]) *
-        BigInt(1_000_000_000);
-    if (deadline > ceiling) {
-      return fail(
-        "semantic_conflict",
-        "$.retention.contentExpiresAt",
-        `${effectivePolicy} content expiration exceeds its policy deadline ceiling`,
-      );
-    }
-  }
+      next.retention.updatedAt,
+  );
+  if (!deadline.ok) return deadline;
 
   if (previous.deletion.status === "completed") {
     for (const key of [
@@ -1653,6 +1806,13 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!deletionRequirements.ok) return deletionRequirements;
   const clock = validateRetentionClock(retention.value);
   if (!clock.ok) return clock;
+  const deadline = validateFiniteRetentionDeadline(
+    retention.value,
+    revision.value === 1 && finalizedAt !== undefined
+      ? finalizedAt
+      : retention.value.updatedAt,
+  );
+  if (!deadline.ok) return deadline;
   const shortening = validateFinalRetentionShortening(
     state.value,
     RETENTION_ORDER[retention.value.effectivePolicy] <
@@ -1706,8 +1866,20 @@ export function validateManifestRetentionConsent(
   manifest: RunManifestV1,
   contextConsent: RetentionPolicyV1 | undefined,
 ): ProtocolParseResult<RunManifestV1> {
+  return validateManifestRetentionCeiling(manifest, contextConsent, false);
+}
+
+function validateManifestRetentionCeiling(
+  manifest: RunManifestV1,
+  contextConsent: RetentionPolicyV1 | undefined,
+  allowContextlessConsent: boolean,
+): ProtocolParseResult<RunManifestV1> {
   if (!manifest.context) {
-    if (!retentionDoesNotExceed(manifest.retention.effectivePolicy, manifest.retention.policy)) {
+    const ceiling =
+      allowContextlessConsent && contextConsent !== undefined
+        ? contextConsent
+        : manifest.retention.policy;
+    if (!retentionDoesNotExceed(manifest.retention.effectivePolicy, ceiling)) {
       return fail(
         "semantic_conflict",
         "$.retention.effectivePolicy",
@@ -1880,7 +2052,25 @@ export function validateRunManifestRevision(
     if (!rootUnknowns.ok) return rootUnknowns;
   }
 
-  const consent = validateManifestRetentionConsent(next, options?.contextConsent);
+  const policyLengthened =
+    RETENTION_ORDER[next.retention.effectivePolicy] >
+    RETENTION_ORDER[previous.retention.effectivePolicy];
+  const inheritedContextlessConsent =
+    !next.context &&
+    RETENTION_ORDER[previous.retention.effectivePolicy] >
+      RETENTION_ORDER[previous.retention.policy] &&
+    options.contextConsent !== undefined;
+  const suppliedFreshContextlessConsent =
+    !next.context &&
+    policyLengthened &&
+    options.freshConsent === true &&
+    options.freshConsentAt !== undefined &&
+    options.contextConsent !== undefined;
+  const consent = validateManifestRetentionCeiling(
+    next,
+    options.contextConsent,
+    inheritedContextlessConsent || suppliedFreshContextlessConsent,
+  );
   if (!consent.ok) return consent;
 
   const lifecycle = validateRetentionLifecycleRevision(previous, next, options);
