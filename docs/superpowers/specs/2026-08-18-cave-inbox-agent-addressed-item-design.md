@@ -57,9 +57,14 @@ not guaranteed to have.
 - Not a new transport, socket, or daemon endpoint. Delivery is the existing
   `/api/inbox` HTTP surface on the same machine's Cave server.
 - Not a permissions/ACL system distinguishing which familiar may read which
-  addressed item. Every item in `inbox.json` is already readable by any
-  same-machine caller today (`GET /api/inbox` has no origin check); this
-  design does not change that trust boundary.
+  addressed item. Every item in `inbox.json` is already readable by **any
+  client that can reach the Cave server** — `GET /api/inbox` has no origin
+  check, and `isLocalOrigin` explicitly documents inbox *read* as one of the
+  routes the guard must not be applied to, because the iOS app legitimately
+  needs it over `tailscale serve` (where the Host is `<name>.ts.net`, not
+  loopback). Reads are therefore **not** same-machine-only; this design does
+  not change that trust boundary, and `recipientFamiliarId` is an addressing
+  field, never a confidentiality boundary.
 - No UI work. The existing bell/Inbox surfaces already render unknown-to-them
   kinds via `inbox-feed.ts`'s fallback path; a follow-up can add a dedicated
   render/label, but it is not required for the channel to function.
@@ -98,8 +103,16 @@ for one kind and "producer" for four others is the kind of ambiguity this
 design exists to remove. `recipientFamiliarId` is unambiguous and additive —
 it does not change behavior for any existing kind or consumer.
 
-`createItem`/`NewItemInput` gain the same optional field, validated only for
-this kind (see API surface below). No change to `updateItem`, `deleteItem`,
+`createItem`/`NewItemInput` gain the same optional field. The
+"`agent-message` carries a recipient" invariant is enforced **inside
+`createItem`**, which rejects an `agent-message` with a missing or blank
+`recipientFamiliarId`. `createItem` is an exported shared library entry point
+that other server-side callers reach directly without passing through
+`/api/inbox`, so a route-only check would leave the invariant unenforced on
+every non-route caller — the same reason task-shape enforcement lives in the
+`cave-board.ts` mutators rather than its route handlers. The route check
+remains as user-input validation, so a bad HTTP request still gets a 400
+rather than a thrown library error. No change to `updateItem`, `deleteItem`,
 `snoozeItem`, `markDone`, `dismissItem`, or `applyBulkAction` — an
 agent-addressed item is a normal `InboxItem` once created and rides the
 existing generic lifecycle.
@@ -143,16 +156,23 @@ under."
 existing `status` filter:
 
 ```ts
-const to = url.searchParams.get("to");
+const recipient = url.searchParams.get("recipientFamiliarId");
 const items = file.items.filter(
-  (i) => (!filter || i.status === filter) && (!to || i.recipientFamiliarId === to),
+  (i) =>
+    (!filter || i.status === filter) &&
+    (!recipient || i.recipientFamiliarId === recipient),
 );
 ```
 
-A familiar checks its own inbox with `GET /api/inbox?to=<familiarId>`, the
-same shape as `bd ready` — one read, filtered to what's addressed to it. No
-new endpoint; the existing route already has no origin check on `GET`, so no
-new trust boundary is introduced by adding this filter.
+A familiar checks its own inbox with
+`GET /api/inbox?recipientFamiliarId=<familiarId>`, the same shape as
+`bd ready` — one read, filtered to what's addressed to it. The parameter is
+named for the field it filters, matching both the body field and the explicit
+naming other routes use, rather than a bare `to`. No new endpoint; the
+existing route already has no origin check on `GET`, so no new trust boundary
+is introduced by adding this filter — and because reads are reachable from any
+client that can reach the server (see Non-goals), this filter is a convenience
+for the caller, not an access control.
 
 No changes needed to `/api/inbox/[id]`, `/api/inbox/bulk`, or `/api/inbox/prefs`
 — acknowledging, dismissing, or completing an addressed item is already the
@@ -186,10 +206,13 @@ cannot be.
 
 - Add unit coverage next to the existing `cave-inbox-create.test.ts` /
   `cave-inbox-bulk.test.ts`: creating an `"agent-message"` item without
-  `recipientFamiliarId` is rejected at the route layer; creating one with it
-  round-trips through `createItem`/`loadInbox`; `GET /api/inbox?to=<id>`
-  returns only items addressed to that id, unaffected by unrelated
-  `familiarId`-tagged items from existing kinds.
+  `recipientFamiliarId` is rejected by `createItem` itself (called directly,
+  bypassing the route, so the library-level invariant is what is under test)
+  **and** returns a 400 at the route layer; creating one with it round-trips
+  through `createItem`/`loadInbox`;
+  `GET /api/inbox?recipientFamiliarId=<id>` returns only items addressed to
+  that id, unaffected by unrelated `familiarId`-tagged items from existing
+  kinds.
 - Extend `inbox-feed.test.ts`'s kind-label and ordering assertions to cover
   `"agent-message"` so it does not silently fall through as an unlabeled kind
   in the bell UI.
@@ -200,7 +223,8 @@ cannot be.
 
 - Whether `inbox-feed.ts` should render `"agent-message"` distinctly from
   `"agent"` in the bell UI, and whether the recipient's *own* session (a
-  `coven run` process) should poll `GET /api/inbox?to=<id>` on startup the way
+  `coven run` process) should poll
+  `GET /api/inbox?recipientFamiliarId=<id>` on startup the way
   it already polls `bd ready` — this design makes the poll possible but does
   not wire it into any familiar's runtime harness.
 - Whether `MUTABLE_KINDS` (`inbox-prefs-shape.ts`) should include
