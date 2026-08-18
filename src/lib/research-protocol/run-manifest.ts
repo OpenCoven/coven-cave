@@ -1134,6 +1134,17 @@ function validateRetentionDeadlineRevision(
       "content expiration cannot be cleared without fresh-consent effective-policy lengthening and coherent deletion cancellation",
     );
   }
+  if (
+    previousDeadline !== null
+    && compareUtcTimestamps(nextDeadline, previousDeadline) > 0
+    && !freshConsentAuthorized
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "moving content expiration later requires durable fresh consent",
+    );
+  }
 
   const shortensEffectivePolicy =
     RETENTION_ORDER[next.retention.effectivePolicy]
@@ -1161,6 +1172,41 @@ function validateRetentionDeadlineRevision(
         "$.retention.contentExpiresAt",
         `content expiration exceeds the ${next.retention.effectivePolicy} retention duration from its shortening transition`,
       );
+    }
+    if (
+      previous.state === "assembling"
+      && next.state === "final"
+      && previous.retention.effectivePolicy !== "project"
+      && isUtcTimestamp(next.finalizedAt)
+    ) {
+      const initialDuration =
+        RETENTION_DURATION_HOURS[previous.retention.effectivePolicy];
+      if (
+        !isUtcTimestampAtMostHoursAfter(
+          next.retention.shortenedAt!,
+          next.finalizedAt,
+          initialDuration,
+        )
+      ) {
+        return fail(
+          "semantic_conflict",
+          "$.retention.shortenedAt",
+          "first-final shortening transition exceeds the previous finite policy ceiling",
+        );
+      }
+      if (
+        !isUtcTimestampAtMostHoursAfter(
+          nextDeadline,
+          next.finalizedAt,
+          initialDuration,
+        )
+      ) {
+        return fail(
+          "semantic_conflict",
+          "$.retention.contentExpiresAt",
+          "first-final shortening deadline exceeds the previous finite policy ceiling",
+        );
+      }
     }
     if (
       previous.state === "final"
@@ -1194,17 +1240,6 @@ function validateRetentionDeadlineRevision(
     );
   }
 
-  if (
-    previousDeadline !== null
-    && compareUtcTimestamps(nextDeadline, previousDeadline) > 0
-    && !freshConsentAuthorized
-  ) {
-    return fail(
-      "semantic_conflict",
-      "$.retention.contentExpiresAt",
-      "moving content expiration later requires durable fresh consent",
-    );
-  }
   return pass(undefined);
 }
 
@@ -1250,13 +1285,19 @@ function validateFreshConsentRevision(
     );
   }
   if (
-    compareUtcTimestamps(options.freshConsentAt, previous.finalizedAt) < 0
-    || compareUtcTimestamps(options.freshConsentAt, previous.retention.updatedAt) < 0
+    compareUtcTimestamps(
+      options.freshConsentAt,
+      retentionAuthorityAnchor(previous),
+    ) <= 0
+    || compareUtcTimestamps(
+      options.freshConsentAt,
+      previous.retention.updatedAt,
+    ) <= 0
   ) {
     return fail(
       "semantic_conflict",
       "$.retention.freshConsentAt",
-      "freshConsentAt cannot precede finalization or the previous retention update",
+      "freshConsentAt must be strictly later than the current retention authority and previous retention update",
     );
   }
   return pass(undefined);

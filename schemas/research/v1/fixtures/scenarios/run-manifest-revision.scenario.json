@@ -82,6 +82,81 @@
       },
       "digestTargets": [""]
     },
+    "assembling-run-only-far-future": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2099-01-01T00:00:00.000Z",
+          "shortenedAt": "2098-12-31T00:00:00.000Z",
+          "updatedAt": "2098-12-31T00:00:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2098-12-31T00:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "assembling-run-only-earlier": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-17T20:05:00.000Z",
+          "shortenedAt": "2026-08-16T20:05:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "assembling-run-only-boundary": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-23T20:04:00.000Z",
+          "shortenedAt": "2026-08-22T20:04:00.000Z",
+          "updatedAt": "2026-08-22T20:04:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-22T20:04:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "assembling-run-only-beyond-initial-ceiling": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-23T20:04:00.000000001Z",
+          "shortenedAt": "2026-08-22T20:04:00.000000001Z",
+          "updatedAt": "2026-08-22T20:04:00.000000001Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-22T20:04:00.000000001Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "assembling-scheduled-previous": {
       "fixture": "valid/run-manifest-assembling.json",
       "mergePatch": {
@@ -652,6 +727,121 @@
       },
       "digestTargets": [""]
     },
+    "project-scheduled-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-20T20:04:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "project-deadline-renewal-replay": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "88c8cfe78c84f14f5ab4a4bcb4188f7265b3aeb28497c4125c472cd0b19b8a90",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-21T20:04:00.000Z",
+          "freshConsentAt": "2026-08-16T20:05:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "project-deadline-renewal-newer": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "88c8cfe78c84f14f5ab4a4bcb4188f7265b3aeb28497c4125c472cd0b19b8a90",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-21T20:04:00.000Z",
+          "freshConsentAt": "2026-08-16T20:05:00.000000001Z",
+          "updatedAt": "2026-08-16T20:05:00.000000001Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "project-to-seven-deadline-earlier": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "88c8cfe78c84f14f5ab4a4bcb4188f7265b3aeb28497c4125c472cd0b19b8a90",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-19T20:04:00.000Z",
+          "shortenedAt": "2026-08-17T20:04:00.000Z",
+          "updatedAt": "2026-08-17T20:04:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-17T20:04:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "project-to-seven-deadline-equal": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "88c8cfe78c84f14f5ab4a4bcb4188f7265b3aeb28497c4125c472cd0b19b8a90",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-20T20:04:00.000Z",
+          "shortenedAt": "2026-08-17T20:04:00.000Z",
+          "updatedAt": "2026-08-17T20:04:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-17T20:04:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "project-to-seven-deadline-later": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "88c8cfe78c84f14f5ab4a4bcb4188f7265b3aeb28497c4125c472cd0b19b8a90",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-21T20:04:00.000Z",
+          "shortenedAt": "2026-08-17T20:04:00.000Z",
+          "updatedAt": "2026-08-17T20:04:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-17T20:04:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
     "created-at-rollback": {
       "fixture": "valid/run-manifest-retention-update.json",
       "mergePatch": {
@@ -699,6 +889,72 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.assembling-shortening-rejects-far-future-clock",
+      "description": "A first final run-only transition cannot derive 2099 retention authority from a 2098 shortening clock.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "assembling-run-only-far-future"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.shortenedAt"
+      }
+    },
+    {
+      "id": "manifest.assembling-shortening-accepts-earlier-deadline",
+      "description": "A first final run-only transition may use a deadline earlier than the prior seven-day ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "assembling-run-only-earlier"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.assembling-shortening-accepts-shared-boundary",
+      "description": "A first final run-only transition may end exactly at both the run-only and initial seven-day ceilings.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "assembling-run-only-boundary"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.assembling-shortening-rejects-deadline-beyond-initial-ceiling",
+      "description": "A first final run-only deadline cannot exceed the initial seven-day ceiling by one nanosecond.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "assembling-run-only-beyond-initial-ceiling"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
       }
     },
     {
@@ -1054,6 +1310,43 @@
       }
     },
     {
+      "id": "manifest.project-deadline-renewal-rejects-consent-replay",
+      "description": "A scheduled project deadline renewal cannot replay the current authority timestamp as fresh consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-scheduled-previous",
+        "next": "project-deadline-renewal-replay"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:05:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.freshConsentAt"
+      }
+    },
+    {
+      "id": "manifest.project-deadline-renewal-accepts-newer-consent",
+      "description": "A scheduled project deadline renewal accepts an externally bound consent timestamp one nanosecond newer.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-scheduled-previous",
+        "next": "project-deadline-renewal-newer"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:05:00.000000001Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
       "id": "manifest.deadline-renewal-without-anchor-advance",
       "description": "A freshConsent boolean without an external freshConsentAt cannot renew a deadline.",
       "validator": "run-manifest-revision",
@@ -1253,6 +1546,54 @@
         "ok": false,
         "stage": "parse",
         "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.project-shortening-preserves-earlier-deadline",
+      "description": "A project retention shortening may move an existing scheduled deadline earlier.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-scheduled-previous",
+        "next": "project-to-seven-deadline-earlier"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.project-shortening-preserves-equal-deadline",
+      "description": "A project retention shortening may preserve an existing scheduled deadline exactly.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-scheduled-previous",
+        "next": "project-to-seven-deadline-equal"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.project-shortening-rejects-later-deadline",
+      "description": "A no-consent project retention shortening cannot move an existing scheduled deadline later.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "project-scheduled-previous",
+        "next": "project-to-seven-deadline-later"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.retention.contentExpiresAt"
       }

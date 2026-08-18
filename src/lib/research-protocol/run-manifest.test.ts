@@ -2134,6 +2134,103 @@ test("assembling-to-final retention shortening must schedule deletion", () => {
   );
 });
 
+test("assembling-to-final shortening rejects a transition clock beyond the initial finite ceiling", () => {
+  const previous = expectOk(parseRunManifestV1(assemblingManifestJson));
+  const shortenedAt = "2098-12-31T00:00:00.000Z";
+  const next = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...finalLocalManifestJson,
+        revision: previous.revision + 1,
+        previousDigest: previous.digest,
+        retention: {
+          ...finalLocalManifestJson.retention,
+          effectivePolicy: "run-only" as const,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt: "2099-01-01T00:00:00.000Z",
+          shortenedAt,
+          updatedAt: shortenedAt,
+        },
+        deletion: {
+          ...finalLocalManifestJson.deletion,
+          status: "scheduled" as const,
+          requestedAt: shortenedAt,
+        },
+      }),
+    ),
+  );
+
+  expectError(
+    validateRunManifestRevision(previous, next, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.shortenedAt",
+    "semantic_conflict",
+  );
+});
+
+test("assembling-to-final shortening caps the deadline at both finite policy ceilings", () => {
+  const previous = expectOk(parseRunManifestV1(assemblingManifestJson));
+  const shortened = (
+    shortenedAt: string,
+    contentExpiresAt: string,
+  ): RunManifestV1 =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...finalLocalManifestJson,
+          revision: previous.revision + 1,
+          previousDigest: previous.digest,
+          retention: {
+            ...finalLocalManifestJson.retention,
+            effectivePolicy: "run-only" as const,
+            status: "deletion_scheduled" as const,
+            contentExpiresAt,
+            shortenedAt,
+            updatedAt: shortenedAt,
+          },
+          deletion: {
+            ...finalLocalManifestJson.deletion,
+            status: "scheduled" as const,
+            requestedAt: shortenedAt,
+          },
+        }),
+      ),
+    );
+
+  for (const candidate of [
+    shortened(
+      "2026-08-16T20:05:00.000Z",
+      "2026-08-17T20:05:00.000Z",
+    ),
+    shortened(
+      "2026-08-22T20:04:00.000Z",
+      "2026-08-23T20:04:00.000Z",
+    ),
+  ]) {
+    assert.deepEqual(
+      expectOk(
+        validateRunManifestRevision(previous, candidate, {
+          contextConsent: "7-days",
+        }),
+      ),
+      candidate,
+    );
+  }
+
+  const beyondInitialCeiling = shortened(
+    "2026-08-22T20:04:00.000000001Z",
+    "2026-08-23T20:04:00.000000001Z",
+  );
+  expectError(
+    validateRunManifestRevision(previous, beyondInitialCeiling, {
+      contextConsent: "7-days",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
 test("final retention shortening starts a coherent deletion clock", () => {
   const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const activeShortening = recalculate({
@@ -2492,6 +2589,236 @@ test("revision renewal requires matching external and durable fresh-consent time
   );
 });
 
+test("fresh consent must strictly advance finalization and the prior retention update", () => {
+  const final = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const lengthened = (
+    previous: RunManifestV1,
+    freshConsentAt: string,
+  ): RunManifestV1 =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...previous,
+          revision: previous.revision + 1,
+          previousDigest: previous.digest,
+          retention: {
+            ...previous.retention,
+            effectivePolicy: "project" as const,
+            freshConsentAt,
+            updatedAt: freshConsentAt,
+          },
+        }),
+      ),
+    );
+  const validateLengthening = (
+    previous: RunManifestV1,
+    next: RunManifestV1,
+    freshConsentAt: string,
+  ) =>
+    validateRunManifestRevision(previous, next, {
+      freshConsent: true,
+      freshConsentAt,
+      contextConsent: "project",
+    });
+
+  const replayedUpdate = lengthened(final, final.retention.updatedAt);
+  expectError(
+    validateLengthening(final, replayedUpdate, final.retention.updatedAt),
+    "$.retention.freshConsentAt",
+    "semantic_conflict",
+  );
+
+  const afterUpdate = "2026-08-16T20:05:00.000000001Z";
+  const freshAfterUpdate = lengthened(final, afterUpdate);
+  assert.deepEqual(
+    expectOk(validateLengthening(final, freshAfterUpdate, afterUpdate)),
+    freshAfterUpdate,
+  );
+
+  const beforeFinalization = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...final,
+        retention: {
+          ...final.retention,
+          updatedAt: "2026-08-16T20:03:00.000Z",
+        },
+      }),
+    ),
+  );
+  const finalizedAt = "2026-08-16T20:04:00.000Z";
+  const replayedFinalization = lengthened(beforeFinalization, finalizedAt);
+  expectError(
+    validateLengthening(beforeFinalization, replayedFinalization, finalizedAt),
+    "$.retention.freshConsentAt",
+    "semantic_conflict",
+  );
+
+  const afterFinalization = "2026-08-16T20:04:00.000000001Z";
+  const freshAfterFinalization = lengthened(beforeFinalization, afterFinalization);
+  assert.deepEqual(
+    expectOk(
+      validateLengthening(
+        beforeFinalization,
+        freshAfterFinalization,
+        afterFinalization,
+      ),
+    ),
+    freshAfterFinalization,
+  );
+});
+
+test("project deadline renewal cannot replay its current fresh-consent authority", () => {
+  const initial = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const firstConsentAt = "2026-08-16T20:06:00.000Z";
+  const project = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...initial,
+        revision: initial.revision + 1,
+        previousDigest: initial.digest,
+        retention: {
+          ...initial.retention,
+          effectivePolicy: "project" as const,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt: "2026-09-01T00:00:00.000Z",
+          freshConsentAt: firstConsentAt,
+          updatedAt: firstConsentAt,
+        },
+        deletion: {
+          ...initial.deletion,
+          status: "scheduled" as const,
+          requestedAt: firstConsentAt,
+        },
+      }),
+    ),
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevision(initial, project, {
+        freshConsent: true,
+        freshConsentAt: firstConsentAt,
+        contextConsent: "project",
+      }),
+    ),
+    project,
+  );
+
+  const renewed = (freshConsentAt: string): RunManifestV1 =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...project,
+          revision: project.revision + 1,
+          previousDigest: project.digest,
+          retention: {
+            ...project.retention,
+            contentExpiresAt: "2026-09-02T00:00:00.000Z",
+            freshConsentAt,
+            updatedAt: freshConsentAt,
+          },
+        }),
+      ),
+    );
+  const replayed = renewed(firstConsentAt);
+  expectError(
+    validateRunManifestRevision(project, replayed, {
+      freshConsent: true,
+      freshConsentAt: firstConsentAt,
+      contextConsent: "project",
+    }),
+    "$.retention.freshConsentAt",
+    "semantic_conflict",
+  );
+
+  const nextConsentAt = "2026-08-16T20:06:00.000000001Z";
+  const fresh = renewed(nextConsentAt);
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevision(project, fresh, {
+        freshConsent: true,
+        freshConsentAt: nextConsentAt,
+        contextConsent: "project",
+      }),
+    ),
+    fresh,
+  );
+});
+
+test("policy lengthening cannot replay the current shortening authority", () => {
+  const initial = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const shortenedAt = "2026-08-16T20:06:00.000Z";
+  const shortened = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...initial,
+        revision: initial.revision + 1,
+        previousDigest: initial.digest,
+        retention: {
+          ...initial.retention,
+          effectivePolicy: "run-only" as const,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt: "2026-08-17T20:06:00.000Z",
+          shortenedAt,
+          updatedAt: shortenedAt,
+        },
+        deletion: {
+          ...initial.deletion,
+          status: "scheduled" as const,
+          requestedAt: shortenedAt,
+        },
+      }),
+    ),
+  );
+  const { shortenedAt: _shortenedAt, ...priorRetention } = shortened.retention;
+  const lengthened = (freshConsentAt: string): RunManifestV1 =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...shortened,
+          revision: shortened.revision + 1,
+          previousDigest: shortened.digest,
+          retention: {
+            ...priorRetention,
+            effectivePolicy: "7-days" as const,
+            status: "active" as const,
+            contentExpiresAt: null,
+            freshConsentAt,
+            updatedAt: freshConsentAt,
+          },
+          deletion: {
+            status: "not_scheduled" as const,
+            futureExtension: { preserve: true },
+          },
+        }),
+      ),
+    );
+
+  const replayed = lengthened(shortenedAt);
+  expectError(
+    validateRunManifestRevision(shortened, replayed, {
+      freshConsent: true,
+      freshConsentAt: shortenedAt,
+      contextConsent: "7-days",
+    }),
+    "$.retention.freshConsentAt",
+    "semantic_conflict",
+  );
+
+  const nextConsentAt = "2026-08-16T20:06:00.000000001Z";
+  const fresh = lengthened(nextConsentAt);
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevision(shortened, fresh, {
+        freshConsent: true,
+        freshConsentAt: nextConsentAt,
+        contextConsent: "7-days",
+      }),
+    ),
+    fresh,
+  );
+});
+
 test("revision rejects a mutable future update as finite retention authority", () => {
   const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const forgedUpdateAt = "2098-12-25T00:00:00.000Z";
@@ -2576,6 +2903,141 @@ test("finite shortening cannot exceed its transition duration or prior authority
     }),
     "$.retention.contentExpiresAt",
     "semantic_conflict",
+  );
+});
+
+test("a scheduled project deadline always caps no-consent shortening", () => {
+  const previous = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...finalLocalManifestJson,
+        retention: {
+          ...finalLocalManifestJson.retention,
+          policy: "project" as const,
+          effectivePolicy: "project" as const,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt: "2026-08-20T20:04:00.000Z",
+        },
+        deletion: {
+          ...finalLocalManifestJson.deletion,
+          status: "scheduled" as const,
+          requestedAt: "2026-08-16T20:05:00.000Z",
+        },
+      }),
+    ),
+  );
+  const transitionAt = "2026-08-17T20:04:00.000Z";
+  const shortened = (contentExpiresAt: string): RunManifestV1 =>
+    expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...previous,
+          revision: previous.revision + 1,
+          previousDigest: previous.digest,
+          retention: {
+            ...previous.retention,
+            effectivePolicy: "7-days" as const,
+            contentExpiresAt,
+            shortenedAt: transitionAt,
+            updatedAt: transitionAt,
+          },
+          deletion: {
+            ...previous.deletion,
+            requestedAt: transitionAt,
+          },
+        }),
+      ),
+    );
+
+  for (const deadline of [
+    "2026-08-19T20:04:00.000Z",
+    previous.retention.contentExpiresAt as string,
+  ]) {
+    const candidate = shortened(deadline);
+    assert.deepEqual(
+      expectOk(
+        validateRunManifestRevision(previous, candidate, {
+          contextConsent: "project",
+        }),
+      ),
+      candidate,
+    );
+  }
+
+  const later = shortened("2026-08-21T20:04:00.000Z");
+  expectError(
+    validateRunManifestRevision(previous, later, {
+      contextConsent: "project",
+    }),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
+test("post-final shortening may rely on a consent-renewed concrete deadline", () => {
+  const initial = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const consentAt = "2026-09-01T00:00:00.000Z";
+  const renewed = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...initial,
+        revision: initial.revision + 1,
+        previousDigest: initial.digest,
+        retention: {
+          ...initial.retention,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt: "2026-09-08T00:00:00.000Z",
+          freshConsentAt: consentAt,
+          updatedAt: consentAt,
+        },
+        deletion: {
+          ...initial.deletion,
+          status: "scheduled" as const,
+          requestedAt: consentAt,
+        },
+      }),
+    ),
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevision(initial, renewed, {
+        freshConsent: true,
+        freshConsentAt: consentAt,
+        contextConsent: "7-days",
+      }),
+    ),
+    renewed,
+  );
+
+  const { freshConsentAt: _freshConsentAt, ...renewedRetention } = renewed.retention;
+  const shortenedAt = "2026-09-07T00:00:00.000Z";
+  const shortened = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...renewed,
+        revision: renewed.revision + 1,
+        previousDigest: renewed.digest,
+        retention: {
+          ...renewedRetention,
+          effectivePolicy: "run-only" as const,
+          contentExpiresAt: renewed.retention.contentExpiresAt,
+          shortenedAt,
+          updatedAt: shortenedAt,
+        },
+        deletion: {
+          ...renewed.deletion,
+          requestedAt: shortenedAt,
+        },
+      }),
+    ),
+  );
+  assert.deepEqual(
+    expectOk(
+      validateRunManifestRevision(renewed, shortened, {
+        contextConsent: "7-days",
+      }),
+    ),
+    shortened,
   );
 });
 
