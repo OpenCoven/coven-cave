@@ -1312,12 +1312,14 @@ function validateFreshRetentionConsent(
     options.freshConsent !== true ||
     options.freshConsentAt === undefined ||
     !isUtcTimestamp(options.freshConsentAt) ||
-    options.contextConsent === undefined
+    (next.context !== undefined && options.contextConsent === undefined)
   ) {
     return fail(
       "semantic_conflict",
       path,
-      "Retention extension requires explicit fresh Context Pack consent",
+      next.context === undefined
+        ? "Retention lengthening requires explicit fresh consent"
+        : "Retention lengthening requires explicit fresh Context Pack consent",
     );
   }
   if (
@@ -1362,14 +1364,19 @@ function validateRetentionLifecycleRevision(
     previousDeadline !== null &&
     nextDeadline !== null &&
     compareUtcTimestamps(nextDeadline, previousDeadline) > 0;
+  const deadlineRemoved = previousDeadline !== null && nextDeadline === null;
   const restoration =
-    policyLengthened &&
+    deadlineRemoved &&
     previous.retention.status === "deletion_scheduled" &&
     previous.deletion.status === "scheduled" &&
     next.retention.effectivePolicy === "project" &&
     next.retention.status === "active" &&
-    next.deletion.status === "not_scheduled" &&
-    nextDeadline === null;
+    next.deletion.status === "not_scheduled";
+  const lengtheningPath = policyLengthened
+    ? "$.retention.effectivePolicy"
+    : "$.retention.contentExpiresAt";
+  const retentionLengthened =
+    policyLengthened || deadlineExtended || deadlineRemoved;
   const deletionPendingOrLater = [previous, next].some(
     (manifest) =>
       manifest.retention.status === "deletion_pending" ||
@@ -1378,25 +1385,21 @@ function validateRetentionLifecycleRevision(
       manifest.deletion.status === "partial_failure" ||
       manifest.deletion.status === "completed",
   );
-  if ((policyLengthened || deadlineExtended) && deletionPendingOrLater) {
+  if (retentionLengthened && deletionPendingOrLater) {
     return fail(
       "semantic_conflict",
-      policyLengthened
-        ? "$.retention.effectivePolicy"
-        : "$.retention.contentExpiresAt",
+      lengtheningPath,
       "Retention cannot be restored after deletion has started",
     );
   }
 
   let freshConsentAt: string | undefined;
-  if (policyLengthened || deadlineExtended) {
+  if (retentionLengthened) {
     const freshConsent = validateFreshRetentionConsent(
       previous,
       next,
       options,
-      policyLengthened
-        ? "$.retention.effectivePolicy"
-        : "$.retention.contentExpiresAt",
+      lengtheningPath,
     );
     if (!freshConsent.ok) return freshConsent;
     freshConsentAt = freshConsent.value;
@@ -1448,7 +1451,7 @@ function validateRetentionLifecycleRevision(
     freshConsentAt ??
       next.finalizedAt ??
       previous.finalizedAt ??
-      next.retention.updatedAt,
+      next.createdAt,
   );
   if (!deadline.ok) return deadline;
 
@@ -1576,7 +1579,10 @@ export function aggregateManifestUsage(
   };
 }
 
-export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManifestV1> {
+function parseRunManifestValueV1(
+  value: unknown,
+  validateStandaloneDeadline: boolean,
+): ProtocolParseResult<RunManifestV1> {
   const wireValue = copyProtocolJsonValue(value);
   if (!wireValue.ok) return wireValue;
 
@@ -1806,13 +1812,13 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!deletionRequirements.ok) return deletionRequirements;
   const clock = validateRetentionClock(retention.value);
   if (!clock.ok) return clock;
-  const deadline = validateFiniteRetentionDeadline(
-    retention.value,
-    revision.value === 1 && finalizedAt !== undefined
-      ? finalizedAt
-      : retention.value.updatedAt,
-  );
-  if (!deadline.ok) return deadline;
+  if (validateStandaloneDeadline) {
+    const deadline = validateFiniteRetentionDeadline(
+      retention.value,
+      finalizedAt ?? createdAt.value,
+    );
+    if (!deadline.ok) return deadline;
+  }
   const shortening = validateFinalRetentionShortening(
     state.value,
     RETENTION_ORDER[retention.value.effectivePolicy] <
@@ -1862,24 +1868,46 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   return pass(parsedManifest as RunManifestV1);
 }
 
+export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManifestV1> {
+  return parseRunManifestValueV1(value, true);
+}
+
+/**
+ * Parses a manifest that will immediately be checked against its preceding
+ * revision. The candidate's finite deadline is deferred to the chain validator,
+ * where verified fresh consent can supply a later clock.
+ */
+export function parseRunManifestRevisionCandidateV1(
+  value: unknown,
+): ProtocolParseResult<RunManifestV1> {
+  return parseRunManifestValueV1(value, false);
+}
+
 export function validateManifestRetentionConsent(
   manifest: RunManifestV1,
   contextConsent: RetentionPolicyV1 | undefined,
 ): ProtocolParseResult<RunManifestV1> {
-  return validateManifestRetentionCeiling(manifest, contextConsent, false);
+  const consent = validateManifestRetentionCeiling(manifest, contextConsent);
+  if (!consent.ok) return consent;
+  const deadline = validateFiniteRetentionDeadline(
+    manifest.retention,
+    manifest.finalizedAt ?? manifest.createdAt,
+  );
+  if (!deadline.ok) return deadline;
+  return pass(manifest);
 }
 
 function validateManifestRetentionCeiling(
   manifest: RunManifestV1,
   contextConsent: RetentionPolicyV1 | undefined,
-  allowContextlessConsent: boolean,
 ): ProtocolParseResult<RunManifestV1> {
   if (!manifest.context) {
-    const ceiling =
-      allowContextlessConsent && contextConsent !== undefined
-        ? contextConsent
-        : manifest.retention.policy;
-    if (!retentionDoesNotExceed(manifest.retention.effectivePolicy, ceiling)) {
+    if (
+      !retentionDoesNotExceed(
+        manifest.retention.effectivePolicy,
+        manifest.retention.policy,
+      )
+    ) {
       return fail(
         "semantic_conflict",
         "$.retention.effectivePolicy",
@@ -2052,24 +2080,9 @@ export function validateRunManifestRevision(
     if (!rootUnknowns.ok) return rootUnknowns;
   }
 
-  const policyLengthened =
-    RETENTION_ORDER[next.retention.effectivePolicy] >
-    RETENTION_ORDER[previous.retention.effectivePolicy];
-  const inheritedContextlessConsent =
-    !next.context &&
-    RETENTION_ORDER[previous.retention.effectivePolicy] >
-      RETENTION_ORDER[previous.retention.policy] &&
-    options.contextConsent !== undefined;
-  const suppliedFreshContextlessConsent =
-    !next.context &&
-    policyLengthened &&
-    options.freshConsent === true &&
-    options.freshConsentAt !== undefined &&
-    options.contextConsent !== undefined;
   const consent = validateManifestRetentionCeiling(
     next,
     options.contextConsent,
-    inheritedContextlessConsent || suppliedFreshContextlessConsent,
   );
   if (!consent.ok) return consent;
 
