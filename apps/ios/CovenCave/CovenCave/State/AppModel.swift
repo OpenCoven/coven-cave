@@ -1797,6 +1797,11 @@ final class AppModel {
         }
     }
 
+    func applyFamiliarAvatarMutation(id: String, avatarUrl: String?) {
+        guard let index = familiars.firstIndex(where: { $0.id == id }) else { return }
+        familiars[index].avatarUrl = avatarUrl
+    }
+
     // MARK: - Unread tracking
 
     /// True when a familiar has activity newer than the last time its chats were

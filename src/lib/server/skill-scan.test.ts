@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { parseFrontmatter, resolveRuntimeSkillRoots } from "./skill-scan.ts";
+import {
+  parseFrontmatter,
+  resolveRuntimeResourceRoots,
+  resolveRuntimeSkillRoots,
+} from "./skill-scan.ts";
 
 // Regression: skill `description:` is almost always a YAML block scalar
 // (`description: |`). The old single-line parser captured just the "|"
@@ -99,6 +103,24 @@ description: |
       }),
       await Promise.all([covenSkillsRoot, codexSkills, pluginCache].map((root) => realpath(root))),
       "a skill root already covered by a project grant should not receive a contradictory read-only grant",
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+}
+
+// Codex image generation writes persistent outputs beside its skill roots.
+// That narrow directory must be advertised as a readable runtime resource so
+// a familiar can copy an approved result into its writable workspace.
+{
+  const home = await mkdtemp(path.join(tmpdir(), "cave-runtime-image-root-"));
+  const generatedImages = path.join(home, ".codex", "generated_images");
+  try {
+    await mkdir(generatedImages, { recursive: true });
+    assert.deepEqual(
+      await resolveRuntimeResourceRoots({ homeDir: home }),
+      [await realpath(generatedImages)],
+      "the existing Codex generated-image root should be a read-only runtime resource",
     );
   } finally {
     await rm(home, { recursive: true, force: true });

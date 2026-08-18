@@ -61,7 +61,10 @@ const unsupported = await resolveInstalledClaudeCompatibility({
   now: () => Date.parse("2026-07-24T00:00:00.000Z"),
 });
 assert.equal(unsupported.kind, "fallback");
-assert.match(claudeCompatibilityDiagnostic(unsupported) ?? "", /trusted tool-activity profile/i);
+assert.match(
+  claudeCompatibilityDiagnostic(unsupported) ?? "",
+  /no trusted stream-json tool profile[\s\S]*?local hook evidence will still be shown/i,
+);
 
 const failed = await resolveInstalledClaudeCompatibility({
   version: async () => null,
@@ -81,7 +84,10 @@ assert.deepEqual(
   { kind: "fallback", reason: "probe-failed" },
   "a failed capability probe must not be reported as a missing advertised capability",
 );
-assert.match(claudeCompatibilityDiagnostic(helpProbeFailed) ?? "", /could not be verified; tool bubbles are disabled/i);
+assert.match(
+  claudeCompatibilityDiagnostic(helpProbeFailed) ?? "",
+  /could not be verified; stream-json tool bubbles are disabled[\s\S]*?local hook evidence will still be shown/i,
+);
 
 const removedStreamJson = await resolveInstalledClaudeCompatibility({
   version: async () => "2.1.179 (Claude Code)",

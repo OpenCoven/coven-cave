@@ -445,19 +445,55 @@ export function covenBinaryFromEnvironment(
   return null;
 }
 
+/**
+ * Explain a `COVEN_BIN` value that `verifiedAbsoluteBinary` refused, so the
+ * operator learns which part of it to fix. Only reached on the failure path.
+ */
+export function covenOverrideRejection(
+  candidate: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const pathApi = platform === "win32" ? path.win32 : path;
+  if (!pathApi.isAbsolute(candidate) && !path.isAbsolute(candidate)) {
+    return "it is not an absolute path";
+  }
+  if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) {
+    return "it refers to a remote UNC share";
+  }
+  try {
+    const canonical = realpathSync(/* turbopackIgnore: true */ candidate);
+    if (platform === "win32" && isWindowsRemoteExecutablePath(canonical)) {
+      return "it resolves onto a remote UNC share";
+    }
+    return statSync(/* turbopackIgnore: true */ canonical).isFile()
+      ? "it could not be verified"
+      : "it is not a file";
+  } catch {
+    return "it does not exist";
+  }
+}
+
 /** Resolve an existing absolute Coven launcher. Windows never returns a bare name. */
 export function covenBin(): string {
   if (cachedBin) return cachedBin;
 
   // Explicit override always wins. Useful for local dev when a checkout-built
   // ~/.cargo/bin/coven is newer than the npm-bundled one in ~/.nvm/.../bin.
-  const envBin = process.env.COVEN_BIN;
+  const envBin = process.env.COVEN_BIN?.trim();
   if (envBin) {
     const verified = verifiedAbsoluteBinary(envBin);
     if (verified) {
       cachedBin = verified;
       return cachedBin;
     }
+    // An override that fails verification used to vanish: resolution fell
+    // through to the managed copy with no error anywhere, so the only way to
+    // find out was to read the code. The warning stays on this cached,
+    // process-level entry point rather than inside `covenBinaryFromEnvironment`,
+    // which callers invoke per request with a supplied environment.
+    console.warn(
+      `[coven-bin] ignoring COVEN_BIN=${envBin} - ${covenOverrideRejection(envBin)}; falling back to discovery`,
+    );
   }
 
   const discovery = discoveryOptions();

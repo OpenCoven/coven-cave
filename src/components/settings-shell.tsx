@@ -226,7 +226,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div
-      className={`settings-shell${embedded ? " settings-shell--embedded h-full" : " h-[100dvh]"} w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
+      className={`settings-shell${embedded ? " settings-shell--embedded h-full" : " h-[100dvh]"} w-full flex flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
     >
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the

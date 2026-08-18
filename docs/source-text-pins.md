@@ -67,6 +67,69 @@ A useful test when writing one: *if someone renamed a local, reformatted the
 file, or added an argument, should this fail?* If no, and your pattern would
 fail anyway, tighten the pattern rather than the code.
 
+## Count required adoption sites deliberately
+
+`assert.match(source, /<RequiredControl/)` proves that **one** matching call
+site exists. It does not prove that every required call site adopted the
+control. This matters when two rows render the same action: a bare match stays
+green after only one row is repaired.
+
+If the product contract names a fixed set of adoption sites, inspect each site
+or count the relevant syntax nodes and assert the contract's exact count. Do
+not count raw substrings across the whole file: imports, comments, fixtures, and
+unrelated components can all satisfy that count accidentally. Also do not pin a
+global count merely because that is how many sites happen to exist today; the
+number must itself be part of the contract.
+
+Mutation-check every required site independently. Removing the control from
+either of two required rows must make the pin fail.
+
+## Prefer a parser when the contract is syntactic
+
+Regular expressions are appropriate for small textual invariants such as a
+required import, an ordering between stable anchors, or the absence of a native
+element. They are a poor substitute for a parser when the claim is about code
+structure: which JSX element owns a prop, how many call sites exist, or whether
+both a paired and self-closing component form are covered.
+
+Use the TypeScript compiler API when it already understands the structure you
+need to inspect:
+
+```ts
+const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const matches: ts.JsxOpeningLikeElement[] = [];
+
+function visit(node: ts.Node): void {
+  if (
+    (ts.isJsxElement(node) && node.openingElement.tagName.getText(sourceFile) === "RequiredControl") ||
+    (ts.isJsxSelfClosingElement(node) && node.tagName.getText(sourceFile) === "RequiredControl")
+  ) {
+    matches.push(ts.isJsxElement(node) ? node.openingElement : node);
+  }
+  ts.forEachChild(node, visit);
+}
+visit(sourceFile);
+```
+
+The parser removes formatting, brace, and nesting ambiguity. Assertions should
+still describe the product contract, not compiler-tree trivia.
+
+## Component behaviour and call-site adoption are separate claims
+
+A rendered component test can prove that `RequiredControl` behaves correctly.
+It cannot prove that every product surface uses it. Conversely, a source-text
+pin can prove that the intended surfaces render the component, but not that the
+component works when clicked.
+
+When both promises matter, keep both tests:
+
+- a behavioural test for the component's user-visible result
+- a call-site adoption test for each surface required to use it
+
+Do not cite one as evidence for the other. During mutation testing, break the
+component behaviour and each adoption site separately; the corresponding test
+must fail each time.
+
 ## Extraction: anchor on the body, not the first brace
 
 Slicing one function out of a file is where these decay silently. This is wrong:

@@ -87,6 +87,22 @@ final class CaveImageCacheTests: XCTestCase {
     private let secondDataURL = "data:image/png;base64,BAUG"
     private let thirdDataURL = "data:image/png;base64,BwgJ"
 
+    func testAuthenticatedRemoteURLUsesBearerHeaderWithoutQueryCredential() throws {
+        let url = try XCTUnwrap(URL(string: "https://cave.test/marketplace-logos/github.png"))
+        let request = try XCTUnwrap(
+            DefaultCaveImageDataLoader.request(
+                for: .authenticatedRemoteURL(url, bearerToken: "test-token")
+            )
+        )
+
+        XCTAssertEqual(request.url, url)
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Authorization"),
+            "Bearer test-token"
+        )
+        XCTAssertNil(request.url?.query)
+    }
+
     func testIdenticalDataURLAndTargetSizeDecodeOnce() async {
         let decoder = CountingImageDecoder()
         let cache = CaveImageCache(decoder: decoder)

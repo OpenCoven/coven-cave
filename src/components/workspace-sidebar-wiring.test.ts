@@ -10,6 +10,31 @@ const shellNavigation = await readFile(new URL("../styles/globals/shell-navigati
 
 // workspace-sidebar.tsx feature assertions
 assert.match(workspaceSidebar, /deriveChatProjectGroups\(applyProjectOverrides/, "should group by project with overrides");
+assert.match(
+  workspaceSidebar,
+  /chatProjectOrganizationGroups\(visibleGroups\)/,
+  "Projects view should derive organization sections from the currently filtered project groups",
+);
+assert.match(
+  workspaceSidebar,
+  /organizationExpansionKey\(organization\.key\)/,
+  "organization disclosures should use the shared namespaced expansion key",
+);
+assert.match(
+  workspaceSidebar,
+  /organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
+  "organization items should keep using the existing project-group renderer",
+);
+assert.match(
+  workspaceSidebar,
+  /const organizationVisible = hasSearch \|\| organizationExpanded;[\s\S]*?disabled=\{hasSearch\}[\s\S]*?aria-expanded=\{organizationVisible\}/,
+  "search should force truthful organization visibility while disabling its disclosure",
+);
+assert.match(
+  workspaceSidebar,
+  /const expanded = hasSearch \|\| !collapsedKeys\.has\(key\);[\s\S]*?disabled=\{hasSearch\}[\s\S]*?aria-expanded=\{expanded\}/,
+  "search should force truthful project visibility while disabling its disclosure",
+);
 assert.match(workspaceSidebar, /handleRegister/, "should offer register-as-project for unregistered roots");
 assert.match(workspaceSidebar, /Register \$\{label\} as a project/, "register label must be accessible");
 assert.match(

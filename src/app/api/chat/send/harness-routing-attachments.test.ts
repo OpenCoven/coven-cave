@@ -121,8 +121,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const runtimeResourceRoots = sshRuntime[\s\S]*?resolveRuntimeSkillRoots\([\s\S]*?readOnlyResourceRoots: runtimeResourceRoots/,
-  "Local skill sources should be declared as read-only runtime resources in the boundary prompt",
+  /const runtimeResourceRoots = sshRuntime[\s\S]*?resolveRuntimeResourceRoots\([\s\S]*?readOnlyResourceRoots: runtimeResourceRoots/,
+  "Local instruction and artifact sources should be declared as read-only runtime resources in the boundary prompt",
 );
 
 function extractAllowedRootsArrayFromCreateBoundarySentinel(source: string) {
@@ -169,10 +169,10 @@ const boundarySentinelAllowedRoots = extractAllowedRootsArrayFromCreateBoundaryS
   chatRoute,
 );
 
-assert.doesNotMatch(
+assert.match(
   boundarySentinelAllowedRoots,
   /\.\.\.runtimeResourceRoots/,
-  "Read-only skill resources must not be accepted by the write-boundary sentinel",
+  "Read-only runtime resources must not be falsely reported as out-of-boundary reads",
 );
 
 const grantDirsInitializerMatch = chatRoute.match(

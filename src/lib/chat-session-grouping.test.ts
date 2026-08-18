@@ -207,11 +207,11 @@ test("chat-list: activity bands head the default recency order", () => {
   );
 });
 
-test("chat-list: group-by select + persisted key + count line", () => {
+test("chat-list: group-by menu + persisted key + count line", () => {
   assert.match(
     chatList,
-    /aria-label="Group sessions by"[\s\S]{0,400}<option value="none">No grouping<\/option>\s*\n\s*<option value="project">Group by project<\/option>\s*\n\s*<option value="date">Group by date<\/option>/,
-    "the group-by select offers none / project / date",
+    /ariaLabel="Session view options"[\s\S]{0,1200}checked=\{groupBy === "none"\}[\s\S]{0,240}No grouping[\s\S]{0,400}checked=\{groupBy === "project"\}[\s\S]{0,240}Group by project[\s\S]{0,400}checked=\{groupBy === "date"\}[\s\S]{0,240}Group by date/,
+    "the session-view menu offers none / project / date",
   );
   assert.match(
     chatList,

@@ -1,7 +1,6 @@
 // @ts-nocheck
 // The nav toggle lives in the desktop top menu bar, anchoring the bar's left
-// edge and matching the row's compact icon-button controls. (The right
-// side-panel + expand toggles were removed with the right companion panel.)
+// edge and matching the row's compact icon-button controls.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 
@@ -201,13 +200,13 @@ assert.doesNotMatch(
   "the dead familiar trigger-rail CSS is pruned",
 );
 
-// The right edge-rail tab toggle was retired — the top-bar right toggle now owns
-// showing/hiding the companion panel.
-assert.doesNotMatch(
-  workspace,
-  /familiarPanelRail=/,
-  "workspace no longer passes a right edge-rail tab toggle to the shell",
-);
+assert.match(shell, /const rightChatToggle = \(/, "the dedicated Chat toggle is hydration-stable");
+assert.match(shell, /aria-label=\{rightChatOpen \? "Close Chat panel" : "Open Chat panel"\}/, "the toggle name is truthful");
+assert.match(shell, /aria-expanded=\{rightChatOpen\}/, "the toggle exposes visibility");
+assert.match(shell, /aria-controls=\{isMobile \? "shell-right-chat-drawer" : "shell-right-chat-panel"\}/, "the toggle controls the active responsive container");
+assert.match(shell, /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)/, "the existing right-panel shortcut controls Chat");
+assert.doesNotMatch(shell, /RightPanelKind|companionTabs|agent\?: ReactNode|rightPanelPeek/, "generic companion architecture stays retired");
+assert.doesNotMatch(workspace, /rightPanel=|familiarPanel=|agent=/, "Workspace does not restore generic companion props");
 // The chat projects rail migrated onto the shared SurfaceRail (Sessions
 // redesign): the collapsed 56px rail's own toggle is the reopen affordance,
 // so the bespoke edge-rail reopen chip is gone from this sidebar.
@@ -238,6 +237,11 @@ assert.doesNotMatch(
   "Shift+B must not fall through to the left sidebar toggle",
 );
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
+assert.match(css, /\.shell-right-chat-panel,[\s\S]*?height:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;/, "the fourth panel fills its allocation");
+assert.match(css, /\.right-chat__header\s*\{[^}]*display:\s*flex;[^}]*min-height:/, "the compact Chat header is a stable flex row");
+assert.match(css, /\.mobile-right-chat-drawer\s*\{[^}]*right:\s*0;[^}]*width:\s*min\(100vw,\s*480px\);/, "the modal enters from the right with a tablet cap");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer\s*\{[^}]*width:\s*100vw;/, "narrow phones use the available width");
+assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?\.mobile-right-chat-drawer[\s\S]*?animation:\s*none/, "drawer motion respects the global reduced-motion contract");
 
 // The right companion panel (and its in-panel collapse bridge) was removed.
 assert.doesNotMatch(

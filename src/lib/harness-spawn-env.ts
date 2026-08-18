@@ -20,11 +20,22 @@ import {
   covenSpawnEnv,
   type CovenSpawnEnvOptions,
 } from "./coven-bin.ts";
-import { vaultFreeDiscoveryEnv } from "./child-spawn-env.ts";
+import {
+  isForbiddenSpawnEnvKey,
+  vaultFreeDiscoveryEnv,
+} from "./child-spawn-env.ts";
 import { readEnvLocalValue } from "./env-file.ts";
 import { GITHUB_HARNESS_TOKEN_ENV_KEYS } from "./github-token-env.ts";
 import { hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
-import { isVaultKeyGrantedTo, loadVaultMap, resolveVaultManagedSecret, type VaultMap } from "./vault.ts";
+import {
+  canMirrorVaultKeyToProcessEnv,
+  isVaultKeyGrantedTo,
+  loadVaultMap,
+  resolveCachedVaultManagedSecret,
+  resolveVaultManagedSecret,
+  type VaultMap,
+  type VaultResolutionOptions,
+} from "./vault.ts";
 
 export { vaultFreeDiscoveryEnv } from "./child-spawn-env.ts";
 
@@ -80,6 +91,7 @@ export function restoreGrantedVaultGitHubTokenEnv(
   env: NodeJS.ProcessEnv,
   map: VaultMap,
   familiarId?: string | null,
+  resolution: VaultResolutionOptions = {},
 ): NodeJS.ProcessEnv {
   for (const key of GITHUB_HARNESS_TOKEN_ENV_KEYS) {
     const entry = map[key];
@@ -88,10 +100,35 @@ export function restoreGrantedVaultGitHubTokenEnv(
     // Vault mapping again so that security boundary does not prevent a
     // configured Codex, Hermes, OpenCode, or other harness from receiving
     // its own scoped credential.
-    // Do not take a same-named launcher variable here. A managed mapping
-    // must retain its Vault value and scope; launcher values need the explicit
-    // COVEN_HARNESS_ALLOW_ENV_KEYS opt-in handled above.
-    const value = resolveVaultManagedSecret(key, entry)?.trim();
+    // Environment mappings deliberately retain launcher/.env.local custody
+    // while still applying the Vault's familiar scope at this boundary.
+    const value = entry.storage === "environment"
+      ? process.env[key]?.trim() || readEnvLocalValue(key)?.trim()
+      : resolveVaultManagedSecret(key, entry, resolution)?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
+/** Materialize every non-GitHub Vault key granted to this familiar. */
+export function restoreGrantedVaultEnv(
+  env: NodeJS.ProcessEnv,
+  map: VaultMap,
+  familiarId?: string | null,
+  resolution: VaultResolutionOptions = {},
+): NodeJS.ProcessEnv {
+  for (const [key, entry] of Object.entries(map)) {
+    if (
+      GITHUB_HARNESS_TOKEN_ENV_KEYS.includes(
+        key as (typeof GITHUB_HARNESS_TOKEN_ENV_KEYS)[number],
+      )
+      || isForbiddenSpawnEnvKey(key)
+      || !canMirrorVaultKeyToProcessEnv(key)
+      || !isVaultKeyGrantedTo(entry, familiarId)
+    ) continue;
+    const value = entry.storage === "environment"
+      ? process.env[key]?.trim() || readEnvLocalValue(key)?.trim()
+      : resolveCachedVaultManagedSecret(key, entry, resolution)?.trim();
     if (value) env[key] = value;
   }
   return env;
@@ -145,6 +182,11 @@ export function harnessSpawnEnv(
   discovery: Pick<CovenSpawnEnvOptions, "discoveryDeadline" | "now"> = {},
 ): NodeJS.ProcessEnv {
   const map = loadVaultMap(true);
+  const configuredBudget = Number(process.env.COVEN_CAVE_HARNESS_VAULT_TIMEOUT_MS);
+  const budgetMs = Number.isFinite(configuredBudget) && configuredBudget >= 0
+    ? configuredBudget
+    : 15_000;
+  const resolution = { deadlineMs: Date.now() + budgetMs };
   const env = subtractScopedVaultKeys(
     covenSpawnEnv({
       discoveryEnv: vaultFreeDiscoveryEnv(process.env, map),
@@ -154,6 +196,7 @@ export function harnessSpawnEnv(
     map,
     familiarId,
   );
-  restoreGrantedVaultGitHubTokenEnv(env, map, familiarId);
+  restoreGrantedVaultEnv(env, map, familiarId, resolution);
+  restoreGrantedVaultGitHubTokenEnv(env, map, familiarId, resolution);
   return restoreAllowedGitHubTokenEnv(env, undefined, new Set(Object.keys(map)));
 }

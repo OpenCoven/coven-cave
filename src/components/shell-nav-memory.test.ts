@@ -439,7 +439,7 @@ assert.match(
 );
 
 const destinationLayoutEffect =
-  shell.match(/const navPrefArmedGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[\s*mounted,[\s\S]*?preferredNavWidth,\s*\]\);/)?.[0] ?? "";
+  shell.match(/const navPrefArmedGroupRef = useRef<string \| null>\(null\);[\s\S]*?\}, \[\s*mounted,[\s\S]*?preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/)?.[0] ?? "";
 assert.ok(destinationLayoutEffect.length > 0, "the destination group restoration effect exists");
 assert.match(
   destinationLayoutEffect,
@@ -458,23 +458,28 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{ \.\.\.\(!twoPane && \{ list: 260 \}\) \},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
   destinationLayoutEffect,
-  /expandedLayoutRef\.current = \{ groupId, layout: destinationLayout \};\s*collapsedLayoutRef\.current = null;\s*layoutPersistenceGroupRef\.current = groupId;\s*restoredGroupRef\.current = groupId;\s*group\.setLayout\(destinationLayout\);/,
-  "the destination group resets collapsed deltas, remembers, and arms its complete expanded layout before applying it",
+  /const commitDestinationLayout = \(\) => \{\s*group\.setLayout\(destinationLayout\);\s*expandedLayoutRef\.current = \{ groupId, layout: destinationLayout \};\s*collapsedLayoutRef\.current = null;\s*layoutPersistenceGroupRef\.current = groupId;\s*restoredGroupRef\.current = groupId;/,
+  "the destination group applies its layout before arming the ref bookkeeping that marks it as the restored group",
 );
 assert.match(
   destinationLayoutEffect,
-  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?expandedLayoutRef\.current = \{ groupId, layout: destinationLayout \};[\s\S]*?group\.setLayout\(destinationLayout\);\s*if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*setNavOpen\(rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}/,
+  /const rememberedNavOpen =\s*navPolicy === "remembered" \? seedNavOpenPref\(false\) : null;[\s\S]*?const commitDestinationLayout = \(\) => \{[\s\S]*?group\.setLayout\(destinationLayout\);[\s\S]*?if \(rememberedNavOpen !== null\) \{\s*railAutoCollapsedNavRef\.current = false;\s*userOverrodeNavRef\.current = false;\s*applyPanelOpenState\(navRef\.current, rememberedNavOpen\);\s*setNavOpen\(rememberedNavOpen\);\s*minimizedGroupsRef\.current\.add\(groupId\);\s*markShellMinimizeApplied\(groupId\);\s*\}\s*\};/,
   "normal destination restoration applies the remembered state before paint while retaining the expanded layout",
 );
 assert.match(
   destinationLayoutEffect,
-  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*preferredNavWidth,\s*\]\);/,
-  "destination restoration reruns with the active nav policy and shared width",
+  /try \{\s*commitDestinationLayout\(\);\s*\} catch \{[\s\S]*?requestAnimationFrame\(\(\) => \{\s*if \(groupRef\.current !== groupAtThrow\) return;\s*try \{\s*commitDestinationLayout\(\);\s*\} catch \{/,
+  "a mid-remount setLayout validation throw retries once after paint instead of crashing the shell",
+);
+assert.match(
+  destinationLayoutEffect,
+  /\}, \[\s*mounted,\s*isMobile,\s*groupId,\s*chatContextual,\s*defaultLayout,\s*twoPane,\s*navPolicy,\s*desktopRightChat,\s*preferredNavWidth,\s*preferredRightChatWidth,\s*rightChatOpen,\s*\]\);/,
+  "destination restoration reruns with the active nav policy, shared nav width, and right chat width",
 );
 assert.match(
   shell,

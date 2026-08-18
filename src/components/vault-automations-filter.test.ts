@@ -7,7 +7,7 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 // Both surfaces gain a text filter via the shared SearchInput primitive.
 const vault = read("./vault-panel.tsx");
 assert.match(vault, /import \{ SearchInput \} from "@\/components\/ui\/search-input"/, "vault imports SearchInput");
-assert.match(vault, /<SearchInput[\s\S]*?placeholder="Filter secrets…"/, "vault renders a secrets filter");
+assert.match(vault, /<SearchInput[\s\S]*?placeholder="Search secrets…"/, "vault renders canonical secret search");
 // Filter composes with the undo-pending hide and matches key / ref / storage / description.
 assert.match(vault, /\[m\.key, m\.ref \?\? "", m\.storage \?\? "", m\.description \?\? ""\]\.join\(" "\)\.toLowerCase\(\)\.includes\(q\)/, "vault filters by key/ref/storage/description");
 assert.match(vault, /No secrets match/, "vault shows a no-matches message");

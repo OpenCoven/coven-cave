@@ -162,7 +162,21 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // home, and is deliberately not attempted here: the extraction candidates are in
 // files several concurrent sessions are editing right now, so it would conflict
 // badly. That is a scheduling constraint, not an argument that the raise is free.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 600) * 1024;
+// RAISED root 600→615 (2026-08-16, cave-ltl38.4): the global shell-owned right
+// Chat panel — a persistent fourth Shell panel plus its mobile drawer, both
+// mounted unconditionally alongside nav/detail — added 137 lines of new,
+// already-tokenized rules to shell-navigation.css and shell-responsive.css
+// (`.right-chat*`, `.mobile-right-chat-drawer*`). Both files are part of the
+// always-loaded shell chain by design, same as the nav/detail panel CSS
+// already there, so this is genuine root growth, not a #3264 mis-scoping: the
+// panel is globally mounted, not a lazy surface. Measured: 616,253 B
+// (601.8 KiB) against the 600 KiB ceiling, ~1.8 KiB over. No reclaim
+// candidate exists in the new rules themselves — codemod:design:check is a
+// no-op over them and every declaration already uses tokens. Per the
+// documented convention above, 615 is the smallest ceiling that clears the 2%
+// THIN threshold here (13.2 KiB / 2.1% headroom) for this one-time addition;
+// this is a ceiling for this feature's CSS, not a licence for the next one.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 615) * 1024;
 const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {

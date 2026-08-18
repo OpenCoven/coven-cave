@@ -7,6 +7,204 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-08-17
+
+> Seamless familiar credential intake and a Chat panel that stays with you across the Cave.
+
+Patch release on top of v0.3.5.
+
+### Changes
+- Make familiar Vault credential intake dynamic, secure, and copy-paste friendly (#4700)
+- Add a global shell-owned right Chat panel (#4697)
+
+## [0.3.5] - 2026-08-16
+
+> Hardened iOS mutations and familiar avatars, now with corrected cross-platform packaging.
+
+Patch release on top of v0.3.4.
+
+v0.3.4 was tagged but stopped at release validation before any artifacts or
+TestFlight build were published. v0.3.5 supersedes it and carries its complete
+product payload.
+
+### Changes
+- Carry forward replay-safe iOS mutations and Familiar avatar management (#4695)
+- Restore cross-platform packaging with the measured sidecar runtime budget (#4698)
+- [Review every product change since v0.3.3](https://github.com/OpenCoven/coven-cave/compare/v0.3.3...v0.3.5)
+
+
+## [0.3.4] - 2026-08-16
+
+> Faster iOS mutations, safer chat and research flows, and a more reliable first-run Cave.
+
+Patch release on top of v0.3.3.
+
+### Changes
+- Harden iOS mutation recovery (#4695)
+- feat(ui): vendor Beautiful UI AI-native primitives onto Cave tokens (#4693)
+- docs: plan Research Desk resource program (#4694)
+- Clarify first-run setup progress (#4690)
+- fix: preserve managed Node setup without Coven CLI (#4691)
+- feat(research): ingest Hugging Face papers and read them with pdf.js (#4688)
+- docs: design daily report history backfill (#4687)
+- Fix familiar visual runtime resources (#4686)
+- Add complete marketplace logo coverage (#4684)
+- Render onboarding before the workspace (#4677)
+- feat(chat): compact assistant tool activity (#4685)
+- Fill chat carousel image frames (#4683)
+- Replace plumbing-speak in the phone handoff modal (#4681)
+- Document durable source-text pin conventions (#4682)
+- Skip unavailable Chat project grants (#4675)
+- Fail-closed on Read-only chat runs when runtime cannot enforce permission (#4641)
+- Preserve Claude hook evidence after protocol drift (#4670)
+- Preserve installer launch diagnostics (#4679)
+- docs(x6rw): re-land the approved waste-free half-splits design and plan (#4680)
+- Repair Chat filter reset contract (#4678)
+- docs(research-desk): approve externalized Research Desk implementation spec
+- fix(shell): keep the outer frame solid under a backdrop (#4676)
+- Exercise every React hook lint source glob (#4671)
+- fix(worktree): make the head-mismatch diagnosis reachable (#4673)
+- docs: make approved specs durable (#4674)
+- test(lint): assert the hooks gate FIRES, not just that the config says so (#4672)
+- fix(chat): keep runtime skill roots read-only (#4642)
+- feat(lint): enforce the Rules of Hooks instead of stubbing them (#4668)
+- feat(chat): render familiar handoff documents (#4669)
+- feat(backdrop): fall back to an accent wash when a familiar has no image (#4667)
+- fix(code): disable review/merge actions for transcript-attributed PRs (#4645)
+- fix(backdrop): let the familiar backdrop reach the top bar (#4666)
+- docs(code): record the two-GitHub-surfaces decision where a reader will find it (#4664)
+- fix(security): preserve Copilot path verification (#4646)
+- test(research): clarify prompt limit coverage (#4665)
+- fix: align research and review character limits (#4663)
+- Harden research media contract tests (#4659)
+- fix(a11y): give PopoverItem a menuitemcheckbox variant for boolean toggles (#4651)
+- fix(worktree): scope the WIP recovery rule to a namespace, not a token (#4652)
+- Require passkey presence for remote PTY WebSocket upgrades (#4643)
+- fix(grimoire): run the scoped-memory count before the empty-state return (#4662)
+- ci: fully parallelize frontend validation (#4654)
+- fix(grimoire): scope the graph scan before truncating it (#4660)
+- fix(chat): gate a registered project that lives inside a familiar workspace (#4653)
+- fix(codex): let the probe timeout be overridden instead of raising it again (#4656)
+- fix(worktree-lifecycle): stop closed beads voting in the orphan ownership tally (#4655)
+- fix(tests): restore green main after media playback changes (#4658)
+- fix(ci): skip an un-dispatchable PR head instead of aborting the whole recovery (#4657)
+- perf(worktree): read the remote head list once per inventory, not per unit (#4620)
+- fix(copilot): reject versions that cannot start Research (#4597)
+- fix(chat): block Read-only Hermes CLI sessions (#4640)
+- fix(chat): reset Sessions filters to familiar scope (#4647)
+- ci: parallelize frontend validation (#4650)
+- Update interactions.jsonl
+- Restore Tauri Research media playback (#4634)
+- fix(reader): enforce read-only permission for rewrite harness runs (#4639)
+- fix(salem): keep local Cave context out of hosted Salem API (#4644)
+- fix(e2e): stop the desktop project collecting tests/mobile specs (#4649)
+- fix(split): collapse the inactive mobile pane, and repair two stale e2e assertions (#4648)
+- fix(release): verify tag before dependency install and disable pnpmfile hooks (#4632)
+- fix(ios): route the Xcode project regeneration through a pnpm alias (#4627)
+- fix(github): prevent fork PR cleanup from deleting base branches (#4631)
+- fix(openclaw): restrict keychain credential ACLs (#4630)
+- Restore the green frontend baseline (#4637)
+- fix(research): align reader text controls (#4613)
+- fix(tests): register beads-delivery-source with the @/ alias loader (#4626)
+- Add portable tweet thread optimization protocol (#4635)
+- fix(chat): re-prove Opus 5 routability at launch, not only in the picker (#4619)
+- fix(ci): stop a recovery dispatch cancelling the run it exists to rescue (#4636)
+- Update interactions.jsonl
+- docs: write the source-text pin convention (#4625)
+- fix(analytics): stop redaction collapsing self-reports and crashing the view (#4617)
+- fix(chat): a mid-draft slash command completes on Enter, never runs (#4614)
+- fix(worktree): stop resurrecting branches this hook itself pushed (#4616)
+- fix(ci): warn before the branch cap bites, and explain a rollback (#4615)
+- feat(chat): global right-side Chat panel (#4611)
+- fix(worktree): stop a stale tracking ref masking a deleted branch (#4612)
+- fix(siderail): keep every control in place when the collapsed rail peeks open (#4609)
+- fix(canvas): lock artifact previews to an offline CSP (#4606)
+- test(docs): ratchet the docs index, and make it run on docs-only PRs (#4610)
+- fix(marketplace): generate the skills field the runtime requires (#4608)
+- docs: freeze docs/specs and point per-surface design at superpowers/specs (#4607)
+- docs: index the docs tree by living, program, historical, and tombstone (#4605)
+- Register Coven recall and require delivery receipts
+- Add familiar-drafted research refinement (#4603)
+- docs(readme): space the startup-diagnostics answer off its summary (#4601)
+- test(chat): wire organization hook alias loader
+- added line breaks to FAQ section for better readability (#4583)
+- docs: codify exact-head PR review standard (#4600)
+- Resizable text in the document reader (#4595)
+- Size the app icon by optical weight, and the notification bell at all (#4594)
+- fix(worktree): archive a remote-deleted branch instead of resurrecting it (#4593)
+- Add redacted Codex launch diagnostics (#4586)
+- fix(dev): allow the access-gated local origin to start Tauri (#4588)
+- test(e2e): compile lazy surface chunks once in a serial warmup project (#4592)
+- fix(chat): harden spec reader
+- fix: remove stale sidebar archive state
+- fix(chat): token-scrim the attachment lightbox, harden the z-index assertion
+- fix(chat): lift expand lightboxes above the reader overlay band
+- docs(onboarding): baseline the desktop journey
+- docs(onboarding): baseline the desktop journey
+- fix(proxy): exempt stamped local-peer document navigations from the mobile gate
+- Fix middleware source test drift
+- fix: restrict Tauri gate bypass to direct sidecar credentials
+- Revert "feat(auth): remove the access-token requirement (#4559)"
+- fix(analytics): validate persisted thread reports
+- feat(afs): integrate daemon review contract
+- feat(trace): focus linked daemon events
+- fix(chat): migrate legacy project root aliases
+- fix(chat): canonicalize disclosure migration scope
+- fix(chat): migrate archived project disclosures
+- fix(beads): guard overview cache generations
+- fix(chat): centralize project disclosure state
+- fix(chat): version organization expansion migration
+- fix(beads): invalidate delivery overview after writes
+- fix(chat): defer organization expansion migration
+- fix(chat): preserve organization disclosure intent
+- test(beads): register overview API contract
+- fix(projects): reveal migrated organization groups
+- test(beads): wire overview route aliases
+- feat(beads): expose local delivery overview
+- test(chat): preserve organization tree drag contract
+- feat(chat): group visible sidebar by organization
+- fix(beads): type surface audit rows
+- test(beads): update validated route contracts
+- test(projects): wire organization tests into app suite
+- fix(beads): harden surface enforcement
+- feat(beads): require platform ownership on creation
+- test(projects): target organization section labels
+- fix(beads): honor strict stale thresholds
+- feat(beads): add delivery overview model
+- test(projects): cover organization grid sections
+- test(workspace): cover registered split pages (cave-x6rw)
+- docs: plan Beads delivery accounting
+- docs: design Beads delivery accounting
+- feat(projects): group cards by organization
+- fix(workspace): preserve exact embedded split pages (cave-x6rw)
+- fix(chat): clarify search-forced disclosures
+- fix(chat): reveal selected organization groups
+- feat(chat): nest projects under organizations
+- test(chat): cover no-organization disclosure key
+- feat(chat): persist organization disclosure state
+- feat(chat): carry project organization metadata
+- feat(projects): derive organization groups
+- feat(workspace): deep-link registered split pages (cave-x6rw)
+- feat(workspace): embed registered split pages (cave-x6rw)
+- docs: plan project and terminal delivery
+- docs: design project grouping and terminal delivery
+- fix(workspace): make half splits waste-free (cave-x6rw)
+- refactor(workspace): normalize split rendering (cave-x6rw)
+- feat(workspace): add split pane foundations (cave-x6rw)
+- refactor(workspace): normalize split page requests (cave-x6rw)
+- feat(workspace): add exhaustive page registry (cave-x6rw)
+- fix(code): preserve project context in collapsed sessions
+- feat(code): make sessions rail collapsible
+
+
+### Fixed
+
+- Native iOS task, reminder, session, theme, and avatar mutations now retry
+  transient network failures only when the operation is explicitly replay-safe,
+  stay within the existing 20-second request budget, and treat a repeated delete
+  as already complete. The missing Familiar avatar mutation client required by
+  the shipped XCTest contract is now implemented as well (cave-ioswipe.1).
+
 ## [0.3.3] - 2026-08-12
 
 > Closes an access-gate bypass on mobile, keeps chat attachments and skills

@@ -15,7 +15,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /const clearSessionFilters = useCallback\(\(\) => \{\s*setSearch\(""\);\s*setStatusFilter\("all"\);\s*setSelection\("all"\);\s*setShowArchived\(false\);\s*\}, \[\]\);/,
+  /const clearSessionFilters = useCallback\(\(\) => \{\s*setSearch\(""\);\s*setStatusFilter\("all"\);\s*onSelectionChange\("all"\);\s*setShowArchived\(false\);\s*\}, \[onSelectionChange\]\);/,
   "One reset should clear every non-familiar Sessions filter",
 );
 assert.match(

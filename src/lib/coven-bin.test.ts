@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
+import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenOverrideRejection, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
@@ -813,6 +813,32 @@ assert.match(
   source,
   /process\.platform === "win32"\) throw new Error\(COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC\)/,
   "a missing Windows Coven CLI fails closed instead of returning a bare executable name",
+);
+
+// An explicit override that fails verification must not vanish: resolution
+// falls through to the managed copy, and without a line naming the reason the
+// only way to discover that is to read the resolver.
+assert.match(
+  source,
+  /console\.warn\([\s\S]{0,200}ignoring COVEN_BIN/,
+  "an unusable COVEN_BIN is reported instead of silently falling through to discovery",
+);
+assert.equal(
+  covenOverrideRejection("coven.exe", "linux"),
+  "it is not an absolute path",
+  "a relative override is named as such - Windows would resolve it against the child cwd",
+);
+assert.equal(
+  covenOverrideRejection("\\\\remote-host\\share\\coven.exe", "win32"),
+  "it refers to a remote UNC share",
+);
+assert.equal(
+  covenOverrideRejection(path.join(os.tmpdir(), "cave-coven-override-absent")),
+  "it does not exist",
+);
+assert.equal(
+  covenOverrideRejection(await realpath(os.tmpdir())),
+  "it is not a file",
 );
 
 if (process.platform === "win32") {

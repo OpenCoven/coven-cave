@@ -35,7 +35,11 @@ export const STANDALONE_BUDGETS = Object.freeze({
   //
   // Both ceilings still catch what this guard is for: a renewed repository-root
   // trace overshoots by gigabytes and thousands of entries, not by 8%.
-  fileCount: 7_600,
+  //
+  // 2026-08-17: release operators raised the file-count ceiling to 12,000.
+  // Keep the independent 480 MiB ceiling and forbidden-root checks intact so
+  // larger artifacts and known local build roots still fail closed.
+  fileCount: 12_000,
   unpackedBytes: 480 * 1024 * 1024,
 });
 
@@ -57,6 +61,7 @@ export const STANDALONE_FORBIDDEN_ROOTS = Object.freeze([
 ]);
 
 const STANDALONE_FORBIDDEN_ROOT_PREFIXES = Object.freeze([".worktree-lifecycle-fixture-"]);
+const IOS_BUILD_ROOT_PATTERN = /^(apps\/ios\/(?:[^/]+\/)*build(?:-[^/]+)?)(?:\/|$)/;
 
 function portable(relativePath) {
   return relativePath.split(path.sep).join("/");
@@ -68,6 +73,8 @@ export function forbiddenStandaloneRoot(relativePath) {
   if (STANDALONE_FORBIDDEN_ROOT_PREFIXES.some((prefix) => candidateRoot.startsWith(prefix))) {
     return candidateRoot;
   }
+  const iosBuildRoot = candidate.match(IOS_BUILD_ROOT_PATTERN)?.[1];
+  if (iosBuildRoot) return iosBuildRoot;
   return STANDALONE_FORBIDDEN_ROOTS.find(
     (root) => candidate === root || candidate.startsWith(`${root}/`),
   );

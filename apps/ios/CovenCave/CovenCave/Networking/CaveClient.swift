@@ -17,10 +17,19 @@ protocol CaveBootstrapClient: Sendable {
 struct CaveClient {
     var connection: CaveConnection
     private let injectedSession: URLSession?
+    private let idempotentMutationRetryBudget: Duration
+    private static let pathSegmentAllowed = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
 
-    init(connection: CaveConnection, session: URLSession? = nil) {
+    init(
+        connection: CaveConnection,
+        session: URLSession? = nil,
+        idempotentMutationRetryBudget: Duration = Self.defaultIdempotentMutationRetryBudget
+    ) {
         self.connection = connection
         self.injectedSession = session
+        self.idempotentMutationRetryBudget = idempotentMutationRetryBudget
     }
 
     /// `POST /api/voice/session` request. The desktop resolves the familiar's
@@ -119,21 +128,116 @@ struct CaveClient {
 
     private var session: URLSession { Self.restSession }
 
-    func data(for req: URLRequest) async throws -> (Data, URLResponse) {
-        let method = (req.httpMethod ?? "GET").uppercased()
-        let retryDelays: [Duration] = ["GET", "HEAD"].contains(method)
-            ? [.milliseconds(350), .seconds(1)]
-            : []
+    static let defaultIdempotentMutationRetryBudget: Duration = .seconds(20)
+
+    func data(
+        for req: URLRequest,
+        retryingIdempotentMutation: Bool = false
+    ) async throws -> (Data, URLResponse) {
+        let retryPlan = Self.retryPlan(
+            for: req,
+            retryingIdempotentMutation: retryingIdempotentMutation,
+            idempotentMutationRetryBudget: idempotentMutationRetryBudget
+        )
         let session = injectedSession ?? self.session
+        let result: RequestResult
+        if let budget = retryPlan.budget {
+            result = try await Self.data(
+                for: req,
+                using: session,
+                retryDelays: retryPlan.delays,
+                within: budget
+            )
+        } else {
+            result = try await Self.performData(
+                for: req,
+                using: session,
+                retryDelays: retryPlan.delays
+            )
+        }
+        return (result.data, result.response)
+    }
+
+    private struct RequestResult: @unchecked Sendable {
+        var data: Data
+        var response: URLResponse
+    }
+
+    private static func data(
+        for req: URLRequest,
+        using session: URLSession,
+        retryDelays: [Duration],
+        within budget: Duration
+    ) async throws -> RequestResult {
+        try await withThrowingTaskGroup(of: RequestResult.self) { group in
+            group.addTask {
+                try await performData(for: req, using: session, retryDelays: retryDelays)
+            }
+            group.addTask {
+                try await Task.sleep(for: budget)
+                throw URLError(.timedOut)
+            }
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else {
+                throw CaveError.transport("Network request failed.")
+            }
+            return result
+        }
+    }
+
+    private static func performData(
+        for req: URLRequest,
+        using session: URLSession,
+        retryDelays: [Duration]
+    ) async throws -> RequestResult {
         for attempt in 0...retryDelays.count {
             do {
-                return try await session.data(for: req)
+                let (data, response) = try await session.data(for: req)
+                return RequestResult(data: data, response: response)
             } catch {
-                guard attempt < retryDelays.count, Self.isTransient(error) else { throw error }
+                guard attempt < retryDelays.count, isTransient(error) else { throw error }
                 try await Task.sleep(for: retryDelays[attempt])
             }
         }
         throw CaveError.transport("Network request failed.")
+    }
+
+    private struct RetryPlan {
+        var delays: [Duration]
+        var budget: Duration?
+    }
+
+    private static func retryPlan(
+        for req: URLRequest,
+        retryingIdempotentMutation: Bool,
+        idempotentMutationRetryBudget: Duration
+    ) -> RetryPlan {
+        let method = (req.httpMethod ?? "GET").uppercased()
+        switch method {
+        case "GET", "HEAD":
+            return RetryPlan(delays: [.milliseconds(350), .seconds(1)], budget: nil)
+        case "DELETE", "PATCH", "PUT":
+            guard retryingIdempotentMutation else {
+                return RetryPlan(delays: [], budget: nil)
+            }
+            return RetryPlan(
+                delays: [.milliseconds(350), .seconds(1), .seconds(3)],
+                budget: idempotentMutationRetryBudget
+            )
+        case "POST":
+            // POST is never replayed unless its caller and server explicitly
+            // share an idempotency key.
+            let key = req.value(forHTTPHeaderField: "Idempotency-Key")?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return key?.isEmpty == false
+                ? RetryPlan(
+                    delays: [.milliseconds(350), .seconds(1), .seconds(3)],
+                    budget: idempotentMutationRetryBudget
+                )
+                : RetryPlan(delays: [], budget: nil)
+        default:
+            return RetryPlan(delays: [], budget: nil)
+        }
     }
 
     private static func isTransient(_ error: Error) -> Bool {
@@ -233,6 +337,65 @@ struct CaveClient {
         return URL(string: path, relativeTo: base)?.absoluteURL
     }
 
+    struct FamiliarAvatarMutation: Decodable {
+        var ok: Bool
+        var avatarUrl: String?
+        var revision: Int?
+        var removed: Bool?
+        var error: String?
+    }
+
+    func uploadFamiliarAvatar(
+        id: String,
+        imageData: Data,
+        contentType: String
+    ) async throws -> FamiliarAvatarMutation {
+        let escaped = try Self.encodedPathSegment(id)
+        var req = try request(
+            "api/familiars/\(escaped)/avatar",
+            method: "POST",
+            body: imageData
+        )
+        req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        return try await familiarAvatarMutation(for: req)
+    }
+
+    func deleteFamiliarAvatar(id: String) async throws -> FamiliarAvatarMutation {
+        let escaped = try Self.encodedPathSegment(id)
+        let req = try request("api/familiars/\(escaped)/avatar", method: "DELETE")
+        return try await familiarAvatarMutation(for: req)
+    }
+
+    private static func encodedPathSegment(_ value: String) throws -> String {
+        guard let encoded = value.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) else {
+            throw CaveError.transport("Could not encode the familiar identifier.")
+        }
+        return encoded
+    }
+
+    private func familiarAvatarMutation(for req: URLRequest) async throws -> FamiliarAvatarMutation {
+        let method = (req.httpMethod ?? "").uppercased()
+        let (data, resp) = try await data(
+            for: req,
+            retryingIdempotentMutation: method == "DELETE"
+        )
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            throw Self.serverResponseError(statusCode: status, data: data)
+        }
+        do {
+            let mutation = try JSONDecoder().decode(FamiliarAvatarMutation.self, from: data)
+            guard mutation.ok else {
+                throw CaveError.transport(mutation.error ?? "The avatar change was not accepted.")
+            }
+            return mutation
+        } catch let error as CaveError {
+            throw error
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     // MARK: - Voice
 
     /// Mint a voice-call grant through Cave. The desktop keeps provider API
@@ -273,6 +436,21 @@ struct CaveClient {
             return try JSONDecoder().decode(MarketplaceResponse.self, from: data).plugins
         } catch {
             throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    func marketplaceLogoSource(for plugin: MarketplacePlugin) -> CaveImageSource? {
+        guard let path = plugin.logo?.assetPath,
+              let base = connection.baseURL,
+              let resolved = URL(string: path, relativeTo: base)?.absoluteURL
+        else { return nil }
+        do {
+            if let token = try CaveConnection.credentialForRequest(to: resolved) {
+                return .authenticatedRemoteURL(resolved, bearerToken: token)
+            }
+            return .remoteURL(resolved)
+        } catch {
+            return nil
         }
     }
 
@@ -461,7 +639,7 @@ struct CaveClient {
         let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
         let payload = try JSONEncoder().encode(SessionFlagsPatch(archived: archived, pinned: pinned))
         let req = try request("api/sessions/\(escaped)", method: "PATCH", body: payload)
-        let (_, resp) = try await data(for: req)
+        let (_, resp) = try await data(for: req, retryingIdempotentMutation: true)
         try Self.check(resp)
     }
 
@@ -470,20 +648,20 @@ struct CaveClient {
     func deleteSession(sessionId: String) async throws {
         let escaped = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
         let req = try request("api/sessions/\(escaped)", method: "DELETE")
-        let (_, resp) = try await data(for: req)
-        try Self.check(resp)
+        let (_, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try Self.checkDelete(resp)
     }
 
     /// `DELETE /api/board/{id}` — remove a task.
     func deleteTask(cardId: String) async throws {
         let req = try request("api/board/\(cardId)", method: "DELETE")
-        let (_, resp) = try await data(for: req)
-        try Self.check(resp)
+        let (_, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try Self.checkDelete(resp)
     }
 
     private func patchTask(cardId: String, payload: Data) async throws -> BoardCard {
         let req = try request("api/board/\(cardId)", method: "PATCH", body: payload)
-        let (data, resp) = try await data(for: req)
+        let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
         try Self.check(resp)
         let decoded = try JSONDecoder().decode(BoardPatchResponse.self, from: data)
         if let card = decoded.card { return card }
@@ -556,7 +734,7 @@ struct CaveClient {
         let payload = try JSONEncoder().encode(
             Body(familiarId: familiarId, sessionId: sessionId, model: model, scope: scope))
         let req = try request("api/chat/model-state", method: "PATCH", body: payload)
-        let (data, resp) = try await data(for: req)
+        let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
@@ -802,7 +980,7 @@ struct CaveClient {
         struct Body: Encodable { let themeId: String; let mode: String }
         let payload = try JSONEncoder().encode(Body(themeId: themeId, mode: mode))
         let req = try request("api/theme", method: "PUT", body: payload)
-        let (data, resp) = try await data(for: req)
+        let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ThemeResponse.self, from: data).theme
@@ -842,8 +1020,8 @@ struct CaveClient {
     func deleteReminder(id: String) async throws {
         let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         let req = try request("api/inbox/\(escaped)", method: "DELETE")
-        let (_, resp) = try await data(for: req)
-        try Self.check(resp)
+        let (_, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try Self.checkDelete(resp)
     }
 
     struct ReminderActionResponse: Decodable { var ok: Bool; var error: String?; var item: Reminder? }
@@ -915,6 +1093,11 @@ struct CaveClient {
         guard (200..<300).contains(http.statusCode) else {
             throw CaveError.badResponse(http.statusCode)
         }
+    }
+
+    private static func checkDelete(_ resp: URLResponse) throws {
+        if (resp as? HTTPURLResponse)?.statusCode == 404 { return }
+        try check(resp)
     }
 }
 

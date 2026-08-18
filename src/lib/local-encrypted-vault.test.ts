@@ -79,6 +79,7 @@ try {
   );
 
   const {
+    commitLocalEncryptedSecretBatch,
     deleteLocalEncryptedSecret,
     getLocalEncryptedSecret,
     getLocalEncryptedSecretSnapshot,
@@ -466,6 +467,52 @@ try {
     "vault mutation contention leaves no store temp files",
   );
 
+  setLocalEncryptedSecret("SYNTHETIC_BATCH_A", "batch-a-before");
+  setLocalEncryptedSecret("SYNTHETIC_BATCH_B", "batch-b-before");
+  assert.throws(
+    () => commitLocalEncryptedSecretBatch(
+      [
+        { key: "SYNTHETIC_BATCH_A", value: "batch-a-after" },
+        { key: "SYNTHETIC_BATCH_B", value: "batch-b-after" },
+      ],
+      () => {
+        throw new Error("synthetic metadata failure");
+      },
+      () => {
+        assert.fail("metadata rollback is unnecessary when metadata never committed");
+      },
+    ),
+    /local encrypted vault is unavailable/,
+    "a failed metadata commit aborts the whole encrypted-value batch",
+  );
+  valueMatches(
+    getLocalEncryptedSecret("SYNTHETIC_BATCH_A"),
+    "batch-a-before",
+    "the first encrypted value is preserved after a failed batch",
+  );
+  valueMatches(
+    getLocalEncryptedSecret("SYNTHETIC_BATCH_B"),
+    "batch-b-before",
+    "the second encrypted value is preserved after a failed batch",
+  );
+  assert.throws(
+    () => commitLocalEncryptedSecretBatch(
+      [
+        { key: "SYNTHETIC_BATCH_A", value: "must-not-write" },
+        { key: "SYNTHETIC_BATCH_B", value: "" },
+      ],
+      () => assert.fail("invalid batches are rejected before metadata commit"),
+      () => assert.fail("invalid batches never need rollback"),
+    ),
+    /secret value is required/,
+    "batch validation completes before any encrypted value is changed",
+  );
+  valueMatches(
+    getLocalEncryptedSecret("SYNTHETIC_BATCH_A"),
+    "batch-a-before",
+    "a later invalid item cannot partially overwrite an earlier item",
+  );
+
   const rawFile = await readFile(vaultFile, "utf8");
   const plaintextTestValues = [
     INITIAL_VALUE,
@@ -478,6 +525,11 @@ try {
     "synthetic-test-cas-race-initial",
     casAValue,
     casBValue,
+    "batch-a-before",
+    "batch-b-before",
+    "batch-a-after",
+    "batch-b-after",
+    "must-not-write",
   ];
   assert.equal(
     plaintextTestValues.some((value) => rawFile.includes(value)),
@@ -501,6 +553,19 @@ try {
   deleteLocalEncryptedSecret(SECRET_KEY);
   assert.equal(getLocalEncryptedSecret(SECRET_KEY), null);
   assert.equal(hasLocalEncryptedSecret(SECRET_KEY), false);
+
+  const malformedStore = "{not valid json";
+  await writeFile(vaultFile, malformedStore, { mode: 0o600 });
+  assert.throws(
+    () => setLocalEncryptedSecret("SYNTHETIC_AFTER_CORRUPTION", "must-not-write"),
+    /local encrypted vault is unavailable/,
+    "a malformed encrypted store fails closed instead of being replaced",
+  );
+  assert.equal(
+    await readFile(vaultFile, "utf8"),
+    malformedStore,
+    "failed mutation preserves the malformed store for recovery",
+  );
 
   console.log("local-encrypted-vault.test.ts: ok");
 } finally {

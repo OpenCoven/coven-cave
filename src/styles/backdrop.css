@@ -340,3 +340,68 @@ html[data-backdrop-on] .shell-list-panel {
   z-index: 1;
   background: var(--bg-panel);
 }
+
+/* ── The outer frame stays solid too (cave-0uzj0) ────────────────────────────
+   Only the CONTENT of the detail pane joins the backdrop. The pane's box is
+   content PLUS the inset gutter, though, and the gutter is chrome — the same
+   frame the nav rail is part of. Handing the whole box to the layer therefore
+   painted the image straight through the top, right and bottom edges: a solid
+   charcoal rail beside three bleeding gutters.
+
+   The panes above fix this by lifting themselves over the layer. The detail
+   pane cannot do that: lifting it would carry the content with it and hide the
+   image inside the panel, which is the one place it is supposed to show. So
+   the gutter BAND is painted instead — four strips on a pseudo-element, above
+   the layer, leaving the content box untouched. Strips rather than a masked
+   ring on purpose: no mask-composite dependency, and the corners stay square
+   where they meet the window edge (a rounded ring would leak the image back in
+   at exactly the four corners of the app).
+
+   No z-index: the strips paint over the layer because they come later in the
+   document, and staying at `auto` keeps them UNDER the pane's own content, so
+   a surface that deliberately paints into the gutter (the home composer's
+   translateX shift, which opens this pane's overflow) is not clipped by them. */
+@media (min-width: 1024px) {
+  html[data-backdrop-on] .shell-detail-panel {
+    /* Positioning context for the strips below — and transparent, which is
+       load-bearing rather than leftover: positioning the pane lifts it over
+       the z-0 layer, so an opaque paint here would cover the image across the
+       WHOLE box, content included (measured: the hero went flat charcoal).
+       The band is painted by ::before instead; the pane itself paints nothing. */
+    position: relative;
+    background: transparent;
+  }
+
+  html[data-backdrop-on] .shell-detail-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--shell-floor) 0 0),
+      linear-gradient(var(--shell-floor) 0 0),
+      linear-gradient(var(--shell-floor) 0 0),
+      linear-gradient(var(--shell-floor) 0 0);
+    background-repeat: no-repeat;
+    background-size:
+      100% var(--space-2),
+      var(--space-2) 100%,
+      100% var(--space-2),
+      var(--space-2) 100%;
+    /* top, right, bottom, left — the exact band .shell-detail-panel's padding
+       reserves, so the strips can never encroach on the content box. */
+    background-position: 0 0, 100% 0, 0 100%, 0 0;
+  }
+
+  /* The strips stop at the content's square box, but the content is a rounded
+     panel — four wedges inside that box, outside its rounded border, would
+     still show the image. An outer spread shadow paints precisely the region
+     outside the border shape, so it fills them in the same color. The
+     elevation shadow is restated because box-shadow does not cascade
+     per-layer. */
+  html[data-backdrop-on] .shell-detail {
+    box-shadow:
+      0 0 0 var(--space-2) var(--shell-floor),
+      0 14px 36px -28px var(--shadow-color);
+  }
+}

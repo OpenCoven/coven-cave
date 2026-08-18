@@ -116,7 +116,11 @@ test.describe("chat boot landing", () => {
     await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
 
     await page.goto("/?mode=chat");
-    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
+    // Scoped to the primary chat panel: the shell also mounts a persistent,
+    // closed-by-default auxiliary Chat panel (data-testid="right-chat") that
+    // renders its own ChatNewDashboard while unopened, so an unscoped
+    // page-wide `chat-new-dashboard` query now matches two elements.
+    await expect(page.getByTestId("chat-main").getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
@@ -137,7 +141,9 @@ test.describe("chat boot landing", () => {
     });
 
     await page.goto("/?mode=chat");
-    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
+    // Scoped to the primary chat panel — see the boot-baseline test above
+    // for why an unscoped page-wide query now matches the auxiliary panel too.
+    await expect(page.getByTestId("chat-main").getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
     expect(sessionsFulfilled).toBe(false);
 
     // Unblock the fetch and confirm the settled landing is intact. (The
@@ -163,7 +169,9 @@ test.describe("chat boot landing", () => {
     // loosened compose gate must not flash a compose view over it.
     const takeover = page.getByRole("status").filter({ hasText: "Opening chat…" });
     await expect(takeover).toBeVisible({ timeout: 45_000 });
-    await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);
+    // Scoped to the primary chat panel — see the boot-baseline test above for
+    // why an unscoped page-wide query would also match the auxiliary panel.
+    await expect(page.getByTestId("chat-main").getByTestId("chat-new-dashboard")).toHaveCount(0);
     await expect(page.locator(".cave-chat-empty")).toHaveCount(0);
 
     releaseSessions();
@@ -201,7 +209,9 @@ test.describe("chat boot landing", () => {
     });
     await page.goto("/?mode=chat");
     await scopedProjectsLoaded;
-    const dash = page.getByTestId("chat-new-dashboard");
+    // Scoped to the primary chat panel — see the boot-baseline test above for
+    // why an unscoped page-wide query would also match the auxiliary panel.
+    const dash = page.getByTestId("chat-main").getByTestId("chat-new-dashboard");
     await expect(dash).toBeVisible({ timeout: 45_000 });
 
     // Chat.dc.html 2b: the launcher is a band per SOURCE of work, and the

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 
+import type { HfPaperMetadata } from "./hf-paper-metadata.ts";
+
 const tmp = await mkdtemp(path.join(tmpdir(), "cave-research-links-"));
 const originalOverride = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE;
 process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = path.join(tmp, "research-links.json");
@@ -142,4 +144,113 @@ test("unreadable stores surface errors instead of reading as empty", async () =>
   } finally {
     process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = previous;
   }
+});
+
+// ── paper metadata (cave-cbz28) ──────────────────────────────────────────────
+
+test("a well-formed paper block survives, a malformed one is dropped without discarding the link", async () => {
+  const target = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
+  await writeFile(
+    target,
+    JSON.stringify({
+      version: 1,
+      links: [
+        {
+          id: "paper-a",
+          url: "https://huggingface.co/papers/2401.12345",
+          category: "paper",
+          title: "A well-formed paper",
+          addedAt: "2026-01-01T00:00:00.000Z",
+          source: "desk",
+          paper: {
+            arxivId: "2401.12345",
+            authors: ["A. Author"],
+            abstract: "An abstract.",
+            publishedAt: "2024-01-22T00:00:00.000Z",
+          },
+        },
+        {
+          id: "paper-b",
+          url: "https://huggingface.co/papers/2402.54321",
+          category: "paper",
+          title: "A malformed paper",
+          addedAt: "2026-01-02T00:00:00.000Z",
+          source: "desk",
+          paper: {
+            arxivId: "../etc/passwd",
+            authors: "not-an-array",
+          },
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const listed = await listSavedLinks();
+  const linkA = listed.find((link) => link.id === "paper-a");
+  const linkB = listed.find((link) => link.id === "paper-b");
+
+  assert.equal(linkA?.paper?.arxivId, "2401.12345");
+  assert.deepEqual(linkA?.paper?.authors, ["A. Author"]);
+
+  assert.ok(linkB, "the link with the malformed paper block still survives");
+  assert.equal(linkB?.paper, undefined);
+});
+
+// ── saveResearchLinks enrichment parameter (cave-cbz28) ─────────────────────
+
+test("enrichment metadata sets the stored title and paper block", async () => {
+  const meta: HfPaperMetadata = {
+    title: "A Well-Formed Paper",
+    authors: ["A. Author", "B. Author"],
+    abstract: "An abstract about a paper.",
+    publishedAt: "2024-01-22T00:00:00.000Z",
+  };
+  const url = "https://huggingface.co/papers/2401.99999";
+  const { added } = await saveResearchLinks([url], "desk", new Map([[url, meta]]));
+  assert.equal(added.length, 1);
+  assert.equal(added[0].title, meta.title);
+  assert.deepEqual(added[0].paper, {
+    arxivId: "2401.99999",
+    authors: meta.authors,
+    abstract: meta.abstract,
+    publishedAt: meta.publishedAt,
+  });
+});
+
+test("a URL that merely embeds a paper URL never gets a paper block", async () => {
+  // The stored arxivId drives the Read affordance and is interpolated into the
+  // PDF route's URL, so it has to come from classifying THIS url — not from
+  // scanning it for a paper reference that belongs to the page it links to.
+  const wrapper = "https://www.google.com/url?q=https://arxiv.org/abs/2401.12345";
+  const meta: HfPaperMetadata = {
+    title: "Distributionally Robust Receive Beamforming",
+    authors: ["A. Author"],
+    abstract: "A foreign paper's abstract.",
+    publishedAt: "2024-01-22T00:00:00.000Z",
+  };
+  const { added } = await saveResearchLinks([wrapper], "chat", new Map([[wrapper, meta]]));
+  assert.equal(added.length, 1);
+  assert.equal(added[0].url, wrapper);
+  assert.equal(added[0].paper, undefined);
+});
+
+test("a null enrichment entry produces exactly the record saved with no enrichment map at all", async () => {
+  const url = "https://huggingface.co/papers/2402.11111";
+
+  const baseline = await saveResearchLinks([url], "desk");
+  assert.equal(baseline.added.length, 1);
+  assert.equal(await removeSavedLink(baseline.added[0].id), true);
+
+  const withNullEnrichment = await saveResearchLinks([url], "desk", new Map([[url, null]]));
+  assert.equal(withNullEnrichment.added.length, 1);
+
+  // Same URL, source, title, category, and absence of a paper block — the only
+  // fields the map is expected to differ on (id, addedAt) are left uncompared.
+  assert.equal(withNullEnrichment.added[0].url, baseline.added[0].url);
+  assert.equal(withNullEnrichment.added[0].title, baseline.added[0].title);
+  assert.equal(withNullEnrichment.added[0].category, baseline.added[0].category);
+  assert.equal(withNullEnrichment.added[0].source, baseline.added[0].source);
+  assert.equal(withNullEnrichment.added[0].paper, baseline.added[0].paper);
+  assert.equal(withNullEnrichment.added[0].paper, undefined);
 });

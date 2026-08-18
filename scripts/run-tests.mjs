@@ -16,6 +16,8 @@
 // allowlisted there).
 
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -132,6 +134,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
     "src/lib/research-generations.test.ts",
+    "src/lib/research-paper-view.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
@@ -277,6 +280,7 @@ export const SUITES = {
     "src/lib/gfm-autolink.test.ts",
     "src/lib/gh-diff.test.ts",
     "src/lib/gh-review-html.test.ts",
+    "src/lib/project-organizations.test.ts",
     "src/lib/chat-projects.test.ts",
     "src/lib/chat-pr-link.test.ts",
     "src/lib/changes-review.test.ts",
@@ -287,6 +291,8 @@ export const SUITES = {
     "src/lib/chat-start-from.test.ts",
     "src/lib/chat-thread-instruments.test.ts",
     "src/lib/chat-tool-batches.test.ts",
+    "src/lib/use-tool-run-disclosure.test.ts",
+    "src/components/chat-tool-run-disclosure.test.ts",
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/auto-mission-state.test.ts",
@@ -325,6 +331,7 @@ export const SUITES = {
     "scripts/sync-marketplace.test.mjs",
     "scripts/crafts-audited-content.test.mjs",
     "src/lib/marketplace-catalog.test.ts",
+    "src/lib/marketplace-logo.test.ts",
     "src/lib/craft-draft.test.ts",
     "src/lib/craft-arrival.test.ts",
     "src/lib/role-craft-composition.test.ts",
@@ -382,6 +389,7 @@ export const SUITES = {
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
+    "src/lib/server/hf-paper-metadata.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
@@ -550,6 +558,8 @@ export const SUITES = {
     "src/components/message-bubble-jump-to-line.test.ts",
     "src/components/message-bubble-file-links.test.ts",
     "src/components/chat-view-polish-tools-activity.test.ts",
+    "src/components/chat-tool-activity-lifecycle.test.ts",
+    "src/components/chat-tool-run-lifecycle.test.ts",
     "src/components/chat-view-polish-header-composer.test.ts",
     "src/components/chat-view-polish-attachments-mentions.test.ts",
     "src/components/chat-view-polish-edit-review.test.ts",
@@ -922,6 +932,7 @@ export const SUITES = {
     "src/components/github-action-popover-chat-launch.test.ts",
     "src/components/github-card-wiring.test.ts",
     "src/components/image-carousel-wiring.test.ts",
+    "src/components/image-carousel-fill.test.ts",
     "src/components/chat-spec-card.test.ts",
     "src/components/chat-spec-card-wiring.test.ts",
     "src/lib/gh-card-commands.test.ts",
@@ -995,6 +1006,7 @@ export const SUITES = {
     "src/lib/github-repo-link.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
+    "src/lib/hf-papers.test.ts",
     "src/lib/memory-inspector.test.ts",
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
@@ -1238,6 +1250,8 @@ export const SUITES = {
     "src/lib/onboarding-status-probes.test.ts",
     "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
+    "src/app/api/research/links/ingest-urls.test.ts",
+    "src/app/api/research/papers/pdf/route.test.ts",
   ],
   api: [
     "src/app/api/afs/afs-routes.test.ts",
@@ -1394,6 +1408,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-attachments.test.ts",
     "src/app/api/chat/send/harness-routing-tool-events.test.ts",
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
+    "src/app/api/chat/send/chat-send-runtime.test.ts",
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
     "src/app/api/chat/send/chat-send-models.test.ts",
@@ -1744,6 +1759,10 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // hf-paper-metadata.ts imports "@/lib/hf-papers" as a runtime value.
+  "src/lib/server/hf-paper-metadata.test.ts",
+  // ingest-urls.ts imports "@/lib/link-extractor" and "@/lib/hf-papers".
+  "src/app/api/research/links/ingest-urls.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -1774,6 +1793,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-orchestration.test.ts",
   "src/app/api/board/orchestration-route.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
+  // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
+  "src/lib/use-auto-expand-new-groups.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
@@ -1807,6 +1828,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-conversations.test.ts",
   "src/app/api/chat/send/chat-send-models.test.ts",
   "src/app/api/chat/send/chat-send-capabilities.test.ts",
+  "src/app/api/chat/send/chat-send-runtime.test.ts",
   "src/app/api/chat/send/route-opencode.integration.test.ts",
   "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
   "src/app/api/chat/send/route-opencode-preflight.integration.test.ts",
@@ -1983,6 +2005,9 @@ const ALIAS_LOADER = new Set([
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
+  // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
+  // reaches "@/lib/server/api-security" for the local-request guard.
+  "src/app/api/research/papers/pdf/route.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
@@ -2054,17 +2079,34 @@ function main(argv) {
   }
   const list = names.flatMap((n) => SUITES[n]);
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
+  const secretRoot = mkdtempSync(path.join(tmpdir(), "coven-test-secrets-"));
+  const testEnv = {
+    ...process.env,
+    COVEN_VAULT_FILE: path.join(secretRoot, "vault.yaml"),
+    COVEN_CAVE_ENV_FILE: path.join(secretRoot, ".env.local"),
+    COVEN_CAVE_LOCAL_VAULT_FILE: path.join(secretRoot, "local-vault.enc.json"),
+    COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(secretRoot, "local-vault.key"),
+  };
   let passed = 0;
-  for (const file of list) {
-    const args = VITEST_TESTS.has(file)
-      ? ["./node_modules/vitest/vitest.mjs", "run", file]
-      : nodeArgsFor(file);
-    const res = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });
-    if (res.status !== 0) {
-      console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
-      process.exit(res.status ?? 1);
+  try {
+    for (const file of list) {
+      const args = VITEST_TESTS.has(file)
+        ? ["./node_modules/vitest/vitest.mjs", "run", file]
+        : nodeArgsFor(file);
+      const res = spawnSync(process.execPath, args, {
+        stdio: "inherit",
+        cwd: root,
+        env: testEnv,
+      });
+      if (res.status !== 0) {
+        console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
+        process.exitCode = res.status ?? 1;
+        return;
+      }
+      passed++;
     }
-    passed++;
+  } finally {
+    rmSync(secretRoot, { recursive: true, force: true });
   }
   console.log(`\n✓ ${passed} test file(s) passed [${names.join(", ")}]`);
 }

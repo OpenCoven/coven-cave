@@ -97,43 +97,19 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const \[autoFinishOnboarding, setAutoFinishOnboarding\] = useState\(false\);/,
-  "Workspace tracks whether startup-opened onboarding should auto-finish on completion",
+  /const openOnboarding = useCallback\(\(\) => \{\s*setOnboardingOpen\(true\);/s,
+  "shared openOnboarding opens onboarding manually after normal startup",
 );
 assert.match(
   workspace,
-  /const manualOnboardingOpenedRef = useRef\(false\);/,
-  "Workspace tracks whether onboarding was opened manually before the startup probe resolves",
+  /const openCreate = \(\) => \{\s*setOnboardingOpen\(true\);/s,
+  "the cave:onboarding-open bridge opens onboarding manually",
 );
+assert.doesNotMatch(workspace, /fetch\("\/api\/onboarding\/bootstrap"/, "Workspace does not repeat the server startup bootstrap request");
 assert.match(
   workspace,
-  /const openOnboarding = useCallback\(\(\) => \{\s*manualOnboardingOpenedRef\.current = true;\s*setAutoFinishOnboarding\(false\);\s*setOnboardingOpen\(true\);/s,
-  "shared openOnboarding marks manual intent before it clears auto-finish and opens the overlay",
-);
-assert.match(
-  workspace,
-  /const openCreate = \(\) => \{\s*manualOnboardingOpenedRef\.current = true;\s*setAutoFinishOnboarding\(false\);\s*setOnboardingOpen\(true\);/s,
-  "the cave:onboarding-open bridge clears auto-finish before opening the overlay",
-);
-assert.match(
-  workspace,
-  /import \{[\s\S]*shouldApplyStartupOnboardingBootstrap[\s\S]*\} from "@\/lib\/onboarding-gate"/,
-  "Workspace imports the shared bootstrap startup helper from onboarding-gate",
-);
-assert.match(
-  workspace,
-  /fetch\("\/api\/onboarding\/bootstrap"[\s\S]*shouldApplyStartupOnboardingBootstrap\(\{\s*status: json,\s*cancelled,\s*manuallyOpened: manualOnboardingOpenedRef\.current,\s*\}\)/s,
-  "a delayed bootstrap response delegates the manual/cancelled/status gate to the shared helper",
-);
-assert.match(
-  workspace,
-  /onDismiss=\{\(\) => \{\s*setAutoFinishOnboarding\(false\);[\s\S]*closeOnboarding\(\);/s,
-  "overlay dismissal clears auto-finish before closing onboarding",
-);
-assert.match(
-  workspace,
-  /<OnboardingOverlay[\s\S]*autoFinishWhenComplete=\{autoFinishOnboarding\}/,
-  "Workspace forwards the auto-finish flag into OnboardingOverlay",
+  /onDismiss=\{\(\) => \{\s*setOnboardingMounted\(true\);[\s\S]*closeOnboarding\(\);/s,
+  "manual overlay dismissal retains its lazy host before closing onboarding",
 );
 
 // The right companion rail was removed in favour of drag-to-split, so the

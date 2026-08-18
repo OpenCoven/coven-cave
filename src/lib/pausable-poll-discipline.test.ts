@@ -46,6 +46,8 @@ const RAW_INTERVAL_ALLOWLIST = new Map([
   ["components/familiar-x-section.tsx", "attempt-scoped X OAuth completion poll; the user is necessarily in ANOTHER window authorizing, so this is the one poll that must keep running while our tab is hidden — it is bounded by the attempt deadline and cancelled on unmount"],
   ["components/github-view.tsx", "15s re-render tick so the GitHub freshness pill's \"synced Nm ago\" ages honestly between polls; reads the clock only, issues no request"],
   ["lib/use-pausable-poll.ts", "the shared hook's own interval (it self-guards via document.hidden)"],
+  ["components/ui/beautiful/LoadingState.tsx", "elapsed-time ticker on the vendored Beautiful UI loader, same shape as ui/thinking-indicator.tsx above; counts tenths of a second and issues no request"],
+  ["components/ui/beautiful/atoms.tsx", "word-reveal timer for the vendored StreamText atom; it advances an index through a local string and issues no request, and it already resolves the whole string immediately under prefers-reduced-motion"],
 ]);
 
 function* walk(dir) {

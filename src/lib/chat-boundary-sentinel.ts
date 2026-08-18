@@ -40,8 +40,10 @@ export type BoundarySentinel = {
 };
 
 type SentinelOptions = {
-  /** Roots the session may touch: runtime cwd, granted project roots, and
-   *  the familiar workspace (memory/identity writes are always in-scope). */
+  /** Roots the session may touch: runtime cwd, granted project roots, the
+   *  familiar workspace, and narrow read-only runtime resources. This
+   *  sentinel observes path access but does not infer read vs. write intent;
+   *  the prompt and harness sandbox retain that distinction. */
   allowedRoots: string[];
   homeDir?: string;
   tmpDir?: string;

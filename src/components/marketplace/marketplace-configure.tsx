@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { vaultStorageForValue } from "@/lib/vault-storage";
 
 type FieldStatus = {
   key: string;
@@ -129,8 +130,9 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
     setKeyBusy(field.key, true);
     setError(null);
     try {
-      const sensitiveBody = draft.startsWith("op://")
-        ? { key: field.env, ref: draft, required: true, description: field.title }
+      const storage = vaultStorageForValue(draft);
+      const sensitiveBody = storage !== "encrypted"
+        ? { key: field.env, storage, ref: draft, required: true, description: field.title }
         : { key: field.env, storage: "encrypted", value: draft, required: true, description: field.title };
       const res = field.sensitive
         ? await fetch("/api/vault", {
@@ -171,7 +173,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
         {!loaded || fields.length > 0 ? (
           <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
             {displayName} needs the following before its tools can run. Secrets are saved in the
-            encrypted local vault or stored as 1Password references.
+            encrypted local Vault or stored as 1Password or Dashlane references.
           </p>
         ) : null}
         {error ? (
@@ -201,9 +203,9 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                   type="text"
                   value={drafts[f.key] ?? ""}
                   onChange={(e) => setDrafts((d) => ({ ...d, [f.key]: e.target.value }))}
-                  placeholder={f.sensitive ? "Paste a secret or op://Vault/Item/field" : f.default ? `e.g. ${f.default}` : "Enter a value (e.g. a directory path)"}
+                  placeholder={f.sensitive ? "Paste a secret, op:// reference, or dl:// reference" : f.default ? `e.g. ${f.default}` : "Enter a value (e.g. a directory path)"}
                   aria-label={`${f.title} value`}
-                  className="min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)] [height:var(--space-8)]!"
+                  className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 text-[length:var(--text-sm)] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)] [height:var(--space-8)]!"
                 />
                 <Button
                   variant="primary"
@@ -232,7 +234,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
               ) : null}
               {f.sensitive ? (
                 <p className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                  Raw values are saved encrypted on this machine. op:// refs still use 1Password.
+                  Raw values are encrypted on this machine. op:// uses 1Password; dl:// uses Dashlane.
                 </p>
               ) : null}
             </div>

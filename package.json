@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.3.3",
+  "version": "0.3.6",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
@@ -34,11 +34,13 @@
     "mobile:tailscale:stop": "bash scripts/mobile-tailscale.sh stop",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "icons:subset": "node scripts/generate-icon-subset.mjs",
+    "marketplace:logos": "node scripts/generate-marketplace-logos.mjs",
+    "marketplace:logos:check": "node scripts/generate-marketplace-logos.mjs --check",
     "protocol:tweet-thread": "node scripts/generate-tweet-thread-protocol.mjs",
     "protocol:tweet-thread:check": "node scripts/generate-tweet-thread-protocol.mjs --check",
     "protocol:tweet-thread:validator": "node scripts/build-tweet-thread-validator.mjs",
     "protocol:tweet-thread:validator:check": "node scripts/build-tweet-thread-validator.mjs --check",
-    "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs",
+    "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-marketplace-logos.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs",
     "build": "next build && pnpm build:server",
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
     "test:bundle": "node scripts/bundle-budget.mjs",
@@ -96,7 +98,7 @@
     "test:e2e": "pnpm e2e:install && playwright test",
     "start": "node server.mjs",
     "build:server": "esbuild server.ts --bundle=false --platform=node --target=node24 --outfile=server.mjs --format=esm",
-    "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs",
+    "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs && node scripts/copy-pdf-worker.mjs",
     "test:supply-chain": "node scripts/dependency-policy.test.mjs"
   },
   "dependencies": {
@@ -135,6 +137,7 @@
     "mermaid": "11.16.0",
     "next": "16.2.12",
     "node-pty": "1.1.0",
+    "pdfjs-dist": "6.2.108",
     "punycode": "2.3.1",
     "qrcode": "1.5.4",
     "react": "19.2.8",
@@ -166,6 +169,7 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "highlight.js": "11.11.1",
     "react-test-renderer": "19.2.8",
+    "simple-icons": "16.28.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
     "vitest": "4.1.10"

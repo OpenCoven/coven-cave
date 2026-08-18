@@ -153,36 +153,6 @@
   border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
 }
 
-/* CHAT-D13-01: "N tools" chip on settled assistant turns — tool activity is
-   hidden by default once a response has fully generated, and this chip is the
-   only way back to it, so like the retry pill it is NOT hover-revealed. */
-.cave-turn-tools-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-hairline);
-  background: transparent;
-  padding: 1px 6px;
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-
-.cave-turn-tools-toggle:hover {
-  color: var(--text-secondary);
-  border-color: var(--border-strong);
-}
-
-.cave-turn-tools-toggle.is-active {
-  color: var(--text-secondary);
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
-}
-
 .cave-reasoning-block,
 .cave-progress-group,
 .cave-tool-group {
@@ -215,6 +185,13 @@
   text-transform: uppercase;
 }
 
+/* One-off wrappers (data-one-off) render their summary hidden/inert — the
+   shared display:flex above would override [hidden]{display:none}, so this
+   scoped rule wins on specificity to keep the one-off summary truly invisible. */
+details[data-one-off] > .cave-tool-summary {
+  display: none;
+}
+
 .cave-tool-summary::-webkit-details-marker {
   display: none;
 }
@@ -236,7 +213,7 @@
   -webkit-mask-size: contain;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-position: center;
-  transition: transform 0.15s ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 details[open] > .cave-tool-summary::before {
@@ -333,13 +310,16 @@ details[open] > .cave-tool-summary::before {
   .cave-progress-row--running svg {
     animation: none;
   }
+  .cave-tool-summary::before {
+    transition: none;
+  }
 }
 
 .cave-tool-block {
   border: 1px solid var(--border-hairline);
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-base) 58%, transparent);
-  padding: 9px;
+  padding: var(--space-2);
   /* Color-coded by tool category (data-tool-category) for quick visual
      inspection — each category drives --tool-accent below. */
   --tool-accent: var(--text-muted);
@@ -351,6 +331,15 @@ details[open] > .cave-tool-summary::before {
   border-radius: var(--radius-control);
   background: var(--bg-subtle);
   padding: var(--space-2);
+}
+
+/* Flatten run-group framing when nested inside the compact work-line disclosure.
+   Standalone .cave-tool-run outside .cave-work-line keeps the card framing above. */
+.cave-work-line .cave-tool-run {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-1) 0;
 }
 
 .cave-tool-run > .cave-tool-summary {
@@ -369,14 +358,24 @@ details[open] > .cave-tool-summary::before {
 
 .cave-tool-run__list {
   display: grid;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  border-top: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
-  padding-top: var(--space-2);
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-1) 0 0 var(--space-4);
 }
 
 .cave-tool-icon { color: var(--tool-accent); }
 .cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
+
+/* Shared status chip row for work-line and repeated-run summaries. */
+.cave-work-line__status,
+.cave-tool-run__status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
 
 /* One tint set for every category-coded surface in the card — the row, the
    run, the batch band above them, and the reader's provenance footer
@@ -482,9 +481,6 @@ details[open] > .cave-tool-summary::before {
 .cave-tool-skills__icon { color: var(--accent-presence); }
 .cave-tool-skills__count { color: var(--text-muted); }
 
-/* The work line's quiet rollup — "4 batches · 6 ok". One phrase, never wrapped
-   away from the tinted running/error counters beside it. */
-.cave-tool-rollup { white-space: nowrap; }
 
 /* CHAT-D4-07: expanded tool I/O is secondary context — clamp it tighter than
    prose code blocks (which cap at min(60vh, 520px), CHAT-D7-03). 360px sits

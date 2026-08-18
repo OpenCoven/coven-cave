@@ -2,10 +2,18 @@
 import { readFileSync } from "node:fs";
 
 export const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+export const toolRunDisclosureSource = readFileSync(
+  new URL("./chat-tool-run-disclosure.ts", import.meta.url),
+  "utf8",
+);
 export const sessionHeader = readFileSync(new URL("./chat-session-header.tsx", import.meta.url), "utf8");
 export const menuModel = readFileSync(new URL("../lib/chat-session-menu-model.ts", import.meta.url), "utf8");
 export const attachmentCards = readFileSync(new URL("./chat-attachment-cards.tsx", import.meta.url), "utf8");
 export const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
+export const activityCss = readFileSync(
+  new URL("../styles/cave-chat/activity.css", import.meta.url),
+  "utf8",
+);
 export const styles = [
   "cave-md",
   "cave-composer",

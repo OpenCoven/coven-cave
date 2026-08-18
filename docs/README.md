@@ -24,7 +24,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Working in this repo
 
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
-- [`source-text-pins.md`](source-text-pins.md) — what a source-reading test may assert (a contract) and may not (arity, formatting, distance), the extraction rule, and why every repair must be mutation-tested
+- [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
 - [`workflows/`](workflows) — branching, release, and PR mechanics
 
 ### Platform and runtime
@@ -69,6 +69,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Design
 
 - [`coven-design-language.md`](coven-design-language.md) — the consolidated reference for how the product looks, moves, and speaks, written from shipped code
+- [`beautiful-ui.md`](beautiful-ui.md) — the vendored Beautiful UI primitives: what the token adapter maps, why their CSS is scoped out of the root bundle, and why they are reference implementations rather than drop-in components
 
 ### Integrity and integrations
 

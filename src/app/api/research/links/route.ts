@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { extractLinks } from "@/lib/link-extractor";
+import { arxivIdFromUrl } from "@/lib/hf-papers";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
+import { fetchHfPaperMetadata, type HfPaperMetadata } from "@/lib/server/hf-paper-metadata";
 import {
   listSavedLinks,
   MAX_LINKS_PER_SAVE,
   removeSavedLink,
   saveResearchLinks,
 } from "@/lib/server/research-links";
+import { collectIngestUrls } from "./ingest-urls";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,15 +43,7 @@ export async function POST(req: Request) {
   const parsed = await readJsonBody<SaveBody>(req, MAX_BODY_BYTES);
   if (!parsed.ok) return parsed.response;
 
-  const urls: string[] = [];
-  if (Array.isArray(parsed.body.urls)) {
-    for (const raw of parsed.body.urls) {
-      if (typeof raw === "string" && raw.trim()) urls.push(raw.trim());
-    }
-  }
-  if (typeof parsed.body.text === "string" && parsed.body.text.trim()) {
-    urls.push(...extractLinks(parsed.body.text));
-  }
+  const urls = collectIngestUrls(parsed.body);
   if (urls.length === 0) {
     return NextResponse.json(
       { ok: false, error: "no links found — pass urls[] or a text block containing http(s) links" },
@@ -62,10 +56,20 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  const enrichment = new Map<string, HfPaperMetadata | null>();
+  await Promise.all(
+    urls.map(async (url) => {
+      // Classify the URL, never scan it: a wrapper that merely embeds a paper
+      // URL is a different page, and enriching it would title it after the
+      // paper it quotes.
+      const arxivId = arxivIdFromUrl(url);
+      if (arxivId) enrichment.set(url, await fetchHfPaperMetadata(arxivId));
+    }),
+  );
   const source = parsed.body.source === "desk" ? "desk" : "chat";
   let result;
   try {
-    result = await saveResearchLinks(urls, source);
+    result = await saveResearchLinks(urls, source, enrichment);
   } catch {
     return NextResponse.json(
       { ok: false, error: "failed to write the saved-links store" },

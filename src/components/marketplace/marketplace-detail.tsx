@@ -25,6 +25,7 @@ import {
 } from "@/components/marketplace/craft-draft-preview";
 import { deriveCraftDisplayName, type CraftDraft } from "@/lib/craft-draft";
 import { KnowledgePackDetail } from "@/components/marketplace/knowledge-pack-detail";
+import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 
 type PackPrompt = PromptOption;
 
@@ -331,10 +332,18 @@ function DraftCraftDetail({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Local draft</p>
-            <h2 className="truncate text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
-            <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{plugin.description}</p>
+          <div className="flex min-w-0 items-start gap-3">
+            <MarketplaceLogo
+              id={plugin.id}
+              displayName={plugin.displayName}
+              logo={plugin.logo}
+              size="detail"
+            />
+            <div className="min-w-0">
+              <p className="text-[length:var(--text-xs)] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Local draft</p>
+              <h2 className="truncate text-[length:var(--text-xl)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
+              <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">{plugin.description}</p>
+            </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
             <Icon name="ph:x" width={16} />
@@ -503,9 +512,12 @@ function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: P
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-              <Icon name={kindIcon(plugin.kind)} width={18} className="text-[var(--text-muted)]" />
-            </span>
+            <MarketplaceLogo
+              id={plugin.id}
+              displayName={plugin.displayName}
+              logo={plugin.logo}
+              size="detail"
+            />
             <div className="min-w-0">
               <h2 className="truncate text-[length:var(--text-lg)] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
               <p className="truncate text-[length:var(--text-sm)] text-[var(--text-muted)]">

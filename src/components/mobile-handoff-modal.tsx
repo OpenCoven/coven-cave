@@ -217,13 +217,13 @@ export function MobileHandoffModal({
       if (controller.signal.aborted) return;
       const json = (await res.json()) as HandoffResponse;
       if (controller.signal.aborted) return;
-      if (!json.ok) setError(json.stderr || json.error || "Tailscale Serve reset failed.");
+      if (!json.ok) setError(json.stderr || json.error || "Couldn’t stop sharing.");
       setHandoff(null);
     } catch (err) {
       if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
         return;
       }
-      setError(err instanceof Error ? err.message : "Tailscale Serve reset failed.");
+      setError(err instanceof Error ? err.message : "Couldn’t stop sharing.");
     } finally {
       if (!controller.signal.aborted) setLoading(false);
       if (startAbortRef.current === controller) startAbortRef.current = null;
@@ -238,7 +238,7 @@ export function MobileHandoffModal({
       footerActions={
         <>
           <Button variant="ghost" onClick={resetServe} disabled={loading}>
-            Reset Serve
+            Stop sharing
           </Button>
           {onMobileModeChange ? (
             <Button
@@ -250,7 +250,7 @@ export function MobileHandoffModal({
             </Button>
           ) : null}
           <Button variant="secondary" onClick={() => void start()} loading={loading}>
-            Refresh route
+            Refresh link
           </Button>
           <Button variant="secondary" onClick={() => void copyHost()} disabled={!handoff?.nativeHost || loading}>
             {copied === "host" ? "Host copied" : "Copy host"}

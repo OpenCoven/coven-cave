@@ -7,6 +7,10 @@ import type { SessionRow } from "@/lib/types";
 import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
 import { setProjectOverride } from "@/lib/chat-project-overrides";
+import {
+  chatProjectOrganizationGroups,
+  organizationExpansionKey,
+} from "@/lib/project-organizations";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
 import { relativeTime } from "@/lib/relative-time";
@@ -499,6 +503,7 @@ export function ChatProjectSidebar({
 
   const displayIds = useMemo(() => display.map((s) => s.id), [display]);
   const hasSearch = search.trim().length > 0;
+  const organizationGroups = useMemo(() => chatProjectOrganizationGroups(groups), [groups]);
 
   function openProjectsTab() {
     if (onOpenProjectsTab) {
@@ -590,6 +595,118 @@ export function ChatProjectSidebar({
   }
 
   const recentRows = allSessions;
+
+  function renderProjectGroup(group: ChatProjectGroup) {
+    const key = selectionKey(group.projectId, group.projectRoot);
+    const projectExpanded = expandedKeys.includes(key);
+    const projectVisible = hasSearch || projectExpanded;
+    const isSelected = selection === key;
+    const label = repoLabel(group);
+    const projectLabel = hasSearch
+      ? `Select ${label}; sessions shown for search`
+      : `${projectVisible ? "Collapse" : "Expand"} ${label} sessions`;
+    const orderedSessions = applyManualOrder(group.sessions, order);
+    const showAll = showMoreKeys.has(key);
+    const { shown, hiddenCount } = railGroupPreview(orderedSessions, showAll);
+    const orderedIds = shown.map((s) => s.id);
+    const latestIso = group.updatedAt ?? group.sessions[0]?.updated_at ?? null;
+    const groupMeta = `${group.sessions.length} chat${group.sessions.length === 1 ? "" : "s"}${latestIso ? ` · ${shortAge(latestIso)}` : ""}`;
+    return (
+      <FolderDroppable key={key} id={`folder:${key}`}>
+        <div
+          className={[
+            // Project folders are task-section headers: a mode-aware fill
+            // plus a hairline divider so each group reads clearly as a header.
+            // Selected keeps an accent tint.
+            "group relative flex w-full items-center border-b border-[var(--border-hairline)] transition-colors",
+            isSelected
+              ? "bg-[color-mix(in_oklch,var(--bg-base)_80%,var(--accent-presence)_20%)]"
+              : "bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] hover:bg-[color-mix(in_oklch,var(--bg-base)_80%,var(--foreground)_20%)]",
+          ].join(" ")}
+        >
+          {isSelected ? <AccentBar tall /> : null}
+          <button
+            type="button"
+            onClick={() => {
+              onSelect(key);
+              if (!hasSearch) onToggleExpanded(key);
+            }}
+            aria-expanded={projectVisible}
+            aria-label={projectLabel}
+            aria-current={isSelected ? "true" : undefined}
+            className={[
+              "focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-1.5 pr-2 text-left text-[length:var(--text-sm)] transition-colors",
+              isSelected
+                ? "text-[var(--text-primary)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+            ].join(" ")}
+          >
+            <Icon name={projectVisible ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
+            <ProjectAvatar
+              name={label}
+              root={group.projectRoot}
+              color={group.projectColor}
+              size="md"
+              className="shrink-0"
+            />
+            <span
+              className={[
+                "min-w-0 flex-1 truncate font-bold",
+                isSelected ? "text-[var(--accent-presence)]" : "text-[var(--text-primary)]",
+              ].join(" ")}
+            >
+              {label}
+            </span>
+            <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+              {groupMeta}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onNewChat(group.projectRoot)}
+            title={`New session in ${label}`}
+            aria-label={`New session in ${label}`}
+            className="touch-always-visible focus-ring absolute right-1 grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Icon name="ph:plus" width={11} aria-hidden />
+          </button>
+        </div>
+        {projectVisible ? (
+          <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
+            <ul>
+              {shown.map((session) => (
+                <FolderChatRow
+                  key={session.id}
+                  session={session}
+                  active={activeSessionId === session.id}
+                  onOpen={() => onOpenSession(session)}
+                  onOpenInSplit={
+                    onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                  }
+                />
+              ))}
+            </ul>
+            {hiddenCount > 0 || showAll ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setShowMoreKeys((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(key)) next.delete(key);
+                    else next.add(key);
+                    return next;
+                  })
+                }
+                className="focus-ring w-full rounded-[var(--radius-sm)] py-1 pl-6 pr-2 text-left text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              >
+                {railMoreLabel(showAll, hiddenCount)}
+              </button>
+            ) : null}
+          </SortableContext>
+        ) : null}
+      </FolderDroppable>
+    );
+  }
 
   return (
     <div className="hidden lg:contents">
@@ -737,6 +854,7 @@ export function ChatProjectSidebar({
                 <div className="flex flex-col items-center gap-1">
                   {groups.map((group) => {
                     const key = selectionKey(group.projectId, group.projectRoot);
+                    const organizationKey = organizationExpansionKey(group.organization.key);
                     const label = repoLabel(group);
                     return (
                       <button
@@ -748,6 +866,7 @@ export function ChatProjectSidebar({
                         onClick={() => {
                           setOpen(true);
                           onSelect(key);
+                          if (!expandedKeys.includes(organizationKey)) onToggleExpanded(organizationKey);
                           if (!expandedKeys.includes(key)) onToggleExpanded(key);
                         }}
                         className={[
@@ -784,113 +903,48 @@ export function ChatProjectSidebar({
                   </button>
 
                   <DndContext id="cps-folders" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
-                    {groups.map((group) => {
-                      const key = selectionKey(group.projectId, group.projectRoot);
-                      const expanded = expandedKeys.includes(key);
-                      const isSelected = selection === key;
-                      const label = repoLabel(group);
-                      const orderedSessions = applyManualOrder(group.sessions, order);
-                      const showAll = showMoreKeys.has(key);
-                      const { shown, hiddenCount } = railGroupPreview(orderedSessions, showAll);
-                      const orderedIds = shown.map((s) => s.id);
-                      const latestIso = group.updatedAt ?? group.sessions[0]?.updated_at ?? null;
-                      const groupMeta = `${group.sessions.length} chat${group.sessions.length === 1 ? "" : "s"}${latestIso ? ` · ${shortAge(latestIso)}` : ""}`;
+                    {organizationGroups.map((organizationGroup) => {
+                      const organization = organizationGroup.organization;
+                      const organizationKey = organizationExpansionKey(organization.key);
+                      const organizationExpanded = expandedKeys.includes(organizationKey);
+                      const organizationVisible = hasSearch || organizationExpanded;
+                      const organizationLabel = hasSearch
+                        ? `${organization.label} projects shown for search`
+                        : `${organizationVisible ? "Collapse" : "Expand"} ${organization.label} projects`;
+                      const projectCount = organizationGroup.items.length;
                       return (
-                        <FolderDroppable key={key} id={`folder:${key}`}>
-                          <div
-                            className={[
-                              // Project folders are task-section headers: a mode-aware
-                              // fill (darker than the page in light mode, lighter in
-                              // dark — the ramp inverts per mode) + a hairline divider
-                              // so each group reads clearly as a header, matching the
-                              // RailSection treatment. Selected keeps an accent tint.
-                              "group relative flex w-full items-center border-b border-[var(--border-hairline)] transition-colors",
-                              isSelected
-                                ? "bg-[color-mix(in_oklch,var(--bg-base)_80%,var(--accent-presence)_20%)]"
-                                : "bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] hover:bg-[color-mix(in_oklch,var(--bg-base)_80%,var(--foreground)_20%)]",
-                            ].join(" ")}
+                        <section
+                          key={organizationKey}
+                          aria-label={organization.label}
+                          className="border-b border-[var(--border-hairline)] last:border-b-0"
+                        >
+                          <button
+                            type="button"
+                            onClick={hasSearch ? undefined : () => onToggleExpanded(organizationKey)}
+                            disabled={hasSearch}
+                            className="focus-ring flex w-full items-center gap-1.5 bg-[var(--bg-panel)] px-2 py-1.5 text-left text-[length:var(--text-xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:cursor-default"
+                            aria-expanded={organizationVisible}
+                            aria-label={organizationLabel}
                           >
-                            {isSelected ? <AccentBar tall /> : null}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onSelect(key);
-                                onToggleExpanded(key);
-                              }}
-                              aria-expanded={expanded}
-                              aria-label={`${expanded ? "Collapse" : "Expand"} ${label} sessions`}
-                              aria-current={isSelected ? "true" : undefined}
-                              className={[
-                                "focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-1.5 pr-2 text-left text-[length:var(--text-sm)] transition-colors",
-                                isSelected
-                                  ? "text-[var(--text-primary)]"
-                                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-                              ].join(" ")}
-                            >
-                              <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
-                              <ProjectAvatar
-                                name={label}
-                                root={group.projectRoot}
-                                color={group.projectColor}
-                                size="md"
-                                className="shrink-0"
-                              />
-                              <span
-                                className={[
-                                  "min-w-0 flex-1 truncate font-bold",
-                                  isSelected ? "text-[var(--accent-presence)]" : "text-[var(--text-primary)]",
-                                ].join(" ")}
-                              >
-                                {label}
-                              </span>
-                              <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                                {groupMeta}
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onNewChat(group.projectRoot)}
-                              title={`New session in ${label}`}
-                              aria-label={`New session in ${label}`}
-                              className="touch-always-visible focus-ring absolute right-1 grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
-                            >
-                              <Icon name="ph:plus" width={11} aria-hidden />
-                            </button>
-                          </div>
-                          {expanded ? (
-                            <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
-                              <ul>
-                                {shown.map((session) => (
-                                  <FolderChatRow
-                                    key={session.id}
-                                    session={session}
-                                    active={activeSessionId === session.id}
-                                    onOpen={() => onOpenSession(session)}
-                                    onOpenInSplit={
-                                      onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
-                                    }
-                                  />
-                                ))}
-                              </ul>
-                              {hiddenCount > 0 || showAll ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setShowMoreKeys((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(key)) next.delete(key);
-                                      else next.add(key);
-                                      return next;
-                                    })
-                                  }
-                                  className="focus-ring w-full rounded-[var(--radius-sm)] py-1 pl-6 pr-2 text-left text-[length:var(--text-2xs)] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
-                                >
-                                  {railMoreLabel(showAll, hiddenCount)}
-                                </button>
-                              ) : null}
-                            </SortableContext>
+                            <Icon
+                              name={organizationVisible ? "ph:caret-down" : "ph:caret-right"}
+                              width={10}
+                              aria-hidden
+                              className="shrink-0 text-[var(--text-muted)]"
+                            />
+                            <span className="min-w-0 flex-1 truncate font-bold">
+                              {organization.label}
+                            </span>
+                            <span className="shrink-0 font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+                              {projectCount} project{projectCount === 1 ? "" : "s"}
+                            </span>
+                          </button>
+                          {organizationVisible ? (
+                            <div>
+                              {organizationGroup.items.map((group) => renderProjectGroup(group))}
+                            </div>
                           ) : null}
-                        </FolderDroppable>
+                        </section>
                       );
                     })}
                   </DndContext>

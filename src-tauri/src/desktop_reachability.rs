@@ -1549,7 +1549,7 @@ fn daemon_augmented_path(node: &Path) -> String {
         directories.push(directory.to_path_buf());
     }
     if let Some(coven) = find_coven() {
-        if let Some(directory) = coven.parent() {
+        if let Some(directory) = coven.path.parent() {
             directories.push(directory.to_path_buf());
         }
     }

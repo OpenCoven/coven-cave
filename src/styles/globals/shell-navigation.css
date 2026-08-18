@@ -18,6 +18,7 @@
 .shell-nav-panel,
 .shell-list-panel,
 .shell-detail-panel,
+.shell-right-chat-panel,
 .shell-bottom-panel {
   height: 100%;
   min-width: 0;
@@ -193,7 +194,10 @@
 
   .shell-detail-panel {
     padding: var(--space-2);
-    background: var(--bg-panel);
+    /* The gutter this padding reserves IS the outer frame, so it takes the
+       rail's own rendered shade rather than the bare panel token — see
+       --shell-floor in globals/foundations.css. */
+    background: var(--shell-floor);
   }
 
   .shell-detail {
@@ -491,6 +495,22 @@
   flex: 1 1 auto;
   height: 1px;
   background: var(--border-hairline);
+}
+
+.cnav__organization + .cnav__organization {
+  margin-top: var(--space-1);
+}
+.cnav__organization-toggle {
+  width: 100%;
+  text-align: left;
+}
+.cnav__organization-toggle:disabled {
+  cursor: default;
+}
+.cnav__organization-projects {
+  margin-inline-start: var(--space-2);
+  padding-inline-start: var(--space-1);
+  border-inline-start: 1px solid var(--border-hairline);
 }
 
 /* Project group header — sticky so context stays while scrolling long lists.
@@ -1158,7 +1178,103 @@
 
 /* The detail wrapper provides the shell floor around the inset content. */
 .shell-detail-panel {
+  background: var(--shell-floor);
+}
+
+.shell-right-chat-panel {
   background: var(--bg-panel);
+}
+
+.shell-right-chat {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+
+.right-chat {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  container-type: inline-size;
+}
+
+.right-chat__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.right-chat__identity {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  font-size: var(--text-sm);
+}
+
+.right-chat__identity > span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-chat__thread-switcher {
+  min-width: 0;
+  max-width: 160px;
+  height: 28px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+
+.right-chat__icon-button {
+  display: inline-grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.right-chat__icon-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.right-chat__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.right-chat__loading,
+.right-chat__familiar-grid {
+  padding: var(--space-4);
+}
+
+@container (max-width: 380px) {
+  .right-chat__identity {
+    display: none;
+  }
+
+  .right-chat__thread-switcher {
+    flex: 1 1 auto;
+    max-width: none;
+  }
 }
 
 .shell-detail-header {

@@ -54,10 +54,6 @@ import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
-import {
-  shouldApplyStartupOnboardingBootstrap,
-  type OnboardingBootstrapStatusPayload,
-} from "@/lib/onboarding-gate";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
@@ -161,6 +157,7 @@ import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
+import { RightChatPanel } from "@/components/right-chat-panel";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -292,6 +289,7 @@ export function Workspace() {
   useSurfaceWarmup();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
+  const [rightChatOpen, setRightChatOpen] = useState(false);
   // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
   // (declared above startFamiliarChat) can call it without a TDZ, and without
   // workspace self-dispatching a chat-nav event. Assigned in an effect below.
@@ -350,6 +348,7 @@ export function Workspace() {
   } = useProjects({ familiarId: projectGateCandidateFamiliarId });
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessionsScopeFamiliarId, setSessionsScopeFamiliarId] = useState<string | null | undefined>(undefined);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -840,15 +839,13 @@ export function Workspace() {
   const activeChatSessionIdRef = useRef<string | null>(null);
   activeChatSessionIdRef.current = activeChatSessionId;
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [onboardingResolved, setOnboardingResolved] = useState(false);
-  const [autoFinishOnboarding, setAutoFinishOnboarding] = useState(false);
+  const onboardingResolved = true;
   // Lazy-load onboarding on first use, then keep its host mounted while closed.
   // Server-owned bootstrap progress persists independently; keeping the host
   // mounted makes close/reopen cheap and retains local focus/announcement refs.
   const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [projectsInitiallyResolved, setProjectsInitiallyResolved] = useState(false);
   const [pendingFirstProjectGrant, setPendingFirstProjectGrant] = useState<PendingFirstProjectAccessSnapshot | null>(() => readPendingFirstProjectAccessSnapshot());
-  const manualOnboardingOpenedRef = useRef(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
@@ -1176,8 +1173,6 @@ export function Workspace() {
   // for adding to an existing roster without re-running setup.
   useEffect(() => {
     const openCreate = () => {
-      manualOnboardingOpenedRef.current = true;
-      setAutoFinishOnboarding(false);
       setOnboardingOpen(true);
     };
     window.addEventListener("cave:onboarding-open", openCreate);
@@ -1542,6 +1537,7 @@ export function Workspace() {
         // reference when nothing changed so an unchanged list doesn't re-render
         // every sessions consumer (chat list, rails, badges) for nothing.
         setSessions((prev) => (sameSessionList(prev, visibleSessions) ? prev : visibleSessions));
+        setSessionsScopeFamiliarId(capturedActiveId);
         setSessionsLoaded(true);
         baseSessionsApplied = true;
       } catch {
@@ -1865,8 +1861,6 @@ export function Workspace() {
   }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
   const openOnboarding = useCallback(() => {
-    manualOnboardingOpenedRef.current = true;
-    setAutoFinishOnboarding(false);
     setOnboardingOpen(true);
   }, []);
   const closeOnboarding = useCallback(() => {
@@ -1898,40 +1892,6 @@ export function Workspace() {
     clearPendingFirstProjectAccessSnapshot();
     setPendingFirstProjectGrant(null);
   }, [canReconcilePendingFirstProjectGrant, pendingFirstProjectGrant, reconciledPendingFirstProjectGrant]);
-
-  // First-run uses the staged bootstrap state instead of the legacy technical
-  // readiness checklist. A confirmed interrupted job always resumes; before
-  // confirmation the existing dismissal flag still suppresses auto-open.
-  useEffect(() => {
-    let cancelled = false;
-    const skipped =
-      typeof window !== "undefined" && window.localStorage.getItem("cave:onboarding:dismissed") === "1";
-    void (async () => {
-      try {
-        const res = await fetch("/api/onboarding/bootstrap", { cache: "no-store" });
-        if (!res.ok || cancelled) return;
-        const json = (await res.json()) as OnboardingBootstrapStatusPayload;
-        if (
-          shouldApplyStartupOnboardingBootstrap({
-            status: json,
-            cancelled,
-            manuallyOpened: manualOnboardingOpenedRef.current,
-          }) &&
-          (!skipped || json.confirmed === true)
-        ) {
-          setAutoFinishOnboarding(true);
-          setOnboardingOpen(true);
-        }
-      } catch {
-        /* ignore — the daemon-offline banner surfaces transport issues */
-      } finally {
-        if (!cancelled) setOnboardingResolved(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null): boolean => {
@@ -3756,6 +3716,31 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
+  const rightChat = (
+    <RightChatPanel
+      open={rightChatOpen}
+      familiars={familiars}
+      activeFamiliar={active}
+      sessions={sessions}
+      sessionsLoaded={sessionsLoaded}
+      sessionsError={sessionsError}
+      sessionsScopeFamiliarId={sessionsScopeFamiliarId}
+      familiarsLoaded={familiarsLoaded}
+      familiarsError={familiarsError}
+      daemonRunning={daemonRunning}
+      onClose={() => shellRef.current?.closeRightChat()}
+      onSetActiveFamiliar={setActiveId}
+      onRetryFamiliars={() => void loadFamiliars()}
+      onRetrySessions={() => void loadSessions()}
+      onSessionStarted={loadSessions}
+      onSessionsChanged={loadSessions}
+      onSessionsDeleted={handleSessionsDeleted}
+      onSlashFromChat={handleSlashIntent}
+      onOpenOnboarding={openOnboarding}
+      onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+      onOpenUrl={openUrlInApp}
+    />
+  );
   // The standalone "Manage familiars" drawer is gone — Chat → Familiar →
   // Settings is the single source of truth. `redirectToChat` routes every
   // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
@@ -3805,6 +3790,8 @@ export function Workspace() {
         onDropSplitPage={openSplitPage}
         navPolicy={mode === "chat" ? "chat-contextual" : "remembered"}
         onNavOpenChange={setNavOpen}
+        rightChat={rightChat}
+        onRightChatOpenChange={setRightChatOpen}
         topBar={({ navDrawerOpen }) => (
           <>
             <FamiliarMenuBar
@@ -3922,10 +3909,8 @@ export function Workspace() {
 
       {(onboardingOpen || onboardingMounted) && (
         <OnboardingOverlay
-          autoFinishWhenComplete={autoFinishOnboarding}
           open={onboardingOpen}
           onDismiss={() => {
-            setAutoFinishOnboarding(false);
             setOnboardingMounted(true);
             closeOnboarding();
           }}

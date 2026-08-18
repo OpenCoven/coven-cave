@@ -82,7 +82,7 @@ test("every remounting surface opts into the registry while searches remain tran
     browser: read("../components/browser-pane.tsx"),
     grimoire: read("../components/grimoire-view.tsx"),
     codeRail: read("../components/rail-files-panel.tsx"),
-    workspace: read("../app/page.tsx"),
+    workspace: read("../components/workspace-app.tsx"),
     workspaceShell: read("../components/workspace.tsx"),
   };
   for (const [name, source] of Object.entries(sources)) {
