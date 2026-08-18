@@ -786,7 +786,7 @@ test("run event rejects custom-prototype nested data", () => {
   );
 });
 
-test("embedded manifests bind original run privacy retention and cloud-content consent", () => {
+test("embedded manifests bind original run privacy retention and every content-sync attempt", () => {
   const finalManifest = linkedManifest(validRunManifest);
 
   expectError(
@@ -827,7 +827,7 @@ test("embedded manifests bind original run privacy retention and cloud-content c
         artifactContentSync: false,
       },
     }),
-    "$.artifactManifest.artifacts[0].placement",
+    "$.artifactManifest.artifacts[0].contentSync",
     "semantic_conflict",
   );
   assert.equal(
@@ -842,6 +842,60 @@ test("embedded manifests bind original run privacy retention and cloud-content c
       }),
     ).artifactManifest?.artifacts[0].placement,
     "cloud-content",
+  );
+
+  for (const contentSync of ["pending", "failed"] as const) {
+    const placement = contentSync === "pending" ? "cloud-metadata" : "device-local";
+    const requestedSyncManifest = linkedManifest({
+      ...validRunManifest,
+      artifacts: validRunManifest.artifacts.map((artifact) => ({
+        ...artifact,
+        placement,
+        contentSync,
+      })),
+    });
+    expectError(
+      parseResearchRunV1({
+        ...runForStatus("completed", requestedSyncManifest),
+        privacy: {
+          ...validResearchRun.privacy,
+          artifactContentSync: false,
+        },
+      }),
+      "$.artifactManifest.artifacts[0].contentSync",
+      "semantic_conflict",
+    );
+    assert.equal(
+      expectOk(
+        parseResearchRunV1({
+          ...runForStatus("completed", requestedSyncManifest),
+          privacy: {
+            ...validResearchRun.privacy,
+            artifactContentSync: true,
+          },
+        }),
+      ).artifactManifest?.artifacts[0].contentSync,
+      contentSync,
+    );
+  }
+
+  const incoherentLocalSync = linkedManifest({
+    ...validRunManifest,
+    artifacts: validRunManifest.artifacts.map((artifact) => ({
+      ...artifact,
+      contentSync: "synced",
+    })),
+  });
+  expectError(
+    parseResearchRunV1({
+      ...runForStatus("completed", incoherentLocalSync),
+      privacy: {
+        ...validResearchRun.privacy,
+        artifactContentSync: false,
+      },
+    }),
+    "$.artifactManifest.artifacts[0].placement",
+    "semantic_conflict",
   );
 
   const cloudMetadataManifest = linkedManifest({
@@ -885,6 +939,73 @@ test("embedded manifests bind original run privacy retention and cloud-content c
       parseResearchRunV1(runForStatus("completed", shortenedEffectivePolicy)),
     ).artifactManifest?.retention.effectivePolicy,
     "run-only",
+  );
+});
+
+test("Context Pack composition cannot approve artifact sync through manifest fields alone", () => {
+  const contextPack = expectOk(parseContextPackV1(validContextPack));
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: contextPack.id,
+    contextPackDigest: contextPack.digest,
+  };
+  const failedLocalManifest = linkedManifest(
+    {
+      ...validRunManifest,
+      artifacts: validRunManifest.artifacts.map((artifact) => ({
+        ...artifact,
+        contentSync: "failed",
+      })),
+    },
+    context,
+  );
+  const run = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", failedLocalManifest),
+      context,
+      privacy: {
+        ...validResearchRun.privacy,
+        artifactContentSync: true,
+      },
+    }),
+  );
+
+  expectError(
+    validateResearchRunContextPackV1(
+      {
+        ...run,
+        privacy: {
+          ...run.privacy,
+          artifactContentSync: false,
+        },
+      },
+      {
+        ...contextPack,
+        consent: {
+          ...contextPack.consent,
+          artifactContentSync: true,
+        },
+      },
+    ),
+    "$.artifactManifest.artifacts[0].contentSync",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack),
+    "$.privacy.artifactContentSync",
+    "semantic_conflict",
+  );
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(run, {
+        ...contextPack,
+        consent: {
+          ...contextPack.consent,
+          artifactContentSync: true,
+        },
+      }),
+    ).artifactManifest?.artifacts[0].contentSync,
+    "failed",
   );
 });
 

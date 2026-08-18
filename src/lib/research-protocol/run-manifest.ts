@@ -39,6 +39,7 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
+const PRINTABLE_ASCII_PROPERTY_NAME_RE = /^[\u0020-\u007e]*$/;
 const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
   "excerpt",
   "privateexcerpt",
@@ -60,7 +61,7 @@ const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
 ]);
 
 function normalizeSensitiveKey(key: string): string {
-  return key.replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
+  return key.normalize("NFKC").replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
 
 export type ArtifactRegistrationV1 = {
@@ -177,6 +178,16 @@ function validateSensitiveObjectKeys(
 
   for (const key of Object.keys(value)) {
     const keyPath = childPath(path, key);
+    if (
+      !PRINTABLE_ASCII_PROPERTY_NAME_RE.test(key)
+      || key.normalize("NFKC") !== key
+    ) {
+      return fail(
+        "semantic_conflict",
+        keyPath,
+        "Sensitive manifest property names must be printable ASCII and NFKC-stable",
+      );
+    }
     if (FORBIDDEN_NORMALIZED_SENSITIVE_KEYS.has(normalizeSensitiveKey(key))) {
       return fail(
         "semantic_conflict",
@@ -516,11 +527,18 @@ function parseArtifact(value: unknown, path: string): ProtocolParseResult<Artifa
     "contentSync",
   );
   if (!contentSync.ok) return contentSync;
-  if (placement.value === "cloud-content" && contentSync.value === "not-requested") {
+  if (placement.value === "cloud-content" && contentSync.value !== "synced") {
     return fail(
       "semantic_conflict",
       childPath(path, "contentSync"),
-      "cloud-content artifacts require content synchronization to be requested",
+      "cloud-content artifacts require completed content synchronization",
+    );
+  }
+  if (contentSync.value === "synced" && placement.value !== "cloud-content") {
+    return fail(
+      "semantic_conflict",
+      childPath(path, "placement"),
+      "synced artifacts require cloud-content placement",
     );
   }
 
@@ -851,6 +869,59 @@ function validateRetentionClock(
     );
   }
   return pass(undefined);
+}
+
+function validateDeletionLifecycleTransition(
+  previous: RunManifestV1,
+  next: RunManifestV1,
+  allowFreshConsentCancellation: boolean,
+): ProtocolParseResult<void> {
+  const pair = validateRetentionDeletionPair(next.retention, next.deletion);
+  if (!pair.ok) return pair;
+
+  const previousStatus = previous.deletion.status;
+  const nextStatus = next.deletion.status;
+  const validForwardTransition =
+    previousStatus === "not_scheduled"
+    || (previousStatus === "scheduled"
+      && ["scheduled", "pending", "partial_failure", "completed"].includes(nextStatus))
+    || (previousStatus === "pending"
+      && ["pending", "partial_failure", "completed"].includes(nextStatus))
+    || (previousStatus === "partial_failure"
+      && ["pending", "partial_failure", "completed"].includes(nextStatus))
+    || (previousStatus === "completed" && nextStatus === "completed");
+  if (validForwardTransition) return pass(undefined);
+
+  if (
+    allowFreshConsentCancellation
+    && previousStatus !== "completed"
+    && next.retention.status === "active"
+    && nextStatus === "not_scheduled"
+    && next.retention.contentExpiresAt === null
+  ) {
+    for (const key of [
+      "requestedAt",
+      "completedAt",
+      "deletedObjectCount",
+      "retainedAuditUntil",
+      "eventSequence",
+    ] as const) {
+      if (hasOwn(next.deletion, key)) {
+        return fail(
+          "semantic_conflict",
+          `$.deletion.${key}`,
+          "Fresh-consent deletion cancellation must clear deletion receipt timing fields",
+        );
+      }
+    }
+    return pass(undefined);
+  }
+
+  return fail(
+    "semantic_conflict",
+    "$.deletion.status",
+    `deletion status cannot move backward from ${previousStatus} to ${nextStatus}`,
+  );
 }
 
 function manifestDigest(value: unknown): string {
@@ -1568,10 +1639,13 @@ export function validateRunManifestRevision(
     }
   }
 
-  const consent = validateManifestRetentionConsent(next, options?.contextConsent);
+  const consent = validateManifestRetentionConsent(next, options.contextConsent);
   if (!consent.ok) return consent;
 
-  if (RETENTION_ORDER[next.retention.effectivePolicy] > RETENTION_ORDER[previous.retention.effectivePolicy]) {
+  const lengthensEffectivePolicy =
+    RETENTION_ORDER[next.retention.effectivePolicy]
+      > RETENTION_ORDER[previous.retention.effectivePolicy];
+  if (lengthensEffectivePolicy) {
     if (options.freshConsent !== true) {
       return fail(
         "semantic_conflict",
@@ -1579,6 +1653,15 @@ export function validateRunManifestRevision(
         "lengthening effective retention requires freshConsent",
       );
     }
+  }
+
+  if (previous.state === "final") {
+    const lifecycle = validateDeletionLifecycleTransition(
+      previous,
+      next,
+      lengthensEffectivePolicy && options.freshConsent === true,
+    );
+    if (!lifecycle.ok) return lifecycle;
   }
 
   return pass(next);

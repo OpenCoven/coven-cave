@@ -944,13 +944,23 @@ function validateAuthoritativeProtocolObject(
 function materializeScenarioInput(
   corpus: ScenarioCorpus,
   entry: ScenarioInputEntry,
+  isExpectedParseFailureInput: boolean,
 ): Record<string, unknown> {
   const location = `${corpus.filePath}.objects.${entry.reference} (input ${entry.name})`;
-  return validateProtocolObjectSchema(
-    materializeObject(corpus.objects[entry.reference], location),
-    location,
+  const materialized = materializeObject(corpus.objects[entry.reference], location);
+  if (!isExpectedParseFailureInput) {
+    return validateProtocolObjectSchema(materialized, location, entry.schema);
+  }
+
+  // A parser-rejection scenario may intentionally violate its role schema;
+  // every other input still passes the authoritative schema before execution.
+  const protocolObject = requireRecord(materialized, location);
+  assert.equal(
+    requireString(protocolObject.schema, `${location}.schema`),
     entry.schema,
+    `${location}: input must declare expected protocol role schema ${entry.schema}`,
   );
+  return protocolObject;
 }
 
 function requireParsedSchema<T extends ResearchProtocolObjectV1>(
@@ -1092,7 +1102,13 @@ function executeScenario(corpus: ScenarioCorpus, scenario: ScenarioDefinition): 
   const materializedInputs = entries.map((entry) => ({
     entry,
     location: `${corpus.filePath}.objects.${entry.reference} (input ${entry.name})`,
-    materialized: materializeScenarioInput(corpus, entry),
+    materialized: materializeScenarioInput(
+      corpus,
+      entry,
+      !scenario.expected.ok
+        && scenario.expected.stage === "parse"
+        && scenario.expected.input === entry.name,
+    ),
   }));
 
   for (const { entry, location, materialized } of materializedInputs) {
@@ -1883,6 +1899,11 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.unscheduled-shortening",
     "manifest.lengthening-without-fresh-consent",
     "manifest.lengthening-with-fresh-consent",
+    "manifest.scheduled-to-active-rollback",
+    "manifest.pending-to-active-rollback",
+    "manifest.pending-to-scheduled-rollback",
+    "manifest.fresh-consent-lengthening-cancellation",
+    "manifest.unchanged-policy-is-not-renewal",
     "manifest.partial-failure-continues",
     "manifest.completed-deletion-terminal",
     "manifest-consent.valid-context-consent",
@@ -1890,6 +1911,14 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest-consent.retention-above-consent",
     "manifest-consent.contextless-without-consent",
     "research-run.valid-context-pack",
+    "research-run.device-local-synced-without-consent",
+    "research-run.pending-sync-without-consent",
+    "research-run.failed-sync-without-consent",
+    "research-run.failed-sync-context-denied",
+    "research-run.failed-local-with-consent",
+    "research-run.cloud-content-pending",
+    "research-run.cloud-content-failed",
+    "research-run.synced-cloud-content-with-consent",
     "research-run.missing-context-pack",
     "research-run.contextless-without-pack",
     "research-run.contextless-with-pack",

@@ -176,6 +176,22 @@ function contextBindingsMatch(
   );
 }
 
+function validateArtifactContentSyncConsent(
+  run: ResearchRunV1,
+): ProtocolParseResult<void> {
+  const requestedSyncIndex = run.artifactManifest?.artifacts.findIndex(
+    (artifact) => artifact.contentSync !== "not-requested",
+  ) ?? -1;
+  if (requestedSyncIndex >= 0 && !run.privacy.artifactContentSync) {
+    return fail(
+      "semantic_conflict",
+      `$.artifactManifest.artifacts[${requestedSyncIndex}].contentSync`,
+      "requested artifact content synchronization requires run artifactContentSync consent",
+    );
+  }
+  return pass(undefined);
+}
+
 /**
  * Validates two already-parsed objects. Run-field errors use run JSON paths;
  * pack-only policy errors use the synthetic `$.contextPack` path.
@@ -186,6 +202,9 @@ export function validateResearchRunContextPackV1(
   run: ResearchRunV1,
   contextPack?: ContextPackV1,
 ): ProtocolParseResult<ResearchRunV1> {
+  const artifactContentSync = validateArtifactContentSyncConsent(run);
+  if (!artifactContentSync.ok) return artifactContentSync;
+
   if (!run.context) {
     if (contextPack !== undefined) {
       return fail(
@@ -904,14 +923,14 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "artifactManifest effective retention must not exceed run privacy retention",
       );
     }
-    const cloudContentIndex = artifactManifest.artifacts.findIndex(
-      (artifact) => artifact.placement === "cloud-content",
+    const requestedSyncIndex = artifactManifest.artifacts.findIndex(
+      (artifact) => artifact.contentSync !== "not-requested",
     );
-    if (cloudContentIndex >= 0 && !privacy.value.artifactContentSync) {
+    if (requestedSyncIndex >= 0 && !privacy.value.artifactContentSync) {
       return fail(
         "semantic_conflict",
-        `$.artifactManifest.artifacts[${cloudContentIndex}].placement`,
-        "cloud-content artifacts require run artifactContentSync consent",
+        `$.artifactManifest.artifacts[${requestedSyncIndex}].contentSync`,
+        "requested artifact content synchronization requires run artifactContentSync consent",
       );
     }
   }

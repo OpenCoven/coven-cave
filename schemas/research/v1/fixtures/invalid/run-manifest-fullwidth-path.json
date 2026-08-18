@@ -1,0 +1,44 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_fullwidth_path_01",
+  "runId": "run_fullwidth_path_01",
+  "digest": "fd58662e883868a5eae710088a6ff2dfb672fe2bd85619885758a1e8a9de7e39",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "artifacts": [
+    {
+      "id": "artifact_fullwidth_path_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "metadata": {
+        "ｐａｔｈ": "/private/report.md"
+      }
+    }
+  ],
+  "sources": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  }
+}

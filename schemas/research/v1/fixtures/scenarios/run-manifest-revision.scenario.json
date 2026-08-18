@@ -201,6 +201,83 @@
         }
       },
       "digestTargets": [""]
+    },
+    "scheduled-previous": {
+      "fixture": "valid/run-manifest-retention-update.json"
+    },
+    "scheduled-to-active-rollback": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
+        "retention": {
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:00:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-to-active-rollback": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "91d24368a371983049838e400fb6b77e264def9bcfa518eb6804a73b56689b8c",
+        "retention": {
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-to-scheduled-rollback": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "91d24368a371983049838e400fb6b77e264def9bcfa518eb6804a73b56689b8c",
+        "retention": {
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "fresh-consent-cancellation-previous": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "run-only",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "fresh-consent-cancellation-next": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "4a608a0886aae1a1ca2e5408cde8a4b7e43885f21d4f73a4f34b5564eaabca93",
+        "retention": {
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        }
+      },
+      "digestTargets": [""]
     }
   },
   "scenarios": [
@@ -428,6 +505,95 @@
         "stage": "composition",
         "code": "semantic_conflict",
         "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.scheduled-to-active-rollback",
+      "description": "A linked scheduled deletion cannot silently return to active retention.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "scheduled-to-active-rollback"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.pending-to-active-rollback",
+      "description": "A pending deletion cannot return to active retention without renewal.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "pending-previous",
+        "next": "pending-to-active-rollback"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.pending-to-scheduled-rollback",
+      "description": "A pending deletion cannot regress to scheduled.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "pending-previous",
+        "next": "pending-to-scheduled-rollback"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.fresh-consent-lengthening-cancellation",
+      "description": "Fresh consent may lengthen retention and coherently cancel a scheduled deletion.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "fresh-consent-cancellation-previous",
+        "next": "fresh-consent-cancellation-next"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.unchanged-policy-is-not-renewal",
+      "description": "Fresh-consent metadata alone cannot cancel deletion when policy does not lengthen.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-previous",
+        "next": "scheduled-to-active-rollback"
+      },
+      "options": {
+        "freshConsent": true,
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
       }
     },
     {

@@ -14,6 +14,8 @@ import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/inval
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
 import invalidActiveShorteningJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-active-shortening.json" with { type: "json" };
 import invalidCompletionBeforeRequestJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-completion-before-request.json" with { type: "json" };
+import invalidFullwidthObjectKeyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-fullwidth-object-key.json" with { type: "json" };
+import invalidFullwidthPathJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-fullwidth-path.json" with { type: "json" };
 import invalidNestedPrivateExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-private-extension.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 
@@ -458,13 +460,41 @@ test("context absent forbids context-pack sources", () => {
   expectError(parseRunManifestV1(invalid), "$.sources[0]", "semantic_conflict");
 });
 
-test("cloud content requires requested or completed synchronization", () => {
+test("artifact placement and content sync describe completed cloud placement coherently", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
-  const invalid = recalculate({
-    ...cloud,
-    artifacts: [{ ...cloud.artifacts[0], contentSync: "not-requested" as const }],
-  });
-  expectError(parseRunManifestV1(invalid), "$.artifacts[0].contentSync", "semantic_conflict");
+
+  for (const contentSync of ["not-requested", "pending", "failed"] as const) {
+    const invalid = recalculate({
+      ...cloud,
+      artifacts: [{ ...cloud.artifacts[0], contentSync }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, contentSync);
+    expectError(parseRunManifestV1(invalid), "$.artifacts[0].contentSync", "semantic_conflict");
+  }
+
+  for (const placement of ["device-local", "cloud-metadata"] as const) {
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], placement, contentSync: "synced" as const }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, placement);
+    expectError(parseRunManifestV1(invalid), "$.artifacts[0].placement", "semantic_conflict");
+  }
+
+  for (const contentSync of ["pending", "failed"] as const) {
+    const placement = contentSync === "pending" ? "cloud-metadata" : "device-local";
+    const valid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], placement, contentSync }],
+    });
+    assert.equal(Value.Check(runManifestSchema, valid), true, contentSync);
+    assert.equal(expectOk(parseRunManifestV1(valid)).artifacts[0].contentSync, contentSync);
+  }
+
+  assert.equal(Value.Check(runManifestSchema, finalCloudManifestJson), true);
+  assert.equal(cloud.artifacts[0].contentSync, "synced");
+  assert.equal(cloud.artifacts[0].placement, "cloud-content");
 });
 
 test("artifact titles reject paths, controls, and known secret prefixes", () => {
@@ -683,6 +713,66 @@ test("schema and parser reject forbidden keys nested in sensitive extension obje
     '$.sources[0].metadata.items[0]["PrIvAtE/🙂eXcErPt"]',
     "semantic_conflict",
   );
+});
+
+test("sensitive manifest property names require printable ASCII before forbidden-name comparison", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const [candidate, path] of [
+    [
+      recalculate({
+        ...local,
+        sources: [{
+          ...local.sources[0],
+          metadata: { "ｐａｔｈ": "/private/report.md" },
+        }],
+      }),
+      '$.sources[0].metadata["ｐａｔｈ"]',
+    ],
+    [
+      recalculate({
+        ...local,
+        artifacts: [{
+          ...local.artifacts[0],
+          metadata: { "ｏｂｊｅｃｔＫｅｙ": "tenant/private/object" },
+        }],
+      }),
+      '$.artifacts[0].metadata["ｏｂｊｅｃｔＫｅｙ"]',
+    ],
+    [
+      recalculate({
+        ...local,
+        deletion: {
+          ...local.deletion,
+          metadata: [{ "méta": "non-ASCII extension name" }],
+        },
+      }),
+      '$.deletion.metadata[0]["méta"]',
+    ],
+  ] as const) {
+    assert.equal(Value.Check(runManifestSchema, candidate), false);
+    expectError(parseRunManifestV1(candidate), path, "semantic_conflict");
+  }
+
+  for (const [fixture, path] of [
+    [invalidFullwidthPathJson, '$.artifacts[0].metadata["ｐａｔｈ"]'],
+    [invalidFullwidthObjectKeyJson, '$.deletion.metadata[0]["ｏｂｊｅｃｔＫｅｙ"]'],
+  ] as const) {
+    assert.equal(Value.Check(runManifestSchema, fixture), false);
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+
+  const benign = recalculate({
+    ...local,
+    artifacts: [{
+      ...local.artifacts[0],
+      "display.metadata": {
+        "build-label": "safe",
+        "display_name": "safe",
+      },
+    }],
+  });
+  assert.equal(Value.Check(runManifestSchema, benign), true);
+  expectOk(parseRunManifestV1(benign));
 });
 
 test("privacy key checks do not scan values or public-evidence metadata", () => {
@@ -1268,6 +1358,211 @@ test("completed deletion cannot be resurrected by a later revision", () => {
   expectError(
     validateRunManifestRevision(deleted, resurrected, { contextConsent: "7-days" }),
     "$.deletion.status",
+    "semantic_conflict",
+  );
+});
+
+test("post-final deletion revisions progress forward unless fresh consent lengthens retention", () => {
+  const final = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduled = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const scheduledToActive = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...scheduled,
+        revision: scheduled.revision + 1,
+        previousDigest: scheduled.digest,
+        retention: {
+          ...scheduled.retention,
+          status: "active" as const,
+          contentExpiresAt: null,
+          updatedAt: "2026-08-16T20:07:00.000Z",
+        },
+        deletion: {
+          status: "not_scheduled" as const,
+          futureExtension: { preserve: true },
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(scheduled, scheduledToActive, { contextConsent: "7-days" }),
+    "$.deletion.status",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestRevision(scheduled, scheduledToActive, {
+      freshConsent: true,
+      contextConsent: "7-days",
+    }),
+    "$.deletion.status",
+    "semantic_conflict",
+  );
+
+  const pending = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...final,
+        retention: {
+          ...final.retention,
+          status: "deletion_pending" as const,
+          contentExpiresAt: "2026-08-17T20:00:00.000Z",
+          updatedAt: "2026-08-17T20:00:00.000Z",
+        },
+        deletion: {
+          ...final.deletion,
+          status: "pending" as const,
+          requestedAt: "2026-08-17T19:00:00.000Z",
+        },
+      }),
+    ),
+  );
+  for (const [retention, deletion] of [
+    [
+      {
+        ...pending.retention,
+        status: "active" as const,
+        contentExpiresAt: null,
+        updatedAt: "2026-08-17T20:01:00.000Z",
+      },
+      {
+        status: "not_scheduled" as const,
+        futureExtension: { preserve: true },
+      },
+    ],
+    [
+      {
+        ...pending.retention,
+        status: "deletion_scheduled" as const,
+        updatedAt: "2026-08-17T20:01:00.000Z",
+      },
+      {
+        ...pending.deletion,
+        status: "scheduled" as const,
+      },
+    ],
+  ] as const) {
+    const rollback = expectOk(
+      parseRunManifestV1(
+        recalculate({
+          ...pending,
+          revision: pending.revision + 1,
+          previousDigest: pending.digest,
+          retention,
+          deletion,
+        }),
+      ),
+    );
+    expectError(
+      validateRunManifestRevision(pending, rollback, { contextConsent: "7-days" }),
+      "$.deletion.status",
+      "semantic_conflict",
+    );
+  }
+
+  const partialFailure = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...pending,
+        deletion: {
+          ...pending.deletion,
+          status: "partial_failure" as const,
+        },
+      }),
+    ),
+  );
+  const retry = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...partialFailure,
+        revision: partialFailure.revision + 1,
+        previousDigest: partialFailure.digest,
+        retention: {
+          ...partialFailure.retention,
+          updatedAt: "2026-08-17T20:02:00.000Z",
+        },
+        deletion: {
+          ...partialFailure.deletion,
+          status: "pending" as const,
+        },
+      }),
+    ),
+  );
+  assert.equal(
+    validateRunManifestRevision(partialFailure, retry, { contextConsent: "7-days" }).ok,
+    true,
+  );
+
+  const shortened = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...final,
+        revision: 2,
+        previousDigest: final.digest,
+        retention: {
+          ...final.retention,
+          effectivePolicy: "run-only" as const,
+          status: "deletion_scheduled" as const,
+          contentExpiresAt: "2026-08-17T20:00:00.000Z",
+          updatedAt: "2026-08-16T20:06:00.000Z",
+        },
+        deletion: {
+          ...final.deletion,
+          status: "scheduled" as const,
+          requestedAt: "2026-08-16T20:06:00.000Z",
+        },
+      }),
+    ),
+  );
+  const renewed = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...shortened,
+        revision: shortened.revision + 1,
+        previousDigest: shortened.digest,
+        retention: {
+          ...shortened.retention,
+          effectivePolicy: "7-days" as const,
+          status: "active" as const,
+          contentExpiresAt: null,
+          updatedAt: "2026-08-16T20:07:00.000Z",
+        },
+        deletion: {
+          status: "not_scheduled" as const,
+          futureExtension: { preserve: true },
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(shortened, renewed, { contextConsent: "7-days" }),
+    "$.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+  assert.equal(
+    validateRunManifestRevision(shortened, renewed, {
+      freshConsent: true,
+      contextConsent: "7-days",
+    }).ok,
+    true,
+  );
+
+  const staleDeletionClock = expectOk(
+    parseRunManifestV1(
+      recalculate({
+        ...renewed,
+        deletion: {
+          ...renewed.deletion,
+          requestedAt: shortened.deletion.requestedAt,
+        },
+      }),
+    ),
+  );
+  expectError(
+    validateRunManifestRevision(shortened, staleDeletionClock, {
+      freshConsent: true,
+      contextConsent: "7-days",
+    }),
+    "$.deletion.requestedAt",
     "semantic_conflict",
   );
 });

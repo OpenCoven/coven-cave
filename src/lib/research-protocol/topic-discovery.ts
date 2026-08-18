@@ -775,12 +775,12 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
   }
   if (
     status.value === "completed" &&
-    (proposalIds.value.length === 0 || proposalIds.value.length > 3)
+    (proposalIds.value.length === 0 || proposalIds.value.length > 7)
   ) {
     return fail(
       "semantic_conflict",
       "$.proposalIds",
-      "completed jobs require between one and three proposalIds",
+      "completed jobs require between one and seven proposalIds",
     );
   }
   if (status.value === "completed" && hasFailure) {

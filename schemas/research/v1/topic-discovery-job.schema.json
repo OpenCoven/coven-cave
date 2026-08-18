@@ -71,7 +71,7 @@
         "properties": {
           "proposalIds": {
             "minItems": 1,
-            "maxItems": 3
+            "maxItems": 7
           }
         },
         "not": { "required": ["failure"] }

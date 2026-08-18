@@ -3,12 +3,13 @@ import { test } from "node:test";
 import { Value } from "typebox/value";
 
 import invalidTopicDiscoveryEight from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-eight.json" with { type: "json" };
-import invalidTopicDiscoveryFour from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-four.json" with { type: "json" };
 import invalidTopicDiscoveryReceiptFamiliar from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-receipt-familiar-mismatch.json" with { type: "json" };
 import invalidTopicProposalScore from "../../../schemas/research/v1/fixtures/invalid/topic-proposal-score.json" with { type: "json" };
 import topicDiscoveryJobSchema from "../../../schemas/research/v1/topic-discovery-job.schema.json" with { type: "json" };
 import topicProposalSchema from "../../../schemas/research/v1/topic-proposal.schema.json" with { type: "json" };
 import noGroundedTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-no-grounded-proposals.json" with { type: "json" };
+import fourProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-four.json" with { type: "json" };
+import sevenProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-seven.json" with { type: "json" };
 import threeProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-three.json" with { type: "json" };
 import twoProposalTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job-two.json" with { type: "json" };
 import validTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job.json" with { type: "json" };
@@ -155,18 +156,22 @@ test("proposal visibleTotal mismatches reject with semantic_conflict", () => {
   );
 });
 
-test("completed jobs accept one, two, or three proposalIds", () => {
+test("completed jobs accept one through seven grounded proposalIds", () => {
+  // Generators target 3–7 cards; completed wire jobs may contain 1–2 when
+  // partial validation rejects some generated proposals.
   for (const job of [
     validTopicDiscoveryJob,
     twoProposalTopicDiscoveryJob,
     threeProposalTopicDiscoveryJob,
+    fourProposalTopicDiscoveryJob,
+    sevenProposalTopicDiscoveryJob,
   ]) {
     assert.equal(Value.Check(topicDiscoveryJobSchema, job), true);
     expectOk(parseTopicDiscoveryJobV1(job));
   }
 });
 
-test("completed jobs reject zero or more than three proposalIds", () => {
+test("completed jobs reject zero or more than seven proposalIds", () => {
   const emptyCompletedJob = {
     ...validTopicDiscoveryJob,
     proposalIds: [],
@@ -175,12 +180,6 @@ test("completed jobs reject zero or more than three proposalIds", () => {
   assert.equal(Value.Check(topicDiscoveryJobSchema, emptyCompletedJob), false);
   expectError(parseTopicDiscoveryJobV1(emptyCompletedJob), "$.proposalIds", "semantic_conflict");
 
-  assert.equal(Value.Check(topicDiscoveryJobSchema, invalidTopicDiscoveryFour), false);
-  expectError(
-    parseTopicDiscoveryJobV1(invalidTopicDiscoveryFour),
-    "$.proposalIds",
-    "semantic_conflict",
-  );
   assert.equal(Value.Check(topicDiscoveryJobSchema, invalidTopicDiscoveryEight), false);
   expectError(
     parseTopicDiscoveryJobV1(invalidTopicDiscoveryEight),

@@ -5,6 +5,226 @@
     "context-pack": {
       "fixture": "valid/context-pack.json"
     },
+    "content-sync-context-pack": {
+      "fixture": "valid/context-pack.json",
+      "mergePatch": {
+        "consent": {
+          "artifactContentSync": true
+        }
+      },
+      "digestTargets": [""]
+    },
+    "device-local-synced-without-consent": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "digest": "932dc841ab1a0015799430c11d7c8a14e0af689621279a30ab68f5d2c36b247f",
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "device-local",
+              "contentSync": "synced",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      }
+    },
+    "pending-sync-without-consent": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "cloud-metadata",
+              "contentSync": "pending",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "failed-sync-without-consent": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "device-local",
+              "contentSync": "failed",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "failed-sync-context-denied": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": true
+        },
+        "artifactManifest": {
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "device-local",
+              "contentSync": "failed",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "failed-local-with-consent": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+        },
+        "privacy": {
+          "artifactContentSync": true
+        },
+        "artifactManifest": {
+          "context": {
+            "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+          },
+          "sources": [
+            {
+              "kind": "context-pack",
+              "id": "ctx_01",
+              "digest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247",
+              "availability": "device-local"
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "device-local",
+              "contentSync": "failed",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "cloud-content-pending": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": true
+        },
+        "artifactManifest": {
+          "digest": "fb36f3cd44e6d9a69a3d70abbebfc17e065581a8ac8776d455af6ab086cc0d72",
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "cloud-content",
+              "contentSync": "pending",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      }
+    },
+    "cloud-content-failed": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": true
+        },
+        "artifactManifest": {
+          "digest": "ae7c259f8c024849ccbcb0674de6ab3ac4f54326055489efb33042a680d3ae08",
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "cloud-content",
+              "contentSync": "failed",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      }
+    },
+    "synced-cloud-content-with-consent": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+        },
+        "privacy": {
+          "artifactContentSync": true
+        },
+        "artifactManifest": {
+          "context": {
+            "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+          },
+          "sources": [
+            {
+              "kind": "context-pack",
+              "id": "ctx_01",
+              "digest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247",
+              "availability": "device-local"
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "artifact_context_01",
+              "kind": "research-notes",
+              "title": "Context-bound research notes",
+              "mediaType": "text/markdown",
+              "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "bytes": 128,
+              "placement": "cloud-content",
+              "contentSync": "synced",
+              "createdAt": "2026-08-15T20:08:00.000Z"
+            }
+          ]
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "contextless-run": {
       "fixture": "valid/research-run.json",
       "mergePatch": {
@@ -56,6 +276,125 @@
       "inputs": {
         "run": "matching-run",
         "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.device-local-synced-without-consent",
+      "description": "A device-local artifact cannot claim completed content sync, even without run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-synced-without-consent",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].placement"
+      }
+    },
+    {
+      "id": "research-run.pending-sync-without-consent",
+      "description": "A pending local content copy requires run artifact-content-sync consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "pending-sync-without-consent",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.failed-sync-without-consent",
+      "description": "A failed local content copy remains consent-gated.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "failed-sync-without-consent",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.failed-sync-context-denied",
+      "description": "Run sync consent cannot exceed the bound Context Pack consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "failed-sync-context-denied",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.privacy.artifactContentSync"
+      }
+    },
+    {
+      "id": "research-run.failed-local-with-consent",
+      "description": "A failed sync remains a valid locally durable artifact when both consent layers allow it.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "failed-local-with-consent",
+        "contextPack": "content-sync-context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.cloud-content-pending",
+      "description": "Cloud-content placement rejects a merely pending content copy.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "cloud-content-pending",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.cloud-content-failed",
+      "description": "Cloud-content placement rejects a failed content copy.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "cloud-content-failed",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.synced-cloud-content-with-consent",
+      "description": "Completed cloud-content placement is valid with run and Context Pack consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "synced-cloud-content-with-consent",
+        "contextPack": "content-sync-context-pack"
       },
       "expected": {
         "ok": true
