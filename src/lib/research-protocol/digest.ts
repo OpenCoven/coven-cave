@@ -66,6 +66,7 @@ function copyCanonicalJsonValueAtPath(
   value: unknown,
   path: string,
   seen: WeakSet<object>,
+  traversedObjects: object[],
 ): unknown {
   if (typeof value === "string") {
     assertPairedUtf16Surrogates(value, path);
@@ -98,6 +99,7 @@ function copyCanonicalJsonValueAtPath(
       throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
     }
     seen.add(value);
+    traversedObjects.push(value);
 
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
     if (
@@ -168,6 +170,7 @@ function copyCanonicalJsonValueAtPath(
           entry.descriptor.value,
           jsonPathForIndex(path, entry.index),
           seen,
+          traversedObjects,
         ),
         enumerable: true,
         configurable: true,
@@ -183,6 +186,7 @@ function copyCanonicalJsonValueAtPath(
     throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
   }
   seen.add(value);
+  traversedObjects.push(value);
 
   const copy = Object.create(null) as Record<string, unknown>;
   for (const key of Reflect.ownKeys(value)) {
@@ -202,7 +206,12 @@ function copyCanonicalJsonValueAtPath(
       throw createCanonicalJsonError(propertyPath, "accessor properties are not allowed");
     }
     Object.defineProperty(copy, key, {
-      value: copyCanonicalJsonValueAtPath(descriptor.value, propertyPath, seen),
+      value: copyCanonicalJsonValueAtPath(
+        descriptor.value,
+        propertyPath,
+        seen,
+        traversedObjects,
+      ),
       enumerable: true,
       configurable: true,
       writable: true,
@@ -212,8 +221,16 @@ function copyCanonicalJsonValueAtPath(
 }
 
 export function copyCanonicalJsonValue<T>(value: T): T {
-  const copy = copyCanonicalJsonValueAtPath(value, "$", new WeakSet<object>()) as T;
-  assertNoProxyObjects(value);
+  const traversedObjects: object[] = [];
+  const copy = copyCanonicalJsonValueAtPath(
+    value,
+    "$",
+    new WeakSet<object>(),
+    traversedObjects,
+  ) as T;
+  for (const traversedObject of traversedObjects) {
+    assertNoProxyObjects(traversedObject);
+  }
   return copy;
 }
 

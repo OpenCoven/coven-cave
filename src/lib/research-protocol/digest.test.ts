@@ -160,6 +160,45 @@ test("canonicalization rejects root and nested Proxy objects", () => {
   assert.throws(() => canonicalJson({ nested: [arrayProxy] }), /proxy/i);
 });
 
+test("canonicalization rejects a nested Proxy that removes itself during traversal", () => {
+  const parent: Record<string, unknown> = {};
+  const nestedProxy = new Proxy({ stale: "proxy value" }, {
+    ownKeys(target) {
+      parent.nested = { replacement: true };
+      return Reflect.ownKeys(target);
+    },
+  });
+  parent.nested = nestedProxy;
+
+  assert.throws(() => canonicalJson(parent), /proxy/i);
+  assert.deepEqual(parent.nested, { replacement: true });
+});
+
+test("canonicalization rejects an array Proxy entry that removes itself during traversal", () => {
+  const parent: unknown[] = [];
+  const nestedProxy = new Proxy({ stale: "proxy value" }, {
+    getOwnPropertyDescriptor(target, key) {
+      parent[0] = { replacement: true };
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
+  parent.push(nestedProxy);
+
+  assert.throws(() => canonicalJson(parent), /proxy/i);
+  assert.deepEqual(parent[0], { replacement: true });
+});
+
+test("canonicalization accepts an ordinary nested graph", () => {
+  assert.equal(
+    canonicalJson({
+      nested: {
+        items: [{ label: "first" }, { label: "second" }],
+      },
+    }),
+    "{\"nested\":{\"items\":[{\"label\":\"first\"},{\"label\":\"second\"}]}}",
+  );
+});
+
 test("canonicalization fails closed when standard structured clone is unavailable", () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
 
