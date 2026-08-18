@@ -3091,10 +3091,13 @@ export async function POST(req: Request) {
   const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
+  const freshNativeSessionRequired =
+    runtimeAccessRefreshNeeded ||
+    inferenceRouteRefreshNeeded ||
+    grokFreshSessionForSandbox ||
+    openCodeFreshSessionForCompatibility;
   const args = buildArgs(
-    runtimeAccessRefreshNeeded || inferenceRouteRefreshNeeded || grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility
-      ? null
-      : resumeTarget,
+    freshNativeSessionRequired ? null : resumeTarget,
     runtimeAccessRetry?.prompt ??
       inferenceRouteRetry?.prompt ??
       grokSandboxRetry?.prompt ??
@@ -3286,7 +3289,7 @@ export async function POST(req: Request) {
       // A conversation created by Hermes CLI has a CLI-native session id here,
       // not a Responses id. If the API rejects it, the shared resume fallback
       // replays saved context into one fresh Responses turn instead.
-      let hermesPreviousResponseId = inferenceRouteRefreshNeeded
+      let hermesPreviousResponseId = freshNativeSessionRequired
         ? null
         : existingConversation?.harnessSessionId ?? null;
       // Legacy/failed conversations may not have a usable Responses id. A

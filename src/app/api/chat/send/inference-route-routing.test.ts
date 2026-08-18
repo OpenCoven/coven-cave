@@ -26,8 +26,13 @@ assert.match(
 );
 assert.match(
   route,
-  /runtimeAccessRefreshNeeded \|\| inferenceRouteRefreshNeeded \|\| grokFreshSessionForSandbox/,
+  /runtimeAccessRefreshNeeded\s*\|\|\s*inferenceRouteRefreshNeeded\s*\|\|\s*grokFreshSessionForSandbox/,
   "route refresh suppresses the stale native resume token",
+);
+assert.match(
+  route,
+  /const freshNativeSessionRequired =[\s\S]*?runtimeAccessRefreshNeeded[\s\S]*?inferenceRouteRefreshNeeded[\s\S]*?grokFreshSessionForSandbox[\s\S]*?openCodeFreshSessionForCompatibility[\s\S]*?let hermesPreviousResponseId = freshNativeSessionRequired\s*\?\s*null/,
+  "Hermes previous_response_id is cleared for every transition that requires a fresh native session",
 );
 assert.match(
   route,
