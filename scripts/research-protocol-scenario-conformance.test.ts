@@ -2176,6 +2176,8 @@ for (const corpus of corpora) {
 
 test("covers every required Unit 0 cross-object scenario", () => {
   for (const requiredId of [
+    "run-deletion.before-finalization-and-latest-content",
+    "run-deletion.latest-content-equality",
     "manifest.assembling-to-final",
     "manifest.partial-usage",
     "manifest.changed-manifest-id",

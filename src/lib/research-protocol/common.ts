@@ -1,3 +1,5 @@
+import { types as nodeUtilTypes } from "node:util";
+
 import { copyCanonicalJsonValue } from "./digest.ts";
 
 export type UnknownFields = Record<string, unknown>;
@@ -35,40 +37,69 @@ export const UTC_TIMESTAMP_PATTERN =
 const UTC_TIMESTAMP_RE = new RegExp(UTC_TIMESTAMP_PATTERN);
 const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
 const PRINTABLE_ASCII_PROPERTY_NAME_RE = /^[\u0020-\u007e]*$/;
-const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
+const arrayIsArrayIntrinsic = Array.isArray;
+const arrayPrototypeIntrinsic = Array.prototype;
+const objectPrototypeIntrinsic = Object.prototype;
+const getPrototypeOfIntrinsic = Object.getPrototypeOf;
+const getOwnPropertyDescriptorIntrinsic = Object.getOwnPropertyDescriptor;
+const defineOwnPropertyIntrinsic = Object.defineProperty;
+const reflectOwnKeysIntrinsic = Reflect.ownKeys;
+const objectHasOwnIntrinsic = Object.hasOwn;
+const isProxyIntrinsic = nodeUtilTypes.isProxy;
+const EXISTING_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
   "excerpt",
-  "excerpts",
   "privateexcerpt",
-  "privateexcerpts",
   "rawexcerpt",
-  "rawexcerpts",
   "text",
-  "texts",
   "content",
-  "contents",
   "blob",
-  "blobs",
   "filename",
-  "filenames",
   "localpath",
-  "localpaths",
   "filepath",
-  "filepaths",
   "path",
-  "paths",
   "credential",
-  "credentials",
   "secret",
-  "secrets",
   "objectkey",
-  "objectkeys",
   "storagekey",
-  "storagekeys",
   "bucketkey",
-  "bucketkeys",
   "deletedcontent",
-  "deletedcontents",
-]);
+] as const;
+export const ADDITIONAL_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
+  "privatetext",
+  "privatecontent",
+  "providerapikey",
+  "apikey",
+  "password",
+  "accesstoken",
+  "refreshtoken",
+  "authtoken",
+  "bearertoken",
+  "authorization",
+  "authheader",
+] as const;
+export const FORBIDDEN_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
+  ...EXISTING_NORMALIZED_SENSITIVE_KEY_FAMILIES,
+  ...ADDITIONAL_NORMALIZED_SENSITIVE_KEY_FAMILIES,
+] as const;
+const FORBIDDEN_NORMALIZED_SENSITIVE_KEY_FAMILY_SET = new Set<string>(
+  FORBIDDEN_NORMALIZED_SENSITIVE_KEY_FAMILIES,
+);
+const SENSITIVE_KEY_SCHEMA_SEPARATOR = "[^A-Za-z0-9]*";
+
+function portableCaseInsensitiveSensitiveFamilyPattern(family: string): string {
+  const letters = Array.from(
+    family,
+    (letter) => `[${letter.toUpperCase()}${letter}]`,
+  );
+  return `${letters.join(SENSITIVE_KEY_SCHEMA_SEPARATOR)}(?:[Ss])?`;
+}
+
+export const ADDITIONAL_SENSITIVE_PROPERTY_NAME_PATTERN =
+  `^${SENSITIVE_KEY_SCHEMA_SEPARATOR}(?:${
+    ADDITIONAL_NORMALIZED_SENSITIVE_KEY_FAMILIES
+      .map(portableCaseInsensitiveSensitiveFamilyPattern)
+      .join("|")
+  })${SENSITIVE_KEY_SCHEMA_SEPARATOR}$`;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -223,6 +254,14 @@ function normalizeSensitiveExtensionKey(key: string): string {
   return key.normalize("NFKC").replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
 
+function isForbiddenNormalizedSensitiveKey(key: string): boolean {
+  return FORBIDDEN_NORMALIZED_SENSITIVE_KEY_FAMILY_SET.has(key)
+    || (
+      key.endsWith("s")
+      && FORBIDDEN_NORMALIZED_SENSITIVE_KEY_FAMILY_SET.has(key.slice(0, -1))
+    );
+}
+
 /**
  * Recursively guards metadata-only extension objects against private-content
  * aliases. Declared callers choose where this stricter boundary applies.
@@ -257,7 +296,7 @@ export function validateSensitiveExtensionKeys(
         `${objectLabel} property names must be printable ASCII and NFKC-stable`,
       );
     }
-    if (FORBIDDEN_NORMALIZED_SENSITIVE_KEYS.has(normalizeSensitiveExtensionKey(key))) {
+    if (isForbiddenNormalizedSensitiveKey(normalizeSensitiveExtensionKey(key))) {
       return fail(
         "semantic_conflict",
         keyPath,
@@ -280,6 +319,134 @@ export function fail<T>(
 
 export function pass<T>(value: T): ProtocolParseResult<T> {
   return { ok: true, value };
+}
+
+function isCanonicalArrayIndex(key: string): boolean {
+  if (!/^(?:0|[1-9]\d*)$/.test(key)) return false;
+  const index = Number(key);
+  return Number.isInteger(index) && index >= 0 && index < 0xffffffff;
+}
+
+export function snapshotProtocolArrayElements(
+  value: unknown,
+  path: string,
+  label: string,
+): ProtocolParseResult<readonly unknown[]> {
+  if (typeof value !== "object" || value === null) {
+    return fail("invalid_type", path, `${label} must be an array`);
+  }
+  if (isProxyIntrinsic(value)) {
+    return fail("invalid_value", path, `${label} must be an ordinary array`);
+  }
+  if (!arrayIsArrayIntrinsic(value)) {
+    return fail("invalid_type", path, `${label} must be an array`);
+  }
+  if (getPrototypeOfIntrinsic(value) !== arrayPrototypeIntrinsic) {
+    return fail("invalid_value", path, `${label} must use the standard Array prototype`);
+  }
+
+  const lengthDescriptor = getOwnPropertyDescriptorIntrinsic(value, "length");
+  if (
+    !lengthDescriptor
+    || !objectHasOwnIntrinsic(lengthDescriptor, "value")
+    || lengthDescriptor.enumerable
+    || lengthDescriptor.configurable
+  ) {
+    return fail("invalid_value", path, `${label} must have the standard length property`);
+  }
+  const length = lengthDescriptor.value;
+  if (
+    typeof length !== "number"
+    || !Number.isInteger(length)
+    || length < 0
+    || length >= 0x100000000
+  ) {
+    return fail("invalid_value", path, `${label} must have a valid array length`);
+  }
+
+  let indexedKeyCount = 0;
+  for (const key of reflectOwnKeysIntrinsic(value)) {
+    if (typeof key === "symbol") {
+      return fail("invalid_value", path, `${label} must not have symbol properties`);
+    }
+    if (key === "length") continue;
+    if (!isCanonicalArrayIndex(key) || Number(key) >= length) {
+      return fail("invalid_value", path, `${label} must not have extra properties`);
+    }
+    indexedKeyCount += 1;
+  }
+  if (indexedKeyCount !== length) {
+    return fail("invalid_value", path, `${label} must not contain sparse holes`);
+  }
+
+  const snapshot = new Array<unknown>(length);
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = getOwnPropertyDescriptorIntrinsic(value, String(index));
+    if (
+      !descriptor
+      || !descriptor.enumerable
+      || !objectHasOwnIntrinsic(descriptor, "value")
+    ) {
+      return fail(
+        "invalid_value",
+        path,
+        `${label} indices must be enumerable data properties`,
+      );
+    }
+    defineOwnPropertyIntrinsic(snapshot, index, {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return pass(snapshot);
+}
+
+export function snapshotProtocolObjectProperties(
+  value: unknown,
+  path: string,
+  label: string,
+): ProtocolParseResult<Record<string, unknown>> {
+  if (typeof value !== "object" || value === null) {
+    return fail("invalid_type", path, `${label} must be an object`);
+  }
+  if (isProxyIntrinsic(value)) {
+    return fail("invalid_value", path, `${label} must be an ordinary object`);
+  }
+  if (arrayIsArrayIntrinsic(value)) {
+    return fail("invalid_type", path, `${label} must be an object`);
+  }
+  const prototype = getPrototypeOfIntrinsic(value);
+  if (prototype !== objectPrototypeIntrinsic && prototype !== null) {
+    return fail("invalid_value", path, `${label} must be an ordinary object`);
+  }
+
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (const key of reflectOwnKeysIntrinsic(value)) {
+    if (typeof key === "symbol") {
+      return fail("invalid_value", path, `${label} must not have symbol properties`);
+    }
+    const descriptor = getOwnPropertyDescriptorIntrinsic(value, key);
+    if (
+      !descriptor
+      || !descriptor.enumerable
+      || !objectHasOwnIntrinsic(descriptor, "value")
+    ) {
+      return fail(
+        "invalid_value",
+        path,
+        `${label} fields must be enumerable data properties`,
+      );
+    }
+    defineOwnPropertyIntrinsic(snapshot, key, {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return pass(snapshot);
 }
 
 function toOrdinaryJsonValue(value: unknown): unknown {

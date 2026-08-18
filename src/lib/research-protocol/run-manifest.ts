@@ -956,6 +956,59 @@ function validateDeletionRequirements(
   return pass(undefined);
 }
 
+function validateCompletedDeletionChronology(
+  deletion: RunManifestDeletionReceiptV1,
+  finalizedAt: string | undefined,
+  sources: readonly RunManifestSourceV1[],
+  artifacts: readonly ArtifactRegistrationV1[],
+): ProtocolParseResult<void> {
+  if (
+    deletion.status !== "completed"
+    || deletion.requestedAt === undefined
+    || deletion.completedAt === undefined
+  ) {
+    return pass(undefined);
+  }
+
+  let latestImmutableContentAt = finalizedAt;
+  for (const artifact of artifacts) {
+    if (
+      latestImmutableContentAt === undefined
+      || compareUtcTimestamps(artifact.createdAt, latestImmutableContentAt) > 0
+    ) {
+      latestImmutableContentAt = artifact.createdAt;
+    }
+  }
+  for (const source of sources) {
+    if (
+      source.kind === "public-evidence"
+      && (
+        latestImmutableContentAt === undefined
+        || compareUtcTimestamps(source.fetchedAt, latestImmutableContentAt) > 0
+      )
+    ) {
+      latestImmutableContentAt = source.fetchedAt;
+    }
+  }
+  if (latestImmutableContentAt === undefined) return pass(undefined);
+
+  if (compareUtcTimestamps(deletion.requestedAt, latestImmutableContentAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "Completed deletion cannot be requested before finalization or immutable content creation",
+    );
+  }
+  if (compareUtcTimestamps(deletion.completedAt, latestImmutableContentAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.completedAt",
+      "Completed deletion cannot precede finalization or immutable content creation",
+    );
+  }
+  return pass(undefined);
+}
+
 type RetentionClockManifest = Pick<
   RunManifestV1,
   "revision" | "state" | "finalizedAt" | "retention"
@@ -1941,6 +1994,13 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!pair.ok) return pair;
   const deletionRequirements = validateDeletionRequirements(deletion.value);
   if (!deletionRequirements.ok) return deletionRequirements;
+  const deletionChronology = validateCompletedDeletionChronology(
+    deletion.value,
+    finalizedAt,
+    sources,
+    artifacts,
+  );
+  if (!deletionChronology.ok) return deletionChronology;
   const clock = validateRetentionClock({
     revision: revision.value,
     state: state.value,

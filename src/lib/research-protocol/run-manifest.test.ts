@@ -22,6 +22,11 @@ import invalidContextPluralJson from "../../../schemas/research/v1/fixtures/inva
 import invalidSourcePluralJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-source-nested-storage-keys.json" with { type: "json" };
 import invalidArtifactPluralJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-nested-local-paths.json" with { type: "json" };
 import invalidDeletionPluralJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-nested-deleted-contents.json" with { type: "json" };
+import invalidContextPrivateContentsJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-context-nested-private-contents.json" with { type: "json" };
+import invalidSourceProviderApiKeysJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-source-nested-provider-api-keys.json" with { type: "json" };
+import invalidArtifactAccessTokensJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-nested-access-tokens.json" with { type: "json" };
+import invalidDeletionAuthHeadersJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-nested-auth-headers.json" with { type: "json" };
+import invalidDeletionBeforeFinalizedContentJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-before-finalized-content.json" with { type: "json" };
 import invalidRetentionBeforeCreatedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-before-created.json" with { type: "json" };
 import invalidArtifactAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-artifact-after-finalized.json" with { type: "json" };
 import invalidPublicSourceAfterFinalizedJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-public-source-after-finalized.json" with { type: "json" };
@@ -37,6 +42,9 @@ import invalidFullwidthSkSecretTitleJson from "../../../schemas/research/v1/fixt
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 import validBenignUnicodeTitleJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-title-benign-unicode.json" with { type: "json" };
 
+import {
+  ADDITIONAL_SENSITIVE_PROPERTY_NAME_PATTERN,
+} from "./common.ts";
 import { digestProtocolObject } from "./digest.ts";
 import {
   aggregateManifestUsage,
@@ -811,6 +819,74 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
   }
 });
 
+test("schema and runtime reject normalized private-content and credential key families", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  for (const key of [
+    "privateContent",
+    "PRIVATE-CONTENTS",
+    "private_text",
+    "private-texts",
+    "providerApiKey",
+    "provider_api_keys",
+    "apiKey",
+    "API-KEYS",
+    "password",
+    "passwords",
+    "accessToken",
+    "access_tokens",
+    "refreshToken",
+    "refresh-tokens",
+    "authToken",
+    "auth.tokens",
+    "bearerToken",
+    "bearer tokens",
+    "authorization",
+    "AUTHORIZATIONS",
+    "authHeader",
+    "auth_headers",
+    "ａｐｉ＿ｋｅｙｓ",
+  ]) {
+    const invalid = recalculate({
+      ...local,
+      artifacts: [{ ...local.artifacts[0], metadata: { [key]: "private material" } }],
+    });
+    assert.equal(Value.Check(runManifestSchema, invalid), false, key);
+    const path = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+      ? `$.artifacts[0].metadata.${key}`
+      : `$.artifacts[0].metadata[${JSON.stringify(key)}]`;
+    expectError(parseRunManifestV1(invalid), path, "semantic_conflict");
+  }
+
+  for (const [fixture, path] of [
+    [
+      invalidContextPrivateContentsJson,
+      '$.context.metadata["private contents"]',
+    ],
+    [
+      invalidSourceProviderApiKeysJson,
+      "$.sources[0].metadata.provider_api_keys",
+    ],
+    [
+      invalidArtifactAccessTokensJson,
+      '$.artifacts[0].metadata["access-tokens"]',
+    ],
+    [
+      invalidDeletionAuthHeadersJson,
+      "$.deletion.metadata.AUTH_HEADERS",
+    ],
+  ] as const) {
+    assert.equal(Value.Check(runManifestSchema, fixture), false);
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+});
+
+test("schema sensitive-key pattern stays synchronized with runtime normalization", () => {
+  assert.equal(
+    runManifestSchema.$defs.sensitivePropertyName.allOf.at(-1)?.not.pattern,
+    ADDITIONAL_SENSITIVE_PROPERTY_NAME_PATTERN,
+  );
+});
+
 test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [candidate, path] of [
@@ -1011,6 +1087,14 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
             context: "safe",
             contentSync: "not-requested",
             credentialHint: "safe",
+            providerName: "OpenCoven",
+            providerBilling: "user-connected",
+            providerMetadata: "safe",
+            apiVersion: "v1",
+            authenticationMethod: "oauth",
+            authorizationPolicy: "user-consent",
+            passwordlessMode: true,
+            tokenBudget: 1024,
             textLabel: "safe",
             "private.excerptLabel": "safe",
             "local.pathHint": "safe",
@@ -1956,6 +2040,75 @@ test("completed deletion rejects completion before request and accepts precise U
     });
     expectOk(parseRunManifestV1(completed));
   }
+});
+
+test("completed deletion follows finalization and every immutable content occurrence", () => {
+  const fixture = withoutExpectedSchemaValid(invalidDeletionBeforeFinalizedContentJson);
+  assert.equal(Value.Check(runManifestSchema, fixture), true);
+  expectError(
+    parseRunManifestV1(fixture),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
+
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const boundary = "2026-08-18T20:10:00.000Z";
+  const completedAtBoundary = recalculate({
+    ...local,
+    revision: 2,
+    previousDigest: local.digest,
+    createdAt: "2026-08-18T20:00:00.000Z",
+    finalizedAt: boundary,
+    artifacts: [{
+      ...local.artifacts[0],
+      createdAt: "2026-08-18T20:08:00.000Z",
+    }],
+    retention: {
+      ...local.retention,
+      status: "deleted" as const,
+      contentExpiresAt: boundary,
+      updatedAt: boundary,
+    },
+    deletion: {
+      status: "completed" as const,
+      requestedAt: boundary,
+      completedAt: boundary,
+      deletedObjectCount: 1,
+      eventSequence: 2,
+    },
+  });
+  expectOk(parseRunManifestV1(completedAtBoundary));
+
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  const assemblingWithLaterPublicSource = {
+    ...cloud,
+    state: "assembling" as const,
+    sources: cloud.sources.map((source) =>
+      source.kind === "public-evidence"
+        ? { ...source, fetchedAt: "2026-08-18T20:08:00.000Z" }
+        : source
+    ),
+    artifacts: [],
+    retention: {
+      ...cloud.retention,
+      status: "deleted" as const,
+      contentExpiresAt: boundary,
+      updatedAt: boundary,
+    },
+    deletion: {
+      status: "completed" as const,
+      requestedAt: "2026-08-18T20:06:00.000Z",
+      completedAt: "2026-08-18T20:06:00.000Z",
+      deletedObjectCount: 1,
+      eventSequence: 2,
+    },
+  } as Record<string, unknown>;
+  Reflect.deleteProperty(assemblingWithLaterPublicSource, "finalizedAt");
+  expectError(
+    parseRunManifestV1(recalculate(assemblingWithLaterPublicSource)),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
 });
 
 test("final manifest timestamps are monotonic at nanosecond precision", () => {

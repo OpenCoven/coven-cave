@@ -10,6 +10,7 @@ import invalidHostedTenantResearchRun from "../../../schemas/research/v1/fixture
 import invalidLocalTenantResearchRun from "../../../schemas/research/v1/fixtures/invalid/research-run-local-tenant.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
+import invalidDeletionBeforeFinalizedContent from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-before-finalized-content.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
 import validHostedResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run-hosted.json" with { type: "json" };
 import validHostedResearchRunWithoutTenant from "../../../schemas/research/v1/fixtures/valid/research-run-hosted-without-tenant.json" with { type: "json" };
@@ -87,6 +88,20 @@ function hostileArrayContainers<T>(
 
   const customPrototype = values.slice();
   Object.setPrototypeOf(customPrototype, Object.create(Array.prototype));
+  const sparse = values.slice();
+  Reflect.deleteProperty(sparse, "0");
+  const extraProperty = values.slice();
+  Object.defineProperty(extraProperty, "extra", {
+    value: "not-an-element",
+    enumerable: true,
+    configurable: true,
+  });
+  const symbolProperty = values.slice();
+  Object.defineProperty(symbolProperty, Symbol("extra"), {
+    value: "not-an-element",
+    enumerable: true,
+    configurable: true,
+  });
 
   return [
     {
@@ -102,6 +117,21 @@ function hostileArrayContainers<T>(
     {
       label: "Proxy",
       value: new Proxy(values.slice(), {}),
+      accessorCalls: () => 0,
+    },
+    {
+      label: "sparse array",
+      value: sparse,
+      accessorCalls: () => 0,
+    },
+    {
+      label: "extra property",
+      value: extraProperty,
+      accessorCalls: () => 0,
+    },
+    {
+      label: "symbol property",
+      value: symbolProperty,
       accessorCalls: () => 0,
     },
   ];
@@ -1319,6 +1349,26 @@ test("research-run options are snapshotted as one boundary before protocol parsi
   );
   assert.equal(getterCalls, 0);
   assert.deepEqual(run, runBefore);
+
+  let proxyTrapCalls = 0;
+  const proxyOptions = new Proxy(
+    {
+      manifestHistory: [root, tip],
+      authorizedFreshConsentAt: [freshConsentAt],
+    },
+    {
+      ownKeys(target) {
+        proxyTrapCalls += 1;
+        return Reflect.ownKeys(target);
+      },
+    },
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, proxyOptions),
+    "$.options",
+    "invalid_value",
+  );
+  assert.equal(proxyTrapCalls, 0);
 });
 
 test("research-run option collection containers reject exotic arrays before iteration", () => {
@@ -1356,6 +1406,49 @@ test("ordinary frozen research-run options and collection arrays preserve run id
   assert.strictEqual(
     expectOk(validateResearchRunContextPackV1(run, contextPack, options)),
     run,
+  );
+});
+
+test("manifest histories allow nested immutable references shared across revisions", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  tip.context = root.context;
+  tip.sources[0] = root.sources[0]!;
+  tip.artifacts[0]!.futureExtension = root.artifacts[0]!.futureExtension;
+
+  assert.strictEqual(
+    expectOk(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory: [root, tip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      }),
+    ),
+    run,
+  );
+});
+
+test("manifest history revisions and embedded tips apply completed-deletion chronology consistently", () => {
+  const {
+    expectedSchemaValid: _expectedSchemaValid,
+    ...invalidManifest
+  } = invalidDeletionBeforeFinalizedContent;
+  const invalidTipRun = runForStatus(
+    "completed",
+    invalidManifest,
+  ) as unknown as ResearchRunV1;
+  expectError(
+    validateResearchRunContextPackV1(invalidTipRun),
+    "$.artifactManifest.deletion.requestedAt",
+    "semantic_conflict",
+  );
+
+  const { rootRun } = rootedContextlessManifestComposition();
+  expectError(
+    validateResearchRunContextPackV1(rootRun, undefined, {
+      manifestHistory: [invalidManifest as unknown as RunManifestV1],
+    }),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
   );
 });
 
@@ -2937,7 +3030,18 @@ test("event collection snapshots reject iterator substitution and exotic arrays"
   }
 });
 
-test("content.deleted event chronology is bounded below by run and manifest creation", () => {
+test("event collections allow nested immutable references shared across events", () => {
+  const first = parsedEvent(1, "run.status", { status: "scoping" });
+  const second = parsedEvent(2, "run.status", { status: "scoping" });
+  const sharedMetadata = Object.freeze({ traceId: "trace_shared_01" });
+  (first.data as Record<string, unknown>).metadata = sharedMetadata;
+  (second.data as Record<string, unknown>).metadata = sharedMetadata;
+  const events = [first, second];
+
+  assert.strictEqual(expectOk(validateRunEventSequence(events)), events);
+});
+
+test("content.deleted event chronology is bounded below by run, manifest, and content creation", () => {
   const deletedRun = runWithCompletedDeletion();
   const first = parsedEvent(1, "run.created", { status: "queued" });
   const completed = parsedEvent(3, "run.status", { status: "completed" });
@@ -2969,7 +3073,7 @@ test("content.deleted event chronology is bounded below by run and manifest crea
     "semantic_conflict",
   );
 
-  const boundary = deletedRun.artifactManifest!.createdAt;
+  const boundary = deletedRun.artifactManifest!.finalizedAt!;
   const boundaryManifest = expectOk(
     parseRunManifestV1(
       recalculatedManifest({
@@ -2986,7 +3090,6 @@ test("content.deleted event chronology is bounded below by run and manifest crea
     parseResearchRunV1({
       ...deletedRun,
       artifactManifest: boundaryManifest,
-      createdAt: boundary,
     }),
   );
   const boundaryEvents = [
@@ -3030,13 +3133,23 @@ test("deletion event chronology includes nanosecond boundaries and leap seconds"
   const leapSecondManifest = expectOk(
     parseRunManifestV1(
       recalculatedManifest({
-      ...deletedRun.artifactManifest!,
-      createdAt: "2016-12-31T23:59:59Z",
-      deletion: {
-        ...deletedRun.artifactManifest!.deletion,
-        requestedAt: "2016-12-31T23:59:59.999999999Z",
-        completedAt: "2017-01-01T00:00:00Z",
-      },
+        ...deletedRun.artifactManifest!,
+        createdAt: "2016-12-31T23:59:59Z",
+        finalizedAt: "2016-12-31T23:59:59.999999999Z",
+        artifacts: deletedRun.artifactManifest!.artifacts.map((artifact) => ({
+          ...artifact,
+          createdAt: "2016-12-31T23:59:59.999999999Z",
+        })),
+        retention: {
+          ...deletedRun.artifactManifest!.retention,
+          contentExpiresAt: "2017-01-01T00:00:00Z",
+          updatedAt: "2017-01-01T00:00:00Z",
+        },
+        deletion: {
+          ...deletedRun.artifactManifest!.deletion,
+          requestedAt: "2016-12-31T23:59:59.999999999Z",
+          completedAt: "2017-01-01T00:00:00Z",
+        },
       }),
     ),
   );

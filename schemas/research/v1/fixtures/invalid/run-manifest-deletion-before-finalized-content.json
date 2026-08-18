@@ -1,0 +1,47 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_deletion_before_finalized_content_01",
+  "runId": "run_deletion_before_finalized_content_01",
+  "digest": "8eef8a17e4958f3d516eea5d9dc2ece3e25cf4c4aecef415fdb16f7130393de7",
+  "revision": 2,
+  "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "state": "final",
+  "createdAt": "2026-08-18T20:00:00.000Z",
+  "finalizedAt": "2026-08-18T20:10:00.000Z",
+  "sources": [],
+  "artifacts": [
+    {
+      "id": "artifact_deletion_order_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-18T20:08:00.000Z"
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "deleted",
+    "contentExpiresAt": "2026-08-18T20:10:00.000Z",
+    "updatedAt": "2026-08-18T20:10:00.000Z"
+  },
+  "deletion": {
+    "status": "completed",
+    "requestedAt": "2026-08-18T20:06:00.000Z",
+    "completedAt": "2026-08-18T20:06:00.000Z",
+    "deletedObjectCount": 1,
+    "eventSequence": 2
+  }
+}

@@ -573,7 +573,7 @@
         },
         "deletion": {
           "status": "completed",
-          "requestedAt": "2026-08-15T20:08:00.000Z",
+          "requestedAt": "2026-08-15T20:09:00.000Z",
           "completedAt": "2026-08-15T20:10:00.000Z",
           "deletedObjectCount": 1,
           "retainedAuditUntil": "2027-08-15T20:10:00.000Z",
@@ -1211,7 +1211,7 @@
           },
           "deletion": {
             "status": "completed",
-            "requestedAt": "2026-08-15T20:08:00.000Z",
+            "requestedAt": "2026-08-15T20:09:00.000Z",
             "completedAt": "2026-08-15T20:10:00.000Z",
             "deletedObjectCount": 1,
             "retainedAuditUntil": "2027-08-15T20:10:00.000Z",

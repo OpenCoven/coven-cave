@@ -7,6 +7,7 @@ import {
   isSha256,
   isUtcTimestamp,
   pass,
+  snapshotProtocolArrayElements,
   type ProtocolParseResult,
   type UnknownFields,
 } from "./common.ts";
@@ -961,11 +962,12 @@ export function validateTopicDiscoveryCompositionV1(
   job: TopicDiscoveryJobV1,
   proposals: readonly TopicProposalV1[],
 ): ProtocolParseResult<TopicDiscoveryJobV1> {
-  const proposalSnapshots = copyProtocolJsonValue(proposals, "$.proposals");
+  const proposalSnapshots = snapshotProtocolArrayElements(
+    proposals,
+    "$.proposals",
+    "proposals",
+  );
   if (!proposalSnapshots.ok) return proposalSnapshots;
-  if (!Array.isArray(proposalSnapshots.value)) {
-    return fail("invalid_type", "$.proposals", "proposals must be an array");
-  }
 
   const parsedContextPack = parseContextPackV1(contextPack);
   if (!parsedContextPack.ok) return parsedContextPack;
@@ -975,7 +977,12 @@ export function validateTopicDiscoveryCompositionV1(
 
   const parsedProposals: TopicProposalV1[] = [];
   for (let index = 0; index < proposalSnapshots.value.length; index += 1) {
-    const parsedProposal = parseTopicProposalV1(proposalSnapshots.value[index]);
+    const proposalSnapshot = copyProtocolJsonValue(
+      proposalSnapshots.value[index],
+      "$.proposals",
+    );
+    if (!proposalSnapshot.ok) return proposalSnapshot;
+    const parsedProposal = parseTopicProposalV1(proposalSnapshot.value);
     if (!parsedProposal.ok) return parsedProposal;
     parsedProposals.push(parsedProposal.value);
   }

@@ -5,6 +5,34 @@
     "completed-deletion-run": {
       "fixture": "scenarios/objects/completed-deletion-run.json"
     },
+    "content-before-deletion-run": {
+      "fixture": "scenarios/objects/completed-deletion-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "digest": "ce2fc236814bdf78a118f2d2d3534d649dc0bfb3710a7eaa96e1c9cb2d9e97ca",
+          "deletion": {
+            "requestedAt": "2026-08-15T20:06:00.000Z",
+            "completedAt": "2026-08-15T20:06:00.000Z"
+          }
+        }
+      }
+    },
+    "content-boundary-deletion-run": {
+      "fixture": "scenarios/objects/completed-deletion-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "retention": {
+            "contentExpiresAt": "2026-08-15T20:10:00.000Z",
+            "updatedAt": "2026-08-15T20:10:00.000Z"
+          },
+          "deletion": {
+            "requestedAt": "2026-08-15T20:10:00.000Z",
+            "completedAt": "2026-08-15T20:10:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "completed-event": {
       "fixture": "valid/run-event.json",
       "mergePatch": {
@@ -118,6 +146,32 @@
         "sequence": 2,
         "type": "content.deleted",
         "at": "2026-08-17T18:59:59.999999999Z",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-event-before-latest-content": {
+      "fixture": "valid/run-event-content-deleted.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "content.deleted",
+        "at": "2026-08-15T20:06:00.000Z",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-event-at-latest-content": {
+      "fixture": "valid/run-event-content-deleted.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "content.deleted",
+        "at": "2026-08-15T20:10:00.000Z",
         "data": {
           "status": null,
           "deletedObjectCount": 3,
@@ -244,6 +298,34 @@
     }
   },
   "scenarios": [
+    {
+      "id": "run-deletion.before-finalization-and-latest-content",
+      "description": "An artifact at 20:08 and finalization at 20:10 make a completed deletion at 20:06 invalid.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "content-before-deletion-run",
+        "events": ["created-event", "deleted-event-before-latest-content", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.deletion.requestedAt"
+      }
+    },
+    {
+      "id": "run-deletion.latest-content-equality",
+      "description": "A deletion exactly at the latest finalization/content boundary is valid.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "content-boundary-deletion-run",
+        "events": ["created-event", "deleted-event-at-latest-content", "completed-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
     {
       "id": "run-deletion.valid-completed",
       "description": "A complete ordered stream contains the content.deleted event named by the completed receipt.",

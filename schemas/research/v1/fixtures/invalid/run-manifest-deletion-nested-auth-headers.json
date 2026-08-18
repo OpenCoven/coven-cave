@@ -1,0 +1,32 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_deletion_auth_headers_01",
+  "runId": "run_deletion_auth_headers_01",
+  "digest": "556657eb248826659d6f23084de91be87d28ff416e19cbe312aa0f189cd5627b",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-18T10:00:00.000Z",
+  "finalizedAt": "2026-08-18T10:01:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-18T10:01:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "metadata": {
+      "AUTH_HEADERS": "private material"
+    }
+  }
+}

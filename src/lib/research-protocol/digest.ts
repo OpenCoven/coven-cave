@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
 const defineOwnProperty = Object.defineProperty;
+const getPrototypeOfIntrinsic = Object.getPrototypeOf;
+const arrayIsArrayIntrinsic = Array.isArray;
+const objectPrototypeIntrinsic = Object.prototype;
+const arrayPrototypeIntrinsic = Array.prototype;
 const structuredCloneIntrinsic = globalThis.structuredClone;
 
 function jsonPathForProperty(path: string, key: string): string {
@@ -17,30 +21,65 @@ function createCanonicalJsonError(path: string, reason: string): TypeError {
   return new TypeError(`Value at ${path} is not canonical JSON: ${reason}`);
 }
 
-function assertNoProxyObjects(retainedIdentities: object[]): void {
+type CanonicalContainerKind = "array" | "object";
+
+function assertCanonicalClonedIdentities(
+  retainedIdentities: object[],
+  retainedKinds: CanonicalContainerKind[],
+  retainedPaths: string[],
+): void {
   if (retainedIdentities.length === 0) return;
   if (typeof structuredCloneIntrinsic !== "function") {
     throw createCanonicalJsonError("$", "standard structured clone support is required");
   }
 
+  let clonedIdentities: object[];
   try {
-    structuredCloneIntrinsic(retainedIdentities);
-  } catch (error) {
-    if (
-      typeof error === "object"
-      && error !== null
-      && "name" in error
-      && error.name === "DataCloneError"
-    ) {
-      throw createCanonicalJsonError("$", "Proxy objects are not allowed");
+    clonedIdentities = structuredCloneIntrinsic(retainedIdentities);
+  } catch {
+    throw createCanonicalJsonError("$", "Proxy objects are not allowed");
+  }
+
+  for (let index = 0; index < clonedIdentities.length; index += 1) {
+    const clonedIdentity = clonedIdentities[index];
+    const expectedKind = retainedKinds[index];
+    const clonedIsArray = arrayIsArrayIntrinsic(clonedIdentity);
+    const clonedPrototype = getPrototypeOfIntrinsic(clonedIdentity);
+    const isExpectedContainer = expectedKind === "array"
+      ? clonedIsArray && clonedPrototype === arrayPrototypeIntrinsic
+      : !clonedIsArray
+        && (clonedPrototype === objectPrototypeIntrinsic || clonedPrototype === null);
+    if (!isExpectedContainer) {
+      throw createCanonicalJsonError(
+        retainedPaths[index]!,
+        "only ordinary JSON objects and arrays are allowed",
+      );
     }
-    throw error;
   }
 }
 
-function retainObjectIdentity(retainedIdentities: object[], value: object): void {
+function retainObjectIdentity(
+  retainedIdentities: object[],
+  retainedKinds: CanonicalContainerKind[],
+  retainedPaths: string[],
+  value: object,
+  kind: CanonicalContainerKind,
+  path: string,
+): void {
   defineOwnProperty(retainedIdentities, retainedIdentities.length, {
     value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+  defineOwnProperty(retainedKinds, retainedKinds.length, {
+    value: kind,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+  defineOwnProperty(retainedPaths, retainedPaths.length, {
+    value: path,
     enumerable: true,
     configurable: true,
     writable: true,
@@ -48,9 +87,9 @@ function retainObjectIdentity(retainedIdentities: object[], value: object): void
 }
 
 function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
+  if (typeof value !== "object" || value === null || arrayIsArrayIntrinsic(value)) return false;
+  const prototype = getPrototypeOfIntrinsic(value);
+  return prototype === objectPrototypeIntrinsic || prototype === null;
 }
 
 function assertPairedUtf16Surrogates(value: string, path: string): void {
@@ -79,6 +118,8 @@ function copyCanonicalJsonValueAtPath(
   path: string,
   seen: WeakSet<object>,
   traversedObjects: object[],
+  traversedKinds: CanonicalContainerKind[],
+  traversedPaths: string[],
 ): unknown {
   if (typeof value === "string") {
     assertPairedUtf16Surrogates(value, path);
@@ -103,15 +144,22 @@ function copyCanonicalJsonValueAtPath(
   if (typeof value === "symbol") {
     throw createCanonicalJsonError(path, "symbols are not allowed");
   }
-  if (Array.isArray(value)) {
-    if (Object.getPrototypeOf(value) !== Array.prototype) {
+  if (arrayIsArrayIntrinsic(value)) {
+    if (getPrototypeOfIntrinsic(value) !== arrayPrototypeIntrinsic) {
       throw createCanonicalJsonError(path, "arrays must use exact Array.prototype");
     }
     if (seen.has(value)) {
       throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
     }
     seen.add(value);
-    retainObjectIdentity(traversedObjects, value);
+    retainObjectIdentity(
+      traversedObjects,
+      traversedKinds,
+      traversedPaths,
+      value,
+      "array",
+      path,
+    );
 
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
     if (
@@ -182,6 +230,8 @@ function copyCanonicalJsonValueAtPath(
           jsonPathForIndex(path, entry.index),
           seen,
           traversedObjects,
+          traversedKinds,
+          traversedPaths,
         ),
         enumerable: true,
         configurable: true,
@@ -197,7 +247,14 @@ function copyCanonicalJsonValueAtPath(
     throw createCanonicalJsonError(path, "cyclic or repeated object references are not allowed");
   }
   seen.add(value);
-  retainObjectIdentity(traversedObjects, value);
+  retainObjectIdentity(
+    traversedObjects,
+    traversedKinds,
+    traversedPaths,
+    value,
+    "object",
+    path,
+  );
 
   const copy = Object.create(null) as Record<string, unknown>;
   for (const key of Reflect.ownKeys(value)) {
@@ -222,6 +279,8 @@ function copyCanonicalJsonValueAtPath(
         propertyPath,
         seen,
         traversedObjects,
+        traversedKinds,
+        traversedPaths,
       ),
       enumerable: true,
       configurable: true,
@@ -233,13 +292,21 @@ function copyCanonicalJsonValueAtPath(
 
 export function copyCanonicalJsonValue<T>(value: T): T {
   const traversedObjects: object[] = [];
+  const traversedKinds: CanonicalContainerKind[] = [];
+  const traversedPaths: string[] = [];
   const copy = copyCanonicalJsonValueAtPath(
     value,
     "$",
     new WeakSet<object>(),
     traversedObjects,
+    traversedKinds,
+    traversedPaths,
   ) as T;
-  assertNoProxyObjects(traversedObjects);
+  assertCanonicalClonedIdentities(
+    traversedObjects,
+    traversedKinds,
+    traversedPaths,
+  );
   return copy;
 }
 

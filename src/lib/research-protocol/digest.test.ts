@@ -268,6 +268,49 @@ test("canonicalization accepts an ordinary nested graph", () => {
   );
 });
 
+test("canonicalization rejects prototype-spoofed exotic built-ins at root and nested positions", () => {
+  const exoticFactories: Array<readonly [string, () => object]> = [
+    ["Map", () => new Map([["key", "value"]])],
+    ["Set", () => new Set(["value"])],
+    ["Date", () => new Date("2026-08-18T20:00:00.000Z")],
+    ["RegExp", () => /research/giu],
+    ["ArrayBuffer", () => new ArrayBuffer(8)],
+    ["typed array", () => new Uint8Array([1, 2, 3])],
+  ];
+
+  for (const [label, createExotic] of exoticFactories) {
+    for (const prototype of [Object.prototype, null]) {
+      const root = createExotic();
+      Object.setPrototypeOf(root, prototype);
+      assert.throws(
+        () => canonicalJson(root),
+        /canonical JSON/i,
+        `${label} with a spoofed root prototype`,
+      );
+
+      const nested = createExotic();
+      Object.setPrototypeOf(nested, prototype);
+      assert.throws(
+        () => canonicalJson({ nested }),
+        /canonical JSON/i,
+        `${label} with a spoofed nested prototype`,
+      );
+    }
+  }
+});
+
+test("canonicalization still accepts ordinary and null-prototype object controls", () => {
+  const nullPrototype = Object.create(null) as Record<string, unknown>;
+  nullPrototype.label = "null-prototype";
+  nullPrototype.items = [1, { valid: true }];
+
+  assert.equal(canonicalJson({ label: "ordinary" }), '{"label":"ordinary"}');
+  assert.equal(
+    canonicalJson(nullPrototype),
+    '{"items":[1,{"valid":true}],"label":"null-prototype"}',
+  );
+});
+
 test("canonicalization validates a bounded deep identity ledger with one structured clone", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
   assert.ok(descriptor);

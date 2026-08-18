@@ -205,7 +205,14 @@ test("proposal containers are snapshotted before protocol parsing and iteration"
     assert.deepEqual(job, jobBefore);
   }
 
-  for (const kind of ["index accessor", "custom prototype", "Proxy"] as const) {
+  for (const kind of [
+    "index accessor",
+    "custom prototype",
+    "Proxy",
+    "sparse array",
+    "extra property",
+    "symbol property",
+  ] as const) {
     const { contextPack, job, proposals } = validDiscoveryComposition();
     let accessorCalls = 0;
     let container: readonly TopicProposalV1[];
@@ -224,8 +231,28 @@ test("proposal containers are snapshotted before protocol parsing and iteration"
       const customPrototype = proposals.slice();
       Object.setPrototypeOf(customPrototype, Object.create(Array.prototype));
       container = customPrototype;
-    } else {
+    } else if (kind === "Proxy") {
       container = new Proxy(proposals.slice(), {});
+    } else if (kind === "sparse array") {
+      const sparse = proposals.slice();
+      Reflect.deleteProperty(sparse, "0");
+      container = sparse;
+    } else if (kind === "extra property") {
+      const extraProperty = proposals.slice();
+      Object.defineProperty(extraProperty, "extra", {
+        value: "not-a-proposal",
+        enumerable: true,
+        configurable: true,
+      });
+      container = extraProperty;
+    } else {
+      const symbolProperty = proposals.slice();
+      Object.defineProperty(symbolProperty, Symbol("extra"), {
+        value: "not-a-proposal",
+        enumerable: true,
+        configurable: true,
+      });
+      container = symbolProperty;
     }
 
     expectError(
@@ -250,6 +277,36 @@ test("proposal containers are snapshotted before protocol parsing and iteration"
       job,
     );
   }
+});
+
+test("proposal collections allow nested immutable references shared across proposals", () => {
+  const { contextPack, job, proposals } = validDiscoveryComposition();
+  const secondProposal = expectOk(
+    parseTopicProposalV1({
+      ...proposals[0],
+      id: "proposal_02",
+    }),
+  );
+  const twoProposalJob = expectOk(
+    parseTopicDiscoveryJobV1({
+      ...job,
+      proposalIds: [proposals[0]!.id, secondProposal.id],
+    }),
+  );
+  secondProposal.suggested = proposals[0]!.suggested;
+  secondProposal.evidence[0]!.selector = proposals[0]!.evidence[0]!.selector;
+  const sharedProposals = [proposals[0]!, secondProposal];
+
+  assert.strictEqual(
+    expectOk(
+      validateTopicDiscoveryCompositionV1(
+        contextPack,
+        twoProposalJob,
+        sharedProposals,
+      ),
+    ),
+    twoProposalJob,
+  );
 });
 
 test("topic discovery composition requires a discovery-purpose Context Pack and policy", () => {

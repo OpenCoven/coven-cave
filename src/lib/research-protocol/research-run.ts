@@ -8,6 +8,8 @@ import {
   parseResearchContextBindingV1,
   pass,
   retentionDoesNotExceed,
+  snapshotProtocolArrayElements,
+  snapshotProtocolObjectProperties,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
   type RetentionPolicyV1,
@@ -226,32 +228,48 @@ function validateResearchRunCompositionOptionKeys(
 function parseResearchRunCompositionOptions(
   value: unknown,
 ): ProtocolParseResult<ParsedResearchRunCompositionOptionsV1> {
-  const wireOptions = copyProtocolJsonValue(value, "$.options");
+  const wireOptions = snapshotProtocolObjectProperties(
+    value,
+    "$.options",
+    "Research Run composition options",
+  );
   if (!wireOptions.ok) return wireOptions;
-  if (!isRecord(wireOptions.value)) {
-    return fail(
-      "invalid_type",
-      "$.options",
-      "Research Run composition options must be an object",
-    );
-  }
 
   const keys = validateResearchRunCompositionOptionKeys(wireOptions.value);
   if (!keys.ok) return keys;
+  for (const key of Object.keys(wireOptions.value)) {
+    if (RESEARCH_RUN_COMPOSITION_OPTION_KEYS.has(key)) continue;
+    const optionSnapshot = copyProtocolJsonValue(
+      wireOptions.value[key],
+      childPath("$.options", key),
+    );
+    if (!optionSnapshot.ok) return optionSnapshot;
+  }
 
   let manifestHistory: RunManifestV1[] | undefined;
   if (hasOwn(wireOptions.value, "manifestHistory")) {
-    if (!Array.isArray(wireOptions.value.manifestHistory)) {
+    const historySnapshot = snapshotProtocolArrayElements(
+      wireOptions.value.manifestHistory,
+      "$.manifestHistory",
+      "manifestHistory",
+    );
+    if (!historySnapshot.ok) {
+      if (historySnapshot.error.code === "invalid_type") return historySnapshot;
       return fail(
-        "invalid_type",
-        "$.manifestHistory",
-        "manifestHistory must be an array",
+        historySnapshot.error.code,
+        "$.options",
+        historySnapshot.error.message,
       );
     }
     manifestHistory = [];
-    for (let index = 0; index < wireOptions.value.manifestHistory.length; index += 1) {
+    for (let index = 0; index < historySnapshot.value.length; index += 1) {
+      const manifestSnapshot = copyProtocolJsonValue(
+        historySnapshot.value[index],
+        "$.options",
+      );
+      if (!manifestSnapshot.ok) return manifestSnapshot;
       const parsedManifest = parseRunManifestV1(
-        wireOptions.value.manifestHistory[index],
+        manifestSnapshot.value,
       );
       if (!parsedManifest.ok) return parsedManifest;
       manifestHistory.push(parsedManifest.value);
@@ -260,19 +278,27 @@ function parseResearchRunCompositionOptions(
 
   const authorizedFreshConsentAt: string[] = [];
   if (hasOwn(wireOptions.value, "authorizedFreshConsentAt")) {
-    if (!Array.isArray(wireOptions.value.authorizedFreshConsentAt)) {
+    const authorizationSnapshot = snapshotProtocolArrayElements(
+      wireOptions.value.authorizedFreshConsentAt,
+      "$.authorizedFreshConsentAt",
+      "authorizedFreshConsentAt",
+    );
+    if (!authorizationSnapshot.ok) {
+      if (authorizationSnapshot.error.code === "invalid_type") {
+        return authorizationSnapshot;
+      }
       return fail(
-        "invalid_type",
-        "$.authorizedFreshConsentAt",
-        "authorizedFreshConsentAt must be an array",
+        authorizationSnapshot.error.code,
+        "$.options",
+        authorizationSnapshot.error.message,
       );
     }
     for (
       let index = 0;
-      index < wireOptions.value.authorizedFreshConsentAt.length;
+      index < authorizationSnapshot.value.length;
       index += 1
     ) {
-      const authorizedAt = wireOptions.value.authorizedFreshConsentAt[index];
+      const authorizedAt = authorizationSnapshot.value[index];
       if (!isUtcTimestamp(authorizedAt)) {
         return fail(
           "invalid_value",
@@ -1685,12 +1711,7 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
 function snapshotRunEventContainer(
   events: readonly RunEventV1[],
 ): ProtocolParseResult<readonly unknown[]> {
-  const wireEvents = copyProtocolJsonValue(events, "$.events");
-  if (!wireEvents.ok) return wireEvents;
-  if (!Array.isArray(wireEvents.value)) {
-    return fail("invalid_type", "$.events", "events must be an array");
-  }
-  return pass(wireEvents.value);
+  return snapshotProtocolArrayElements(events, "$.events", "events");
 }
 
 function parseRunEventSnapshots(
@@ -1698,7 +1719,9 @@ function parseRunEventSnapshots(
 ): ProtocolParseResult<RunEventV1[]> {
   const parsedEvents: RunEventV1[] = [];
   for (let index = 0; index < events.length; index += 1) {
-    const parsedEvent = parseRunEventV1(events[index]);
+    const eventSnapshot = copyProtocolJsonValue(events[index], "$.events");
+    if (!eventSnapshot.ok) return eventSnapshot;
+    const parsedEvent = parseRunEventV1(eventSnapshot.value);
     if (!parsedEvent.ok) return parsedEvent;
     parsedEvents.push(parsedEvent.value);
   }
@@ -1854,6 +1877,36 @@ function validateRunManifestDeletionEventParsedV1(
       "semantic_conflict",
       `$[${eventIndex}].at`,
       "content.deleted must not precede manifest creation",
+    );
+  }
+  let latestImmutableContentAt = manifest.finalizedAt;
+  for (const artifact of manifest.artifacts) {
+    if (
+      latestImmutableContentAt === undefined
+      || compareUtcTimestamps(artifact.createdAt, latestImmutableContentAt) > 0
+    ) {
+      latestImmutableContentAt = artifact.createdAt;
+    }
+  }
+  for (const source of manifest.sources) {
+    if (
+      source.kind === "public-evidence"
+      && (
+        latestImmutableContentAt === undefined
+        || compareUtcTimestamps(source.fetchedAt, latestImmutableContentAt) > 0
+      )
+    ) {
+      latestImmutableContentAt = source.fetchedAt;
+    }
+  }
+  if (
+    latestImmutableContentAt !== undefined
+    && compareUtcTimestamps(event.at, latestImmutableContentAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].at`,
+      "content.deleted must not precede finalization or immutable content creation",
     );
   }
   if (
