@@ -118,6 +118,7 @@ function extendedRetentionComposition(
         ...validRunManifest.retention,
         policy: "run-only",
         effectivePolicy,
+        freshConsentAt: validRunManifest.retention.updatedAt,
       },
     },
     context,
@@ -775,7 +776,7 @@ test("deletion requests cannot postdate the enclosing run update", () => {
     retention: {
       ...validRunManifest.retention,
       status: "deletion_scheduled",
-      contentExpiresAt: "2026-08-23T20:05:00.000Z",
+      contentExpiresAt: "2026-08-23T20:04:00.000Z",
     },
     deletion: {
       status: "scheduled",
@@ -800,7 +801,7 @@ test("completed deletion receipt clocks cannot postdate the enclosing run update
     retention: {
       ...validRunManifest.retention,
       status: "deleted",
-      contentExpiresAt: "2026-08-23T20:05:00.000Z",
+      contentExpiresAt: "2026-08-23T20:04:00.000Z",
     },
     deletion: {
       status: "completed",
@@ -866,7 +867,7 @@ test("embedded manifest future deadlines may follow the enclosing run update", (
     retention: {
       ...validRunManifest.retention,
       status: "deleted",
-      contentExpiresAt: "2026-08-23T20:05:00.000Z",
+      contentExpiresAt: "2026-08-23T20:04:00.000Z",
     },
     deletion: {
       status: "completed",
@@ -1165,6 +1166,7 @@ test("embedded manifests bind original run privacy retention and every content-s
       ...validRunManifest.retention,
       policy: "run-only",
       effectivePolicy: "7-days",
+      freshConsentAt: validRunManifest.retention.updatedAt,
     },
   });
   const extendedRetentionRun = expectOk(
@@ -1379,6 +1381,7 @@ test("contextless embedded manifests cannot extend effective retention beyond th
       ...validRunManifest.retention,
       policy: "run-only",
       effectivePolicy: "7-days",
+      freshConsentAt: validRunManifest.retention.updatedAt,
     },
   };
   delete contextlessManifest.context;

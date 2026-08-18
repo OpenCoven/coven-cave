@@ -315,6 +315,9 @@
         "artifactManifest": {
           "state": "assembling",
           "finalizedAt": null,
+          "retention": {
+            "freshConsentAt": null
+          },
           "artifacts": [
             {
               "id": "artifact_context_01",
@@ -340,6 +343,9 @@
         "artifactManifest": {
           "state": "assembling",
           "finalizedAt": null,
+          "retention": {
+            "freshConsentAt": null
+          },
           "sources": [
             {
               "kind": "context-pack",

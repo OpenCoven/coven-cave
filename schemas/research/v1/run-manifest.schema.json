@@ -546,6 +546,7 @@
           "enum": ["active", "deletion_scheduled", "deletion_pending", "deleted"]
         },
         "contentExpiresAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "freshConsentAt": { "$ref": "#/$defs/utcTimestamp" },
         "updatedAt": { "$ref": "#/$defs/utcTimestamp" }
       }
     },

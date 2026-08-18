@@ -33,6 +33,7 @@ import {
   digestProtocolObject,
   isRecord,
   isSha256,
+  isUtcTimestamp,
   parseResearchProtocolObject,
   validateManifestRetentionConsent,
   validateModelTaskResultV1,
@@ -619,7 +620,7 @@ function validateScenario(
       assertAllowedKeys(
         rawOptions,
         validator === "run-manifest-revision"
-          ? ["contextConsent", "freshConsent"]
+          ? ["contextConsent", "freshConsent", "freshConsentAt"]
           : ["contextConsent"],
         `${location}.options`,
       );
@@ -636,6 +637,12 @@ function validateScenario(
           `${location}.options.freshConsent: must be a boolean`,
         );
       }
+      if (rawOptions.freshConsentAt !== undefined) {
+        assert.ok(
+          isUtcTimestamp(rawOptions.freshConsentAt),
+          `${location}.options.freshConsentAt: must be a valid exact UTC timestamp`,
+        );
+      }
       options = {
         ...(rawOptions.contextConsent === undefined
           ? {}
@@ -645,6 +652,9 @@ function validateScenario(
         ...(rawOptions.freshConsent === undefined
           ? {}
           : { freshConsent: rawOptions.freshConsent as boolean }),
+        ...(rawOptions.freshConsentAt === undefined
+          ? {}
+          : { freshConsentAt: rawOptions.freshConsentAt as string }),
       };
     }
   } else {
@@ -2079,6 +2089,10 @@ test("covers every required Unit 0 cross-object scenario", () => {
     "manifest.pending-to-active-rollback",
     "manifest.pending-to-scheduled-rollback",
     "manifest.fresh-consent-lengthening-cancellation",
+    "manifest.fresh-consent-option-mismatch",
+    "manifest.fresh-consent-before-prior-update",
+    "manifest.project-to-finite-shortening",
+    "manifest.project-to-finite-beyond-duration",
     "manifest.unchanged-policy-is-not-renewal",
     "manifest.partial-failure-continues",
     "manifest.completed-deletion-terminal",

@@ -133,6 +133,7 @@ export type RunManifestRetentionV1 = {
   effectivePolicy: "run-only" | "7-days" | "project";
   status: "active" | "deletion_scheduled" | "deletion_pending" | "deleted";
   contentExpiresAt: string | null;
+  freshConsentAt?: string;
   updatedAt: string;
 } & UnknownFields;
 
@@ -166,6 +167,7 @@ export type RunManifestV1 = {
 
 export type ManifestRevisionOptions = {
   freshConsent?: boolean;
+  freshConsentAt?: string;
   contextConsent?: RetentionPolicyV1;
 };
 
@@ -725,6 +727,17 @@ function parseRetention(value: unknown, path: string): ProtocolParseResult<RunMa
   );
   if (!contentExpiresAt.ok) return contentExpiresAt;
 
+  let freshConsentAt: string | undefined;
+  if (hasOwn(object.value, "freshConsentAt")) {
+    const parsedFreshConsentAt = parseUtc(
+      object.value.freshConsentAt,
+      childPath(path, "freshConsentAt"),
+      "freshConsentAt",
+    );
+    if (!parsedFreshConsentAt.ok) return parsedFreshConsentAt;
+    freshConsentAt = parsedFreshConsentAt.value;
+  }
+
   const updatedAtField = parseRequiredField(object.value, "updatedAt", path);
   if (!updatedAtField.ok) return updatedAtField;
   const updatedAt = parseUtc(updatedAtField.value, childPath(path, "updatedAt"), "updatedAt");
@@ -736,6 +749,7 @@ function parseRetention(value: unknown, path: string): ProtocolParseResult<RunMa
     effectivePolicy: effectivePolicy.value,
     status: status.value,
     contentExpiresAt: contentExpiresAt.value,
+    ...(freshConsentAt === undefined ? {} : { freshConsentAt }),
     updatedAt: updatedAt.value,
   });
 }
@@ -871,9 +885,41 @@ function validateDeletionRequirements(
   return pass(undefined);
 }
 
+type RetentionClockManifest = Pick<
+  RunManifestV1,
+  "revision" | "state" | "finalizedAt" | "retention"
+>;
+
+function retentionAuthorityAnchor(manifest: RetentionClockManifest): string {
+  const { retention } = manifest;
+  if (retention.freshConsentAt !== undefined) return retention.freshConsentAt;
+  if (
+    retention.effectivePolicy === "project"
+    || manifest.state !== "final"
+    || RETENTION_ORDER[retention.effectivePolicy] < RETENTION_ORDER[retention.policy]
+  ) {
+    return retention.updatedAt;
+  }
+  return manifest.finalizedAt!;
+}
+
+function deadlineFitsFiniteAuthority(
+  deadline: string,
+  manifest: RetentionClockManifest,
+): boolean {
+  const policy = manifest.retention.effectivePolicy;
+  return policy === "project"
+    || isUtcTimestampAtMostHoursAfter(
+      deadline,
+      retentionAuthorityAnchor(manifest),
+      RETENTION_DURATION_HOURS[policy],
+    );
+}
+
 function validateRetentionClock(
-  retention: RunManifestRetentionV1,
+  manifest: RetentionClockManifest,
 ): ProtocolParseResult<void> {
+  const { retention } = manifest;
   if (retention.status === "active" && retention.contentExpiresAt !== null) {
     return fail(
       "semantic_conflict",
@@ -895,14 +941,69 @@ function validateRetentionClock(
       "active project retention must not have contentExpiresAt",
     );
   }
-  if (retention.contentExpiresAt !== null) {
-    if (!isUtcTimestamp(retention.updatedAt)) {
+  if (!isUtcTimestamp(retention.updatedAt)) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt must be a valid UTC timestamp",
+    );
+  }
+  if (
+    manifest.state === "final"
+    && RETENTION_ORDER[retention.effectivePolicy] > RETENTION_ORDER[retention.policy]
+    && retention.freshConsentAt === undefined
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.freshConsentAt",
+      "lengthened effective retention requires a durable freshConsentAt receipt",
+    );
+  }
+  if (retention.freshConsentAt !== undefined) {
+    if (!isUtcTimestamp(retention.freshConsentAt)) {
       return fail(
         "semantic_conflict",
-        "$.retention.updatedAt",
-        "retention.updatedAt must be a valid UTC timestamp",
+        "$.retention.freshConsentAt",
+        "retention.freshConsentAt must be a valid exact UTC timestamp",
       );
     }
+    if (manifest.state !== "final") {
+      return fail(
+        "semantic_conflict",
+        "$.retention.freshConsentAt",
+        "freshConsentAt is only valid after manifest finalization",
+      );
+    }
+    if (manifest.revision === 1) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.freshConsentAt",
+        "initial manifests must not include freshConsentAt",
+      );
+    }
+    if (!isUtcTimestamp(manifest.finalizedAt)) {
+      return fail(
+        "semantic_conflict",
+        "$.finalizedAt",
+        "freshConsentAt requires a valid finalizedAt timestamp",
+      );
+    }
+    if (compareUtcTimestamps(retention.freshConsentAt, manifest.finalizedAt) < 0) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.freshConsentAt",
+        "freshConsentAt must not precede manifest finalization",
+      );
+    }
+    if (compareUtcTimestamps(retention.freshConsentAt, retention.updatedAt) > 0) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.freshConsentAt",
+        "freshConsentAt must not follow retention.updatedAt",
+      );
+    }
+  }
+  if (retention.contentExpiresAt !== null) {
     if (!isUtcTimestamp(retention.contentExpiresAt)) {
       return fail(
         "semantic_conflict",
@@ -910,21 +1011,28 @@ function validateRetentionClock(
         "content expiration must be a valid UTC timestamp",
       );
     }
-    if (compareUtcTimestamps(retention.contentExpiresAt, retention.updatedAt) < 0) {
+    if (
+      manifest.state === "final"
+      && retention.effectivePolicy !== "project"
+      && retention.freshConsentAt === undefined
+      && RETENTION_ORDER[retention.effectivePolicy] >= RETENTION_ORDER[retention.policy]
+      && !isUtcTimestamp(manifest.finalizedAt)
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.finalizedAt",
+        "finite final retention requires a valid finalizedAt timestamp",
+      );
+    }
+    const anchor = retentionAuthorityAnchor(manifest);
+    if (compareUtcTimestamps(retention.contentExpiresAt, anchor) < 0) {
       return fail(
         "semantic_conflict",
         "$.retention.contentExpiresAt",
-        "content expiration must not precede retention.updatedAt",
+        "content expiration must not precede its authoritative retention clock",
       );
     }
-    if (
-      retention.effectivePolicy !== "project"
-      && !isUtcTimestampAtMostHoursAfter(
-        retention.contentExpiresAt,
-        retention.updatedAt,
-        RETENTION_DURATION_HOURS[retention.effectivePolicy],
-      )
-    ) {
+    if (!deadlineFitsFiniteAuthority(retention.contentExpiresAt, manifest)) {
       return fail(
         "semantic_conflict",
         "$.retention.contentExpiresAt",
@@ -939,9 +1047,9 @@ function validateRetentionDeadlineRevision(
   previous: RunManifestV1,
   next: RunManifestV1,
   allowFreshConsentCancellation: boolean,
-  freshConsent: boolean,
+  freshConsentAuthorized: boolean,
 ): ProtocolParseResult<void> {
-  const nextClock = validateRetentionClock(next.retention);
+  const nextClock = validateRetentionClock(next);
   if (!nextClock.ok) return nextClock;
 
   const previousDeadline = previous.retention.contentExpiresAt;
@@ -960,8 +1068,8 @@ function validateRetentionDeadlineRevision(
       "next content expiration must be a valid UTC timestamp",
     );
   }
-  if (previousDeadline === null) return pass(undefined);
   if (nextDeadline === null) {
+    if (previousDeadline === null) return pass(undefined);
     if (
       allowFreshConsentCancellation
       && next.retention.status === "active"
@@ -975,21 +1083,127 @@ function validateRetentionDeadlineRevision(
       "content expiration cannot be cleared without fresh-consent effective-policy lengthening and coherent deletion cancellation",
     );
   }
-  if (compareUtcTimestamps(nextDeadline, previousDeadline) > 0) {
-    if (!freshConsent) {
+
+  const shortensEffectivePolicy =
+    RETENTION_ORDER[next.retention.effectivePolicy]
+      < RETENTION_ORDER[previous.retention.effectivePolicy];
+  if (shortensEffectivePolicy && next.retention.effectivePolicy !== "project") {
+    if (compareUtcTimestamps(nextDeadline, next.retention.updatedAt) < 0) {
       return fail(
         "semantic_conflict",
         "$.retention.contentExpiresAt",
-        "moving content expiration later requires freshConsent",
+        "shortened content expiration must not precede its transition time",
       );
     }
-    if (compareUtcTimestamps(next.retention.updatedAt, previous.retention.updatedAt) <= 0) {
+    if (
+      !isUtcTimestampAtMostHoursAfter(
+        nextDeadline,
+        next.retention.updatedAt,
+        RETENTION_DURATION_HOURS[next.retention.effectivePolicy],
+      )
+    ) {
       return fail(
         "semantic_conflict",
         "$.retention.contentExpiresAt",
-        "fresh-consent content expiration renewal requires advancing retention.updatedAt",
+        `content expiration exceeds the ${next.retention.effectivePolicy} retention duration from its shortening transition`,
       );
     }
+    if (
+      previous.state === "final"
+      && previous.retention.effectivePolicy !== "project"
+      && (
+        (previousDeadline !== null
+          && compareUtcTimestamps(nextDeadline, previousDeadline) > 0)
+        || !deadlineFitsFiniteAuthority(nextDeadline, previous)
+      )
+    ) {
+      return fail(
+        "semantic_conflict",
+        "$.retention.contentExpiresAt",
+        "shortening finite retention cannot exceed its prior deadline or authoritative ceiling",
+      );
+    }
+    return pass(undefined);
+  }
+
+  if (
+    previous.state === "final"
+    && previous.retention.effectivePolicy === next.retention.effectivePolicy
+    && next.retention.effectivePolicy !== "project"
+    && !freshConsentAuthorized
+    && !deadlineFitsFiniteAuthority(nextDeadline, previous)
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "unchanged finite retention cannot exceed its prior authoritative ceiling",
+    );
+  }
+
+  if (
+    previousDeadline !== null
+    && compareUtcTimestamps(nextDeadline, previousDeadline) > 0
+    && !freshConsentAuthorized
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "moving content expiration later requires durable fresh consent",
+    );
+  }
+  return pass(undefined);
+}
+
+function validateFreshConsentRevision(
+  previous: RunManifestV1,
+  next: RunManifestV1,
+  options: ManifestRevisionOptions,
+  requiredPath: string,
+): ProtocolParseResult<void> {
+  if (options.freshConsent !== true) {
+    return fail(
+      "semantic_conflict",
+      requiredPath,
+      "retention renewal or lengthening requires freshConsent and freshConsentAt",
+    );
+  }
+  if (!isUtcTimestamp(options.freshConsentAt)) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.freshConsentAt",
+      "freshConsentAt option must be a valid exact UTC timestamp",
+    );
+  }
+  if (next.retention.freshConsentAt !== options.freshConsentAt) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.freshConsentAt",
+      "manifest freshConsentAt must exactly equal the external freshConsentAt option",
+    );
+  }
+  if (next.retention.updatedAt !== options.freshConsentAt) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt must exactly equal the external freshConsentAt option",
+    );
+  }
+  if (previous.state !== "final" || !isUtcTimestamp(previous.finalizedAt)) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.freshConsentAt",
+      "fresh retention consent may only be recorded after finalization",
+    );
+  }
+  if (
+    compareUtcTimestamps(options.freshConsentAt, previous.finalizedAt) < 0
+    || compareUtcTimestamps(options.freshConsentAt, previous.retention.updatedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.freshConsentAt",
+      "freshConsentAt cannot precede finalization or the previous retention update",
+    );
   }
   return pass(undefined);
 }
@@ -1083,7 +1297,13 @@ function compareImmutableField(
 }
 
 const MUTABLE_ROOT_FIELDS = new Set(["digest", "revision", "previousDigest"]);
-const MUTABLE_RETENTION_FIELDS = new Set(["effectivePolicy", "status", "contentExpiresAt", "updatedAt"]);
+const MUTABLE_RETENTION_FIELDS = new Set([
+  "effectivePolicy",
+  "status",
+  "contentExpiresAt",
+  "freshConsentAt",
+  "updatedAt",
+]);
 const MUTABLE_DELETION_FIELDS = new Set([
   "status",
   "requestedAt",
@@ -1547,7 +1767,12 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!pair.ok) return pair;
   const deletionRequirements = validateDeletionRequirements(deletion.value);
   if (!deletionRequirements.ok) return deletionRequirements;
-  const clock = validateRetentionClock(retention.value);
+  const clock = validateRetentionClock({
+    revision: revision.value,
+    state: state.value,
+    ...(typeof finalizedAt === "string" ? { finalizedAt } : {}),
+    retention: retention.value,
+  });
   if (!clock.ok) return clock;
 
   let computedDigest: string;
@@ -1690,6 +1915,14 @@ export function validateRunManifestRevision(
       "semantic_conflict",
       "$.retention.updatedAt",
       "next retention.updatedAt must not precede previous retention.updatedAt",
+    );
+  }
+  const previousClock = validateRetentionClock(previous);
+  if (!previousClock.ok) {
+    return fail(
+      previousClock.error.code,
+      `$.previous${previousClock.error.path.slice(1)}`,
+      previousClock.error.message,
     );
   }
 
@@ -1847,31 +2080,63 @@ export function validateRunManifestRevision(
   const consent = validateManifestRetentionConsent(next, options.contextConsent);
   if (!consent.ok) return consent;
 
+  const nextClock = validateRetentionClock(next);
+  if (!nextClock.ok) return nextClock;
+
   const lengthensEffectivePolicy =
     RETENTION_ORDER[next.retention.effectivePolicy]
       > RETENTION_ORDER[previous.retention.effectivePolicy];
-  if (lengthensEffectivePolicy) {
-    if (options.freshConsent !== true) {
-      return fail(
-        "semantic_conflict",
-        "$.retention.effectivePolicy",
-        "lengthening effective retention requires freshConsent",
-      );
-    }
+  const previousDeadline = previous.retention.contentExpiresAt;
+  const nextDeadline = next.retention.contentExpiresAt;
+  const extendsDeadline =
+    previousDeadline !== null
+    && nextDeadline !== null
+    && isUtcTimestamp(previousDeadline)
+    && isUtcTimestamp(nextDeadline)
+    && compareUtcTimestamps(nextDeadline, previousDeadline) > 0;
+  const exceedsPriorFiniteCeiling =
+    previous.state === "final"
+    && previous.retention.effectivePolicy === next.retention.effectivePolicy
+    && previous.retention.effectivePolicy !== "project"
+    && nextDeadline !== null
+    && isUtcTimestamp(nextDeadline)
+    && !deadlineFitsFiniteAuthority(nextDeadline, previous);
+  const changesFreshConsentReceipt =
+    previous.retention.freshConsentAt !== next.retention.freshConsentAt;
+
+  const freshConsentRequiredPath = lengthensEffectivePolicy
+    ? "$.retention.effectivePolicy"
+    : extendsDeadline || exceedsPriorFiniteCeiling
+      ? "$.retention.contentExpiresAt"
+      : changesFreshConsentReceipt
+        ? "$.retention.freshConsentAt"
+        : null;
+  const hasFreshConsentOptions =
+    options.freshConsent === true || options.freshConsentAt !== undefined;
+  let freshConsentAuthorized = false;
+  if (freshConsentRequiredPath !== null || hasFreshConsentOptions) {
+    const freshConsent = validateFreshConsentRevision(
+      previous,
+      next,
+      options,
+      freshConsentRequiredPath ?? "$.retention.freshConsentAt",
+    );
+    if (!freshConsent.ok) return freshConsent;
+    freshConsentAuthorized = true;
   }
 
   const lifecycle = validateDeletionLifecycleTransition(
     previous,
     next,
-    lengthensEffectivePolicy && options.freshConsent === true,
+    lengthensEffectivePolicy && freshConsentAuthorized,
   );
   if (!lifecycle.ok) return lifecycle;
 
   const deadline = validateRetentionDeadlineRevision(
     previous,
     next,
-    lengthensEffectivePolicy && options.freshConsent === true,
-    options.freshConsent === true,
+    lengthensEffectivePolicy && freshConsentAuthorized,
+    freshConsentAuthorized,
   );
   if (!deadline.ok) return deadline;
 

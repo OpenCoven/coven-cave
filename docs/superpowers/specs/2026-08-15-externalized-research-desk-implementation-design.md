@@ -735,6 +735,7 @@ type RunManifestRetentionV1 = {
     | "deletion_pending"
     | "deleted";
   contentExpiresAt: string | null;
+  freshConsentAt?: string;
   updatedAt: string;
 };
 
@@ -825,6 +826,14 @@ Rules:
 - `retention.effectivePolicy` initially equals `retention.policy`. It may move
   to a shorter policy; moving to a longer policy requires fresh consent and
   still must not exceed the Context Pack consent.
+- Initial finite retention is anchored at `finalizedAt`: a deadline must be
+  between finalization and finalization plus 24 hours (`run-only`) or seven days
+  (`7-days`). A later `retention.updatedAt` does not renew that authority.
+- `retention.freshConsentAt`, when present, is the durable exact-UTC receipt for
+  a post-final renewal or lengthening. The external revision option, this field,
+  and `retention.updatedAt` must exactly match when the receipt is recorded; it
+  cannot precede finalization or the prior retention update. A renewed finite
+  deadline stays between that receipt and one policy duration after it.
 - `contentExpiresAt` is `null` before the deletion clock begins. It remains
   `null` while the effective policy is `project`, until project deletion or a
   shorter policy is explicitly approved.
@@ -1353,13 +1362,22 @@ Retention behavior:
 These are product defaults. Legal or operational policy may shorten them but
 must not silently lengthen them.
 
-For a scheduled finite Run Manifest policy, `retention.updatedAt` is the
-deletion-clock anchor. Duration checks use exact nanoseconds and
-proleptic-Gregorian UTC days of 86,400 seconds. For the protocol's accepted
-`23:59:60` syntax, arithmetic floors an anchor to `23:59:59` and rounds a
-deadline up to the following civil second while preserving its fractional
-digits. This deterministic bound may shorten a leap-second window but never
-lengthens the named retention duration.
+Finite retention starts at terminal finalization. Only a matching external and
+durable `freshConsentAt` receipt may establish a later renewal clock; changing
+`retention.updatedAt` alone has no authority. An unchanged finite policy remains
+capped by its prior authoritative ceiling, and moving a deadline later,
+renewing beyond that ceiling, lengthening policy, or canceling deletion because
+of lengthening requires that receipt. Privacy-shortening transitions instead
+use their transition `updatedAt`: finite-to-shorter deadlines cannot exceed the
+prior deadline or ceiling, while project-to-finite deadlines may run for the
+new shorter duration from that transition. Project retention otherwise remains
+unbounded until explicit deletion or shortening.
+
+Duration checks use exact nanoseconds and proleptic-Gregorian UTC days of 86,400
+seconds. For the protocol's accepted `23:59:60` syntax, arithmetic floors an
+anchor to `23:59:59` and rounds a deadline up to the following civil second
+while preserving its fractional digits. This deterministic bound may shorten a
+leap-second window but never lengthens the named retention duration.
 
 ## 15. Cave API and UI
 
