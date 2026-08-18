@@ -38,7 +38,7 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-const FORBIDDEN_SENSITIVE_KEYS = new Set([
+const SENSITIVE_EXTENSION_KEY_TOKENS = [
   "excerpt",
   "text",
   "content",
@@ -54,6 +54,46 @@ const FORBIDDEN_SENSITIVE_KEYS = new Set([
   "storagekey",
   "bucketkey",
   "deletedcontent",
+] as const;
+
+function caseInsensitiveTokenPattern(token: string): string {
+  return [...token]
+    .map((character) => `[${character}${character.toUpperCase()}]`)
+    .join("");
+}
+
+const SENSITIVE_EXTENSION_TOKEN_PATTERN = SENSITIVE_EXTENSION_KEY_TOKENS
+  .map(caseInsensitiveTokenPattern)
+  .join("|");
+const SENSITIVE_EXTENSION_CAMEL_TOKEN_PATTERN = SENSITIVE_EXTENSION_KEY_TOKENS
+  .map((token) => `${token[0]!.toUpperCase()}${caseInsensitiveTokenPattern(token.slice(1))}`)
+  .join("|");
+export const SENSITIVE_EXTENSION_KEY_PATTERN =
+  `(?:^(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})|` +
+  `(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})$|` +
+  `(?:^|[_.-])(?:${SENSITIVE_EXTENSION_TOKEN_PATTERN})(?:[_.-]|$)|` +
+  `(?:^|[_.-]|[a-z0-9])(?:${SENSITIVE_EXTENSION_CAMEL_TOKEN_PATTERN})(?:[A-Z0-9_.-]|$))`;
+const SENSITIVE_EXTENSION_KEY_RE = new RegExp(SENSITIVE_EXTENSION_KEY_PATTERN);
+const NO_DECLARED_FIELDS: ReadonlySet<string> = new Set();
+const CONTEXT_PACK_SOURCE_FIELDS = new Set(["kind", "id", "digest", "availability"]);
+const ARTIFACT_FIELDS = new Set([
+  "id",
+  "kind",
+  "title",
+  "mediaType",
+  "digest",
+  "bytes",
+  "placement",
+  "contentSync",
+  "createdAt",
+]);
+const DELETION_FIELDS = new Set([
+  "status",
+  "requestedAt",
+  "completedAt",
+  "deletedObjectCount",
+  "retainedAuditUntil",
+  "eventSequence",
 ]);
 
 export type ArtifactRegistrationV1 = {
@@ -158,6 +198,7 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
 function validateSensitiveObjectKeys(
   value: unknown,
   path: string,
+  declaredFields: ReadonlySet<string> = NO_DECLARED_FIELDS,
 ): ProtocolParseResult<void> {
   if (Array.isArray(value)) {
     for (const [index, entry] of value.entries()) {
@@ -169,12 +210,13 @@ function validateSensitiveObjectKeys(
   if (!isRecord(value)) return pass(undefined);
 
   for (const key of Object.keys(value)) {
+    if (declaredFields.has(key)) continue;
     const keyPath = childPath(path, key);
-    if (FORBIDDEN_SENSITIVE_KEYS.has(key.toLowerCase())) {
+    if (SENSITIVE_EXTENSION_KEY_RE.test(key)) {
       return fail(
         "semantic_conflict",
         keyPath,
-        `Sensitive manifest objects must not contain ${key}`,
+        `Sensitive manifest extensions must not contain ${key}`,
       );
     }
     const nested = validateSensitiveObjectKeys(value[key], keyPath);
@@ -378,7 +420,11 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
   if (!id.ok) return id;
 
   if (kind.value === "context-pack") {
-    const safeKeys = validateSensitiveObjectKeys(object.value, path);
+    const safeKeys = validateSensitiveObjectKeys(
+      object.value,
+      path,
+      CONTEXT_PACK_SOURCE_FIELDS,
+    );
     if (!safeKeys.ok) return safeKeys;
 
     const digestField = parseRequiredField(object.value, "digest", path);
@@ -451,7 +497,7 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
 function parseArtifact(value: unknown, path: string): ProtocolParseResult<ArtifactRegistrationV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
-  const safeKeys = validateSensitiveObjectKeys(object.value, path);
+  const safeKeys = validateSensitiveObjectKeys(object.value, path, ARTIFACT_FIELDS);
   if (!safeKeys.ok) return safeKeys;
 
   const idField = parseRequiredField(object.value, "id", path);
@@ -701,7 +747,7 @@ function parseDeletion(
 ): ProtocolParseResult<RunManifestDeletionReceiptV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
-  const safeKeys = validateSensitiveObjectKeys(object.value, path);
+  const safeKeys = validateSensitiveObjectKeys(object.value, path, DELETION_FIELDS);
   if (!safeKeys.ok) return safeKeys;
 
   const statusField = parseRequiredField(object.value, "status", path);
@@ -825,11 +871,37 @@ function validateRetentionClock(
       "active retention must not have contentExpiresAt",
     );
   }
-  if (retention.status === "active" && retention.effectivePolicy === "project" && retention.contentExpiresAt !== null) {
+  if (retention.status !== "active" && retention.contentExpiresAt === null) {
     return fail(
       "semantic_conflict",
       "$.retention.contentExpiresAt",
-      "active project retention must not have contentExpiresAt",
+      "scheduled or completed deletion requires contentExpiresAt",
+    );
+  }
+  return pass(undefined);
+}
+
+function validateFinalRetentionShortening(
+  state: RunManifestV1["state"],
+  shortened: boolean,
+  retention: RunManifestRetentionV1,
+  deletion: RunManifestDeletionReceiptV1,
+): ProtocolParseResult<void> {
+  if (state !== "final" || !shortened) return pass(undefined);
+  if (retention.status === "active" || deletion.status === "not_scheduled") {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "shortened final retention must have scheduled-or-later deletion",
+    );
+  }
+  const pair = validateRetentionDeletionPair(retention, deletion);
+  if (!pair.ok) return pair;
+  if (retention.contentExpiresAt === null) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.contentExpiresAt",
+      "shortened final retention requires contentExpiresAt",
     );
   }
   return pass(undefined);
@@ -1187,6 +1259,14 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!deletionRequirements.ok) return deletionRequirements;
   const clock = validateRetentionClock(retention.value);
   if (!clock.ok) return clock;
+  const shortening = validateFinalRetentionShortening(
+    state.value,
+    RETENTION_ORDER[retention.value.effectivePolicy] <
+      RETENTION_ORDER[retention.value.policy],
+    retention.value,
+    deletion.value,
+  );
+  if (!shortening.ok) return shortening;
 
   let computedDigest: string;
   try {
@@ -1408,6 +1488,15 @@ export function validateRunManifestRevision(
 
   const consent = validateManifestRetentionConsent(next, options?.contextConsent);
   if (!consent.ok) return consent;
+
+  const shortening = validateFinalRetentionShortening(
+    next.state,
+    RETENTION_ORDER[next.retention.effectivePolicy] <
+      RETENTION_ORDER[previous.retention.effectivePolicy],
+    next.retention,
+    next.deletion,
+  );
+  if (!shortening.ok) return shortening;
 
   if (RETENTION_ORDER[next.retention.effectivePolicy] > RETENTION_ORDER[previous.retention.effectivePolicy]) {
     if (options.freshConsent !== true) {
