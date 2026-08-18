@@ -39,6 +39,10 @@ import {
   isUtcTimestamp,
   parseResearchContextBindingV1,
 } from "./common.ts";
+import {
+  parseRunManifestV1,
+  type RunManifestV1,
+} from "./run-manifest.ts";
 
 function expectOk<T>(result: { ok: true; value: T } | { ok: false; error: { path: string; message: string } }): T {
   if (!result.ok) {
@@ -66,9 +70,17 @@ const researchSchemaContext: Record<string, TSchema> = {
   [runManifestSchema.$id]: runManifestSchema as TSchema,
   [researchRunSchema.properties.artifactManifest.$ref]: runManifestSchema as TSchema,
 };
+const runEventSchemaContext: Record<string, TSchema> = {
+  [runEventSchema.$defs.sensitivePropertyName.$ref]:
+    runManifestSchema.$defs.sensitivePropertyName as TSchema,
+};
 
 function checkResearchRunSchema(value: unknown): boolean {
   return Check(researchSchemaContext, researchRunSchema as TSchema, value);
+}
+
+function checkRunEventSchema(value: unknown): boolean {
+  return Check(runEventSchemaContext, runEventSchema as TSchema, value);
 }
 
 function linkedManifest(
@@ -98,6 +110,14 @@ function linkedManifest(
   };
   linked.digest = digestProtocolObject(linked);
   return linked;
+}
+
+function recalculatedManifest<T extends Record<string, unknown>>(manifest: T): T {
+  const copy = structuredClone(manifest);
+  return {
+    ...copy,
+    digest: digestProtocolObject(copy),
+  };
 }
 
 function extendedRetentionComposition(
@@ -134,6 +154,66 @@ function extendedRetentionComposition(
     }),
   );
   return { run, contextPack };
+}
+
+function rootedExtendedRetentionComposition(): {
+  run: ResearchRunV1;
+  contextPack: ContextPackV1;
+  root: RunManifestV1;
+  tip: RunManifestV1;
+  freshConsentAt: string;
+} {
+  const contextPack = expectOk(parseContextPackV1(validContextPack));
+  const context = {
+    ...validResearchRun.context,
+    contextPackId: contextPack.id,
+    contextPackDigest: contextPack.digest,
+  };
+  const root = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...validRunManifest,
+          retention: {
+            ...validRunManifest.retention,
+            policy: "run-only",
+            effectivePolicy: "run-only",
+          },
+        },
+        context,
+      ),
+    ),
+  );
+  const freshConsentAt = "2026-08-16T20:06:00.000Z";
+  const tip = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...root,
+          revision: 2,
+          previousDigest: root.digest,
+          retention: {
+            ...root.retention,
+            effectivePolicy: "7-days",
+            freshConsentAt,
+            updatedAt: freshConsentAt,
+          },
+        },
+        context,
+      ),
+    ),
+  );
+  const run = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", tip),
+      context,
+      privacy: {
+        ...validResearchRun.privacy,
+        retention: "run-only",
+      },
+    }),
+  );
+  return { run, contextPack, root, tip, freshConsentAt };
 }
 
 function runForStatus(
@@ -1058,11 +1138,208 @@ test("run privacy cannot exceed Context Pack consent", () => {
 });
 
 test("context-bound manifest accepts fresh-consent retention within the Context Pack ceiling", () => {
-  const { run, contextPack } = extendedRetentionComposition("7-days");
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
 
   assert.equal(
-    expectOk(validateResearchRunContextPackV1(run, contextPack)),
+    expectOk(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory: [root, tip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      }),
+    ),
     run,
+  );
+});
+
+test("embedded manifest revisions compose only from a complete rooted authorized history", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack),
+    "$.manifestHistory",
+    "semantic_conflict",
+  );
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory: [root, tip],
+        authorizedFreshConsentAt: [freshConsentAt],
+      }),
+    ),
+    run,
+  );
+});
+
+test("embedded manifest history rejects non-rooted, broken, foreign, and mismatched chains", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const authorize = [freshConsentAt];
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [tip],
+      authorizedFreshConsentAt: authorize,
+    }),
+    "$.manifestHistory",
+    "semantic_conflict",
+  );
+
+  const badLink = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...tip,
+          previousDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        },
+        root.context!,
+      ),
+    ),
+  );
+  expectError(
+    validateResearchRunContextPackV1(
+      { ...run, artifactManifest: badLink },
+      contextPack,
+      {
+        manifestHistory: [root, badLink],
+        authorizedFreshConsentAt: authorize,
+      },
+    ),
+    "$.manifestHistory[1].previousDigest",
+    "semantic_conflict",
+  );
+
+  for (const [label, foreignRoot, path] of [
+    [
+      "id",
+      expectOk(
+        parseRunManifestV1(
+          linkedManifest({ ...root, id: "manifest_other" }),
+        ),
+      ),
+      "$.manifestHistory[0].id",
+    ],
+    [
+      "run",
+      expectOk(
+        parseRunManifestV1(
+          recalculatedManifest({ ...root, runId: "run_other" }),
+        ),
+      ),
+      "$.manifestHistory[0].runId",
+    ],
+    [
+      "context",
+      expectOk(
+        parseRunManifestV1(
+          linkedManifest(
+            root,
+            {
+              ...root.context!,
+              contextPackId: "ctx_other",
+            },
+          ),
+        ),
+      ),
+      "$.manifestHistory[0].context",
+    ],
+  ] as const) {
+    assert.ok(label);
+    expectError(
+      validateResearchRunContextPackV1(run, contextPack, {
+        manifestHistory: [foreignRoot, tip],
+        authorizedFreshConsentAt: authorize,
+      }),
+      path,
+      "semantic_conflict",
+    );
+  }
+
+  const mismatchedTip = expectOk(
+    parseRunManifestV1(
+      linkedManifest(
+        {
+          ...tip,
+          deletion: {
+            ...tip.deletion,
+            auditReceipt: "different",
+          },
+        },
+        root.context!,
+      ),
+    ),
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [root, mismatchedTip],
+      authorizedFreshConsentAt: authorize,
+    }),
+    "$.manifestHistory[1]",
+    "semantic_conflict",
+  );
+});
+
+test("embedded manifest history requires exact fresh-consent authorizations with no extras", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [root, tip],
+    }),
+    "$.authorizedFreshConsentAt",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [root, tip],
+      authorizedFreshConsentAt: ["2026-08-16T20:06:00.000000001Z"],
+    }),
+    "$.authorizedFreshConsentAt[0]",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(run, contextPack, {
+      manifestHistory: [root, tip],
+      authorizedFreshConsentAt: [
+        freshConsentAt,
+        "2026-08-16T20:07:00.000Z",
+      ],
+    }),
+    "$.authorizedFreshConsentAt[1]",
+    "semantic_conflict",
+  );
+});
+
+test("revision-one embedded manifests need no history but supplied history must equal the tip", () => {
+  const { run, contextPack, root } = rootedExtendedRetentionComposition();
+  const rootRun = expectOk(
+    parseResearchRunV1({
+      ...runForStatus("completed", root),
+      context: run.context,
+      privacy: {
+        ...run.privacy,
+        retention: "run-only",
+      },
+    }),
+  );
+
+  assert.equal(expectOk(validateResearchRunContextPackV1(rootRun, contextPack)), rootRun);
+  assert.equal(
+    expectOk(
+      validateResearchRunContextPackV1(rootRun, contextPack, {
+        manifestHistory: [root],
+      }),
+    ),
+    rootRun,
+  );
+  expectError(
+    validateResearchRunContextPackV1(rootRun, contextPack, {
+      manifestHistory: [],
+    }),
+    "$.manifestHistory",
+    "semantic_conflict",
   );
 });
 
@@ -1077,11 +1354,11 @@ test("context-bound manifest effective retention cannot exceed the Context Pack 
 });
 
 test("events parse and validateRunEventSequence enforces contiguous same-run sequences", () => {
-  assert.ok(Value.Check(runEventSchema, validRunEvent));
+  assert.ok(checkRunEventSchema(validRunEvent));
   const parsedEvent = expectOk(parseRunEventV1(validRunEvent));
   assert.equal(parsedEvent.sequence, 1);
 
-  assert.equal(Value.Check(runEventSchema, invalidRunEventSequence), false);
+  assert.equal(checkRunEventSchema(invalidRunEventSequence), false);
   expectError(parseRunEventV1(invalidRunEventSequence), "$.sequence", "invalid_value");
 
   const second: RunEventV1 = {
@@ -1124,7 +1401,7 @@ test("schema and parser agree on expressible constraints and additive fields sur
   );
   expectError(parseResearchRunV1({ ...validResearchRun, schema: "opencoven.research-run/v2" }), "$.schema", "unknown_major");
 
-  assert.equal(Value.Check(runEventSchema, { ...validRunEvent, schema: "opencoven.run-event/v2" }), false);
+  assert.equal(checkRunEventSchema({ ...validRunEvent, schema: "opencoven.run-event/v2" }), false);
   expectError(parseRunEventV1({ ...validRunEvent, schema: "opencoven.run-event/v2" }), "$.schema", "unknown_major");
 });
 
@@ -1510,6 +1787,115 @@ test("research runs reject embedded manifests for another run or context", () =>
   );
 });
 
+test("content.deleted events require metadata-only deletion receipts and preserve benign extensions", () => {
+  const event = {
+    ...validRunEvent,
+    type: "content.deleted",
+    data: {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+      audit: {
+        requestId: "delete_01",
+        retries: [0, 1],
+      },
+    },
+  };
+
+  assert.equal(checkRunEventSchema(event), true);
+  assert.deepEqual(expectOk(parseRunEventV1(event)).data, event.data);
+
+  for (const [data, path, code] of [
+    [
+      { manifestStatus: "deleted" },
+      "$.data.deletedObjectCount",
+      "missing_field",
+    ],
+    [
+      { deletedObjectCount: -1, manifestStatus: "deleted" },
+      "$.data.deletedObjectCount",
+      "invalid_value",
+    ],
+    [
+      { deletedObjectCount: 1.5, manifestStatus: "deleted" },
+      "$.data.deletedObjectCount",
+      "invalid_value",
+    ],
+    [
+      {
+        deletedObjectCount: Number.MAX_SAFE_INTEGER + 1,
+        manifestStatus: "deleted",
+      },
+      "$.data.deletedObjectCount",
+      "invalid_value",
+    ],
+    [
+      { deletedObjectCount: 3, manifestStatus: "active" },
+      "$.data.manifestStatus",
+      "invalid_value",
+    ],
+  ] as const) {
+    const candidate = { ...event, data };
+    assert.equal(checkRunEventSchema(candidate), false);
+    expectError(parseRunEventV1(candidate), path, code);
+  }
+});
+
+test("content.deleted events recursively reject sensitive metadata aliases before composition", () => {
+  const privateEvent = {
+    ...validRunEvent,
+    type: "content.deleted",
+    data: {
+      deletedObjectCount: 3,
+      manifestStatus: "deleted",
+      audit: {
+        deletedContents: ["private research"],
+      },
+    },
+  };
+
+  assert.equal(checkRunEventSchema(privateEvent), false);
+  expectError(
+    parseRunEventV1(privateEvent),
+    "$.data.audit.deletedContents",
+    "semantic_conflict",
+  );
+
+  for (const key of [
+    "deleted-content",
+    "Excerpts",
+    "local_path",
+    "Secrets",
+    "object-key",
+    "storageKeys",
+    "bucket_key",
+  ]) {
+    const candidate = {
+      ...privateEvent,
+      data: {
+        deletedObjectCount: 3,
+        manifestStatus: "deleted",
+        audit: { [key]: "private" },
+      },
+    };
+    assert.equal(checkRunEventSchema(candidate), false, key);
+    expectError(
+      parseRunEventV1(candidate),
+      `$.data.audit${/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`}`,
+      "semantic_conflict",
+    );
+  }
+
+  const unrelatedEvent = {
+    ...validRunEvent,
+    type: "run.status",
+    data: {
+      deletedContents: ["event-type-specific data remains unchanged"],
+    },
+  };
+  assert.equal(checkRunEventSchema(unrelatedEvent), true);
+  assert.equal(parseRunEventV1(unrelatedEvent).ok, true);
+});
+
 test("completed deletion requires a final manifest and its exact event in the complete run stream", () => {
   const deletedRun = runWithCompletedDeletion();
   const first = parsedEvent(1, "run.created", { status: "queued" });
@@ -1579,7 +1965,10 @@ test("completed deletion requires a final manifest and its exact event in the co
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
       first,
-      parsedDeletionEvent(2, { manifestStatus: "deleted" }),
+      {
+        ...deletion,
+        data: { manifestStatus: "deleted" },
+      } as RunEventV1,
       completed,
     ]),
     "$[1].data.deletedObjectCount",
@@ -1600,7 +1989,10 @@ test("completed deletion requires a final manifest and its exact event in the co
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
       first,
-      parsedDeletionEvent(2, { deletedObjectCount: 3 }),
+      {
+        ...deletion,
+        data: { deletedObjectCount: 3 },
+      } as RunEventV1,
       completed,
     ]),
     "$[1].data.manifestStatus",
@@ -1609,10 +2001,13 @@ test("completed deletion requires a final manifest and its exact event in the co
   expectError(
     validateRunManifestDeletionEventV1(deletedRun, [
       first,
-      parsedDeletionEvent(2, {
-        deletedObjectCount: 3,
-        manifestStatus: "active",
-      }),
+      {
+        ...deletion,
+        data: {
+          deletedObjectCount: 3,
+          manifestStatus: "active",
+        },
+      } as RunEventV1,
       completed,
     ]),
     "$[1].data.manifestStatus",
@@ -1635,6 +2030,76 @@ test("completed deletion requires a final manifest and its exact event in the co
     ]),
     "$[1].at",
     "semantic_conflict",
+  );
+});
+
+test("content.deleted event chronology is bounded below by run and manifest creation", () => {
+  const deletedRun = runWithCompletedDeletion();
+  const first = parsedEvent(1, "run.created", { status: "queued" });
+  const deletion = parsedDeletionEvent(2, {
+    deletedObjectCount: 3,
+    manifestStatus: "deleted",
+  });
+  const completed = parsedEvent(3, "run.status", { status: "completed" });
+
+  expectError(
+    validateRunManifestDeletionEventV1(
+      {
+        ...deletedRun,
+        createdAt: "2026-08-17T19:30:00.000000001Z",
+      },
+      [first, deletion, completed],
+    ),
+    "$[1].at",
+    "semantic_conflict",
+  );
+  expectError(
+    validateRunManifestDeletionEventV1(
+      {
+        ...deletedRun,
+        artifactManifest: {
+          ...deletedRun.artifactManifest!,
+          createdAt: "2026-08-17T19:30:00.000000001Z",
+        },
+      },
+      [first, deletion, completed],
+    ),
+    "$[1].at",
+    "semantic_conflict",
+  );
+
+  const boundary = deletedRun.artifactManifest!.createdAt;
+  const boundaryManifest = expectOk(
+    parseRunManifestV1(
+      recalculatedManifest({
+        ...deletedRun.artifactManifest!,
+        deletion: {
+          ...deletedRun.artifactManifest!.deletion,
+          requestedAt: boundary,
+          completedAt: boundary,
+        },
+      }),
+    ),
+  );
+  const boundaryRun = expectOk(
+    parseResearchRunV1({
+      ...deletedRun,
+      artifactManifest: boundaryManifest,
+      createdAt: boundary,
+    }),
+  );
+  const boundaryEvents = [
+    parsedEvent(1, "run.created", { status: "queued" }, boundaryRun.id, boundary),
+    parsedDeletionEvent(
+      2,
+      { deletedObjectCount: 3, manifestStatus: "deleted" },
+      boundary,
+    ),
+    parsedEvent(3, "run.status", { status: "completed" }, boundaryRun.id, boundary),
+  ];
+  assert.equal(
+    expectOk(validateRunManifestDeletionEventV1(boundaryRun, boundaryEvents)),
+    boundaryRun,
   );
 });
 
@@ -1663,8 +2128,10 @@ test("deletion event chronology includes nanosecond boundaries and leap seconds"
 
   const leapSecondRun: ResearchRunV1 = {
     ...deletedRun,
+    createdAt: "2016-12-31T23:59:59Z",
     artifactManifest: {
       ...deletedRun.artifactManifest!,
+      createdAt: "2016-12-31T23:59:59Z",
       deletion: {
         ...deletedRun.artifactManifest!.deletion,
         requestedAt: "2016-12-31T23:59:59.999999999Z",

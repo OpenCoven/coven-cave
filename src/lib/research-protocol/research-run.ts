@@ -8,13 +8,16 @@ import {
   parseResearchContextBindingV1,
   pass,
   retentionDoesNotExceed,
+  validateSensitiveExtensionKeys,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
   type UnknownFields,
 } from "./common.ts";
 import type { ContextPackV1 } from "./context-pack.ts";
+import { canonicalJson } from "./digest.ts";
 import {
   parseRunManifestV1,
+  validateRunManifestRevision,
   type RunManifestV1,
 } from "./run-manifest.ts";
 
@@ -148,6 +151,18 @@ export type RunEventV1 = {
   data: Record<string, unknown>;
 } & UnknownFields;
 
+export type ContentDeletedEventDataV1 = {
+  deletedObjectCount: number;
+  manifestStatus: "deleted";
+} & UnknownFields;
+
+export type ResearchRunCompositionOptionsV1 = {
+  /** Complete ordered revisions 1..tip when an artifactManifest is embedded. */
+  manifestHistory?: readonly RunManifestV1[];
+  /** External authorizations, in transition order, consumed exactly once. */
+  authorizedFreshConsentAt?: readonly string[];
+};
+
 function childPath(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
     ? `${path}.${key}`
@@ -254,15 +269,217 @@ function validateArtifactContentSyncConsent(
   return pass(undefined);
 }
 
+function canonicalValuesMatch(left: unknown, right: unknown): boolean {
+  try {
+    return canonicalJson(left) === canonicalJson(right);
+  } catch {
+    return false;
+  }
+}
+
+function prefixManifestHistoryError<T>(
+  result: ProtocolParseResult<T>,
+  index: number,
+): ProtocolParseResult<T> {
+  if (result.ok) return result;
+  return fail(
+    result.error.code,
+    result.error.path === "$"
+      ? `$.manifestHistory[${index}]`
+      : `$.manifestHistory[${index}]${result.error.path.slice(1)}`,
+    result.error.message,
+  );
+}
+
+function validateEmbeddedManifestHistory(
+  run: ResearchRunV1,
+  contextPack: ContextPackV1 | undefined,
+  options: ResearchRunCompositionOptionsV1,
+): ProtocolParseResult<void> {
+  const manifest = run.artifactManifest;
+  const history = options.manifestHistory;
+  const authorizations = options.authorizedFreshConsentAt ?? [];
+
+  if (history !== undefined && !Array.isArray(history)) {
+    return fail(
+      "invalid_type",
+      "$.manifestHistory",
+      "manifestHistory must be an array",
+    );
+  }
+  if (!Array.isArray(authorizations)) {
+    return fail(
+      "invalid_type",
+      "$.authorizedFreshConsentAt",
+      "authorizedFreshConsentAt must be an array",
+    );
+  }
+  for (const [index, authorizedAt] of authorizations.entries()) {
+    if (!isUtcTimestamp(authorizedAt)) {
+      return fail(
+        "invalid_value",
+        `$.authorizedFreshConsentAt[${index}]`,
+        "fresh-consent authorizations must be exact UTC timestamps",
+      );
+    }
+  }
+
+  if (!manifest) {
+    if (history !== undefined) {
+      return fail(
+        "semantic_conflict",
+        "$.manifestHistory",
+        "manifestHistory must not be supplied without an embedded artifactManifest",
+      );
+    }
+    if (authorizations.length > 0) {
+      return fail(
+        "semantic_conflict",
+        "$.authorizedFreshConsentAt[0]",
+        "fresh-consent authorization is unused",
+      );
+    }
+    return pass(undefined);
+  }
+
+  if (history === undefined) {
+    if (manifest.revision > 1) {
+      return fail(
+        "semantic_conflict",
+        "$.manifestHistory",
+        "embedded manifest revisions after 1 require their complete rooted history",
+      );
+    }
+    if (authorizations.length > 0) {
+      return fail(
+        "semantic_conflict",
+        "$.authorizedFreshConsentAt[0]",
+        "fresh-consent authorization is unused",
+      );
+    }
+    return pass(undefined);
+  }
+
+  if (history.length !== manifest.revision) {
+    return fail(
+      "semantic_conflict",
+      "$.manifestHistory",
+      `manifestHistory must contain exactly revisions 1 through ${manifest.revision}`,
+    );
+  }
+
+  for (const [index, item] of history.entries()) {
+    const itemPath = `$.manifestHistory[${index}]`;
+    if (item.revision !== index + 1) {
+      return fail(
+        "semantic_conflict",
+        `${itemPath}.revision`,
+        `manifest history revision must equal ${index + 1}`,
+      );
+    }
+    if (item.id !== manifest.id) {
+      return fail(
+        "semantic_conflict",
+        `${itemPath}.id`,
+        "manifest history id must match the embedded tip",
+      );
+    }
+    if (item.runId !== manifest.runId || item.runId !== run.id) {
+      return fail(
+        "semantic_conflict",
+        `${itemPath}.runId`,
+        "manifest history runId must match the embedded tip and enclosing run",
+      );
+    }
+    if (!canonicalValuesMatch(item.context, manifest.context)) {
+      return fail(
+        "semantic_conflict",
+        `${itemPath}.context`,
+        "manifest history context must match the embedded tip",
+      );
+    }
+  }
+
+  const tipIndex = history.length - 1;
+  const historyTip = history[tipIndex]!;
+  if (
+    historyTip.digest !== manifest.digest
+    || !canonicalValuesMatch(historyTip, manifest)
+  ) {
+    return fail(
+      "semantic_conflict",
+      `$.manifestHistory[${tipIndex}]`,
+      "final manifest history item must exactly equal the embedded artifactManifest",
+    );
+  }
+
+  let authorizationIndex = 0;
+  for (let index = 1; index < history.length; index += 1) {
+    const previous = history[index - 1]!;
+    const next = history[index]!;
+    const changedFreshConsentAt =
+      next.retention.freshConsentAt !== undefined
+      && next.retention.freshConsentAt !== previous.retention.freshConsentAt;
+    const revisionOptions = {
+      ...(contextPack === undefined
+        ? {}
+        : { contextConsent: contextPack.consent.retention }),
+      ...(changedFreshConsentAt
+        ? {
+            freshConsent: true as const,
+            freshConsentAt: next.retention.freshConsentAt,
+          }
+        : {}),
+    };
+
+    if (changedFreshConsentAt) {
+      const authorizedAt = authorizations[authorizationIndex];
+      if (authorizedAt === undefined) {
+        return fail(
+          "semantic_conflict",
+          "$.authorizedFreshConsentAt",
+          "manifest freshConsentAt requires an exact external authorization",
+        );
+      }
+      if (authorizedAt !== next.retention.freshConsentAt) {
+        return fail(
+          "semantic_conflict",
+          `$.authorizedFreshConsentAt[${authorizationIndex}]`,
+          "fresh-consent authorization must exactly match the manifest transition",
+        );
+      }
+      authorizationIndex += 1;
+    }
+
+    const revision = prefixManifestHistoryError(
+      validateRunManifestRevision(previous, next, revisionOptions),
+      index,
+    );
+    if (!revision.ok) return revision;
+  }
+
+  if (authorizationIndex !== authorizations.length) {
+    return fail(
+      "semantic_conflict",
+      `$.authorizedFreshConsentAt[${authorizationIndex}]`,
+      "fresh-consent authorization is unused",
+    );
+  }
+  return pass(undefined);
+}
+
 /**
  * Validates two already-parsed objects. Run-field errors use run JSON paths;
  * pack-only policy errors use the synthetic `$.contextPack` path.
  * Parsing a context-bound run is provisional; callers must compose it with its
- * parsed Context Pack here before use, including when it embeds a manifest.
+ * parsed Context Pack here before use. Embedded manifest revisions after 1 are
+ * also provisional until this boundary receives their complete rooted history
+ * and the exact external fresh-consent authorization receipts.
  */
 export function validateResearchRunContextPackV1(
   run: ResearchRunV1,
   contextPack?: ContextPackV1,
+  options: ResearchRunCompositionOptionsV1 = {},
 ): ProtocolParseResult<ResearchRunV1> {
   const artifactContentSync = validateArtifactContentSyncConsent(run);
   if (!artifactContentSync.ok) return artifactContentSync;
@@ -275,6 +492,8 @@ export function validateResearchRunContextPackV1(
         "A Context Pack must not be supplied when the run has no context binding",
       );
     }
+    const history = validateEmbeddedManifestHistory(run, undefined, options);
+    if (!history.ok) return history;
     return pass(run);
   }
   if (contextPack === undefined) {
@@ -347,6 +566,8 @@ export function validateResearchRunContextPackV1(
     );
   }
 
+  const history = validateEmbeddedManifestHistory(run, contextPack, options);
+  if (!history.ok) return history;
   return pass(run);
 }
 
@@ -788,6 +1009,53 @@ function parseResearchRunFailureV1(
   });
 }
 
+function parseContentDeletedEventData(
+  value: Record<string, unknown>,
+  path: string,
+): ProtocolParseResult<ContentDeletedEventDataV1> {
+  const safeKeys = validateSensitiveExtensionKeys(
+    value,
+    path,
+    "content.deleted data",
+  );
+  if (!safeKeys.ok) return safeKeys;
+
+  const deletedObjectCountField = parseRequiredField(
+    value,
+    "deletedObjectCount",
+    path,
+  );
+  if (!deletedObjectCountField.ok) return deletedObjectCountField;
+  const deletedObjectCount = parseSafeIntegerInRange(
+    deletedObjectCountField.value,
+    childPath(path, "deletedObjectCount"),
+    "deletedObjectCount",
+    0,
+    MAX_SAFE_INTEGER,
+  );
+  if (!deletedObjectCount.ok) return deletedObjectCount;
+
+  const manifestStatusField = parseRequiredField(value, "manifestStatus", path);
+  if (!manifestStatusField.ok) return manifestStatusField;
+  const manifestStatus = parseEnumValue(
+    manifestStatusField.value,
+    ["deleted"] as const,
+    childPath(path, "manifestStatus"),
+    "manifestStatus",
+  );
+  if (!manifestStatus.ok) return manifestStatus;
+
+  return pass({
+    ...value,
+    deletedObjectCount: deletedObjectCount.value,
+    manifestStatus: manifestStatus.value,
+  });
+}
+
+/**
+ * Parses the Research Run wire shape. An embedded manifest remains provisional
+ * until `validateResearchRunContextPackV1` validates its revision history.
+ */
 export function parseResearchRunV1(value: unknown): ProtocolParseResult<ResearchRunV1> {
   const wireValue = copyProtocolJsonValue(value);
   if (!wireValue.ok) return wireValue;
@@ -1147,6 +1415,11 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
   if (!dataField.ok) return dataField;
   const data = parseObject(dataField.value, "$.data");
   if (!data.ok) return data;
+  const parsedData =
+    type.value === "content.deleted"
+      ? parseContentDeletedEventData(data.value, "$.data")
+      : pass({ ...data.value });
+  if (!parsedData.ok) return parsedData;
 
   return pass({
     ...object.value,
@@ -1155,7 +1428,7 @@ export function parseRunEventV1(value: unknown): ProtocolParseResult<RunEventV1>
     sequence: sequence.value,
     type: type.value,
     at: at.value,
-    data: { ...data.value },
+    data: parsedData.value,
   });
 }
 
@@ -1280,6 +1553,20 @@ export function validateRunManifestDeletionEventV1(
       "semantic_conflict",
       "$.artifactManifest.deletion",
       "Completed deletion requires request and completion timestamps",
+    );
+  }
+  if (compareUtcTimestamps(event.at, run.createdAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].at`,
+      "content.deleted must not precede run creation",
+    );
+  }
+  if (compareUtcTimestamps(event.at, manifest.createdAt) < 0) {
+    return fail(
+      "semantic_conflict",
+      `$[${eventIndex}].at`,
+      "content.deleted must not precede manifest creation",
     );
   }
   if (

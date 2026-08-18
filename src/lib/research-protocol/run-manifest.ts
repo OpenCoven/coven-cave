@@ -11,6 +11,7 @@ import {
   pass,
   retentionDoesNotExceed,
   RETENTION_ORDER,
+  validateSensitiveExtensionKeys as validateSensitiveObjectKeys,
   type ProtocolParseResult,
   type ResearchContextBindingV1,
   type RetentionPolicyV1,
@@ -44,45 +45,6 @@ const COMPLETENESS_VALUES = ["complete", "partial", "unreported"] as const;
 const ARTIFACT_TITLE_URI_SCHEME_PREFIX_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const ARTIFACT_TITLE_SECRET_RE = /(?:sk-|ghp_|github_pat_)/;
 const ARTIFACT_TITLE_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
-const PRINTABLE_ASCII_PROPERTY_NAME_RE = /^[\u0020-\u007e]*$/;
-const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
-  "excerpt",
-  "excerpts",
-  "privateexcerpt",
-  "privateexcerpts",
-  "rawexcerpt",
-  "rawexcerpts",
-  "text",
-  "texts",
-  "content",
-  "contents",
-  "blob",
-  "blobs",
-  "filename",
-  "filenames",
-  "localpath",
-  "localpaths",
-  "filepath",
-  "filepaths",
-  "path",
-  "paths",
-  "credential",
-  "credentials",
-  "secret",
-  "secrets",
-  "objectkey",
-  "objectkeys",
-  "storagekey",
-  "storagekeys",
-  "bucketkey",
-  "bucketkeys",
-  "deletedcontent",
-  "deletedcontents",
-]);
-
-function normalizeSensitiveKey(key: string): string {
-  return key.normalize("NFKC").replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
-}
 
 export type ArtifactRegistrationV1 = {
   id: string;
@@ -184,44 +146,6 @@ function indexPath(path: string, index: number): string {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
-}
-
-function validateSensitiveObjectKeys(
-  value: unknown,
-  path: string,
-): ProtocolParseResult<void> {
-  if (Array.isArray(value)) {
-    for (const [index, entry] of value.entries()) {
-      const nested = validateSensitiveObjectKeys(entry, indexPath(path, index));
-      if (!nested.ok) return nested;
-    }
-    return pass(undefined);
-  }
-  if (!isRecord(value)) return pass(undefined);
-
-  for (const key of Object.keys(value)) {
-    const keyPath = childPath(path, key);
-    if (
-      !PRINTABLE_ASCII_PROPERTY_NAME_RE.test(key)
-      || key.normalize("NFKC") !== key
-    ) {
-      return fail(
-        "semantic_conflict",
-        keyPath,
-        "Sensitive manifest property names must be printable ASCII and NFKC-stable",
-      );
-    }
-    if (FORBIDDEN_NORMALIZED_SENSITIVE_KEYS.has(normalizeSensitiveKey(key))) {
-      return fail(
-        "semantic_conflict",
-        keyPath,
-        `Sensitive manifest objects must not contain ${key}`,
-      );
-    }
-    const nested = validateSensitiveObjectKeys(value[key], keyPath);
-    if (!nested.ok) return nested;
-  }
-  return pass(undefined);
 }
 
 function parseObject(value: unknown, path: string): ProtocolParseResult<Record<string, unknown>> {
@@ -399,6 +323,41 @@ function parseArtifactTitle(value: unknown, path: string): ProtocolParseResult<s
   return title;
 }
 
+function parseCanonicalEvidenceUrl(
+  value: unknown,
+  path: string,
+): ProtocolParseResult<string> {
+  const canonicalUrl = parseString(value, path, "canonicalUrl");
+  if (!canonicalUrl.ok) return canonicalUrl;
+  if (canonicalUrl.value.length === 0) {
+    return fail("invalid_value", path, "canonicalUrl must not be empty");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(canonicalUrl.value);
+  } catch {
+    return fail(
+      "invalid_value",
+      path,
+      "canonicalUrl must be an absolute HTTP(S) URL",
+    );
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+    || parsed.hostname.length === 0
+    || parsed.username.length > 0
+    || parsed.password.length > 0
+  ) {
+    return fail(
+      "invalid_value",
+      path,
+      "canonicalUrl must be an absolute credential-free HTTP(S) URL with a hostname",
+    );
+  }
+  return canonicalUrl;
+}
+
 function parseSource(value: unknown, path: string): ProtocolParseResult<RunManifestSourceV1> {
   const object = parseObject(value, path);
   if (!object.ok) return object;
@@ -466,10 +425,9 @@ function parseSource(value: unknown, path: string): ProtocolParseResult<RunManif
 
   const canonicalUrlField = parseRequiredField(object.value, "canonicalUrl", path);
   if (!canonicalUrlField.ok) return canonicalUrlField;
-  const canonicalUrl = parseString(
+  const canonicalUrl = parseCanonicalEvidenceUrl(
     canonicalUrlField.value,
     childPath(path, "canonicalUrl"),
-    "canonicalUrl",
   );
   if (!canonicalUrl.ok) return canonicalUrl;
 
@@ -1782,6 +1740,26 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!deletionField.ok) return deletionField;
   const deletion = parseDeletion(deletionField.value, "$.deletion");
   if (!deletion.ok) return deletion;
+  if (
+    typeof deletion.value.completedAt === "string"
+    && compareUtcTimestamps(deletion.value.completedAt, createdAt.value) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.completedAt",
+      "deletion.completedAt must not precede manifest creation",
+    );
+  }
+  if (
+    typeof deletion.value.requestedAt === "string"
+    && compareUtcTimestamps(deletion.value.requestedAt, createdAt.value) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.requestedAt",
+      "deletion.requestedAt must not precede manifest creation",
+    );
+  }
 
   if (context) {
     if (contextSourceCount !== 1) {

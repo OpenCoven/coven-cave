@@ -106,6 +106,8 @@ jobs:
             command: typecheck
           - name: test wiring
             command: check:tests-wired
+          - name: conformance
+            command: test:conformance
           - name: app tests
             command: test:app
           - name: API tests

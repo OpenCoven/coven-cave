@@ -1,0 +1,23 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_url_non_http",
+  "runId": "run_url_01",
+  "digest": "2208a999b4bed35c1044bb5fe3466eaedf61774c8433b88462a961b67ebbf16e",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-18T12:00:00.000Z",
+  "finalizedAt": "2026-08-18T12:01:00.000Z",
+  "sources": [{
+    "kind": "public-evidence",
+    "id": "evidence_url_01",
+    "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "snapshotDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "canonicalUrl": "ftp://example.test/evidence",
+    "fetchedAt": "2026-08-18T12:01:00.000Z"
+  }],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": { "inputTokens": null, "outputTokens": null, "costUsd": null, "completeness": "unreported" },
+  "retention": { "policy": "project", "effectivePolicy": "project", "status": "active", "contentExpiresAt": null, "updatedAt": "2026-08-18T12:01:00.000Z" },
+  "deletion": { "status": "not_scheduled" }
+}

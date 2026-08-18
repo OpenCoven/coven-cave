@@ -111,6 +111,7 @@ function collectExternalSchemaReferences(
     });
     return references;
   }
+
   if (!isRecord(value)) return references;
 
   for (const [key, entry] of Object.entries(value)) {
@@ -135,6 +136,27 @@ function collectExternalSchemaReferences(
     collectExternalSchemaReferences(sourceId, entry, entryPath, references);
   }
   return references;
+}
+
+function resolveSchemaReferenceTarget(
+  schema: TSchema,
+  reference: string,
+  location: string,
+): TSchema {
+  const hashIndex = reference.indexOf("#");
+  if (hashIndex < 0 || reference.slice(hashIndex) === "#") return schema;
+  const fragment = reference.slice(hashIndex + 1);
+  assert.ok(fragment.startsWith("/"), `${location}: only JSON Pointer schema fragments are supported`);
+
+  let target: unknown = schema;
+  for (const encodedSegment of fragment.slice(1).split("/")) {
+    const segment = encodedSegment.replaceAll("~1", "/").replaceAll("~0", "~");
+    assert.ok(isRecord(target), `${location}: schema fragment traverses a non-object`);
+    assert.ok(Object.hasOwn(target, segment), `${location}: schema fragment segment ${segment} is missing`);
+    target = target[segment];
+  }
+  assert.ok(isRecord(target), `${location}: schema fragment must resolve to an object schema`);
+  return target as TSchema;
 }
 
 test("loads and validates all eight authoritative Research Protocol v1 schema files", () => {
@@ -168,14 +190,19 @@ test("loads and validates all eight authoritative Research Protocol v1 schema fi
       target !== undefined,
       `${sourceId} ${referencePath}: ${reference} resolves to unregistered schema id ${resolvedId}`,
     );
+    const checkTarget = resolveSchemaReferenceTarget(
+      target,
+      reference,
+      `${sourceId} ${referencePath}`,
+    );
     if (Object.hasOwn(schemaCheckContext, reference)) {
       assert.equal(
         schemaCheckContext[reference],
-        target,
+        checkTarget,
         `${reference}: TypeBox alias cannot resolve to multiple schema resources`,
       );
     } else {
-      schemaCheckContext[reference] = target;
+      schemaCheckContext[reference] = checkTarget;
     }
   }
 });
@@ -193,6 +220,12 @@ test("external schema references resolve by RFC3986 semantics to registered sche
       sourceId: "opencoven.research-run/v1",
       path: "$.properties.artifactManifest.$ref",
       reference: "../opencoven.run-manifest/v1",
+      resolvedId: "opencoven.run-manifest/v1",
+    },
+    {
+      sourceId: "opencoven.run-event/v1",
+      path: "$.$defs.sensitivePropertyName.$ref",
+      reference: "../opencoven.run-manifest/v1#/$defs/sensitivePropertyName",
       resolvedId: "opencoven.run-manifest/v1",
     },
   ]);

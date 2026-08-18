@@ -59,6 +59,33 @@
         "data": {
           "status": null,
           "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "audit": {
+            "requestId": "delete_01",
+            "attempts": [1, 2]
+          }
+        }
+      }
+    },
+    "deleted-private-event": {
+      "fixture": "valid/run-event-content-deleted.json",
+      "mergePatch": {
+        "data": {
+          "audit": {
+            "deletedContents": ["private research"]
+          }
+        }
+      }
+    },
+    "deleted-event-before-manifest": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "content.deleted",
+        "at": "2026-08-15T19:59:59.999999999Z",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
           "manifestStatus": "deleted"
         }
       }
@@ -249,6 +276,37 @@
       }
     },
     {
+      "id": "run-deletion.event-before-manifest",
+      "description": "The content.deleted event cannot precede its manifest creation.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-event-before-manifest", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].at"
+      }
+    },
+    {
+      "id": "run-deletion.private-data-rejected-before-composition",
+      "description": "A content.deleted event cannot carry deleted content in nested metadata.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-private-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "semantic_conflict",
+        "path": "$.data.audit.deletedContents"
+      }
+    },
+    {
       "id": "run-deletion.event-after-completion",
       "description": "The content.deleted event cannot follow receipt completion.",
       "validator": "run-event-deletion",
@@ -428,7 +486,7 @@
     },
     {
       "id": "run-deletion.wrong-manifest-status",
-      "description": "The deletion event manifestStatus must be deleted.",
+      "description": "The deletion event parser requires manifestStatus deleted before composition.",
       "validator": "run-event-deletion",
       "inputs": {
         "run": "completed-deletion-run",
@@ -436,9 +494,10 @@
       },
       "expected": {
         "ok": false,
-        "stage": "composition",
-        "code": "semantic_conflict",
-        "path": "$[1].data.manifestStatus"
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "invalid_value",
+        "path": "$.data.manifestStatus"
       }
     },
     {

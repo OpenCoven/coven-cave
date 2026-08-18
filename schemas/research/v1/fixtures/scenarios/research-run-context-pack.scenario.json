@@ -5,6 +5,305 @@
     "context-pack": {
       "fixture": "valid/context-pack.json"
     },
+    "manifest-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json"
+    },
+    "manifest-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json"
+    },
+    "manifest-tip-bad-link": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json",
+      "mergePatch": {
+        "previousDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "digestTargets": [""]
+    },
+    "manifest-root-wrong-id": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "id": "manifest_other_01"
+      },
+      "digestTargets": [""]
+    },
+    "manifest-root-wrong-run": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "runId": "run_other_01"
+      },
+      "digestTargets": [""]
+    },
+    "manifest-root-wrong-context": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "context": {
+          "contextPackId": "ctx_other_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_other_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "manifest-tip-mismatch": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json",
+      "mergePatch": {
+        "deletion": {
+          "auditReceipt": "different"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "occurrence-manifest-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          },
+          {
+            "kind": "public-evidence",
+            "id": "evidence_public_01",
+            "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "canonicalUrl": "https://example.test/research",
+            "fetchedAt": "2026-08-15T20:09:00.000Z"
+          }
+        ],
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "device-local",
+            "contentSync": "not-requested",
+            "createdAt": "2026-08-15T20:09:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "occurrence-manifest-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json",
+      "mergePatch": {
+        "previousDigest": "10c195844554670798284d76f5c8456542d318032a3ea2d53867011e7028a0d8",
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          },
+          {
+            "kind": "public-evidence",
+            "id": "evidence_public_01",
+            "contentDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "snapshotDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "canonicalUrl": "https://example.test/research",
+            "fetchedAt": "2026-08-15T20:09:00.000Z"
+          }
+        ],
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "device-local",
+            "contentSync": "not-requested",
+            "createdAt": "2026-08-15T20:09:00.000Z"
+          }
+        ],
+        "retention": {
+          "status": "deleted",
+          "contentExpiresAt": "2026-08-15T20:10:00.000Z"
+        },
+        "deletion": {
+          "status": "completed",
+          "requestedAt": "2026-08-15T20:10:00.000Z",
+          "completedAt": "2026-08-15T20:10:00.000Z",
+          "deletedObjectCount": 1,
+          "eventSequence": 2
+        }
+      },
+      "digestTargets": [""]
+    },
+    "future-deadlines-manifest-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deleted",
+          "contentExpiresAt": "2026-08-22T20:09:00.000Z"
+        },
+        "deletion": {
+          "status": "completed",
+          "requestedAt": "2026-08-15T20:08:00.000Z",
+          "completedAt": "2026-08-15T20:10:00.000Z",
+          "deletedObjectCount": 1,
+          "retainedAuditUntil": "2027-08-15T20:10:00.000Z",
+          "eventSequence": 2
+        }
+      },
+      "digestTargets": [""]
+    },
+    "failed-sync-manifest-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247",
+            "availability": "device-local"
+          }
+        ],
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "device-local",
+            "contentSync": "failed",
+            "createdAt": "2026-08-15T20:08:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "failed-sync-manifest-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json",
+      "mergePatch": {
+        "previousDigest": "a937f318b82f0296761c2eab3a4e82f80c01d8303699e60a187744bf56073a4b",
+        "context": {
+          "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247",
+            "availability": "device-local"
+          }
+        ],
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "device-local",
+            "contentSync": "failed",
+            "createdAt": "2026-08-15T20:08:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "synced-manifest-root": {
+      "fixture": "scenarios/objects/context-bound-manifest-root.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247",
+            "availability": "device-local"
+          }
+        ],
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "cloud-content",
+            "contentSync": "synced",
+            "createdAt": "2026-08-15T20:08:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "synced-manifest-tip": {
+      "fixture": "scenarios/objects/context-bound-manifest-tip.json",
+      "mergePatch": {
+        "previousDigest": "bd3bd9dc8665fb0e7afe6cf36f3de643168740b54fa3e22ba252b626af699595",
+        "context": {
+          "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247",
+            "availability": "device-local"
+          }
+        ],
+        "artifacts": [
+          {
+            "id": "artifact_context_01",
+            "kind": "research-notes",
+            "title": "Context-bound research notes",
+            "mediaType": "text/markdown",
+            "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 128,
+            "placement": "cloud-content",
+            "contentSync": "synced",
+            "createdAt": "2026-08-15T20:08:00.000Z"
+          }
+        ]
+      },
+      "digestTargets": [""]
+    },
+    "matching-run-bad-link": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "previousDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "root-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "revision": 1,
+          "previousDigest": null,
+          "retention": {
+            "effectivePolicy": "run-only",
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
     "content-sync-context-pack": {
       "fixture": "valid/context-pack.json",
       "mergePatch": {
@@ -111,6 +410,7 @@
           "artifactContentSync": true
         },
         "artifactManifest": {
+          "previousDigest": "a937f318b82f0296761c2eab3a4e82f80c01d8303699e60a187744bf56073a4b",
           "context": {
             "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
           },
@@ -197,6 +497,7 @@
           "artifactContentSync": true
         },
         "artifactManifest": {
+          "previousDigest": "bd3bd9dc8665fb0e7afe6cf36f3de643168740b54fa3e22ba252b626af699595",
           "context": {
             "contextPackDigest": "6162fdf5ecd2ff5ce07451e932664c77e53007dbd7fde16c58c1b9836611e247"
           },
@@ -280,7 +581,7 @@
     "run-manifest-clock-equality": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
-        "updatedAt": "2026-08-15T20:09:00.000Z"
+        "updatedAt": "2026-08-15T20:10:00.000Z"
       }
     },
     "retention-update-after-run": {
@@ -318,7 +619,8 @@
           "state": "assembling",
           "finalizedAt": null,
           "retention": {
-            "freshConsentAt": null
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
           },
           "artifacts": [
             {
@@ -346,7 +648,8 @@
           "state": "assembling",
           "finalizedAt": null,
           "retention": {
-            "freshConsentAt": null
+            "freshConsentAt": null,
+            "updatedAt": "2026-08-15T20:09:00.000Z"
           },
           "sources": [
             {
@@ -371,7 +674,7 @@
     "completed-deletion-after-run-update": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
-        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "updatedAt": "2026-08-15T20:10:00.000Z",
         "artifactManifest": {
           "retention": {
             "status": "deleted",
@@ -379,8 +682,8 @@
           },
           "deletion": {
             "status": "completed",
-            "requestedAt": "2026-08-15T20:09:00.000Z",
-            "completedAt": "2026-08-15T20:09:00.000000001Z",
+            "requestedAt": "2026-08-15T20:10:00.000Z",
+            "completedAt": "2026-08-15T20:10:00.000000001Z",
             "deletedObjectCount": 1,
             "eventSequence": 2
           }
@@ -388,11 +691,47 @@
       },
       "digestTargets": ["/artifactManifest"]
     },
+    "deletion-request-before-manifest": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "digest": "b562d3d09999aa1cf56565a1cb1161c72cec93ce674f495da27d0f4e33e89336",
+          "retention": {
+            "status": "deletion_scheduled",
+            "contentExpiresAt": "2026-08-22T20:10:00.000Z"
+          },
+          "deletion": {
+            "status": "scheduled",
+            "requestedAt": "2026-08-15T19:59:59.999999999Z"
+          }
+        }
+      }
+    },
+    "deletion-completion-before-manifest": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "digest": "7218d71262a21ee74dcd60b18497f8c63a8223ab00e06a0611d534e7a07e9c6b",
+          "retention": {
+            "status": "deleted",
+            "contentExpiresAt": "2026-08-22T20:10:00.000Z"
+          },
+          "deletion": {
+            "status": "completed",
+            "requestedAt": "2026-08-15T19:58:00.000Z",
+            "completedAt": "2026-08-15T19:59:00.000Z",
+            "deletedObjectCount": 1,
+            "eventSequence": 2
+          }
+        }
+      }
+    },
     "occurrence-clock-equality": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
-        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "updatedAt": "2026-08-15T20:10:00.000Z",
         "artifactManifest": {
+          "previousDigest": "10c195844554670798284d76f5c8456542d318032a3ea2d53867011e7028a0d8",
           "sources": [
             {
               "kind": "context-pack",
@@ -424,12 +763,12 @@
           ],
           "retention": {
             "status": "deleted",
-            "contentExpiresAt": "2026-08-15T20:09:00.000Z"
+            "contentExpiresAt": "2026-08-15T20:10:00.000Z"
           },
           "deletion": {
             "status": "completed",
-            "requestedAt": "2026-08-15T20:09:00.000Z",
-            "completedAt": "2026-08-15T20:09:00.000Z",
+            "requestedAt": "2026-08-15T20:10:00.000Z",
+            "completedAt": "2026-08-15T20:10:00.000Z",
             "deletedObjectCount": 1,
             "eventSequence": 2
           }
@@ -440,7 +779,7 @@
     "future-deadlines-after-run-update": {
       "fixture": "scenarios/objects/context-bound-extended-run.json",
       "mergePatch": {
-        "updatedAt": "2026-08-15T20:09:00.000Z",
+        "updatedAt": "2026-08-15T20:10:00.000Z",
         "artifactManifest": {
           "retention": {
             "status": "deleted",
@@ -449,9 +788,9 @@
           "deletion": {
             "status": "completed",
             "requestedAt": "2026-08-15T20:08:00.000Z",
-            "completedAt": "2026-08-15T20:09:00.000Z",
+            "completedAt": "2026-08-15T20:10:00.000Z",
             "deletedObjectCount": 1,
-            "retainedAuditUntil": "2027-08-15T20:09:00.000Z",
+            "retainedAuditUntil": "2027-08-15T20:10:00.000Z",
             "eventSequence": 2
           }
         }
@@ -477,10 +816,228 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.valid-root-manifest-without-history",
+      "description": "An embedded revision-one root composes without a history option.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "root-run",
         "contextPack": "context-pack"
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "research-run.valid-root-manifest-with-exact-history",
+      "description": "A supplied revision-one history contains exactly the embedded root.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "root-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.manifest-history-missing",
+      "description": "An embedded revision-two tip cannot compose without its full history.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack"
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-non-rooted",
+      "description": "A manifest history cannot begin at its revision-two tip.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-bad-previous-digest",
+      "description": "Every adjacent manifest must link to the preceding digest.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run-bad-link",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip-bad-link"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[1].previousDigest"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-wrong-id",
+      "description": "Every history item must retain the embedded manifest id.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root-wrong-id", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].id"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-wrong-run",
+      "description": "Every history item must retain the embedded and enclosing run id.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root-wrong-run", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].runId"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-wrong-context",
+      "description": "Every history item must retain the embedded Context Pack binding.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root-wrong-context", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[0].context"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-tip-mismatch",
+      "description": "The final history value must exactly equal the embedded manifest tip.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip-mismatch"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[1]"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-missing-authorization",
+      "description": "A fresh-consent transition requires an external timestamp authorization.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.authorizedFreshConsentAt"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-wrong-authorization",
+      "description": "A fresh-consent transition must exactly match its external authorization.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000000001Z"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.authorizedFreshConsentAt[0]"
+      }
+    },
+    {
+      "id": "research-run.manifest-history-unused-authorization",
+      "description": "Fresh-consent authorization lists cannot contain unused receipts.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": [
+          "2026-08-15T20:10:00.000Z",
+          "2026-08-15T20:11:00.000Z"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.authorizedFreshConsentAt[1]"
       }
     },
     {
@@ -521,7 +1078,11 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "run-manifest-clock-equality",
-        "contextPack": "context-pack"
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
       },
       "expected": {
         "ok": true
@@ -549,7 +1110,11 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "post-final-retention-revision",
-        "contextPack": "context-pack"
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
       },
       "expected": {
         "ok": true
@@ -604,12 +1169,51 @@
       }
     },
     {
+      "id": "research-run.deletion-request-before-manifest",
+      "description": "An embedded deletion request cannot precede manifest creation.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "deletion-request-before-manifest",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.deletion.requestedAt"
+      }
+    },
+    {
+      "id": "research-run.deletion-completion-before-manifest",
+      "description": "An embedded deletion completion cannot precede manifest creation.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "deletion-completion-before-manifest",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.deletion.completedAt"
+      }
+    },
+    {
       "id": "research-run.occurrence-clock-equality",
       "description": "Manifest occurrence clocks may equal the enclosing run update.",
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "occurrence-clock-equality",
-        "contextPack": "context-pack"
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "occurrence-manifest-root",
+          "occurrence-manifest-tip"
+        ]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
       },
       "expected": {
         "ok": true
@@ -621,7 +1225,11 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "future-deadlines-after-run-update",
-        "contextPack": "context-pack"
+        "contextPack": "context-pack",
+        "manifestHistory": ["manifest-root", "future-deadlines-manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
       },
       "expected": {
         "ok": true
@@ -696,7 +1304,14 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "failed-local-with-consent",
-        "contextPack": "content-sync-context-pack"
+        "contextPack": "content-sync-context-pack",
+        "manifestHistory": [
+          "failed-sync-manifest-root",
+          "failed-sync-manifest-tip"
+        ]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
       },
       "expected": {
         "ok": true
@@ -740,7 +1355,11 @@
       "validator": "research-run-context-pack",
       "inputs": {
         "run": "synced-cloud-content-with-consent",
-        "contextPack": "content-sync-context-pack"
+        "contextPack": "content-sync-context-pack",
+        "manifestHistory": ["synced-manifest-root", "synced-manifest-tip"]
+      },
+      "options": {
+        "authorizedFreshConsentAt": ["2026-08-15T20:10:00.000Z"]
       },
       "expected": {
         "ok": true

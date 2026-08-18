@@ -48,6 +48,7 @@ import {
   type ModelTaskV1,
   type ProtocolParseResult,
   type ResearchProtocolObjectV1,
+  type ResearchRunCompositionOptionsV1,
   type ResearchRunV1,
   type RunEventV1,
   type RunManifestV1,
@@ -132,7 +133,10 @@ type ScenarioDefinition = {
   description: string;
   validator: ValidatorKind;
   inputs: Record<string, unknown>;
-  options?: ManifestRevisionOptions;
+  options?: ManifestRevisionOptions & Pick<
+    ResearchRunCompositionOptionsV1,
+    "authorizedFreshConsentAt"
+  >;
   expected: ExpectedResult;
 };
 
@@ -459,7 +463,11 @@ function scenarioInputEntries(
       );
       break;
     case "research-run-context-pack":
-      assertAllowedKeys(scenario.inputs, ["run", "contextPack"], location);
+      assertAllowedKeys(
+        scenario.inputs,
+        ["run", "contextPack", "manifestHistory"],
+        location,
+      );
       assert.ok(Object.hasOwn(scenario.inputs, "run"), `${location}: missing field run`);
       entries.push({
         name: "run",
@@ -476,6 +484,23 @@ function scenarioInputEntries(
           ),
           schema: "opencoven.context-pack/v1",
         });
+      }
+      if (Object.hasOwn(scenario.inputs, "manifestHistory")) {
+        assert.ok(
+          Array.isArray(scenario.inputs.manifestHistory),
+          `${location}.manifestHistory: must be an array`,
+        );
+        for (const [index, manifest] of scenario.inputs.manifestHistory.entries()) {
+          entries.push({
+            name: `manifestHistory[${index}]`,
+            reference: requireObjectReference(
+              manifest,
+              objects,
+              `${location}.manifestHistory[${index}]`,
+            ),
+            schema: "opencoven.run-manifest/v1",
+          });
+        }
       }
       break;
     case "topic-discovery-composition":
@@ -610,10 +635,11 @@ function validateScenario(
     `${location}.inputs`,
   );
 
-  let options: ManifestRevisionOptions | undefined;
+  let options: ScenarioDefinition["options"];
   if (
     validator === "run-manifest-revision" ||
-    validator === "manifest-retention-consent"
+    validator === "manifest-retention-consent" ||
+    validator === "research-run-context-pack"
   ) {
     if (scenario.options !== undefined) {
       const rawOptions = requireRecord(scenario.options, `${location}.options`);
@@ -621,7 +647,9 @@ function validateScenario(
         rawOptions,
         validator === "run-manifest-revision"
           ? ["contextConsent", "freshConsent", "freshConsentAt"]
-          : ["contextConsent"],
+          : validator === "manifest-retention-consent"
+            ? ["contextConsent"]
+            : ["authorizedFreshConsentAt"],
         `${location}.options`,
       );
       if (rawOptions.contextConsent !== undefined) {
@@ -643,6 +671,18 @@ function validateScenario(
           `${location}.options.freshConsentAt: must be a valid exact UTC timestamp`,
         );
       }
+      if (rawOptions.authorizedFreshConsentAt !== undefined) {
+        assert.ok(
+          Array.isArray(rawOptions.authorizedFreshConsentAt),
+          `${location}.options.authorizedFreshConsentAt: must be an array`,
+        );
+        for (const [index, authorizedAt] of rawOptions.authorizedFreshConsentAt.entries()) {
+          assert.ok(
+            isUtcTimestamp(authorizedAt),
+            `${location}.options.authorizedFreshConsentAt[${index}]: must be a valid exact UTC timestamp`,
+          );
+        }
+      }
       options = {
         ...(rawOptions.contextConsent === undefined
           ? {}
@@ -655,13 +695,19 @@ function validateScenario(
         ...(rawOptions.freshConsentAt === undefined
           ? {}
           : { freshConsentAt: rawOptions.freshConsentAt as string }),
+        ...(rawOptions.authorizedFreshConsentAt === undefined
+          ? {}
+          : {
+              authorizedFreshConsentAt:
+                rawOptions.authorizedFreshConsentAt as string[],
+            }),
       };
     }
   } else {
     assert.equal(
       scenario.options,
       undefined,
-      `${location}.options: is only valid for manifest retention consent or revisions`,
+      `${location}.options: is only valid for manifest retention consent, revisions, or run composition`,
     );
   }
 
@@ -925,6 +971,27 @@ const schemaContext = new Map<string, TSchema>();
 const schemaCheckContext: Record<string, TSchema> = Object.create(null);
 const schemaResolutionOrigin = new URL("https://research-protocol.invalid/");
 
+function resolveTypeBoxReferenceTarget(
+  schema: TSchema,
+  reference: string,
+  sourceId: string,
+): TSchema {
+  const hashIndex = reference.indexOf("#");
+  if (hashIndex < 0 || reference.slice(hashIndex) === "#") return schema;
+  const fragment = reference.slice(hashIndex + 1);
+  assert.ok(fragment.startsWith("/"), `${sourceId}: only JSON Pointer schema fragments are supported`);
+
+  let target: unknown = schema;
+  for (const encodedSegment of fragment.slice(1).split("/")) {
+    const segment = encodedSegment.replaceAll("~1", "/").replaceAll("~0", "~");
+    assert.ok(isRecord(target), `${sourceId}: schema fragment traverses a non-object`);
+    assert.ok(Object.hasOwn(target, segment), `${sourceId}: schema fragment segment ${segment} is missing`);
+    target = target[segment];
+  }
+  assert.ok(isRecord(target), `${sourceId}: schema fragment must resolve to an object schema`);
+  return target as TSchema;
+}
+
 function registerTypeBoxReferenceAliases(sourceId: string, value: unknown): void {
   if (Array.isArray(value)) {
     for (const entry of value) registerTypeBoxReferenceAliases(sourceId, entry);
@@ -947,14 +1014,15 @@ function registerTypeBoxReferenceAliases(sourceId: string, value: unknown): void
         target !== undefined,
         `${sourceId}: external $ref ${entry} resolves to unregistered schema id ${resolvedId}`,
       );
+      const checkTarget = resolveTypeBoxReferenceTarget(target, entry, sourceId);
       if (Object.hasOwn(schemaCheckContext, entry)) {
         assert.equal(
           schemaCheckContext[entry],
-          target,
+          checkTarget,
           `${entry}: TypeBox alias cannot resolve to multiple schema resources`,
         );
       } else {
-        schemaCheckContext[entry] = target;
+        schemaCheckContext[entry] = checkTarget;
       }
       continue;
     }
@@ -1121,8 +1189,29 @@ function executeComposition(
               "opencoven.context-pack/v1",
               `${scenario.id}.contextPack`,
             );
+      const manifestHistory: RunManifestV1[] = [];
+      const rawManifestHistory = scenario.inputs.manifestHistory;
+      if (Array.isArray(rawManifestHistory)) {
+        for (const index of rawManifestHistory.keys()) {
+          manifestHistory.push(
+            requireParsedSchema<RunManifestV1>(
+              parsedInputs.get(`manifestHistory[${index}]`)!,
+              "opencoven.run-manifest/v1",
+              `${scenario.id}.manifestHistory[${index}]`,
+            ),
+          );
+        }
+      }
       return {
-        result: validateResearchRunContextPackV1(run, contextPack),
+        result: validateResearchRunContextPackV1(run, contextPack, {
+          ...(rawManifestHistory === undefined ? {} : { manifestHistory }),
+          ...(scenario.options?.authorizedFreshConsentAt === undefined
+            ? {}
+            : {
+                authorizedFreshConsentAt:
+                  scenario.options.authorizedFreshConsentAt,
+              }),
+        }),
         expectedValue: run,
       };
     }

@@ -13,6 +13,19 @@
     "at": { "$ref": "#/$defs/utcTimestamp" },
     "data": { "$ref": "#/$defs/data" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "content.deleted" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "#/$defs/contentDeletedData" }
+        }
+      }
+    }
+  ],
   "$defs": {
     "runId": {
       "type": "string",
@@ -21,6 +34,11 @@
     "positiveSafeInteger": {
       "type": "integer",
       "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "nonNegativeSafeInteger": {
+      "type": "integer",
+      "minimum": 0,
       "maximum": 9007199254740991
     },
     "utcTimestamp": {
@@ -51,6 +69,35 @@
     "data": {
       "type": "object",
       "additionalProperties": true
+    },
+    "sensitivePropertyName": {
+      "$ref": "../opencoven.run-manifest/v1#/$defs/sensitivePropertyName"
+    },
+    "safeExtensionValue": {
+      "anyOf": [
+        {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/safeExtensionValue" }
+        },
+        {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
+          "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" }
+        }
+      ]
+    },
+    "contentDeletedData": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "required": ["deletedObjectCount", "manifestStatus"],
+      "properties": {
+        "deletedObjectCount": { "$ref": "#/$defs/nonNegativeSafeInteger" },
+        "manifestStatus": { "const": "deleted" }
+      }
     }
   }
 }

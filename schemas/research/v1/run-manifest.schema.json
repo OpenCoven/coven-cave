@@ -358,7 +358,15 @@
         "id": { "$ref": "#/$defs/evidenceId" },
         "contentDigest": { "$ref": "#/$defs/sha256" },
         "snapshotDigest": { "$ref": "#/$defs/sha256" },
-        "canonicalUrl": { "type": "string" },
+        "canonicalUrl": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+          "anyOf": [
+            { "format": "uri" },
+            { "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://" }
+          ]
+        },
         "fetchedAt": { "$ref": "#/$defs/utcTimestamp" }
       }
     },

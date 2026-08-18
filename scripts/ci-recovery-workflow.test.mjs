@@ -53,10 +53,18 @@ assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validati
   { name: "lint", command: "lint" },
   { name: "typecheck", command: "typecheck" },
   { name: "test wiring", command: "check:tests-wired" },
+  { name: "conformance", command: "test:conformance" },
   { name: "app tests", command: "test:app" },
   { name: "API tests", command: "test:api" },
   { name: "mobile tests", command: "test:mobile" },
 ]);
+assert.equal(
+  ciWorkflow.jobs["frontend-validation"].strategy.matrix.validation
+    .filter(({ command }) => command === "test:conformance")
+    .length,
+  1,
+  "pull-request frontend validation runs conformance exactly once",
+);
 assert.equal(ciWorkflow.jobs["frontend-validation"].strategy["fail-fast"], false);
 assert.equal(
   ciWorkflow.jobs["frontend-validation"].steps.at(-1)?.run,

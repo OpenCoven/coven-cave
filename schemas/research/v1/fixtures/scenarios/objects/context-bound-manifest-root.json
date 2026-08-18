@@ -1,0 +1,56 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_context_01",
+  "runId": "run_01",
+  "digest": "57f91560b67d180d07d183aeae8adf52e0e4a7cc4096b9c8a7c3ed224cf22a37",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-15T20:00:00.000Z",
+  "finalizedAt": "2026-08-15T20:09:00.000Z",
+  "context": {
+    "contextPackId": "ctx_01",
+    "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+    "topicProposalId": "proposal_01",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_01",
+      "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+      "availability": "device-local"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_context_01",
+      "kind": "research-notes",
+      "title": "Context-bound research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-15T20:08:00.000Z"
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-15T20:09:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  }
+}

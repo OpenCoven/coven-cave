@@ -27,6 +27,22 @@ test("workflow and script changes run frontend validation", () => {
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
 });
 
+test("research schema and fixture-only changes run frontend validation", () => {
+  for (const path of [
+    "schemas/research/v1/run-manifest.schema.json",
+    "schemas/research/v1/fixtures/valid/run-event-content-deleted.json",
+    "schemas/research/v1/fixtures/scenarios/research-run-context-pack.scenario.json",
+  ]) {
+    assert.deepEqual(classifyCiPaths([path]), {
+      frontend: true,
+      rust: false,
+      e2e: false,
+      ios: false,
+      docs: false,
+    }, path);
+  }
+});
+
 test("Rust-only changes avoid frontend and E2E work", () => {
   assert.deepEqual(classifyCiPaths(["src-tauri/src/main.rs"]), {
     frontend: false,

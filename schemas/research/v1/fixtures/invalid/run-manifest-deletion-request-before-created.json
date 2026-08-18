@@ -1,0 +1,26 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_deletion_request_01",
+  "runId": "run_deletion_01",
+  "digest": "90d69d70a274b88a1fe4f0eeb558201234769cc496b922702f6ed21dac6892a0",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-18T12:00:00.000Z",
+  "finalizedAt": "2026-08-18T12:01:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": { "inputTokens": null, "outputTokens": null, "costUsd": null, "completeness": "unreported" },
+  "retention": {
+    "policy": "project",
+    "effectivePolicy": "project",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2026-08-19T12:00:00.000Z",
+    "updatedAt": "2026-08-18T12:01:00.000Z"
+  },
+  "deletion": {
+    "status": "scheduled",
+    "requestedAt": "2026-08-18T11:59:59.999999999Z"
+  }
+}

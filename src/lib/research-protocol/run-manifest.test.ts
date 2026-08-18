@@ -1019,6 +1019,58 @@ test("privacy key checks do not scan values or public-evidence metadata", () => 
   );
 });
 
+test("public evidence canonical URLs preserve absolute credential-free HTTP(S) URLs", () => {
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  for (const canonicalUrl of [
+    "https://example.test/research?q=public#finding",
+    "http://example.test:8080/research?source=1",
+    "https://例え.テスト/検索?q=猫",
+  ]) {
+    const candidate = recalculate({
+      ...cloud,
+      sources: cloud.sources.map((source) =>
+        source.kind === "public-evidence"
+          ? { ...source, canonicalUrl }
+          : source
+      ),
+    });
+    assert.equal(Value.Check(runManifestSchema, candidate), true, canonicalUrl);
+    const parsed = expectOk(parseRunManifestV1(candidate));
+    const evidence = parsed.sources.find((source) => source.kind === "public-evidence");
+    assert.equal(evidence?.canonicalUrl, canonicalUrl);
+  }
+});
+
+test("public evidence canonical URLs reject non-HTTP, relative, malformed, empty, and credential-bearing values", () => {
+  const cloud = expectOk(parseRunManifestV1(finalCloudManifestJson));
+  for (const [canonicalUrl, expectedSchemaValid] of [
+    ["", false],
+    ["/relative/research", false],
+    ["ftp://example.test/research", false],
+    ["https://", true],
+    ["https://researcher:secret@example.test/report", true],
+  ] as const) {
+    const candidate = recalculate({
+      ...cloud,
+      sources: cloud.sources.map((source) =>
+        source.kind === "public-evidence"
+          ? { ...source, canonicalUrl }
+          : source
+      ),
+    });
+    assert.equal(
+      Value.Check(runManifestSchema, candidate),
+      expectedSchemaValid,
+      canonicalUrl || "<empty>",
+    );
+    expectError(
+      parseRunManifestV1(candidate),
+      "$.sources[1].canonicalUrl",
+      "invalid_value",
+    );
+  }
+});
+
 test("declared protocol fields remain authoritative inside sensitive objects", () => {
   for (const fixture of [finalLocalManifestJson, retentionUpdateJson]) {
     assert.equal(Value.Check(runManifestSchema, fixture), true);
@@ -1080,6 +1132,65 @@ test("retention and deletion status pairs and receipt requirements are enforced"
   assert.equal(Value.Check(runManifestSchema, activeWithExpiry), false);
   expectError(parseRunManifestV1(activeWithExpiry), "$.retention.contentExpiresAt", "semantic_conflict");
 
+});
+
+test("deletion request and completion timestamps cannot precede manifest creation", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const scheduledBeforeCreation = recalculate({
+    ...local,
+    retention: {
+      ...local.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...local.deletion,
+      status: "scheduled" as const,
+      requestedAt: "2026-08-16T19:59:59.999999999Z",
+    },
+  });
+  expectError(
+    parseRunManifestV1(scheduledBeforeCreation),
+    "$.deletion.requestedAt",
+    "semantic_conflict",
+  );
+
+  const completedBeforeCreation = recalculate({
+    ...local,
+    retention: {
+      ...local.retention,
+      status: "deleted" as const,
+      contentExpiresAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...local.deletion,
+      status: "completed" as const,
+      requestedAt: "2026-08-16T19:58:00.000Z",
+      completedAt: "2026-08-16T19:59:00.000Z",
+      deletedObjectCount: 1,
+      eventSequence: 2,
+    },
+  });
+  expectError(
+    parseRunManifestV1(completedBeforeCreation),
+    "$.deletion.completedAt",
+    "semantic_conflict",
+  );
+
+  const equality = recalculate({
+    ...local,
+    retention: {
+      ...local.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: "2026-08-16T20:06:00.000Z",
+    },
+    deletion: {
+      ...local.deletion,
+      status: "scheduled" as const,
+      requestedAt: local.createdAt,
+    },
+  });
+  assert.equal(parseRunManifestV1(equality).ok, true);
 });
 
 test("scheduled and completed deletion states require a concrete content expiration", () => {

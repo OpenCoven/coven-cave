@@ -34,6 +34,41 @@ export const UTC_TIMESTAMP_PATTERN =
   String.raw`^\d{4}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d|(?:(?:01|03|05|07|08|10|12)-31|(?:04|06|09|11)-30|02-(?:28|29))T23:59:60)(?:\.\d{1,9})?Z$`;
 const UTC_TIMESTAMP_RE = new RegExp(UTC_TIMESTAMP_PATTERN);
 const JSON_POINTER_RE = /^(?:$|\/(?:[^~/]|~0|~1)*(?:\/(?:[^~/]|~0|~1)*)*)$/;
+const PRINTABLE_ASCII_PROPERTY_NAME_RE = /^[\u0020-\u007e]*$/;
+const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
+  "excerpt",
+  "excerpts",
+  "privateexcerpt",
+  "privateexcerpts",
+  "rawexcerpt",
+  "rawexcerpts",
+  "text",
+  "texts",
+  "content",
+  "contents",
+  "blob",
+  "blobs",
+  "filename",
+  "filenames",
+  "localpath",
+  "localpaths",
+  "filepath",
+  "filepaths",
+  "path",
+  "paths",
+  "credential",
+  "credentials",
+  "secret",
+  "secrets",
+  "objectkey",
+  "objectkeys",
+  "storagekey",
+  "storagekeys",
+  "bucketkey",
+  "bucketkeys",
+  "deletedcontent",
+  "deletedcontents",
+]);
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -182,6 +217,57 @@ export function retentionDoesNotExceed(
   consented: RetentionPolicyV1,
 ): boolean {
   return RETENTION_ORDER[requested] <= RETENTION_ORDER[consented];
+}
+
+function normalizeSensitiveExtensionKey(key: string): string {
+  return key.normalize("NFKC").replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
+}
+
+/**
+ * Recursively guards metadata-only extension objects against private-content
+ * aliases. Declared callers choose where this stricter boundary applies.
+ */
+export function validateSensitiveExtensionKeys(
+  value: unknown,
+  path: string,
+  objectLabel = "Sensitive manifest objects",
+): ProtocolParseResult<void> {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      const nested = validateSensitiveExtensionKeys(
+        entry,
+        `${path}[${index}]`,
+        objectLabel,
+      );
+      if (!nested.ok) return nested;
+    }
+    return pass(undefined);
+  }
+  if (!isRecord(value)) return pass(undefined);
+
+  for (const key of Object.keys(value)) {
+    const keyPath = childPath(path, key);
+    if (
+      !PRINTABLE_ASCII_PROPERTY_NAME_RE.test(key)
+      || key.normalize("NFKC") !== key
+    ) {
+      return fail(
+        "semantic_conflict",
+        keyPath,
+        `${objectLabel} property names must be printable ASCII and NFKC-stable`,
+      );
+    }
+    if (FORBIDDEN_NORMALIZED_SENSITIVE_KEYS.has(normalizeSensitiveExtensionKey(key))) {
+      return fail(
+        "semantic_conflict",
+        keyPath,
+        `${objectLabel} must not contain ${key}`,
+      );
+    }
+    const nested = validateSensitiveExtensionKeys(value[key], keyPath, objectLabel);
+    if (!nested.ok) return nested;
+  }
+  return pass(undefined);
 }
 
 export function fail<T>(

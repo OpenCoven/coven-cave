@@ -1,0 +1,38 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_url_01",
+  "runId": "run_url_01",
+  "digest": "e7718ecb3baebfc0f53e8acd06638cbf5c543812dc6f94f912aa61de46b518d5",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-18T12:00:00.000Z",
+  "finalizedAt": "2026-08-18T12:01:00.000Z",
+  "sources": [
+    {
+      "kind": "public-evidence",
+      "id": "evidence_url_01",
+      "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "snapshotDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "canonicalUrl": "https://例え.テスト:8443/検索?q=猫#証拠",
+      "fetchedAt": "2026-08-18T12:01:00.000Z"
+    }
+  ],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "project",
+    "effectivePolicy": "project",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-18T12:01:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  }
+}
