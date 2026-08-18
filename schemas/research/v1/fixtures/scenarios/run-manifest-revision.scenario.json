@@ -144,6 +144,29 @@
       },
       "digestTargets": [""]
     },
+    "restored-active-next": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "58ee11b3606e525cd52959d52c57ae6718ec4a4f0034354942d72551633733fd",
+        "retention": {
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "regressed-retention-clock": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "updatedAt": "2026-08-16T20:04:30.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "scheduled-deletion": {
+      "fixture": "valid/run-manifest-retention-update.json"
+    },
     "post-final-mutation": {
       "fixture": "scenarios/objects/run-manifest-final-mutation.json"
     },
@@ -379,6 +402,42 @@
       },
       "expected": {
         "ok": true
+      }
+    },
+    {
+      "id": "manifest.deletion-activation-monotonic",
+      "description": "A linked revision cannot return scheduled deletion to active and not_scheduled.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-deletion",
+        "next": "restored-active-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.status"
+      }
+    },
+    {
+      "id": "manifest.retention-clock-monotonic",
+      "description": "A linked revision cannot move retention.updatedAt backward.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "regressed-retention-clock"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.updatedAt"
       }
     },
     {

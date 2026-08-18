@@ -748,6 +748,17 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!acceptedTopicField.ok) return acceptedTopicField;
   const acceptedTopic = parseAcceptedTopic(acceptedTopicField.value, "$.acceptedTopic");
   if (!acceptedTopic.ok) return acceptedTopic;
+  if (
+    typeof context?.topicProposalId === "string"
+    && typeof acceptedTopic.value.proposalId === "string"
+    && acceptedTopic.value.proposalId !== context.topicProposalId
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.acceptedTopic.proposalId",
+      "acceptedTopic.proposalId must match context.topicProposalId",
+    );
+  }
 
   const executionField = parseRequiredField(object.value, "execution", "$");
   if (!executionField.ok) return executionField;
@@ -832,6 +843,13 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
   if (!updatedAtField.ok) return updatedAtField;
   const updatedAt = parseUtc(updatedAtField.value, "$.updatedAt", "updatedAt");
   if (!updatedAt.ok) return updatedAt;
+  if (compareUtcTimestamps(updatedAt.value, createdAt.value) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.updatedAt",
+      "updatedAt must not precede createdAt",
+    );
+  }
 
   const nextEventSequenceField = parseRequiredField(object.value, "nextEventSequence", "$");
   if (!nextEventSequenceField.ok) return nextEventSequenceField;
@@ -871,6 +889,28 @@ export function parseResearchRunV1(value: unknown): ProtocolParseResult<Research
         "$.artifactManifest.context",
         "artifactManifest context must match the enclosing run context",
       );
+    }
+    if (execution.value.strategy === "single-agent") {
+      for (const [index, modelExecution] of artifactManifest.modelExecutions.entries()) {
+        const receiptPath = `$.artifactManifest.modelExecutions[${index}].receipt`;
+        if (modelExecution.receipt.familiarId !== execution.value.modelBinding.familiarId) {
+          return fail(
+            "semantic_conflict",
+            `${receiptPath}.familiarId`,
+            "single-agent receipt familiarId must match execution.modelBinding.familiarId",
+          );
+        }
+        if (
+          execution.value.modelBinding.selection === "pinned"
+          && modelExecution.receipt.effectiveModel !== execution.value.modelBinding.model
+        ) {
+          return fail(
+            "semantic_conflict",
+            `${receiptPath}.effectiveModel`,
+            "single-agent receipt effectiveModel must match the pinned model",
+          );
+        }
+      }
     }
     if (artifactManifest.retention.policy !== privacy.value.retention) {
       return fail(

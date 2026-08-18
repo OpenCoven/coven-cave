@@ -60,7 +60,7 @@ const FORBIDDEN_NORMALIZED_SENSITIVE_KEYS = new Set([
 ]);
 
 function normalizeSensitiveKey(key: string): string {
-  return key.toLowerCase().replaceAll(/[-._\u0009-\u000d\u0020]/g, "");
+  return key.replaceAll(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
 
 export type ArtifactRegistrationV1 = {
@@ -843,11 +843,14 @@ function validateRetentionClock(
       "active retention must not have contentExpiresAt",
     );
   }
-  if (retention.status === "active" && retention.effectivePolicy === "project" && retention.contentExpiresAt !== null) {
+  if (
+    retention.status !== "active"
+    && !isUtcTimestamp(retention.contentExpiresAt)
+  ) {
     return fail(
       "semantic_conflict",
       "$.retention.contentExpiresAt",
-      "active project retention must not have contentExpiresAt",
+      "non-active retention requires contentExpiresAt",
     );
   }
   return pass(undefined);
@@ -859,12 +862,13 @@ function manifestDigest(value: unknown): string {
 
 function canonicalField(record: Record<string, unknown>, key: string): string {
   const descriptor = Object.getOwnPropertyDescriptor(record, key);
-  if (descriptor && (!descriptor.enumerable || !("value" in descriptor))) {
+  const hasOwnValue = descriptor !== undefined && Object.hasOwn(descriptor, "value");
+  if (descriptor && (!descriptor.enumerable || !hasOwnValue)) {
     return canonicalJson(record);
   }
   return canonicalJson({
     present: Boolean(descriptor),
-    ...(descriptor && "value" in descriptor ? { value: descriptor.value } : {}),
+    ...(descriptor && hasOwnValue ? { value: descriptor.value } : {}),
   });
 }
 
@@ -1077,6 +1081,16 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
     if (!parsedFinalizedAt.ok) return parsedFinalizedAt;
     finalizedAt = parsedFinalizedAt.value;
   }
+  if (
+    typeof finalizedAt === "string"
+    && compareUtcTimestamps(finalizedAt, createdAt.value) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finalizedAt",
+      "finalizedAt must not precede createdAt",
+    );
+  }
 
   let context: ResearchContextBindingV1 | undefined;
   if (hasOwn(object.value, "context")) {
@@ -1155,6 +1169,13 @@ export function parseRunManifestV1(value: unknown): ProtocolParseResult<RunManif
   if (!retentionField.ok) return retentionField;
   const retention = parseRetention(retentionField.value, "$.retention");
   if (!retention.ok) return retention;
+  if (compareUtcTimestamps(retention.value.updatedAt, createdAt.value) < 0) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt must not precede createdAt",
+    );
+  }
 
   const deletionField = parseRequiredField(object.value, "deletion", "$");
   if (!deletionField.ok) return deletionField;
@@ -1398,6 +1419,48 @@ export function validateRunManifestRevision(
       "semantic_conflict",
       "$.retention.status",
       "deleted retention is terminal",
+    );
+  }
+  if (
+    previous.retention.status !== "active"
+    && next.retention.status === "active"
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.status",
+      "retention cannot return to active after deletion is scheduled",
+    );
+  }
+  if (
+    previous.deletion.status !== "not_scheduled"
+    && next.deletion.status === "not_scheduled"
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.deletion.status",
+      "deletion cannot return to not_scheduled after it is scheduled",
+    );
+  }
+  if (
+    !isUtcTimestamp(previous.retention.updatedAt)
+    || !isUtcTimestamp(next.retention.updatedAt)
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt must be a valid UTC timestamp across revisions",
+    );
+  }
+  if (
+    compareUtcTimestamps(
+      next.retention.updatedAt,
+      previous.retention.updatedAt,
+    ) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.retention.updatedAt",
+      "retention.updatedAt cannot move backward across revisions",
     );
   }
 

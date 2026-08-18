@@ -1,4 +1,5 @@
 import {
+  compareUtcTimestamps,
   copyProtocolJsonValue,
   fail,
   isOpaqueId,
@@ -720,6 +721,37 @@ export function parseTopicDiscoveryJobV1(value: unknown): ProtocolParseResult<To
     const parsedFinishedAt = parseUtc(object.value.finishedAt, "$.finishedAt", "finishedAt");
     if (!parsedFinishedAt.ok) return parsedFinishedAt;
     finishedAt = parsedFinishedAt.value;
+  }
+  if (
+    typeof startedAt === "string"
+    && compareUtcTimestamps(startedAt, requestedAt.value) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.startedAt",
+      "startedAt must not precede requestedAt",
+    );
+  }
+  if (
+    typeof finishedAt === "string"
+    && compareUtcTimestamps(finishedAt, requestedAt.value) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finishedAt",
+      "finishedAt must not precede requestedAt",
+    );
+  }
+  if (
+    typeof startedAt === "string"
+    && typeof finishedAt === "string"
+    && compareUtcTimestamps(finishedAt, startedAt) < 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      "$.finishedAt",
+      "finishedAt must not precede startedAt",
+    );
   }
 
   const proposalIdsField = parseRequiredField(object.value, "proposalIds", "$");

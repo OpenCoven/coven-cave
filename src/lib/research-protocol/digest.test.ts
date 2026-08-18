@@ -104,6 +104,46 @@ test("canonicalization rejects accessors and toJSON functions without invoking t
   assert.equal(calls, 0);
 });
 
+test("canonicalization rejects accessors when Object.prototype has a value property", () => {
+  const originalValue = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+  let calls = 0;
+  const accessorObject = {};
+  Object.defineProperty(accessorObject, "entry", {
+    get() {
+      calls += 1;
+      return "safe";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  const accessorArray = new Array<unknown>(1);
+  Object.defineProperty(accessorArray, "0", {
+    get() {
+      calls += 1;
+      return "safe";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  try {
+    Object.defineProperty(Object.prototype, "value", {
+      value: "safe",
+      configurable: true,
+      writable: true,
+    });
+    assert.throws(() => canonicalJson(accessorObject), /accessor properties/i);
+    assert.throws(() => canonicalJson(accessorArray), /array indices must be data properties/i);
+    assert.equal(calls, 0);
+  } finally {
+    if (originalValue) {
+      Object.defineProperty(Object.prototype, "value", originalValue);
+    } else {
+      Reflect.deleteProperty(Object.prototype, "value");
+    }
+  }
+});
+
 test("canonicalization enforces exact dense JSON arrays", () => {
   const sparse = [1, , 3];
   assert.throws(() => canonicalJson(sparse), /sparse array holes/i);

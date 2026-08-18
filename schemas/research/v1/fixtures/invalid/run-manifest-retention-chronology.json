@@ -1,0 +1,30 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_retention_chronology_01",
+  "runId": "run_retention_chronology_01",
+  "digest": "a790c3e12a0034ccbaf1d1f81eead565495ca3fdc013783907e61226e510ed2f",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:01:00.000Z",
+  "finalizedAt": "2026-08-16T20:02:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:00:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  },
+  "expectedSchemaValid": true
+}

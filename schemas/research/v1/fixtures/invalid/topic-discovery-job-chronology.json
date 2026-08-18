@@ -1,0 +1,26 @@
+{
+  "schema": "opencoven.topic-discovery-job/v1",
+  "id": "topicjob_chronology_01",
+  "contextPackId": "ctx_01",
+  "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+  "familiarId": "sage",
+  "status": "completed",
+  "requestedAt": "2026-08-15T20:02:00.000Z",
+  "startedAt": "2026-08-15T20:01:00.000Z",
+  "finishedAt": "2026-08-15T20:06:00.000Z",
+  "proposalIds": ["proposal_01"],
+  "modelReceipt": {
+    "familiarId": "sage",
+    "runtime": "coven-cave",
+    "effectiveModel": "gpt-5-mini",
+    "modelSource": "runtime-default",
+    "providerBilling": "user-connected",
+    "usage": {
+      "inputTokens": 1200,
+      "outputTokens": 450,
+      "costUsd": 0.0125,
+      "reportedByRuntime": true
+    }
+  },
+  "expectedSchemaValid": true
+}

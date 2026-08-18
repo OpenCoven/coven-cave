@@ -6,6 +6,8 @@ import { Check, Value } from "typebox/value";
 import researchRunSchema from "../../../schemas/research/v1/research-run.schema.json" with { type: "json" };
 import runEventSchema from "../../../schemas/research/v1/run-event.schema.json" with { type: "json" };
 import runManifestSchema from "../../../schemas/research/v1/run-manifest.schema.json" with { type: "json" };
+import invalidResearchRunChronology from "../../../schemas/research/v1/fixtures/invalid/research-run-chronology.json" with { type: "json" };
+import invalidResearchRunProposalLineage from "../../../schemas/research/v1/fixtures/invalid/research-run-proposal-lineage.json" with { type: "json" };
 import invalidResearchRunWaitingPhase from "../../../schemas/research/v1/fixtures/invalid/research-run-waiting-phase.json" with { type: "json" };
 import invalidRunEventSequence from "../../../schemas/research/v1/fixtures/invalid/run-event-sequence.json" with { type: "json" };
 import validContextPack from "../../../schemas/research/v1/fixtures/valid/context-pack.json" with { type: "json" };
@@ -211,6 +213,44 @@ test("valid waiting_for_executor run with resumable phase accepts", () => {
   const parsed = expectOk(parseResearchRunV1(validResearchRun));
   assert.equal(parsed.status, "waiting_for_executor");
   assert.equal(parsed.waitingForPhase, "challenge");
+});
+
+test("research run timestamps are monotonic", () => {
+  const { expectedSchemaValid, ...fixture } = invalidResearchRunChronology;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(checkResearchRunSchema(fixture), true);
+  expectError(parseResearchRunV1(fixture), "$.updatedAt", "semantic_conflict");
+
+  expectOk(parseResearchRunV1({
+    ...validResearchRun,
+    createdAt: "2016-12-31T23:59:60.999999999Z",
+    updatedAt: "2017-01-01T00:00:00Z",
+  }));
+});
+
+test("accepted proposal lineage matches the optional context proposal", () => {
+  const { expectedSchemaValid, ...fixture } = invalidResearchRunProposalLineage;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(checkResearchRunSchema(fixture), true);
+  expectError(
+    parseResearchRunV1(fixture),
+    "$.acceptedTopic.proposalId",
+    "semantic_conflict",
+  );
+
+  const withoutContextProposal = {
+    ...validResearchRun,
+    context: { ...validResearchRun.context },
+  };
+  delete (withoutContextProposal.context as Record<string, unknown>).topicProposalId;
+  expectOk(parseResearchRunV1(withoutContextProposal));
+
+  const withoutAcceptedProposal = {
+    ...validResearchRun,
+    acceptedTopic: { ...validResearchRun.acceptedTopic },
+  };
+  delete (withoutAcceptedProposal.acceptedTopic as Record<string, unknown>).proposalId;
+  expectOk(parseResearchRunV1(withoutAcceptedProposal));
 });
 
 test("Research Run and Run Event reject schema accessors without invoking them", () => {
@@ -841,6 +881,84 @@ test("embedded manifests bind original run privacy retention and cloud-content c
     ).artifactManifest?.retention.effectivePolicy,
     "run-only",
   );
+});
+
+test("single-agent manifests bind every receipt to the familiar and pinned model", () => {
+  const manifest = linkedManifest(validCloudRunManifest);
+  const baseRun = {
+    ...runForStatus("completed", manifest),
+    privacy: {
+      ...validResearchRun.privacy,
+      retention: "project" as const,
+      artifactContentSync: true,
+    },
+  };
+  expectOk(parseResearchRunV1(baseRun));
+
+  expectError(
+    parseResearchRunV1({
+      ...baseRun,
+      execution: {
+        ...validResearchRun.execution,
+        modelBinding: {
+          ...validResearchRun.execution.modelBinding,
+          familiarId: "nova",
+        },
+      },
+    }),
+    "$.artifactManifest.modelExecutions[0].receipt.familiarId",
+    "semantic_conflict",
+  );
+
+  expectError(
+    parseResearchRunV1({
+      ...baseRun,
+      execution: {
+        ...validResearchRun.execution,
+        modelBinding: {
+          ...validResearchRun.execution.modelBinding,
+          model: "gpt-5.6-terra",
+        },
+      },
+    }),
+    "$.artifactManifest.modelExecutions[0].receipt.effectiveModel",
+    "semantic_conflict",
+  );
+
+  const resolvedManifest = linkedManifest({
+    ...validCloudRunManifest,
+    modelExecutions: validCloudRunManifest.modelExecutions.map((modelExecution) => ({
+      ...modelExecution,
+      receipt: {
+        ...modelExecution.receipt,
+        effectiveModel: "resolved-at-runtime",
+      },
+    })),
+  });
+  expectOk(parseResearchRunV1({
+    ...baseRun,
+    artifactManifest: resolvedManifest,
+    execution: {
+      ...validResearchRun.execution,
+      modelBinding: {
+        familiarId: "sage",
+        selection: "resolve-at-run-start" as const,
+      },
+    },
+  }));
+
+  expectOk(parseResearchRunV1({
+    ...baseRun,
+    execution: {
+      ...validResearchRun.execution,
+      strategy: "orchestrator-workers" as const,
+      modelBinding: {
+        familiarId: "nova",
+        selection: "pinned" as const,
+        model: "gpt-5.6-terra",
+      },
+    },
+  }));
 });
 
 test("contextless embedded manifests cannot extend effective retention beyond the run policy", () => {

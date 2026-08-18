@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { Value } from "typebox/value";
 
 import invalidTopicDiscoveryEight from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-eight.json" with { type: "json" };
+import invalidTopicDiscoveryChronology from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-chronology.json" with { type: "json" };
 import invalidTopicDiscoveryReceiptFamiliar from "../../../schemas/research/v1/fixtures/invalid/topic-discovery-job-receipt-familiar-mismatch.json" with { type: "json" };
 import invalidTopicProposalScore from "../../../schemas/research/v1/fixtures/invalid/topic-proposal-score.json" with { type: "json" };
 import topicDiscoveryJobSchema from "../../../schemas/research/v1/topic-discovery-job.schema.json" with { type: "json" };
@@ -256,6 +257,53 @@ test("completed and failed jobs remain valid", () => {
   };
   assert.equal(Value.Check(topicDiscoveryJobSchema, validFailedJob), true);
   expectOk(parseTopicDiscoveryJobV1(validFailedJob));
+});
+
+test("topic discovery lifecycle timestamps are monotonic", () => {
+  const { expectedSchemaValid, ...fixture } = invalidTopicDiscoveryChronology;
+  assert.equal(expectedSchemaValid, true);
+  assert.equal(Value.Check(topicDiscoveryJobSchema, fixture), true);
+  expectError(parseTopicDiscoveryJobV1(fixture), "$.startedAt", "semantic_conflict");
+
+  const { startedAt: _startedAt, ...jobWithoutStartedAt } = validTopicDiscoveryJob;
+  const cases = [
+    {
+      value: {
+        ...validTopicDiscoveryJob,
+        requestedAt: "2026-08-15T20:02:00.000Z",
+        startedAt: "2026-08-15T20:01:00.000Z",
+        finishedAt: "2026-08-15T20:03:00.000Z",
+      },
+      path: "$.startedAt",
+    },
+    {
+      value: {
+        ...jobWithoutStartedAt,
+        requestedAt: "2026-08-15T20:02:00.000Z",
+        finishedAt: "2026-08-15T20:01:00.000Z",
+      },
+      path: "$.finishedAt",
+    },
+    {
+      value: {
+        ...validTopicDiscoveryJob,
+        requestedAt: "2026-08-15T20:00:00.000Z",
+        startedAt: "2026-08-15T20:02:00.000Z",
+        finishedAt: "2026-08-15T20:01:00.000Z",
+      },
+      path: "$.finishedAt",
+    },
+  ] as const;
+  for (const { value, path } of cases) {
+    expectError(parseTopicDiscoveryJobV1(value), path, "semantic_conflict");
+  }
+
+  expectOk(parseTopicDiscoveryJobV1({
+    ...validTopicDiscoveryJob,
+    requestedAt: "2016-12-31T23:59:59.999999999Z",
+    startedAt: "2016-12-31T23:59:60Z",
+    finishedAt: "2017-01-01T00:00:00Z",
+  }));
 });
 
 test("completed, failed, and cancelled jobs without finishedAt reject", () => {

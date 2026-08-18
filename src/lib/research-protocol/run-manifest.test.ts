@@ -14,7 +14,9 @@ import invalidPrivateTitleJson from "../../../schemas/research/v1/fixtures/inval
 import invalidDeletionEventJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-deletion-event.json" with { type: "json" };
 import invalidActiveShorteningJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-active-shortening.json" with { type: "json" };
 import invalidCompletionBeforeRequestJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-completion-before-request.json" with { type: "json" };
+import invalidFinalizedChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-finalized-chronology.json" with { type: "json" };
 import invalidNestedPrivateExtensionJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-nested-private-extension.json" with { type: "json" };
+import invalidRetentionChronologyJson from "../../../schemas/research/v1/fixtures/invalid/run-manifest-retention-chronology.json" with { type: "json" };
 import validNestedBenignExtensionJson from "../../../schemas/research/v1/fixtures/valid/run-manifest-nested-benign-extension.json" with { type: "json" };
 
 import { digestProtocolObject } from "./digest.ts";
@@ -306,6 +308,61 @@ test("Run Manifest rejects non-canonical wire data before invoking accessors", (
   assert.equal(accessorCalls, 0);
 });
 
+test("Run Manifest rejects accessor-bearing objects and arrays under descriptor pollution", () => {
+  const originalValue = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+  let accessorCalls = 0;
+  const objectCandidate = recalculate({
+    ...finalLocalManifestJson,
+    accessorExtension: "preserve",
+  });
+  Object.defineProperty(objectCandidate, "accessorExtension", {
+    get() {
+      accessorCalls += 1;
+      return "preserve";
+    },
+    enumerable: true,
+    configurable: true,
+  });
+
+  const arrayCandidate = recalculate({
+    ...finalLocalManifestJson,
+    artifacts: [{ ...finalLocalManifestJson.artifacts[0] }],
+  });
+  const accessorArtifacts = new Array<unknown>(1);
+  Object.defineProperty(accessorArtifacts, "0", {
+    get() {
+      accessorCalls += 1;
+      return finalLocalManifestJson.artifacts[0];
+    },
+    enumerable: true,
+    configurable: true,
+  });
+  arrayCandidate.artifacts = accessorArtifacts as typeof arrayCandidate.artifacts;
+
+  try {
+    Object.defineProperty(Object.prototype, "value", {
+      value: "preserve",
+      configurable: true,
+      writable: true,
+    });
+    expectError(parseRunManifestV1(objectCandidate), "$", "invalid_value");
+
+    Object.defineProperty(Object.prototype, "value", {
+      value: finalLocalManifestJson.artifacts[0],
+      configurable: true,
+      writable: true,
+    });
+    expectError(parseRunManifestV1(arrayCandidate), "$", "invalid_value");
+    assert.equal(accessorCalls, 0);
+  } finally {
+    if (originalValue) {
+      Object.defineProperty(Object.prototype, "value", originalValue);
+    } else {
+      Reflect.deleteProperty(Object.prototype, "value");
+    }
+  }
+});
+
 test("Run Manifest returns detached additive objects and arrays", () => {
   const extension = {
     nested: { state: "original" },
@@ -585,6 +642,70 @@ test("sensitive manifest objects reject forbidden extension keys case-insensitiv
   }
 });
 
+test("sensitive key normalization removes every non-ASCII-alphanumeric separator", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const forbiddenKeys = [
+    "private/excerpt",
+    "local:path",
+    "object—key",
+    "DeLeTeD:/—._ CoNtEnT",
+  ];
+
+  for (const key of forbiddenKeys) {
+    const candidates = [
+      {
+        value: recalculate({
+          ...local,
+          sources: [{ ...local.sources[0], [key]: "private material" }],
+        }),
+        path: `$.sources[0][${JSON.stringify(key)}]`,
+      },
+      {
+        value: recalculate({
+          ...local,
+          artifacts: [{ ...local.artifacts[0], [key]: "private material" }],
+        }),
+        path: `$.artifacts[0][${JSON.stringify(key)}]`,
+      },
+      {
+        value: recalculate({
+          ...local,
+          deletion: { ...local.deletion, [key]: "private material" },
+        }),
+        path: `$.deletion[${JSON.stringify(key)}]`,
+      },
+    ];
+    for (const candidate of candidates) {
+      assert.equal(Value.Check(runManifestSchema, candidate.value), false, `${candidate.path}`);
+      expectError(parseRunManifestV1(candidate.value), candidate.path, "semantic_conflict");
+    }
+  }
+
+  const benignKeys = [
+    "private/excerpt-label",
+    "local:pathHint",
+    "object—keyboard",
+    "DeLeTeD:/—._ CoNtEnT Label",
+  ];
+  const benign = recalculate({
+    ...local,
+    sources: [{
+      ...local.sources[0],
+      ...Object.fromEntries(benignKeys.map((key) => [key, "display label"])),
+    }],
+    artifacts: [{
+      ...local.artifacts[0],
+      ...Object.fromEntries(benignKeys.map((key) => [key, "display label"])),
+    }],
+    deletion: {
+      ...local.deletion,
+      ...Object.fromEntries(benignKeys.map((key) => [key, "display label"])),
+    },
+  });
+  assert.equal(Value.Check(runManifestSchema, benign), true);
+  expectOk(parseRunManifestV1(benign));
+});
+
 test("schema and parser reject forbidden keys nested in sensitive extension objects and arrays", () => {
   const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
   for (const [candidate, path] of [
@@ -792,6 +913,55 @@ test("retention and deletion status pairs and receipt requirements are enforced"
 
 });
 
+test("every non-active retention status requires a non-null deletion clock", () => {
+  const local = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const cases = [
+    {
+      retentionStatus: "deletion_scheduled" as const,
+      deletion: {
+        status: "scheduled" as const,
+        requestedAt: "2026-08-16T20:06:00.000Z",
+      },
+    },
+    {
+      retentionStatus: "deletion_pending" as const,
+      deletion: {
+        status: "pending" as const,
+        requestedAt: "2026-08-16T20:06:00.000Z",
+      },
+    },
+    {
+      retentionStatus: "deleted" as const,
+      deletion: {
+        status: "completed" as const,
+        requestedAt: "2026-08-16T20:06:00.000Z",
+        completedAt: "2026-08-16T20:07:00.000Z",
+        deletedObjectCount: 1,
+        eventSequence: 2,
+      },
+    },
+  ];
+
+  for (const { retentionStatus, deletion } of cases) {
+    const candidate = recalculate({
+      ...local,
+      retention: {
+        ...local.retention,
+        status: retentionStatus,
+        contentExpiresAt: null,
+        updatedAt: "2026-08-16T20:06:00.000Z",
+      },
+      deletion,
+    });
+    assert.equal(Value.Check(runManifestSchema, candidate), false, retentionStatus);
+    expectError(
+      parseRunManifestV1(candidate),
+      "$.retention.contentExpiresAt",
+      "semantic_conflict",
+    );
+  }
+});
+
 test("standalone shortened retention cannot remain active and unscheduled", () => {
   const fixture = withoutExpectedSchemaValid(invalidActiveShorteningJson);
   assert.equal(Value.Check(runManifestSchema, fixture), true);
@@ -879,6 +1049,8 @@ test("completed deletion rejects completion before request and accepts precise U
       ...local,
       revision: 2,
       previousDigest: local.digest,
+      createdAt: requestedAt,
+      finalizedAt: completedAt,
       retention: {
         ...local.retention,
         status: "deleted" as const,
@@ -895,6 +1067,29 @@ test("completed deletion rejects completion before request and accepts precise U
     });
     expectOk(parseRunManifestV1(completed));
   }
+});
+
+test("manifest lifecycle timestamps are monotonic", () => {
+  for (const [fixtureWithMarker, path] of [
+    [invalidFinalizedChronologyJson, "$.finalizedAt"],
+    [invalidRetentionChronologyJson, "$.retention.updatedAt"],
+  ] as const) {
+    const fixture = withoutExpectedSchemaValid(fixtureWithMarker);
+    assert.equal(Value.Check(runManifestSchema, fixture), true);
+    assert.equal(fixture.digest, digestProtocolObject(fixture));
+    expectError(parseRunManifestV1(fixture), path, "semantic_conflict");
+  }
+
+  const leapSecondManifest = recalculate({
+    ...finalLocalManifestJson,
+    createdAt: "2016-12-31T23:59:59.999999999Z",
+    finalizedAt: "2016-12-31T23:59:60Z",
+    retention: {
+      ...finalLocalManifestJson.retention,
+      updatedAt: "2017-01-01T00:00:00Z",
+    },
+  });
+  expectOk(parseRunManifestV1(leapSecondManifest));
 });
 
 test("retention consent uses context consent or the original policy ceiling", () => {
@@ -939,6 +1134,22 @@ test("revision chains accept assembling-to-final and allowed retention updates",
   assert.deepEqual(
     expectOk(validateRunManifestRevision(finalLocal, update, { contextConsent: "7-days" })),
     update,
+  );
+});
+
+test("revision retention clocks cannot move backward", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const next = expectOk(parseRunManifestV1(recalculate({
+    ...retentionUpdateJson,
+    retention: {
+      ...retentionUpdateJson.retention,
+      updatedAt: "2026-08-16T20:04:30.000Z",
+    },
+  })));
+  expectError(
+    validateRunManifestRevision(previous, next, { contextConsent: "7-days" }),
+    "$.retention.updatedAt",
+    "semantic_conflict",
   );
 });
 
@@ -1168,6 +1379,53 @@ test("completed deletion cannot be resurrected by a later revision", () => {
 
   expectError(
     validateRunManifestRevision(deleted, resurrected, { contextConsent: "7-days" }),
+    "$.deletion.status",
+    "semantic_conflict",
+  );
+});
+
+test("scheduled deletion cannot return to active or not_scheduled", () => {
+  const scheduled = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const restoredActive = expectOk(parseRunManifestV1(recalculate({
+    ...scheduled,
+    revision: 3,
+    previousDigest: scheduled.digest,
+    retention: {
+      ...scheduled.retention,
+      status: "active" as const,
+      contentExpiresAt: null,
+      updatedAt: "2026-08-16T20:07:00.000Z",
+    },
+    deletion: {
+      status: "not_scheduled" as const,
+      futureExtension: { preserve: true },
+    },
+  })));
+  expectError(
+    validateRunManifestRevision(scheduled, restoredActive, { contextConsent: "7-days" }),
+    "$.retention.status",
+    "semantic_conflict",
+  );
+
+  const unscheduledReceipt = recalculate({
+    ...scheduled,
+    revision: 3,
+    previousDigest: scheduled.digest,
+    retention: {
+      ...scheduled.retention,
+      updatedAt: "2026-08-16T20:07:00.000Z",
+    },
+    deletion: {
+      status: "not_scheduled" as const,
+      futureExtension: { preserve: true },
+    },
+  });
+  expectError(
+    validateRunManifestRevision(
+      scheduled,
+      unscheduledReceipt as unknown as RunManifestV1,
+      { contextConsent: "7-days" },
+    ),
     "$.deletion.status",
     "semantic_conflict",
   );
