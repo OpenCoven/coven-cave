@@ -7,12 +7,15 @@ import validModelTaskResult from "../../../schemas/research/v1/fixtures/valid/mo
 import validResearchRun from "../../../schemas/research/v1/fixtures/valid/research-run.json" with { type: "json" };
 import validRunEvent from "../../../schemas/research/v1/fixtures/valid/run-event.json" with { type: "json" };
 import validRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-assembling.json" with { type: "json" };
+import validFinalRunManifest from "../../../schemas/research/v1/fixtures/valid/run-manifest-final-local.json" with { type: "json" };
 import validTopicDiscoveryJob from "../../../schemas/research/v1/fixtures/valid/topic-discovery-job.json" with { type: "json" };
 import validTopicProposal from "../../../schemas/research/v1/fixtures/valid/topic-proposal.json" with { type: "json" };
 import invalidContextPackPdfSelector from "../../../schemas/research/v1/fixtures/invalid/context-pack-pdf-selector.json" with { type: "json" };
 import unknownMajorRunEvent from "../../../schemas/research/v1/fixtures/invalid/unknown-major.json" with { type: "json" };
 
 import { parseContextPackV1 } from "./context-pack.ts";
+import { digestProtocolObject } from "./digest.ts";
+import * as researchProtocol from "./index.ts";
 import {
   RESEARCH_PROTOCOL_SCHEMAS,
   parseResearchProtocolObject,
@@ -36,6 +39,10 @@ function expectError(result: ParseResult, path: string, code: string): void {
   }
   assert.equal(result.error.path, path);
   assert.equal(result.error.code, code);
+}
+
+function recalculate<T extends Record<string, unknown>>(value: T): T {
+  return { ...value, digest: digestProtocolObject(value) };
 }
 
 test("RESEARCH_PROTOCOL_SCHEMAS lists all eight v1 schema identifiers in order", () => {
@@ -110,6 +117,48 @@ test("dispatch preserves the underlying parser's result exactly", () => {
   const direct = parseContextPackV1(invalidContextPackPdfSelector);
   const dispatched = parseResearchProtocolObject(invalidContextPackPdfSelector);
   assert.deepEqual(dispatched, direct);
+});
+
+test("public manifest dispatch rejects unvalidated policy and deadline extensions", () => {
+  const policyExtension = recalculate({
+    ...validRunManifest,
+    revision: 2,
+    previousDigest: validRunManifest.digest,
+    retention: {
+      ...validRunManifest.retention,
+      effectivePolicy: "project" as const,
+    },
+  });
+  expectError(
+    parseResearchProtocolObject(policyExtension),
+    "$.retention.effectivePolicy",
+    "semantic_conflict",
+  );
+
+  const deadlineExtension = recalculate({
+    ...validFinalRunManifest,
+    revision: 2,
+    previousDigest: validFinalRunManifest.digest,
+    retention: {
+      ...validFinalRunManifest.retention,
+      status: "deletion_scheduled" as const,
+      contentExpiresAt: "2026-08-24T20:04:00.000Z",
+      updatedAt: "2026-08-17T20:04:00.000Z",
+    },
+    deletion: {
+      status: "scheduled" as const,
+      requestedAt: "2026-08-17T20:04:00.000Z",
+    },
+  });
+  expectError(
+    parseResearchProtocolObject(deadlineExtension),
+    "$.retention.contentExpiresAt",
+    "semantic_conflict",
+  );
+});
+
+test("public protocol exports do not expose a permissive manifest candidate parser", () => {
+  assert.equal("parseRunManifestRevisionCandidateV1" in researchProtocol, false);
 });
 
 test("dispatcher rejects non-canonical wire data for discovery, proposal, run, and event families", () => {
