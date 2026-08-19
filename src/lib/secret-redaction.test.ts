@@ -250,6 +250,35 @@ assert.equal(
   safeRelativeUrl,
   "ordinary relative URLs remain intact during redaction",
 );
+for (const [ref, expected] of [
+  ["?key=credential", `?key=${REDACTED_SECRET}`],
+  ["#key=credential", `#key=${REDACTED_SECRET}`],
+  ["?%6bey=credential", `?%6bey=${REDACTED_SECRET}`],
+  ["#%6bey=credential", `#%6bey=${REDACTED_SECRET}`],
+] as const) {
+  assert.equal(
+    containsSecretText(ref),
+    true,
+    "query-only and fragment-only relative references with secret parameters remain secret evidence",
+  );
+  assert.equal(
+    redactSecretText(ref),
+    expected,
+    "query-only and fragment-only relative references redact without rewriting the reference",
+  );
+}
+for (const safeReference of ["?state=visible", "#tab=details"] as const) {
+  assert.equal(
+    containsSecretText(safeReference),
+    false,
+    "ordinary query-only and fragment-only relative references remain safe evidence",
+  );
+  assert.equal(
+    redactSecretText(safeReference),
+    safeReference,
+    "ordinary query-only and fragment-only relative references remain intact",
+  );
+}
 assert.equal(
   containsSecretText("key=value"),
   false,
@@ -595,6 +624,16 @@ assert.equal(
   "Authorization headers redact the full line for any scheme",
 );
 assert.equal(
+  containsSecretText("authorization=opaque-credential"),
+  true,
+  "authorization assignments treat opaque nonempty credentials as secret evidence",
+);
+assert.equal(
+  redactSecretText("authorization=opaque-credential"),
+  `authorization=${REDACTED_SECRET}`,
+  "authorization assignments redact opaque non-scheme credential values",
+);
+assert.equal(
   redactSecretText("password=short-secret && echo done\nnext=safe"),
   `password=${REDACTED_SECRET} && echo done\nnext=safe`,
   "equals assignments retain shell suffix operators and following lines",
@@ -617,6 +656,30 @@ for (const value of [null, false, 0, [], {}]) {
     `decoded JSON token values such as ${json} use structured traversal without assignment-text false positives`,
   );
   assert.deepEqual(JSON.parse(redactSecretText(json)), { token: value });
+}
+const opaqueAuthorizationJson = JSON.stringify({ authorization: "opaque-credential" });
+assert.equal(
+  containsSecretText(opaqueAuthorizationJson),
+  true,
+  "decoded JSON authorization values treat opaque nonempty scalars as secret evidence",
+);
+assert.deepEqual(
+  JSON.parse(redactSecretText(opaqueAuthorizationJson)),
+  { authorization: REDACTED_SECRET },
+  "decoded JSON authorization values redact opaque non-scheme credentials",
+);
+for (const value of [null, false, 0] as const) {
+  const json = JSON.stringify({ authorization: value });
+  assert.equal(
+    containsSecretText(json),
+    false,
+    "authorization preserves the existing safe null/false/0 JSON semantics",
+  );
+  assert.deepEqual(
+    JSON.parse(redactSecretText(json)),
+    { authorization: value },
+    "authorization preserves safe null/false/0 JSON values during redaction",
+  );
 }
 for (const [key, value] of [["password", 123456], ["token", true]] as const) {
   const json = JSON.stringify({ [key]: value });

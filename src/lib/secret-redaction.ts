@@ -53,7 +53,7 @@ const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
 ];
 const GENERIC_BASE64_SECRET_PATTERN = /\b[A-Za-z0-9+/]{32,}={0,2}\b/g;
-const URL_CANDIDATE_PATTERN = /(?:https?:)?\/\/[^\s<>"'`]+|\/[^\s<>"'`]+/gi;
+const URL_CANDIDATE_PATTERN = /(?:https?:)?\/\/[^\s<>"'`]+|[/?#][^\s<>"'`]+/gi;
 const URL_PARAMETER_PATTERN = /([?#&])([^=&?#]+)=([^&#\s]*)/g;
 const URL_PARSE_BASE = "https://secret-redaction.invalid";
 
@@ -83,7 +83,7 @@ function containsSecretJsonValue(value: unknown): boolean {
   if (Array.isArray(value)) return value.some((entry) => containsSecretJsonValue(entry));
 
   return Object.entries(value).some(([key, entry]) => (
-    containsSecretFieldValue(key, entry) || containsSecretJsonValue(entry)
+    containsStructuredSecretFieldValue(key, entry) || containsSecretJsonValue(entry)
   ));
 }
 
@@ -112,10 +112,22 @@ function containsSecretTextPlain(text: string): boolean {
       assignment.key,
       assignment.separator,
     );
+    if (
+      assignment.separator === "=" &&
+      isAuthorizationKey(assignment.key) &&
+      hasMeaningfulAuthorizationScalar(text.slice(assignment.valueStart, valueEnd))
+    ) {
+      return true;
+    }
     if (containsSecretFieldValue(assignment.key, text.slice(assignment.valueStart, valueEnd))) return true;
     index = Math.max(assignment.keyEnd, valueEnd);
   }
   return false;
+}
+
+function containsStructuredSecretFieldValue(key: string, value: unknown): boolean {
+  if (isAuthorizationKey(key) && hasMeaningfulAuthorizationScalar(value)) return true;
+  return containsSecretFieldValue(key, value);
 }
 
 function containsSecretFieldValue(key: string, value: unknown): boolean {
@@ -126,6 +138,13 @@ function containsSecretFieldValue(key: string, value: unknown): boolean {
       : containsSecretJsonValue(value);
   }
   return hasCredentialValue(value);
+}
+
+function hasMeaningfulAuthorizationScalar(value: unknown): boolean {
+  if (typeof value === "string") return hasCredentialValue(value);
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  if (typeof value === "boolean") return value;
+  return false;
 }
 
 function containsAuthorizationCredential(value: string): boolean {
