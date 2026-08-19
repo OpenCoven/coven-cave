@@ -78,9 +78,11 @@ test("marketplace cards and details show brand marks with resilient monograms", 
     await setTheme(page, theme.id, theme.mode);
     await expect(githubLogo).toBeVisible();
     await expect(fallbackLogo).toBeVisible();
-    const alpha = await githubLogo.evaluate((el) => {
-      const c = getComputedStyle(el).color;
-      return c === "transparent" ? 0 : Number(c.match(/rgba\(\d+, \d+, \d+, ([0-9.]+)\)/)?.[1] ?? 1);
+    const alpha = await githubLogo.evaluate((element) => {
+      const color = getComputedStyle(element).color.trim().toLowerCase();
+      if (color === "transparent") return 0;
+      const channels = color.match(/[\d.]+/g)?.map(Number) ?? [];
+      return color.startsWith("rgba") ? channels[3] ?? 1 : 1;
     });
     expect(alpha).toBeGreaterThan(0);
   }
