@@ -19,6 +19,8 @@
  *    reader never mistakes "we could not tell" for "clear".
  */
 
+import { deriveReviewLandingState } from "./review-landing.ts";
+
 /** Reader tabs, in the frame's order. */
 export const PR_READER_TABS = ["conversation", "commits", "checks", "files"] as const;
 export type PrReaderTab = (typeof PR_READER_TABS)[number];
@@ -109,18 +111,36 @@ export type PrGateInput = {
  */
 export function prLandingGates(input: PrGateInput): PrLandingGate[] {
   const { counts, reviews, mergeable, mergeableState } = input;
+  const canonical = deriveReviewLandingState({
+    state: "open",
+    draft: false,
+    checks:
+      counts.total === 0
+        ? null
+        : counts.failing > 0
+          ? "failing"
+          : counts.pending > 0
+            ? "pending"
+            : "passing",
+    reviews,
+    mergeable,
+    mergeableState,
+    // The full reader's visible gateboard has three gates. Thread state is
+    // rendered separately, so it stays unknown here rather than being guessed.
+    unresolvedThreads: null,
+  });
 
   const checks: PrLandingGate =
-    counts.total === 0
+    canonical.checks === "unknown"
       ? { id: "checks", label: "checks", state: "unknown", detail: "no checks reported" }
-      : counts.failing > 0
+      : canonical.checks === "blocked"
         ? {
             id: "checks",
             label: "checks",
             state: "blocked",
             detail: `${counts.failing} failing`,
           }
-        : counts.pending > 0
+        : canonical.checks === "pending"
           ? {
               id: "checks",
               label: "checks",
@@ -129,23 +149,23 @@ export function prLandingGates(input: PrGateInput): PrLandingGate[] {
             }
           : { id: "checks", label: "checks", state: "pass", detail: `${counts.passing} passed` };
 
-  const review: PrLandingGate = !reviews
+  const review: PrLandingGate = canonical.review === "unknown"
     ? { id: "review", label: "review", state: "unknown", detail: "review state unavailable" }
-    : reviews.changesRequested > 0
+    : canonical.review === "blocked"
       ? { id: "review", label: "review", state: "blocked", detail: "changes requested" }
-      : reviews.approved > 0
+      : canonical.review === "pass"
         ? {
             id: "review",
             label: "review",
             state: "pass",
-            detail: `${reviews.approved} approved`,
+            detail: `${reviews?.approved ?? 0} approved`,
           }
         : { id: "review", label: "review", state: "pending", detail: "no review yet" };
 
   const conflicts: PrLandingGate =
-    mergeable === false
+    canonical.conflicts === "blocked"
       ? { id: "conflicts", label: "conflicts", state: "blocked", detail: mergeableState || "conflicts with the base" }
-      : mergeable === true
+      : canonical.conflicts === "pass"
         ? { id: "conflicts", label: "conflicts", state: "pass", detail: "none with the base" }
         : {
             id: "conflicts",
