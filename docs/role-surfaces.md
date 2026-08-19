@@ -144,7 +144,13 @@ never fake production data.
 - **Research Desk** (`researcher-desk`, role `researcher`) — mission-first
   research intake with explainable Brief/Sweep/Paper/Autoresearch routing,
   real Flow progress, provenance-rich Knowledge artifacts, structured sources,
-  checkpoints, and finite linked Codex Automations.
+  checkpoints, and finite linked Codex Automations. Resources accepts mixed
+  ordinary, Hugging Face paper, and X Article URLs (up to 10 X Articles per
+  submission). X Article ingestion uses the third-party Sorsa provider
+  (`COVEN_CAVE_X_ARTICLE_PROVIDER=sorsa`) because the official X API does not
+  expose full Article bodies; keep `SORSA_API_KEY` in Cave Vault, never a
+  client environment. It retains durable normalized snapshots and
+  mission-local provenance Markdown copies.
 - **Comms Operations** (`messenger-ops`, role `messenger`) — channel-aware
   drafting (email/Discord/Slack/SMS/Teams/social), approval-required states,
   real inbox items, delivery queue drawer. Nothing sends externally — no

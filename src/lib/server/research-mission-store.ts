@@ -5,7 +5,9 @@ import {
   readdir,
   realpath,
   rm,
+  unlink,
 } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import type { ResearchMission } from "../research-missions.ts";
@@ -24,6 +26,7 @@ import {
 
 const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ARTIFACT_FILE_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
+const SOURCE_FILE_RE = /^x-article-[a-f0-9]{24}\.md$/;
 const RESEARCH_SESSION_OWNER_VERSION = 1;
 const RESEARCH_SESSION_ID_MAX_LENGTH = 512;
 
@@ -69,6 +72,24 @@ export function researchMissionsRoot(): string {
   );
 }
 
+function privateResearchRuntimeRoot(
+  override: string | undefined,
+  defaultDirectory: string,
+  label: string,
+): string {
+  if (override && !path.isAbsolute(override)) {
+    throw new Error(`Research ${label} directory must be absolute`);
+  }
+  const root = path.resolve(
+    override || path.join(/* turbopackIgnore: true */ caveHome(), defaultDirectory),
+  );
+  const missionRoot = path.resolve(researchMissionsRoot());
+  if (isWithin(root, missionRoot) || isWithin(missionRoot, root)) {
+    throw new Error(`Research ${label} directory must be outside mission workspaces`);
+  }
+  return root;
+}
+
 /**
  * Private process ownership lives beside, never inside, agent-writable mission
  * workspaces. It is intentionally not part of the public Research DTO or Cave
@@ -76,17 +97,23 @@ export function researchMissionsRoot(): string {
  * would be unsafe.
  */
 export function researchMissionSessionOwnersRoot(): string {
-  const override = process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR?.trim();
-  if (override && !path.isAbsolute(override)) {
-    throw new Error("Research session ownership directory must be absolute");
-  }
-  const root = path.resolve(
-    override || path.join(/* turbopackIgnore: true */ caveHome(), "research-session-owners"),
+  return privateResearchRuntimeRoot(
+    process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR?.trim(),
+    "research-session-owners",
+    "session ownership",
   );
-  if (isWithin(root, path.resolve(researchMissionsRoot()))) {
-    throw new Error("Research session ownership directory must be outside mission workspaces");
-  }
-  return root;
+}
+
+/**
+ * Cross-process action intents live beside the private session-owner ledger,
+ * never beneath a familiar-writable research workspace.
+ */
+export function researchMissionActionLocksRoot(): string {
+  return privateResearchRuntimeRoot(
+    process.env.COVEN_RESEARCH_ACTION_LOCKS_DIR?.trim(),
+    "research-mission-action-locks",
+    "mission action lock",
+  );
 }
 
 export type ResearchMissionSessionOwner = {
@@ -153,23 +180,39 @@ function researchMissionSessionOwnerPath(missionId: string, root = researchMissi
   return path.join(/* turbopackIgnore: true */ root, `${missionId}.json`);
 }
 
-async function assertPrivateSessionOwnerRoot(): Promise<string> {
-  const root = researchMissionSessionOwnersRoot();
+async function assertPrivateResearchRuntimeRoot(
+  root: string,
+  label: string,
+): Promise<string> {
   await mkdir(/* turbopackIgnore: true */ root, { recursive: true });
   const info = await lstat(/* turbopackIgnore: true */ root);
   if (info.isSymbolicLink() || !info.isDirectory()) {
-    throw new Error("Research session ownership directory must be a real directory");
+    throw new Error(`Research ${label} directory must be a real directory`);
   }
   const resolvedRoot = await realpath(/* turbopackIgnore: true */ root);
   try {
     const resolvedMissions = await realpath(/* turbopackIgnore: true */ researchMissionsRoot());
-    if (isWithin(resolvedRoot, resolvedMissions)) {
-      throw new Error("Research session ownership directory resolves inside mission workspaces");
+    if (isWithin(resolvedRoot, resolvedMissions) || isWithin(resolvedMissions, resolvedRoot)) {
+      throw new Error(`Research ${label} directory resolves inside mission workspaces`);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   return resolvedRoot;
+}
+
+async function assertPrivateSessionOwnerRoot(): Promise<string> {
+  return assertPrivateResearchRuntimeRoot(
+    researchMissionSessionOwnersRoot(),
+    "session ownership",
+  );
+}
+
+export async function assertResearchMissionActionLockRoot(): Promise<string> {
+  return assertPrivateResearchRuntimeRoot(
+    researchMissionActionLocksRoot(),
+    "mission action lock",
+  );
 }
 
 /**
@@ -351,6 +394,136 @@ async function assertRealMissionDirectory(id: string): Promise<string> {
     throw new Error("mission workspace is outside research root");
   }
   return resolvedDirectory;
+}
+
+function assertSourceFileName(fileName: string): void {
+  if (!SOURCE_FILE_RE.test(fileName)) {
+    throw new Error("invalid source filename");
+  }
+}
+
+async function assertRealSourceFilesDirectory(missionDirectory: string): Promise<string> {
+  const directory = path.join(/* turbopackIgnore: true */ missionDirectory, "source-files");
+  await mkdir(/* turbopackIgnore: true */ directory, { recursive: true });
+  const stat = await lstat(/* turbopackIgnore: true */ directory);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error("source-files must be a real directory");
+  }
+  const resolvedDirectory = await realpath(/* turbopackIgnore: true */ directory);
+  if (!isWithin(resolvedDirectory, missionDirectory)) {
+    throw new Error("source-files is outside mission workspace");
+  }
+  return resolvedDirectory;
+}
+
+async function sourceFileTarget(
+  missionDirectory: string,
+  fileName: string,
+): Promise<{ sourceDirectory: string; target: string }> {
+  const sourceDirectory = await assertRealSourceFilesDirectory(missionDirectory);
+  const target = path.resolve(/* turbopackIgnore: true */ sourceDirectory, fileName);
+  if (!isWithin(target, sourceDirectory)) {
+    throw new Error("source file is outside source-files");
+  }
+  return { sourceDirectory, target };
+}
+
+async function readExistingSourceFile(
+  sourceDirectory: string,
+  target: string,
+): Promise<string | null> {
+  let stat;
+  try {
+    stat = await lstat(/* turbopackIgnore: true */ target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  if (stat.isSymbolicLink()) throw new Error("source files cannot be symlinks");
+  if (!stat.isFile()) throw new Error("source path is not a file");
+  const resolvedTarget = await realpath(/* turbopackIgnore: true */ target);
+  if (!isWithin(resolvedTarget, sourceDirectory)) {
+    throw new Error("source file is outside source-files");
+  }
+  return readFile(/* turbopackIgnore: true */ resolvedTarget, "utf8");
+}
+
+export type ResearchMissionSourceFileWriteToken = {
+  content: string;
+  sha256: string;
+};
+
+function sourceFileWriteToken(content: string): ResearchMissionSourceFileWriteToken {
+  // This is the exact text that reaches writeFileAtomic after Node's UTF-8
+  // conversion, including replacement characters for malformed JS strings.
+  const utf8Content = Buffer.from(content, "utf8").toString("utf8");
+  return {
+    content: utf8Content,
+    sha256: createHash("sha256").update(utf8Content, "utf8").digest("hex"),
+  };
+}
+
+function assertSourceFileWriteToken(
+  expected: ResearchMissionSourceFileWriteToken,
+): void {
+  if (
+    typeof expected?.content !== "string" ||
+    !/^[a-f0-9]{64}$/.test(expected.sha256) ||
+    sourceFileWriteToken(expected.content).sha256 !== expected.sha256
+  ) {
+    throw new Error("invalid expected source file write token");
+  }
+}
+
+export async function writeResearchMissionSourceFile(
+  missionId: string,
+  fileName: string,
+  content: string,
+): Promise<{
+  path: string;
+  previous: string | null;
+  expected: ResearchMissionSourceFileWriteToken;
+}> {
+  assertMissionId(missionId);
+  assertSourceFileName(fileName);
+  return withResearchMissionLock(missionId, async () => {
+    const missionDirectory = await assertRealMissionDirectory(missionId);
+    const { sourceDirectory, target } = await sourceFileTarget(missionDirectory, fileName);
+    const previous = await readExistingSourceFile(sourceDirectory, target);
+    const expected = sourceFileWriteToken(content);
+    await writeFileAtomic(target, expected.content);
+    return { path: path.posix.join("source-files", fileName), previous, expected };
+  });
+}
+
+export async function restoreResearchMissionSourceFile(
+  missionId: string,
+  fileName: string,
+  previous: string | null,
+  expected: ResearchMissionSourceFileWriteToken,
+): Promise<void> {
+  assertMissionId(missionId);
+  assertSourceFileName(fileName);
+  assertSourceFileWriteToken(expected);
+  return withResearchMissionLock(missionId, async () => {
+    const missionDirectory = await assertRealMissionDirectory(missionId);
+    const { sourceDirectory, target } = await sourceFileTarget(missionDirectory, fileName);
+    const existing = await readExistingSourceFile(sourceDirectory, target);
+    if (existing === null) {
+      throw new Error("Research source file is missing after materialization; rollback refused");
+    }
+    if (
+      existing !== expected.content ||
+      createHash("sha256").update(existing, "utf8").digest("hex") !== expected.sha256
+    ) {
+      throw new Error("Research source file changed after materialization; rollback refused");
+    }
+    if (previous !== null) {
+      await writeFileAtomic(target, previous);
+      return;
+    }
+    await unlink(/* turbopackIgnore: true */ target);
+  });
 }
 
 export async function createResearchMissionWorkspace(

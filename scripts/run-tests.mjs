@@ -131,6 +131,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-library.test.ts",
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
+    "src/components/role-surfaces/use-research-links.test.ts",
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
     "src/lib/research-generations.test.ts",
@@ -161,6 +162,7 @@ export const SUITES = {
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/x-api.test.ts",
+    "src/lib/x-articles.test.ts",
     "src/lib/tweet-thread-protocol.test.ts",
     "src/lib/tweet-thread-validation.test.ts",
     "src/lib/tweet-thread-scoring.test.ts",
@@ -170,6 +172,7 @@ export const SUITES = {
     "src/lib/server/familiar-avatar-mutation.test.ts",
     "src/lib/server/x-app-config.test.ts",
     "src/lib/server/x-client.test.ts",
+    "src/lib/server/x-article-sorsa.test.ts",
     "src/lib/server/x-credentials.test.ts",
     "src/lib/server/x-access.test.ts",
     "src/lib/server/x-sources.test.ts",
@@ -389,8 +392,11 @@ export const SUITES = {
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
+    "src/lib/server/research-link-materialization.test.ts",
     "src/lib/server/hf-paper-metadata.test.ts",
+    "src/lib/server/x-article-ingest.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
+    "src/lib/server/research-mission-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
     "src/lib/research-media-ticket.test.ts",
@@ -1255,6 +1261,7 @@ export const SUITES = {
     "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
     "src/app/api/research/links/ingest-urls.test.ts",
+    "src/app/api/research/links/route.test.ts",
     "src/app/api/research/papers/pdf/route.test.ts",
   ],
   api: [
@@ -1767,6 +1774,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/hf-paper-metadata.test.ts",
   // ingest-urls.ts imports "@/lib/link-extractor" and "@/lib/hf-papers".
   "src/app/api/research/links/ingest-urls.test.ts",
+  // X Article ingest reaches the configured provider and Research Links route
+  // through runtime @/lib imports.
+  "src/lib/server/x-article-ingest.test.ts",
+  "src/app/api/research/links/route.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -1793,6 +1804,7 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/research-quick-saves.test.ts",
   "src/components/role-surfaces/research-library-view.test.ts",
   "src/components/role-surfaces/research-studio-providers.test.ts",
+  "src/components/role-surfaces/use-research-links.test.ts",
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
   "src/app/api/board/orchestration-route.test.ts",

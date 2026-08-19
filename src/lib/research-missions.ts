@@ -29,7 +29,8 @@ export type ResearchMissionAction =
   | "pause"
   | "resume"
   | "cancel"
-  | "archive";
+  | "archive"
+  | "attach-saved-link";
 
 export type ResearchBounds = {
   wallClockMinutes: number;
@@ -364,6 +365,7 @@ export type ResearchMissionActionInput =
     projectRoot?: string | null;
   }
   | { action: "attach-source"; source: ResearchSourceDraft }
+  | { action: "attach-saved-link"; savedLinkId: string; familiarId: string }
   | { action: "update-source"; sourceId: string; patch: ResearchSourcePatch }
   | { action: "reject-artifact"; artifactKey: string; reason: string }
   | { action: "publish-artifact"; artifactKey: string };

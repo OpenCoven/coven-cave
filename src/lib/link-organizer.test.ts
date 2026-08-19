@@ -83,6 +83,34 @@ test("normalizeLinkUrl produces one key per page", () => {
   );
 });
 
+test("summarizeLinkIntake collapses X status aliases with the shared saved-link dedupe key", () => {
+  const saved: SavedLink[] = [{
+    id: "saved-x-status",
+    url: "https://twitter.com/i/web/status/123456789",
+    category: "social",
+    title: "Saved X status",
+    addedAt: "2026-07-26T00:00:00Z",
+    source: "desk",
+  }];
+
+  const summary = summarizeLinkIntake(
+    [
+      "https://x.com/OpenCoven/status/123456789?ref=home",
+      "https://twitter.com/OpenCoven/status/123456789#article",
+    ].join("\n"),
+    saved,
+  );
+
+  assert.equal(summary.detectedCount, 2);
+  assert.deepEqual(summary.ready, []);
+  assert.deepEqual(
+    summary.duplicates.map((item) => item.url),
+    ["https://x.com/OpenCoven/status/123456789?ref=home"],
+  );
+  assert.deepEqual(summary.categoryCounts, { social: 1 });
+  assert.equal(summary.canSubmit, false);
+});
+
 // ── intake preview ────────────────────────────────────────────────────────────
 
 test("summarizeLinkIntake previews unique ready and already-saved resources", () => {

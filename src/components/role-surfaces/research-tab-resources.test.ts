@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("./research-tab-resources.tsx", import.meta.url), "utf8");
@@ -9,6 +9,9 @@ const styles = readFileSync(
   new URL("../../styles/globals/surface-research-resources.css", import.meta.url),
   "utf8",
 );
+const researchLinksHook = readFileSync(new URL("./use-research-links.ts", import.meta.url), "utf8");
+const xArticles = readFileSync(new URL("../../lib/x-articles.ts", import.meta.url), "utf8");
+const readerUrl = new URL("../research-x-article-reader.tsx", import.meta.url);
 
 test("resources render real SavedLink fields only — no fabricated stats", () => {
   // The store holds url/title/category/addedAt/source; everything shown is
@@ -83,7 +86,7 @@ test("remove is a two-step inline confirm wired to useResearchLinks.remove", () 
   // document under paper B's title and start its fetch unasked.
   assert.match(
     source,
-    /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*\}, \[openId\]\)/,
+    /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*setArticleDetail\(null\);\s*setArticleLoading\(false\);\s*setArticleError\(null\);\s*\}, \[openId\]\)/,
   );
 });
 
@@ -155,7 +158,13 @@ test("resources expose a labeled multiline batch intake with truthful preview", 
 });
 
 test("batch save feedback uses resource vocabulary and preserves duplicate-only drafts", () => {
-  assert.match(source, /const submittedDraft = draft;\s*setSaving\(true\);\s*const result = await save\(submittedDraft\)/);
+  assert.match(
+    source,
+    /const submittedDraft = draft;[\s\S]{0,600}setSaving\(true\);\s*const result = await save\(submittedDraft\)/,
+  );
+  assert.match(source, /const totalSaveFailure = !result\.ok \|\| \(/);
+  assert.match(source, /if \(!totalSaveFailure\) announce\(message, "polite"\);/);
+  assert.doesNotMatch(source, /announce\(message, totalSaveFailure \? "assertive" : "polite"\)/);
   assert.match(source, /No links found\. Paste full http:\/\/ or https:\/\/ URLs\./);
   assert.match(source, /All \$\{result\.duplicates\}[\s\S]{0,160}already saved/);
   assert.match(source, /Saved \$\{result\.added\}[\s\S]{0,160}resource/);
@@ -164,7 +173,16 @@ test("batch save feedback uses resource vocabulary and preserves duplicate-only 
     /if \(result\.added > 0\)[\s\S]*setDraft\(\(current\) => current === submittedDraft \? "" : current\)/,
     "a completed save only clears the batch that was actually submitted",
   );
-  assert.match(source, /role="status"/);
+  assert.match(
+    source,
+    /role=\{\s*saveFeedbackTone === "status"\s*\?\s*"status"\s*:\s*saveFailures\.length === 0\s*\?\s*"alert"\s*:\s*undefined\s*\}/,
+    "the aggregate status line stays polite for success/partial and flips to alert only when no detailed failures render",
+  );
+  assert.match(
+    source,
+    /role=\{\s*saveFeedbackTone === "alert"\s*\?\s*"alert"\s*:\s*undefined\s*\}/,
+    "the detailed failure list owns the visible alert role for total failure states",
+  );
 });
 
 test("resources filter by type before workflow-first grouping", () => {
@@ -175,6 +193,13 @@ test("resources filter by type before workflow-first grouping", () => {
   assert.doesNotMatch(source, /groupSavedLinks\(/);
   assert.match(source, /<SearchInput/);
   assert.match(source, /placeholder="Search resources…"/);
+  assert.match(source, /function linkSearchText\(link: SavedLinkSummary\)/);
+  assert.match(source, /link\.xArticle \? "X Article" : undefined/);
+  assert.match(source, /link\.xArticle\?\.author\.username/);
+  assert.match(source, /link\.xArticle\?\.author\.displayName/);
+  assert.match(source, /link\.xArticle\?\.excerpt/);
+  assert.match(source, /link\.xArticle\?\.publishedAt/);
+  assert.match(source, /linkSearchText\(link\)\.includes\(q\)/);
   assert.match(source, /setQuery\(""\);\s*setFilter\("all"\)/);
   assert.match(source, />\s*Clear filters\s*<\/Button>/);
 });
@@ -284,4 +309,137 @@ test("the grid collapses empty tracks, and the card cap is grid-only (cave-93jz1
   const narrowAt = styles.indexOf("@container research-desk (max-width: 560px)");
   assert.notEqual(narrowAt, -1);
   assert.match(ruleBody('.research-res-card[data-view="grid"]', narrowAt), /max-width: none/);
+});
+
+test("X Article intake and reading keep the saved-link contract source-pinned", () => {
+  assert.match(xArticles, /export const MAX_X_ARTICLES_PER_INGEST = 10/);
+  assert.match(xArticles, /export function parseXArticleCandidateUrl\(raw: string\)/);
+  assert.match(
+    researchLinksHook,
+    /failed: XArticleIngestFailure\[\]/,
+    "the save result exposes typed per-article failures",
+  );
+  assert.match(researchLinksHook, /loadDetail/, "the hook can fetch an article's full snapshot");
+  assert.match(source, /result\.failed/, "the intake keeps per-URL failures after a save");
+  assert.match(source, /MAX_X_ARTICLES_PER_INGEST/, "the preview names the Article cap");
+  assert.match(source, /parseXArticleCandidateUrl/, "the preview dedupes X aliases by source post");
+  assert.match(
+    source,
+    /article \? \(\s*<p className="research-res-card__excerpt">\{article\.excerpt\}<\/p>\s*\) : null/,
+    "Article cards render only the body-free saved summary",
+  );
+  assert.match(source, /<ResearchXArticleReader\b/, "the detail mounts a dedicated text reader");
+  assert.match(source, />\s*Read article\s*<\/Button>/);
+  assert.match(source, /action: "attach-saved-link"/);
+  assert.match(source, /savedLinkId: link\.id/);
+  assert.match(source, /action: "attach-source"/, "ordinary links keep their source attachment route");
+  assert.match(styles, /\.research-x-article-reader\b/);
+  assert.doesNotMatch(styles, /#[0-9a-f]{3,8}\b/i, "the Resources surface uses theme tokens");
+});
+
+test("X Article card excerpts are tokenized and bounded without affecting ordinary cards", () => {
+  const excerptRule = styles.match(/\.research-res-card__excerpt\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(excerptRule, /font-size: var\(--text-sm\)/);
+  assert.match(excerptRule, /color: var\(--text-secondary\)/);
+  assert.match(excerptRule, /overflow: hidden/);
+  assert.match(excerptRule, /overflow-wrap: anywhere/);
+  assert.match(excerptRule, /-webkit-line-clamp: 3/);
+  assert.match(excerptRule, /line-clamp: 3/);
+  assert.match(
+    source,
+    /\{article \? \(\s*<p className="research-res-card__excerpt">/,
+    "ordinary and Hugging Face cards do not gain an empty excerpt row",
+  );
+});
+
+test("the X Article reader is plain selectable text, never embedded remote markup", () => {
+  assert.ok(existsSync(readerUrl), "the article reader component exists");
+  if (!existsSync(readerUrl)) return;
+  const reader = readFileSync(readerUrl, "utf8");
+  assert.match(reader, /import \{ forwardRef \} from "react"/);
+  assert.match(
+    reader,
+    /export const ResearchXArticleReader = forwardRef<HTMLElement, ResearchXArticleReaderProps>\(/,
+  );
+  assert.match(
+    reader,
+    /<article[\s\S]*ref=\{ref\}[\s\S]*className="research-x-article-reader focus-ring"[\s\S]*aria-label=\{`Reading \$\{title\}`\}[\s\S]*tabIndex=\{-1\}/,
+  );
+  assert.match(reader, /aria-label=\{`Reading \$\{title\}`\}/);
+  assert.match(reader, /article/);
+  assert.match(reader, /X Article · via \{article\.provider\}/);
+  assert.match(reader, /@\{article\.author\.username\}/);
+  assert.match(reader, /Published <RelativeTime iso=\{article\.publishedAt\} fallback="date unavailable" \/>/);
+  assert.match(reader, /split\(\/\\r\?\\n\\s\*\\r\?\\n\//);
+  assert.match(reader, /key=\{`\$\{article\.contentSha256\}-\$\{index\}`\}/);
+  assert.doesNotMatch(reader, /dangerouslySetInnerHTML|<iframe|Markdown/);
+  assert.match(reader, /research-x-article-reader__body/);
+});
+
+test("article detail reads reject stale payloads and reset per open resource", () => {
+  assert.match(source, /const articleRequestRef = useRef\(0\)/);
+  assert.match(source, /const activeArticleIdRef = useRef<string \| null>\(null\)/);
+  assert.match(source, /const request = \+\+articleRequestRef\.current;/);
+  assert.match(
+    source,
+    /if \(articleRequestRef\.current !== request \|\| activeArticleIdRef\.current !== requestedId\) return;/,
+  );
+  assert.match(source, /articleRequestRef\.current \+= 1;\s*activeArticleIdRef\.current = openId;/);
+});
+
+test("article detail focus transfers only after the mounted reader commits a successful current load", () => {
+  assert.match(source, /import[\s\S]*useLayoutEffect/);
+  assert.match(source, /const articleReaderRef = useRef<HTMLElement \| null>\(null\)/);
+  assert.match(source, /const pendingArticleFocusRef = useRef\(false\)/);
+  assert.match(
+    source,
+    /activeArticleIdRef\.current = openId;\s*pendingArticleFocusRef\.current = false;[\s\S]{0,120}setConfirmingRemove\(false\)/,
+  );
+  assert.match(
+    source,
+    /if \(!detail \|\| detail\.id !== requestedId \|\| !detail\.xArticle\) \{\s*pendingArticleFocusRef\.current = false;[\s\S]{0,160}setArticleError\("Couldn’t load the full article\. Try again\."\);/,
+  );
+  assert.match(source, /pendingArticleFocusRef\.current = true;\s*setArticleDetail\(detail\);/);
+  assert.match(
+    source,
+    /useLayoutEffect\(\(\) => \{\s*if \(!articleDetail\?\.xArticle \|\| !pendingArticleFocusRef\.current\) return;[\s\S]{0,200}const reader = articleReaderRef\.current;[\s\S]{0,120}pendingArticleFocusRef\.current = false;[\s\S]{0,120}reader\.focus\(\);[\s\S]{0,40}\}, \[articleDetail\]\);/,
+  );
+  assert.match(source, /<ResearchXArticleReader[\s\S]*ref=\{articleReaderRef\}/);
+});
+
+test("article load states stay polite while loading and escalate to alert on failure", () => {
+  assert.match(source, /<p className="research-res__empty" role="status">Loading article…<\/p>/);
+  assert.match(source, /<p className="research-res__error" role="alert">/);
+  assert.match(source, /Couldn’t load the full article\. Try again\./);
+  assert.match(source, />\s*Retry\s*<\/Button>/);
+});
+
+test("a loaded X Article reader replaces the normal resource stats strip", () => {
+  assert.match(
+    source,
+    /\{!articleDetail\?\.xArticle \? \(\s*<div className="research-res-overlay__stats">[\s\S]*?<\/div>\s*\) : null\}/,
+  );
+});
+
+test("the X Article reader keeps focus, selection, and overflow on the same bounded region", () => {
+  const ruleBody = (selector: string, from = 0): string => {
+    const at = styles.indexOf(selector, from);
+    assert.notEqual(at, -1, `missing rule: ${selector}`);
+    const open = styles.indexOf("{", at);
+    const close = styles.indexOf("}", open);
+    assert.ok(open !== -1 && close !== -1, `unterminated rule: ${selector}`);
+    return styles.slice(open + 1, close);
+  };
+
+  const readerRegion = ruleBody(".research-x-article-reader");
+  assert.match(readerRegion, /max-block-size: 50vh/);
+  assert.match(readerRegion, /overflow-y: auto/);
+  assert.match(readerRegion, /user-select: text/);
+
+  const body = ruleBody(".research-x-article-reader__body");
+  assert.doesNotMatch(body, /overflow-y: auto/);
+
+  const narrowAt = styles.indexOf("@container research-desk (max-width: 560px)");
+  assert.notEqual(narrowAt, -1);
+  assert.match(ruleBody(".research-x-article-reader", narrowAt), /max-block-size: 44vh/);
 });

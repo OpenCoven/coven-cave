@@ -9,6 +9,7 @@
  */
 
 import type { IconName } from "./icon.tsx";
+import { parseXArticleCandidateUrl, type XArticleSnapshot } from "./x-articles.ts";
 import { extractLinks } from "./link-extractor.ts";
 
 export type LinkCategory =
@@ -58,6 +59,12 @@ export type SavedLink = {
     abstract: string;
     publishedAt: string;
   };
+  /** Present only for persisted X Article snapshots. */
+  xArticle?: XArticleSnapshot;
+};
+
+export type SavedLinkSummary = Omit<SavedLink, "xArticle"> & {
+  xArticle?: Omit<XArticleSnapshot, "body">;
 };
 
 const VIDEO_HOSTS = new Set([
@@ -224,6 +231,13 @@ export function normalizeLinkUrl(rawUrl: string): string {
   return out;
 }
 
+/** Saved-link identity collapses X status aliases to the shared source post. */
+export function savedLinkDedupeKey(rawUrl: string): string {
+  const xArticleCandidate = parseXArticleCandidateUrl(rawUrl);
+  if (xArticleCandidate) return `x-status:${xArticleCandidate.sourcePostId}`;
+  return normalizeLinkUrl(rawUrl);
+}
+
 export type LinkIntakeItem = {
   url: string;
   category: LinkCategory;
@@ -249,11 +263,11 @@ export function summarizeLinkIntake(
   savedLinks: readonly Pick<SavedLink, "url">[],
 ): LinkIntakeSummary {
   const extracted = extractLinks(text);
-  const existing = new Set(savedLinks.map((link) => normalizeLinkUrl(link.url)));
+  const existing = new Set(savedLinks.map((link) => savedLinkDedupeKey(link.url)));
   const unique = new Map<string, LinkIntakeItem>();
 
   for (const url of extracted) {
-    const key = normalizeLinkUrl(url);
+    const key = savedLinkDedupeKey(url);
     if (unique.has(key)) continue;
     unique.set(key, {
       url,
@@ -292,22 +306,25 @@ export function linkCategoryMeta(category: string): { label: string; icon: IconN
 
 export type LinkUsageGroupId = "selected" | "uncited" | "cited";
 
-export type LinkUsageGroup = {
+export type LinkUsageGroup<TLink extends Pick<SavedLink, "url"> = SavedLink> = {
   id: LinkUsageGroupId;
   label: string;
   description: string;
-  links: SavedLink[];
+  links: TLink[];
 };
 
 /** Group links by how they relate to the selected and prior research runs. */
-export function groupSavedLinksByUsage<TMission extends { id: string }>(
-  links: SavedLink[],
+export function groupSavedLinksByUsage<
+  TLink extends Pick<SavedLink, "url">,
+  TMission extends { id: string },
+>(
+  links: TLink[],
   citedByUrl: ReadonlyMap<string, readonly TMission[]>,
   selectedMissionId?: string,
-): LinkUsageGroup[] {
-  const selected: SavedLink[] = [];
-  const uncited: SavedLink[] = [];
-  const cited: SavedLink[] = [];
+): LinkUsageGroup<TLink>[] {
+  const selected: TLink[] = [];
+  const uncited: TLink[] = [];
+  const cited: TLink[] = [];
 
   for (const link of links) {
     const missions = citedByUrl.get(normalizeLinkUrl(link.url)) ?? [];
@@ -320,7 +337,7 @@ export function groupSavedLinksByUsage<TMission extends { id: string }>(
     }
   }
 
-  const groups: LinkUsageGroup[] = [];
+  const groups: LinkUsageGroup<TLink>[] = [];
   if (selectedMissionId) {
     groups.push({
       id: "selected",

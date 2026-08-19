@@ -49,6 +49,7 @@ import {
   type ResearchMissionSessionOwner,
 } from "./research-mission-store.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
+import { materializeSavedLinkForMission } from "./research-link-materialization.ts";
 import {
   applyStartResult,
   createMissionRecord,
@@ -181,6 +182,10 @@ export type ResearchMissionRunnerDeps = {
   ): Promise<string>;
   readMissionFile(id: string, relativePath: string): Promise<string | null>;
   readSources(id: string): Promise<ResearchSourceRef[]>;
+  materializeSavedLink(
+    mission: ResearchMission,
+    savedLinkId: string,
+  ): Promise<{ source: ResearchSourceRef; rollback(): Promise<void> }>;
   publishKnowledge(entry: KnowledgeEntry): Promise<KnowledgeEntry>;
   killSession(
     sessionId: string,
@@ -290,6 +295,27 @@ function mergeFileSources(
 const PATCHABLE_SOURCE_FIELDS = [
   "title", "publisher", "publishedAt", "sourceType", "claim", "note", "confidence", "status",
 ] as const satisfies ReadonlyArray<keyof ResearchSourcePatch>;
+
+function mergeMaterializedResearchSource(
+  sources: ResearchSourceRef[],
+  source: ResearchSourceRef,
+): ResearchSourceRef[] {
+  // A content-addressed materialization is the only safe identity here: an
+  // updated Article may retain its URL while receiving a new source id/path.
+  const index = sources.findIndex((item) => item.id === source.id);
+  if (index < 0) return [source, ...sources];
+  return sources.map((item, itemIndex) => itemIndex === index ? {
+    ...source,
+    title: item.title,
+    ...(item.publisher === undefined ? {} : { publisher: item.publisher }),
+    ...(item.publishedAt === undefined ? {} : { publishedAt: item.publishedAt }),
+    sourceType: item.sourceType,
+    ...(item.claim === undefined ? {} : { claim: item.claim }),
+    ...(item.note === undefined ? {} : { note: item.note }),
+    ...(item.confidence === undefined ? {} : { confidence: item.confidence }),
+    status: item.status,
+  } : item);
+}
 
 const PATCHABLE_TEXT_LIMITS: Record<string, number> = {
   title: 300,
@@ -1003,6 +1029,23 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         }
         throw new Error("research mission not found");
       }
+      const savedLinkInput = input.action === "attach-saved-link"
+        ? input as Extract<ResearchMissionActionInput, { action: "attach-saved-link" }>
+        : null;
+      let savedLinkId = "";
+      if (savedLinkInput) {
+        // Conceal cross-familiar missions before reconciliation, owner lookup,
+        // timestamps, or any mutable saved-link work.
+        if (savedLinkInput.familiarId !== mission.familiarId) {
+          throw new Error("research mission not found");
+        }
+        savedLinkId = typeof savedLinkInput.savedLinkId === "string"
+          ? savedLinkInput.savedLinkId.trim()
+          : "";
+        if (!savedLinkId || savedLinkId.length > 128) {
+          throw new Error("saved link id is invalid");
+        }
+      }
       mission = await reconcileFlowUnlocked(mission);
       const sessionOwner = await deps.loadSessionOwner(id);
       const timestamp = deps.now().toISOString();
@@ -1011,6 +1054,25 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         throw new Error(RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT);
       }
 
+      if (savedLinkInput) {
+        const materialized = await deps.materializeSavedLink(mission, savedLinkId);
+        try {
+          return await saveUpdated({
+            ...mission,
+            sources: mergeMaterializedResearchSource(mission.sources, materialized.source),
+          });
+        } catch (error) {
+          try {
+            await materialized.rollback();
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              "Research saved link could not be rolled back after the mission save failed",
+            );
+          }
+          throw error;
+        }
+      }
       if (input.action === "attach-source") {
         const normalized = normalizeResearchSource(input.source);
         if (!normalized.ok) throw new Error(normalized.reason);
@@ -2026,6 +2088,7 @@ export function makeProductionResearchMissionRunner() {
       const raw = await readValidatedMissionFile(id, "sources.json");
       return parseResearchSourcesFile(raw);
     },
+    materializeSavedLink: materializeSavedLinkForMission,
     publishKnowledge: async (entry) => {
       const { writeKnowledgeEntry } = await import("./knowledge-vault.ts");
       return writeKnowledgeEntry(entry);
