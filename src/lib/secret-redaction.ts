@@ -73,10 +73,9 @@ export function redactSecretText(text: string): string {
  */
 export function containsSecretText(text: string): boolean {
   const decoded = decodeJsonValue(text);
-  return (
-    (decoded !== undefined && containsSecretJsonValue(decoded.value))
-    || containsSecretTextPlain(text)
-  );
+  return decoded !== undefined
+    ? containsSecretJsonValue(decoded.value)
+    : containsSecretTextPlain(text);
 }
 
 function containsSecretJsonValue(value: unknown): boolean {
@@ -146,9 +145,13 @@ function containsAuthorizationCredential(value: string): boolean {
     && scheme !== "oauth"
   ) return false;
 
-  return scheme === "basic"
-    ? isBasicAuthorizationCredential(credential)
-    : isCredentialToken(credential);
+  if (scheme === "basic") return isBasicAuthorizationCredential(credential);
+  if (scheme === "digest") return hasDigestAuthorizationCredential(value);
+  return isCredentialToken(credential);
+}
+
+function hasDigestAuthorizationCredential(value: string): boolean {
+  return /(?:^|[\s,])(?:username|nonce|response|cnonce|opaque)\s*=\s*(?:"[^"]+"|[^,\s]+)/i.test(value);
 }
 
 function hasCredentialValue(value: unknown): boolean {
@@ -175,7 +178,7 @@ function containsGenericBase64Secret(text: string): boolean {
   GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = GENERIC_BASE64_SECRET_PATTERN.exec(text)) !== null) {
-    if (!isHexString(match[0])) {
+    if (!isHexString(match[0]) || match[0].length === 64) {
       GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
       return true;
     }
@@ -219,7 +222,7 @@ function redactSecretTextPlain(text: string): string {
   }
   next = next.replace(
     GENERIC_BASE64_SECRET_PATTERN,
-    (match) => (isHexString(match) ? match : REDACTED_SECRET),
+    (match) => (isHexString(match) && match.length !== 64 ? match : REDACTED_SECRET),
   );
   next = next.replace(
     /([?&](?:access_token|api_key|auth|key|password|secret|token)=)[^&#\s]+/gi,
@@ -263,7 +266,7 @@ export function redactSecretsDeep<T>(value: T): T {
       continue;
     }
 
-    if (frame.key && isSecretKey(frame.key)) {
+    if (frame.key && isSecretKey(frame.key) && hasCredentialValue(frame.value)) {
       if (!frame.assign(REDACTED_SECRET)) return REDACTED_SECRET as T;
       continue;
     }

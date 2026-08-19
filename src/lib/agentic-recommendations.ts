@@ -16,10 +16,10 @@ export const AGENTIC_EVIDENCE_KINDS = [
 export type AgenticEvidenceKind = (typeof AGENTIC_EVIDENCE_KINDS)[number];
 
 export const AGENTIC_RECOMMENDATION_KINDS = [
-  "reference-canonicalization",
-  "reference-deduplication",
+  "canonicalize-reference",
+  "deduplicate-reference",
   "identifier-normalization",
-  "read-only-projection",
+  "recompute-readonly-projection",
   "prose",
   "dependency",
   "topic",
@@ -28,10 +28,10 @@ export const AGENTIC_RECOMMENDATION_KINDS = [
 export type AgenticRecommendationKind = (typeof AGENTIC_RECOMMENDATION_KINDS)[number];
 
 export const AUTO_APPLY_RECOMMENDATION_KINDS = [
-  "reference-canonicalization",
-  "reference-deduplication",
+  "canonicalize-reference",
+  "deduplicate-reference",
   "identifier-normalization",
-  "read-only-projection",
+  "recompute-readonly-projection",
 ] as const;
 export type AutoApplyRecommendationKind = (typeof AUTO_APPLY_RECOMMENDATION_KINDS)[number];
 
@@ -47,6 +47,32 @@ export type AgenticJsonValue =
   | AgenticJsonValue[]
   | { [key: string]: AgenticJsonValue };
 export type AgenticPayload = { [key: string]: AgenticJsonValue };
+
+export type CanonicalizeReferencePayload = {
+  referenceId: string;
+  canonicalUrl: string;
+};
+
+export type DeduplicateReferencePayload = {
+  duplicateReferenceId: string;
+  canonicalReferenceId: string;
+};
+
+export type IdentifierNormalizationPayload = {
+  entityId: string;
+  normalizedIdentifier: string;
+};
+
+export type RecomputeReadonlyProjectionPayload = {
+  entityId: string;
+  projection: "dependency-summary" | "reference-summary" | "status-summary";
+};
+
+export type AutoApplyPayload =
+  | CanonicalizeReferencePayload
+  | DeduplicateReferencePayload
+  | IdentifierNormalizationPayload
+  | RecomputeReadonlyProjectionPayload;
 
 export type AgenticEvidenceRef = {
   id: string;
@@ -126,7 +152,6 @@ const MAX_ID_CHARS = 96;
 const MAX_TEXT_CHARS = 2_000;
 const MAX_RANK_REASONS = 8;
 const MAX_EVIDENCE_REFS = 16;
-const MAX_VERIFICATION_CHECKS = 16;
 const MAX_PAYLOAD_BYTES = 8 * 1024;
 const MAX_PAYLOAD_DEPTH = 12;
 const MAX_PAYLOAD_ENTRIES = 128;
@@ -135,12 +160,16 @@ const MAX_CONTEXT_DEPTH = 16;
 const MAX_CONTEXT_ENTRIES = 256;
 const ID_RE = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
 const FINGERPRINT_RE = /^ctx-v1-[0-9a-f]{32}$/;
-const verificationStatuses = new Set<AgenticVerificationStatus>(["verified", "proposal", "blocked"]);
-const verificationCheckStates = new Set<AgenticVerificationCheckState>(["passed", "pending", "failed"]);
 const agenticSurfaces = new Set<string>(AGENTIC_SURFACES);
 const evidenceKinds = new Set<string>(AGENTIC_EVIDENCE_KINDS);
 const recommendationKinds = new Set<string>(AGENTIC_RECOMMENDATION_KINDS);
 const autoApplyKinds = new Set<string>(AUTO_APPLY_RECOMMENDATION_KINDS);
+const READONLY_PROJECTIONS = new Set<RecomputeReadonlyProjectionPayload["projection"]>([
+  "dependency-summary",
+  "reference-summary",
+  "status-summary",
+]);
+const trustedVerifiedRecommendations = new WeakSet<object>();
 
 type RawRecord = Record<string, unknown>;
 
@@ -187,7 +216,7 @@ function asEvidenceKind(value: unknown): AgenticEvidenceKind {
   return value as AgenticEvidenceKind;
 }
 
-function parsePayload(value: unknown): AgenticPayload {
+function parsePayload(kind: AgenticRecommendationKind, value: unknown): AgenticPayload {
   if (!isRecord(value) || !isBoundedJsonValue(value, MAX_PAYLOAD_DEPTH, { entries: 0 })) {
     parseError("invalid_payload");
   }
@@ -198,7 +227,82 @@ function parsePayload(value: unknown): AgenticPayload {
     parseError("invalid_payload");
   }
   if (utf8ByteLength(serialized) > MAX_PAYLOAD_BYTES) parseError("invalid_payload");
-  return value as AgenticPayload;
+  if (!autoApplyKinds.has(kind)) return value as AgenticPayload;
+  return parseAutoApplyPayload(kind as AutoApplyRecommendationKind, value);
+}
+
+function parseAutoApplyPayload(
+  kind: AutoApplyRecommendationKind,
+  value: RawRecord,
+): AutoApplyPayload {
+  switch (kind) {
+    case "canonicalize-reference":
+      if (
+        !hasExactKeys(value, ["referenceId", "canonicalUrl"])
+        || !isValidId(value.referenceId)
+        || !isCanonicalUrl(value.canonicalUrl)
+      ) parseError("invalid_payload");
+      return { referenceId: value.referenceId, canonicalUrl: value.canonicalUrl };
+    case "deduplicate-reference":
+      if (
+        !hasExactKeys(value, ["duplicateReferenceId", "canonicalReferenceId"])
+        || !isValidId(value.duplicateReferenceId)
+        || !isValidId(value.canonicalReferenceId)
+        || value.duplicateReferenceId === value.canonicalReferenceId
+      ) parseError("invalid_payload");
+      return {
+        duplicateReferenceId: value.duplicateReferenceId,
+        canonicalReferenceId: value.canonicalReferenceId,
+      };
+    case "identifier-normalization":
+      if (
+        !hasExactKeys(value, ["entityId", "normalizedIdentifier"])
+        || !isValidId(value.entityId)
+        || !isValidId(value.normalizedIdentifier)
+        || value.normalizedIdentifier !== value.normalizedIdentifier.toLowerCase()
+      ) parseError("invalid_payload");
+      return { entityId: value.entityId, normalizedIdentifier: value.normalizedIdentifier };
+    case "recompute-readonly-projection":
+      if (
+        !hasExactKeys(value, ["entityId", "projection"])
+        || !isValidId(value.entityId)
+        || typeof value.projection !== "string"
+        || !READONLY_PROJECTIONS.has(value.projection as RecomputeReadonlyProjectionPayload["projection"])
+      ) parseError("invalid_payload");
+      return {
+        entityId: value.entityId,
+        projection: value.projection as RecomputeReadonlyProjectionPayload["projection"],
+      };
+  }
+}
+
+function isCanonicalUrl(value: unknown): value is string {
+  if (!isBoundedString(value, MAX_TEXT_CHARS)) return false;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:")
+      && url.username === ""
+      && url.password === ""
+      && url.hash === ""
+      && url.href === value
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isAutoApplyPayload(
+  kind: AgenticRecommendationKind,
+  payload: unknown,
+): payload is AutoApplyPayload {
+  if (!autoApplyKinds.has(kind) || !isRecord(payload)) return false;
+  try {
+    parseAutoApplyPayload(kind as AutoApplyRecommendationKind, payload);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isBoundedJsonValue(
@@ -223,34 +327,21 @@ function parseEvidenceRefs(value: unknown): AgenticEvidenceRef[] {
     if (!isRecord(entry) || !hasExactKeys(entry, ["id", "kind", "label"])) parseError("invalid_evidence");
     if (!isValidId(entry.id) || !isBoundedString(entry.label)) parseError("invalid_evidence");
     const kind = asEvidenceKind(entry.kind);
-    if (containsSecretText(entry.id) || containsSecretText(entry.label)) {
+    if (
+      (containsSecretText(entry.id) || containsSecretText(entry.label))
+      && !isExplicitGithubCommitEvidence(kind, entry.label)
+    ) {
       parseError("secret_evidence");
     }
     return { id: entry.id, kind, label: entry.label };
   });
 }
 
-function parseVerification(value: unknown): AgenticVerification {
-  if (!isRecord(value) || !hasExactKeys(value, ["status", "checks"]) || typeof value.status !== "string") {
-    parseError("invalid_verification");
-  }
-  const status = value.status as AgenticVerificationStatus;
-  if (!verificationStatuses.has(status) || !Array.isArray(value.checks) || value.checks.length > MAX_VERIFICATION_CHECKS) {
-    parseError("invalid_verification");
-  }
-  const checks = value.checks.map((check) => {
-    if (!isRecord(check) || !hasExactKeys(check, ["id", "state", "detail"])) parseError("invalid_verification");
-    const state = check.state as AgenticVerificationCheckState;
-    if (!isValidId(check.id) || typeof check.state !== "string" || !verificationCheckStates.has(state) || !isBoundedString(check.detail)) {
-      parseError("invalid_verification");
-    }
-    return { id: check.id, state: check.state as AgenticVerificationCheckState, detail: check.detail };
-  });
-  const verification = { status, checks };
-  if (status === "verified" && !hasPassedVerificationChecks(verification)) {
-    parseError("invalid_verified_checks");
-  }
-  return verification;
+function isExplicitGithubCommitEvidence(kind: AgenticEvidenceKind, label: string): boolean {
+  return (
+    kind === "github"
+    && /\b(?:commit|sha(?:256)?)\b[\s:="']+(?:[a-f0-9]{40}|[a-f0-9]{64})\b/i.test(label)
+  );
 }
 
 function hasPassedVerificationChecks(verification: Pick<AgenticVerification, "status" | "checks">): boolean {
@@ -259,24 +350,6 @@ function hasPassedVerificationChecks(verification: Pick<AgenticVerification, "st
     && verification.checks.length > 0
     && verification.checks.every((check) => check.state === "passed")
   );
-}
-
-function parseApplication(value: unknown): AgenticApplication {
-  if (!isRecord(value) || !hasExactKeys(value, ["mode", "requiresApproval", "reversible"])) {
-    parseError("invalid_application");
-  }
-  if (
-    (value.mode !== "auto-apply" && value.mode !== "review") ||
-    typeof value.requiresApproval !== "boolean" ||
-    typeof value.reversible !== "boolean"
-  ) {
-    parseError("invalid_application");
-  }
-  return {
-    mode: value.mode,
-    requiresApproval: value.requiresApproval,
-    reversible: value.reversible,
-  };
 }
 
 function parseRecommendation(value: unknown): AgenticRecommendation {
@@ -292,8 +365,6 @@ function parseRecommendation(value: unknown): AgenticRecommendation {
       "rankReasons",
       "evidenceRefs",
       "contextFingerprint",
-      "verification",
-      "application",
     ])
   ) {
     parseError("invalid_recommendation");
@@ -310,23 +381,21 @@ function parseRecommendation(value: unknown): AgenticRecommendation {
   ) {
     parseError("invalid_recommendation");
   }
+  const kind = asKind(value.kind);
 
   const recommendation: AgenticRecommendation = {
     id: value.id,
     surface: asSurface(value.surface),
-    kind: asKind(value.kind),
-    payload: parsePayload(value.payload),
+    kind,
+    payload: parsePayload(kind, value.payload),
     rationale: value.rationale,
     inferredGoal: value.inferredGoal,
     rankReasons: [...value.rankReasons],
     evidenceRefs: parseEvidenceRefs(value.evidenceRefs),
     contextFingerprint: value.contextFingerprint,
-    verification: parseVerification(value.verification),
-    application: parseApplication(value.application),
+    verification: { status: "proposal", checks: [] },
+    application: { mode: "review", requiresApproval: true, reversible: false },
   };
-  if (recommendation.application.mode === "auto-apply" && !isAutoApplyAllowed(recommendation)) {
-    parseError("auto_apply_forbidden");
-  }
   return recommendation;
 }
 
@@ -363,19 +432,60 @@ export function parseAgenticRecommendationsOutput(text: string): AgenticRecommen
   });
 }
 
+/**
+ * Validates one deterministic proposal in application code and issues an
+ * in-process verification stamp. Persisted data must be passed through here again.
+ */
+export function verifyAutoApplicableRecommendation(
+  recommendation: AgenticRecommendation,
+): AgenticRecommendation | undefined {
+  if (!isAutoApplyPayload(recommendation.kind, recommendation.payload)) return undefined;
+
+  const verified: AgenticRecommendation = {
+    ...recommendation,
+    payload: Object.freeze({ ...recommendation.payload }),
+    verification: {
+      status: "verified",
+      checks: [
+        {
+          id: "deterministic-payload-schema",
+          state: "passed",
+          detail: "The code-owned payload schema accepted this deterministic operation.",
+        },
+      ],
+    },
+    application: { mode: "auto-apply", requiresApproval: false, reversible: true },
+  };
+  Object.freeze(verified.verification.checks);
+  Object.freeze(verified.verification);
+  Object.freeze(verified.application);
+  Object.freeze(verified);
+  trustedVerifiedRecommendations.add(verified);
+  return verified;
+}
+
 /** The only machine-applied recommendation operations; all content changes remain review proposals. */
-export function isAutoApplyAllowed(recommendation: Pick<AgenticRecommendation, "kind" | "verification" | "application">): boolean {
+export function isAutoApplyAllowed(
+  recommendation: Pick<AgenticRecommendation, "kind" | "payload" | "verification" | "application">,
+): boolean {
   return (
-    autoApplyKinds.has(recommendation.kind) &&
-    recommendation.application.mode === "auto-apply" &&
-    !recommendation.application.requiresApproval &&
-    recommendation.application.reversible &&
-    hasPassedVerificationChecks(recommendation.verification)
+    typeof recommendation === "object"
+    && recommendation !== null
+    && trustedVerifiedRecommendations.has(recommendation)
+    && autoApplyKinds.has(recommendation.kind)
+    && isAutoApplyPayload(recommendation.kind, recommendation.payload)
+    && recommendation.application.mode === "auto-apply"
+    && !recommendation.application.requiresApproval
+    && recommendation.application.reversible
+    && hasPassedVerificationChecks(recommendation.verification)
   );
 }
 
 function rankTier(recommendation: AgenticRecommendation): number {
-  if (hasPassedVerificationChecks(recommendation.verification)) return 0;
+  if (
+    trustedVerifiedRecommendations.has(recommendation)
+    && hasPassedVerificationChecks(recommendation.verification)
+  ) return 0;
   switch (recommendation.verification.status) {
     case "proposal":
     case "verified":
@@ -411,16 +521,101 @@ function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
 
+interface CanonicalWriter {
+  parts: string[];
+  bytes: number;
+}
+
+function appendCanonical(writer: CanonicalWriter, fragment: string): void {
+  let bytes = writer.bytes;
+  for (let index = 0; index < fragment.length; index += 1) {
+    const code = fragment.charCodeAt(index);
+    if (code <= 0x7f) {
+      bytes += 1;
+    } else if (code <= 0x7ff) {
+      bytes += 2;
+    } else if (
+      code >= 0xd800
+      && code <= 0xdbff
+      && index + 1 < fragment.length
+      && fragment.charCodeAt(index + 1) >= 0xdc00
+      && fragment.charCodeAt(index + 1) <= 0xdfff
+    ) {
+      bytes += 4;
+      index += 1;
+    } else {
+      bytes += 3;
+    }
+    if (bytes > MAX_CONTEXT_BYTES) throw new Error("context is too large to fingerprint");
+  }
+  writer.bytes = bytes;
+  writer.parts.push(fragment);
+}
+
+function appendCanonicalString(writer: CanonicalWriter, value: string): void {
+  appendCanonical(writer, "\"");
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    switch (code) {
+      case 0x08:
+        appendCanonical(writer, "\\b");
+        break;
+      case 0x09:
+        appendCanonical(writer, "\\t");
+        break;
+      case 0x0a:
+        appendCanonical(writer, "\\n");
+        break;
+      case 0x0c:
+        appendCanonical(writer, "\\f");
+        break;
+      case 0x0d:
+        appendCanonical(writer, "\\r");
+        break;
+      case 0x22:
+        appendCanonical(writer, "\\\"");
+        break;
+      case 0x5c:
+        appendCanonical(writer, "\\\\");
+        break;
+      default:
+        if (code <= 0x1f || (code >= 0xd800 && code <= 0xdfff && (
+          code > 0xdbff
+          || index + 1 >= value.length
+          || value.charCodeAt(index + 1) < 0xdc00
+          || value.charCodeAt(index + 1) > 0xdfff
+        ))) {
+          appendCanonical(writer, `\\u${code.toString(16).padStart(4, "0")}`);
+        } else if (code >= 0xd800 && code <= 0xdbff) {
+          appendCanonical(writer, value.slice(index, index + 2));
+          index += 1;
+        } else {
+          appendCanonical(writer, value[index]!);
+        }
+    }
+  }
+  appendCanonical(writer, "\"");
+}
+
 function canonicalJson(
   value: unknown,
   depth: number,
   ancestors: Set<object>,
   budget: { entries: number },
-): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+  writer: CanonicalWriter,
+): void {
+  if (value === null || typeof value === "boolean") {
+    appendCanonical(writer, JSON.stringify(value));
+    return;
+  }
+  if (typeof value === "string") {
+    appendCanonicalString(writer, value);
+    return;
+  }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error("context must not contain non-finite numbers");
-    return JSON.stringify(value);
+    appendCanonical(writer, JSON.stringify(value));
+    return;
   }
   if (typeof value === "function") throw new Error("context must not contain functions");
   if (typeof value === "symbol") throw new Error("context must not contain symbols");
@@ -434,10 +629,11 @@ function canonicalJson(
     if (Object.getPrototypeOf(value) !== Array.prototype) {
       throw new Error("context arrays must use the Array prototype");
     }
-    return canonicalArray(value, depth, ancestors, budget);
+    canonicalArray(value, depth, ancestors, budget, writer);
+    return;
   }
   if (!isPlainObject(value)) throw new Error("context objects must be plain objects");
-  return canonicalObject(value as RawRecord, depth, ancestors, budget);
+  canonicalObject(value as RawRecord, depth, ancestors, budget, writer);
 }
 
 function canonicalArray(
@@ -445,7 +641,8 @@ function canonicalArray(
   depth: number,
   ancestors: Set<object>,
   budget: { entries: number },
-): string {
+  writer: CanonicalWriter,
+): void {
   const keys = Reflect.ownKeys(value);
   if (keys.length !== value.length + 1 || !keys.includes("length")) {
     throw new Error("context arrays must not have non-index properties");
@@ -455,15 +652,16 @@ function canonicalArray(
 
   ancestors.add(value);
   try {
-    const entries: unknown[] = [];
+    appendCanonical(writer, "[");
     for (let index = 0; index < value.length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
         throw new Error("context arrays must not be sparse or accessor-backed");
       }
-      entries.push(descriptor.value);
+      if (index > 0) appendCanonical(writer, ",");
+      canonicalJson(descriptor.value, depth - 1, ancestors, budget, writer);
     }
-    return `[${entries.map((entry) => canonicalJson(entry, depth - 1, ancestors, budget)).join(",")}]`;
+    appendCanonical(writer, "]");
   } finally {
     ancestors.delete(value);
   }
@@ -474,27 +672,29 @@ function canonicalObject(
   depth: number,
   ancestors: Set<object>,
   budget: { entries: number },
-): string {
+  writer: CanonicalWriter,
+): void {
   const keys = Reflect.ownKeys(value);
   if (keys.some((key) => typeof key !== "string")) throw new Error("context must not contain symbol keys");
   if (keys.length > MAX_CONTEXT_ENTRIES - budget.entries) throw new Error("context has too many entries");
   budget.entries += keys.length;
+  const sortedKeys = (keys as string[]).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 
-  const entries = (keys as string[])
-    .map((key) => {
+  ancestors.add(value);
+  try {
+    appendCanonical(writer, "{");
+    for (let index = 0; index < sortedKeys.length; index += 1) {
+      const key = sortedKeys[index]!;
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
         throw new Error("context plain objects must contain enumerable data properties");
       }
-      return [key, descriptor.value] as const;
-    })
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-
-  ancestors.add(value);
-  try {
-    return `{${entries
-      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry, depth - 1, ancestors, budget)}`)
-      .join(",")}}`;
+      if (index > 0) appendCanonical(writer, ",");
+      appendCanonicalString(writer, key);
+      appendCanonical(writer, ":");
+      canonicalJson(descriptor.value, depth - 1, ancestors, budget, writer);
+    }
+    appendCanonical(writer, "}");
   } finally {
     ancestors.delete(value);
   }
@@ -511,8 +711,9 @@ function hash32(value: string, seed: number): string {
 
 /** A deterministic, versioned client-safe fingerprint for stale-context checks, not an integrity signature. */
 export function contextFingerprint(context: unknown): string {
-  const canonical = canonicalJson(context, MAX_CONTEXT_DEPTH, new Set(), { entries: 0 });
-  if (utf8ByteLength(canonical) > MAX_CONTEXT_BYTES) throw new Error("context is too large to fingerprint");
+  const writer: CanonicalWriter = { parts: [], bytes: 0 };
+  canonicalJson(context, MAX_CONTEXT_DEPTH, new Set(), { entries: 0 }, writer);
+  const canonical = writer.parts.join("");
   return `ctx-v1-${[
     hash32(canonical, 0x811c9dc5),
     hash32(canonical, 0x9e3779b9),

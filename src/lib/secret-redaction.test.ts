@@ -317,17 +317,27 @@ assert.equal(
   true,
   "Basic authorization with a credential-shaped base64 value remains secret text",
 );
+const digestCredential = 'Authorization: Digest username="Mufasa", realm="test@example.invalid", nonce="abcdef1234567890", response="0123456789abcdef"';
+assert.equal(
+  containsSecretText(digestCredential),
+  true,
+  "Digest Authorization headers with credential parameters remain secret text",
+);
+assert.equal(
+  redactSecretText(digestCredential),
+  `Authorization: ${REDACTED_SECRET}`,
+  "Digest Authorization headers redact all credential parameters as one value",
+);
 assert.equal(
   containsSecretText("Authorization: Bearer Abc123_def456-ghi789.jkl012Mno345"),
   true,
   "Bearer authorization with a token-shaped value remains secret text",
 );
-const commitShas = [
+const shortCommitShas = [
   "0123456789abcdef0123456789abcdef",
   "0123456789abcdef0123456789abcdef01234567",
-  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 ];
-for (const commitSha of commitShas) {
+for (const commitSha of shortCommitShas) {
   assert.equal(
     containsSecretText(`commit ${commitSha}`),
     false,
@@ -339,6 +349,17 @@ for (const commitSha of commitShas) {
     "hex commit SHAs in JSON are not generic base64 secrets",
   );
 }
+const hexApiKey = "a".repeat(64);
+assert.equal(
+  containsSecretText(`api key ${hexApiKey}`),
+  true,
+  "64-character hexadecimal API keys remain credential material outside explicit evidence handling",
+);
+assert.equal(
+  redactSecretText(`api key ${hexApiKey}`),
+  `api key ${REDACTED_SECRET}`,
+  "64-character hexadecimal API keys are redacted rather than globally exempted",
+);
 assert.equal(
   containsSecretText(JSON.stringify({
     token: "QmFzZTY0Q3JlZGVudGlh" + "bFZhbHVlMTIzNDU2",
@@ -444,6 +465,15 @@ assert.deepEqual(
   safeJsonValue,
   "safe complete JSON text remains semantically intact",
 );
+for (const value of [null, false, 0, [], {}]) {
+  const json = JSON.stringify({ token: value });
+  assert.equal(
+    containsSecretText(json),
+    false,
+    `decoded JSON token values such as ${json} use structured traversal without assignment-text false positives`,
+  );
+  assert.deepEqual(JSON.parse(redactSecretText(json)), { token: value });
+}
 
 let veryDeep: Record<string, unknown> = { leaf: "raw-leaf-value" };
 for (let depth = 0; depth < 20_000; depth += 1) {
