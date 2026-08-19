@@ -4424,7 +4424,7 @@ exit 0
   assert.match(
     inventoryDrivenRemainingText,
     /Cleanup-ready but not processed \(0\): none/,
-    "the unprocessed section remains limited to candidates skipped by the batch bound",
+    "the unprocessed section remains limited to candidates skipped by a success or attempt bound",
   );
 
   const partialBlockedRetirement = {
