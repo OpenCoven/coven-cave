@@ -34,7 +34,7 @@ export const ResearchXArticleReader = forwardRef<HTMLElement, ResearchXArticleRe
           <h4>{title}</h4>
           <div className="research-x-article-reader__byline">
             <span>{authorName(article)}</span>
-            <span>@{article.author.username}</span>
+            {article.author.displayName ? <span>@{article.author.username}</span> : null}
             <span>
               Published <RelativeTime iso={article.publishedAt} fallback="date unavailable" />
             </span>
