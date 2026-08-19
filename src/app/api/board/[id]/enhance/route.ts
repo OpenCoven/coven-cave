@@ -176,6 +176,11 @@ function boardEnhancePrompt(
     "Return only a strict <recommendations> JSON envelope. Do not write prose outside it.",
     "Every recommendation must have surface \"board\", the exact contextFingerprint below,",
     "and evidenceRefs that name only task/dependency/GitHub ids from the trusted context.",
+    "Return exactly this envelope: {\"recommendations\":[RECOMMENDATION]}.",
+    "RECOMMENDATION exact required keys: id, surface, kind, payload, rationale, inferredGoal, rankReasons, evidenceRefs, contextFingerprint.",
+    "Allowed surfaces: board. Allowed kinds: canonicalize-reference, deduplicate-reference, identifier-normalization, recompute-readonly-projection, prose, dependency, topic, action.",
+    "Each evidenceRef exact keys are id, kind, label. Allowed evidence kinds: task, dependency, github, mission, saved-link, vault, message, artifact.",
+    "Example: {\"recommendations\":[{\"id\":\"proposal-1\",\"surface\":\"board\",\"kind\":\"prose\",\"payload\":{\"cardId\":\"TASK_ID\",\"patch\":{\"notes\":\"Clarify the acceptance condition.\"}},\"rationale\":\"The task needs a concrete outcome.\",\"inferredGoal\":\"Make completion verifiable.\",\"rankReasons\":[\"It resolves an explicit gap.\"],\"evidenceRefs\":[{\"id\":\"task:TASK_ID\",\"kind\":\"task\",\"label\":\"Task\"}],\"contextFingerprint\":\"EXACT_FINGERPRINT\"}]}.",
     "For model-authored changes, use payload {\"cardId\":\"...\",\"patch\":{...}}.",
     "Do not propose status, lifecycle, execution, or needs-human fields.",
     "A canonicalize-reference recommendation must name an exact GitHub reference and is the only",
@@ -358,6 +363,17 @@ export function createBoardEnhanceRoute(deps: BoardEnhanceRouteDeps) {
 
     const validations = recommendations.map((recommendation) =>
       validateBoardAgenticRecommendation(generationCard, board.cards, recommendation));
+    const usedProposalIds = new Set(card.agenticEnhance?.proposals.map((proposal) => proposal.id) ?? []);
+    const generationValidations = validations.map((validation, index) => {
+      const rawId = validation.recommendation.id;
+      const base = `${rawId}--${context.fingerprint.slice(7, 15)}-${index + 1}`;
+      let id = rawId;
+      if (usedProposalIds.has(id)) id = base;
+      let suffix = 2;
+      while (usedProposalIds.has(id)) id = `${base}-${suffix++}`;
+      usedProposalIds.add(id);
+      return { ...validation, recommendation: { ...validation.recommendation, id } };
+    });
     const blocked = validations.filter((validation) => validation.status === "blocked");
     if (blocked.length > 0) {
       recordBoardDiagnostic(deps.diagnostics, {
@@ -368,19 +384,18 @@ export function createBoardEnhanceRoute(deps: BoardEnhanceRouteDeps) {
         },
       });
     }
-    const automatic = validations.filter(
-      (validation) => validation.status === "verified" && validation.patch,
-    );
     let stored;
     try {
       stored = await autoApplyBoardAgenticProposalBatch(
         id,
-        automatic.map((validation) => validation.recommendation.id),
+        generationValidations
+          .filter((validation) => validation.status === "verified" && validation.patch)
+          .map((validation) => validation.recommendation.id),
         {
           contextFingerprint: context.fingerprint,
           actor: actorFrom(body) ?? "enhance",
           signal: req.signal,
-          generationInputs: validations.map((validation) => ({
+          generationInputs: generationValidations.map((validation) => ({
             ...boardAgenticProposalRecord(context, validation),
             actor: actorFrom(body) ?? "enhance",
           })),

@@ -174,6 +174,16 @@ assert.match(
 );
 assert.match(
   src,
+  /Regenerate recommendations/,
+  "persisted recommendations retain an independent regeneration action",
+);
+assert.match(
+  src,
+  /aria-label="Enhance actions"/,
+  "generation and review controls remain independently addressable",
+);
+assert.match(
+  src,
   /mutationSequenceRef/,
   "proposal mutations carry a monotonic sequence for stale response safety",
 );

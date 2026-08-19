@@ -1525,30 +1525,33 @@ function BoardAgenticEnhanceSection({ card, onCardReplaced }: BoardAgenticEnhanc
           <h3 id="board-agentic-enhance-heading">Recommendations</h3>
           <p>Review task prose and orchestration changes before they affect this task.</p>
         </div>
-        <Button
-          ref={triggerRef}
-          variant={proposals.length === 0 ? "primary" : "secondary"}
-          size="sm"
-          className="focus-ring"
-          aria-expanded={open}
-          aria-controls="board-agentic-enhance-panel"
-          loading={activeMutation?.action === "generate"}
-          disabled={mutationBusy}
-          onClick={() => {
-            if (proposals.length === 0) {
+        <div className="board-agentic-enhance__header-actions" aria-label="Enhance actions">
+          <Button
+            variant="primary"
+            size="sm"
+            className="focus-ring"
+            loading={activeMutation?.action === "generate"}
+            disabled={mutationBusy}
+            onClick={() => {
               setOpen(true);
               void mutate("generate");
-              return;
-            }
-            setOpen((current) => !current);
-          }}
-        >
-          {proposals.length === 0
-            ? "Enhance task"
-            : open
-              ? "Close enhancements"
-              : "Review enhancements"}
-        </Button>
+            }}
+          >
+            {proposals.length === 0 ? "Generate recommendations" : "Regenerate recommendations"}
+          </Button>
+          <Button
+            ref={triggerRef}
+            variant="secondary"
+            size="sm"
+            className="focus-ring"
+            aria-expanded={open}
+            aria-controls="board-agentic-enhance-panel"
+            disabled={mutationBusy}
+            onClick={() => setOpen((current) => !current)}
+          >
+            {open ? "Close enhancements" : "Review enhancements"}
+          </Button>
+        </div>
       </header>
 
       {open ? (
@@ -1560,29 +1563,27 @@ function BoardAgenticEnhanceSection({ card, onCardReplaced }: BoardAgenticEnhanc
           aria-label="Enhance recommendations"
           tabIndex={-1}
         >
+          {generationError ? (
+            <p className="board-agentic-enhance__errors" role="alert">{generationError}</p>
+          ) : null}
           {proposals.length === 0 ? (
-            <>
-              <EmptyState
-                compact
-                headline="No recommendations yet"
-                subtitle="Recommendations appear here after the task has grounded evidence to review."
-                actions={(
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="focus-ring"
-                    loading={activeMutation?.action === "generate"}
-                    disabled={mutationBusy}
-                    onClick={() => void mutate("generate")}
-                  >
-                    Generate recommendations
-                  </Button>
-                )}
-              />
-              {generationError ? (
-                <p className="board-agentic-enhance__errors" role="alert">{generationError}</p>
-              ) : null}
-            </>
+            <EmptyState
+              compact
+              headline="No recommendations yet"
+              subtitle="Recommendations appear here after the task has grounded evidence to review."
+              actions={(
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="focus-ring"
+                  loading={activeMutation?.action === "generate"}
+                  disabled={mutationBusy}
+                  onClick={() => void mutate("generate")}
+                >
+                  Generate recommendations
+                </Button>
+              )}
+            />
           ) : (
             <div className="board-agentic-enhance__list">
               {proposals.map((proposal) => {

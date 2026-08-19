@@ -245,7 +245,7 @@ test("marks otherwise grounded recommendations as reduced-context when Vault ret
 });
 
 test("excludes secret-shaped evidence before it can enter recommendation output", () => {
-  const authorizationSecret = ["Bearer", "secret-value-123456"].join(" ");
+  const authorizationSecret = ["Bearer", "secret-value-12345678"].join(" ");
   const result = recommendResearchTopics(context({
     missions: [mission("unsafe-mission", authorizationSecret)],
     savedLinks: [savedLink("unsafe-link", "Private link", "https://example.test/report?token=secret-value")],

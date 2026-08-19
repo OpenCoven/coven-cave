@@ -722,7 +722,9 @@ export async function autoApplyBoardAgenticProposalBatch(
   proposalIds: readonly string[],
   options: ApplyBoardAgenticProposalOptions,
 ): Promise<Card | null> {
-  const uniqueIds = [...new Set(proposalIds)];
+  let uniqueIds = [...new Set(proposalIds)];
+  const generationIds = new Set<string>();
+  const allocatedIds = new Map<string, string>();
   if (uniqueIds.length === 0 && options.generationInputs === undefined) return null;
 
   return withBoardLock(async () => {
@@ -741,9 +743,20 @@ export async function autoApplyBoardAgenticProposalBatch(
           throw new BoardAgenticProposalMutationError("stale_context");
         }
         const { actor, ...recordInput } = input;
+        const usedIds = new Set([
+          ...(agenticEnhance?.proposals.map((proposal) => proposal.id) ?? []),
+          ...(agenticEnhance?.audit.map((entry) => entry.proposalId) ?? []),
+        ]);
+        let id = recordInput.id;
+        let suffix = 2;
+        while (usedIds.has(id)) id = `${recordInput.id}-${suffix++}`;
+        generationIds.add(id);
+        allocatedIds.set(recordInput.id, id);
         const now = new Date().toISOString();
         const proposal: BoardAgenticProposalRecord = {
           ...structuredClone(recordInput),
+          id,
+          recommendation: { ...recordInput.recommendation, id },
           createdAt: now,
           updatedAt: now,
         };
@@ -758,9 +771,38 @@ export async function autoApplyBoardAgenticProposalBatch(
       const index = board.cards.findIndex((card) => card.id === cardId);
       current = { ...current, agenticEnhance };
       board.cards[index] = current;
+      uniqueIds = uniqueIds.map((id) => allocatedIds.get(id) ?? id);
     }
     if (options.signal?.aborted) throw new BoardAgenticProposalMutationError("cancelled");
     if (uniqueIds.length === 0) {
+      const index = board.cards.findIndex((card) => card.id === cardId);
+      const base = current.agenticEnhance ?? { proposals: [], audit: [] };
+      current = {
+        ...current,
+        agenticEnhance: {
+          proposals: base.proposals.map((proposal) =>
+            (proposal.state === "proposed" || proposal.state === "blocked")
+              && !generationIds.has(proposal.id)
+              ? {
+                ...proposal,
+                state: "blocked",
+                validation: {
+                  ...proposal.validation,
+                  errors: [
+                    ...proposal.validation.errors,
+                    {
+                      code: "stale_context",
+                      message: "A newer Board generation superseded this proposal.",
+                    },
+                  ],
+                },
+              }
+              : proposal,
+          ),
+          audit: base.audit,
+        },
+      };
+      board.cards[index] = current;
       await saveBoard(board);
       return current;
     }
@@ -860,6 +902,22 @@ export async function autoApplyBoardAgenticProposalBatch(
           };
         }
         if (proposal.state === "proposed" || proposal.state === "blocked") {
+          if (!generationIds.has(proposal.id)) {
+            return {
+              ...proposal,
+              state: "blocked",
+              validation: {
+                ...proposal.validation,
+                errors: [
+                  ...proposal.validation.errors,
+                  {
+                    code: "stale_context",
+                    message: "A newer Board generation superseded this proposal.",
+                  },
+                ],
+              },
+            };
+          }
           return {
             ...proposal,
             recommendation: { ...proposal.recommendation, contextFingerprint: finalContext },
@@ -913,10 +971,12 @@ export async function revertBoardAgenticProposal(
     const proposal = current.agenticEnhance?.proposals.find((entry) => entry.id === proposalId);
     if (!proposal) throw new BoardAgenticProposalMutationError("proposal_not_found");
     const context = buildBoardAgenticContext(current, board.cards);
-    if (
+    const crossedContext = options.contextFingerprint !== context.fingerprint
+      || proposal.appliedContextFingerprint !== context.fingerprint;
+    if (!proposal.scopedInverse && (
       options.contextFingerprint !== context.fingerprint
       || proposal.appliedContextFingerprint !== context.fingerprint
-    ) {
+    )) {
       throw new BoardAgenticProposalMutationError("stale_context");
     }
     if (
@@ -953,6 +1013,19 @@ export async function revertBoardAgenticProposal(
     let agenticEnhance: BoardAgenticEnhanceState = {
       proposals: base.proposals.map((entry) => {
         if (entry.id === proposalId) return nextProposal;
+        if (crossedContext && (entry.state === "proposed" || entry.state === "blocked")) {
+          return {
+            ...entry,
+            state: "blocked",
+            validation: {
+              ...entry.validation,
+              errors: [
+                ...entry.validation.errors,
+                { code: "stale_context", message: "Context changed before this proposal could be applied." },
+              ],
+            },
+          };
+        }
         if (
           entry.state === "auto-applied"
           || entry.state === "proposed"

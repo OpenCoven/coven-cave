@@ -370,7 +370,8 @@ test("keeps Board recommendations hidden and idle when the capability is disable
 
   await openBoard(page);
   const dialog = await openInspector(page);
-  await expect(dialog.getByRole("button", { name: "Enhance task" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Generate recommendations" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Regenerate recommendations" })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Review enhancements" })).toHaveCount(0);
   await page.waitForTimeout(800);
   expect(recommendationRequests).toBe(0);
@@ -466,7 +467,7 @@ test.describe("governed Board Enhance", () => {
 
     await openBoard(page);
     let dialog = await openInspector(page);
-    await dialog.getByRole("button", { name: "Enhance task" }).click();
+    await dialog.getByLabel("Enhance actions").getByRole("button", { name: "Generate recommendations" }).click();
     const panel = dialog.getByRole("region", { name: "Enhance recommendations" });
     await expect(panel).toBeFocused();
     await expect(panel.getByRole("alert")).toHaveText(
@@ -551,6 +552,122 @@ test.describe("governed Board Enhance", () => {
       { intent: "board-agentic-enhance", action: "apply", proposalId: "stale-proposal", fingerprint: "ctx-after-second-revert" },
       { intent: "board-agentic-enhance", action: "apply", proposalId: "prose-proposal", fingerprint: "ctx-after-second-revert" },
     ]);
+  });
+
+  test("regenerates after a task changes while retaining prior proposal history", async ({ page }) => {
+    test.slow();
+    const audit = (proposalId: string, fingerprint: string) => ({
+      proposalId,
+      action: "generated",
+      actor: "enhance",
+      at: ISO,
+      context: { fingerprint, cardUpdatedAt: ISO, taskIds: ["card-governed"], githubRefs: [] },
+      evidence: [],
+      validation: { status: "proposal", checks: [], errors: [] },
+    });
+    const historyRecommendation = recommendation("history-proposal", "prose", {
+      cardId: "card-governed",
+      patch: { notes: "First generated recommendation." },
+    });
+    const currentRecommendation = recommendation("current-proposal", "prose", {
+      cardId: "card-governed",
+      patch: { notes: "Current generated recommendation." },
+    });
+    let liveCard: FixtureCard = baseCard();
+    let generationCount = 0;
+    let boardReads = 0;
+
+    await page.route("**/api/board", (route) => {
+      boardReads += 1;
+      return route.fulfill({ json: { ok: true, cards: [liveCard] } });
+    });
+    await page.route("**/api/board/card-governed/enhance", async (route) => {
+      const body = route.request().postDataJSON() as { intent?: string };
+      expect(body.intent).toBe("generate");
+      expect(Object.hasOwn(body, "output")).toBe(false);
+      generationCount += 1;
+      if (generationCount === 1) {
+        liveCard = {
+          ...baseCard(),
+          agenticEnhance: {
+            proposals: [proposal("history-proposal", "proposed", historyRecommendation, {
+              patch: { notes: "First generated recommendation." },
+            })],
+            audit: [audit("history-proposal", "ctx-first")],
+          },
+        } as FixtureCard;
+      } else if (generationCount === 2) {
+        await route.fulfill({ status: 409, json: { ok: false, error: "stale_context" } });
+        return;
+      } else if (generationCount === 3) {
+        await route.fulfill({ status: 500, json: { ok: false, error: "familiar_unavailable" } });
+        return;
+      } else {
+        liveCard = {
+          ...liveCard,
+          agenticEnhance: {
+            proposals: [
+              ...(liveCard.agenticEnhance as { proposals: FixtureProposal[] }).proposals,
+              proposal("current-proposal", "proposed", currentRecommendation, {
+                context: {
+                  fingerprint: "ctx-current",
+                  cardUpdatedAt: ISO,
+                  taskIds: ["card-governed"],
+                  githubRefs: [],
+                },
+                recommendation: { ...currentRecommendation, contextFingerprint: "ctx-current" },
+                patch: { notes: "Current generated recommendation." },
+              }),
+            ],
+            audit: [
+              ...(liveCard.agenticEnhance as { audit: unknown[] }).audit,
+              audit("current-proposal", "ctx-current"),
+            ],
+          },
+        } as FixtureCard;
+      }
+      await route.fulfill({ json: { ok: true, card: liveCard } });
+    });
+
+    await openBoard(page);
+    let dialog = await openInspector(page);
+    const actions = dialog.getByLabel("Enhance actions");
+    await actions.getByRole("button", { name: "Generate recommendations" }).click();
+    await expect(dialog.getByRole("article", { name: "Enhancement: history-proposal" })).toBeVisible();
+
+    const changed = structuredClone(liveCard) as FixtureCard;
+    changed.notes = "Task context changed after the first generation.";
+    const historical = (changed.agenticEnhance as { proposals: FixtureProposal[] }).proposals[0]!;
+    historical.state = "blocked";
+    historical.validation = {
+      status: "blocked",
+      checks: [],
+      errors: [{
+        code: "stale_context",
+        message: "The task changed before this proposal could be applied.",
+      }],
+    };
+    liveCard = changed;
+
+    await dialog.getByLabel("Close", { exact: true }).click();
+    await refreshBoard(page, () => boardReads);
+    dialog = await openInspector(page);
+    await dialog.getByRole("button", { name: "Review enhancements" }).click();
+    await expect(dialog.getByRole("article", { name: "Enhancement: history-proposal" })).toContainText("Blocked");
+
+    await dialog.getByLabel("Enhance actions").getByRole("button", { name: "Regenerate recommendations" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "The task changed before recommendations could be generated. Try Enhance again.",
+    );
+    await dialog.getByLabel("Enhance actions").getByRole("button", { name: "Regenerate recommendations" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("Recommendations could not be generated. Try Enhance again.");
+    await dialog.getByLabel("Enhance actions").getByRole("button", { name: "Regenerate recommendations" }).click();
+    await expect(dialog.getByRole("article", { name: "Enhancement: history-proposal" })).toContainText("Blocked");
+    await expect(dialog.getByRole("article", { name: "Enhancement: current-proposal" })).toBeVisible();
+    const debug = await debugCard(dialog);
+    await expect(debug).toContainText("history-proposal");
+    await expect(debug).toContainText("current-proposal");
+    expect(generationCount).toBe(4);
   });
 
   test("generic needs-human recovery retains Retry and Cancel", async ({ page }) => {

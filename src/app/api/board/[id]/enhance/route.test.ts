@@ -845,6 +845,11 @@ try {
   );
   assert.equal(familiarGenerated.status, 200);
   assert.equal((await familiarGenerated.json()).card.agenticEnhance.proposals[0].id, "familiar-proposal");
+  const familiarPrompt = familiarGenerator.calls[0]?.[0] as string[];
+  assert.match(familiarPrompt.at(-1) ?? "", /"recommendations":\[/);
+  assert.match(familiarPrompt.at(-1) ?? "", /canonicalize-reference/);
+  assert.match(familiarPrompt.at(-1) ?? "", /saved-link/);
+  assert.match(familiarPrompt.at(-1) ?? "", /contextFingerprint/);
 
   const retryTarget = await board.createCard({ title: "Retry malformed familiar output", familiarId: "nyx" });
   const retryBoard = await board.loadBoard();
@@ -872,7 +877,10 @@ try {
   const malformedContext = enhance.buildBoardAgenticContext(malformedCurrent, malformedBoard.cards);
   const malformedDiagnostics: AgenticDiagnosticEvent[] = [];
   const malformedGenerator = mockedFamiliarRoute(
-    ["nope", "still nope"],
+    [
+      JSON.stringify({ recommendations: [{ id: "schema-less" }] }),
+      JSON.stringify({ recommendations: [{ id: "still-schema-less" }] }),
+    ],
     undefined,
     (event) => malformedDiagnostics.push(event),
   );
