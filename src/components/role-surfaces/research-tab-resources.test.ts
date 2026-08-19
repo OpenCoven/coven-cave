@@ -69,8 +69,8 @@ test("add-to-run uses the evidence ledger's attach-source candidate mechanism", 
   assert.match(source, /Select a run on the Desk first/);
   assert.match(source, /Select a run to add/);
   assert.match(source, /In this run/);
-  // Already-attached links (normalized-url match) can't be attached twice.
-  assert.match(source, /selectedMission\.sources\.some\(\s*\(source\) => source\.url && normalizeLinkUrl\(source\.url\) === key/);
+  // Already-attached links (deduped-key match) can't be attached twice.
+  assert.match(source, /selectedMission\.sources\.some\(\s*\(source\) => source\.url && savedLinkDedupeKey\(source\.url\) === key/);
 });
 
 test("remove is a two-step inline confirm wired to useResearchLinks.remove", () => {

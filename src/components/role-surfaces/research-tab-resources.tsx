@@ -40,7 +40,6 @@ import {
   linkCategoryMeta,
   LINK_CATEGORY_ORDER,
   MAX_LINKS_PER_SAVE,
-  normalizeLinkUrl,
   savedLinkDedupeKey,
   summarizeLinkIntake,
   type LinkCategory,
@@ -230,9 +229,9 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   // currently selected mission.
   const attachedToSelected = useCallback((link: SavedLinkSummary) => {
     if (!selectedMission) return false;
-    const key = normalizeLinkUrl(link.url);
+    const key = savedLinkDedupeKey(link.url);
     return selectedMission.sources.some(
-      (source) => source.url && normalizeLinkUrl(source.url) === key,
+      (source) => source.url && savedLinkDedupeKey(source.url) === key,
     );
   }, [selectedMission]);
 
