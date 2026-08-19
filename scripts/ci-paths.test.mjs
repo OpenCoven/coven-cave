@@ -78,7 +78,6 @@ test("iOS sources and generators request the macOS build", () => {
   for (const path of [
     "scripts/ios-xcodegen.sh",
     "scripts/build-ios-markdown.mjs",
-    "scripts/build-ios-terminal.mjs",
     "scripts/ci-paths.mjs",
   ]) {
     assert.equal(classifyCiPaths([path]).ios, true, path);

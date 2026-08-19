@@ -359,7 +359,7 @@ export type ResearchMissionActionInput =
   | {
     action: ResearchMissionAction;
     direction?: string;
-    /** One-pass approval to continue when the previous iteration reported no cost. */
+    /** One-iteration approval to continue when the previous iteration reported no cost. */
     approveCostUnavailable?: boolean;
     /**
      * Retry-only project root override: a path re-targets the retried
@@ -1159,15 +1159,21 @@ export function researchSourceStatusCounts(
 }
 
 export type ResearchContinueLabel = {
-  /** Compact button text in the desk's iN/M vocabulary. */
+  /** Explicit button text naming the iteration the runner will evaluate. */
   label: string;
   /** Full-sentence consequence for the button's aria-label and title. */
   description: string;
   /** A stop gate already refuses the next iteration — pressing starts nothing. */
   gated: boolean;
-  /** Missing telemetry may be bypassed for exactly one explicitly approved pass. */
+  /** Missing telemetry may be bypassed for exactly one explicitly approved iteration. */
   costApprovalRequired: boolean;
 };
+
+export function nextResearchIterationNumber(
+  mission: Pick<ResearchMission, "iterations">,
+): number {
+  return (mission.iterations.at(-1)?.number ?? 0) + 1;
+}
 
 /**
  * What pressing Continue will actually do.
@@ -1176,15 +1182,15 @@ export type ResearchContinueLabel = {
  * (src/lib/server/research-mission-runner.ts): iteration count, wall-clock
  * budget, missing-cost policy, and the reported-spend cap. Hard bounds refuse
  * the action; missing cost instead requires an explicit approval that applies
- * to one pass only. Keep this in sync with stopBeforeNextIteration.
+ * to one iteration only. Keep this in sync with stopBeforeNextIteration.
  */
 export function researchContinueLabel(
   mission: Pick<ResearchMission, "iterations" | "bounds" | "startedAt">,
   nowMs: number = Date.now(),
 ): ResearchContinueLabel {
-  const next = mission.iterations.length + 1;
+  const next = nextResearchIterationNumber(mission);
   const max = mission.bounds.maxIterations;
-  const label = `Continue (i${next}/${max})`;
+  const label = `Continue to iteration ${next} of ${max}`;
   const refusal = (why: string) => ({
     label,
     description: `Continue would ask for iteration ${next}, but ${why}`,
@@ -1193,7 +1199,7 @@ export function researchContinueLabel(
   });
   if (next > max) {
     return {
-      label,
+      label: "Iteration limit reached",
       description: `Continue would ask for iteration ${next}, past the planned ${max} — the runner stops at the iteration limit instead of starting it.`,
       gated: true,
       costApprovalRequired: false,
@@ -1215,8 +1221,8 @@ export function researchContinueLabel(
     mission.iterations.some((iteration) => iteration.finishedAt && iteration.costUsd === undefined)
   ) {
     return {
-      label: `Continue with unreported cost (i${next}/${max})`,
-      description: `An iteration finished without reporting cost. Continue starts iteration ${next} with one-pass approval; the mission will ask again before another unmetered pass.`,
+      label: `Continue with unreported cost, iteration ${next} of ${max}`,
+      description: `An iteration finished without reporting cost. Continue starts iteration ${next} with approval for that one iteration; the mission will ask again before another unmetered iteration.`,
       gated: true,
       costApprovalRequired: true,
     };

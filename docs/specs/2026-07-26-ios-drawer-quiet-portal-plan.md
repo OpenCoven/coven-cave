@@ -1,5 +1,9 @@
 # iOS Drawer Shell and Quiet Portal Implementation Plan
 
+> **Completed historical implementation plan.** Do not resume its checklist.
+> Use [`../ios-current-direction.md`](../ios-current-direction.md) for current
+> priorities.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove the native iOS bottom tab bar, make the Cave drawer the complete primary navigation surface, and replace the cold connection spinner with the approved Quiet Portal.

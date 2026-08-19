@@ -183,30 +183,37 @@ struct MainShellView: View {
         return nil
     }()
     @State private var overlayDismissalAction: (() -> Void)?
-    @State private var terminal = PtyTerminal()
-    @State private var terminalCwd: String?
 
     var body: some View {
-        ZStack {
-            selectedDestination
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                selectedDestination
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .modifier(
+                        DrawerDestinationStage(
+                            isOpen: app.navigationDrawerOpen,
+                            availableWidth: geometry.size.width
+                        )
+                    )
 
-            CaveNavigationDrawer(
-                isOpen: Binding(
-                    get: { app.navigationDrawerOpen },
-                    set: { app.navigationDrawerOpen = $0 }
-                ),
-                openProjects: { project in
-                    presentedOverlay = .projects(project)
-                },
-                openFamiliars: { presentedOverlay = .familiars },
-                openThread: { app.requestOpen($0) },
-                newChat: {
-                    app.selectedTab = .chats
-                    app.newChatRequested = true
-                },
-                openSearch: { presentedOverlay = .search }
-            )
-            .zIndex(100)
+                CaveNavigationDrawer(
+                    isOpen: Binding(
+                        get: { app.navigationDrawerOpen },
+                        set: { app.navigationDrawerOpen = $0 }
+                    ),
+                    openProjects: { project in
+                        presentedOverlay = .projects(project)
+                    },
+                    openFamiliars: { presentedOverlay = .familiars },
+                    openThread: { app.requestOpen($0) },
+                    newChat: {
+                        app.selectedTab = .chats
+                        app.newChatRequested = true
+                    },
+                    openSearch: { presentedOverlay = .search }
+                )
+                .zIndex(100)
+            }
         }
         .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
             switch overlay {
@@ -242,7 +249,7 @@ struct MainShellView: View {
         // Command confirmations float above the whole shell so they're visible
         // whether a command stays in chat or jumps to the Tasks destination.
         .toast(Binding(get: { app.toast }, set: { app.toast = $0 }))
-        // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–4.
+        // Hardware-keyboard destination switching (iPad / Mac over Tailscale): ⌘1–3.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
             ForEach(Array(AppTab.shortcutOrder.enumerated()), id: \.element) { index, tab in
@@ -295,11 +302,45 @@ struct MainShellView: View {
             ChatsHomeView()
         case .tasks:
             TasksView()
-        case .terminal:
-            TerminalView(terminal: terminal, cwd: $terminalCwd)
         case .settings:
             SettingsView()
         }
+    }
+}
+
+private struct DrawerDestinationStage: ViewModifier {
+    @Environment(\.chrome) private var chrome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let isOpen: Bool
+    let availableWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        let destinationOffset = min(availableWidth * 0.64, 286)
+        content
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: isOpen ? 30 : 0,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                if isOpen {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(chrome.border.opacity(0.82), lineWidth: 1)
+                }
+            }
+            .shadow(
+                color: isOpen ? Color.black.opacity(0.42) : .clear,
+                radius: 26,
+                x: -10,
+                y: 12
+            )
+            .scaleEffect(isOpen ? 0.97 : 1, anchor: .trailing)
+            .offset(x: isOpen ? destinationOffset : 0)
+            .allowsHitTesting(!isOpen)
+            .accessibilityHidden(isOpen)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.26), value: isOpen)
     }
 }
 

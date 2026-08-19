@@ -1,5 +1,9 @@
 # Project grouping, UX audit closeout, and iOS terminal composer
 
+> **Historical multi-stream design.** Its native iOS Terminal stream is
+> superseded and must not be resumed. Current native iOS priorities live in
+> [`../../ios-current-direction.md`](../../ios-current-direction.md).
+
 **Date:** 2026-08-09  
 **Beads:** `cave-1vpy`, `cave-ui5z`, `cave-nv1dk.2`  
 **Status:** Approved for implementation

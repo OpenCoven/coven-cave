@@ -33,6 +33,7 @@ struct ChatsHomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var showNewChat = false
     @State private var fixedNewChatFamiliarId: String?
     @State private var query = ""
@@ -102,14 +103,11 @@ struct ChatsHomeView: View {
                 isPresented: $showNewChat,
                 onDismiss: {
                     fixedNewChatFamiliarId = nil
-                    app.cancelTerminalFamiliarHandoff()
                 }
             ) {
                 NewChatView(
-                    fixedFamiliarId: fixedNewChatFamiliarId,
-                    initialProjectRoot: app.terminalFamiliarHandoff?.cwd
+                    fixedFamiliarId: fixedNewChatFamiliarId
                 ) { thread in
-                    app.applyTerminalFamiliarHandoff(to: thread)
                     showNewChat = false
                     open(.thread(thread))
                 }
@@ -264,34 +262,33 @@ struct ChatsHomeView: View {
     /// Large-title header pinned to the top, mirroring the Read / Tasks
     /// destinations so every destination title aligns at the same flush position.
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             CircularIconButton(systemImage: "line.3.horizontal",
                                label: "Open navigation") {
                 app.navigationDrawerOpen = true
             }
-            Text("Chats")
-                .font(.largeTitle.weight(.bold))
+            EditorialSurfaceTitle(
+                title: "Chats",
+                detail: visibleConversationLabel,
+                large: true
+            )
             Spacer()
             CircularIconButton(systemImage: "folder",
                                label: "Projects") {
                 showProjects = true
             }
-            CircularIconButton(systemImage: "square.and.pencil",
-                               label: "New chat") {
-                presentContextualNewChat()
-            }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
         .glassChrome(.top)
     }
 
     private var homeSearchBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(searchFocused ? chrome.accent : chrome.textSecondary)
                 TextField("Search chats…", text: $query)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -307,18 +304,50 @@ struct ChatsHomeView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            .background(chrome.bgRaised, in: Capsule())
-            .overlay(Capsule().stroke(chrome.border.opacity(0.7), lineWidth: 1))
+            .frame(minHeight: dockControlSize)
+            .glass(.control, in: Capsule())
+            .accentGlow(active: searchFocused)
 
-            CircularIconButton(systemImage: "square.and.pencil",
-                               label: "New chat") {
+            Button {
                 presentContextualNewChat()
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(chrome.accentForeground)
+                    .frame(width: dockControlSize, height: dockControlSize)
+                    .background(
+                        chrome.accentGradient,
+                        in: RoundedRectangle(cornerRadius: dockCornerRadius, style: .continuous)
+                    )
             }
+            .buttonStyle(.glassPress)
+            .accessibilityLabel("New chat")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassChrome(.bottom)
+        .padding(verticalSizeClass == .compact ? 6 : 8)
+        .frame(maxWidth: sizeClass == .regular ? 560 : .infinity)
+        .glass(.elevated, cornerRadius: verticalSizeClass == .compact ? 20 : 24)
+        .padding(.horizontal, sizeClass == .regular ? 24 : 12)
+        .padding(.bottom, verticalSizeClass == .compact ? 4 : 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var visibleConversationCount: Int {
+        app.threads.lazy.filter { !$0.archived }.count
+    }
+
+    private var visibleConversationLabel: String? {
+        guard visibleConversationCount > 0 else { return nil }
+        return visibleConversationCount == 1
+            ? "1 conversation"
+            : "\(visibleConversationCount) conversations"
+    }
+
+    private var dockControlSize: CGFloat {
+        verticalSizeClass == .compact ? 44 : 48
+    }
+
+    private var dockCornerRadius: CGFloat {
+        verticalSizeClass == .compact ? 14 : 16
     }
 
     private var homeList: some View {
@@ -356,9 +385,48 @@ struct ChatsHomeView: View {
                         }
                     }
             }
+            if showsLowDensityActions {
+                lowDensityActions
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
         }
         .listStyle(.plain)
         .themedListBackground()
+    }
+
+    private var showsLowDensityActions: Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && filteredFamiliars.count <= 2
+    }
+
+    private var lowDensityActions: some View {
+        HStack(spacing: 10) {
+            lowDensityAction("New chat", systemImage: "square.and.pencil") {
+                presentContextualNewChat()
+            }
+            lowDensityAction("All familiars", systemImage: "person.2") {
+                showFamiliars = true
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Chat shortcuts")
+    }
+
+    private func lowDensityAction(
+        _ label: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(chrome.textPrimary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .glass(.raised, cornerRadius: 14)
+        }
+        .buttonStyle(.glassPress)
     }
 
     private func consumeGlobalRequests() {
@@ -381,6 +449,9 @@ struct ChatsHomeView: View {
     /// Open Chats at the latest active conversation without stealing focus from
     /// a deep link, cross-view handoff, New Chat, or an existing selection.
     private func selectMostRecentThreadIfNeeded() {
+        #if DEBUG
+        guard !ProcessInfo.processInfo.arguments.contains("--ui-preview-chats-home") else { return }
+        #endif
         guard selection == nil,
               !showNewChat,
               app.threadToOpen == nil,
@@ -471,35 +542,58 @@ struct FamiliarConversationRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             AvatarView(familiar: familiar,
                        url: app.client?.avatarURL(for: familiar),
-                       size: 48, showStatus: true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(familiar.displayName)
-                        .font(.body.weight(.semibold))
-                        .lineLimit(1)
-                    if app.hasUnread(familiar.id) {
-                        Circle().fill(chrome.accent).frame(width: 8, height: 8)
+                       size: 52, showStatus: true)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        familiarName
+                        Spacer(minLength: 8)
+                        relativeTime
                     }
-                    Spacer(minLength: 4)
-                    if let updated = thread?.updatedAt {
-                        Text(updated, format: .relative(presentation: .numeric))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        familiarName
+                        relativeTime
                     }
                 }
                 Text(preview)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(chrome.textSecondary)
                     .lineLimit(2)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+    }
+
+    private var familiarName: some View {
+        HStack(spacing: 6) {
+            Text(familiar.displayName)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(chrome.textPrimary)
+                .lineLimit(1)
+                .layoutPriority(1)
+            if app.hasUnread(familiar.id) {
+                Circle().fill(chrome.accent).frame(width: 8, height: 8)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var relativeTime: some View {
+        if let updated = thread?.updatedAt {
+            Text(updated, format: .relative(presentation: .numeric))
+                .font(.caption2)
+                .foregroundStyle(chrome.textMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        }
     }
 
     /// VoiceOver hears the name, whether anything is unread, and the preview —

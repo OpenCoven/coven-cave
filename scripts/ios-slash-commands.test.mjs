@@ -13,7 +13,7 @@ const desktopCommands = [...desktopSlash.matchAll(/name: "(\/[^"]+)"/g)]
   .map((match) => match[1])
   // /canvas is retired on iOS; /save stays off the native catalog while the
   // Library feature lives on feature/library (ios-library-isolation guard).
-  .filter((name) => !["/canvas", "/save", "/rituals", "/projects"].includes(name));
+  .filter((name) => !["/canvas", "/save", "/rituals", "/projects", "/terminal"].includes(name));
 
 for (const command of desktopCommands) {
   assert.match(
@@ -52,16 +52,10 @@ assert.doesNotMatch(
   "Commands sheet should not render desktop-only command rows on iOS",
 );
 
-assert.match(
-  iosSlash,
-  /name: "\/terminal"[\s\S]{0,240}availability: \.native[\s\S]{0,120}action: \.openTerminal/,
-  "/terminal should open the native Terminal tab",
-);
-assert.match(
-  chatView,
-  /case \.openTerminal:[\s\S]{0,120}app\.selectedTab = \.terminal/,
-  "/terminal routes directly to the Terminal tab",
-);
+assert.doesNotMatch(iosSlash, /name: "\/terminal"|name: "\/comux"/,
+  "the retired iOS terminal commands stay out of the native catalog");
+assert.doesNotMatch(chatView, /\.openTerminal|selectedTab = \.terminal/,
+  "chat command routing cannot reach the retired iOS terminal");
 
 // /model is native on iOS: it switches the chat model via the model-state API.
 assert.match(
