@@ -55,6 +55,6 @@ assert.match(css, /\.menu-bar__search \{[\s\S]*?border:\s*1px solid var\(--borde
 assert.match(css, /\.shell-top-history \{/, "history Back/Forward pair has its grouping styles");
 assert.match(css, /\.menu-bar__task-label \{\s*\n\s*display:\s*none/, "task labels are CSS-demoted — the bar shows icons only");
 assert.match(css, /\.menu-bar__task-label--live \{\s*\n\s*display:\s*inline/, "…except live enrich progress, which is information, not chrome");
-assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 29px/, "the desktop bar is a slim 29px — it hugs the 28px controls instead of towering over the macOS traffic lights");
-assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \.menu-bar \{[\s\S]{0,120}?min-height: 28px/, "the inner menu-bar must not prop the slim titlebar band back open at 34px");
+assert.match(css, /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,300}?flex: 0 0 30px/, "native macOS renders a dedicated 30px window title strip");
+assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 34px/, "the functional toolbar keeps its compact 34px row below the title strip");
 console.log("menu-bar-icon-size.test.ts passed");

@@ -123,6 +123,11 @@ assert.match(
   /\.shell-top:has\(\.notification-bell__popover\) \{[^}]*z-index: 140;/,
   "an open notification dropdown lifts its title-bar stacking context above shell content",
 );
+assert.match(
+  desktopChrome,
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,500}?border-bottom: 1px solid color-mix/,
+  "native macOS separates the centered identity strip from the functional toolbar with a quiet hairline",
+);
 
 // ── 3. Bottom status bar ─────────────────────────────────────────────────────
 assert.match(
