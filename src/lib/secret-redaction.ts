@@ -58,8 +58,8 @@ const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
   /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
-  /\b[A-Za-z0-9+/]{32,}={0,2}\b/g,
 ];
+const GENERIC_BASE64_SECRET_PATTERN = /\b[A-Za-z0-9+/]{32,}={0,2}\b/g;
 
 export function redactSecretText(text: string): string {
   const jsonRedaction = redactJsonText(text);
@@ -93,7 +93,12 @@ function containsSecretJsonValue(value: unknown): boolean {
 }
 
 function containsSecretTextPlain(text: string): boolean {
-  if (WHOLE_SECRET_PATTERNS.some((pattern) => matchesSecretPattern(pattern, text))) return true;
+  if (
+    WHOLE_SECRET_PATTERNS.some((pattern) => matchesSecretPattern(pattern, text))
+    || containsGenericBase64Secret(text)
+  ) {
+    return true;
+  }
   if (/[?&](?:access_token|api_key|auth|key|password|secret|token)=[^&#\s]+/i.test(text)) return true;
   if (/\bhttps?:\/\/[^:/\s]+:[^@\s/]+@/i.test(text)) return true;
 
@@ -134,14 +139,16 @@ function containsAuthorizationCredential(value: string): boolean {
   const scheme = match[1]!.toLowerCase();
   const credential = match[2]!;
   if (
-    AUTHORIZATION_SCHEMES.has(scheme)
-    || scheme === "apikey"
-    || scheme === "api-key"
-    || scheme === "token"
-  ) {
-    return true;
-  }
-  return scheme === "oauth" && !/^\d+(?:\.\d+)*$/.test(credential);
+    !AUTHORIZATION_SCHEMES.has(scheme)
+    && scheme !== "apikey"
+    && scheme !== "api-key"
+    && scheme !== "token"
+    && scheme !== "oauth"
+  ) return false;
+
+  return scheme === "basic"
+    ? isBasicAuthorizationCredential(credential)
+    : isCredentialToken(credential);
 }
 
 function hasCredentialValue(value: unknown): boolean {
@@ -164,11 +171,56 @@ function matchesSecretPattern(pattern: RegExp, text: string): boolean {
   return matched;
 }
 
+function containsGenericBase64Secret(text: string): boolean {
+  GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = GENERIC_BASE64_SECRET_PATTERN.exec(text)) !== null) {
+    if (!isHexString(match[0])) {
+      GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
+      return true;
+    }
+  }
+  GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
+  return false;
+}
+
+function isHexString(value: string): boolean {
+  return /^[a-f0-9]+$/i.test(value);
+}
+
+function isBasicAuthorizationCredential(value: string): boolean {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
+  const unpadded = value.replace(/=+$/, "");
+  if (unpadded.length % 4 === 1) return false;
+  if (unpadded.length >= 20) return true;
+
+  try {
+    return atob(value).includes(":");
+  } catch {
+    return false;
+  }
+}
+
+function isCredentialToken(value: string): boolean {
+  if (!/^[A-Za-z0-9._~+/=-]{20,}$/.test(value)) return false;
+  const characterClasses = [
+    /[a-z]/.test(value),
+    /[A-Z]/.test(value),
+    /\d/.test(value),
+    /[._~+/=-]/.test(value),
+  ];
+  return characterClasses.filter(Boolean).length >= 3;
+}
+
 function redactSecretTextPlain(text: string): string {
   let next = text;
   for (const pattern of WHOLE_SECRET_PATTERNS) {
     next = next.replace(pattern, REDACTED_SECRET);
   }
+  next = next.replace(
+    GENERIC_BASE64_SECRET_PATTERN,
+    (match) => (isHexString(match) ? match : REDACTED_SECRET),
+  );
   next = next.replace(
     /([?&](?:access_token|api_key|auth|key|password|secret|token)=)[^&#\s]+/gi,
     `$1${REDACTED_SECRET}`,

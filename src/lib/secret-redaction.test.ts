@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   REDACTED_SECRET,
+  containsSecretText,
   redactSecretText,
   redactSecretsDeep,
 } from "./secret-redaction.ts";
@@ -305,6 +306,45 @@ assert.equal(
   redactSecretText("Authorization: Basic dXNlcjpwYXNz"),
   `Authorization: ${REDACTED_SECRET}`,
   "Authorization schemes consume and redact the complete credential",
+);
+assert.equal(
+  containsSecretText("Authorization: Basic authentication is disabled"),
+  false,
+  "Authorization documentation without a credential remains safe evidence",
+);
+assert.equal(
+  containsSecretText("Authorization: Basic dXNlcjpwYXNz"),
+  true,
+  "Basic authorization with a credential-shaped base64 value remains secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: Bearer Abc123_def456-ghi789.jkl012Mno345"),
+  true,
+  "Bearer authorization with a token-shaped value remains secret text",
+);
+const commitShas = [
+  "0123456789abcdef0123456789abcdef",
+  "0123456789abcdef0123456789abcdef01234567",
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+];
+for (const commitSha of commitShas) {
+  assert.equal(
+    containsSecretText(`commit ${commitSha}`),
+    false,
+    "hex commit SHAs in plain text are not generic base64 secrets",
+  );
+  assert.equal(
+    containsSecretText(JSON.stringify({ commit: commitSha })),
+    false,
+    "hex commit SHAs in JSON are not generic base64 secrets",
+  );
+}
+assert.equal(
+  containsSecretText(JSON.stringify({
+    token: "QmFzZTY0Q3JlZGVudGlh" + "bFZhbHVlMTIzNDU2",
+  })),
+  true,
+  "credential-shaped base64 in a sensitive JSON field remains secret text",
 );
 assert.equal(
   redactSecretText("TOKEN=$(printf 'literal-secret' && echo exposed"),

@@ -152,6 +152,9 @@ for (const label of [
 }
 const safeEvidenceLabels = [
   "Authorization: migrate to OAuth 2.1",
+  "Authorization: Basic authentication is disabled",
+  "Commit 0123456789abcdef0123456789abcdef01234567",
+  JSON.stringify({ commit: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }),
   '{ "safe": "value" }',
 ];
 for (const [index, label] of safeEvidenceLabels.entries()) {
