@@ -228,7 +228,7 @@ assert.match(
 );
 assert.match(
   tailscaleRecovery,
-  /TAILSCALE_RECOVERY_DELAYS_MS\s*=\s*\[750,\s*1_250,\s*2_000,\s*3_000,\s*4_000,\s*5_000\]/,
+  /TAILSCALE_RECOVERY_DELAYS_MS\s*=\s*\[\s*750\s*,\s*1_250\s*,\s*2_000\s*,\s*3_000\s*,\s*4_000\s*,\s*5_000\s*\]/,
   "recovery retries are prompt but bounded",
 );
 assert.match(

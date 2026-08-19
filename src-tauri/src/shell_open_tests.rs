@@ -230,6 +230,6 @@ fn tailscale_launcher_uses_only_fixed_native_commands() {
     );
     assert!(
         src.contains("pub(super) async fn open_tailscale_app() -> Result<(), String>"),
-        "the Tauri command must not accept caller-controlled launch input",
+        "the Tauri command must have a zero-argument signature so it cannot accept caller-controlled launch input",
     );
 }
