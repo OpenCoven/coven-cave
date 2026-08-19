@@ -9,10 +9,6 @@ type ResearchXArticleReaderProps = {
   article: XArticleSnapshot;
 };
 
-function authorName(article: XArticleSnapshot): string {
-  return article.author.displayName ?? `@${article.author.username}`;
-}
-
 export const ResearchXArticleReader = forwardRef<HTMLElement, ResearchXArticleReaderProps>(
   function ResearchXArticleReader({ title, article }, ref) {
     const paragraphs = article.body
@@ -33,8 +29,14 @@ export const ResearchXArticleReader = forwardRef<HTMLElement, ResearchXArticleRe
           </span>
           <h4>{title}</h4>
           <div className="research-x-article-reader__byline">
-            <span>{authorName(article)}</span>
-            {article.author.displayName ? <span>@{article.author.username}</span> : null}
+            {article.author.displayName ? (
+              <>
+                <span>{article.author.displayName}</span>
+                <span>@{article.author.username}</span>
+              </>
+            ) : (
+              <span>@{article.author.username}</span>
+            )}
             <span>
               Published <RelativeTime iso={article.publishedAt} fallback="date unavailable" />
             </span>

@@ -376,6 +376,15 @@ test("the X Article reader is plain selectable text, never embedded remote marku
   assert.match(reader, /research-x-article-reader__body/);
 });
 
+test("the X Article reader renders a fallback username only once", () => {
+  const reader = readFileSync(readerUrl, "utf8");
+  assert.match(
+    reader,
+    /\{article\.author\.displayName \? \(\s*<>\s*<span>\{article\.author\.displayName\}<\/span>\s*<span>@\{article\.author\.username\}<\/span>\s*<\/>\s*\) : \(\s*<span>@\{article\.author\.username\}<\/span>\s*\)\}/,
+  );
+  assert.doesNotMatch(reader, /function authorName\(/);
+});
+
 test("article detail reads reject stale payloads and reset per open resource", () => {
   assert.match(source, /const articleRequestRef = useRef\(0\)/);
   assert.match(source, /const activeArticleIdRef = useRef<string \| null>\(null\)/);

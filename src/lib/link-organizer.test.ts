@@ -12,6 +12,7 @@ import {
   LINK_CATEGORY_ORDER,
   MAX_LINKS_PER_SAVE,
   normalizeLinkUrl,
+  savedLinkDedupeKey,
   summarizeLinkIntake,
   type SavedLink,
 } from "./link-organizer.ts";
@@ -211,6 +212,18 @@ test("groupSavedLinksByUsage omits selected grouping without a selected mission"
     assert.ok(LINK_CATEGORY_META[category].label);
     assert.ok(LINK_CATEGORY_META[category].icon.startsWith("ph:"));
   }
+});
+
+test("groupSavedLinksByUsage matches X status aliases in a mission citation index", () => {
+  const saved = savedLink("saved-x", "https://x.com/OpenCoven/status/123456789");
+  const citedBy = new Map<string, { id: string }[]>([
+    [savedLinkDedupeKey("https://twitter.com/i/web/status/123456789"), [{ id: "mission-selected" }]],
+  ]);
+
+  const groups = groupSavedLinksByUsage([saved], citedBy, "mission-selected");
+
+  assert.deepEqual(groups.map((group) => group.id), ["selected"]);
+  assert.deepEqual(groups[0]?.links.map((link) => link.id), ["saved-x"]);
 });
 
 // ── wiring pins ───────────────────────────────────────────────────────────────
