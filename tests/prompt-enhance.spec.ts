@@ -237,6 +237,32 @@ function chatEnhanceStatus(chat: Locator, text: string) {
   return chat.getByRole("status").filter({ hasText: text });
 }
 
+function waitForPoliteAnnouncement(page: Page, expected: string) {
+  return page.evaluate(({ message, timeoutMs }) => new Promise<void>((resolve, reject) => {
+    const region = document.querySelector(
+      'div.sr-only[role="status"][aria-live="polite"][aria-atomic="true"]',
+    );
+    if (!region) {
+      reject(new Error("Polite live region is unavailable."));
+      return;
+    }
+    const finish = () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+      resolve();
+    };
+    const observer = new MutationObserver(() => {
+      if (region.textContent === message) finish();
+    });
+    const timer = window.setTimeout(() => {
+      observer.disconnect();
+      reject(new Error(`Timed out waiting for polite announcement: ${message}`));
+    }, timeoutMs);
+    observer.observe(region, { childList: true, subtree: true, characterData: true });
+    if (region.textContent === message) finish();
+  }), { message: expected, timeoutMs: 15_000 });
+}
+
 test.describe("prompt enhance", () => {
   test("legacy Enhance remains available and never sends a chat message when recommendations are disabled", async ({ page }) => {
     await seed(page);
@@ -352,17 +378,18 @@ test.describe("Chat agentic prompt enhancement", () => {
     const fixture = await seedChat(page, async (route) => fulfillSse(route, ENHANCED));
     const { chat, draft } = await openChat(page);
     const tools = chat.getByRole("button", { name: "Tools" });
-    const announcer = page.locator('div.sr-only[role="status"][aria-live="polite"][aria-atomic="true"]');
 
     await draft.fill("fix login bug");
     await tools.focus();
-    await clickChatEnhance(page, chat);
+    await Promise.all([
+      waitForPoliteAnnouncement(page, "Prompt enhanced."),
+      clickChatEnhance(page, chat),
+    ]);
 
     const applied = chatEnhanceStatus(chat, "Prompt improved.");
     await expect(applied).toBeVisible({ timeout: 15_000 });
     await expect(tools).toBeFocused();
     await expect(draft).toHaveValue(ENHANCED);
-    await expect(announcer).toHaveText("Prompt enhanced.");
 
     expect(fixture.enhancementRequests).toHaveLength(1);
     expect(String(fixture.enhancementRequests[0]?.prompt)).toContain("Current thread: Agentic enhancement evidence");
@@ -383,10 +410,12 @@ test.describe("Chat agentic prompt enhancement", () => {
     await page.keyboard.press("Shift+Tab");
     await expect(revert).toBeFocused();
 
-    await revert.click();
+    await Promise.all([
+      waitForPoliteAnnouncement(page, "Prompt restored."),
+      revert.click(),
+    ]);
     await expect(draft).toHaveValue("fix login bug");
     await expect(draft).toBeFocused();
-    await expect(announcer).toHaveText("Prompt restored.");
   });
 
   test("turns a mid-stream Chat edit into an apply-or-dismiss suggestion and cancels stale context", async ({ page }) => {

@@ -6719,7 +6719,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // pick its first send used.
   const draftViewKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    const viewKey = `${sessionId ?? ""}|${projectRoot ?? ""}`;
+    const viewKey = sessionId
+      ? `session:${sessionId}`
+      : `draft:${projectRoot ?? ""}`;
     const viewChanged = draftViewKeyRef.current !== viewKey;
     draftViewKeyRef.current = viewKey;
     setProjectIdDraft((prev) => {
