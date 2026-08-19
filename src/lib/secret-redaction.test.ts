@@ -381,6 +381,26 @@ assert.equal(
   true,
   "short Token authorization credentials remain secret text",
 );
+assert.equal(
+  containsSecretText("Authorization: DPoP x"),
+  true,
+  "DPoP authorization with a one-token credential remains secret text",
+);
+assert.equal(
+  redactSecretText("Authorization: DPoP x"),
+  `Authorization: ${REDACTED_SECRET}`,
+  "DPoP authorization headers redact the full credential regardless of length",
+);
+assert.equal(
+  containsSecretText("Authorization: Proof_v1+demo x"),
+  true,
+  "arbitrary valid HTTP auth schemes with single-token credentials remain secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: DPoP proof is required"),
+  false,
+  "multi-word authorization documentation remains safe evidence for arbitrary schemes",
+);
 const digestCredential = 'Authorization: Digest username="Mufasa", realm="test@example.invalid", nonce="abcdef1234567890", response="0123456789abcdef"';
 assert.equal(
   containsSecretText(digestCredential),

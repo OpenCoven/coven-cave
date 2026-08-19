@@ -165,6 +165,8 @@ expectRejected(
 );
 for (const label of [
   `Authorization: Bearer ${"a".repeat(32)}`,
+  "Authorization: DPoP x",
+  "Authorization: Proof_v1+demo x",
   "API_KEY=synthetic-credential-value",
   JSON.stringify({ client_secret: "synthetic-credential-value" }),
 ]) {
@@ -179,6 +181,7 @@ for (const label of [
 const safeEvidenceLabels = [
   "Authorization: migrate to OAuth 2.1",
   "Authorization: Basic authentication is disabled",
+  "Authorization: DPoP proof is required",
   '{ "safe": "value" }',
 ];
 for (const [index, label] of safeEvidenceLabels.entries()) {
