@@ -6742,19 +6742,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // Initialise when unset, or always resync on session switch.
       return prev === null ? resolved : resolved ?? prev;
     });
-    setMentionedFiles([]);
-    setRuntimeHost(null);
-    // ChatView is a single instance reused across threads (not keyed by
-    // sessionId in ChatRouter), so per-thread composer context must be cleared
-    // on switch or it bleeds into the next conversation's next send: a
-    // reply-quote and staged attachments would be injected into the wrong
-    // thread, a pending branch parent would mis-parent the turn onto a node
-    // that doesn't exist in the new tree, and the "Prompt improved / Revert"
-    // strip would resurrect the previous thread's pre-enhancement draft.
-    setReplyTarget(null);
-    clearAttachments();
-    setPendingBranchParent(undefined);
-    promptEnhance.reset();
+    if (viewChanged) {
+      setMentionedFiles([]);
+      setRuntimeHost(null);
+      // ChatView is a single instance reused across threads (not keyed by
+      // sessionId in ChatRouter), so per-thread composer context must be cleared
+      // on switch or it bleeds into the next conversation's next send: a
+      // reply-quote and staged attachments would be injected into the wrong
+      // thread, a pending branch parent would mis-parent the turn onto a node
+      // that doesn't exist in the new tree, and the "Prompt improved / Revert"
+      // strip would resurrect the previous thread's pre-enhancement draft.
+      setReplyTarget(null);
+      clearAttachments();
+      setPendingBranchParent(undefined);
+      promptEnhance.reset();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
