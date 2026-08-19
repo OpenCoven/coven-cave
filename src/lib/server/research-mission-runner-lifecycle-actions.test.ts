@@ -920,6 +920,136 @@ test("cost-unavailable policy pauses before another iteration", async () => {
   assert.match(result.lastError ?? "", /Cost unavailable/);
 });
 
+test("one-pass cost approval starts the next iteration without weakening the policy", async () => {
+  let stored = checkpointMission({
+    bounds: {
+      ...checkpointMission().bounds,
+      stopWhenCostUnavailable: true,
+    },
+  });
+  let starts = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async (flow) => {
+      starts += 1;
+      return {
+        ok: true,
+        executor: "session",
+        sessionId: "session-2",
+        run: { ...RUN, id: "run-2", flowId: flow.id, sessionId: "session-2" },
+      };
+    },
+  }));
+  const result = await runner.act(stored.id, {
+    action: "continue",
+    approveCostUnavailable: true,
+  });
+  assert.equal(result.status, "running");
+  assert.equal(result.iterations.length, 2);
+  assert.equal(result.bounds.stopWhenCostUnavailable, true);
+  assert.equal(starts, 1);
+});
+
+test("one-pass cost approval cannot override the reported spend cap", async () => {
+  let stored = checkpointMission({
+    bounds: {
+      ...checkpointMission().bounds,
+      maxSpendUsd: 1,
+      stopWhenCostUnavailable: true,
+    },
+    iterations: [
+      {
+        ...checkpointMission().iterations[0],
+        costUsd: 1,
+      },
+      {
+        number: 2,
+        status: "checkpoint",
+        startedAt: NOW.toISOString(),
+        finishedAt: NOW.toISOString(),
+        decision: "checkpoint",
+        decisionReason: "Review before continuing",
+      },
+    ],
+  });
+  let starts = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async () => {
+      starts += 1;
+      return { ok: true, executor: "session", sessionId: "must-not-start" };
+    },
+  }));
+  const result = await runner.act(stored.id, {
+    action: "continue",
+    approveCostUnavailable: true,
+  });
+  assert.equal(result.status, "paused");
+  assert.match(result.lastError ?? "", /Reported spend limit reached/);
+  assert.equal(starts, 0);
+});
+
+test("a blocked Continue cannot downgrade a completed mission", async () => {
+  const finishedAt = NOW.toISOString();
+  let stored = checkpointMission({
+    status: "completed",
+    finishedAt,
+    bounds: {
+      ...checkpointMission().bounds,
+      stopWhenCostUnavailable: true,
+    },
+    iterations: [{
+      ...checkpointMission().iterations[0],
+      status: "completed",
+      decision: "complete",
+      decisionReason: "Enough evidence",
+    }],
+  });
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => {
+      saves += 1;
+      stored = structuredClone(mission);
+    },
+  }));
+  const result = await runner.act(stored.id, { action: "continue" });
+  assert.equal(result.status, "completed");
+  assert.equal(result.finishedAt, finishedAt);
+  assert.equal(result.lastError, undefined);
+  assert.equal(saves, 0);
+});
+
+test("Resume approves one unmetered pass for a legacy cost-paused mission", async () => {
+  let stored = checkpointMission({
+    status: "paused",
+    lastError: "Cost unavailable; review before another iteration",
+    bounds: {
+      ...checkpointMission().bounds,
+      stopWhenCostUnavailable: true,
+    },
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async (flow) => ({
+      ok: true,
+      executor: "session",
+      sessionId: "session-2",
+      run: { ...RUN, id: "run-2", flowId: flow.id, sessionId: "session-2" },
+    }),
+  }));
+  const result = await runner.act(stored.id, {
+    action: "resume",
+    approveCostUnavailable: true,
+  });
+  assert.equal(result.status, "running");
+  assert.equal(result.iterations.length, 2);
+  assert.equal(result.lastError, undefined);
+});
+
 test("cancel kills the active session and preserves artifacts", async () => {
   const killed: Array<[string, unknown, unknown]> = [];
   let cleared = 0;
